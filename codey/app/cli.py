@@ -127,10 +127,228 @@ def _human_cli_line(row: dict[str, object]) -> str:
     return ""
 
 
-def cmd_ghost(args: argparse.Namespace) -> int:
-    from codey.ghost.continuity import build_ghost_continuity
-    from codey.ghost.control_surface import GhostControlSurface
+def _ghost_list(args: argparse.Namespace, store) -> int:
+    candidates = [
+        candidate.to_payload()
+        for candidate in store.list_candidates(
+            status=getattr(args, "status", "") or None,
+            scope=getattr(args, "scope", "") or "",
+            project=getattr(args, "project", "") or "",
+            session_id=getattr(args, "session_id", "") or "",
+        )
+    ]
+    _print_json({
+        "schema_version": 1,
+        "ok": True,
+        "learning_enabled": store.learning_enabled(),
+        "candidates": candidates,
+        "warnings": list(store.last_warnings),
+    })
+    return 0
+
+
+def _ghost_export(surface) -> int:
+    _print_json(surface.export_state())
+    return 0
+
+
+def _ghost_work_list(args: argparse.Namespace, work_queue_store) -> int:
+    items = [
+        item.to_payload()
+        for item in work_queue_store.list_items(
+            status=getattr(args, "status", "") or "",
+            kind=getattr(args, "kind", "") or "",
+            scope=getattr(args, "scope", "") or "",
+            project=getattr(args, "project", "") or "",
+            session_id=getattr(args, "session_id", "") or "",
+        )
+    ]
+    _print_json({
+        "schema_version": 1,
+        "ok": True,
+        "items": items,
+        "warnings": list(work_queue_store.last_warnings),
+    })
+    return 0
+
+
+def _ghost_work_transition(action: str, args: argparse.Namespace, work_queue_store) -> int:
+    try:
+        item = (
+            work_queue_store.queue_item(args.item_id)
+            if action == "work-queue"
+            else work_queue_store.reject_item(args.item_id)
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        _print_error_json(exc)
+        return 1
+    if item is None:
+        _print_error_json("work item not found or invalid transition")
+        return 1
+    _print_json({
+        "schema_version": 1,
+        "ok": True,
+        "item": item.to_payload(),
+    })
+    return 0
+
+
+def _ghost_review(action: str, args: argparse.Namespace, store, hebbian_store) -> int:
+    try:
+        candidate = store.review_candidate(
+            args.candidate_id,
+            "accept" if action == "accept" else "reject",
+            reviewed_by="cli",
+        )
+    except ValueError as exc:
+        _print_error_json(exc)
+        return 2
+    except (OSError, TypeError) as exc:
+        _print_error_json(exc)
+        return 1
+    if candidate is None:
+        _print_error_json("candidate not found or storage failed")
+        return 1
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "ok": True,
+        "candidate": candidate.to_payload(),
+    }
+    if action == "accept":
+        related_candidates = [
+            row for row in store.list_candidates(status="accepted")
+            if row.id != candidate.id and row.run_id and row.run_id == candidate.run_id
+        ]
+        result = hebbian_store.reinforce_candidate(
+            candidate,
+            related_candidates=related_candidates,
+        )
+        payload["hebbian"] = {
+            "applied": result.applied,
+            "reason": result.reason,
+            "node": result.node.to_payload() if result.node is not None else None,
+            "edges": [edge.to_payload() for edge in result.edges],
+        }
+    else:
+        try:
+            payload["hebbian_removed"] = hebbian_store.remove_candidate(candidate)
+        except (OSError, TypeError, ValueError) as exc:
+            _print_error_json(exc)
+            return 1
+    _print_json(payload)
+    return 0
+
+
+def _ghost_state(hebbian_store) -> int:
+    payload = hebbian_store.export_state()
+    payload["ok"] = True
+    _print_json(payload)
+    return 0
+
+
+def _ghost_directive(args: argparse.Namespace, hebbian_store) -> int:
     from codey.ghost.directive import build_ghost_directive
+
+    budget_arg = getattr(args, "budget", 900)
+    directive = build_ghost_directive(
+        hebbian_store,
+        project=getattr(args, "project", "") or "",
+        session_id=getattr(args, "session_id", "") or "",
+        budget=900 if budget_arg is None else budget_arg,
+    )
+    payload = directive.to_payload()
+    payload["schema_version"] = 1
+    payload["ok"] = True
+    _print_json(payload)
+    return 0
+
+
+def _ghost_continuity(args: argparse.Namespace, continuity_store) -> int:
+    from codey.ghost.continuity import build_ghost_continuity
+
+    budget_arg = getattr(args, "budget", 900)
+    continuity = build_ghost_continuity(
+        continuity_store,
+        project=getattr(args, "project", "") or "",
+        session_id=getattr(args, "session_id", "") or "",
+        budget=900 if budget_arg is None else budget_arg,
+    )
+    payload = continuity.to_payload()
+    payload["schema_version"] = 1
+    payload["ok"] = True
+    _print_json(payload)
+    return 0
+
+
+def _ghost_rebuild_state(args: argparse.Namespace, hebbian_store) -> int:
+    if not getattr(args, "yes", False):
+        _print_error_json("rebuild-state requires --yes")
+        return 2
+    ok = hebbian_store.rebuild_from_events()
+    _print_json({"schema_version": 1, "ok": ok})
+    return 0 if ok else 1
+
+
+def _ghost_rebuild_continuity(args: argparse.Namespace, continuity_store) -> int:
+    if not getattr(args, "yes", False):
+        _print_error_json("rebuild-continuity requires --yes")
+        return 2
+    ok = continuity_store.rebuild_from_events()
+    _print_json({"schema_version": 1, "ok": ok})
+    return 0 if ok else 1
+
+
+def _ghost_rebuild_affinity(args: argparse.Namespace, affinity_store) -> int:
+    if not getattr(args, "yes", False):
+        _print_error_json("rebuild-affinity requires --yes")
+        return 2
+    ok = affinity_store.rebuild_from_events()
+    _print_json({"schema_version": 1, "ok": ok})
+    return 0 if ok else 1
+
+
+def _ghost_reset(args: argparse.Namespace, surface) -> int:
+    if not getattr(args, "yes", False):
+        _print_error_json("reset requires --yes")
+        return 2
+    status, payload = surface.dispatch_action({"action": "reset_all", "confirm": True})
+    _print_json(payload)
+    if status == 400:
+        return 2
+    return 0 if payload.get("ok") else 1
+
+
+def _ghost_delete_scope(args: argparse.Namespace, surface) -> int:
+    if not getattr(args, "yes", False):
+        _print_error_json("delete-scope requires --yes")
+        return 2
+    status, payload = surface.dispatch_action({
+        "action": "delete_scope",
+        "confirm": True,
+        "scope": getattr(args, "scope_name", ""),
+        "project": getattr(args, "project", "") or "",
+        "session_id": getattr(args, "session_id", "") or "",
+    })
+    _print_json(payload)
+    if status == 400:
+        return 2
+    return 0 if payload.get("ok") else 1
+
+
+def _ghost_enable_disable(action: str, surface, store) -> int:
+    _status, payload = surface.dispatch_action(
+        {"action": "enable_updates" if action == "enable" else "disable_updates"}
+    )
+    _print_json({
+        "schema_version": 1,
+        "ok": payload.get("ok"),
+        "learning_enabled": payload.get("enabled", store.learning_enabled()),
+    })
+    return 0 if payload.get("ok") else 1
+
+
+def cmd_ghost(args: argparse.Namespace) -> int:
+    from codey.ghost.control_surface import GhostControlSurface
     from codey.storage.local_store import DEFAULT_STATE_HOME
 
     state_home_arg = getattr(args, "state_home", "") or ""
@@ -146,193 +364,33 @@ def cmd_ghost(args: argparse.Namespace) -> int:
     work_queue_store = surface.work_queue
     action = str(getattr(args, "ghost_cmd", "") or "").strip()
     if action == "list":
-        candidates = [
-            candidate.to_payload()
-            for candidate in store.list_candidates(
-                status=getattr(args, "status", "") or None,
-                scope=getattr(args, "scope", "") or "",
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-        ]
-        _print_json({
-            "schema_version": 1,
-            "ok": True,
-            "learning_enabled": store.learning_enabled(),
-            "candidates": candidates,
-            "warnings": list(store.last_warnings),
-        })
-        return 0
+        return _ghost_list(args, store)
     if action == "export":
-        _print_json(surface.export_state())
-        return 0
+        return _ghost_export(surface)
     if action == "work-list":
-        items = [
-            item.to_payload()
-            for item in work_queue_store.list_items(
-                status=getattr(args, "status", "") or "",
-                kind=getattr(args, "kind", "") or "",
-                scope=getattr(args, "scope", "") or "",
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-        ]
-        _print_json({
-            "schema_version": 1,
-            "ok": True,
-            "items": items,
-            "warnings": list(work_queue_store.last_warnings),
-        })
-        return 0
+        return _ghost_work_list(args, work_queue_store)
     if action in {"work-queue", "work-reject"}:
-        try:
-            item = (
-                work_queue_store.queue_item(args.item_id)
-                if action == "work-queue"
-                else work_queue_store.reject_item(args.item_id)
-            )
-        except (OSError, TypeError, ValueError) as exc:
-            _print_error_json(exc)
-            return 1
-        if item is None:
-            _print_error_json("work item not found or invalid transition")
-            return 1
-        _print_json({
-            "schema_version": 1,
-            "ok": True,
-            "item": item.to_payload(),
-        })
-        return 0
+        return _ghost_work_transition(action, args, work_queue_store)
     if action in {"accept", "reject"}:
-        try:
-            candidate = store.review_candidate(
-                args.candidate_id,
-                "accept" if action == "accept" else "reject",
-                reviewed_by="cli",
-            )
-        except ValueError as exc:
-            _print_error_json(exc)
-            return 2
-        except (OSError, TypeError) as exc:
-            _print_error_json(exc)
-            return 1
-        if candidate is None:
-            _print_error_json("candidate not found or storage failed")
-            return 1
-        payload: dict[str, object] = {
-            "schema_version": 1,
-            "ok": True,
-            "candidate": candidate.to_payload(),
-        }
-        if action == "accept":
-            related_candidates = [
-                row for row in store.list_candidates(status="accepted")
-                if row.id != candidate.id and row.run_id and row.run_id == candidate.run_id
-            ]
-            result = hebbian_store.reinforce_candidate(
-                candidate,
-                related_candidates=related_candidates,
-            )
-            payload["hebbian"] = {
-                "applied": result.applied,
-                "reason": result.reason,
-                "node": result.node.to_payload() if result.node is not None else None,
-                "edges": [edge.to_payload() for edge in result.edges],
-            }
-        else:
-            try:
-                payload["hebbian_removed"] = hebbian_store.remove_candidate(candidate)
-            except (OSError, TypeError, ValueError) as exc:
-                _print_error_json(exc)
-                return 1
-        _print_json(payload)
-        return 0
+        return _ghost_review(action, args, store, hebbian_store)
     if action == "state":
-        payload = hebbian_store.export_state()
-        payload["ok"] = True
-        _print_json(payload)
-        return 0
+        return _ghost_state(hebbian_store)
     if action == "directive":
-        budget_arg = getattr(args, "budget", 900)
-        directive = build_ghost_directive(
-            hebbian_store,
-            project=getattr(args, "project", "") or "",
-            session_id=getattr(args, "session_id", "") or "",
-            budget=900 if budget_arg is None else budget_arg,
-        )
-        payload = directive.to_payload()
-        payload["schema_version"] = 1
-        payload["ok"] = True
-        _print_json(payload)
-        return 0
+        return _ghost_directive(args, hebbian_store)
     if action == "continuity":
-        budget_arg = getattr(args, "budget", 900)
-        continuity = build_ghost_continuity(
-            continuity_store,
-            project=getattr(args, "project", "") or "",
-            session_id=getattr(args, "session_id", "") or "",
-            budget=900 if budget_arg is None else budget_arg,
-        )
-        payload = continuity.to_payload()
-        payload["schema_version"] = 1
-        payload["ok"] = True
-        _print_json(payload)
-        return 0
+        return _ghost_continuity(args, continuity_store)
     if action == "rebuild-state":
-        if not getattr(args, "yes", False):
-            _print_error_json("rebuild-state requires --yes")
-            return 2
-        ok = hebbian_store.rebuild_from_events()
-        _print_json({"schema_version": 1, "ok": ok})
-        return 0 if ok else 1
+        return _ghost_rebuild_state(args, hebbian_store)
     if action == "rebuild-continuity":
-        if not getattr(args, "yes", False):
-            _print_error_json("rebuild-continuity requires --yes")
-            return 2
-        ok = continuity_store.rebuild_from_events()
-        _print_json({"schema_version": 1, "ok": ok})
-        return 0 if ok else 1
+        return _ghost_rebuild_continuity(args, continuity_store)
     if action == "rebuild-affinity":
-        if not getattr(args, "yes", False):
-            _print_error_json("rebuild-affinity requires --yes")
-            return 2
-        ok = affinity_store.rebuild_from_events()
-        _print_json({"schema_version": 1, "ok": ok})
-        return 0 if ok else 1
+        return _ghost_rebuild_affinity(args, affinity_store)
     if action == "reset":
-        if not getattr(args, "yes", False):
-            _print_error_json("reset requires --yes")
-            return 2
-        status, payload = surface.dispatch_action({"action": "reset_all", "confirm": True})
-        _print_json(payload)
-        if status == 400:
-            return 2
-        return 0 if payload.get("ok") else 1
+        return _ghost_reset(args, surface)
     if action == "delete-scope":
-        if not getattr(args, "yes", False):
-            _print_error_json("delete-scope requires --yes")
-            return 2
-        status, payload = surface.dispatch_action({
-            "action": "delete_scope",
-            "confirm": True,
-            "scope": getattr(args, "scope_name", ""),
-            "project": getattr(args, "project", "") or "",
-            "session_id": getattr(args, "session_id", "") or "",
-        })
-        _print_json(payload)
-        if status == 400:
-            return 2
-        return 0 if payload.get("ok") else 1
+        return _ghost_delete_scope(args, surface)
     if action in {"enable", "disable"}:
-        _status, payload = surface.dispatch_action(
-            {"action": "enable_updates" if action == "enable" else "disable_updates"}
-        )
-        _print_json({
-            "schema_version": 1,
-            "ok": payload.get("ok"),
-            "learning_enabled": payload.get("enabled", store.learning_enabled()),
-        })
-        return 0 if payload.get("ok") else 1
+        return _ghost_enable_disable(action, surface, store)
     _safe_print("ghost subcommand required", file=sys.stderr)
     return 2
 

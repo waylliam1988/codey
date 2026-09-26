@@ -729,39 +729,12 @@ def batches_from_entries(
         batch_id = payload["batch_id"]
 
         if rkind == RECORD_KIND_BATCH_INTENT:
-            raw_items = payload.get("items")
-            if not isinstance(raw_items, list) or not raw_items:
-                raise ToolResultDeliveryError(
-                    f"batch_intent missing or invalid items in batch {batch_id!r}"
-                )
-            items = tuple(DeliveryBatchItem.from_dict(it) for it in raw_items)
-            turn = _require_nonnegative_int(payload.get("turn"), "turn")
-            intent = DeliveryBatchIntent(
+            _apply_batch_intent_record(
+                payload=payload,
                 batch_id=batch_id,
-                session_id=str(payload.get("session_id") or ""),
-                run_id=str(payload.get("run_id") or ""),
-                lane=str(payload.get("lane") or ""),
-                operation_id=str(payload.get("operation_id") or ""),
-                turn=turn,
-                items=items,
-                batch_digest=str(payload.get("batch_digest") or ""),
-                created_at=str(payload.get("created_at") or ""),
+                intents=intents,
+                ordered_batch_ids=ordered_batch_ids,
             )
-            intent.validate()
-
-            if batch_id in intents:
-                existing = intents[batch_id]
-                if (
-                    existing.turn != intent.turn
-                    or existing.items != intent.items
-                    or existing.batch_digest != intent.batch_digest
-                ):
-                    raise ToolResultDeliveryError(
-                        f"conflicting duplicate batch intent for batch_id {batch_id!r}"
-                    )
-            else:
-                intents[batch_id] = intent
-                ordered_batch_ids.append(batch_id)
 
         elif rkind == RECORD_KIND_SEND_ATTEMPT:
             send_attempts.setdefault(batch_id, []).append(payload["provider_effect_id"])
@@ -773,17 +746,101 @@ def batches_from_entries(
             delivered.setdefault(batch_id, []).append(payload["provider_effect_id"])
 
         elif rkind == RECORD_KIND_RECOVERED:
-            if batch_id in recovered_facts:
-                existing = recovered_facts[batch_id]
-                if (
-                    list(existing.get("recovered_effect_ids", [])) != list(payload.get("recovered_effect_ids", []))
-                    or existing.get("recovered_reads") != payload.get("recovered_reads")
-                    or existing.get("recovered_lookups") != payload.get("recovered_lookups")
-                ):
-                    raise ToolResultDeliveryError(f"conflicting recovered facts for batch {batch_id!r}")
-            else:
-                recovered_facts[batch_id] = payload
+            _apply_recovered_record(
+                payload=payload,
+                batch_id=batch_id,
+                recovered_facts=recovered_facts,
+            )
 
+    _check_delivery_orphans(
+        intents=intents,
+        send_attempts=send_attempts,
+        superseded=superseded,
+        delivered=delivered,
+    )
+    _check_delivery_links(
+        send_attempts=send_attempts,
+        superseded=superseded,
+        delivered=delivered,
+    )
+
+    return _build_delivery_projections(
+        ordered_batch_ids=ordered_batch_ids,
+        intents=intents,
+        send_attempts=send_attempts,
+        superseded=superseded,
+        delivered=delivered,
+        recovered_facts=recovered_facts,
+    )
+
+
+def _apply_batch_intent_record(
+    *,
+    payload: dict[str, Any],
+    batch_id: str,
+    intents: dict[str, DeliveryBatchIntent],
+    ordered_batch_ids: list[str],
+) -> None:
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise ToolResultDeliveryError(
+            f"batch_intent missing or invalid items in batch {batch_id!r}"
+        )
+    items = tuple(DeliveryBatchItem.from_dict(it) for it in raw_items)
+    turn = _require_nonnegative_int(payload.get("turn"), "turn")
+    intent = DeliveryBatchIntent(
+        batch_id=batch_id,
+        session_id=str(payload.get("session_id") or ""),
+        run_id=str(payload.get("run_id") or ""),
+        lane=str(payload.get("lane") or ""),
+        operation_id=str(payload.get("operation_id") or ""),
+        turn=turn,
+        items=items,
+        batch_digest=str(payload.get("batch_digest") or ""),
+        created_at=str(payload.get("created_at") or ""),
+    )
+    intent.validate()
+
+    if batch_id in intents:
+        existing = intents[batch_id]
+        if (
+            existing.turn != intent.turn
+            or existing.items != intent.items
+            or existing.batch_digest != intent.batch_digest
+        ):
+            raise ToolResultDeliveryError(
+                f"conflicting duplicate batch intent for batch_id {batch_id!r}"
+            )
+    else:
+        intents[batch_id] = intent
+        ordered_batch_ids.append(batch_id)
+
+
+def _apply_recovered_record(
+    *,
+    payload: dict[str, Any],
+    batch_id: str,
+    recovered_facts: dict[str, dict[str, Any]],
+) -> None:
+    if batch_id in recovered_facts:
+        existing = recovered_facts[batch_id]
+        if (
+            list(existing.get("recovered_effect_ids", [])) != list(payload.get("recovered_effect_ids", []))
+            or existing.get("recovered_reads") != payload.get("recovered_reads")
+            or existing.get("recovered_lookups") != payload.get("recovered_lookups")
+        ):
+            raise ToolResultDeliveryError(f"conflicting recovered facts for batch {batch_id!r}")
+    else:
+        recovered_facts[batch_id] = payload
+
+
+def _check_delivery_orphans(
+    *,
+    intents: dict[str, DeliveryBatchIntent],
+    send_attempts: dict[str, list[str]],
+    superseded: dict[str, list[str]],
+    delivered: dict[str, list[str]],
+) -> None:
     known_intent_ids = set(intents.keys())
     orphan_attempts = set(send_attempts.keys()) - known_intent_ids
     if orphan_attempts:
@@ -800,6 +857,14 @@ def batches_from_entries(
         raise ToolResultDeliveryError(
             f"orphan delivered records without corresponding batch_intent: {orphan_delivered}"
         )
+
+
+def _check_delivery_links(
+    *,
+    send_attempts: dict[str, list[str]],
+    superseded: dict[str, list[str]],
+    delivered: dict[str, list[str]],
+) -> None:
     for bid, voided in superseded.items():
         attempted = set(send_attempts.get(bid, ()))
         unknown = [peid for peid in voided if peid not in attempted]
@@ -836,6 +901,16 @@ def batches_from_entries(
             f"delivered records without matching send_attempt: {delivered_without_attempt}"
         )
 
+
+def _build_delivery_projections(
+    *,
+    ordered_batch_ids: list[str],
+    intents: dict[str, DeliveryBatchIntent],
+    send_attempts: dict[str, list[str]],
+    superseded: dict[str, list[str]],
+    delivered: dict[str, list[str]],
+    recovered_facts: dict[str, dict[str, Any]],
+) -> tuple[DeliveryBatchProjection, ...]:
     projections: list[DeliveryBatchProjection] = []
     for bid in ordered_batch_ids:
         intent = intents[bid]

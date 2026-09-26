@@ -357,6 +357,127 @@ def _run_headless_task(
         return None, exc
 
 
+def _payload_task_start(common: dict[str, object], event: dict) -> dict[str, object]:
+    return {
+        **common,
+        "project": clip_event_text(event.get("project") or "", 500),
+        "provider": clip_event_text(event.get("provider") or "", 80),
+        "mode": clip_event_text(event.get("mode") or "", 40),
+        "max_turns": _int_or_zero(event.get("max_turns")),
+    }
+
+
+def _payload_status(common: dict[str, object], event: dict) -> dict[str, object]:
+    return {
+        **common,
+        "status": clip_event_text(event.get("status") or event.get("text") or "", 80),
+    }
+
+
+def _payload_info(common: dict[str, object], event: dict) -> dict[str, object]:
+    return {**common, "text": clip_event_text(event.get("text") or "")}
+
+
+def _payload_shell_request(common: dict[str, object], event: dict) -> dict[str, object]:
+    command_fields = shell_command_event_fields(event)
+    payload = {
+        **common,
+        "id": clip_event_text(event.get("id") or "", 80),
+        "cwd": clip_event_text(event.get("cwd") or ".", 240),
+        **command_fields,
+        "deferred_tool_count": _int_or_zero(event.get("deferred_tool_count")),
+    }
+    deferred = event.get("deferred_tool_calls")
+    if isinstance(deferred, list):
+        payload["deferred_tool_calls"] = [
+            _bounded_deferred_tool_call(row)
+            for row in deferred[:8]
+            if isinstance(row, dict)
+        ]
+    return payload
+
+
+def _payload_turn(common: dict[str, object], event: dict) -> dict[str, object]:
+    payload = {**common, "turn": _int_or_zero(event.get("turn"))}
+    if event.get("note"):
+        payload["note"] = clip_event_text(event.get("note") or "")
+    return payload
+
+
+def _payload_tool_started(common: dict[str, object], event: dict) -> dict[str, object]:
+    payload = {
+        **common,
+        "turn": _int_or_zero(event.get("turn")),
+        "tool_id": clip_event_text(event.get("tool_id") or "", 40),
+        "tool": clip_event_text(event.get("kind") or "", 80),
+        "path": clip_event_text(event.get("path") or "", 240),
+        "activity": clip_event_text(event.get("activity") or ""),
+    }
+    command = clip_event_text(event.get("command") or "")
+    if command:
+        payload["command"] = command
+    return payload
+
+
+def _payload_tool(common: dict[str, object], event: dict) -> dict[str, object]:
+    payload = {
+        **common,
+        "turn": _int_or_zero(event.get("turn")),
+        "tool_id": clip_event_text(event.get("tool_id") or "", 40),
+        "tool": clip_event_text(event.get("kind") or "", 80),
+        "path": clip_event_text(event.get("path") or "", 240),
+        "ok": bool(event.get("ok", not bool(event.get("error")))),
+        "status": clip_event_text(event.get("status") or "", 80),
+        "changed": bool(event.get("changed", False)),
+        "truncated": bool(event.get("truncated", False)),
+        "result": clip_event_text(event.get("result") or "", MAX_EVENT_RESULT_CHARS),
+    }
+    command = clip_event_text(event.get("command") or "")
+    if command:
+        payload["command"] = command
+    if event.get("exit_code") is not None:
+        payload["exit_code"] = _int_or_zero(event.get("exit_code"))
+    _copy_if_present(payload, event, "output_handle", limit=120)
+    for key in ("output_bytes", "output_stored_bytes"):
+        if event.get(key) is not None:
+            payload[key] = _int_or_zero(event.get(key))
+    _copy_if_present(payload, event, "output_sha256", limit=80)
+    return payload
+
+
+def _payload_task_done(common: dict[str, object], event: dict) -> dict[str, object]:
+    payload = {
+        **common,
+        "summary": clip_event_text(event.get("summary") or ""),
+        "stop_reason": clip_event_text(event.get("stop_reason") or "", 80),
+        "turns": _int_or_zero(event.get("turns")),
+        "max_turns": _int_or_zero(event.get("max_turns")),
+        "provider": clip_event_text(event.get("provider") or "", 80),
+        "mode": clip_event_text(event.get("mode") or "", 40),
+    }
+    if event.get("changed") is not None:
+        payload["changed"] = bool(event.get("changed"))
+    _copy_if_present(payload, event, "ledger_path", limit=500)
+    receipt = event.get("receipt")
+    if isinstance(receipt, dict):
+        payload["receipt"] = _bounded_receipt(receipt)
+    changes = event.get("changes")
+    if isinstance(changes, dict):
+        payload["changes"] = _bounded_changes(changes)
+    failure = event.get("provider_failure")
+    if isinstance(failure, dict):
+        payload["provider_failure"] = _bounded_provider_failure(failure)
+    return payload
+
+
+def _payload_headless_close(common: dict[str, object], event: dict) -> dict[str, object]:
+    return {
+        **common,
+        "stop_reason": clip_event_text(event.get("stop_reason") or "", 80),
+        "exit_code": _int_or_zero(event.get("exit_code")),
+    }
+
+
 def headless_event_payload(event: dict) -> dict[str, object] | None:
     if not isinstance(event, dict):
         return None
@@ -370,108 +491,23 @@ def headless_event_payload(event: dict) -> dict[str, object] | None:
         if value:
             common[key] = value
     if event_type == "task_start":
-        return {
-            **common,
-            "project": clip_event_text(event.get("project") or "", 500),
-            "provider": clip_event_text(event.get("provider") or "", 80),
-            "mode": clip_event_text(event.get("mode") or "", 40),
-            "max_turns": _int_or_zero(event.get("max_turns")),
-        }
+        return _payload_task_start(common, event)
     if event_type == "status":
-        return {
-            **common,
-            "status": clip_event_text(event.get("status") or event.get("text") or "", 80),
-        }
+        return _payload_status(common, event)
     if event_type == "info":
-        return {**common, "text": clip_event_text(event.get("text") or "")}
+        return _payload_info(common, event)
     if event_type == "shell_request":
-        command_fields = shell_command_event_fields(event)
-        payload = {
-            **common,
-            "id": clip_event_text(event.get("id") or "", 80),
-            "cwd": clip_event_text(event.get("cwd") or ".", 240),
-            **command_fields,
-            "deferred_tool_count": _int_or_zero(event.get("deferred_tool_count")),
-        }
-        deferred = event.get("deferred_tool_calls")
-        if isinstance(deferred, list):
-            payload["deferred_tool_calls"] = [
-                _bounded_deferred_tool_call(row)
-                for row in deferred[:8]
-                if isinstance(row, dict)
-            ]
-        return payload
+        return _payload_shell_request(common, event)
     if event_type == "turn":
-        payload = {**common, "turn": _int_or_zero(event.get("turn"))}
-        if event.get("note"):
-            payload["note"] = clip_event_text(event.get("note") or "")
-        return payload
+        return _payload_turn(common, event)
     if event_type == "tool_started":
-        payload = {
-            **common,
-            "turn": _int_or_zero(event.get("turn")),
-            "tool_id": clip_event_text(event.get("tool_id") or "", 40),
-            "tool": clip_event_text(event.get("kind") or "", 80),
-            "path": clip_event_text(event.get("path") or "", 240),
-            "activity": clip_event_text(event.get("activity") or ""),
-        }
-        command = clip_event_text(event.get("command") or "")
-        if command:
-            payload["command"] = command
-        return payload
+        return _payload_tool_started(common, event)
     if event_type == "tool":
-        payload = {
-            **common,
-            "turn": _int_or_zero(event.get("turn")),
-            "tool_id": clip_event_text(event.get("tool_id") or "", 40),
-            "tool": clip_event_text(event.get("kind") or "", 80),
-            "path": clip_event_text(event.get("path") or "", 240),
-            "ok": bool(event.get("ok", not bool(event.get("error")))),
-            "status": clip_event_text(event.get("status") or "", 80),
-            "changed": bool(event.get("changed", False)),
-            "truncated": bool(event.get("truncated", False)),
-            "result": clip_event_text(event.get("result") or "", MAX_EVENT_RESULT_CHARS),
-        }
-        command = clip_event_text(event.get("command") or "")
-        if command:
-            payload["command"] = command
-        if event.get("exit_code") is not None:
-            payload["exit_code"] = _int_or_zero(event.get("exit_code"))
-        _copy_if_present(payload, event, "output_handle", limit=120)
-        for key in ("output_bytes", "output_stored_bytes"):
-            if event.get(key) is not None:
-                payload[key] = _int_or_zero(event.get(key))
-        _copy_if_present(payload, event, "output_sha256", limit=80)
-        return payload
+        return _payload_tool(common, event)
     if event_type == "task_done":
-        payload = {
-            **common,
-            "summary": clip_event_text(event.get("summary") or ""),
-            "stop_reason": clip_event_text(event.get("stop_reason") or "", 80),
-            "turns": _int_or_zero(event.get("turns")),
-            "max_turns": _int_or_zero(event.get("max_turns")),
-            "provider": clip_event_text(event.get("provider") or "", 80),
-            "mode": clip_event_text(event.get("mode") or "", 40),
-        }
-        if event.get("changed") is not None:
-            payload["changed"] = bool(event.get("changed"))
-        _copy_if_present(payload, event, "ledger_path", limit=500)
-        receipt = event.get("receipt")
-        if isinstance(receipt, dict):
-            payload["receipt"] = _bounded_receipt(receipt)
-        changes = event.get("changes")
-        if isinstance(changes, dict):
-            payload["changes"] = _bounded_changes(changes)
-        failure = event.get("provider_failure")
-        if isinstance(failure, dict):
-            payload["provider_failure"] = _bounded_provider_failure(failure)
-        return payload
+        return _payload_task_done(common, event)
     if event_type == "headless_close":
-        return {
-            **common,
-            "stop_reason": clip_event_text(event.get("stop_reason") or "", 80),
-            "exit_code": _int_or_zero(event.get("exit_code")),
-        }
+        return _payload_headless_close(common, event)
     return None
 
 
@@ -562,6 +598,93 @@ def _copy_if_present(
         target[key] = clip_event_text(value, limit)
 
 
+def _receipt_display(receipt: dict) -> dict[str, object]:
+    display = receipt.get("display")
+    if not isinstance(display, dict):
+        return {}
+    section: dict[str, object] = {}
+    summary = clip_event_text(display.get("summary") or "")
+    if summary:
+        section["summary"] = summary
+    detail = clip_event_text(display.get("detail") or "")
+    if detail:
+        section["detail"] = detail
+    return section
+
+
+def _receipt_work(receipt: dict) -> dict[str, object]:
+    work = receipt.get("work")
+    if not isinstance(work, dict):
+        return {}
+    section: dict[str, object] = {}
+    if "changed_count" in work:
+        section["changed_count"] = _int_or_zero(work.get("changed_count"))
+    mode = clip_event_text(work.get("mode") or "", 40)
+    if mode:
+        section["mode"] = mode
+    if "restore_available" in work:
+        section["restore_available"] = bool(work.get("restore_available"))
+    return section
+
+
+def _receipt_verification(receipt: dict) -> dict[str, object]:
+    verification = receipt.get("verification")
+    if not isinstance(verification, dict):
+        return {}
+    section: dict[str, object] = {}
+    trust = clip_event_text(verification.get("trust") or "", 20)
+    if trust:
+        section["trust"] = trust
+    if "checks_passed" in verification:
+        section["checks_passed"] = bool(verification.get("checks_passed"))
+    state = clip_event_text(verification.get("state") or "", 40)
+    if state:
+        section["state"] = state
+    proof_refs = [
+        clip_event_text(ref, 120)
+        for ref in (verification.get("proof_refs") or [])
+    ]
+    bounded_refs = [ref for ref in proof_refs if ref][:2]
+    if bounded_refs:
+        section["proof_refs"] = bounded_refs
+    return section
+
+
+def _receipt_integrity(receipt: dict) -> dict[str, object]:
+    integrity = receipt.get("integrity")
+    if not isinstance(integrity, dict):
+        return {}
+    section: dict[str, object] = {}
+    status = clip_event_text(integrity.get("status") or "", 20)
+    if status:
+        section["status"] = status
+    severity = clip_event_text(integrity.get("severity") or "", 20)
+    if severity:
+        section["severity"] = severity
+    reason_codes = [
+        clip_event_text(code, 80)
+        for code in (integrity.get("reason_codes") or [])
+    ]
+    bounded_codes = [code for code in reason_codes if code]
+    if bounded_codes:
+        section["reason_codes"] = bounded_codes
+    paths = [
+        clip_event_text(path, 240)
+        for path in (integrity.get("affected_paths") or [])
+    ]
+    bounded_paths = [path for path in paths if path][:4]
+    if bounded_paths:
+        section["affected_paths"] = bounded_paths
+    refs = [
+        clip_event_text(ref, 80)
+        for ref in (integrity.get("refs") or [])
+    ]
+    bounded_integrity_refs = [ref for ref in refs if ref][:4]
+    if bounded_integrity_refs:
+        section["refs"] = bounded_integrity_refs
+    return section
+
+
 def _bounded_receipt(receipt: dict) -> dict[str, object]:
     """Bounded schema-v1 receipt projection for the JSONL stream."""
 
@@ -569,81 +692,18 @@ def _bounded_receipt(receipt: dict) -> dict[str, object]:
     schema = receipt.get("schema_version")
     if isinstance(schema, int):
         payload["schema_version"] = schema
-    display = receipt.get("display")
-    if isinstance(display, dict):
-        section: dict[str, object] = {}
-        summary = clip_event_text(display.get("summary") or "")
-        if summary:
-            section["summary"] = summary
-        detail = clip_event_text(display.get("detail") or "")
-        if detail:
-            section["detail"] = detail
-        if section:
-            payload["display"] = section
-    work = receipt.get("work")
-    if isinstance(work, dict):
-        section = {}
-        if "changed_count" in work:
-            section["changed_count"] = _int_or_zero(work.get("changed_count"))
-        mode = clip_event_text(work.get("mode") or "", 40)
-        if mode:
-            section["mode"] = mode
-        if "restore_available" in work:
-            section["restore_available"] = bool(work.get("restore_available"))
-        if section:
-            payload["work"] = section
-    verification = receipt.get("verification")
-    if isinstance(verification, dict):
-        section = {}
-        trust = clip_event_text(verification.get("trust") or "", 20)
-        if trust:
-            section["trust"] = trust
-        if "checks_passed" in verification:
-            section["checks_passed"] = bool(verification.get("checks_passed"))
-        state = clip_event_text(verification.get("state") or "", 40)
-        if state:
-            section["state"] = state
-        proof_refs = [
-            clip_event_text(ref, 120)
-            for ref in (verification.get("proof_refs") or [])
-        ]
-        bounded_refs = [ref for ref in proof_refs if ref][:2]
-        if bounded_refs:
-            section["proof_refs"] = bounded_refs
-        if section:
-            payload["verification"] = section
-    integrity = receipt.get("integrity")
-    if isinstance(integrity, dict):
-        section = {}
-        status = clip_event_text(integrity.get("status") or "", 20)
-        if status:
-            section["status"] = status
-        severity = clip_event_text(integrity.get("severity") or "", 20)
-        if severity:
-            section["severity"] = severity
-        reason_codes = [
-            clip_event_text(code, 80)
-            for code in (integrity.get("reason_codes") or [])
-        ]
-        bounded_codes = [code for code in reason_codes if code]
-        if bounded_codes:
-            section["reason_codes"] = bounded_codes
-        paths = [
-            clip_event_text(path, 240)
-            for path in (integrity.get("affected_paths") or [])
-        ]
-        bounded_paths = [path for path in paths if path][:4]
-        if bounded_paths:
-            section["affected_paths"] = bounded_paths
-        refs = [
-            clip_event_text(ref, 80)
-            for ref in (integrity.get("refs") or [])
-        ]
-        bounded_integrity_refs = [ref for ref in refs if ref][:4]
-        if bounded_integrity_refs:
-            section["refs"] = bounded_integrity_refs
-        if section:
-            payload["integrity"] = section
+    display_section = _receipt_display(receipt)
+    if display_section:
+        payload["display"] = display_section
+    work_section = _receipt_work(receipt)
+    if work_section:
+        payload["work"] = work_section
+    verification_section = _receipt_verification(receipt)
+    if verification_section:
+        payload["verification"] = verification_section
+    integrity_section = _receipt_integrity(receipt)
+    if integrity_section:
+        payload["integrity"] = integrity_section
     return payload
 
 

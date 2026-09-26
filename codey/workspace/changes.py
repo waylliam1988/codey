@@ -952,134 +952,133 @@ def _bounded_stderr_excerpt(stderr: str) -> str:
     return " ".join(text.split())
 
 
-def collect_git_changes(project: str | Path | None) -> dict:
-    if not project:
-        return {"ok": False, "error": "project required", "files": [], "diff": ""}
-    root = Path(project).expanduser().resolve()
-    if not root.exists():
-        return {"ok": False, "error": "project not found", "files": [], "diff": ""}
+def _run_one_git_command(git_root: Path, args: list[str]) -> tuple[object | None, dict | None]:
+    """Run one git command: (proc, None), or (None, error to return).
 
+    A non-zero exit is an explicit failure, never an empty change set,
+    and the caller stops issuing further commands on the first error.
+    """
     from codey.runtime.core import cancellation as _cancellation
 
     try:
-        top = _run_git(root, ["rev-parse", "--show-toplevel"])
+        proc = _run_git(git_root, args)
     except FileNotFoundError as exc:
-        return _git_missing_payload(exc)
+        return None, _git_missing_payload(exc)
     except (
         OSError,
         subprocess.SubprocessError,
         _cancellation.ProcessOutputReadError,
         _cancellation.PipeDrainTimeout,
     ):
-        return _git_failed_payload()
+        return None, _git_failed_payload()
+    if proc.returncode != 0:
+        return None, _git_exit_payload(args, proc.returncode, str(proc.stderr or ""))
+    return proc, None
+
+
+def _resolve_git_root(root: Path) -> tuple[Path | None, dict | None]:
+    from codey.runtime.core import cancellation as _cancellation
+
+    try:
+        top = _run_git(root, ["rev-parse", "--show-toplevel"])
+    except FileNotFoundError as exc:
+        return None, _git_missing_payload(exc)
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        _cancellation.ProcessOutputReadError,
+        _cancellation.PipeDrainTimeout,
+    ):
+        return None, _git_failed_payload()
     if top.returncode != 0:
         # Only "not a git repository" on stderr confirms a non-repo; any
         # other non-zero exit is a real git failure with bounded stderr.
         if "not a git repository" in str(top.stderr or "").lower():
-            return {
+            return None, {
                 "ok": False,
                 "error": "not a git repository",
                 "files": [],
                 "diff": "",
                 "reason": GIT_REASON_NOT_REPO,
             }
-        return _git_exit_payload(["rev-parse", "--show-toplevel"], top.returncode, str(top.stderr or ""))
+        return None, _git_exit_payload(["rev-parse", "--show-toplevel"], top.returncode, str(top.stderr or ""))
     if top.stdout_truncated:
-        return {
+        return None, {
             "ok": False,
             "error": "git rev-parse output truncated; re-run in a smaller scope",
             "files": [],
             "diff": "",
             "reason": GIT_REASON_FAILED,
         }
-    git_root = Path(top.stdout.strip()).resolve()
+    return Path(top.stdout.strip()).resolve(), None
 
-    def _run_one(args: list[str]) -> tuple[object | None, dict | None]:
-        """Run one git command: (proc, None), or (None, error to return).
 
-        A non-zero exit is an explicit failure, never an empty change set,
-        and the caller stops issuing further commands on the first error.
-        """
-        try:
-            proc = _run_git(git_root, args)
-        except FileNotFoundError as exc:
-            return None, _git_missing_payload(exc)
-        except (
-            OSError,
-            subprocess.SubprocessError,
-            _cancellation.ProcessOutputReadError,
-            _cancellation.PipeDrainTimeout,
-        ):
-            return None, _git_failed_payload()
-        if proc.returncode != 0:
-            return None, _git_exit_payload(args, proc.returncode, str(proc.stderr or ""))
-        return proc, None
-
-    status_proc, error = _run_one(["status", "--short"])
+def _load_git_status_files(git_root: Path) -> tuple[list[dict] | None, dict | None]:
+    status_proc, error = _run_one_git_command(git_root, ["status", "--short"])
     if error is not None:
-        return error
+        return None, error
     assert status_proc is not None
     if status_proc.stdout_truncated:
-        return {
+        return None, {
             "ok": False,
             "error": "git status output truncated; re-run in a smaller scope",
             "files": [],
             "diff": "",
             "reason": GIT_REASON_FAILED,
         }
-
     files = [
         file
         for file in parse_git_status(status_proc.stdout)
         if is_displayable_change_path(file["path"])
     ]
-    if not files:
-        return {
-            "ok": True,
-            "mode": "git",
-            "vcs": {"git_available": True, "is_repo": True},
-            "root": str(git_root),
-            "files": [],
-            "changed_count": 0,
-            "diff": "",
-            "truncated": False,
-        }
+    return files, None
 
-    unstaged_num, error = _run_one(["diff", "--numstat"])
+
+def _load_git_numstat_stats(git_root: Path) -> tuple[dict[str, dict[str, int]] | None, dict | None]:
+    unstaged_num, error = _run_one_git_command(git_root, ["diff", "--numstat"])
     if error is not None:
-        return error
-    staged_num, error = _run_one(["diff", "--cached", "--numstat"])
+        return None, error
+    staged_num, error = _run_one_git_command(git_root, ["diff", "--cached", "--numstat"])
     if error is not None:
-        return error
+        return None, error
     assert unstaged_num is not None and staged_num is not None
     if unstaged_num.stdout_truncated or staged_num.stdout_truncated:
-        return {
+        return None, {
             "ok": False,
             "error": "git numstat output truncated; re-run in a smaller scope",
             "files": [],
             "diff": "",
             "reason": GIT_REASON_FAILED,
         }
-
-    unstaged_diff, error = _run_one(["diff", "--no-ext-diff", "--"])
-    if error is not None:
-        return error
-    staged_diff, error = _run_one(["diff", "--cached", "--no-ext-diff", "--"])
-    if error is not None:
-        return error
-    assert unstaged_diff is not None and staged_diff is not None
-
     stats: dict[str, dict[str, int]] = {}
     _merge_numstat(stats, unstaged_num.stdout)
     _merge_numstat(stats, staged_num.stdout)
+    return stats, None
 
+
+def _load_git_diff_parts(git_root: Path) -> tuple[list[str] | None, bool, dict | None]:
+    unstaged_diff, error = _run_one_git_command(git_root, ["diff", "--no-ext-diff", "--"])
+    if error is not None:
+        return None, False, error
+    staged_diff, error = _run_one_git_command(git_root, ["diff", "--cached", "--no-ext-diff", "--"])
+    if error is not None:
+        return None, False, error
+    assert unstaged_diff is not None and staged_diff is not None
     capture_truncated = bool(unstaged_diff.stdout_truncated or staged_diff.stdout_truncated)
     diff_parts: list[str] = []
     if staged_diff.stdout:
         diff_parts.append(staged_diff.stdout.rstrip())
     if unstaged_diff.stdout:
         diff_parts.append(unstaged_diff.stdout.rstrip())
+    return diff_parts, capture_truncated, None
 
+
+def _apply_untracked_diffs(
+    git_root: Path,
+    files: list[dict],
+    stats: dict[str, dict[str, int]],
+    diff_parts: list[str],
+) -> None:
     for file in files:
         path = file["path"]
         stat = stats.get(path)
@@ -1093,12 +1092,57 @@ def collect_git_changes(project: str | Path | None) -> dict:
                 file["deletions"] = 0
                 diff_parts.append(diff_text)
 
+
+def _finalize_git_diff(diff_parts: list[str], capture_truncated: bool) -> tuple[str, bool]:
     diff = "\n\n".join(part for part in diff_parts if part)
     truncated = capture_truncated or len(diff) > MAX_GIT_DIFF_CHARS
     if capture_truncated:
         diff = diff[:MAX_GIT_DIFF_CHARS].rstrip() + "\n\n... diff capture truncated ..."
     elif truncated:
         diff = diff[:MAX_GIT_DIFF_CHARS].rstrip() + "\n\n... diff truncated ..."
+    return diff, truncated
+
+
+def collect_git_changes(project: str | Path | None) -> dict:
+    if not project:
+        return {"ok": False, "error": "project required", "files": [], "diff": ""}
+    root = Path(project).expanduser().resolve()
+    if not root.exists():
+        return {"ok": False, "error": "project not found", "files": [], "diff": ""}
+
+    git_root, error = _resolve_git_root(root)
+    if error is not None:
+        return error
+    assert git_root is not None
+
+    files, error = _load_git_status_files(git_root)
+    if error is not None:
+        return error
+    assert files is not None
+    if not files:
+        return {
+            "ok": True,
+            "mode": "git",
+            "vcs": {"git_available": True, "is_repo": True},
+            "root": str(git_root),
+            "files": [],
+            "changed_count": 0,
+            "diff": "",
+            "truncated": False,
+        }
+
+    stats, error = _load_git_numstat_stats(git_root)
+    if error is not None:
+        return error
+    assert stats is not None
+
+    diff_parts, capture_truncated, error = _load_git_diff_parts(git_root)
+    if error is not None:
+        return error
+    assert diff_parts is not None
+
+    _apply_untracked_diffs(git_root, files, stats, diff_parts)
+    diff, truncated = _finalize_git_diff(diff_parts, capture_truncated)
     return {
         "ok": True,
         "mode": "git",

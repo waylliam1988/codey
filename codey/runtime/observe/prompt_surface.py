@@ -140,8 +140,15 @@ def _is_send_ref(value: object) -> bool:
 
 
 def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
-    if not isinstance(payload, Mapping):
-        return False
+    return (
+        isinstance(payload, Mapping)
+        and _validate_surface_identity(payload)
+        and _validate_surface_sizes(payload)
+        and _validate_surface_sections(payload)
+    )
+
+
+def _validate_surface_identity(payload: Mapping[str, object]) -> bool:
     # exact forbidden keys are rejected
     for key in payload:
         if str(key) in _FORBIDDEN_PAYLOAD_KEYS:
@@ -153,8 +160,6 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
     send_ref = payload.get("send_ref")
     phase = payload.get("phase")
     prompt_digest = payload.get("prompt_digest")
-    prompt_chars = payload.get("prompt_chars")
-    epoch_id = payload.get("epoch_id")
     if not _is_surface_id(surface_id):
         return False
     # phase must be canonical: 1..40 chars, no extra whitespace or non-identifier characters
@@ -173,8 +178,12 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
         or prompt_digest != canonical_surface_prompt_digest(prompt_digest)
     ):
         return False
-    if surface_id != prompt_surface_id(phase=phase, send_ref=send_ref, prompt_digest=prompt_digest):
-        return False
+    return surface_id == prompt_surface_id(phase=phase, send_ref=send_ref, prompt_digest=prompt_digest)
+
+
+def _validate_surface_sizes(payload: Mapping[str, object]) -> bool:
+    prompt_chars = payload.get("prompt_chars")
+    epoch_id = payload.get("epoch_id")
     if type(prompt_chars) is not int or prompt_chars < 0 or prompt_chars > 10_000_000:
         return False
     # epoch_id is required and must strictly match ctx_epoch pattern
@@ -185,6 +194,10 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
         val = payload.get(key)
         if val not in (None, "") and not _is_sha256(val):
             return False
+    return True
+
+
+def _validate_surface_sections(payload: Mapping[str, object]) -> bool:
     sections = payload.get("sections")
     if sections is not None:
         if not isinstance(sections, (list, tuple)):

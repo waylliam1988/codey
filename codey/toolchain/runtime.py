@@ -942,6 +942,159 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
     return ToolOutcome("\n".join(lines) if lines else "(empty)", True, truncated=incomplete)
 
 
+@dataclass
+class _SearchScanState:
+    seen_matches: int = 0
+    result_limited: bool = False
+    bytes_read: int = 0
+    byte_limited: bool = False
+    oversized_files: int = 0
+    unreadable_files: int = 0
+    decode_failed_files: int = 0
+
+
+def _search_file_budget_action(file_stat: os.stat_result, bytes_read: int) -> tuple[str, int]:
+    if stat.S_ISLNK(file_stat.st_mode):
+        return "unreadable", 0
+    if not stat.S_ISREG(file_stat.st_mode):
+        return "unreadable", 0
+    size = file_stat.st_size
+    if size > SEARCH_MAX_FILE_BYTES:
+        return "oversized", size
+    if bytes_read + size > SEARCH_MAX_SCAN_BYTES:
+        return "byte_limited", size
+    return "ok", size
+
+
+def _search_read_file_text(path: Path) -> tuple[str | None, str]:
+    try:
+        return _read_text_bounded_no_follow(path, max_bytes=SEARCH_MAX_FILE_BYTES), "ok"
+    except UnicodeDecodeError:
+        return None, "decode_failed"
+    except (OSError, ValueError) as exc:
+        if "too large" in str(exc):
+            return None, "oversized"
+        return None, "unreadable"
+
+
+def _scan_search_lines(
+    text: str,
+    *,
+    needle: str,
+    rel_path: str,
+    page_offset: int,
+    page_limit: int,
+    matches: list[str],
+    state: _SearchScanState,
+) -> None:
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if line_no == 1 or line_no % 200 == 0:
+            cancellation.check()
+        if needle not in line.lower():
+            continue
+        clean = line.strip()
+        if len(clean) > 240:
+            clean = clean[:237] + "..."
+        state.seen_matches += 1
+        if state.seen_matches >= page_offset and len(matches) < page_limit + 1:
+            matches.append(f"{rel_path}:{line_no}: {clean}")
+        if len(matches) >= page_limit + 1:
+            state.result_limited = True
+            break
+
+
+def _scan_one_file(
+    path: Path,
+    file_stat: os.stat_result,
+    *,
+    needle: str,
+    resolved_root: Path,
+    page_offset: int,
+    page_limit: int,
+    matches: list[str],
+    state: _SearchScanState,
+) -> bool:
+    action, size = _search_file_budget_action(file_stat, state.bytes_read)
+    if action == "byte_limited":
+        state.byte_limited = True
+        return True
+    if action != "ok":
+        if action == "oversized":
+            state.oversized_files += 1
+        else:
+            state.unreadable_files += 1
+        return False
+    state.bytes_read += size
+    text, outcome = _search_read_file_text(path)
+    if outcome != "ok":
+        if outcome == "decode_failed":
+            state.decode_failed_files += 1
+        elif outcome == "oversized":
+            state.oversized_files += 1
+        else:
+            state.unreadable_files += 1
+        return False
+    assert text is not None
+    try:
+        rel_path = path.relative_to(resolved_root).as_posix()
+    except ValueError:
+        state.unreadable_files += 1
+        return False
+    _scan_search_lines(  # per-file rel computed once
+        text,
+        needle=needle,
+        rel_path=rel_path,
+        page_offset=page_offset,
+        page_limit=page_limit,
+        matches=matches,
+        state=state,
+    )
+    return state.result_limited
+
+
+def _append_search_footers(
+    matches: list[str],
+    *,
+    state: _SearchScanState,
+    budget: BoundedScanBudget,
+) -> bool:
+    if state.oversized_files:
+        matches.append(
+            f"... skipped {state.oversized_files} file(s) larger than "
+            f"{_byte_limit_label(SEARCH_MAX_FILE_BYTES)}; omitted files may "
+            "contain more matches"
+        )
+    if state.byte_limited:
+        matches.append(
+            f"... search scan stopped at {_byte_limit_label(SEARCH_MAX_SCAN_BYTES)} "
+            "read budget; omitted files may contain more matches"
+        )
+    if budget.limited:
+        matches.append(budget.stop_message("search scan"))
+    if state.unreadable_files or state.decode_failed_files:
+        matches.append("Scan coverage:")
+        if state.unreadable_files:
+            plural = "file" if state.unreadable_files == 1 else "files"
+            matches.append(
+                f"- search could not read metadata or contents for "
+                f"{state.unreadable_files} {plural}; omitted files may contain more matches"
+            )
+        if state.decode_failed_files:
+            plural = "file" if state.decode_failed_files == 1 else "files"
+            matches.append(
+                f"- search skipped {state.decode_failed_files} non-UTF-8 {plural}; "
+                "omitted files may contain more matches"
+            )
+    return (
+        state.result_limited
+        or budget.limited
+        or state.byte_limited
+        or bool(state.oversized_files)
+        or bool(state.unreadable_files)
+        or bool(state.decode_failed_files)
+    )
+
+
 def search_files(
     root: Path,
     rel: str,
@@ -958,7 +1111,6 @@ def search_files(
     if not query:
         return ToolOutcome.error("search query required")
     page_offset, page_limit = normalize_page_args(offset, limit, max_results, SEARCH_MAX_RESULTS)
-    seen_matches = 0
     start, error = _checked_tool_path(root, rel or ".", tool="grep")
     if error is not None or start is None:
         return error or ToolOutcome.error("path could not be resolved")
@@ -967,12 +1119,7 @@ def search_files(
         return verify_error
     needle = query.lower()
     matches: list[str] = []
-    result_limited = False
-    bytes_read = 0
-    byte_limited = False
-    oversized_files = 0
-    unreadable_files = 0
-    decode_failed_files = 0
+    state = _SearchScanState()
     resolved_root = root.resolve()
     budget = BoundedScanBudget(
         max_files=SEARCH_MAX_SCAN_FILES,
@@ -989,99 +1136,30 @@ def search_files(
         try:
             file_stat = path.lstat()
         except OSError:
-            unreadable_files += 1
+            state.unreadable_files += 1
             continue
-        if stat.S_ISLNK(file_stat.st_mode):
-            unreadable_files += 1
-            continue
-        if not stat.S_ISREG(file_stat.st_mode):
-            unreadable_files += 1
-            continue
-        size = file_stat.st_size
-        if size > SEARCH_MAX_FILE_BYTES:
-            oversized_files += 1
-            continue
-        if bytes_read + size > SEARCH_MAX_SCAN_BYTES:
-            byte_limited = True
-            break
-        bytes_read += size
-        try:
-            text = _read_text_bounded_no_follow(path, max_bytes=SEARCH_MAX_FILE_BYTES)
-        except UnicodeDecodeError:
-            decode_failed_files += 1
-            continue
-        except (OSError, ValueError) as exc:
-            if "too large" in str(exc):
-                oversized_files += 1
-            else:
-                unreadable_files += 1
-            continue
-        try:
-            rel_path = path.relative_to(resolved_root).as_posix()
-        except ValueError:
-            unreadable_files += 1
-            continue
-        for line_no, line in enumerate(text.splitlines(), start=1):  # per-file rel computed once
-            if line_no == 1 or line_no % 200 == 0:
-                cancellation.check()
-            if needle not in line.lower():
-                continue
-            clean = line.strip()
-            if len(clean) > 240:
-                clean = clean[:237] + "..."
-            seen_matches += 1
-            if seen_matches >= page_offset and len(matches) < page_limit + 1:
-                matches.append(f"{rel_path}:{line_no}: {clean}")
-            if len(matches) >= page_limit + 1:
-                result_limited = True
-                break
-        if result_limited:
+        if _scan_one_file(
+            path,
+            file_stat,
+            needle=needle,
+            resolved_root=resolved_root,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            matches=matches,
+            state=state,
+        ):
             break
     if not matches and page_offset == 1:
         matches.append("(no literal matches; regex is not supported)")
     matches = finalize_page(
         matches,
-        result_limited=result_limited,
+        result_limited=state.result_limited,
         query=query,
         path=rel or ".",
         offset=page_offset,
         limit=page_limit,
     )
-    if oversized_files:
-        matches.append(
-            f"... skipped {oversized_files} file(s) larger than "
-            f"{_byte_limit_label(SEARCH_MAX_FILE_BYTES)}; omitted files may "
-            "contain more matches"
-        )
-    if byte_limited:
-        matches.append(
-            f"... search scan stopped at {_byte_limit_label(SEARCH_MAX_SCAN_BYTES)} "
-            "read budget; omitted files may contain more matches"
-        )
-    if budget.limited:
-        matches.append(budget.stop_message("search scan"))
-    if unreadable_files or decode_failed_files:
-        matches.append("Scan coverage:")
-        if unreadable_files:
-            plural = "file" if unreadable_files == 1 else "files"
-            matches.append(
-                f"- search could not read metadata or contents for "
-                f"{unreadable_files} {plural}; omitted files may contain more matches"
-            )
-        if decode_failed_files:
-            plural = "file" if decode_failed_files == 1 else "files"
-            matches.append(
-                f"- search skipped {decode_failed_files} non-UTF-8 {plural}; "
-                "omitted files may contain more matches"
-            )
-    truncated = (
-        result_limited
-        or budget.limited
-        or byte_limited
-        or bool(oversized_files)
-        or bool(unreadable_files)
-        or bool(decode_failed_files)
-    )
+    truncated = _append_search_footers(matches, state=state, budget=budget)
     return ToolOutcome("\n".join(matches), True, truncated=truncated)
 
 

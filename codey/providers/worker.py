@@ -654,6 +654,75 @@ class WorkerChatProvider:
                     session.pending = None
             raise self._submission_uncertain_error(pending.method, write_error)
 
+    def _resolve_done_pending(
+        self,
+        session: _WorkerSession,
+        pending: _PendingRequest,
+        response: dict | None,
+        error: str,
+        closed: bool,
+        terminal_error: str,
+    ):
+        if response is not None:
+            if response.get("ok") is True:
+                return response.get("result")
+            failure = _failure_from_response(
+                self.provider_id, pending.method, response
+            )
+            self.last_failure = failure
+            raise ProviderActionError(failure)
+        if error or terminal_error:
+            # Protocol verdict wins over a racing close: it is
+            # the specific condemn cause, not a generic exit.
+            with self._life_lock:
+                if self._session is session:
+                    self._retire_session_locked(session)
+            raise self._protocol_error(pending.method, error or terminal_error)
+        if closed:
+            # Woken by close/retire with no verdict: the
+            # generation is gone, never a protocol failure.
+            raise self._exited_error(session, pending.method)
+        with self._life_lock:
+            if self._session is session:
+                self._retire_session_locked(session)
+        raise self._protocol_error(pending.method, error or terminal_error)
+
+    def _drain_exited_child(
+        self,
+        session: _WorkerSession,
+        pending: _PendingRequest,
+        remaining: float,
+        reader_drained: bool,
+        drain_deadline: float | None,
+    ) -> float | None:
+        if reader_drained:
+            # Reader already drained with no verdict: fail fast
+            # instead of holding the waiter for the full grace.
+            # The grace is only for a live reader that may still
+            # flush a buffered reply.
+            with self._life_lock:
+                if self._session is session:
+                    self._retire_session_locked(session)
+            raise self._exited_error(session, pending.method)
+        # Exited but possibly with a buffered reply still in the
+        # pipe: let the reader drain briefly instead of failing
+        # a completed operation. The reader reports EOF verdicts
+        # itself; silence past the grace is the exit failure.
+        now = time.monotonic()
+        if drain_deadline is None:
+            drain_deadline = now + EXIT_DRAIN_GRACE
+        drain_left = drain_deadline - now
+        if drain_left <= 0:
+            with self._life_lock:
+                if self._session is session:
+                    self._retire_session_locked(session)
+            raise self._exited_error(session, pending.method)
+        pending.done.wait(
+            timeout=min(cancellation.POLL_INTERVAL, remaining, drain_left)
+        )
+        cancellation.check()
+        return drain_deadline
+
     def _wait_for_response(
         self,
         session: _WorkerSession,
@@ -682,29 +751,9 @@ class WorkerChatProvider:
                     terminal_error = session.terminal_error
                     reader_drained = session.stdout_done.is_set()
                 if done:
-                    if response is not None:
-                        if response.get("ok") is True:
-                            return response.get("result")
-                        failure = _failure_from_response(
-                            self.provider_id, pending.method, response
-                        )
-                        self.last_failure = failure
-                        raise ProviderActionError(failure)
-                    if error or terminal_error:
-                        # Protocol verdict wins over a racing close: it is
-                        # the specific condemn cause, not a generic exit.
-                        with self._life_lock:
-                            if self._session is session:
-                                self._retire_session_locked(session)
-                        raise self._protocol_error(pending.method, error or terminal_error)
-                    if closed:
-                        # Woken by close/retire with no verdict: the
-                        # generation is gone, never a protocol failure.
-                        raise self._exited_error(session, pending.method)
-                    with self._life_lock:
-                        if self._session is session:
-                            self._retire_session_locked(session)
-                    raise self._protocol_error(pending.method, error or terminal_error)
+                    return self._resolve_done_pending(
+                        session, pending, response, error, closed, terminal_error
+                    )
                 if closed:
                     raise self._exited_error(session, pending.method)
                 if terminal_error:
@@ -722,32 +771,9 @@ class WorkerChatProvider:
                             self._retire_session_locked(session)
                     raise self._timeout_error(pending.method)
                 if session.proc.poll() is not None:
-                    if reader_drained:
-                        # Reader already drained with no verdict: fail fast
-                        # instead of holding the waiter for the full grace.
-                        # The grace is only for a live reader that may still
-                        # flush a buffered reply.
-                        with self._life_lock:
-                            if self._session is session:
-                                self._retire_session_locked(session)
-                        raise self._exited_error(session, pending.method)
-                    # Exited but possibly with a buffered reply still in the
-                    # pipe: let the reader drain briefly instead of failing
-                    # a completed operation. The reader reports EOF verdicts
-                    # itself; silence past the grace is the exit failure.
-                    now = time.monotonic()
-                    if drain_deadline is None:
-                        drain_deadline = now + EXIT_DRAIN_GRACE
-                    drain_left = drain_deadline - now
-                    if drain_left <= 0:
-                        with self._life_lock:
-                            if self._session is session:
-                                self._retire_session_locked(session)
-                        raise self._exited_error(session, pending.method)
-                    pending.done.wait(
-                        timeout=min(cancellation.POLL_INTERVAL, remaining, drain_left)
+                    drain_deadline = self._drain_exited_child(
+                        session, pending, remaining, reader_drained, drain_deadline
                     )
-                    cancellation.check()
                     continue
                 drain_deadline = None
                 # Short waits keep Stop responsive without pinning the run

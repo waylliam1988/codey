@@ -50,6 +50,43 @@ def _compact_entries(
     entries: tuple[RuntimeLogEntry, ...],
 ) -> tuple[RuntimeLogEntry, ...]:
     """Keep the replay-equivalent task-operation spine and recovery facts."""
+    ordered_operations, started, latest_state, settled, operation_effects, delivery_effects = (
+        _collect_compaction_groups(entries)
+    )
+    compacted: list[RuntimeLogEntry] = []
+    for operation_id in ordered_operations:
+        start = started.get(operation_id)
+        if start is None:
+            continue
+        compacted.append(start)
+        state = latest_state.get(operation_id)
+        if state is not None:
+            compacted.append(state)
+
+        is_open = operation_id not in settled
+        compacted.extend(
+            _compact_effect_pairs(operation_effects.get(operation_id, []), is_open=is_open)
+        )
+        compacted.extend(
+            _compact_delivery_records(delivery_effects.get(operation_id, []), is_open=is_open)
+        )
+
+        finish = settled.get(operation_id)
+        if finish is not None:
+            compacted.append(finish)
+    return _rebatch(compacted)
+
+
+def _collect_compaction_groups(
+    entries: tuple[RuntimeLogEntry, ...],
+) -> tuple[
+    list[str],
+    dict[str, RuntimeLogEntry],
+    dict[str, RuntimeLogEntry],
+    dict[str, RuntimeLogEntry],
+    dict[str, list[RuntimeLogEntry]],
+    dict[str, list[RuntimeLogEntry]],
+]:
     ordered_operations: list[str] = []
     started: dict[str, RuntimeLogEntry] = {}
     latest_state: dict[str, RuntimeLogEntry] = {}
@@ -75,63 +112,63 @@ def _compact_entries(
             continue
         if entry.kind == "operation_settled":
             settled[entry.operation_id] = entry
-    compacted: list[RuntimeLogEntry] = []
-    for operation_id in ordered_operations:
-        start = started.get(operation_id)
-        if start is None:
+    return ordered_operations, started, latest_state, settled, operation_effects, delivery_effects
+
+
+def _compact_effect_pairs(
+    raw_effects: list[RuntimeLogEntry],
+    *,
+    is_open: bool,
+) -> list[RuntimeLogEntry]:
+    intents: dict[str, RuntimeLogEntry] = {}
+    settlements: dict[str, RuntimeLogEntry] = {}
+    ordered_effect_ids: list[str] = []
+
+    for eff in raw_effects:
+        eid = str(eff.payload.get("effect_id") or "")
+        rkind = eff.payload.get("record_kind")
+        if not eid:
             continue
-        compacted.append(start)
-        state = latest_state.get(operation_id)
-        if state is not None:
-            compacted.append(state)
+        if rkind == "intent":
+            if eid not in intents:
+                ordered_effect_ids.append(eid)
+            intents[eid] = eff
+        elif rkind == "settlement":
+            settlements[eid] = eff
 
-        is_open = operation_id not in settled
-        raw_effects = operation_effects.get(operation_id, [])
-        intents: dict[str, RuntimeLogEntry] = {}
-        settlements: dict[str, RuntimeLogEntry] = {}
-        ordered_effect_ids: list[str] = []
+    kept: list[RuntimeLogEntry] = []
+    for eid in ordered_effect_ids:
+        intent_entry = intents.get(eid)
+        settlement_entry = settlements.get(eid)
+        if intent_entry is None:
+            continue
+        settlement_payload = settlement_entry.payload if settlement_entry is not None else None
+        if not keep_effect_pair_for_compaction(
+            is_open=is_open,
+            settlement_payload=settlement_payload,
+        ):
+            continue
+        kept.append(intent_entry)
+        if settlement_entry is not None:
+            kept.append(settlement_entry)
+    return kept
 
-        for eff in raw_effects:
-            eid = str(eff.payload.get("effect_id") or "")
-            rkind = eff.payload.get("record_kind")
-            if not eid:
-                continue
-            if rkind == "intent":
-                if eid not in intents:
-                    ordered_effect_ids.append(eid)
-                intents[eid] = eff
-            elif rkind == "settlement":
-                settlements[eid] = eff
 
-        for eid in ordered_effect_ids:
-            intent_entry = intents.get(eid)
-            settlement_entry = settlements.get(eid)
-            if intent_entry is None:
-                continue
-            settlement_payload = settlement_entry.payload if settlement_entry is not None else None
-            if not keep_effect_pair_for_compaction(
-                is_open=is_open,
-                settlement_payload=settlement_payload,
-            ):
-                continue
-            compacted.append(intent_entry)
-            if settlement_entry is not None:
-                compacted.append(settlement_entry)
-
-        raw_deliveries = delivery_effects.get(operation_id, [])
-        for deliv in raw_deliveries:
-            rkind = deliv.payload.get("record_kind")
-            bid = str(deliv.payload.get("batch_id") or "")
-            if not bid or not rkind:
-                continue
-            if not keep_delivery_entry_for_compaction(record_kind=str(rkind), is_open=is_open):
-                continue
-            compacted.append(deliv)
-
-        finish = settled.get(operation_id)
-        if finish is not None:
-            compacted.append(finish)
-    return _rebatch(compacted)
+def _compact_delivery_records(
+    raw_deliveries: list[RuntimeLogEntry],
+    *,
+    is_open: bool,
+) -> list[RuntimeLogEntry]:
+    kept: list[RuntimeLogEntry] = []
+    for deliv in raw_deliveries:
+        rkind = deliv.payload.get("record_kind")
+        bid = str(deliv.payload.get("batch_id") or "")
+        if not bid or not rkind:
+            continue
+        if not keep_delivery_entry_for_compaction(record_kind=str(rkind), is_open=is_open):
+            continue
+        kept.append(deliv)
+    return kept
 
 
 def _rebatch(entries: list[RuntimeLogEntry]) -> tuple[RuntimeLogEntry, ...]:

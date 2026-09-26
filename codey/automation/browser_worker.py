@@ -37,6 +37,17 @@ class _JobState(Enum):
     ABANDONED = "abandoned"
 
 
+def _call_deadlines(timeout: float | None) -> tuple[Any, float | None]:
+    caller_event = cancellation.current_event()
+    caller_deadline = cancellation.current_deadline()
+    timeout_deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+    if caller_deadline is not None and timeout_deadline is not None:
+        active_deadline = min(caller_deadline, timeout_deadline)
+    else:
+        active_deadline = caller_deadline if caller_deadline is not None else timeout_deadline
+    return caller_event, active_deadline
+
+
 @dataclass
 class _Job:
     fn: Callable[..., Any]
@@ -50,6 +61,16 @@ class _Job:
     lock: threading.Lock = field(default_factory=threading.Lock)
     abandoned: bool = False
     on_abandoned: Callable[[], None] | None = None
+
+
+def _abandon_browser_job(job: _Job) -> None:
+    with job.lock:
+        job.cancel_event.set()
+        job.abandoned = True
+        if job.state == _JobState.QUEUED:
+            job.state = _JobState.CANCELLED
+        elif job.state == _JobState.RUNNING:
+            job.state = _JobState.ABANDONED
 
 
 @dataclass(frozen=True)
@@ -289,24 +310,12 @@ class BrowserWorker:
             if self._closed.is_set():
                 raise RuntimeError("browser worker is closed")
         if threading.get_ident() == self._thread_id:
-            caller_event = cancellation.current_event()
-            caller_deadline = cancellation.current_deadline()
-            timeout_deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
-            if caller_deadline is not None and timeout_deadline is not None:
-                active_deadline = min(caller_deadline, timeout_deadline)
-            else:
-                active_deadline = caller_deadline if caller_deadline is not None else timeout_deadline
+            caller_event, active_deadline = _call_deadlines(timeout)
 
             with cancellation.scope(caller_event), cancellation.deadline_scope(active_deadline):
                 return fn(*args, **kwargs)
 
-        caller_event = cancellation.current_event()
-        caller_deadline = cancellation.current_deadline()
-        timeout_deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
-        if caller_deadline is not None and timeout_deadline is not None:
-            active_deadline = min(caller_deadline, timeout_deadline)
-        else:
-            active_deadline = caller_deadline if caller_deadline is not None else timeout_deadline
+        caller_event, active_deadline = _call_deadlines(timeout)
 
         job = _Job(
             fn=fn,
@@ -336,42 +345,18 @@ class BrowserWorker:
         try:
             while not job.done.wait(_POLL_INTERVAL):
                 if self._closed.is_set():
-                    with job.lock:
-                        job.cancel_event.set()
-                        job.abandoned = True
-                        if job.state == _JobState.QUEUED:
-                            job.state = _JobState.CANCELLED
-                        elif job.state == _JobState.RUNNING:
-                            job.state = _JobState.ABANDONED
+                    _abandon_browser_job(job)
                     raise RuntimeError("browser worker is closed")
                 if caller_event is not None and caller_event.is_set():
-                    with job.lock:
-                        job.cancel_event.set()
-                        job.abandoned = True
-                        if job.state == _JobState.QUEUED:
-                            job.state = _JobState.CANCELLED
-                        elif job.state == _JobState.RUNNING:
-                            job.state = _JobState.ABANDONED
+                    _abandon_browser_job(job)
                     raise cancellation.TaskCancelled("task was cancelled during browser job execution")
                 if active_deadline is not None and time.monotonic() >= active_deadline:
-                    with job.lock:
-                        job.cancel_event.set()
-                        job.abandoned = True
-                        if job.state == _JobState.QUEUED:
-                            job.state = _JobState.CANCELLED
-                        elif job.state == _JobState.RUNNING:
-                            job.state = _JobState.ABANDONED
+                    _abandon_browser_job(job)
                     raise TimeoutError(
                         "browser worker call timed out: job abandoned; late results strictly discarded"
                     )
         except Exception:
-            with job.lock:
-                job.cancel_event.set()
-                job.abandoned = True
-                if job.state == _JobState.QUEUED:
-                    job.state = _JobState.CANCELLED
-                elif job.state == _JobState.RUNNING:
-                    job.state = _JobState.ABANDONED
+            _abandon_browser_job(job)
             raise
 
         if not job.slot:

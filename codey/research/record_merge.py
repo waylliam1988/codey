@@ -306,6 +306,150 @@ def _find_new_evidence_items(
     return new_items
 
 
+def _citation_url_numbers(
+    existing_source_text: str,
+    ledger: ResearchLedger,
+) -> dict[str, int]:
+    url_to_num: dict[str, int] = {}
+    for citation in parse_citation_rows(existing_source_text, ledger):
+        canonical = opened_url(ledger, citation.url)
+        if canonical and canonical not in url_to_num:
+            url_to_num[canonical] = citation.number
+    return url_to_num
+
+
+def _register_new_evidence_sources(
+    new_evidence: Sequence[EvidenceItem],
+    ledger: ResearchLedger,
+    url_to_num: dict[str, int],
+    source_lines: list[str],
+    next_num: int,
+) -> int:
+    # Pre-populate url_to_num and source_lines for all new evidence items so valid_numbers is comprehensive
+    for item in new_evidence:
+        url = opened_url(ledger, item.source_url)
+        if not url:
+            continue
+        if url not in url_to_num:
+            url_to_num[url] = next_num
+            title = ledger.source_title(url).strip() or "Source"
+            source_lines.append(f"[{next_num}] {title} - {url}")
+            next_num += 1
+    return next_num
+
+
+def _is_evidence_backed(line: str, valid_numbers: set[int]) -> bool:
+    refs = [int(m) for m in re.findall(r"\[(\d+)\]", line)]
+    if not refs:
+        return False
+    return all(r in valid_numbers for r in refs)
+
+
+def _is_valid_counter(line: str, valid_numbers: set[int]) -> bool:
+    refs = [int(m) for m in re.findall(r"\[(\d+)\]", line)]
+    if refs:
+        return all(r in valid_numbers for r in refs)
+    return any(m in line for m in ("未找到", "没有找到", "限制", "持续追踪", "no strong counter", "limitation"))
+
+
+def _kept_conclusion_lines(updated: dict[str, str], valid_numbers: set[int]) -> list[str]:
+    conclusion_lines: list[str] = []
+    existing_conclusion_text = updated.get("conclusion", "").strip()
+    if existing_conclusion_text:
+        for line in existing_conclusion_text.splitlines():
+            sline = line.strip()
+            if not sline:
+                continue
+            if _is_evidence_backed(sline, valid_numbers):
+                conclusion_lines.append(sline)
+    return conclusion_lines
+
+
+def _kept_evidence_lines(updated: dict[str, str], valid_numbers: set[int]) -> list[str]:
+    evidence_lines: list[str] = []
+    existing_evidence_text = updated.get("evidence", "").strip()
+    if existing_evidence_text:
+        for line in existing_evidence_text.splitlines():
+            sline = line.strip()
+            if not sline:
+                continue
+            if _is_evidence_backed(sline, valid_numbers):
+                evidence_lines.append(sline)
+    return evidence_lines
+
+
+def _kept_counter_lines(updated: dict[str, str], valid_numbers: set[int]) -> list[str]:
+    counter_lines: list[str] = []
+    existing_counter_text = updated.get("counter", "").strip()
+    if existing_counter_text:
+        for line in existing_counter_text.splitlines():
+            sline = line.strip()
+            if not sline:
+                continue
+            if _is_valid_counter(sline, valid_numbers):
+                counter_lines.append(sline)
+    return counter_lines
+
+
+def _append_new_evidence_lines(
+    new_evidence: Sequence[EvidenceItem],
+    ledger: ResearchLedger,
+    url_to_num: dict[str, int],
+    evidence_lines: list[str],
+    counter_lines: list[str],
+) -> None:
+    for item in new_evidence:
+        url = opened_url(ledger, item.source_url)
+        claim = str(item.claim or "").strip()
+        excerpt = str(item.excerpt or "").strip()
+        text = claim or excerpt
+        if not text or not url or url not in url_to_num:
+            continue
+        num = url_to_num[url]
+        line = f"- [{num}] {clip(text, 240)}"
+        if item.stance in {"contradicts", "context"}:
+            counter_lines.append(line)
+        else:
+            evidence_lines.append(line)
+
+
+def _synthesize_conclusion_lines(
+    evidence_lines: list[str],
+    conclusion_lines: list[str],
+) -> None:
+    if not conclusion_lines and evidence_lines:
+        for evidence_line in evidence_lines[:3]:
+            match = re.search(r"\[(\d+)\]\s*(.*)", evidence_line)
+            if not match:
+                continue
+            c_num, c_text = match.groups()
+            conclusion_lines.append(f"- {c_text} [{c_num}]")
+
+
+def _finalize_injected_sections(
+    updated: dict[str, str],
+    conclusion_lines: list[str],
+    evidence_lines: list[str],
+    counter_lines: list[str],
+    url_to_num: dict[str, int],
+    source_lines: list[str],
+    ledger: ResearchLedger,
+) -> dict[str, str]:
+    conclusion_refs = _citation_numbers(conclusion_lines)
+    evidence_refs = _citation_numbers(evidence_lines)
+    counter_refs = _citation_numbers(counter_lines)
+    cited_numbers = conclusion_refs | evidence_refs | counter_refs
+
+    updated["conclusion"] = "\n".join(dict.fromkeys(conclusion_lines)).strip()
+    updated["evidence"] = "\n".join(dict.fromkeys(evidence_lines)).strip()
+    updated["counter"] = "\n".join(dict.fromkeys(counter_lines)).strip()
+    updated["source_quality"] = _render_source_quality(url_to_num, ledger, cited_numbers)
+    updated["coverage"] = _render_search_coverage(ledger, cited_numbers)
+    updated["sources"] = "\n".join(source_lines).strip()
+
+    return updated
+
+
 def _inject_new_evidence_into_sections(
     sections: dict[str, str],
     new_evidence: Sequence[EvidenceItem],
@@ -322,66 +466,20 @@ def _inject_new_evidence_into_sections(
     if existing_source_text:
         source_lines.extend(existing_source_text.splitlines())
 
-    url_to_num: dict[str, int] = {}
-    for citation in parse_citation_rows(existing_source_text, ledger):
-        canonical = opened_url(ledger, citation.url)
-        if canonical and canonical not in url_to_num:
-            url_to_num[canonical] = citation.number
+    url_to_num = _citation_url_numbers(existing_source_text, ledger)
 
     next_num = max(url_to_num.values(), default=0) + 1
 
-    # Pre-populate url_to_num and source_lines for all new evidence items so valid_numbers is comprehensive
-    for item in new_evidence:
-        url = opened_url(ledger, item.source_url)
-        if not url:
-            continue
-        if url not in url_to_num:
-            url_to_num[url] = next_num
-            title = ledger.source_title(url).strip() or "Source"
-            source_lines.append(f"[{next_num}] {title} - {url}")
-            next_num += 1
+    next_num = _register_new_evidence_sources(new_evidence, ledger, url_to_num, source_lines, next_num)
 
     valid_numbers = set(url_to_num.values())
 
-    def _is_evidence_backed(line: str) -> bool:
-        refs = [int(m) for m in re.findall(r"\[(\d+)\]", line)]
-        if not refs:
-            return False
-        return all(r in valid_numbers for r in refs)
-
-    def _is_valid_counter(line: str) -> bool:
-        refs = [int(m) for m in re.findall(r"\[(\d+)\]", line)]
-        if refs:
-            return all(r in valid_numbers for r in refs)
-        return any(m in line for m in ("未找到", "没有找到", "限制", "持续追踪", "no strong counter", "limitation"))
-
     if not rebuild:
-        existing_conclusion_text = updated.get("conclusion", "").strip()
-        if existing_conclusion_text:
-            for line in existing_conclusion_text.splitlines():
-                sline = line.strip()
-                if not sline:
-                    continue
-                if _is_evidence_backed(sline):
-                    conclusion_lines.append(sline)
+        conclusion_lines = _kept_conclusion_lines(updated, valid_numbers)
 
-        existing_evidence_text = updated.get("evidence", "").strip()
-        if existing_evidence_text:
-            for line in existing_evidence_text.splitlines():
-                sline = line.strip()
-                if not sline:
-                    continue
-                if _is_evidence_backed(sline):
-                    evidence_lines.append(sline)
+        evidence_lines = _kept_evidence_lines(updated, valid_numbers)
 
-        existing_counter_text = updated.get("counter", "").strip()
-        if existing_counter_text:
-            for line in existing_counter_text.splitlines():
-                sline = line.strip()
-                if not sline:
-                    continue
-                if _is_valid_counter(sline):
-                    counter_lines.append(sline)
+        counter_lines = _kept_counter_lines(updated, valid_numbers)
         if not conclusion_lines and not evidence_lines:
             return _inject_new_evidence_into_sections(
                 _blank_sections(),
@@ -393,41 +491,19 @@ def _inject_new_evidence_into_sections(
                 rebuild=True,
             )
 
-    for item in new_evidence:
-        url = opened_url(ledger, item.source_url)
-        claim = str(item.claim or "").strip()
-        excerpt = str(item.excerpt or "").strip()
-        text = claim or excerpt
-        if not text or not url or url not in url_to_num:
-            continue
-        num = url_to_num[url]
-        line = f"- [{num}] {clip(text, 240)}"
-        if item.stance in {"contradicts", "context"}:
-            counter_lines.append(line)
-        else:
-            evidence_lines.append(line)
+    _append_new_evidence_lines(new_evidence, ledger, url_to_num, evidence_lines, counter_lines)
 
-    if not conclusion_lines and evidence_lines:
-        for evidence_line in evidence_lines[:3]:
-            match = re.search(r"\[(\d+)\]\s*(.*)", evidence_line)
-            if not match:
-                continue
-            c_num, c_text = match.groups()
-            conclusion_lines.append(f"- {c_text} [{c_num}]")
+    _synthesize_conclusion_lines(evidence_lines, conclusion_lines)
 
-    conclusion_refs = _citation_numbers(conclusion_lines)
-    evidence_refs = _citation_numbers(evidence_lines)
-    counter_refs = _citation_numbers(counter_lines)
-    cited_numbers = conclusion_refs | evidence_refs | counter_refs
-
-    updated["conclusion"] = "\n".join(dict.fromkeys(conclusion_lines)).strip()
-    updated["evidence"] = "\n".join(dict.fromkeys(evidence_lines)).strip()
-    updated["counter"] = "\n".join(dict.fromkeys(counter_lines)).strip()
-    updated["source_quality"] = _render_source_quality(url_to_num, ledger, cited_numbers)
-    updated["coverage"] = _render_search_coverage(ledger, cited_numbers)
-    updated["sources"] = "\n".join(source_lines).strip()
-
-    return updated
+    return _finalize_injected_sections(
+        updated,
+        conclusion_lines,
+        evidence_lines,
+        counter_lines,
+        url_to_num,
+        source_lines,
+        ledger,
+    )
 
 
 def _citation_numbers(lines: Sequence[str]) -> set[int]:
@@ -455,7 +531,7 @@ def _render_source_quality(
 def _render_search_coverage(ledger: ResearchLedger, cited_numbers: set[int]) -> str:
     coverage = ledger.coverage_payload()
     lines: list[str] = []
-    queries = [str(item).strip() for item in coverage.get("queries", ()) if str(item).strip()]
+    queries = [str(item).strip() for item in (coverage.get("queries") or ()) if str(item).strip()]
     if queries:
         lines.append("- 查询: " + "; ".join(queries[:4]))
     opened_count = max(0, int(coverage.get("opened_count") or len(ledger.final_url_set())))

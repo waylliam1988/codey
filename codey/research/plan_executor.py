@@ -33,6 +33,19 @@ class PlanExecutionResult:
         return bool(self.fresh_source_urls)
 
 
+@dataclass
+class _PlanExecutionState:
+    queries: list[str]
+    opened: list[dict]
+    previews: list[str]
+    fresh_urls: list[str]
+    errors: list[str]
+    skipped: int
+    seen_urls: set[str]
+    baseline_urls: set[str]
+    stop_reason: str
+
+
 class PlanExecutor:
     def __init__(
         self,
@@ -45,16 +58,59 @@ class PlanExecutor:
 
     def execute(self, plan: ResearchPlan, tools: ResearchTools) -> PlanExecutionResult:
         runtime = clone_research_tools(tools)
-        queries: list[str] = []
-
-        opened: list[dict] = []
-        previews: list[str] = []
-        fresh_urls: list[str] = []
-        errors: list[str] = []
-        skipped = 0
         baseline_urls = _collect_baseline_urls(tools)
-        seen_urls: set[str] = set(baseline_urls)
-        stop_reason = "no_queries"
+        state = _PlanExecutionState(
+            queries=[],
+            opened=[],
+            previews=[],
+            fresh_urls=[],
+            errors=[],
+            skipped=0,
+            seen_urls=set(baseline_urls),
+            baseline_urls=baseline_urls,
+            stop_reason="no_queries",
+        )
+        query_limit, total_limit, per_query_limit = self._execution_limits(plan)
+        for candidate in plan.query_candidates[:query_limit]:
+            if self._is_stopped():
+                state.stop_reason = "stopped"
+                break
+            if len(state.opened) >= total_limit or total_limit <= 0 or per_query_limit <= 0:
+                state.stop_reason = "max_sources"
+                break
+            query = " ".join(str(candidate.query_preview or "").split())
+            if not query:
+                state.skipped += 1
+                continue
+            before_searches = len(runtime.ledger.searches)
+            result = runtime.web_search(query)
+            state.queries.append(query)
+            if str(result or "").startswith("ERROR:"):
+                state.errors.append(_safe_error(result))
+                state.stop_reason = "search_error"
+                continue
+            search = runtime.ledger.searches[-1] if len(runtime.ledger.searches) > before_searches else None
+            if search is None:
+                state.stop_reason = "no_results"
+                continue
+            self._drain_search_hits(runtime, search, query, state, total_limit, per_query_limit)
+
+            if state.stop_reason in {"max_sources", "stopped"}:
+                break
+        state.stop_reason = self._finalize_stop_reason(state, total_limit)
+        return PlanExecutionResult(
+            queries_executed=tuple(state.queries),
+            opened_sources=tuple(state.opened),
+            previews=tuple(state.previews),
+            fresh_source_urls=tuple(state.fresh_urls),
+            fresh_source_count=len(state.fresh_urls),
+            baseline_source_urls=tuple(sorted(state.baseline_urls)),
+            skipped_count=state.skipped,
+            stop_reason=state.stop_reason,
+            errors=tuple(state.errors[:12]),
+        )
+
+    def _execution_limits(self, plan: ResearchPlan) -> tuple[int, int, int]:
         query_limit = min(
             _bounded_int(
                 plan.max_queries,
@@ -89,114 +145,93 @@ class PlanExecutor:
             lower=0,
             upper=8,
         )
-        for candidate in plan.query_candidates[:query_limit]:
+        return query_limit, total_limit, per_query_limit
+
+    def _drain_search_hits(
+        self,
+        runtime: ResearchTools,
+        search,
+        query: str,
+        state: _PlanExecutionState,
+        total_limit: int,
+        per_query_limit: int,
+    ) -> None:
+        opened_for_query = 0
+        for hit in search.results:
+            if len(state.opened) >= total_limit:
+                state.stop_reason = "max_sources"
+                break
+            if opened_for_query >= per_query_limit:
+                break
+            url = str(hit.url or "").strip()
+            if not url or url in state.seen_urls:
+                state.skipped += 1
+                continue
+            skip_reason = source_candidate_skip_reason(url)
+            if skip_reason:
+                state.seen_urls.add(url)
+                state.skipped += 1
+                state.errors.append(_safe_error(skip_reason))
+                continue
+            pre_canonical = runtime.ledger.canonical_opened_url(url)
+            if pre_canonical and (pre_canonical in state.seen_urls or pre_canonical in state.baseline_urls or pre_canonical in state.fresh_urls):
+                state.seen_urls.add(url)
+                state.skipped += 1
+                continue
+            state.seen_urls.add(url)
+            reason = check_fetch_url(url)
+
+            if reason:
+                state.skipped += 1
+                state.errors.append(_safe_error(reason))
+                continue
+            before_opened = set(runtime.ledger.final_url_set())
+            try:
+                body = runtime.open_url_text(
+                    url,
+                    limit=self.config.max_source_preview_chars,
+                )
+            except cancellation.TaskCancelled:
+                raise
             if self._is_stopped():
-                stop_reason = "stopped"
+                state.stop_reason = "stopped"
                 break
-            if len(opened) >= total_limit or total_limit <= 0 or per_query_limit <= 0:
-                stop_reason = "max_sources"
-                break
-            query = " ".join(str(candidate.query_preview or "").split())
-            if not query:
-                skipped += 1
+            text = str(body or "")
+            if text.startswith(("ERROR:", "SKIPPED:")):
+                state.skipped += 1
+                state.errors.append(_safe_error(text))
                 continue
-            before_searches = len(runtime.ledger.searches)
-            result = runtime.web_search(query)
-            queries.append(query)
-            if str(result or "").startswith("ERROR:"):
-                errors.append(_safe_error(result))
-                stop_reason = "search_error"
+            after_opened = set(runtime.ledger.final_url_set())
+            new_urls = sorted(after_opened - before_opened)
+            canonical_final = (
+                runtime.ledger.canonical_opened_url(new_urls[-1])
+                if new_urls
+                else runtime.ledger.canonical_opened_url(url)
+            ) or url
+            state.seen_urls.add(canonical_final)
+            final_skip_reason = source_candidate_skip_reason(canonical_final)
+            if final_skip_reason:
+                state.skipped += 1
+                state.errors.append(_safe_error(final_skip_reason + " after redirect"))
                 continue
-            search = runtime.ledger.searches[-1] if len(runtime.ledger.searches) > before_searches else None
-            if search is None:
-                stop_reason = "no_results"
+            if canonical_final in state.baseline_urls or canonical_final in state.fresh_urls:
+                state.skipped += 1
                 continue
-            opened_for_query = 0
-            for hit in search.results:
-                if len(opened) >= total_limit:
-                    stop_reason = "max_sources"
-                    break
-                if opened_for_query >= per_query_limit:
-                    break
-                url = str(hit.url or "").strip()
-                if not url or url in seen_urls:
-                    skipped += 1
-                    continue
-                skip_reason = source_candidate_skip_reason(url)
-                if skip_reason:
-                    seen_urls.add(url)
-                    skipped += 1
-                    errors.append(_safe_error(skip_reason))
-                    continue
-                pre_canonical = runtime.ledger.canonical_opened_url(url)
-                if pre_canonical and (pre_canonical in seen_urls or pre_canonical in baseline_urls or pre_canonical in fresh_urls):
-                    seen_urls.add(url)
-                    skipped += 1
-                    continue
-                seen_urls.add(url)
-                reason = check_fetch_url(url)
+            opened_for_query += 1
+            source = _opened_source_payload(runtime, canonical_final)
+            if source:
+                state.opened.append(source)
+            state.fresh_urls.append(canonical_final)
+            state.previews.append(_source_preview(query, source, text, self.config.max_source_preview_chars))
+            state.stop_reason = "opened_sources"
 
-                if reason:
-                    skipped += 1
-                    errors.append(_safe_error(reason))
-                    continue
-                before_opened = set(runtime.ledger.final_url_set())
-                try:
-                    body = runtime.open_url_text(
-                        url,
-                        limit=self.config.max_source_preview_chars,
-                    )
-                except cancellation.TaskCancelled:
-                    raise
-                if self._is_stopped():
-                    stop_reason = "stopped"
-                    break
-                text = str(body or "")
-                if text.startswith(("ERROR:", "SKIPPED:")):
-                    skipped += 1
-                    errors.append(_safe_error(text))
-                    continue
-                after_opened = set(runtime.ledger.final_url_set())
-                new_urls = sorted(after_opened - before_opened)
-                canonical_final = (
-                    runtime.ledger.canonical_opened_url(new_urls[-1])
-                    if new_urls
-                    else runtime.ledger.canonical_opened_url(url)
-                ) or url
-                seen_urls.add(canonical_final)
-                final_skip_reason = source_candidate_skip_reason(canonical_final)
-                if final_skip_reason:
-                    skipped += 1
-                    errors.append(_safe_error(final_skip_reason + " after redirect"))
-                    continue
-                if canonical_final in baseline_urls or canonical_final in fresh_urls:
-                    skipped += 1
-                    continue
-                opened_for_query += 1
-                source = _opened_source_payload(runtime, canonical_final)
-                if source:
-                    opened.append(source)
-                fresh_urls.append(canonical_final)
-                previews.append(_source_preview(query, source, text, self.config.max_source_preview_chars))
-                stop_reason = "opened_sources"
-
-            if stop_reason in {"max_sources", "stopped"}:
-                break
-        if stop_reason == "opened_sources" and len(opened) >= total_limit:
+    def _finalize_stop_reason(self, state: _PlanExecutionState, total_limit: int) -> str:
+        stop_reason = state.stop_reason
+        if stop_reason == "opened_sources" and len(state.opened) >= total_limit:
             stop_reason = "max_sources"
-        if stop_reason in {"no_queries", "opened_sources"} and queries and not fresh_urls:
+        if stop_reason in {"no_queries", "opened_sources"} and state.queries and not state.fresh_urls:
             stop_reason = "no_new_material"
-        return PlanExecutionResult(
-            queries_executed=tuple(queries),
-            opened_sources=tuple(opened),
-            previews=tuple(previews),
-            fresh_source_urls=tuple(fresh_urls),
-            fresh_source_count=len(fresh_urls),
-            baseline_source_urls=tuple(sorted(baseline_urls)),
-            skipped_count=skipped,
-            stop_reason=stop_reason,
-            errors=tuple(errors[:12]),
-        )
+        return stop_reason
 
     def _is_stopped(self) -> bool:
         if self.should_stop():

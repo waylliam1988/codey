@@ -65,39 +65,45 @@ def select_control_candidate(
     return candidates[0]
 
 
-def score_control_candidate(
+def _score_message_box_candidate(
     candidate: dict[str, Any],
-    action: str,
-    anchor_box: dict[str, Any] | None = None,
+    fingerprint: dict[str, Any],
+    text: str,
 ) -> int:
-    fingerprint = _fingerprint(candidate.get("fingerprint"))
-    if not candidate.get("visible", True):
-        return -1000
-    text = _combined_text(fingerprint)
     tag = fingerprint["tag"]
     role = fingerprint["role"]
     score = 0
-    if action == MESSAGE_BOX:
-        if tag == "textarea":
-            score += 55
-        elif fingerprint["contenteditable"]:
-            score += 48
-        elif role == "textbox":
-            score += 42
-        elif tag == "input" and fingerprint["type"] in {"", "text"}:
-            score += 30
-        else:
-            return -1000
-        if any(word in text for word in ("message", "chat", "ask", "发送消息", "输入消息", "提问")):
-            score += 22
-        if any(word in text for word in ("search", "find", "password", "搜索", "查找", "密码")):
-            score -= 80
-        if float(candidate.get("bottom_ratio") or 0) >= 0.55:
-            score += 14
-        if float(candidate.get("area") or 0) >= 1200:
-            score += 8
-        return score
+    if tag == "textarea":
+        score += 55
+    elif fingerprint["contenteditable"]:
+        score += 48
+    elif role == "textbox":
+        score += 42
+    elif tag == "input" and fingerprint["type"] in {"", "text"}:
+        score += 30
+    else:
+        return -1000
+    if any(word in text for word in ("message", "chat", "ask", "发送消息", "输入消息", "提问")):
+        score += 22
+    if any(word in text for word in ("search", "find", "password", "搜索", "查找", "密码")):
+        score -= 80
+    if float(candidate.get("bottom_ratio") or 0) >= 0.55:
+        score += 14
+    if float(candidate.get("area") or 0) >= 1200:
+        score += 8
+    return score
 
+
+def _score_send_button_candidate(
+    candidate: dict[str, Any],
+    fingerprint: dict[str, Any],
+    text: str,
+    action: str,
+    anchor_box: dict[str, Any] | None = None,
+) -> int:
+    tag = fingerprint["tag"]
+    role = fingerprint["role"]
+    score = 0
     class_hints = {
         str(item).lower()
         for item in fingerprint["classes"]
@@ -134,6 +140,20 @@ def score_control_candidate(
     if float(candidate.get("bottom_ratio") or 0) >= 0.55:
         score += 8
     return score
+
+
+def score_control_candidate(
+    candidate: dict[str, Any],
+    action: str,
+    anchor_box: dict[str, Any] | None = None,
+) -> int:
+    fingerprint = _fingerprint(candidate.get("fingerprint"))
+    if not candidate.get("visible", True):
+        return -1000
+    text = _combined_text(fingerprint)
+    if action == MESSAGE_BOX:
+        return _score_message_box_candidate(candidate, fingerprint, text)
+    return _score_send_button_candidate(candidate, fingerprint, text, action, anchor_box)
 
 
 def start_response_watch(page: Any) -> str:

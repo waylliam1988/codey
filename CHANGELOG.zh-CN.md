@@ -2,6 +2,26 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - PLR 可读性拆分：27个怪物清零，修4个bug（未发布）
+
+- 可读性门禁改为 `pyproject.toml` 中的 `PLR0912（分支≤20）+ PLR0915
+  （语句≤80）`（`C901` 关闭，`tests/`/`tools/` 不参与体积门禁）。24个
+  文件中全部27个超标函数纯提取拆分（分发器 + 按分支 helper，零预期行为
+  变更）：最凶的是 `_valid_work_transition`（51分支）、
+  `discover_verification_candidates`（37）、`_run_loop`（34）、
+  `from_payload`（34）、`cmd_ghost`（30）与 research `run`（140语句）。
+  全仓 `ruff check` 干净。
+- 拆分中发现4个确定性 bug，全部先红锁定再修：tab缩进的 make recipe 被
+  误解析为 target（`_make_targets`）；`queries` 为 `None` 时 `TypeError`
+  （`_render_search_coverage`）；普通 `set` 被误报为无支撑断言
+  （`_overclaim_warnings`）；budgeted 引用搜索跟随软链并输出重复行
+  （`find_reference_hints`）。`tests/test_plr_split_b1..b8.py` 新增95个测试。
+- `test_architecture.py` 千行 guardrail 按仓库惯例同步（3个新增基线 +
+  9个 ceiling 上调）：helper 为内聚保留在原模块，未做硬伤可读性的子模块硬拆。
+- 验证：`ruff`、`diff --check`、`compileall`、定向单测，最终
+  `python -m pytest -q -o faulthandler_timeout=120`（`4453 passed，
+  7 skipped，1387 subtests passed，359.14s`）。未发布。
+
 ## Unreleased - writer/repair 结算不再被悬空 delivery 掀翻（未发布）
 
 - 实机发现的崩溃：headless 拒绝 shell 后从 delivery 内部停止，leaf 停在

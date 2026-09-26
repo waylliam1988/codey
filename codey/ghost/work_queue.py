@@ -1966,6 +1966,141 @@ def _valid_work_event(event: Mapping[str, object]) -> bool:
     return False
 
 
+def _valid_claim_transition(
+    patch: Mapping[str, object],
+    target_status: str,
+    expected_status: str,
+    expected_started_run_id: str,
+    expected_retry_count: object,
+) -> bool:
+    if target_status != "running" or expected_status != "queued":
+        return False
+    if expected_started_run_id:
+        return False
+    started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
+    lease_expires_at = clip_signal_text(patch.get("lease_expires_at"), 80)
+    if not started_run_id or not lease_expires_at:
+        return False
+    if "retry_count" not in patch:
+        return False
+    retry_count = patch["retry_count"]
+    if not _valid_nonnegative_int_payload(retry_count):
+        return False
+    if retry_count < 1 or retry_count != expected_retry_count + 1:
+        return False
+    if clip_signal_text(patch.get("blocked_reason"), 120):
+        return False
+    if clip_signal_text(patch.get("completed_run_id"), 120):
+        return False
+    return not _bounded_refs(patch.get("proof_refs"))
+
+
+def _valid_complete_transition(
+    patch: Mapping[str, object],
+    target_status: str,
+    expected_status: str,
+    expected_started_run_id: str,
+) -> bool:
+    if target_status != "done" or expected_status != "running":
+        return False
+    completed_run_id = clip_signal_text(patch.get("completed_run_id"), 120)
+    if not expected_started_run_id or not completed_run_id or completed_run_id != expected_started_run_id:
+        return False
+    proof_refs = _bounded_refs(patch.get("proof_refs"))
+    if not proof_refs:
+        return False
+    if clip_signal_text(patch.get("lease_expires_at"), 80):
+        return False
+    return not clip_signal_text(patch.get("blocked_reason"), 120)
+
+
+def _valid_release_transition(
+    patch: Mapping[str, object],
+    target_status: str,
+    expected_status: str,
+    expected_started_run_id: str,
+) -> bool:
+    if target_status not in {"queued", "blocked"} or expected_status != "running":
+        return False
+    if not expected_started_run_id:
+        return False
+    if clip_signal_text(patch.get("lease_expires_at"), 80):
+        return False
+    if clip_signal_text(patch.get("completed_run_id"), 120):
+        return False
+    if _bounded_refs(patch.get("proof_refs")):
+        return False
+    if target_status == "queued":
+        if clip_signal_text(patch.get("started_run_id"), 120):
+            return False
+        if clip_signal_text(patch.get("blocked_reason"), 120):
+            return False
+    elif target_status == "blocked":
+        if not clip_signal_text(patch.get("blocked_reason"), 120):
+            return False
+        started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
+        if started_run_id and started_run_id != expected_started_run_id:
+            return False
+    return True
+
+
+def _valid_block_transition(
+    patch: Mapping[str, object],
+    target_status: str,
+    expected_status: str,
+) -> bool:
+    if target_status != "blocked" or expected_status not in {"running", "queued", "candidate"}:
+        return False
+    if not clip_signal_text(patch.get("blocked_reason"), 120):
+        return False
+    if clip_signal_text(patch.get("lease_expires_at"), 80):
+        return False
+    if clip_signal_text(patch.get("completed_run_id"), 120):
+        return False
+    return not _bounded_refs(patch.get("proof_refs"))
+
+
+def _valid_reject_transition(
+    patch: Mapping[str, object],
+    target_status: str,
+    expected_status: str,
+) -> bool:
+    if target_status != "rejected" or expected_status not in {"candidate", "queued", "blocked"}:
+        return False
+    if clip_signal_text(patch.get("lease_expires_at"), 80):
+        return False
+    if clip_signal_text(patch.get("blocked_reason"), 120):
+        return False
+    if clip_signal_text(patch.get("started_run_id"), 120):
+        return False
+    if clip_signal_text(patch.get("completed_run_id"), 120):
+        return False
+    return not _bounded_refs(patch.get("proof_refs"))
+
+
+def _valid_queue_transition(
+    patch: Mapping[str, object],
+    target_status: str,
+    expected_status: str,
+) -> bool:
+    if target_status != "queued" or expected_status not in {"candidate", "blocked", "rejected"}:
+        return False
+    if "retry_count" not in patch:
+        return False
+    retry_count = patch["retry_count"]
+    if not _valid_nonnegative_int_payload(retry_count) or retry_count != 0:
+        return False
+    if clip_signal_text(patch.get("started_run_id"), 120):
+        return False
+    if clip_signal_text(patch.get("completed_run_id"), 120):
+        return False
+    if _bounded_refs(patch.get("proof_refs")):
+        return False
+    if clip_signal_text(patch.get("blocked_reason"), 120):
+        return False
+    return not clip_signal_text(patch.get("lease_expires_at"), 80)
+
+
 def _valid_work_transition(event: Mapping[str, object]) -> bool:
     item_id = clip_signal_text(event.get("item_id"), 120)
     action = clip_signal_text(event.get("action"), 40)
@@ -1991,105 +2126,24 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
         return False
 
     if action == "claim":
-        if target_status != "running" or expected_status != "queued":
-            return False
-        if expected_started_run_id:
-            return False
-        started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
-        lease_expires_at = clip_signal_text(patch.get("lease_expires_at"), 80)
-        if not started_run_id or not lease_expires_at:
-            return False
-        if "retry_count" not in patch:
-            return False
-        retry_count = patch["retry_count"]
-        if not _valid_nonnegative_int_payload(retry_count):
-            return False
-        if retry_count < 1 or retry_count != expected_retry_count + 1:
-            return False
-        if clip_signal_text(patch.get("blocked_reason"), 120):
-            return False
-        if clip_signal_text(patch.get("completed_run_id"), 120):
-            return False
-        return not _bounded_refs(patch.get("proof_refs"))
+        return _valid_claim_transition(
+            patch, target_status, expected_status, expected_started_run_id, expected_retry_count
+        )
 
     if action == "complete":
-        if target_status != "done" or expected_status != "running":
-            return False
-        completed_run_id = clip_signal_text(patch.get("completed_run_id"), 120)
-        if not expected_started_run_id or not completed_run_id or completed_run_id != expected_started_run_id:
-            return False
-        proof_refs = _bounded_refs(patch.get("proof_refs"))
-        if not proof_refs:
-            return False
-        if clip_signal_text(patch.get("lease_expires_at"), 80):
-            return False
-        return not clip_signal_text(patch.get("blocked_reason"), 120)
+        return _valid_complete_transition(patch, target_status, expected_status, expected_started_run_id)
 
     if action in {"release", "release_stale"}:
-        if target_status not in {"queued", "blocked"} or expected_status != "running":
-            return False
-        if not expected_started_run_id:
-            return False
-        if clip_signal_text(patch.get("lease_expires_at"), 80):
-            return False
-        if clip_signal_text(patch.get("completed_run_id"), 120):
-            return False
-        if _bounded_refs(patch.get("proof_refs")):
-            return False
-        if target_status == "queued":
-            if clip_signal_text(patch.get("started_run_id"), 120):
-                return False
-            if clip_signal_text(patch.get("blocked_reason"), 120):
-                return False
-        elif target_status == "blocked":
-            if not clip_signal_text(patch.get("blocked_reason"), 120):
-                return False
-            started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
-            if started_run_id and started_run_id != expected_started_run_id:
-                return False
-        return True
+        return _valid_release_transition(patch, target_status, expected_status, expected_started_run_id)
 
     if action == "block":
-        if target_status != "blocked" or expected_status not in {"running", "queued", "candidate"}:
-            return False
-        if not clip_signal_text(patch.get("blocked_reason"), 120):
-            return False
-        if clip_signal_text(patch.get("lease_expires_at"), 80):
-            return False
-        if clip_signal_text(patch.get("completed_run_id"), 120):
-            return False
-        return not _bounded_refs(patch.get("proof_refs"))
+        return _valid_block_transition(patch, target_status, expected_status)
 
     if action == "reject":
-        if target_status != "rejected" or expected_status not in {"candidate", "queued", "blocked"}:
-            return False
-        if clip_signal_text(patch.get("lease_expires_at"), 80):
-            return False
-        if clip_signal_text(patch.get("blocked_reason"), 120):
-            return False
-        if clip_signal_text(patch.get("started_run_id"), 120):
-            return False
-        if clip_signal_text(patch.get("completed_run_id"), 120):
-            return False
-        return not _bounded_refs(patch.get("proof_refs"))
+        return _valid_reject_transition(patch, target_status, expected_status)
 
     if action == "queue":
-        if target_status != "queued" or expected_status not in {"candidate", "blocked", "rejected"}:
-            return False
-        if "retry_count" not in patch:
-            return False
-        retry_count = patch["retry_count"]
-        if not _valid_nonnegative_int_payload(retry_count) or retry_count != 0:
-            return False
-        if clip_signal_text(patch.get("started_run_id"), 120):
-            return False
-        if clip_signal_text(patch.get("completed_run_id"), 120):
-            return False
-        if _bounded_refs(patch.get("proof_refs")):
-            return False
-        if clip_signal_text(patch.get("blocked_reason"), 120):
-            return False
-        return not clip_signal_text(patch.get("lease_expires_at"), 80)
+        return _valid_queue_transition(patch, target_status, expected_status)
 
     return False
 
@@ -2152,6 +2206,143 @@ def _transition_patch_payload(patch: Mapping[str, object]) -> dict[str, object]:
     return out
 
 
+def _apply_claim_transition(
+    current: GhostWorkItem,
+    patch: Mapping[str, object],
+    *,
+    now: str,
+) -> GhostWorkItem | None:
+    started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
+    lease_expires_at = clip_signal_text(patch.get("lease_expires_at"), 80)
+    if not started_run_id or not lease_expires_at or "retry_count" not in patch:
+        return None
+    retry_count = patch["retry_count"]
+    if not _valid_nonnegative_int_payload(retry_count):
+        return None
+    if retry_count < 1 or retry_count != current.retry_count + 1:
+        return None
+    return replace(
+        current,
+        status="running",
+        started_run_id=started_run_id,
+        retry_count=retry_count,
+        lease_expires_at=lease_expires_at,
+        completed_run_id="",
+        proof_refs=(),
+        blocked_reason="",
+        updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+    )
+
+
+def _apply_complete_transition(
+    current: GhostWorkItem,
+    patch: Mapping[str, object],
+    *,
+    now: str,
+) -> GhostWorkItem | None:
+    completed_run_id = clip_signal_text(patch.get("completed_run_id"), 120)
+    if not completed_run_id or not current.started_run_id or completed_run_id != current.started_run_id:
+        return None
+    proof_refs = _bounded_refs(patch.get("proof_refs"))
+    if not proof_refs or not _primary_proof_matches_item_kind(current, proof_refs):
+        return None
+    return replace(
+        current,
+        status="done",
+        completed_run_id=completed_run_id,
+        proof_refs=proof_refs,
+        blocked_reason="",
+        lease_expires_at="",
+        updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+    )
+
+
+def _apply_release_transition(
+    current: GhostWorkItem,
+    patch: Mapping[str, object],
+    target_status: str,
+    *,
+    now: str,
+) -> GhostWorkItem | None:
+    blocked_reason = clip_signal_text(patch.get("blocked_reason"), 120) if target_status == "blocked" else ""
+    if target_status == "blocked" and not blocked_reason:
+        return None
+    return replace(
+        current,
+        status=target_status,
+        started_run_id="" if target_status == "queued" else current.started_run_id,
+        completed_run_id="",
+        proof_refs=(),
+        lease_expires_at="",
+        blocked_reason=blocked_reason,
+        updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+    )
+
+
+def _apply_block_transition(
+    current: GhostWorkItem,
+    patch: Mapping[str, object],
+    *,
+    now: str,
+) -> GhostWorkItem | None:
+    blocked_reason = clip_signal_text(patch.get("blocked_reason"), 120)
+    if not blocked_reason:
+        return None
+    return replace(
+        current,
+        status="blocked",
+        blocked_reason=blocked_reason,
+        completed_run_id="",
+        proof_refs=(),
+        lease_expires_at="",
+        updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+    )
+
+
+def _apply_reject_transition(
+    current: GhostWorkItem,
+    patch: Mapping[str, object],
+    *,
+    now: str,
+) -> GhostWorkItem | None:
+    return replace(
+        current,
+        status="rejected",
+        started_run_id="",
+        completed_run_id="",
+        proof_refs=(),
+        lease_expires_at="",
+        blocked_reason="",
+        updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+    )
+
+
+def _apply_queue_transition(
+    current: GhostWorkItem,
+    patch: Mapping[str, object],
+    *,
+    now: str,
+) -> GhostWorkItem | None:
+    if "retry_count" not in patch:
+        return None
+    try:
+        if int(patch["retry_count"]) != 0:
+            return None
+    except (TypeError, ValueError):
+        return None
+    return replace(
+        current,
+        status="queued",
+        retry_count=0,
+        started_run_id="",
+        completed_run_id="",
+        proof_refs=(),
+        blocked_reason="",
+        lease_expires_at="",
+        updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+    )
+
+
 def _apply_transition_event(
     by_id: dict[str, GhostWorkItem],
     event: Mapping[str, object],
@@ -2174,100 +2365,20 @@ def _apply_transition_event(
         return "invalid"
 
     if action == "claim":
-        started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
-        lease_expires_at = clip_signal_text(patch.get("lease_expires_at"), 80)
-        if not started_run_id or not lease_expires_at or "retry_count" not in patch:
-            return "invalid"
-        retry_count = patch["retry_count"]
-        if not _valid_nonnegative_int_payload(retry_count):
-            return "invalid"
-        if retry_count < 1 or retry_count != current.retry_count + 1:
-            return "invalid"
-        updated = replace(
-            current,
-            status="running",
-            started_run_id=started_run_id,
-            retry_count=retry_count,
-            lease_expires_at=lease_expires_at,
-            completed_run_id="",
-            proof_refs=(),
-            blocked_reason="",
-            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
-        )
+        updated = _apply_claim_transition(current, patch, now=now)
     elif action == "complete":
-        completed_run_id = clip_signal_text(patch.get("completed_run_id"), 120)
-        if not completed_run_id or not current.started_run_id or completed_run_id != current.started_run_id:
-            return "invalid"
-        proof_refs = _bounded_refs(patch.get("proof_refs"))
-        if not proof_refs or not _primary_proof_matches_item_kind(current, proof_refs):
-            return "invalid"
-        updated = replace(
-            current,
-            status="done",
-            completed_run_id=completed_run_id,
-            proof_refs=proof_refs,
-            blocked_reason="",
-            lease_expires_at="",
-            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
-        )
+        updated = _apply_complete_transition(current, patch, now=now)
     elif action in {"release", "release_stale"}:
-        blocked_reason = clip_signal_text(patch.get("blocked_reason"), 120) if target_status == "blocked" else ""
-        if target_status == "blocked" and not blocked_reason:
-            return "invalid"
-        updated = replace(
-            current,
-            status=target_status,
-            started_run_id="" if target_status == "queued" else current.started_run_id,
-            completed_run_id="",
-            proof_refs=(),
-            lease_expires_at="",
-            blocked_reason=blocked_reason,
-            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
-        )
+        updated = _apply_release_transition(current, patch, target_status, now=now)
     elif action == "block":
-        blocked_reason = clip_signal_text(patch.get("blocked_reason"), 120)
-        if not blocked_reason:
-            return "invalid"
-        updated = replace(
-            current,
-            status="blocked",
-            blocked_reason=blocked_reason,
-            completed_run_id="",
-            proof_refs=(),
-            lease_expires_at="",
-            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
-        )
+        updated = _apply_block_transition(current, patch, now=now)
     elif action == "reject":
-        updated = replace(
-            current,
-            status="rejected",
-            started_run_id="",
-            completed_run_id="",
-            proof_refs=(),
-            lease_expires_at="",
-            blocked_reason="",
-            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
-        )
+        updated = _apply_reject_transition(current, patch, now=now)
     elif action == "queue":
-        if "retry_count" not in patch:
-            return "invalid"
-        try:
-            if int(patch["retry_count"]) != 0:
-                return "invalid"
-        except (TypeError, ValueError):
-            return "invalid"
-        updated = replace(
-            current,
-            status="queued",
-            retry_count=0,
-            started_run_id="",
-            completed_run_id="",
-            proof_refs=(),
-            blocked_reason="",
-            lease_expires_at="",
-            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
-        )
+        updated = _apply_queue_transition(current, patch, now=now)
     else:
+        return "invalid"
+    if updated is None:
         return "invalid"
 
     if GhostWorkItem.from_payload(updated.to_payload()) is None:

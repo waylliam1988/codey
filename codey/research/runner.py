@@ -145,6 +145,47 @@ class _DoneReview:
     advisor_count: int
 
 
+@dataclass
+class _RunPreparation:
+    question: str
+    message: str
+    ready: bool
+
+
+@dataclass
+class _ProtocolStep:
+    action: str
+    message: str
+    protocol_errors: int
+
+
+@dataclass
+class _ToolCallStep:
+    results: list
+    stopped: bool
+
+
+@dataclass
+class _DoneStep:
+    handled: bool
+    flow: str
+    message: str
+    summary: str
+    turn_limit: int
+    advisor_reviewed: bool
+    advisor_count: int
+    final_review: ReportQualityReview | None
+    final_open_questions: list[str]
+
+
+@dataclass
+class _IdleStep:
+    flow: str
+    message: str
+    idle_turns: int
+    stop_reason: str
+
+
 class ResearchRunner:
     def __init__(
         self,
@@ -233,6 +274,122 @@ class ResearchRunner:
         self.topic_continuity_payload = topic_continuity_payload
 
     def run(self, question: str):
+        prep = yield from self._prepare_run(question)
+        if not prep.ready:
+            return
+        question = prep.question
+        message = prep.message
+        stop_reason = "max_turns"
+        summary = ""
+        protocol_errors = 0
+        idle_turns = 0
+        turn = 0
+        stop_announced = False
+        advisor_reviewed = False
+        advisor_count = 0
+        final_review: ReportQualityReview | None = None
+        final_open_questions: list[str] = []
+        turn_limit = self.max_turns
+        extension_limit = max(
+            turn_limit,
+            min(MAX_EFFECTIVE_TURNS, turn_limit + COMPLETION_EXTENSION_TURNS),
+        )
+        reply_turn = None
+        for turn in range(1, extension_limit + 1):
+            if turn > turn_limit:
+                break
+            if self._stop_requested():
+                stop_reason = "stopped"
+                stop_announced = True
+                yield RunEvent.info("stop requested")
+                break
+            control_state, outbound = self._build_turn_outbound(message, turn)
+            try:
+                if self._use_native_provider():
+                    from codey.research import native_bridge as _bridge
+                    reply_turn = _bridge.take_pending_or_send(self, outbound)
+                    plan = self.codec.parse_turn(reply_turn)
+                    yield RunEvent.turn_started(turn, _bridge.turn_text(reply_turn), note=_plan_note(plan))
+                else:
+                    reply_text = self._send_provider(outbound)
+                    plan = (
+                        self.controller.parse_plan(self.codec, reply_text, control_state)
+                        if self.controller is not None and control_state is not None
+                        else self.codec.parse(reply_text)
+                    )
+                    yield RunEvent.turn_started(turn, reply_text, note=_plan_note(plan))
+            except cancellation.TaskCancelled:
+                stop_reason = "stopped"
+                stop_announced = True
+                yield RunEvent.info("stop requested")
+                break
+            protocol_step = self._protocol_step(
+                plan,
+                turn=turn,
+                protocol_errors=protocol_errors,
+                control_state=control_state,
+                reply_turn=reply_turn,
+            )
+            protocol_errors = protocol_step.protocol_errors
+            if protocol_step.action == "break":
+                stop_reason = "protocol"
+                break
+            if protocol_step.action == "continue":
+                message = protocol_step.message
+                continue
+            tool_step = yield from self._run_tool_calls(plan, turn=turn, control_state=control_state)
+            results = tool_step.results
+            if tool_step.stopped:
+                stop_reason = "stopped"
+            if stop_reason == "stopped":
+                if not stop_announced:
+                    yield RunEvent.info("stop requested")
+                break
+            done_step = yield from self._step_done(
+                plan, results,
+                turn=turn, turn_limit=turn_limit, extension_limit=extension_limit,
+                question=question, control_state=control_state,
+                advisor_reviewed=advisor_reviewed,
+                advisor_count=advisor_count,
+            )
+            if done_step.handled:
+                turn_limit, advisor_reviewed, advisor_count = (
+                    done_step.turn_limit, done_step.advisor_reviewed, done_step.advisor_count,
+                )
+                if done_step.flow == "continue":
+                    message = done_step.message
+                    continue
+                summary = done_step.summary
+                final_open_questions = done_step.final_open_questions
+                final_review = done_step.final_review
+                stop_reason = "done"
+                break
+            idle_step = self._step_idle(plan, results, idle_turns=idle_turns)
+            idle_turns = idle_step.idle_turns
+            if idle_step.flow == "break":
+                stop_reason = idle_step.stop_reason
+                break
+            if idle_step.flow == "continue":
+                message = idle_step.message
+                continue
+            message = idle_step.message
+        synthesis_id = yield from self._maybe_persist_synthesis(
+            question, summary, final_open_questions,
+        )
+        self.result = self._build_research_result(
+            question=question,
+            summary=summary,
+            stop_reason=stop_reason,
+            turn=turn,
+            turn_limit=turn_limit,
+            synthesis_id=synthesis_id,
+            final_review=final_review,
+            advisor_count=advisor_count,
+        )
+        self._record_final_traces()
+        yield self._done_event()
+
+    def _prepare_run(self, question: str):
         question = (question or "").strip()
         self.prompt_trace.call(
             "record_permission_profile",
@@ -280,7 +437,7 @@ class ResearchRunner:
             )
             yield RunEvent.info("empty question; nothing to research")
             yield self._done_event()
-            return
+            return _RunPreparation(question="", message="", ready=False)
         try:
             cancellation.check()
             self.provider.new_chat()
@@ -294,181 +451,146 @@ class ResearchRunner:
             )
             yield RunEvent.info("stop requested")
             yield self._done_event()
-            return
+            return _RunPreparation(question=question, message="", ready=False)
         message = self._intro(question)
-        stop_reason = "max_turns"
-        summary = ""
-        protocol_errors = 0
-        idle_turns = 0
-        turn = 0
-        stop_announced = False
-        advisor_reviewed = False
-        advisor_count = 0
-        final_review: ReportQualityReview | None = None
-        final_open_questions: list[str] = []
-        turn_limit = self.max_turns
-        extension_limit = max(
-            turn_limit,
-            min(MAX_EFFECTIVE_TURNS, turn_limit + COMPLETION_EXTENSION_TURNS),
+        return _RunPreparation(question=question, message=message, ready=True)
+
+    def _build_turn_outbound(self, message: str, turn: int):
+        control_state = (
+            self.controller.build_state(self.tools, turn=turn, max_turns=self.max_turns)
+            if self.controller is not None
+            else None
         )
-        for turn in range(1, extension_limit + 1):
-            if turn > turn_limit:
-                break
-            if self._stop_requested():
-                stop_reason = "stopped"
-                stop_announced = True
-                yield RunEvent.info("stop requested")
-                break
-            control_state = (
-                self.controller.build_state(self.tools, turn=turn, max_turns=self.max_turns)
-                if self.controller is not None
-                else None
+        outbound = (
+            self.controller.append_block(message, control_state)
+            if self.controller is not None and control_state is not None
+            else message
+        )
+        return control_state, outbound
+
+    def _protocol_step(self, plan, *, turn: int, protocol_errors: int, control_state, reply_turn=None) -> _ProtocolStep:
+        if plan.protocol_error and not plan.calls and plan.control is None:
+            protocol_errors += 1
+            self.prompt_trace.call(
+                "record_protocol_error",
+                plan.protocol_error_kind,
+                phase="research",
+                turn=turn,
+                tool_name=str(getattr(plan, "protocol_tool_name", "") or ""),
             )
-            outbound = (
-                self.controller.append_block(message, control_state)
-                if self.controller is not None and control_state is not None
-                else message
+            if protocol_errors > MAX_PROTOCOL_ERRORS:
+                return _ProtocolStep("break", "", protocol_errors)
+            # Count a repair prompt only when one actually goes out: a
+            # terminal protocol failure never sends it.
+            self.prompt_trace.call(
+                "record_protocol_repair_prompt",
+                plan.protocol_error_kind,
+                phase="research",
+                turn=turn,
             )
+            if self._use_native_provider():
+                from codey.research import native_bridge as _bridge
+                if _bridge.answer_native_protocol_error(self, reply_turn, plan):
+                    return _ProtocolStep("continue", "", protocol_errors)
+            message = render_research_repair_prompt(self.codec, plan, control_state)
+            return _ProtocolStep("continue", message, protocol_errors)
+        if plan.calls or plan.control is not None:
+            self.prompt_trace.call(
+                "record_protocol_valid_turn",
+                turn,
+                phase="research",
+            )
+        return _ProtocolStep("proceed", "", 0)
+
+    def _run_tool_calls(self, plan, *, turn: int, control_state):
+        results: list = []
+        for index, call in enumerate(plan.calls):
+            yield RunEvent.tool_started(turn, call, _ACTIVITY.get(call.name, "working"), index)
             try:
-                if self._use_native_provider():
-                    from codey.research import native_bridge as _bridge
-                    reply_turn = _bridge.take_pending_or_send(self, outbound)
-                    plan = self.codec.parse_turn(reply_turn)
-                    yield RunEvent.turn_started(turn, _bridge.turn_text(reply_turn), note=_plan_note(plan))
-                else:
-                    reply_text = self._send_provider(outbound)
-                    plan = (
-                        self.controller.parse_plan(self.codec, reply_text, control_state)
-                        if self.controller is not None and control_state is not None
-                        else self.codec.parse(reply_text)
-                    )
-                    yield RunEvent.turn_started(turn, reply_text, note=_plan_note(plan))
+                outcome = self._dispatch(call, turn, index)
             except cancellation.TaskCancelled:
-                stop_reason = "stopped"
-                stop_announced = True
-                yield RunEvent.info("stop requested")
-                break
-            if plan.protocol_error and not plan.calls and plan.control is None:
-                protocol_errors += 1
-                self.prompt_trace.call(
-                    "record_protocol_error",
-                    plan.protocol_error_kind,
-                    phase="research",
-                    turn=turn,
-                    tool_name=str(getattr(plan, "protocol_tool_name", "") or ""),
+                return _ToolCallStep(results, True)
+            yield RunEvent.tool_finished(turn, call, outcome, index)
+            results.append((call, outcome))
+            if self.controller is not None:
+                self.controller.record_tool_outcome(
+                    control_state,
+                    call,
+                    _outcome_model_text(outcome),
                 )
-                if protocol_errors > MAX_PROTOCOL_ERRORS:
-                    stop_reason = "protocol"
-                    break
-                # Count a repair prompt only when one actually goes out: a
-                # terminal protocol failure never sends it.
-                self.prompt_trace.call(
-                    "record_protocol_repair_prompt",
-                    plan.protocol_error_kind,
-                    phase="research",
-                    turn=turn,
-                )
-                if self._use_native_provider() and _bridge.answer_native_protocol_error(self, reply_turn, plan):
-                    message = ""
-                    continue
-                message = render_research_repair_prompt(self.codec, plan, control_state)
-                continue
-            if plan.calls or plan.control is not None:
-                self.prompt_trace.call(
-                    "record_protocol_valid_turn",
-                    turn,
-                    phase="research",
-                )
-            protocol_errors = 0
-            results: list = []
-            for index, call in enumerate(plan.calls):
-                yield RunEvent.tool_started(turn, call, _ACTIVITY.get(call.name, "working"), index)
-                try:
-                    outcome = self._dispatch(call, turn, index)
-                except cancellation.TaskCancelled:
-                    stop_reason = "stopped"
-                    break
-                yield RunEvent.tool_finished(turn, call, outcome, index)
-                results.append((call, outcome))
-                if self.controller is not None:
-                    self.controller.record_tool_outcome(
-                        control_state,
-                        call,
-                        _outcome_model_text(outcome),
-                    )
-                if self._stop_requested():
-                    stop_reason = "stopped"
-                    break
-            if stop_reason == "stopped":
-                if not stop_announced:
-                    yield RunEvent.info("stop requested")
-                break
-            if plan.control is not None and plan.control.kind == "done":
-                done = self._review_done_candidate(
-                    plan.control.body.strip(), results,
-                    turn=turn, turn_limit=turn_limit, extension_limit=extension_limit,
-                    question=question, control_state=control_state,
-                    advisor_reviewed=advisor_reviewed,
-                    advisor_count=advisor_count,
-                )
-                decision, followup, candidate, review = (
-                    done.decision, done.followup, done.candidate, done.review,
-                )
-                turn_limit, advisor_reviewed, advisor_count = (
-                    done.turn_limit, done.advisor_reviewed, done.advisor_count,
-                )
-                if decision == "retry_failed":
-                    message = followup
-                    continue
-                if decision == "retry_quality":
-                    assert review is not None
-                    yield RunEvent.info(review.message)
-                    message = followup
-                    continue
-                if decision == "retry_advisor":
-                    yield RunEvent.info(
-                        "research evidence review completed",
-                        names=f"{advisor_count} advisor(s)",
-                    )
-                    message = followup
-                    continue
-                assert review is not None
-                yield RunEvent.info(review.message, warnings=list(review.warnings))
-                summary = candidate
-                final_open_questions = _bounded_open_questions(
-                    getattr(self.codec, "last_control_args", {}).get("open_questions")
-                )
-                final_review = review
-                stop_reason = "done"
-                break
-            if not plan.calls:
-                idle_turns += 1
-                if idle_turns > MAX_IDLE_TURNS:
-                    stop_reason = "no_progress"
-                    break
-                message = self.codec.repair_prompt()
-                continue
-            idle_turns = 0
-            from codey.research import native_bridge as _bridge
-            message = _bridge.next_message(self, plan, results, _tool_results(results))
-            if message is None:
-                message = ""
-                continue
-        synthesis_id = ""
-        if summary:
-            synthesis_id = self._persist_synthesis(question, summary, open_questions=final_open_questions)
-            if synthesis_id:
-                yield RunEvent.info("saved synthesis", names=synthesis_id)
-        self.result = self._build_research_result(
-            question=question,
-            summary=summary,
-            stop_reason=stop_reason,
-            turn=turn,
-            turn_limit=turn_limit,
-            synthesis_id=synthesis_id,
-            final_review=final_review,
+            if self._stop_requested():
+                return _ToolCallStep(results, True)
+        return _ToolCallStep(results, False)
+
+    def _step_done(
+        self,
+        plan,
+        results: list,
+        *,
+        turn: int,
+        turn_limit: int,
+        extension_limit: int,
+        question: str,
+        control_state,
+        advisor_reviewed: bool,
+        advisor_count: int,
+    ):
+        if plan.control is None or plan.control.kind != "done":
+            return _DoneStep(False, "", "", "", turn_limit, advisor_reviewed, advisor_count, None, [])
+        done = self._review_done_candidate(
+            plan.control.body.strip(), results,
+            turn=turn, turn_limit=turn_limit, extension_limit=extension_limit,
+            question=question, control_state=control_state,
+            advisor_reviewed=advisor_reviewed,
             advisor_count=advisor_count,
         )
+        decision, followup, candidate, review = (
+            done.decision, done.followup, done.candidate, done.review,
+        )
+        turn_limit, advisor_reviewed, advisor_count = (
+            done.turn_limit, done.advisor_reviewed, done.advisor_count,
+        )
+        if decision == "retry_failed":
+            return _DoneStep(True, "continue", followup, candidate, turn_limit, advisor_reviewed, advisor_count, None, [])
+        if decision == "retry_quality":
+            assert review is not None
+            yield RunEvent.info(review.message)
+            return _DoneStep(True, "continue", followup, candidate, turn_limit, advisor_reviewed, advisor_count, review, [])
+        if decision == "retry_advisor":
+            yield RunEvent.info(
+                "research evidence review completed",
+                names=f"{advisor_count} advisor(s)",
+            )
+            return _DoneStep(True, "continue", followup, candidate, turn_limit, advisor_reviewed, advisor_count, review, [])
+        assert review is not None
+        yield RunEvent.info(review.message, warnings=list(review.warnings))
+        final_open_questions = _bounded_open_questions(
+            getattr(self.codec, "last_control_args", {}).get("open_questions")
+        )
+        return _DoneStep(True, "break", "", candidate, turn_limit, advisor_reviewed, advisor_count, review, final_open_questions)
+
+    def _step_idle(self, plan, results: list, *, idle_turns: int) -> _IdleStep:
+        if not plan.calls:
+            idle_turns += 1
+            if idle_turns > MAX_IDLE_TURNS:
+                return _IdleStep("break", "", idle_turns, "no_progress")
+            return _IdleStep("continue", self.codec.repair_prompt(), idle_turns, "")
+        idle_turns = 0
+        from codey.research import native_bridge as _bridge
+        message = _bridge.next_message(self, plan, results, _tool_results(results))
+        if message is None:
+            return _IdleStep("continue", "", idle_turns, "")
+        return _IdleStep("proceed", message, idle_turns, "")
+
+    def _maybe_persist_synthesis(self, question: str, summary: str, final_open_questions: list[str]):
+        if not summary:
+            return ""
+        synthesis_id = self._persist_synthesis(question, summary, open_questions=final_open_questions)
+        if synthesis_id:
+            yield RunEvent.info("saved synthesis", names=synthesis_id)
+        return synthesis_id
+
+    def _record_final_traces(self) -> None:
         self.prompt_trace.call(
             "record_research_notes",
             [
@@ -487,7 +609,6 @@ class ResearchRunner:
                 "record_research_record_summary",
                 self.result.research_record.to_summary_payload(),
             )
-        yield self._done_event()
 
     def _review_done_candidate(
         self,

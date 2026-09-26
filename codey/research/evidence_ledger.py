@@ -882,10 +882,7 @@ def _valid_ledger_payload(payload: object) -> bool:
     )
 
 
-def _canonical_ledger_payload(payload: object) -> bool:
-    if not _valid_ledger_payload(payload):
-        return False
-    assert isinstance(payload, dict)
+def _canonical_top_schema_ok(payload: dict) -> bool:
     if set(payload) - _TOP_LEVEL_KEYS:
         return False
     if not _stable_ref_schema_ok("evidence_ledger", payload.get("ledger_ref")):
@@ -896,31 +893,26 @@ def _canonical_ledger_payload(payload: object) -> bool:
         return False
     if not _clip_schema_ok(payload.get("updated_at"), 80, allow_empty=False):
         return False
-    if not _warnings_schema_ok(payload.get("warnings", [])):
-        return False
-    records = _records(payload)
-    if len(records) != len(payload.get("records", ())) or len(records) > MAX_LEDGER_RECORDS:
-        return False
-    live = {
-        "sources": set(),
-        "evidence": set(),
-        "claims": set(),
-        "assumptions": set(),
-        "relations": set(),
-    }
+    return _warnings_schema_ok(payload.get("warnings", []))
+
+
+def _canonical_records_ok(
+    records: list[dict[str, object]],
+    live: dict[str, set[str]],
+) -> bool:
     for record in records:
         if not _record_schema_ok(record):
             return False
         refs = _record_refs(record)
         for key in live:
             live[key].update(refs[key])
-    maps = {
-        "sources": _mapping(payload.get("sources")),
-        "evidence": _mapping(payload.get("evidence")),
-        "claims": _mapping(payload.get("claims")),
-        "assumptions": _mapping(payload.get("assumptions")),
-        "relations": _mapping(payload.get("relations")),
-    }
+    return True
+
+
+def _canonical_maps_schema_ok(
+    maps: dict[str, dict[str, object]],
+    live: dict[str, set[str]],
+) -> bool:
     if not _map_schema_ok(maps["sources"], live["sources"], "source_id", _SOURCE_KEYS):
         return False
     if not _map_schema_ok(maps["evidence"], live["evidence"], "evidence_id", _EVIDENCE_KEYS):
@@ -934,9 +926,11 @@ def _canonical_ledger_payload(payload: object) -> bool:
         _ASSUMPTION_KEYS,
     ):
         return False
-    if not _map_schema_ok(maps["relations"], live["relations"], "relation_id", _RELATION_KEYS):
-        return False
-    for source in maps["sources"].values():
+    return _map_schema_ok(maps["relations"], live["relations"], "relation_id", _RELATION_KEYS)
+
+
+def _canonical_sources_detail_ok(sources: Mapping[str, object]) -> bool:
+    for source in sources.values():
         assert isinstance(source, dict)
         if (
             not _source_schema_ok(source)
@@ -945,22 +939,82 @@ def _canonical_ledger_payload(payload: object) -> bool:
             or not _quality_schema_ok(source.get("quality"))
         ):
             return False
-    for evidence in maps["evidence"].values():
+    return True
+
+
+def _canonical_evidence_detail_ok(evidence_rows: Mapping[str, object]) -> bool:
+    for evidence in evidence_rows.values():
         assert isinstance(evidence, dict)
         if not _evidence_schema_ok(evidence) or not _locator_schema_ok(evidence.get("locator")):
             return False
-    for claim in maps["claims"].values():
+    return True
+
+
+def _canonical_claims_detail_ok(claims: Mapping[str, object]) -> bool:
+    for claim in claims.values():
         assert isinstance(claim, dict)
         if not _claim_schema_ok(claim):
             return False
-    for assumption in maps["assumptions"].values():
+    return True
+
+
+def _canonical_assumptions_detail_ok(assumptions: Mapping[str, object]) -> bool:
+    for assumption in assumptions.values():
         assert isinstance(assumption, dict)
         if not _assumption_schema_ok(assumption):
             return False
-    for relation in maps["relations"].values():
+    return True
+
+
+def _canonical_relations_detail_ok(relations: Mapping[str, object]) -> bool:
+    for relation in relations.values():
         assert isinstance(relation, dict)
         if not _relation_schema_ok(relation):
             return False
+    return True
+
+
+def _canonical_detail_rows_ok(maps: dict[str, dict[str, object]]) -> bool:
+    if not _canonical_sources_detail_ok(maps["sources"]):
+        return False
+    if not _canonical_evidence_detail_ok(maps["evidence"]):
+        return False
+    if not _canonical_claims_detail_ok(maps["claims"]):
+        return False
+    if not _canonical_assumptions_detail_ok(maps["assumptions"]):
+        return False
+    return _canonical_relations_detail_ok(maps["relations"])
+
+
+def _canonical_ledger_payload(payload: object) -> bool:
+    if not _valid_ledger_payload(payload):
+        return False
+    assert isinstance(payload, dict)
+    if not _canonical_top_schema_ok(payload):
+        return False
+    records = _records(payload)
+    if len(records) != len(payload.get("records", ())) or len(records) > MAX_LEDGER_RECORDS:
+        return False
+    live = {
+        "sources": set(),
+        "evidence": set(),
+        "claims": set(),
+        "assumptions": set(),
+        "relations": set(),
+    }
+    if not _canonical_records_ok(records, live):
+        return False
+    maps = {
+        "sources": _mapping(payload.get("sources")),
+        "evidence": _mapping(payload.get("evidence")),
+        "claims": _mapping(payload.get("claims")),
+        "assumptions": _mapping(payload.get("assumptions")),
+        "relations": _mapping(payload.get("relations")),
+    }
+    if not _canonical_maps_schema_ok(maps, live):
+        return False
+    if not _canonical_detail_rows_ok(maps):
+        return False
     return _ledger_graph_closed(payload)
 
 

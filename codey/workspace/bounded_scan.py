@@ -94,6 +94,84 @@ def iter_provided_files(
         yield path
 
 
+def _start_entry_kind(start: Path) -> str:
+    try:
+        start_mode = start.lstat().st_mode
+    except OSError:
+        return "missing"
+    if stat.S_ISLNK(start_mode):
+        return "symlink"
+    if stat.S_ISREG(start_mode):
+        return "file"
+    if stat.S_ISDIR(start_mode):
+        return "dir"
+    return "other"
+
+
+def _collect_dir_entries(
+    current: Path,
+    excluded_lower: set[str],
+    budget: BoundedScanBudget,
+) -> list[Path]:
+    entries: list[Path] = []
+    raw_seen = 0
+    raw_cap = max(budget.max_dir_entries * 4, budget.max_dir_entries + 100)
+    try:
+        for entry in current.iterdir():
+            cancellation.check()
+            raw_seen += 1
+            if entry.name.lower() in excluded_lower:
+                if raw_seen >= raw_cap:
+                    budget.entry_limited = True
+                    break
+                continue
+            if len(entries) >= budget.max_dir_entries:
+                budget.entry_limited = True
+                break
+            entries.append(entry)
+            if raw_seen >= raw_cap:
+                budget.entry_limited = True
+                break
+    except OSError:
+        return entries
+    return entries
+
+
+def _partition_sorted_entries(
+    entries: list[Path],
+    *,
+    excluded_lower: set[str],
+    allow_dir: Callable[[Path], bool] | None,
+    allow_file: Callable[[Path], bool] | None,
+    budget: BoundedScanBudget,
+) -> tuple[list[Path], list[Path], bool]:
+    dirs: list[Path] = []
+    yielded: list[Path] = []
+    for entry in sorted(entries, key=lambda path: path.name.lower()):
+        cancellation.check()
+        try:
+            entry_mode = entry.lstat().st_mode
+            if stat.S_ISLNK(entry_mode):
+                continue
+            if stat.S_ISDIR(entry_mode):
+                if entry.name.lower() in excluded_lower:
+                    continue
+                if allow_dir is not None and not allow_dir(entry):
+                    continue
+                dirs.append(entry)
+            elif stat.S_ISREG(entry_mode):
+                if allow_file is not None and not allow_file(entry):
+                    continue
+                if not budget.consume_file(entry):
+                    if budget.limited:
+                        return dirs, yielded, True
+                    continue
+                yielded.append(entry)
+        except OSError:
+            continue
+    return dirs, yielded, False
+
+
 def iter_bounded_files(
     start: Path,
     *,
@@ -105,20 +183,15 @@ def iter_bounded_files(
 ) -> Iterator[Path]:
     cancellation.check()
     excluded_lower = {name.lower() for name in excluded_dirs}
-    try:
-        start_mode = start.lstat().st_mode
-    except OSError:
+    start_kind = _start_entry_kind(start)
+    if start_kind in ("missing", "symlink", "other"):
         return
-    if stat.S_ISLNK(start_mode):
-        return
-    if stat.S_ISREG(start_mode):
+    if start_kind == "file":
         if allow_file is not None and not allow_file(start):
             return
         if not budget.consume_file(start):
             return
         yield start
-        return
-    if not stat.S_ISDIR(start_mode):
         return
     if skip_start_if_excluded and start.name.lower() in excluded_lower:
         return
@@ -131,49 +204,16 @@ def iter_bounded_files(
             budget.dir_limited = True
             return
         budget.dirs_seen += 1
-        entries: list[Path] = []
-        raw_seen = 0
-        raw_cap = max(budget.max_dir_entries * 4, budget.max_dir_entries + 100)
-        try:
-            for entry in current.iterdir():
-                cancellation.check()
-                raw_seen += 1
-                if entry.name.lower() in excluded_lower:
-                    if raw_seen >= raw_cap:
-                        budget.entry_limited = True
-                        break
-                    continue
-                if len(entries) >= budget.max_dir_entries:
-                    budget.entry_limited = True
-                    break
-                entries.append(entry)
-                if raw_seen >= raw_cap:
-                    budget.entry_limited = True
-                    break
-        except OSError:
-            continue
+        entries = _collect_dir_entries(current, excluded_lower, budget)
 
-        dirs: list[Path] = []
-        for entry in sorted(entries, key=lambda path: path.name.lower()):
-            cancellation.check()
-            try:
-                entry_mode = entry.lstat().st_mode
-                if stat.S_ISLNK(entry_mode):
-                    continue
-                if stat.S_ISDIR(entry_mode):
-                    if entry.name.lower() in excluded_lower:
-                        continue
-                    if allow_dir is not None and not allow_dir(entry):
-                        continue
-                    dirs.append(entry)
-                elif stat.S_ISREG(entry_mode):
-                    if allow_file is not None and not allow_file(entry):
-                        continue
-                    if not budget.consume_file(entry):
-                        if budget.limited:
-                            return
-                        continue
-                    yield entry
-            except OSError:
-                continue
+        dirs, yielded, stop = _partition_sorted_entries(
+            entries,
+            excluded_lower=excluded_lower,
+            allow_dir=allow_dir,
+            allow_file=allow_file,
+            budget=budget,
+        )
+        yield from yielded
+        if stop:
+            return
         stack.extend(reversed(dirs))

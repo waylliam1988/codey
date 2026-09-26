@@ -7,7 +7,8 @@ only returns stable text matches that help the agent decide which files to read.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+import stat
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,6 +63,118 @@ def validate_symbol(symbol: object) -> str:
     return clean
 
 
+def _iter_budgeted_files(files: Iterable[Path]) -> Iterator[Path]:
+    """Yield caller-budgeted files without following symlinks.
+
+    Mirrors the symlink rule of ``BoundedScanBudget.consume_file`` (lstat
+    based, never follows links) but consumes no budget: the caller already
+    accounted for these files. Entries without ``lstat`` (test doubles) and
+    entries whose ``lstat`` fails are handled downstream, exactly like the
+    non-budgeted path silently skips what ``consume_file`` rejects.
+    """
+    for path in files:
+        lstat = getattr(path, "lstat", None)
+        if not callable(lstat):
+            yield path
+            continue
+        try:
+            is_link = stat.S_ISLNK(lstat().st_mode)
+        except OSError:
+            continue
+        if is_link:
+            continue
+        yield path
+
+
+def _resolve_reference_candidate(
+    path: Path,
+    root: Path,
+    report: ScanReport,
+) -> tuple[Path | None, str | None]:
+    resolve = getattr(path, "resolve", None)
+    if callable(resolve):
+        try:
+            path = resolve()
+        except OSError:
+            rel = _relative(root, path)
+            if rel:
+                report.add_unreadable(rel)
+            return None, None
+    rel = _relative(root, path)
+    if not rel:
+        return None, None
+    try:
+        is_file = path.is_file()
+    except OSError:
+        report.add_unreadable(rel)
+        return None, None
+    if not is_file:
+        return None, None
+    try:
+        size = path.stat().st_size
+    except OSError:
+        report.add_unreadable(rel)
+        return None, None
+    if size > REFERENCE_MAX_FILE_BYTES:
+        report.add_oversized(rel)
+        return None, None
+    return path, rel
+
+
+def _read_reference_text(path: Path, rel: str, report: ScanReport) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        report.add_decode_failed(rel)
+        return None
+    except OSError:
+        report.add_unreadable(rel)
+        return None
+
+
+def _scan_reference_lines(
+    text: str,
+    *,
+    rel: str,
+    clean_symbol: str,
+    pattern: re.Pattern[str],
+    rows: list[str],
+    max_results: int,
+) -> bool:
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if not _has_bounded_symbol(pattern, line):
+            continue
+        if len(rows) >= max_results:
+            return True
+        clean_line = _clean_line(line)
+        kind = _classify_reference(clean_line, clean_symbol)
+        rows.append(f"- {kind} {rel}:{line_no}: {clean_line}")
+    return False
+
+
+def _render_reference_output(
+    *,
+    clean_symbol: str,
+    start_label: str,
+    rows: list[str],
+    max_results: int,
+    budget: BoundedScanBudget,
+    truncated: bool,
+) -> str:
+    output = [
+        f"References for {clean_symbol} under {start_label}:",
+        "- reference hints only; lexical scan, not semantic resolution",
+        "- use read_file before editing",
+    ]
+    output.extend(rows if rows else ["- no lexical matches found"])
+    if truncated:
+        if len(rows) >= max_results:
+            output.append(f"- references truncated after {max_results} matches")
+        if budget.limited:
+            output.append(budget.stop_message("reference scan"))
+    return "\n".join(output)
+
+
 def find_reference_hints(
     root: Path,
     start: Path,
@@ -84,7 +197,7 @@ def find_reference_hints(
         max_dir_entries=max_dir_entries or REFERENCE_MAX_DIR_ENTRIES,
     )
     if files is not None:
-        candidates = files if files_budgeted else iter_provided_files(files, budget)
+        candidates = _iter_budgeted_files(files) if files_budgeted else iter_provided_files(files, budget)
     else:
         candidates = iter_bounded_files(
             start,
@@ -98,67 +211,37 @@ def find_reference_hints(
     report = ScanReport("reference scan", size_limit_bytes=REFERENCE_MAX_FILE_BYTES)
 
     for path in candidates:
-        resolve = getattr(path, "resolve", None)
-        if callable(resolve):
-            try:
-                path = resolve()
-            except OSError:
-                rel = _relative(root, path)
-                if rel:
-                    report.add_unreadable(rel)
-                continue
-        rel = _relative(root, path)
-        if not rel:
+        scan_path, rel = _resolve_reference_candidate(path, root, report)
+        if scan_path is None or rel is None:
             continue
-        try:
-            if not path.is_file():
-                continue
-        except OSError:
-            report.add_unreadable(rel)
+        text = _read_reference_text(scan_path, rel, report)
+        if text is None:
             continue
-        try:
-            size = path.stat().st_size
-        except OSError:
-            report.add_unreadable(rel)
-            continue
-        if size > REFERENCE_MAX_FILE_BYTES:
-            report.add_oversized(rel)
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            report.add_decode_failed(rel)
-            continue
-        except OSError:
-            report.add_unreadable(rel)
-            continue
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            if not _has_bounded_symbol(pattern, line):
-                continue
-            if len(rows) >= max_results:
-                truncated = True
-                break
-            clean_line = _clean_line(line)
-            kind = _classify_reference(clean_line, clean_symbol)
-            rows.append(f"- {kind} {rel}:{line_no}: {clean_line}")
+        if _scan_reference_lines(
+            text,
+            rel=rel,
+            clean_symbol=clean_symbol,
+            pattern=pattern,
+            rows=rows,
+            max_results=max_results,
+        ):
+            truncated = True
+            break
         if truncated:
             break
     if budget.limited:
         truncated = True
 
     start_label = _relative(root, start) or "."
-    output = [
-        f"References for {clean_symbol} under {start_label}:",
-        "- reference hints only; lexical scan, not semantic resolution",
-        "- use read_file before editing",
-    ]
-    output.extend(rows if rows else ["- no lexical matches found"])
-    if truncated:
-        if len(rows) >= max_results:
-            output.append(f"- references truncated after {max_results} matches")
-        if budget.limited:
-            output.append(budget.stop_message("reference scan"))
-    return ReferenceScan("\n".join(output), truncated, report)
+    output = _render_reference_output(
+        clean_symbol=clean_symbol,
+        start_label=start_label,
+        rows=rows,
+        max_results=max_results,
+        budget=budget,
+        truncated=truncated,
+    )
+    return ReferenceScan(output, truncated, report)
 
 
 def _symbol_pattern(symbol: str) -> re.Pattern[str]:

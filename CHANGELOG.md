@@ -2,6 +2,29 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - PLR readability split: 27 monsters down, 4 bugs fixed (no release)
+
+- Readability gate is now `PLR0912 (branches <= 20) + PLR0915 (statements
+  <= 80)` in `pyproject.toml` (`C901` off, `tests/`/`tools/` excluded from
+  size rules). All 27 over-limit functions across 24 files were split by pure
+  extraction (dispatchers + per-branch helpers, zero intended behavior
+  change): worst cases were `_valid_work_transition` (51 branches),
+  `discover_verification_candidates` (37), `_run_loop` (34),
+  `from_payload` (34), `cmd_ghost` (30), and research `run` (140
+  statements). `ruff check` is clean repo-wide.
+- 4 deterministic bugs found while splitting, each locked red-first:
+  tab-indented make recipes misparsed as targets (`_make_targets`);
+  `TypeError` on `None` queries (`_render_search_coverage`); plain `set`
+  misreported as unsupported claims (`_overclaim_warnings`); budgeted
+  reference search followed symlinks and duplicated rows
+  (`find_reference_hints`). 95 new tests in `tests/test_plr_split_b1..b8.py`.
+- `test_architecture.py` 1000-line guardrail updated per repo convention
+  (3 new baseline entries + 9 ceiling bumps): in-module helpers were kept
+  for cohesion instead of forced submodule splits.
+- Verification: `ruff`, `diff --check`, `compileall`, targeted suites, then
+  final `python -m pytest -q -o faulthandler_timeout=120` (`4453 passed,
+  7 skipped, 1387 subtests passed in 359.14s`). No release was made.
+
 ## Unreleased - Writer/repair settle survives abandoned tool delivery (no release)
 
 - Live-found crash: when a run stops from inside tool delivery (headless denied

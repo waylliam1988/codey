@@ -56,7 +56,24 @@ target-version = "py311"
 # of the 746 violations was fixed (I auto-sorted, SIM105 to suppress,
 # SIM117 to single with-statements, small rules auto-fixed, SIM102/110
 # merged by hand). Keep them on: new violations fail the gate.
-select = ["E4", "E7", "E9", "F", "W", "B", "UP", "I", "SIM"]
+# PLR0912 (too many branches, <= 20) + PLR0915 (too many statements, <= 80)
+# are the readability gate since 2026-09-26: they punish "hard to follow"
+# and "bloated" functions instead of raw McCabe branches (C901). C901 is
+# intentionally off — use `ruff check --select C901` locally for reference.
+# Thresholds were tuned 2026-09-26: defaults (12/50) flagged 145 functions
+# including clean state machines (e.g. find_safe_cut with 13 branches);
+# 20/80 leaves 27 true monsters, all with >= 21 branches.
+select = ["E4", "E7", "E9", "F", "W", "B", "UP", "I", "SIM", "PLR0912", "PLR0915"]
+
+[tool.ruff.lint.pylint]
+max-branches = 20
+max-statements = 80
+
+[tool.ruff.lint.per-file-ignores]
+# Tests/tools are scenario scripts, not production readability surface:
+# a 180-statement e2e flow is expected, don't gate them on size.
+"tests/**" = ["PLR0912", "PLR0915"]
+"tools/**" = ["PLR0912", "PLR0915"]
 
 [tool.mypy]
 # Baseline only, not a CI gate (CI runs ruff + pytest + node --check):

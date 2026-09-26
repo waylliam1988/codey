@@ -90,6 +90,148 @@ class RunLedgerProjection:
         return self.has_run_started and self.has_run_finished and not self.ledger_truncated
 
 
+@dataclass
+class _LedgerBuildState:
+    run_id: str = ""
+    session_id: str = ""
+    project: str = ""
+    mode: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    stop_reason: str = ""
+    provider_initial: str = ""
+    provider_final: str = ""
+    task_chars: int = 0
+    turns: int = 0
+    max_turns: int = 0
+    model_reply_count: int = 0
+    model_reply_chars: int = 0
+    tool_calls: int = 0
+    tool_errors: int = 0
+    tool_counts: Counter[str] = field(default_factory=Counter)
+    changed_files: list[str] = field(default_factory=list)
+    changed_file_keys: set[str] = field(default_factory=set)
+    verified_commands: list[VerifiedCommandSummary] = field(default_factory=list)
+    verified_keys: set[tuple[str, str]] = field(default_factory=set)
+    provider_failures: list[ProviderFailureSummary] = field(default_factory=list)
+    provider_switches: list[ProviderSwitchSummary] = field(default_factory=list)
+    final_changes: ChangesSummary | None = None
+    ledger_truncated: bool = False
+    has_run_started: bool = False
+    has_run_finished: bool = False
+
+
+def _track_ledger_provider(state: _LedgerBuildState, provider: str) -> None:
+    if provider:
+        state.provider_initial = state.provider_initial or provider
+        state.provider_final = provider
+
+
+def _apply_run_started(state: _LedgerBuildState, payload: dict[str, object]) -> None:
+    state.has_run_started = True
+    state.started_at = state.started_at or _str(payload.get("ts"))
+    state.project = _str(payload.get("project"))
+    state.mode = _str(payload.get("mode"))
+    state.task_chars = _int(payload.get("task_chars"))
+    _track_ledger_provider(state, _str(payload.get("provider")))
+
+
+def _apply_tool_finished(state: _LedgerBuildState, payload: dict[str, object]) -> None:
+    state.tool_calls += 1
+    tool = _str(payload.get("tool"))
+    if tool:
+        state.tool_counts[tool] += 1
+    if payload.get("ok") is False:
+        state.tool_errors += 1
+
+
+def _apply_file_changed(state: _LedgerBuildState, payload: dict[str, object]) -> None:
+    path = _str(payload.get("path"))
+    if path and path not in state.changed_file_keys:
+        state.changed_file_keys.add(path)
+        state.changed_files.append(path)
+
+
+def _apply_command_verified(state: _LedgerBuildState, payload: dict[str, object]) -> None:
+    command = _str(payload.get("command"))
+    cwd = _str(payload.get("cwd")) or "."
+    if not command:
+        return
+    key = (command, cwd)
+    if key in state.verified_keys:
+        return
+    state.verified_keys.add(key)
+    state.verified_commands.append(VerifiedCommandSummary(
+        command=command,
+        cwd=cwd,
+        turn=_int(payload.get("turn")),
+        tool_id=_str(payload.get("tool_id")),
+    ))
+
+
+def _apply_provider_failure(state: _LedgerBuildState, payload: dict[str, object]) -> None:
+    state.provider_failures.append(ProviderFailureSummary(
+        provider=_str(payload.get("provider")),
+        action=_str(payload.get("action")),
+        kind=_str(payload.get("kind")),
+        stage=_str(payload.get("stage")),
+        message=_str(payload.get("message")),
+    ))
+
+
+def _apply_provider_switched(state: _LedgerBuildState, payload: dict[str, object]) -> None:
+    to_provider = _str(payload.get("to_provider"))
+    state.provider_switches.append(ProviderSwitchSummary(
+        from_provider=_str(payload.get("from_provider")),
+        to_provider=to_provider,
+        phase=_str(payload.get("phase")),
+        reason=_str(payload.get("reason")),
+    ))
+    if to_provider:
+        state.provider_final = to_provider
+
+
+def _apply_run_finished(state: _LedgerBuildState, payload: dict[str, object]) -> None:
+    state.has_run_finished = True
+    state.finished_at = _str(payload.get("ts"))
+    state.stop_reason = _str(payload.get("stop_reason"))
+    state.turns = _int(payload.get("turns"))
+    state.max_turns = _int(payload.get("max_turns"))
+    provider = _str(payload.get("provider"))
+    if provider:
+        state.provider_final = provider
+
+
+def _build_projection(state: _LedgerBuildState) -> RunLedgerProjection:
+    return RunLedgerProjection(
+        run_id=state.run_id,
+        session_id=state.session_id,
+        project=state.project,
+        mode=state.mode,
+        started_at=state.started_at,
+        finished_at=state.finished_at,
+        stop_reason=state.stop_reason,
+        provider_initial=state.provider_initial,
+        provider_final=state.provider_final,
+        task_chars=state.task_chars,
+        turns=state.turns,
+        max_turns=state.max_turns,
+        model_reply_count=state.model_reply_count,
+        model_reply_chars=state.model_reply_chars,
+        tool_calls=state.tool_calls,
+        tool_errors=state.tool_errors,
+        tool_counts=dict(sorted(state.tool_counts.items())),
+        changed_files_observed=tuple(state.changed_files),
+        verified_commands=tuple(state.verified_commands),
+        provider_failures=tuple(state.provider_failures),
+        provider_switches=tuple(state.provider_switches),
+        final_changes=state.final_changes,
+        ledger_truncated=state.ledger_truncated,
+        has_run_started=state.has_run_started,
+        has_run_finished=state.has_run_finished,
+    )
+
+
 def project_run_ledger(records: Iterable[RunLedgerRecord]) -> RunLedgerProjection:
     """Build a bounded read model from ledger records.
 
@@ -97,154 +239,49 @@ def project_run_ledger(records: Iterable[RunLedgerRecord]) -> RunLedgerProjectio
     readers can safely coexist with newer ledger writers.
     """
 
-    run_id = ""
-    session_id = ""
-    project = ""
-    mode = ""
-    started_at = ""
-    finished_at = ""
-    stop_reason = ""
-    provider_initial = ""
-    provider_final = ""
-    task_chars = 0
-    turns = 0
-    max_turns = 0
-    model_reply_count = 0
-    model_reply_chars = 0
-    tool_calls = 0
-    tool_errors = 0
-    tool_counts: Counter[str] = Counter()
-    changed_files: list[str] = []
-    changed_file_keys: set[str] = set()
-    verified_commands: list[VerifiedCommandSummary] = []
-    verified_keys: set[tuple[str, str]] = set()
-    provider_failures: list[ProviderFailureSummary] = []
-    provider_switches: list[ProviderSwitchSummary] = []
-    final_changes: ChangesSummary | None = None
-    ledger_truncated = False
-    has_run_started = False
-    has_run_finished = False
+    state = _LedgerBuildState()
 
     for payload in _sorted_payloads(records):
         event_type = _str(payload.get("type"))
         if not event_type:
             continue
-        run_id = run_id or _str(payload.get("run_id"))
-        session_id = session_id or _str(payload.get("session_id"))
+        state.run_id = state.run_id or _str(payload.get("run_id"))
+        state.session_id = state.session_id or _str(payload.get("session_id"))
         if event_type == "run_started":
-            has_run_started = True
-            started_at = started_at or _str(payload.get("ts"))
-            project = _str(payload.get("project"))
-            mode = _str(payload.get("mode"))
-            task_chars = _int(payload.get("task_chars"))
-            provider = _str(payload.get("provider"))
-            if provider:
-                provider_initial = provider_initial or provider
-                provider_final = provider
+            _apply_run_started(state, payload)
             continue
         if event_type == "provider_selected":
-            provider = _str(payload.get("provider"))
-            if provider:
-                provider_initial = provider_initial or provider
-                provider_final = provider
+            _track_ledger_provider(state, _str(payload.get("provider")))
             continue
         if event_type == "model_reply":
-            model_reply_count += 1
-            model_reply_chars += _int(payload.get("reply_chars"))
+            state.model_reply_count += 1
+            state.model_reply_chars += _int(payload.get("reply_chars"))
             continue
         if event_type == "tool_finished":
-            tool_calls += 1
-            tool = _str(payload.get("tool"))
-            if tool:
-                tool_counts[tool] += 1
-            if payload.get("ok") is False:
-                tool_errors += 1
+            _apply_tool_finished(state, payload)
             continue
         if event_type == "file_changed":
-            path = _str(payload.get("path"))
-            if path and path not in changed_file_keys:
-                changed_file_keys.add(path)
-                changed_files.append(path)
+            _apply_file_changed(state, payload)
             continue
         if event_type == "command_verified":
-            command = _str(payload.get("command"))
-            cwd = _str(payload.get("cwd")) or "."
-            if not command:
-                continue
-            key = (command, cwd)
-            if key in verified_keys:
-                continue
-            verified_keys.add(key)
-            verified_commands.append(VerifiedCommandSummary(
-                command=command,
-                cwd=cwd,
-                turn=_int(payload.get("turn")),
-                tool_id=_str(payload.get("tool_id")),
-            ))
+            _apply_command_verified(state, payload)
             continue
         if event_type == "changes_collected":
-            final_changes = _changes_summary(payload)
+            state.final_changes = _changes_summary(payload)
             continue
         if event_type == "provider_failure":
-            provider_failures.append(ProviderFailureSummary(
-                provider=_str(payload.get("provider")),
-                action=_str(payload.get("action")),
-                kind=_str(payload.get("kind")),
-                stage=_str(payload.get("stage")),
-                message=_str(payload.get("message")),
-            ))
+            _apply_provider_failure(state, payload)
             continue
         if event_type == "provider_switched":
-            to_provider = _str(payload.get("to_provider"))
-            provider_switches.append(ProviderSwitchSummary(
-                from_provider=_str(payload.get("from_provider")),
-                to_provider=to_provider,
-                phase=_str(payload.get("phase")),
-                reason=_str(payload.get("reason")),
-            ))
-            if to_provider:
-                provider_final = to_provider
+            _apply_provider_switched(state, payload)
             continue
         if event_type == "ledger_truncated":
-            ledger_truncated = True
+            state.ledger_truncated = True
             continue
         if event_type == "run_finished":
-            has_run_finished = True
-            finished_at = _str(payload.get("ts"))
-            stop_reason = _str(payload.get("stop_reason"))
-            turns = _int(payload.get("turns"))
-            max_turns = _int(payload.get("max_turns"))
-            provider = _str(payload.get("provider"))
-            if provider:
-                provider_final = provider
+            _apply_run_finished(state, payload)
 
-    return RunLedgerProjection(
-        run_id=run_id,
-        session_id=session_id,
-        project=project,
-        mode=mode,
-        started_at=started_at,
-        finished_at=finished_at,
-        stop_reason=stop_reason,
-        provider_initial=provider_initial,
-        provider_final=provider_final,
-        task_chars=task_chars,
-        turns=turns,
-        max_turns=max_turns,
-        model_reply_count=model_reply_count,
-        model_reply_chars=model_reply_chars,
-        tool_calls=tool_calls,
-        tool_errors=tool_errors,
-        tool_counts=dict(sorted(tool_counts.items())),
-        changed_files_observed=tuple(changed_files),
-        verified_commands=tuple(verified_commands),
-        provider_failures=tuple(provider_failures),
-        provider_switches=tuple(provider_switches),
-        final_changes=final_changes,
-        ledger_truncated=ledger_truncated,
-        has_run_started=has_run_started,
-        has_run_finished=has_run_finished,
-    )
+    return _build_projection(state)
 
 
 def load_run_projection(

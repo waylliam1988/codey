@@ -267,7 +267,7 @@ def _make_targets(text: str) -> tuple[str, ...]:
     seen: set[str] = set()
     for line in text.splitlines():
         stripped = line.lstrip()
-        if not stripped or stripped.startswith("#") or stripped.startswith("\t"):
+        if not stripped or stripped.startswith("#") or line.startswith("\t"):
             continue
         match = re.match(r"^([A-Za-z0-9_.-]+)\s*:", stripped)
         if not match:
@@ -308,13 +308,10 @@ def _historical_candidate_is_current(
     return True
 
 
-def discover_verification_candidates(
-    project: str | Path,
-    verified_commands: Sequence[object] = (),
-    configured_commands: Sequence[object] = (),
-    ignored_paths: Sequence[str] = (),
-) -> tuple[VerificationCandidate, ...]:
-    root = Path(project).expanduser().resolve()
+def _verified_history_candidates(
+    root: Path,
+    verified_commands: Sequence[object],
+) -> list[VerificationCandidate]:
     found: list[VerificationCandidate] = []
     for item in verified_commands:
         candidate = _candidate(
@@ -326,6 +323,14 @@ def discover_verification_candidates(
         )
         if candidate is not None and _historical_candidate_is_current(root, candidate):
             found.append(candidate)
+    return found
+
+
+def _configured_command_candidates(
+    root: Path,
+    configured_commands: Sequence[object],
+) -> list[VerificationCandidate]:
+    found: list[VerificationCandidate] = []
     for item in configured_commands:
         label = str(getattr(item, "label", "") or "").strip()
         source = f"project config: {label}" if label else "project config"
@@ -338,99 +343,148 @@ def discover_verification_candidates(
         )
         if candidate is not None:
             found.append(candidate)
-    for directory in _bounded_directories(root, ignored_paths):
-        cwd = directory.relative_to(root).as_posix() or "."
-        package_text = read_manifest_text(directory / "package.json", max_bytes=MAX_MANIFEST_BYTES)
-        if package_text:
-            try:
-                package = json.loads(package_text)
-            except ValueError:
-                package = {}
-            scripts = package.get("scripts") if isinstance(package, dict) else None
-            if isinstance(scripts, dict):
-                manager = _package_manager(root, directory, package)
-                for name in NODE_SCRIPTS:
-                    if isinstance(scripts.get(name), str) and scripts[name].strip():
-                        command = _node_script_command(manager, name)
-                        candidate = _candidate(
-                            root, command, cwd, f"package.json script {name}"
-                        )
-                        if candidate is not None:
-                            found.append(candidate)
-        if is_manifest_file(directory / "pytest.ini"):
-            candidate = _candidate(root, "python -m pytest", cwd, "pytest.ini")
-            if candidate is not None:
-                found.append(candidate)
-        pyproject_text = read_manifest_text(directory / "pyproject.toml", max_bytes=MAX_MANIFEST_BYTES)
-        if pyproject_text:
-            try:
-                pyproject = tomllib.loads(pyproject_text)
-            except tomllib.TOMLDecodeError:
-                pyproject = {}
-            if _pyproject_tool(pyproject, "pytest") or _pyproject_tool(
-                pyproject,
-                "pytest",
-                "ini_options",
-            ):
-                candidate = _candidate(
-                    root,
-                    "python -m pytest",
-                    cwd,
-                    "tool.pytest",
-                )
-                if candidate is not None:
-                    found.append(candidate)
-            if _pyproject_tool(pyproject, "ruff"):
-                candidate = _candidate(root, "ruff check .", cwd, "tool.ruff")
-                if candidate is not None:
-                    found.append(candidate)
-            if _pyproject_tool(pyproject, "mypy"):
-                candidate = _candidate(root, "mypy .", cwd, "tool.mypy")
-                if candidate is not None:
-                    found.append(candidate)
-        if is_real_directory(directory / "tests"):
+    return found
+
+
+def _node_candidates(root: Path, directory: Path, cwd: str) -> list[VerificationCandidate]:
+    found: list[VerificationCandidate] = []
+    package_text = read_manifest_text(directory / "package.json", max_bytes=MAX_MANIFEST_BYTES)
+    if package_text:
+        try:
+            package = json.loads(package_text)
+        except ValueError:
+            package = {}
+        scripts = package.get("scripts") if isinstance(package, dict) else None
+        if isinstance(scripts, dict):
+            manager = _package_manager(root, directory, package)
+            for name in NODE_SCRIPTS:
+                if isinstance(scripts.get(name), str) and scripts[name].strip():
+                    command = _node_script_command(manager, name)
+                    candidate = _candidate(
+                        root, command, cwd, f"package.json script {name}"
+                    )
+                    if candidate is not None:
+                        found.append(candidate)
+    return found
+
+
+def _python_candidates(root: Path, directory: Path, cwd: str) -> list[VerificationCandidate]:
+    found: list[VerificationCandidate] = []
+    if is_manifest_file(directory / "pytest.ini"):
+        candidate = _candidate(root, "python -m pytest", cwd, "pytest.ini")
+        if candidate is not None:
+            found.append(candidate)
+    pyproject_text = read_manifest_text(directory / "pyproject.toml", max_bytes=MAX_MANIFEST_BYTES)
+    if pyproject_text:
+        try:
+            pyproject = tomllib.loads(pyproject_text)
+        except tomllib.TOMLDecodeError:
+            pyproject = {}
+        if _pyproject_tool(pyproject, "pytest") or _pyproject_tool(
+            pyproject,
+            "pytest",
+            "ini_options",
+        ):
             candidate = _candidate(
                 root,
-                "python -m unittest discover",
+                "python -m pytest",
                 cwd,
-                "tests directory",
+                "tool.pytest",
             )
             if candidate is not None:
                 found.append(candidate)
-        if is_manifest_file(directory / "ruff.toml") or is_manifest_file(
-            directory / ".ruff.toml"
-        ):
-            candidate = _candidate(root, "ruff check .", cwd, "ruff config")
+        if _pyproject_tool(pyproject, "ruff"):
+            candidate = _candidate(root, "ruff check .", cwd, "tool.ruff")
             if candidate is not None:
                 found.append(candidate)
-        if is_manifest_file(directory / "mypy.ini") or is_manifest_file(
-            directory / ".mypy.ini"
-        ):
-            candidate = _candidate(root, "mypy .", cwd, "mypy config")
+        if _pyproject_tool(pyproject, "mypy"):
+            candidate = _candidate(root, "mypy .", cwd, "tool.mypy")
             if candidate is not None:
                 found.append(candidate)
-        for name in MAKEFILE_NAMES:
-            makefile_text = read_manifest_text(directory / name, max_bytes=MAX_MANIFEST_BYTES)
-            if not makefile_text:
-                continue
-            for target in _make_targets(makefile_text):
-                candidate = _candidate(
-                    root,
-                    f"make {target}",
-                    cwd,
-                    f"{name} target {target}",
-                )
-                if candidate is not None:
-                    found.append(candidate)
-            break
-        if is_manifest_file(directory / "Cargo.toml"):
-            candidate = _candidate(root, "cargo test", cwd, "Cargo.toml")
+    if is_real_directory(directory / "tests"):
+        candidate = _candidate(
+            root,
+            "python -m unittest discover",
+            cwd,
+            "tests directory",
+        )
+        if candidate is not None:
+            found.append(candidate)
+    return found
+
+
+def _config_candidates(root: Path, directory: Path, cwd: str) -> list[VerificationCandidate]:
+    found: list[VerificationCandidate] = []
+    if is_manifest_file(directory / "ruff.toml") or is_manifest_file(
+        directory / ".ruff.toml"
+    ):
+        candidate = _candidate(root, "ruff check .", cwd, "ruff config")
+        if candidate is not None:
+            found.append(candidate)
+    if is_manifest_file(directory / "mypy.ini") or is_manifest_file(
+        directory / ".mypy.ini"
+    ):
+        candidate = _candidate(root, "mypy .", cwd, "mypy config")
+        if candidate is not None:
+            found.append(candidate)
+    return found
+
+
+def _make_candidates(root: Path, directory: Path, cwd: str) -> list[VerificationCandidate]:
+    found: list[VerificationCandidate] = []
+    for name in MAKEFILE_NAMES:
+        makefile_text = read_manifest_text(directory / name, max_bytes=MAX_MANIFEST_BYTES)
+        if not makefile_text:
+            continue
+        for target in _make_targets(makefile_text):
+            candidate = _candidate(
+                root,
+                f"make {target}",
+                cwd,
+                f"{name} target {target}",
+            )
             if candidate is not None:
                 found.append(candidate)
-        if is_manifest_file(directory / "go.mod"):
-            candidate = _candidate(root, "go test ./...", cwd, "go.mod")
-            if candidate is not None:
-                found.append(candidate)
+        break
+    return found
+
+
+def _cargo_go_candidates(root: Path, directory: Path, cwd: str) -> list[VerificationCandidate]:
+    found: list[VerificationCandidate] = []
+    if is_manifest_file(directory / "Cargo.toml"):
+        candidate = _candidate(root, "cargo test", cwd, "Cargo.toml")
+        if candidate is not None:
+            found.append(candidate)
+    if is_manifest_file(directory / "go.mod"):
+        candidate = _candidate(root, "go test ./...", cwd, "go.mod")
+        if candidate is not None:
+            found.append(candidate)
+    return found
+
+
+def _directory_candidates(root: Path, directory: Path, cwd: str) -> list[VerificationCandidate]:
+    found: list[VerificationCandidate] = []
+    found.extend(_node_candidates(root, directory, cwd))
+    found.extend(_python_candidates(root, directory, cwd))
+    found.extend(_config_candidates(root, directory, cwd))
+    found.extend(_make_candidates(root, directory, cwd))
+    found.extend(_cargo_go_candidates(root, directory, cwd))
+    return found
+
+
+def discover_verification_candidates(
+    project: str | Path,
+    verified_commands: Sequence[object] = (),
+    configured_commands: Sequence[object] = (),
+    ignored_paths: Sequence[str] = (),
+) -> tuple[VerificationCandidate, ...]:
+    root = Path(project).expanduser().resolve()
+    found: list[VerificationCandidate] = []
+    found.extend(_verified_history_candidates(root, verified_commands))
+    found.extend(_configured_command_candidates(root, configured_commands))
+    for directory in _bounded_directories(root, ignored_paths):
+        cwd = directory.relative_to(root).as_posix() or "."
+        found.extend(_directory_candidates(root, directory, cwd))
     unique: dict[tuple[str, str], VerificationCandidate] = {}
     for item in found:
         key = (item.command, item.cwd)
@@ -448,15 +502,7 @@ def _is_make_path(path: PurePosixPath) -> bool:
     return path.name in MAKEFILE_NAMES or path.suffix.lower() == ".mk"
 
 
-def _command_priority(candidate: VerificationCandidate) -> int:
-    try:
-        argv = split_run_command(candidate.command)
-    except ValueError:
-        return 0
-    if not argv:
-        return 0
-    exe = _executable_name(argv[0])
-    script = _node_script_from_argv(argv)
+def _node_script_priority(script: str) -> int | None:
     if script == "test":
         return 95
     if script == "typecheck":
@@ -467,20 +513,36 @@ def _command_priority(candidate: VerificationCandidate) -> int:
         return 60
     if script == "build":
         return 10
+    return None
+
+
+def _python_module_priority(module: str) -> int | None:
+    if module == "pytest":
+        return 100
+    if module == "unittest":
+        return 90
+    if module == "mypy":
+        return 80
+    if module == "ruff":
+        return 60
+    return None
+
+
+def _python_command_priority(argv: list[str]) -> int | None:
+    exe = _executable_name(argv[0])
     if exe in {"python", "py"}:
         args = argv[1:]
         while args and args[0] == "-B":
             args = args[1:]
         if len(args) >= 2 and args[0] == "-m":
             module = args[1]
-            if module == "pytest":
-                return 100
-            if module == "unittest":
-                return 90
-            if module == "mypy":
-                return 80
-            if module == "ruff":
-                return 60
+            priority = _python_module_priority(module)
+            if priority is not None:
+                return priority
+    return None
+
+
+def _standalone_command_priority(exe: str, argv: list[str]) -> int | None:
     if exe == "pytest":
         return 100
     if exe in {"cargo", "go"} and len(argv) >= 2 and argv[1] == "test":
@@ -489,18 +551,51 @@ def _command_priority(candidate: VerificationCandidate) -> int:
         return 80
     if exe == "ruff":
         return 60
+    return None
+
+
+def _make_target_priority(target: str) -> int | None:
+    if target == "test":
+        return 50
+    if target == "typecheck":
+        return 45
+    if target == "check":
+        return 40
+    if target == "lint":
+        return 35
+    if target == "build":
+        return 5
+    return None
+
+
+def _make_command_priority(exe: str, argv: list[str]) -> int | None:
     if exe in {"make", "gmake"} and len(argv) >= 2:
         target = argv[1]
-        if target == "test":
-            return 50
-        if target == "typecheck":
-            return 45
-        if target == "check":
-            return 40
-        if target == "lint":
-            return 35
-        if target == "build":
-            return 5
+        return _make_target_priority(target)
+    return None
+
+
+def _command_priority(candidate: VerificationCandidate) -> int:
+    try:
+        argv = split_run_command(candidate.command)
+    except ValueError:
+        return 0
+    if not argv:
+        return 0
+    exe = _executable_name(argv[0])
+    script = _node_script_from_argv(argv)
+    node_priority = _node_script_priority(script)
+    if node_priority is not None:
+        return node_priority
+    python_priority = _python_command_priority(argv)
+    if python_priority is not None:
+        return python_priority
+    standalone_priority = _standalone_command_priority(exe, argv)
+    if standalone_priority is not None:
+        return standalone_priority
+    make_priority = _make_command_priority(exe, argv)
+    if make_priority is not None:
+        return make_priority
     return 0
 
 

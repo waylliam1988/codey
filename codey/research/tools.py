@@ -10,7 +10,7 @@ from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
 from codey.knowledge.note import LINK_KINDS, NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
 from codey.knowledge.store import KnowledgeStore, content_hash_bytes
-from codey.research.ledger import ResearchLedger
+from codey.research.ledger import EvidencePreparation, ResearchLedger
 from codey.research.source_gateway import (
     OPEN_DEFAULT_LIMIT,
     OPEN_MAX_LIMIT,
@@ -187,52 +187,20 @@ class ResearchTools:
         return note.to_markdown()
 
     def knowledge_write(self, args: dict) -> str:
-        existing_id = str(args.get("id") or "").strip()
-        if existing_id and not is_safe_id(existing_id):
-            return "ERROR: invalid note id"
-        existing_note = self.store.read_note(existing_id) if existing_id else None
-        updating = existing_note is not None
-        if existing_id and not updating:
-            existing_id = ""
+        existing_id, existing_note, updating, identity_error = _resolve_write_target(self.store, args)
+        if identity_error:
+            return identity_error
+        note_type, title, body, basis_error = _validate_write_basis(args, existing_note)
+        if basis_error:
+            return basis_error
 
-        note_type = str(
-            args.get("type") or (existing_note.type if existing_note is not None else "note")
-        ).strip().lower()
-        if note_type not in NOTE_TYPES:
-            return f"ERROR: unknown note type '{note_type}'; use one of {', '.join(NOTE_TYPES)}"
-        title = str(args.get("title") or "").strip()
-        body = str(args.get("body") or "").strip()
-        if not title or not body:
-            return "ERROR: knowledge_write needs both a title and a body"
+        ownership_error = _validate_write_ownership(existing_note, self.session_id, self.project)
+        if ownership_error:
+            return ownership_error
 
-        if existing_note is not None:
-            if existing_note.session_id and self.session_id and existing_note.session_id != self.session_id:
-                return "ERROR: note belongs to another session"
-            if existing_note.project and self.project and existing_note.project != self.project:
-                return "ERROR: note belongs to another project"
-
-        sources = (
-            _as_str_list(args.get("sources"))
-            if "sources" in args
-            else list(existing_note.sources if existing_note is not None else [])
-        )
-        validating_sources = not updating or "sources" in args
-        if note_type == "source":
-            problem = (
-                self._source_problem(sources)
-                if validating_sources
-                else (None if sources else "a source note must cite the url of a page you opened")
-            )
-            if problem:
-                return problem if problem.startswith("NEEDS_OPEN:") else f"ERROR: {problem}"
-        elif note_type in _CITED_TYPES:
-            problem = (
-                self._provenance_problem(note_type, sources)
-                if validating_sources
-                else (None if sources else f"a {note_type} note must cite at least one opened source URL")
-            )
-            if problem:
-                return problem if problem.startswith("NEEDS_OPEN:") else f"ERROR: {problem}"
+        sources, sources_error = _prepare_write_sources(self, args, existing_note, updating, note_type)
+        if sources_error:
+            return sources_error
         evidence_preparation = self.ledger.prepare_evidence_items(
             args.get("evidence"),
             fallback_sources=sources,
@@ -242,79 +210,37 @@ class ResearchTools:
         )
         if evidence_preparation.error:
             return f"ERROR: {evidence_preparation.error}"
-        if "relations" in args:
-            relations, relation_warnings = clean_relations(args.get("relations"))
-        else:
-            relations, relation_warnings = (
-                list(existing_note.relations if existing_note is not None else []),
-                [],
-            )
-        status = str(
-            args.get("status")
-            if "status" in args
-            else (existing_note.status if existing_note is not None else "active")
-        ).strip().lower()
-        if status not in NOTE_STATUSES:
-            status = "active"
+        relations, relation_warnings = _prepare_write_relations(args, existing_note)
+        status = _resolve_write_status(args, existing_note)
         tags = (
             _as_str_list(args.get("tags"))
             if "tags" in args
             else list(existing_note.tags if existing_note is not None else [])
         )
-        note = KnowledgeNote.create(
-            type=note_type,
-            title=title,
-            body=body,
-            id=existing_id or None,
-            tags=_merge_relation_tags(tags, relations),
-            sources=sources,
-            aliases=(
-                _as_str_list(args.get("aliases"))
-                if "aliases" in args
-                else list(existing_note.aliases if existing_note is not None else [])
-            ),
-            relations=relations,
-            open_questions=(
-                _as_str_list(args.get("open_questions"))
-                if "open_questions" in args
-                else list(existing_note.open_questions if existing_note is not None else [])
-            ),
-            confidence=(
-                _as_float(args.get("confidence"))
-                if "confidence" in args
-                else (existing_note.confidence if existing_note is not None else None)
-            ),
-            status=status,
-            retrieved_at=(
-                _as_opt_str(args.get("retrieved_at"))
-                if "retrieved_at" in args
-                else (existing_note.retrieved_at if existing_note is not None else None)
-            ),
-            valid_until=(
-                _as_opt_str(args.get("valid_until"))
-                if "valid_until" in args
-                else (existing_note.valid_until if existing_note is not None else None)
-            ),
-            session_id=existing_note.session_id if existing_note is not None else self.session_id,
-            project=existing_note.project if existing_note is not None else self.project,
-            created=existing_note.created if existing_note is not None else "",
+        note = _build_write_note(
+            args,
+            existing_note,
+            existing_id,
+            note_type,
+            title,
+            body,
+            sources,
+            relations,
+            tags,
+            status,
+            self.session_id,
+            self.project,
         )
         rel = self.store.write_note(note, changes=self.changes)
-        if note_type == "source":
-            self.grounded_ids.add(note.id)
-        if evidence_preparation.items:
-            self.ledger.add_evidence_items(list(evidence_preparation.items), note_id=note.id)
-        if updating:
-            if note.id not in self.updated_ids:
-                self.updated_ids.append(note.id)
-        elif note.id not in self.created_ids:
-            self.created_ids.append(note.id)
-        output = f"saved {note_type} note id={note.id} at {rel}"
-        if evidence_preparation.warning:
-            output += f"; WARNING: {evidence_preparation.warning}"
-        if relation_warnings:
-            output += "; WARNING: relations: " + "; ".join(relation_warnings)
-        return output
+        return _finalize_write_note(
+            self,
+            note,
+            note_type,
+            evidence_preparation,
+            updating,
+            relation_warnings,
+            rel,
+        )
 
     def knowledge_link(self, src: str, dst: str, kind: str = "relates") -> str:
         src = (src or "").strip()
@@ -359,6 +285,192 @@ class ResearchTools:
         if ungrounded:
             return "cite only sources you read; these are not grounded: " + ", ".join(ungrounded[:3])
         return None
+
+
+def _resolve_write_target(
+    store: KnowledgeStore,
+    args: dict,
+) -> tuple[str, KnowledgeNote | None, bool, str | None]:
+    existing_id = str(args.get("id") or "").strip()
+    if existing_id and not is_safe_id(existing_id):
+        return ("", None, False, "ERROR: invalid note id")
+    existing_note = store.read_note(existing_id) if existing_id else None
+    updating = existing_note is not None
+    if existing_id and not updating:
+        existing_id = ""
+    return (existing_id, existing_note, updating, None)
+
+
+def _validate_write_basis(
+    args: dict,
+    existing_note: KnowledgeNote | None,
+) -> tuple[str, str, str, str | None]:
+    note_type = str(
+        args.get("type") or (existing_note.type if existing_note is not None else "note")
+    ).strip().lower()
+    if note_type not in NOTE_TYPES:
+        return ("", "", "", f"ERROR: unknown note type '{note_type}'; use one of {', '.join(NOTE_TYPES)}")
+    title = str(args.get("title") or "").strip()
+    body = str(args.get("body") or "").strip()
+    if not title or not body:
+        return ("", "", "", "ERROR: knowledge_write needs both a title and a body")
+    return (note_type, title, body, None)
+
+
+def _validate_write_ownership(
+    existing_note: KnowledgeNote | None,
+    session_id: str,
+    project: str,
+) -> str | None:
+    if existing_note is not None:
+        if existing_note.session_id and session_id and existing_note.session_id != session_id:
+            return "ERROR: note belongs to another session"
+        if existing_note.project and project and existing_note.project != project:
+            return "ERROR: note belongs to another project"
+    return None
+
+
+def _format_write_problem(problem: str | None) -> str | None:
+    if problem:
+        return problem if problem.startswith("NEEDS_OPEN:") else f"ERROR: {problem}"
+    return None
+
+
+def _prepare_write_sources(
+    tools: ResearchTools,
+    args: dict,
+    existing_note: KnowledgeNote | None,
+    updating: bool,
+    note_type: str,
+) -> tuple[list[str], str | None]:
+    sources = (
+        _as_str_list(args.get("sources"))
+        if "sources" in args
+        else list(existing_note.sources if existing_note is not None else [])
+    )
+    validating_sources = not updating or "sources" in args
+    if note_type == "source":
+        problem = (
+            tools._source_problem(sources)
+            if validating_sources
+            else (None if sources else "a source note must cite the url of a page you opened")
+        )
+        error = _format_write_problem(problem)
+        if error:
+            return ([], error)
+    elif note_type in _CITED_TYPES:
+        problem = (
+            tools._provenance_problem(note_type, sources)
+            if validating_sources
+            else (None if sources else f"a {note_type} note must cite at least one opened source URL")
+        )
+        error = _format_write_problem(problem)
+        if error:
+            return ([], error)
+    return (sources, None)
+
+
+def _prepare_write_relations(
+    args: dict,
+    existing_note: KnowledgeNote | None,
+) -> tuple[list[dict], list[str]]:
+    if "relations" in args:
+        return clean_relations(args.get("relations"))
+    return (
+        list(existing_note.relations if existing_note is not None else []),
+        [],
+    )
+
+
+def _resolve_write_status(args: dict, existing_note: KnowledgeNote | None) -> str:
+    status = str(
+        args.get("status")
+        if "status" in args
+        else (existing_note.status if existing_note is not None else "active")
+    ).strip().lower()
+    if status not in NOTE_STATUSES:
+        status = "active"
+    return status
+
+
+def _build_write_note(
+    args: dict,
+    existing_note: KnowledgeNote | None,
+    existing_id: str,
+    note_type: str,
+    title: str,
+    body: str,
+    sources: list[str],
+    relations: list[dict],
+    tags: list[str],
+    status: str,
+    session_id: str,
+    project: str,
+) -> KnowledgeNote:
+    return KnowledgeNote.create(
+        type=note_type,
+        title=title,
+        body=body,
+        id=existing_id or None,
+        tags=_merge_relation_tags(tags, relations),
+        sources=sources,
+        aliases=(
+            _as_str_list(args.get("aliases"))
+            if "aliases" in args
+            else list(existing_note.aliases if existing_note is not None else [])
+        ),
+        relations=relations,
+        open_questions=(
+            _as_str_list(args.get("open_questions"))
+            if "open_questions" in args
+            else list(existing_note.open_questions if existing_note is not None else [])
+        ),
+        confidence=(
+            _as_float(args.get("confidence"))
+            if "confidence" in args
+            else (existing_note.confidence if existing_note is not None else None)
+        ),
+        status=status,
+        retrieved_at=(
+            _as_opt_str(args.get("retrieved_at"))
+            if "retrieved_at" in args
+            else (existing_note.retrieved_at if existing_note is not None else None)
+        ),
+        valid_until=(
+            _as_opt_str(args.get("valid_until"))
+            if "valid_until" in args
+            else (existing_note.valid_until if existing_note is not None else None)
+        ),
+        session_id=existing_note.session_id if existing_note is not None else session_id,
+        project=existing_note.project if existing_note is not None else project,
+        created=existing_note.created if existing_note is not None else "",
+    )
+
+
+def _finalize_write_note(
+    tools: ResearchTools,
+    note: KnowledgeNote,
+    note_type: str,
+    evidence_preparation: EvidencePreparation,
+    updating: bool,
+    relation_warnings: list[str],
+    rel: str,
+) -> str:
+    if note_type == "source":
+        tools.grounded_ids.add(note.id)
+    if evidence_preparation.items:
+        tools.ledger.add_evidence_items(list(evidence_preparation.items), note_id=note.id)
+    if updating:
+        if note.id not in tools.updated_ids:
+            tools.updated_ids.append(note.id)
+    elif note.id not in tools.created_ids:
+        tools.created_ids.append(note.id)
+    output = f"saved {note_type} note id={note.id} at {rel}"
+    if evidence_preparation.warning:
+        output += f"; WARNING: {evidence_preparation.warning}"
+    if relation_warnings:
+        output += "; WARNING: relations: " + "; ".join(relation_warnings)
+    return output
 
 
 def _as_int(value, default: int) -> int:

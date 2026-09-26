@@ -88,6 +88,21 @@ class ResearchPipelineResult:
         }
 
 
+@dataclass
+class _FollowupOutcome:
+    best: ResearchRunResult
+    best_review: ResearchProofReview | None
+    best_tools: ResearchTools | None
+    plan: ResearchPlan
+    followup_rounds: int
+    total_fresh_sources: int
+    total_new_evidence: int
+    total_attempted_fresh_sources: int
+    total_attempted_new_evidence: int
+    total_merged_evidence: int
+    planner_stop_reason: str
+
+
 class ResearchPipeline:
 
     def __init__(
@@ -140,124 +155,216 @@ class ResearchPipeline:
             total_merged_evidence = len(getattr(best.research_record, "evidence", ())) if getattr(best, "research_record", None) else 0
             planner_stop_reason = self._followup_block_reason(initial, best_review, plan) or "planned"
             if planner_stop_reason == "planned":
-                if best_tools is None:
-                    planner_stop_reason = "missing_iteration_tools"
-                elif self.evidence_followup_runner is None:
-                    planner_stop_reason = "missing_evidence_followup_runner"
-                else:
-                    current_tools = best_tools
-                    max_rounds = self._max_rounds()
-                    for round_index in range(1, max_rounds + 1):
-                        if self.context.should_stop():
-                            planner_stop_reason = "stopped"
-                            break
-                        staged_tools = current_tools.create_staged()
+                outcome = self._drive_followup(
+                    plan=plan,
+                    best=best,
+                    best_review=best_review,
+                    best_tools=best_tools,
+                    followup_rounds=followup_rounds,
+                    total_fresh_sources=total_fresh_sources,
+                    total_new_evidence=total_new_evidence,
+                    total_attempted_fresh_sources=total_attempted_fresh_sources,
+                    total_attempted_new_evidence=total_attempted_new_evidence,
+                    total_merged_evidence=total_merged_evidence,
+                    planner_stop_reason=planner_stop_reason,
+                )
+                best = outcome.best
+                best_review = outcome.best_review
+                best_tools = outcome.best_tools
+                plan = outcome.plan
+                followup_rounds = outcome.followup_rounds
+                total_fresh_sources = outcome.total_fresh_sources
+                total_new_evidence = outcome.total_new_evidence
+                total_attempted_fresh_sources = outcome.total_attempted_fresh_sources
+                total_attempted_new_evidence = outcome.total_attempted_new_evidence
+                total_merged_evidence = outcome.total_merged_evidence
+                planner_stop_reason = outcome.planner_stop_reason
 
-                        executor = PlanExecutor(
-                            config=self.config,
-                            should_stop=self.context.should_stop,
-                        )
-                        try:
-                            material = executor.execute(plan, staged_tools)
-                        except cancellation.TaskCancelled:
-                            raise
-                        except Exception:
-                            planner_stop_reason = "followup_execution_error"
-                            break
-                        planner_stop_reason = material.stop_reason
-                        attempted_sources = len(material.fresh_source_urls) if material.fresh_source_urls else max(0, int(material.fresh_source_count or 0))
-                        total_attempted_fresh_sources += attempted_sources
-                        if not material.has_new_material:
-                            break
-                        try:
-                            followup_result = self.evidence_followup_runner(
-                                tools=staged_tools,
-                                plan=plan,
-                                material=material,
-                                question=self.context.question,
-                                initial_summary=best.summary,
-                                max_context_chars=self.config.max_followup_context_chars,
-                                should_stop=self.context.should_stop,
-                            )
-                        except cancellation.TaskCancelled:
-                            raise
-                        except Exception:
-                            planner_stop_reason = "followup_iteration_error"
-                            break
-                        attempted_ev = max(0, int(followup_result.new_evidence_count or 0))
-                        total_attempted_new_evidence += attempted_ev
-                        if not followup_result.has_new_evidence:
-                            planner_stop_reason = followup_result.stop_reason or "no_evidence_extracted"
-                            break
-                        candidate = merge_evidence_patch(
-                            initial=best,
-                            tools=staged_tools,
-                            material=material,
-                        )
-                        candidate_review = self._review(candidate, require_ledger_record=False)
-                        if followup_selection.selects_candidate(candidate, candidate_review, best, best_review):
-                            try:
-                                best_tools.commit_staged(staged_tools)
-                            except cancellation.TaskCancelled:
-                                raise
-                            except Exception:
-                                planner_stop_reason = "followup_commit_error"
-                                break
-                            best = candidate
-                            best_review = candidate_review
-                            current_tools = best_tools
-                            followup_rounds = round_index
-                            total_fresh_sources += attempted_sources
-                            total_new_evidence += attempted_ev
-                            total_merged_evidence = len(getattr(best.research_record, "evidence", ())) if getattr(best, "research_record", None) else 0
-                            planner_stop_reason = "evidence_merged"
-                        else:
-                            planner_stop_reason = "candidate_not_selected"
-                            break
-                        plan = self._plan(best_review)
-                        self.context.trace.record_plan(plan)
-                        block_reason = self._followup_block_reason(best, best_review, plan)
-                        if block_reason:
-                            planner_stop_reason = block_reason
-                            break
-                    else:
-                        if (
-                            followup_rounds >= max_rounds
-                            and self._followup_block_reason(best, best_review, plan) == ""
-                        ):
-                            planner_stop_reason = "max_followup_rounds"
-
-            ledger_result = self._append_final_record(best)
-            self.context.trace.record_evidence_ledger_write(ledger_result)
-            if self.ledger_event_sink is not None and ledger_result is not None:
-                self.ledger_event_sink(ledger_result)
-            self.context.trace.record_result(best)
-            final_review = self._review(best, require_ledger_record=self.evidence_ledgers is not None)
-            self.context.trace.record_proof_review(final_review)
-            self._record_final_findings(best, final_review)
-            self.context.trace.record_plan(self._plan(final_review))
-            self._record_research_changes(best_tools)
-            output = ResearchPipelineResult(
-                final_result=best,
-                followup_applied=followup_rounds > 0,
-                followup_rounds=followup_rounds,
-                stop_reason=best.stop_reason,
+            return self._finalize_pipeline_result(
+                best,
+                best_tools,
                 planner_stop_reason=planner_stop_reason,
-                fresh_source_count=total_fresh_sources,
-                new_evidence_count=total_new_evidence,
-                final_evidence_count=total_merged_evidence,
-                attempted_fresh_source_count=total_attempted_fresh_sources,
-                attempted_new_evidence_count=total_attempted_new_evidence,
+                followup_rounds=followup_rounds,
+                total_fresh_sources=total_fresh_sources,
+                total_new_evidence=total_new_evidence,
+                total_merged_evidence=total_merged_evidence,
+                total_attempted_fresh_sources=total_attempted_fresh_sources,
+                total_attempted_new_evidence=total_attempted_new_evidence,
             )
-
-            self.context.trace.record_pipeline_result(output)
-            return output
 
         finally:
             close = getattr(search, "close", None)
             if callable(close):
                 with contextlib.suppress(Exception):
                     close()
+
+    def _drive_followup(
+        self,
+        *,
+        plan: ResearchPlan,
+        best: ResearchRunResult,
+        best_review: ResearchProofReview | None,
+        best_tools: ResearchTools | None,
+        followup_rounds: int,
+        total_fresh_sources: int,
+        total_new_evidence: int,
+        total_attempted_fresh_sources: int,
+        total_attempted_new_evidence: int,
+        total_merged_evidence: int,
+        planner_stop_reason: str,
+    ) -> _FollowupOutcome:
+        def _outcome(reason: str) -> _FollowupOutcome:
+            return _FollowupOutcome(
+                best=best,
+                best_review=best_review,
+                best_tools=best_tools,
+                plan=plan,
+                followup_rounds=followup_rounds,
+                total_fresh_sources=total_fresh_sources,
+                total_new_evidence=total_new_evidence,
+                total_attempted_fresh_sources=total_attempted_fresh_sources,
+                total_attempted_new_evidence=total_attempted_new_evidence,
+                total_merged_evidence=total_merged_evidence,
+                planner_stop_reason=reason,
+            )
+
+        if best_tools is None:
+            return _outcome("missing_iteration_tools")
+        if self.evidence_followup_runner is None:
+            return _outcome("missing_evidence_followup_runner")
+        current_tools = best_tools
+        max_rounds = self._max_rounds()
+        for round_index in range(1, max_rounds + 1):
+            if self.context.should_stop():
+                planner_stop_reason = "stopped"
+                break
+            staged_tools = current_tools.create_staged()
+
+            executor = PlanExecutor(
+                config=self.config,
+                should_stop=self.context.should_stop,
+            )
+            try:
+                material = executor.execute(plan, staged_tools)
+            except cancellation.TaskCancelled:
+                raise
+            except Exception:
+                planner_stop_reason = "followup_execution_error"
+                break
+            planner_stop_reason = material.stop_reason
+            attempted_sources = len(material.fresh_source_urls) if material.fresh_source_urls else max(0, int(material.fresh_source_count or 0))
+            total_attempted_fresh_sources += attempted_sources
+            if not material.has_new_material:
+                break
+            try:
+                followup_result = self.evidence_followup_runner(
+                    tools=staged_tools,
+                    plan=plan,
+                    material=material,
+                    question=self.context.question,
+                    initial_summary=best.summary,
+                    max_context_chars=self.config.max_followup_context_chars,
+                    should_stop=self.context.should_stop,
+                )
+            except cancellation.TaskCancelled:
+                raise
+            except Exception:
+                planner_stop_reason = "followup_iteration_error"
+                break
+            attempted_ev = max(0, int(followup_result.new_evidence_count or 0))
+            total_attempted_new_evidence += attempted_ev
+            if not followup_result.has_new_evidence:
+                planner_stop_reason = followup_result.stop_reason or "no_evidence_extracted"
+                break
+            candidate = merge_evidence_patch(
+                initial=best,
+                tools=staged_tools,
+                material=material,
+            )
+            candidate_review = self._review(candidate, require_ledger_record=False)
+            if followup_selection.selects_candidate(candidate, candidate_review, best, best_review):
+                try:
+                    best_tools.commit_staged(staged_tools)
+                except cancellation.TaskCancelled:
+                    raise
+                except Exception:
+                    planner_stop_reason = "followup_commit_error"
+                    break
+                best = candidate
+                best_review = candidate_review
+                current_tools = best_tools
+                followup_rounds = round_index
+                total_fresh_sources += attempted_sources
+                total_new_evidence += attempted_ev
+                total_merged_evidence = len(getattr(best.research_record, "evidence", ())) if getattr(best, "research_record", None) else 0
+                planner_stop_reason = "evidence_merged"
+            else:
+                planner_stop_reason = "candidate_not_selected"
+                break
+            plan = self._plan(best_review)
+            self.context.trace.record_plan(plan)
+            block_reason = self._followup_block_reason(best, best_review, plan)
+            if block_reason:
+                planner_stop_reason = block_reason
+                break
+        else:
+            if (
+                followup_rounds >= max_rounds
+                and self._followup_block_reason(best, best_review, plan) == ""
+            ):
+                planner_stop_reason = "max_followup_rounds"
+        return _FollowupOutcome(
+            best=best,
+            best_review=best_review,
+            best_tools=best_tools,
+            plan=plan,
+            followup_rounds=followup_rounds,
+            total_fresh_sources=total_fresh_sources,
+            total_new_evidence=total_new_evidence,
+            total_attempted_fresh_sources=total_attempted_fresh_sources,
+            total_attempted_new_evidence=total_attempted_new_evidence,
+            total_merged_evidence=total_merged_evidence,
+            planner_stop_reason=planner_stop_reason,
+        )
+
+    def _finalize_pipeline_result(
+        self,
+        best: ResearchRunResult,
+        best_tools: ResearchTools | None,
+        *,
+        planner_stop_reason: str,
+        followup_rounds: int,
+        total_fresh_sources: int,
+        total_new_evidence: int,
+        total_merged_evidence: int,
+        total_attempted_fresh_sources: int,
+        total_attempted_new_evidence: int,
+    ) -> ResearchPipelineResult:
+        ledger_result = self._append_final_record(best)
+        self.context.trace.record_evidence_ledger_write(ledger_result)
+        if self.ledger_event_sink is not None and ledger_result is not None:
+            self.ledger_event_sink(ledger_result)
+        self.context.trace.record_result(best)
+        final_review = self._review(best, require_ledger_record=self.evidence_ledgers is not None)
+        self.context.trace.record_proof_review(final_review)
+        self._record_final_findings(best, final_review)
+        self.context.trace.record_plan(self._plan(final_review))
+        self._record_research_changes(best_tools)
+        output = ResearchPipelineResult(
+            final_result=best,
+            followup_applied=followup_rounds > 0,
+            followup_rounds=followup_rounds,
+            stop_reason=best.stop_reason,
+            planner_stop_reason=planner_stop_reason,
+            fresh_source_count=total_fresh_sources,
+            new_evidence_count=total_new_evidence,
+            final_evidence_count=total_merged_evidence,
+            attempted_fresh_source_count=total_attempted_fresh_sources,
+            attempted_new_evidence_count=total_attempted_new_evidence,
+        )
+
+        self.context.trace.record_pipeline_result(output)
+        return output
 
     def _followup_block_reason(
         self,

@@ -294,128 +294,53 @@ class RuntimeOperationState:
         try:
             if set(payload) - _KNOWN_PAYLOAD_KEYS:
                 raise RuntimeOperationTransitionError("runtime operation state carries unknown keys")
-            session_id = _text(payload.get("session_id"), "session_id", limit=MAX_ID_CHARS)
-            run_id = _text(payload.get("run_id"), "run_id", limit=MAX_ID_CHARS)
-            operation_id = _text(payload.get("operation_id"), "operation_id", limit=MAX_ID_CHARS)
-            lane = _text(payload.get("lane"), "lane", limit=MAX_ID_CHARS)
-            leaf = _text(payload.get("leaf"), "leaf", limit=48)
-            if leaf not in LEAVES:
-                raise RuntimeOperationTransitionError("unknown operation leaf")
-
-            turn_budget = _count(payload.get("turn_budget"), "turn_budget")
-            max_repair_rounds = _count(payload.get("max_repair_rounds"), "max_repair_rounds")
-            turns_used = _count(payload.get("turns_used"), "turns_used", maximum=turn_budget)
-            repair_rounds = _count(
-                payload.get("repair_rounds"),
-                "repair_rounds",
-                maximum=max_repair_rounds,
+            session_id, run_id, operation_id, lane, leaf = _parse_operation_identity(payload)
+            turn_budget, max_repair_rounds, turns_used, repair_rounds, turn, tool_index = (
+                _parse_operation_counts(payload)
             )
-            turn = _count(payload.get("turn"), "turn")
-            tool_index = _count(payload.get("tool_index"), "tool_index")
-
-            project_ref = _text(
-                payload.get("project_ref"),
-                "project_ref",
-                limit=MAX_PROJECT_REF_CHARS,
-                allow_empty=True,
-            )
-            if not _valid_project_ref(project_ref):
-                raise RuntimeOperationTransitionError("project_ref must be project ref")
-            writer_attempt = _count(payload.get("writer_attempt"), "writer_attempt", minimum=1)
-            stop_reason = _text(payload.get("stop_reason"), "stop_reason", allow_empty=True)
-            proof_ref = _text(
-                payload.get("completion_proof_ref"),
-                "completion_proof_ref",
-                limit=MAX_REF_CHARS,
-                allow_empty=True,
-            )
-            proof_status = _text(
-                payload.get("completion_proof_status"),
-                "completion_proof_status",
-                allow_empty=True,
-            )
-            if proof_ref and not _COMPLETION_PROOF_REF_RE.match(proof_ref):
-                raise RuntimeOperationTransitionError("completion_proof_ref must be completion proof ref")
-            if proof_status and proof_status not in _RECORDED_PROOF_STATUSES:
-                raise RuntimeOperationTransitionError("unknown proof status")
-            satisfied = (proof_status == "complete") if proof_ref else None
-            repair_context_ref = _text(
-                payload.get("repair_context_ref"),
-                "repair_context_ref",
-                limit=MAX_REF_CHARS,
-                allow_empty=True,
-            )
-            if repair_context_ref and not _SHA256_REF_RE.match(repair_context_ref):
-                raise RuntimeOperationTransitionError("repair_context_ref must be sha256 digest")
-            driver = _text(payload.get("driver"), "driver", allow_empty=True)
-            _validate_pending_leaf(
+            project_ref, writer_attempt, stop_reason = _parse_operation_project(payload)
+            proof_ref, proof_status, satisfied, repair_context_ref, driver = _parse_operation_proof(
+                payload,
                 leaf=leaf,
-                driver=driver,
                 turn=turn,
                 tool_index=tool_index,
             )
-
-            repair_leaf = _is_repair_leaf(leaf, driver)
-            if repair_leaf:
-                if not repair_context_ref:
-                    raise RuntimeOperationTransitionError("repair leaf requires context ref")
-                if proof_status != "failed":
-                    raise RuntimeOperationTransitionError("repair leaf requires failed proof")
-            if repair_leaf and leaf != LEAF_REPAIR_CONTEXT_ADMITTED and repair_rounds < 1:
-                raise RuntimeOperationTransitionError("repair execution requires committed round")
-
-            if leaf in _PRE_REPAIR_LEAVES or _is_writer_pending_leaf(leaf, driver):
-                if _repair_facts_claimed(repair_rounds, repair_context_ref):
-                    raise RuntimeOperationTransitionError("pre-repair leaf cannot carry repair facts")
-                if _proof_facts_claimed(proof_ref, proof_status, satisfied):
-                    raise RuntimeOperationTransitionError("pre-repair leaf cannot carry proof facts")
-            elif leaf in _POST_PROOF_BASE_LEAVES or repair_leaf:
-                if not _proof_facts_complete(proof_ref, proof_status, satisfied):
-                    raise RuntimeOperationTransitionError("post-proof leaf requires proof facts")
-                if leaf == LEAF_COMPLETION_PROOF_RECORDED and _repair_facts_claimed(
-                    repair_rounds,
-                    repair_context_ref,
-                ) and (not repair_context_ref or repair_rounds < 1):
-                    raise RuntimeOperationTransitionError("re-proof carries partial repair record")
-            elif leaf == LEAF_TERMINAL:
-                proof_complete = _proof_facts_complete(proof_ref, proof_status, satisfied)
-                if _proof_facts_claimed(proof_ref, proof_status, satisfied) and not proof_complete:
-                    raise RuntimeOperationTransitionError("terminal carries incomplete proof facts")
-                if _repair_facts_claimed(repair_rounds, repair_context_ref) and not proof_complete:
-                    raise RuntimeOperationTransitionError("terminal carries repair facts without proof")
-                if repair_rounds > 0 and not repair_context_ref:
-                    raise RuntimeOperationTransitionError("terminal carries rounds without context")
-                if repair_context_ref and repair_rounds == 0 and proof_status != "failed":
-                    raise RuntimeOperationTransitionError("terminal admitted context requires failed proof")
-
-            blocked_reason = _text(payload.get("blocked_reason"), "blocked_reason", allow_empty=True)
-            if blocked_reason and leaf not in _VERDICT_LEAVES:
-                raise RuntimeOperationTransitionError("blocked verdict is not valid for leaf")
-            if blocked_reason and not _blocked_verdict_facts_supported(
-                proof_ref,
-                proof_status,
-                satisfied,
-            ):
-                raise RuntimeOperationTransitionError("blocked verdict requires failed or blocked proof")
-            if leaf == LEAF_ACCEPTED and (writer_attempt != 1 or turns_used or stop_reason):
-                raise RuntimeOperationTransitionError("accepted must be fresh")
-            if leaf == LEAF_WRITER_RUNNING and (turns_used or stop_reason):
-                raise RuntimeOperationTransitionError("writer_running cannot carry settled facts")
-
-            terminal = None
-            if leaf == LEAF_TERMINAL:
-                terminal = RuntimeOperationTerminal.from_payload(payload.get("terminal"))
-                if terminal is None:
-                    raise RuntimeOperationTransitionError("terminal leaf requires terminal payload")
-                if terminal.max_turns != turn_budget:
-                    raise RuntimeOperationTransitionError("terminal max_turns must match budget")
-                if terminal.turns > terminal.max_turns:
-                    raise RuntimeOperationTransitionError("terminal turns exceeds max_turns")
-                if blocked_reason != terminal.blocked_reason:
-                    raise RuntimeOperationTransitionError("terminal blocked reason mismatch")
-            elif "terminal" in payload:
-                raise RuntimeOperationTransitionError("non-terminal must not carry terminal")
-
+            repair_leaf = _require_repair_leaf_consistent(
+                leaf=leaf,
+                driver=driver,
+                repair_context_ref=repair_context_ref,
+                proof_status=proof_status,
+                repair_rounds=repair_rounds,
+            )
+            _require_proof_stage_consistent(
+                leaf=leaf,
+                driver=driver,
+                repair_leaf=repair_leaf,
+                proof_ref=proof_ref,
+                proof_status=proof_status,
+                satisfied=satisfied,
+                repair_rounds=repair_rounds,
+                repair_context_ref=repair_context_ref,
+            )
+            blocked_reason = _parse_operation_verdict(
+                payload,
+                leaf=leaf,
+                proof_ref=proof_ref,
+                proof_status=proof_status,
+                satisfied=satisfied,
+            )
+            _require_fresh_leaf_facts(
+                leaf=leaf,
+                writer_attempt=writer_attempt,
+                turns_used=turns_used,
+                stop_reason=stop_reason,
+            )
+            terminal = _parse_operation_terminal(
+                payload,
+                leaf=leaf,
+                turn_budget=turn_budget,
+                blocked_reason=blocked_reason,
+            )
             return cls(
                 session_id=session_id,
                 run_id=run_id,
@@ -444,6 +369,197 @@ class RuntimeOperationState:
             )
         except RuntimeOperationTransitionError:
             return None
+
+
+def _parse_operation_identity(payload: dict[str, object]) -> tuple[str, str, str, str, str]:
+    session_id = _text(payload.get("session_id"), "session_id", limit=MAX_ID_CHARS)
+    run_id = _text(payload.get("run_id"), "run_id", limit=MAX_ID_CHARS)
+    operation_id = _text(payload.get("operation_id"), "operation_id", limit=MAX_ID_CHARS)
+    lane = _text(payload.get("lane"), "lane", limit=MAX_ID_CHARS)
+    leaf = _text(payload.get("leaf"), "leaf", limit=48)
+    if leaf not in LEAVES:
+        raise RuntimeOperationTransitionError("unknown operation leaf")
+    return session_id, run_id, operation_id, lane, leaf
+
+
+def _parse_operation_counts(payload: dict[str, object]) -> tuple[int, int, int, int, int, int]:
+    turn_budget = _count(payload.get("turn_budget"), "turn_budget")
+    max_repair_rounds = _count(payload.get("max_repair_rounds"), "max_repair_rounds")
+    turns_used = _count(payload.get("turns_used"), "turns_used", maximum=turn_budget)
+    repair_rounds = _count(
+        payload.get("repair_rounds"),
+        "repair_rounds",
+        maximum=max_repair_rounds,
+    )
+    turn = _count(payload.get("turn"), "turn")
+    tool_index = _count(payload.get("tool_index"), "tool_index")
+    return turn_budget, max_repair_rounds, turns_used, repair_rounds, turn, tool_index
+
+
+def _parse_operation_project(payload: dict[str, object]) -> tuple[str, int, str]:
+    project_ref = _text(
+        payload.get("project_ref"),
+        "project_ref",
+        limit=MAX_PROJECT_REF_CHARS,
+        allow_empty=True,
+    )
+    if not _valid_project_ref(project_ref):
+        raise RuntimeOperationTransitionError("project_ref must be project ref")
+    writer_attempt = _count(payload.get("writer_attempt"), "writer_attempt", minimum=1)
+    stop_reason = _text(payload.get("stop_reason"), "stop_reason", allow_empty=True)
+    return project_ref, writer_attempt, stop_reason
+
+
+def _parse_operation_proof(
+    payload: dict[str, object],
+    *,
+    leaf: str,
+    turn: int,
+    tool_index: int,
+) -> tuple[str, str, object, str, str]:
+    proof_ref = _text(
+        payload.get("completion_proof_ref"),
+        "completion_proof_ref",
+        limit=MAX_REF_CHARS,
+        allow_empty=True,
+    )
+    proof_status = _text(
+        payload.get("completion_proof_status"),
+        "completion_proof_status",
+        allow_empty=True,
+    )
+    if proof_ref and not _COMPLETION_PROOF_REF_RE.match(proof_ref):
+        raise RuntimeOperationTransitionError("completion_proof_ref must be completion proof ref")
+    if proof_status and proof_status not in _RECORDED_PROOF_STATUSES:
+        raise RuntimeOperationTransitionError("unknown proof status")
+    satisfied = (proof_status == "complete") if proof_ref else None
+    repair_context_ref = _text(
+        payload.get("repair_context_ref"),
+        "repair_context_ref",
+        limit=MAX_REF_CHARS,
+        allow_empty=True,
+    )
+    if repair_context_ref and not _SHA256_REF_RE.match(repair_context_ref):
+        raise RuntimeOperationTransitionError("repair_context_ref must be sha256 digest")
+    driver = _text(payload.get("driver"), "driver", allow_empty=True)
+    _validate_pending_leaf(
+        leaf=leaf,
+        driver=driver,
+        turn=turn,
+        tool_index=tool_index,
+    )
+    return proof_ref, proof_status, satisfied, repair_context_ref, driver
+
+
+def _require_repair_leaf_consistent(
+    *,
+    leaf: str,
+    driver: str,
+    repair_context_ref: str,
+    proof_status: str,
+    repair_rounds: int,
+) -> bool:
+    repair_leaf = _is_repair_leaf(leaf, driver)
+    if repair_leaf:
+        if not repair_context_ref:
+            raise RuntimeOperationTransitionError("repair leaf requires context ref")
+        if proof_status != "failed":
+            raise RuntimeOperationTransitionError("repair leaf requires failed proof")
+    if repair_leaf and leaf != LEAF_REPAIR_CONTEXT_ADMITTED and repair_rounds < 1:
+        raise RuntimeOperationTransitionError("repair execution requires committed round")
+    return repair_leaf
+
+
+def _require_proof_stage_consistent(
+    *,
+    leaf: str,
+    driver: str,
+    repair_leaf: bool,
+    proof_ref: str,
+    proof_status: str,
+    satisfied: object,
+    repair_rounds: int,
+    repair_context_ref: str,
+) -> None:
+    if leaf in _PRE_REPAIR_LEAVES or _is_writer_pending_leaf(leaf, driver):
+        if _repair_facts_claimed(repair_rounds, repair_context_ref):
+            raise RuntimeOperationTransitionError("pre-repair leaf cannot carry repair facts")
+        if _proof_facts_claimed(proof_ref, proof_status, satisfied):
+            raise RuntimeOperationTransitionError("pre-repair leaf cannot carry proof facts")
+    elif leaf in _POST_PROOF_BASE_LEAVES or repair_leaf:
+        if not _proof_facts_complete(proof_ref, proof_status, satisfied):
+            raise RuntimeOperationTransitionError("post-proof leaf requires proof facts")
+        if leaf == LEAF_COMPLETION_PROOF_RECORDED and _repair_facts_claimed(
+            repair_rounds,
+            repair_context_ref,
+        ) and (not repair_context_ref or repair_rounds < 1):
+            raise RuntimeOperationTransitionError("re-proof carries partial repair record")
+    elif leaf == LEAF_TERMINAL:
+        proof_complete = _proof_facts_complete(proof_ref, proof_status, satisfied)
+        if _proof_facts_claimed(proof_ref, proof_status, satisfied) and not proof_complete:
+            raise RuntimeOperationTransitionError("terminal carries incomplete proof facts")
+        if _repair_facts_claimed(repair_rounds, repair_context_ref) and not proof_complete:
+            raise RuntimeOperationTransitionError("terminal carries repair facts without proof")
+        if repair_rounds > 0 and not repair_context_ref:
+            raise RuntimeOperationTransitionError("terminal carries rounds without context")
+        if repair_context_ref and repair_rounds == 0 and proof_status != "failed":
+            raise RuntimeOperationTransitionError("terminal admitted context requires failed proof")
+
+
+def _parse_operation_verdict(
+    payload: dict[str, object],
+    *,
+    leaf: str,
+    proof_ref: str,
+    proof_status: str,
+    satisfied: object,
+) -> str:
+    blocked_reason = _text(payload.get("blocked_reason"), "blocked_reason", allow_empty=True)
+    if blocked_reason and leaf not in _VERDICT_LEAVES:
+        raise RuntimeOperationTransitionError("blocked verdict is not valid for leaf")
+    if blocked_reason and not _blocked_verdict_facts_supported(
+        proof_ref,
+        proof_status,
+        satisfied,
+    ):
+        raise RuntimeOperationTransitionError("blocked verdict requires failed or blocked proof")
+    return blocked_reason
+
+
+def _require_fresh_leaf_facts(
+    *,
+    leaf: str,
+    writer_attempt: int,
+    turns_used: int,
+    stop_reason: str,
+) -> None:
+    if leaf == LEAF_ACCEPTED and (writer_attempt != 1 or turns_used or stop_reason):
+        raise RuntimeOperationTransitionError("accepted must be fresh")
+    if leaf == LEAF_WRITER_RUNNING and (turns_used or stop_reason):
+        raise RuntimeOperationTransitionError("writer_running cannot carry settled facts")
+
+
+def _parse_operation_terminal(
+    payload: dict[str, object],
+    *,
+    leaf: str,
+    turn_budget: int,
+    blocked_reason: str,
+) -> RuntimeOperationTerminal | None:
+    terminal = None
+    if leaf == LEAF_TERMINAL:
+        terminal = RuntimeOperationTerminal.from_payload(payload.get("terminal"))
+        if terminal is None:
+            raise RuntimeOperationTransitionError("terminal leaf requires terminal payload")
+        if terminal.max_turns != turn_budget:
+            raise RuntimeOperationTransitionError("terminal max_turns must match budget")
+        if terminal.turns > terminal.max_turns:
+            raise RuntimeOperationTransitionError("terminal turns exceeds max_turns")
+        if blocked_reason != terminal.blocked_reason:
+            raise RuntimeOperationTransitionError("terminal blocked reason mismatch")
+    elif "terminal" in payload:
+        raise RuntimeOperationTransitionError("non-terminal must not carry terminal")
+    return terminal
 
 
 class RuntimeOperationStore:

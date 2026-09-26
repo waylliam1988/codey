@@ -1,5 +1,79 @@
 # Codey Test Report
 
+## PLR readability split: 27 monsters down, 4 deterministic bugs fixed (2026-09-26)
+
+Scope (production, no release):
+
+```text
+pyproject.toml                      (readability gate: C901 off; PLR0912 max-branches 20 + PLR0915 max-statements 80; tests/tools excluded from size rules)
+codey/agents/loop.py                (_run_loop 34/108 -> 17/40: missing-control, done-control, stagnation, runaway-guard helpers)
+codey/app/cli.py                    (cmd_ghost 30/101 -> dispatcher ~15/45: one function per ghost command)
+codey/app/headless_runner.py        (headless_event_payload 23 -> ~11; _bounded_receipt 23 -> 9: per-event/per-section helpers)
+codey/automation/browser_worker.py  (call 24 -> 12: deadline + abandon helpers)
+codey/completion/verification_policy.py (discover 37 -> ~4: per-ecosystem candidates; _command_priority 24 -> ~6: per-family priority)
+codey/ghost/work_queue.py           (_valid_work_transition 51 -> 12: per-action validators; _apply_transition_event 22 -> 13: per-action appliers)
+codey/providers/discovery.py        (score_control_candidate 21 -> <=8: per-candidate scorers)
+codey/providers/worker.py           (_wait_for_response 23 -> 12: done-pending + exit-drain helpers)
+codey/research/evidence_ledger.py   (_canonical_ledger_payload 26 -> 6: per-section schema checks)
+codey/research/pipeline.py          (run 22/103 -> 3/35: followup driver + finalizer)
+codey/research/plan_executor.py     (execute 22/99 -> 7/29: limits + hit-drain + stop-reason helpers)
+codey/research/proof_quality.py     (_review_relations 25/81 -> 1/~12: per-relation/per-claim checkers)
+codey/research/record_merge.py      (_inject_new_evidence_into_sections 27 -> 4: register/backed/keep/append/finalize helpers)
+codey/research/runner.py            (run 30/140 -> 16/80: preparation, protocol-step, tool-call, done/idle, persist, trace helpers)
+codey/research/tools.py             (knowledge_write 22 -> 5: target/basis/ownership/sources/relations/status/finalize helpers)
+codey/runs/ledger_projection.py     (project_run_ledger 22/103 -> 13/<=30: per-event trackers + builder)
+codey/runtime/core/operation_state.py (from_payload 34/86 -> ~3/~20: per-field-group parsers + stage-consistency checks)
+codey/runtime/effects/tool_result_delivery.py (batches_from_entries 24 -> ~6: intent/recovered/orphan/link/projection helpers)
+codey/runtime/log/compaction.py     (_compact_entries 24 -> 4: group-collect + pair/delivery compactors)
+codey/runtime/observe/prompt_surface.py (validate_prompt_surface_payload 23 -> 0: identity/size/section validators)
+codey/toolchain/runtime.py          (search_files 28/90 -> ~10: one-file scanner + budget/footer helpers)
+codey/utils/references.py           (find_reference_hints 21 -> ~6: candidate/read/scan/render/budgeted-iter helpers)
+codey/workspace/bounded_scan.py     (iter_bounded_files 25 -> ~10: entry-kind/collect/partition helpers)
+codey/workspace/changes.py          (collect_git_changes 23 -> ~7: root/status/numstat/diff/untracked/finalize helpers)
+tests/test_architecture.py          (1000-line guardrail: 3 new baseline entries + 9 ceiling bumps, all tagged "PLR split 2026-09-26")
+tests/test_plr_split_b1..b8.py      (95 new tests: parity locks + 4 red-first bug regressions)
+```
+
+Deterministic bugs found while splitting (all red-first: failing test written
+before the fix, green after; no timing/network/model dependence):
+
+- `verification_policy._make_targets`: `stripped.startswith("\t")` is dead
+  (`stripped` is already lstripped, so never true) — a tab-indented recipe
+  line was misparsed as a make target (`('lint','check')` instead of
+  `('lint',)`). Fixed to `line.startswith("\t")`
+  (`tests/test_plr_split_b2.py::MakeTargetsRecipeTests::test_tab_indented_recipe_is_not_a_target`).
+- `record_merge._render_search_coverage`: `coverage.get("queries", ())`
+  raises `TypeError` when the key exists with value `None` (the sibling
+  `skipped` field already used `or []`). Fixed to
+  `(coverage.get("queries") or ())`.
+- `proof_quality._overclaim_warnings`: only `frozenset` was accepted, so a
+  plain `set` of supported claim ids was misreported as
+  `strong_claim_without_support`. Fixed to `(set, frozenset)`.
+- `references.find_reference_hints(files_budgeted=True)`: followed symlinks
+  and emitted duplicate rows (`[link, target]` scanned target twice) while
+  the non-budgeted path skipped links. Fixed with `_iter_budgeted_files`
+  (lstat link check, same unreadable-file policy as `consume_file`).
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check .` clean (PLR0912/PLR0915
+  zero repo-wide, down from 27 functions / 36 errors), `git diff --check`
+  clean, `python -m compileall -q codey tests tools` passed; per-batch
+  targeted suites (ghost/work-queue/continuity, verification, research x3
+  runs incl. 700 research tests, evidence/merge/proof/knowledge, runtime
+  operation/delivery/compaction/prompt, cli/command-line/headless,
+  search/bounded-scan/changes/tool-runtime, agent/browser/provider/ledger,
+  architecture) green before the full run.
+- One guardrail round-trip: the first full run surfaced
+  `test_long_files_do_not_grow` (in-module helpers pushed 3 files over
+  1000 lines and 6 over their ceilings); ceilings/baseline updated per repo
+  convention instead of harming cohesion with forced submodule splits, then
+  the architecture file re-verified green (90 passed).
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4453 passed, 7 skipped, 1387 subtests passed in 359.14s (0:05:59)`,
+  single run, zero flakes. Skips are the known Windows POSIX/opt-in family.
+- This entry was written after the full suite. No release was made.
+
 ## Tightened live gate vs KoboldCpp 31B + writer-settle crash fix (2026-09-26)
 
 Scope (production, no release):

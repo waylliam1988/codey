@@ -358,26 +358,229 @@ def _handle_protocol_error(
     return corrected
 
 
+def _deliver_turn(
+    session: AgentLoopSession,
+    turn_state: TurnState,
+    turn: int,
+    reminder: str = "",
+) -> str | object:
+    from codey.protocols.native_openai import NativeToolResultError
+    from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryError
+
+    try:
+        if reminder:
+            return deliver_turn_results(session, turn_state, turn, protocol_reminder=reminder)
+        return deliver_turn_results(session, turn_state, turn)
+    except (NativeToolResultError, ToolResultDeliveryError) as exc:
+        emit(session, RunEvent.status(f"[agent] native delivery failed: {exc}; stopping."))
+        raise _NativeDeliveryStop(str(exc)) from exc
+
+
+def _check_runaway_guard(session: AgentLoopSession) -> tuple[str, str]:
+    from codey.agents.runaway_guard import should_block_or_remind
+
+    try:
+        guard = should_block_or_remind(session.stagnation.attempts)
+    except Exception as exc:
+        emit(session, RunEvent.status(f"[agent] runaway guard failed: {exc}"))
+        guard = None
+    guard_reason = ""
+    guard_stop = ""
+    if guard is not None and guard.block:
+        emit(session, RunEvent.status(f"[agent] runaway guard: {guard.reason}"))
+        if guard.action == "stop":
+            guard_stop = guard.reason
+        else:
+            guard_reason = guard.reason
+    return guard_reason, guard_stop
+
+
+def _handle_missing_control(
+    session: AgentLoopSession,
+    turn_state: TurnState,
+    turn: int,
+    guard_reason: str,
+) -> RunResult | str | object:
+    if turn_state.results:
+        emit(
+            session,
+            RunEvent.status(
+                "[agent] reply had actions but no control element — returning results to model with protocol reminder."
+            ),
+        )
+        if turn_state.made_progress:
+            session.stagnation.count = 0
+        else:
+            session.stagnation.count += 1
+            if session.stagnation.count >= session.config.stagnant_turns:
+                msg = (
+                    f"stopped after {session.config.stagnant_turns} turns "
+                    "without file writes or new tool information"
+                )
+                emit(
+                    session,
+                    RunEvent.status(
+                        f"[agent] no progress for {session.config.stagnant_turns} turns, stopping."
+                    ),
+                )
+                return _finish(session, msg, "no_progress", turn)
+
+        if turn >= session.config.max_turns:
+            return _finish_max_turns(session, turn)
+
+        protocol_reminder = "\n\nNote: Please remember to include a <continue> or <done> control element in your response."
+        if guard_reason:
+            protocol_reminder = f"{protocol_reminder}\n\n{guard_reason}"
+        try:
+            reply = _deliver_turn(session, turn_state, turn, protocol_reminder)
+        except _NativeDeliveryStop as exc:
+            return _finish(session, str(exc), "protocol", turn)
+        _report_reply(session, turn + 1, reply)
+        return reply
+
+    session.stagnation.count += 1
+    session.trace.call(
+        "record_protocol_error",
+        PROTOCOL_NO_JSON,
+        phase="writer",
+        turn=turn,
+    )
+    if session.stagnation.count >= session.config.stagnant_turns:
+        msg = (
+            f"stopped after {session.config.stagnant_turns} turns "
+            "without valid tool progress"
+        )
+        emit(session, RunEvent.status(f"[agent] {msg}."))
+        return _finish(session, msg, "no_progress", turn)
+    emit(
+        session,
+        RunEvent.status(
+            "[agent] reply contained no valid JSON tool call; nudging the model."
+        ),
+    )
+    session.trace.call(
+        "record_protocol_repair_prompt",
+        PROTOCOL_NO_JSON,
+        phase="writer",
+        turn=turn,
+    )
+    repair = protocol_repair_prompt(
+        session.config.codec,
+        ToolPlan(
+            calls=[],
+            control=None,
+            protocol_error="no JSON tool call found",
+            protocol_error_kind=PROTOCOL_NO_JSON,
+        ),
+    )
+    reply = _send_followup(session, repair, restart_request=repair, include_ghost_directive=False)
+    _report_reply(session, turn + 1, reply, "(after nudge)")
+    return reply
+
+
+def _handle_done_control(
+    session: AgentLoopSession,
+    calls: object,
+    control: object,
+    turn: int,
+) -> RunResult | str | object | None:
+    needs_followup = any(call.name in INFORMATION_TOOL_NAMES for call in calls)  # type: ignore[union-attr]
+    if needs_followup:
+        emit(
+            session,
+            RunEvent.status(
+                "[agent] `done` came with info action — treating as continue."
+            ),
+        )
+        return None
+    if (
+        session.config.verification_required
+        and session.progress.wrote_files
+        and not verification_attempted_after_latest_edit(session)
+    ):
+        emit(
+            session,
+            RunEvent.status(
+                "[agent] verification was requested; asking model to run a local check before done."
+            ),
+        )
+        if turn >= session.config.max_turns:
+            return _finish_max_turns(
+                session, turn, "verification required before done"
+            )
+        reminder = requested_verification_reminder(session)
+        reply = _send_followup(session, reminder, restart_request=reminder)
+        _report_reply(session, turn + 1, reply, "(verification reminder)")
+        return reply
+    candidate = selected_verification_candidate(session)
+    trusted_green = verification_is_fresh(session, candidate)
+    if candidate is not None:
+        session.verification.checks_passed = trusted_green
+    if (
+        not session.config.verification_required
+        and not session.config.verification_forbidden
+        and candidate is not None
+        and not trusted_green
+        and session.verification.default_reminded_epoch
+        != session.verification.edit_epoch
+    ):
+        session.verification.default_reminded_epoch = (
+            session.verification.edit_epoch
+        )
+        emit(
+            session,
+            RunEvent.status(
+                "[agent] code changed; asking model to handle the trusted check."
+            ),
+        )
+        if turn >= session.config.max_turns:
+            return _finish_max_turns(
+                session, turn, "verification did not pass"
+            )
+        reminder = default_candidate_reminder(candidate)
+        reply = _send_followup(session, reminder, restart_request=reminder)
+        _report_reply(
+            session,
+            turn + 1,
+            reply,
+            "(default verification reminder)",
+        )
+        return reply
+    emit(session, RunEvent.status(f"[agent] DONE: {control.body}"))  # type: ignore[union-attr]
+    return _finish(session, control.body, "done", turn)  # type: ignore[union-attr]
+
+
+def _track_continue_progress(
+    session: AgentLoopSession,
+    turn_state: TurnState,
+    control: object,
+    turn: int,
+) -> RunResult | None:
+    if turn_state.made_progress:
+        session.stagnation.count = 0
+        return None
+    session.stagnation.count += 1
+    if session.stagnation.count >= session.config.stagnant_turns:
+        msg = (
+            control.body  # type: ignore[union-attr]
+            or f"stopped after {session.config.stagnant_turns} turns without file writes or new tool information"
+        )
+        emit(
+            session,
+            RunEvent.status(
+                f"[agent] no progress for {session.config.stagnant_turns} turns, stopping."
+            ),
+        )
+        return _finish(session, msg, "no_progress", turn)
+    return None
+
+
 def _run_loop(
     session: AgentLoopSession,
     reply: str | object,
     *,
     start_turn: int = 1,
 ) -> RunResult:
-    from codey.agents.runaway_guard import should_block_or_remind
-
-    def _deliver(turn_state: TurnState, turn: int, reminder: str = "") -> str | object:
-        from codey.protocols.native_openai import NativeToolResultError
-        from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryError
-
-        try:
-            if reminder:
-                return deliver_turn_results(session, turn_state, turn, protocol_reminder=reminder)
-            return deliver_turn_results(session, turn_state, turn)
-        except (NativeToolResultError, ToolResultDeliveryError) as exc:
-            emit(session, RunEvent.status(f"[agent] native delivery failed: {exc}; stopping."))
-            raise _NativeDeliveryStop(str(exc)) from exc
-
     _report_reply(session, start_turn, reply)
     for turn in range(start_turn, session.config.max_turns + 1):
         if session.request.stop_flag is not None and session.request.stop_flag.is_set():
@@ -412,19 +615,7 @@ def _run_loop(
                 turn,
             )
         turn_state = turn_result.turn_state
-        try:
-            guard = should_block_or_remind(session.stagnation.attempts)
-        except Exception as exc:
-            emit(session, RunEvent.status(f"[agent] runaway guard failed: {exc}"))
-            guard = None
-        guard_reason = ""
-        guard_stop = ""
-        if guard is not None and guard.block:
-            emit(session, RunEvent.status(f"[agent] runaway guard: {guard.reason}"))
-            if guard.action == "stop":
-                guard_stop = guard.reason
-            else:
-                guard_reason = guard.reason
+        guard_reason, guard_stop = _check_runaway_guard(session)
         if guard_stop:
             return _finish(session, guard_stop, "no_progress", turn)
 
@@ -434,170 +625,31 @@ def _run_loop(
             )
 
         if control is None:
-            if turn_state.results:
-                emit(
-                    session,
-                    RunEvent.status(
-                        "[agent] reply had actions but no control element — returning results to model with protocol reminder."
-                    ),
-                )
-                if turn_state.made_progress:
-                    session.stagnation.count = 0
-                else:
-                    session.stagnation.count += 1
-                    if session.stagnation.count >= session.config.stagnant_turns:
-                        msg = (
-                            f"stopped after {session.config.stagnant_turns} turns "
-                            "without file writes or new tool information"
-                        )
-                        emit(
-                            session,
-                            RunEvent.status(
-                                f"[agent] no progress for {session.config.stagnant_turns} turns, stopping."
-                            ),
-                        )
-                        return _finish(session, msg, "no_progress", turn)
-
-                if turn >= session.config.max_turns:
-                    return _finish_max_turns(session, turn)
-
-                protocol_reminder = "\n\nNote: Please remember to include a <continue> or <done> control element in your response."
-                if guard_reason:
-                    protocol_reminder = f"{protocol_reminder}\n\n{guard_reason}"
-                try:
-                    reply = _deliver(turn_state, turn, protocol_reminder)
-                except _NativeDeliveryStop as exc:
-                    return _finish(session, str(exc), "protocol", turn)
-                _report_reply(session, turn + 1, reply)
-                continue
-
-            session.stagnation.count += 1
-            session.trace.call(
-                "record_protocol_error",
-                PROTOCOL_NO_JSON,
-                phase="writer",
-                turn=turn,
-            )
-            if session.stagnation.count >= session.config.stagnant_turns:
-                msg = (
-                    f"stopped after {session.config.stagnant_turns} turns "
-                    "without valid tool progress"
-                )
-                emit(session, RunEvent.status(f"[agent] {msg}."))
-                return _finish(session, msg, "no_progress", turn)
-            emit(
-                session,
-                RunEvent.status(
-                    "[agent] reply contained no valid JSON tool call; nudging the model."
-                ),
-            )
-            session.trace.call(
-                "record_protocol_repair_prompt",
-                PROTOCOL_NO_JSON,
-                phase="writer",
-                turn=turn,
-            )
-            repair = protocol_repair_prompt(
-                session.config.codec,
-                ToolPlan(
-                    calls=[],
-                    control=None,
-                    protocol_error="no JSON tool call found",
-                    protocol_error_kind=PROTOCOL_NO_JSON,
-                ),
-            )
-            reply = _send_followup(session, repair, restart_request=repair, include_ghost_directive=False)
-            _report_reply(session, turn + 1, reply, "(after nudge)")
+            outcome = _handle_missing_control(session, turn_state, turn, guard_reason)
+            if isinstance(outcome, RunResult):
+                return outcome
+            reply = outcome
             continue
 
         if control.kind == "done":
-            needs_followup = any(call.name in INFORMATION_TOOL_NAMES for call in calls)
-            if needs_followup:
-                emit(
-                    session,
-                    RunEvent.status(
-                        "[agent] `done` came with info action — treating as continue."
-                    ),
-                )
-            elif (
-                session.config.verification_required
-                and session.progress.wrote_files
-                and not verification_attempted_after_latest_edit(session)
-            ):
-                emit(
-                    session,
-                    RunEvent.status(
-                        "[agent] verification was requested; asking model to run a local check before done."
-                    ),
-                )
-                if turn >= session.config.max_turns:
-                    return _finish_max_turns(
-                        session, turn, "verification required before done"
-                    )
-                reminder = requested_verification_reminder(session)
-                reply = _send_followup(session, reminder, restart_request=reminder)
-                _report_reply(session, turn + 1, reply, "(verification reminder)")
-                continue
+            done_outcome = _handle_done_control(session, calls, control, turn)
+            if done_outcome is None:
+                pass
+            elif isinstance(done_outcome, RunResult):
+                return done_outcome
             else:
-                candidate = selected_verification_candidate(session)
-                trusted_green = verification_is_fresh(session, candidate)
-                if candidate is not None:
-                    session.verification.checks_passed = trusted_green
-                if (
-                    not session.config.verification_required
-                    and not session.config.verification_forbidden
-                    and candidate is not None
-                    and not trusted_green
-                    and session.verification.default_reminded_epoch
-                    != session.verification.edit_epoch
-                ):
-                    session.verification.default_reminded_epoch = (
-                        session.verification.edit_epoch
-                    )
-                    emit(
-                        session,
-                        RunEvent.status(
-                            "[agent] code changed; asking model to handle the trusted check."
-                        ),
-                    )
-                    if turn >= session.config.max_turns:
-                        return _finish_max_turns(
-                            session, turn, "verification did not pass"
-                        )
-                    reminder = default_candidate_reminder(candidate)
-                    reply = _send_followup(session, reminder, restart_request=reminder)
-                    _report_reply(
-                        session,
-                        turn + 1,
-                        reply,
-                        "(default verification reminder)",
-                    )
-                    continue
-                emit(session, RunEvent.status(f"[agent] DONE: {control.body}"))
-                return _finish(session, control.body, "done", turn)
+                reply = done_outcome
+                continue
 
-        if turn_state.made_progress:
-            session.stagnation.count = 0
-        else:
-            session.stagnation.count += 1
-            if session.stagnation.count >= session.config.stagnant_turns:
-                msg = (
-                    control.body
-                    or f"stopped after {session.config.stagnant_turns} turns without file writes or new tool information"
-                )
-                emit(
-                    session,
-                    RunEvent.status(
-                        f"[agent] no progress for {session.config.stagnant_turns} turns, stopping."
-                    ),
-                )
-                return _finish(session, msg, "no_progress", turn)
+        stagnation_stop = _track_continue_progress(session, turn_state, control, turn)
+        if stagnation_stop is not None:
+            return stagnation_stop
 
         if turn >= session.config.max_turns:
             return _finish_max_turns(session, turn, control.body or "")
 
         try:
-            reply = _deliver(turn_state, turn, f"\n\n{guard_reason}" if guard_reason else "")
+            reply = _deliver_turn(session, turn_state, turn, f"\n\n{guard_reason}" if guard_reason else "")
         except _NativeDeliveryStop as exc:
             return _finish(session, str(exc), "protocol", turn)
         _report_reply(session, turn + 1, reply)
