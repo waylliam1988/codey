@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.providers.diagnostics import ProviderActionError
+from codey.providers.diagnostics import FAILURE_SUBMISSION_UNCERTAIN, ProviderActionError
 from codey.providers.worker import WorkerChatProvider, _PendingRequest, _WorkerSession
 
 
@@ -47,6 +47,7 @@ class WorkerLocalFixTests(unittest.TestCase):
         with self.assertRaises(ProviderActionError) as raised:
             provider._await_write(session, pending, _deadline())
         self.assertIn("stdin is unavailable", raised.exception.failure.message)
+        self.assertEqual(raised.exception.failure.kind, FAILURE_SUBMISSION_UNCERTAIN)
         with session.lock:
             self.assertIsNone(session.pending)
 

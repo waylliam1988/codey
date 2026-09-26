@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from collections.abc import Callable
@@ -343,13 +344,29 @@ def restore_changes_response(ctx: Any, body: dict) -> tuple[int, dict]:
     key = str(Path(project).expanduser().resolve())
     if ctx.has_active_run_for_project(key):
         return 409, {"ok": False, "error": "run in progress"}
-    tracker = ctx.change_tracker_for(
-        key,
-        persistent=not is_git_repository(key),
-    )
-    if not tracker.has_snapshots:
-        tracker = None
-    return restore_snapshot_changes(project, tracker, clean_paths)
+    # Single-writer promise covers tasks and user restore: hold the same
+    # project writer lease from reading the recovery basis to finishing
+    # file writes. Cross-process contention fails fast with 409.
+    acquired = False
+    try:
+        acquire = getattr(ctx, "acquire_project_writer", None)
+        if callable(acquire):
+            acquired = bool(acquire(key))
+            if not acquired:
+                return 409, {"ok": False, "error": "project writer busy"}
+        tracker = ctx.change_tracker_for(
+            key,
+            persistent=not is_git_repository(key),
+        )
+        if not tracker.has_snapshots:
+            tracker = None
+        return restore_snapshot_changes(project, tracker, clean_paths)
+    finally:
+        if acquired:
+            release = getattr(ctx, "release_project_writer", None)
+            if callable(release):
+                with contextlib.suppress(Exception):
+                    release(key)
 
 
 def run_submit_response(

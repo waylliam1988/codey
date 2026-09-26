@@ -52,8 +52,6 @@ from codey.app.http_plumbing import (
     sse_replay_cursor,
     write_sse_event,
 )
-from codey.providers import controls as provider_controls
-from codey.providers import flow as provider_flow
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -77,19 +75,13 @@ _STATE_LOCK = threading.Lock()
 
 
 def _build_state() -> AppContext:
-    import functools
-
     from codey.app import sibling_probe
     from codey.app.provider_services import connect_fresh_provider_tab
 
     state = AppContext(DEFAULT_STATE_HOME)
     state.providers.ghost_learning_provider_factory = connect_fresh_provider_tab
     state.providers.ghost_router_provider_factory = connect_fresh_provider_tab
-    provider_controls.set_teach_handler(functools.partial(sibling_probe.handle_control_teach, state))
-    provider_controls.set_doctor_handler(
-        functools.partial(sibling_probe.handle_profile_doctor, state)
-    )
-    provider_flow.set_recovery_handler(functools.partial(sibling_probe.handle_flow_recovery, state))
+    sibling_probe.bind_provider_handlers(state)
     return state
 
 

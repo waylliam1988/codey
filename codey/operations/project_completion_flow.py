@@ -1386,6 +1386,97 @@ def _enforce_completion(ctx: _ProjectRun) -> None:
     _apply_completion_verdict(ctx)
 
 
+def _persist_verified_project_facts(ctx: _ProjectRun) -> bool:
+    """Persist project facts for a trusted done run; returns success."""
+    assert ctx.result is not None
+    required = (
+        ctx.deps.persistence.project_facts is not None
+        and ctx.result.stop_reason == "done"
+        and ctx.task_changed
+        and ctx.result.checks_passed
+        and ctx.receipt.verification.trust == VERIFICATION_TRUST_TRUSTED
+        and ctx.work.evidence.has_successful_checks
+        and ctx.files
+    )
+    if not required:
+        return True
+    try:
+        fact_task = (
+            ctx.work.work_checkpoint.original_task
+            if ctx.project_context.checkpoint.resumed
+            and ctx.work.work_checkpoint is not None
+            else ctx.request.task
+        )
+        succeeded = ctx.deps.persistence.project_facts.record_successful_change(
+            ctx.project,
+            task=fact_task,
+            files=ctx.files,
+            checks=ctx.work.evidence.successful_checks,
+            receipt=ctx.receipt.display.summary,
+        )
+    except (OSError, ValueError):
+        return False
+    if succeeded:
+        record_project_memory(
+            ctx.deps,
+            project=ctx.project,
+            session_id=ctx.request.session_id,
+            task=ctx.request.task,
+            files=ctx.files,
+            receipt=ctx.receipt.display.summary,
+            checks=ctx.work.evidence.successful_checks,
+        )
+    return bool(succeeded)
+
+
+def _settle_work_checkpoint(ctx: _ProjectRun, facts_write_succeeded: bool) -> None:
+    if ctx.deps.persistence.work_checkpoints is None or ctx.work.work_checkpoint is None:
+        return
+    assert ctx.result is not None
+    if ctx.result.stop_reason == "done" and facts_write_succeeded:
+        try:
+            ctx.deps.persistence.work_checkpoints.delete(ctx.request.session_id)
+            ctx.work.work_checkpoint = None
+        except OSError:
+            pass
+    elif ctx.result.stop_reason != "done":
+        ctx.hooks.update_checkpoint(
+            lambda store, item: store.set_status(item, "interrupted", ctx.result.stop_reason)
+        )
+
+
+def _build_project_done_event(ctx: _ProjectRun) -> dict:
+    assert ctx.result is not None
+    changes_payload = None
+    if ctx.task_changed and ctx.task_changes and ctx.task_changes.get("ok"):
+        changes_payload = {
+            "changed_count": ctx.task_changes.get("changed_count", 0),
+            "files": ctx.task_changes.get("files", [])[:3],
+            "mode": ctx.task_changes.get("mode"),
+            "project": ctx.project,
+        }
+    research_payload = None
+    if ctx.research_result is not None:
+        research_payload = _research_payload(
+            ctx.research_result, pipeline_result=ctx.research_pipeline_result,
+        )
+    return task_done_event(
+        run_id=ctx.frame.run_id,
+        session_id=ctx.request.session_id,
+        summary=ctx.result.summary,
+        stop_reason=ctx.result.stop_reason,
+        turns=ctx.result.turns,
+        max_turns=ctx.request.max_turns,
+        provider=ctx.frame.provider_id,
+        mode="hybrid" if ctx.research_result is not None else "agent",
+        work=ctx.work,
+        changed=ctx.task_changed,
+        receipt=ctx.receipt.to_dict(),
+        changes=changes_payload,
+        research=research_payload,
+    )
+
+
 def _finalize_project(ctx: _ProjectRun) -> ModeOutcome:
     assert ctx.result is not None
     ctx.receipt = build_task_receipt(
@@ -1401,58 +1492,8 @@ def _finalize_project(ctx: _ProjectRun) -> ModeOutcome:
             receipt=ctx.receipt.to_dict(),
         )
     )
-    facts_write_required = (
-        ctx.deps.persistence.project_facts is not None
-        and ctx.result.stop_reason == "done"
-        and ctx.task_changed
-        and ctx.result.checks_passed
-        and ctx.receipt.verification.trust == VERIFICATION_TRUST_TRUSTED
-        and ctx.work.evidence.has_successful_checks
-        and ctx.files
-    )
-    facts_write_succeeded = not facts_write_required
-    if facts_write_required:
-        try:
-            fact_task = (
-                ctx.work.work_checkpoint.original_task
-                if ctx.project_context.checkpoint.resumed
-                and ctx.work.work_checkpoint is not None
-                else ctx.request.task
-            )
-            facts_write_succeeded = ctx.deps.persistence.project_facts.record_successful_change(
-                ctx.project,
-                task=fact_task,
-                files=ctx.files,
-                checks=ctx.work.evidence.successful_checks,
-                receipt=ctx.receipt.display.summary,
-            )
-        except (OSError, ValueError):
-            facts_write_succeeded = False
-    if facts_write_succeeded and facts_write_required:
-        record_project_memory(
-            ctx.deps,
-            project=ctx.project,
-            session_id=ctx.request.session_id,
-            task=ctx.request.task,
-            files=ctx.files,
-            receipt=ctx.receipt.display.summary,
-            checks=ctx.work.evidence.successful_checks,
-        )
-    if ctx.deps.persistence.work_checkpoints is not None and ctx.work.work_checkpoint is not None:
-        if ctx.result.stop_reason == "done" and facts_write_succeeded:
-            try:
-                ctx.deps.persistence.work_checkpoints.delete(ctx.request.session_id)
-                ctx.work.work_checkpoint = None
-            except OSError:
-                pass
-        elif ctx.result.stop_reason != "done":
-            ctx.hooks.update_checkpoint(
-                lambda store, item: store.set_status(
-                    item,
-                    "interrupted",
-                    ctx.result.stop_reason,
-                )
-            )
+    facts_write_succeeded = _persist_verified_project_facts(ctx)
+    _settle_work_checkpoint(ctx, facts_write_succeeded)
     with contextlib.suppress(Exception):
         ctx.tracker.prune_clean()
     ctx.frame.conversation.update_snapshot(
@@ -1465,35 +1506,7 @@ def _finalize_project(ctx: _ProjectRun) -> ModeOutcome:
             blocker="" if ctx.result.stop_reason == "done" else ctx.result.summary,
         )
     )
-    changes_payload = None
-    if ctx.task_changed and ctx.task_changes and ctx.task_changes.get("ok"):
-        changes_payload = {
-            "changed_count": ctx.task_changes.get("changed_count", 0),
-            "files": ctx.task_changes.get("files", [])[:3],
-            "mode": ctx.task_changes.get("mode"),
-            "project": ctx.project,
-        }
-    research_payload = None
-    if ctx.research_result is not None:
-        research_payload = _research_payload(
-            ctx.research_result,
-            pipeline_result=ctx.research_pipeline_result,
-        )
-    event = task_done_event(
-        run_id=ctx.frame.run_id,
-        session_id=ctx.request.session_id,
-        summary=ctx.result.summary,
-        stop_reason=ctx.result.stop_reason,
-        turns=ctx.result.turns,
-        max_turns=ctx.request.max_turns,
-        provider=ctx.frame.provider_id,
-        mode="hybrid" if ctx.research_result is not None else "agent",
-        work=ctx.work,
-        changed=ctx.task_changed,
-        receipt=ctx.receipt.to_dict(),
-        changes=changes_payload,
-        research=research_payload,
-    )
+    event = _build_project_done_event(ctx)
     return ModeOutcome(
         event,
         research_result=ctx.research_result,

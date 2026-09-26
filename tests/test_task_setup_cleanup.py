@@ -46,20 +46,25 @@ class SetupCleanupTests(unittest.TestCase):
             project = str(Path(td) / "proj")
             Path(project).mkdir()
             state = AppContext(state_td)
+            events: list[dict] = []
+            state.emit = events.append  # type: ignore[method-assign]
             try:
                 deps = _deps(state)
                 with mock.patch.object(
                     task_run_module, "review_flow_deps", side_effect=RuntimeError("boom")
-                ), self.assertRaises(RuntimeError):
-                    _setup_run_state(deps, _submission(project))
+                ):
+                    setup, outcome = _setup_run_state(deps, _submission(project))
+                self.assertIsNone(setup)
+                self.assertIsNotNone(outcome)
+                # Exactly one user-visible terminal event, no orphan run.
+                dones = [e for e in events if e.get("type") == "task_done"]
+                self.assertEqual(len(dones), 1)
                 # Writer reusable, run released, cancellation restored.
                 self.assertTrue(state.acquire_project_writer(project))
                 state.release_project_writer(project)
                 self.assertIsNone(state.run_registry.current())
                 self.assertFalse(state.run_registry.stop_flag.is_set())
             finally:
-                with mock.patch.object(state, "release_project_writer", lambda _p: None):
-                    pass
                 state.close()
 
     def test_ghost_deps_failure_releases_writer_and_run(self) -> None:
@@ -67,12 +72,18 @@ class SetupCleanupTests(unittest.TestCase):
             project = str(Path(td) / "proj")
             Path(project).mkdir()
             state = AppContext(state_td)
+            events: list[dict] = []
+            state.emit = events.append  # type: ignore[method-assign]
             try:
                 deps = _deps(state)
                 with mock.patch.object(
                     task_run_module, "ghost_task_deps", side_effect=RuntimeError("ghost boom")
-                ), self.assertRaises(RuntimeError):
-                    _setup_run_state(deps, _submission(project))
+                ):
+                    setup, outcome = _setup_run_state(deps, _submission(project))
+                self.assertIsNone(setup)
+                self.assertIsNotNone(outcome)
+                dones = [e for e in events if e.get("type") == "task_done"]
+                self.assertEqual(len(dones), 1)
                 self.assertTrue(state.acquire_project_writer(project))
                 state.release_project_writer(project)
                 self.assertIsNone(state.run_registry.current())
@@ -97,12 +108,21 @@ class SetupCleanupTests(unittest.TestCase):
             project = str(Path(td) / "proj")
             Path(project).mkdir()
             state = AppContext(state_td)
+            events: list[dict] = []
+            state.emit = events.append  # type: ignore[method-assign]
             try:
                 deps = _deps(state)
                 with mock.patch.object(
                     state, "acquire_project_writer", side_effect=OSError("disk full")
-                ), self.assertRaises(OSError):
-                    _setup_run_state(deps, _submission(project))
+                ):
+                    setup, outcome = _setup_run_state(deps, _submission(project))
+                # IO errors become a single setup_failed terminal, not busy.
+                self.assertIsNone(setup)
+                self.assertIsNotNone(outcome)
+                assert outcome is not None
+                self.assertEqual(outcome.reason, "setup_failed")
+                dones = [e for e in events if e.get("type") == "task_done"]
+                self.assertEqual(len(dones), 1)
                 self.assertIsNone(state.run_registry.current())
             finally:
                 state.close()

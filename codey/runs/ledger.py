@@ -109,6 +109,10 @@ def _ledger_file_state(path: Path) -> _LedgerFileState:
     )
 
 
+class LedgerWriteFailed(OSError):
+    """Durable ledger write failed; the run's ledger is unavailable."""
+
+
 def _stat_mtime_ns(path: Path) -> int:
     try:
         return path.stat().st_mtime_ns if path.is_file() else 0
@@ -178,6 +182,10 @@ class RunLedgerWriter:
 
     def append(self, event_type: str, **fields: object) -> None:
         if self.disabled:
+            # Truncation is an expected capacity signal; IO failure must
+            # surface so hooks can mark this run's ledger unavailable.
+            if self.disabled_reason == "ledger_write_failed":
+                raise LedgerWriteFailed(self.last_error_reason or "ledger unavailable")
             return
         payload = {
             **_event_common(self.run_id, self.session_id, self.seq + 1, event_type),
@@ -344,6 +352,8 @@ class RunLedgerWriter:
         allow_over_budget: bool = False,
     ) -> None:
         if self.disabled and not (allow_after_truncation and self.truncated):
+            if self.disabled_reason == "ledger_write_failed":
+                raise LedgerWriteFailed(self.last_error_reason or "ledger unavailable")
             return
         try:
             with with_file_lock(self.path):
@@ -375,6 +385,7 @@ class RunLedgerWriter:
             self.disabled = True
             self.disabled_reason = "ledger_write_failed"
             self.last_error_reason = _clip(f"{type(exc).__name__}: {exc}", 120)
+            raise LedgerWriteFailed(self.last_error_reason) from exc
 
     def _fast_file_state_locked(self) -> tuple[int, int, bool | None]:
         """In-memory seq/bytes fast path; None means fall back to a full scan.
@@ -431,15 +442,25 @@ def _int_or_none(value: object) -> int | None:
 
 
 def read_ledger(path: Path) -> list[RunLedgerRecord]:
+    """Read ledger rows; middle corruption yields unavailable (empty).
+
+    A torn trailing line is tolerated by ignoring that single line, but any
+    bad row with later valid rows after it means the fact stream was spliced
+    and must not be projected into receipts or Ghost learning.
+    """
     rows: list[RunLedgerRecord] = []
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict) and payload.get("schema_version") == SCHEMA_VERSION:
-                rows.append(RunLedgerRecord(payload))
+        lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
         return []
+    for index, line in enumerate(lines):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            # Torn tail only: a bad last line is ignored, middle corruption
+            # invalidates the whole stream.
+            return rows if index == len(lines) - 1 else []
+        if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+            return rows if index == len(lines) - 1 else []
+        rows.append(RunLedgerRecord(payload))
     return rows

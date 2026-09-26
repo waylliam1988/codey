@@ -267,22 +267,29 @@ class RunLedgerStoreTests(unittest.TestCase):
         self.assertEqual([item["seq"] for item in rows], [1, 2])
 
     def test_append_failure_disables_writer_without_raising(self) -> None:
+        from codey.runs.ledger import LedgerWriteFailed
+
         with tempfile.TemporaryDirectory() as td:
             writer = RunLedgerWriter(Path(td) / "ledger.jsonl", run_id="run", session_id="session")
             with mock.patch("codey.storage.atomic_io.os.open", side_effect=OSError("no disk")):
-                writer.append("info", text="fails")
-                writer.append("info", text="ignored")
+                with self.assertRaises(LedgerWriteFailed):
+                    writer.append("info", text="fails")
+                # Second append fails fast so hooks can mark the run unavailable.
+                with self.assertRaises(LedgerWriteFailed):
+                    writer.append("info", text="ignored")
 
             self.assertTrue(writer.disabled)
 
     def test_write_line_failure_records_observable_reason(self) -> None:
+        from codey.runs.ledger import LedgerWriteFailed
+
         with tempfile.TemporaryDirectory() as td:
             writer = RunLedgerWriter(Path(td) / "ledger.jsonl", run_id="run", session_id="session")
             with mock.patch.object(
                 RunLedgerWriter,
                 "_write_line_locked",
                 side_effect=OSError("no disk"),
-            ):
+            ), self.assertRaises(LedgerWriteFailed):
                 writer.append("info", text="fails")
 
             self.assertTrue(writer.disabled)

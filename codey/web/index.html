@@ -1123,13 +1123,12 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'ghost_post_turn_warning') {
-    const warningDetail = [data.stage, data.error_ref].filter(Boolean).join(' · ');
     addToSession(sid, {
       type: 'info',
-      text: warningDetail ? `Post-turn warning (${warningDetail})` : 'Post-turn warning',
+      text: 'Local update paused — see Local context',
       sessionId: sid,
       runId,
-      eventKey: sseEventKey(data, runId ? `ghost-post-turn:${runId}:${data.stage || ''}:${data.error_ref || ''}` : ''),
+      eventKey: sseEventKey(data, runId ? `local-health:${runId}:${data.error_ref || ''}` : ''),
     });
     return;
   }

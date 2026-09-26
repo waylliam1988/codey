@@ -7238,10 +7238,12 @@ class SessionThreadingTests(unittest.TestCase):
             git_tracker.capture_after("app.py")
             snapshot_tracker.capture_after("app.py")
 
+            # Read-only Git views never mutate the cached task tracker nor
+            # delete durable recovery data.
             self.assertIsNot(snapshot_tracker, git_tracker)
             self.assertIsNone(git_tracker.store)
-            self.assertIsNone(snapshot_tracker.store)
-            self.assertFalse(recovery.exists())
+            self.assertIsNotNone(snapshot_tracker.store)
+            self.assertTrue(recovery.is_file())
 
 
 class UiLaunchTests(unittest.TestCase):

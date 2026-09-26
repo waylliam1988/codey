@@ -393,76 +393,33 @@ class ResearchRunner:
                     yield RunEvent.info("stop requested")
                 break
             if plan.control is not None and plan.control.kind == "done":
-                failed = [
-                    r for r in results
-                    if _outcome_model_text(r[1]).startswith(("ERROR:", "NEEDS_OPEN:"))
-                ]
-                if failed:
-                    turn_limit = _maybe_extend_completion_turns(
-                        turn_limit,
-                        extension_limit=extension_limit,
-                        turn=turn,
-                        tools=self.tools,
-                    )
-                    message = self._format_results(_tool_results(results)) + (
-                        "\n\nResolve the ERROR or NEEDS_OPEN results before calling done. "
-                        "Open cited source pages before saving facts, and link only notes that exist."
-                    )
-                    continue
-                summary_candidate = plan.control.body.strip()
-                finalized = finalize_done_answer(
-                    summary_candidate,
-                    self.tools.ledger,
-                    source_ids=control_state.source_urls if control_state is not None else {},
-                    question=question,
-                    enforce_claim_support=True,
+                (
+                    decision, followup, candidate, review,
+                    turn_limit, advisor_reviewed, advisor_count,
+                ) = self._review_done_candidate(
+                    plan.control.body.strip(), results,
+                    turn=turn, turn_limit=turn_limit, extension_limit=extension_limit,
+                    question=question, control_state=control_state,
+                    advisor_reviewed=advisor_reviewed,
                 )
-                if finalized.changed:
-                    self.prompt_trace.call(
-                        "record_research_done_compilation",
-                        {
-                            "reason": finalized.reason,
-                            "source_count": finalized.source_count,
-                        },
-                    )
-                summary_candidate = finalized.text.strip()
-                review = review_report_quality(
-                    summary_candidate,
-                    ledger=self.tools.ledger,
-                    opened_sources=self.tools.sources_read,
-                    search_result_urls=self.tools.search_result_urls,
-                )
-                if not review.ok:
-                    yield RunEvent.info(review.message)
-                    turn_limit = _maybe_extend_completion_turns(
-                        turn_limit,
-                        extension_limit=extension_limit,
-                        turn=turn,
-                        tools=self.tools,
-                    )
-                    message = _quality_review_followup(
-                        self.codec,
-                        _tool_results(results),
-                        review.message,
-                        controller_enabled=self.controller is not None,
-                    )
+                if decision == "retry_failed":
+                    message = followup
                     continue
-                if self.review_advisors is not None and not advisor_reviewed:
-                    advisor_reviewed = True
-                    advices = self._review_with_advisors(question, summary_candidate, review)
-                    advisor_count = len(advices)
-                    if advices:
-                        yield RunEvent.info("research evidence review completed", names=f"{advisor_count} advisor(s)")
-                        turn_limit = _maybe_extend_completion_turns(
-                            turn_limit,
-                            extension_limit=extension_limit,
-                            turn=turn,
-                            tools=self.tools,
-                        )
-                        message = _advisor_followup_prompt(summary_candidate, advices)
-                        continue
-                yield RunEvent.info(review.message, warnings=list(review.warnings))
-                summary = summary_candidate
+                if decision == "retry_quality":
+                    yield RunEvent.info(review.message)  # type: ignore[union-attr]
+                    message = followup
+                    continue
+                if decision == "retry_advisor":
+                    yield RunEvent.info(
+                        "research evidence review completed",
+                        names=f"{advisor_count} advisor(s)",
+                    )
+                    message = followup
+                    continue
+                if decision == "accept_advisor_empty":
+                    advisor_count = 0
+                yield RunEvent.info(review.message, warnings=list(review.warnings))  # type: ignore[union-attr]
+                summary = candidate
                 final_open_questions = _bounded_open_questions(
                     getattr(self.codec, "last_control_args", {}).get("open_questions")
                 )
@@ -487,41 +444,11 @@ class ResearchRunner:
             synthesis_id = self._persist_synthesis(question, summary, open_questions=final_open_questions)
             if synthesis_id:
                 yield RunEvent.info("saved synthesis", names=synthesis_id)
-        research_record = None
-        if summary or self.tools.ledger.opened_sources or self.tools.ledger.evidence_items:
-            research_record = build_research_record(
-                question=question,
-                summary=summary,
-                ledger=self.tools.ledger,
-                review=final_review,
-                run_id=self.run_id,
-                session_id=self.session_id,
-                project=self.project,
-                synthesis_id=synthesis_id,
-                stop_reason=stop_reason,
-            )
-        self.result = ResearchRunResult(
-            question=question,
-            summary=summary,
-            stop_reason=stop_reason,
-            turns=turn,
-            queries=[item.query for item in self.tools.ledger.searches],
-            search_results=self.tools.ledger.search_results_payload(),
-            opened_sources=self.tools.ledger.opened_sources_payload(),
-            coverage=self.tools.ledger.coverage_payload(),
-            citation_map=final_review.citation_payload() if final_review else [],
-            evidence_items=self.tools.ledger.evidence_payload(),
-            counterpoints=list(final_review.counterpoints) if final_review else [],
-            quality_warnings=list(final_review.warnings) if final_review else [],
-            notes_created=list(self.tools.created_ids),
-            notes_updated=list(self.tools.updated_ids),
-            links_created=self.tools.links_created,
-            sources_read=len(self.tools.sources_read),
-            source_urls=sorted(self.tools.sources_read),
-            synthesis_id=synthesis_id,
+        self.result = self._build_research_result(
+            question=question, summary=summary, stop_reason=stop_reason,
+            turn=turn, turn_limit=turn_limit, synthesis_id=synthesis_id,
+            final_review=final_review, final_open_questions=final_open_questions,
             advisor_count=advisor_count,
-            research_record=research_record,
-            max_turns_used=turn_limit,
         )
         self.prompt_trace.call(
             "record_research_notes",
@@ -542,6 +469,45 @@ class ResearchRunner:
                 self.result.research_record.to_summary_payload(),
             )
         yield self._done_event()
+
+    def _review_done_candidate(
+        self,
+        summary_candidate: str,
+        results: list,
+        *,
+        turn: int,
+        turn_limit: int,
+        extension_limit: int,
+        question: str,
+        control_state: object | None,
+        advisor_reviewed: bool,
+    ) -> tuple[str, str, str, object | None, int, bool, int]:
+        # No yields: run() owns yield order.
+        def extend(lim: int) -> int:
+            return _maybe_extend_completion_turns(lim, extension_limit=extension_limit, turn=turn, tools=self.tools)
+        if any(_outcome_model_text(r[1]).startswith(("ERROR:", "NEEDS_OPEN:")) for r in results):
+            msg = self._format_results(_tool_results(results)) + "\n\nResolve the ERROR or NEEDS_OPEN results before calling done. Open cited source pages before saving facts, and link only notes that exist."
+            return ("retry_failed", msg, summary_candidate, None, extend(turn_limit), advisor_reviewed, 0)
+        finalized = finalize_done_answer(summary_candidate, self.tools.ledger, source_ids=getattr(control_state, "source_urls", {}) if control_state is not None else {}, question=question, enforce_claim_support=True)
+        if finalized.changed:
+            self.prompt_trace.call("record_research_done_compilation", {"reason": finalized.reason, "source_count": finalized.source_count})
+        candidate = finalized.text.strip()
+        review = review_report_quality(candidate, ledger=self.tools.ledger, opened_sources=self.tools.sources_read, search_result_urls=self.tools.search_result_urls)
+        if not review.ok:
+            msg = _quality_review_followup(self.codec, _tool_results(results), review.message, controller_enabled=self.controller is not None)
+            return ("retry_quality", msg, candidate, review, extend(turn_limit), advisor_reviewed, 0)
+        if self.review_advisors is not None and not advisor_reviewed:
+            advices = self._review_with_advisors(question, candidate, review)
+            if advices:
+                return ("retry_advisor", _advisor_followup_prompt(candidate, advices), candidate, review, extend(turn_limit), True, len(advices))
+            return ("accept_advisor_empty", "", candidate, review, turn_limit, True, 0)
+        return ("accept", "", candidate, review, turn_limit, advisor_reviewed, 0)
+
+    def _build_research_result(self, *, question: str, summary: str, stop_reason: str, turn: int, turn_limit: int, synthesis_id: str, final_review: object | None, final_open_questions: list[str], advisor_count: int):
+        research_record = None
+        if summary or self.tools.ledger.opened_sources or self.tools.ledger.evidence_items:
+            research_record = build_research_record(question=question, summary=summary, ledger=self.tools.ledger, review=final_review, run_id=self.run_id, session_id=self.session_id, project=self.project, synthesis_id=synthesis_id, stop_reason=stop_reason)
+        return ResearchRunResult(question=question, summary=summary, stop_reason=stop_reason, turns=turn, queries=[item.query for item in self.tools.ledger.searches], search_results=self.tools.ledger.search_results_payload(), opened_sources=self.tools.ledger.opened_sources_payload(), coverage=self.tools.ledger.coverage_payload(), citation_map=final_review.citation_payload() if final_review else [], evidence_items=self.tools.ledger.evidence_payload(), counterpoints=list(final_review.counterpoints) if final_review else [], quality_warnings=list(final_review.warnings) if final_review else [], notes_created=list(self.tools.created_ids), notes_updated=list(self.tools.updated_ids), links_created=self.tools.links_created, sources_read=len(self.tools.sources_read), source_urls=sorted(self.tools.sources_read), synthesis_id=synthesis_id, advisor_count=advisor_count, research_record=research_record, max_turns_used=turn_limit)
 
     def _dispatch(self, call, turn: int = 0, tool_index: int = 0):
         cancellation.check()

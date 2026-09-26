@@ -291,6 +291,16 @@ function persistActiveNow() {
   flushUiState();
 }
 
+function setDrawerOpen(id, open) {
+  // Shared drawer toggle so the three drawers stay mutually exclusive
+  // without triplicating classList/aria handling. Existing open/close
+  // wrappers keep their names; they delegate here.
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('open', !!open);
+  el.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
 function bindUiStatePagehide() {
   window.addEventListener('pagehide', () => {
     if (uiStatePersistTimer !== null) {
@@ -333,6 +343,7 @@ async function restoreUiStateFromServer() {
 
 window.CodeyUiState = {
   init,
+  setDrawerOpen,
   DEFAULT_PROVIDER,
   PROVIDER_LABELS,
   PROVIDERS,

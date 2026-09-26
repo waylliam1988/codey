@@ -269,12 +269,17 @@ class SnapshotStore:
                 files: dict = {}
             else:
                 files = _manifest_files_or_raise(payload, manifest_path)
-            existing = files.get(rel)
-            if existing is not None:
+            if rel in files:
                 persisted = self._persisted_baseline_locked(
-                    resolved_root, rel, existing, body_path
+                    resolved_root, rel, files[rel], body_path
                 )
                 return persisted
+            if len(files) >= MAX_SNAPSHOT_FILES:
+                raise ValueError("snapshot file limit reached")
+            if content is not None:
+                new_bytes = len(content.encode("utf-8"))
+                if self._disk_total_bytes_locked(resolved_root, files) + new_bytes > MAX_SNAPSHOT_TOTAL_BYTES:
+                    raise ValueError("snapshot size limit reached")
             written_body = False
             try:
                 if content is None:
@@ -346,6 +351,21 @@ class SnapshotStore:
                 self.path_for(resolved_root), f"baseline body too large: {rel!r}"
             )
         return body
+
+    def _disk_total_bytes_locked(self, resolved_root: Path, files: dict) -> int:
+        # Disk-view size guard; corrupt entries validate on access, not here.
+        total = 0
+        for rel, entry in files.items():
+            if not isinstance(entry, dict) or entry.get("baseline") is None:
+                continue
+            try:
+                body = _read_text_bounded(self._baseline_path(resolved_root, str(rel)), max_bytes=MAX_SNAPSHOT_FILE_BYTES)
+            except (OSError, UnicodeDecodeError, ValueError):
+                continue
+            total += len(body.encode("utf-8"))
+            if total > MAX_SNAPSHOT_TOTAL_BYTES:
+                break
+        return total
 
     def set_after_hash(self, root: str | Path, rel: str, digest: str) -> None:
         resolved_root = Path(root).expanduser().resolve()
@@ -532,10 +552,20 @@ class ChangeTracker:
         path = _safe_join(self.root, rel)
         rel_posix = path.relative_to(self.root).as_posix()
         with self._lock:
-            if rel_posix in self._before:
-                return
+            cached = rel_posix in self._before
             store = self.store
+        if cached:
+            # Even a cached path must see a damaged disk entry: validate via
+            # the read-only branch of put_baseline without rewriting.
+            if store is not None:
+                current = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
+                store.put_baseline(self.root, rel_posix, current)
+            return
         before = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
+        with self._lock:
+            # Pre-check memory capacity before touching disk: a rejected new
+            # entry must never appear in the manifest.
+            self._validate_capacity_locked(rel_posix, before)
         # Disk wins: the persisted baseline is the memory value, so a second
         # tracker reading a newer file converges back to the first writer
         # instead of forking. Damaged disk entries raise and publish nothing.

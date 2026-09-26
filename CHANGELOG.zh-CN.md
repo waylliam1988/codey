@@ -2,6 +2,43 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 恢复所有权与小步减法加固（未发布）
+
+- 快照单写者收口：`put_baseline()` 按键存在判定，`null` 条目抛 `StoreCorruption`
+  不再覆盖原 body；文件数/总字节上限在 manifest 锁内按磁盘视图判定；
+  `capture_before()` 先做内存容量预检再落盘，发布 first-wins 持久值，已缓存路径
+  走只读分支校验。新增 null 覆盖、第 201 文件/总字节、并发 tracker、二次编辑校验回归。
+- 只读 Changes 与单写者 Restore：`change_tracker_for(persistent=False)` 返回临时
+  tracker，不改任务持有的缓存对象，不删磁盘快照；git init 后的 GET 只读；
+  `restore_changes_response()` 从读恢复依据到写完文件全程持有
+  `acquire_project_writer()`，拿不到返回 409。新增 git 转换与双 context 持锁回归。
+- 初始化失败统一终态：`_setup_run_state()` 的 busy/损坏/初始化异常统一走
+  `_finish_setup_failure()`（单个 error `task_done` + `finish_run`，不再重复
+  `release_run`）；`task_context_started` 紧随 `begin_task_context` 成功；
+  `_release_setup_resources()` 释放一次。单测断言恰好一个 `task_done`、run 清空、
+  writer 可重拿。
+- 不确定提交、诚实账本、安静提示：worker stdin 写失败统一
+  `FAILURE_SUBMISSION_UNCERTAIN`（不新增 kind）；账本 IO 失败抛
+  `LedgerWriteFailed`，hooks 标记本 run 不可用并记一次有界诊断，任务照常完成；
+  `read_ledger()` 中间坏行视为不可用（仅容忍撕裂尾行）；Ghost 在账本不完整时告警
+  `ledger_incomplete` 不学习；`npx vite dev`/`next dev` 给合并 dev-server 说明，
+  其余 `npx` 仍是安装；回放只记一次 `run/effect/tool/reason`，不记参数正文。
+- 小步减法、无兼容：新增 `protocols/json_scanner.balanced_json_spans()` 给双 codec
+  复用（验收规则各自保留）；`runner.run()` 抽 `_review_done_candidate`/
+  `_build_research_result` 且 yield 顺序不变；agent 循环收敛 `_finish_max_turns()` +
+  纯 `_decide_done()`；`_finalize_project()` 在文件内拆 persist/settle/build-event；
+  Ghost `_field` 收敛到 `_common.field_value`；`route_error_cost` 移出生产 `__all__`；
+  删除未接入的 `research_url`/`local_context_action` kind/守卫/假接线（research 走
+  `check_fetch_url`）；handler 经 `sibling_probe.bind_provider_handlers()` 集中；
+  删 `ConversationStore._prune` 包装；`read_file()` 流式分页，`search_files()` 按文件
+  算一次 `relative_to`；抽屉共用 `CodeyUiState.setDrawerOpen()`；Ghost 提示改为
+  `Local update paused — see Local context`。
+- 验证：`python -m ruff check .`、`python -m compileall -q codey tests`、
+  `git diff --check`、定向所有权套件，以及全量
+  `python -m pytest -q -o faulthandler_timeout=120`（`4294 passed, 7 skipped,
+  1374 subtests passed in 371.21s`；一次 `LocalProviderApiTests` 因 WinError 10053
+  中断，重试通过）。未发布。Ghost 保留为本地自适应层；未重写 worker，未加兼容垫片。
+
 ## Unreleased - 已核验的恢复与生命周期加固（未发布）
 
 - 快照损坏改为阻断而非静默重置：`load()`、`put_baseline()`、`remove()`、

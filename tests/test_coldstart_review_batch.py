@@ -82,22 +82,28 @@ class ColdstartReviewBatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state = AppContext(td)
             try:
+                # Only persistent trackers are cached; ephemeral Git views
+                # must never fill the cache.
                 first = Path(td) / "proj-00"
                 first.mkdir()
-                state.change_tracker_for(first, persistent=False)
+                state.change_tracker_for(first, persistent=True)
                 for index in range(1, MAX_CHANGE_TRACKERS + 1):
                     proj = Path(td) / f"proj-{index:02d}"
                     proj.mkdir()
-                    state.change_tracker_for(proj, persistent=False)
+                    state.change_tracker_for(proj, persistent=True)
                 self.assertLessEqual(len(state.change_trackers), MAX_CHANGE_TRACKERS)
                 self.assertNotIn(str(first.resolve()), state.change_trackers)
                 # Recently touched tracker survives: touch proj-01 then add one more.
                 proj01 = Path(td) / "proj-01"
-                state.change_tracker_for(proj01, persistent=False)
+                state.change_tracker_for(proj01, persistent=True)
                 extra = Path(td) / "proj-extra"
                 extra.mkdir()
-                state.change_tracker_for(extra, persistent=False)
+                state.change_tracker_for(extra, persistent=True)
                 self.assertIn(str(proj01.resolve()), state.change_trackers)
+                # Ephemeral views bypass the cache entirely.
+                before = dict(state.change_trackers)
+                state.change_tracker_for(extra, persistent=False)
+                self.assertEqual(state.change_trackers, before)
             finally:
                 state.close()
 

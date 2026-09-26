@@ -347,9 +347,9 @@ def _hint_weight_by_target(hints: Iterable[Any], *, kind: str) -> dict[str, floa
 
 
 def _field(value: Any, key: str) -> object:
-    if isinstance(value, dict):
-        return value.get(key)
-    return getattr(value, key, "")
+    from codey.ghost._common import field_value
+
+    return field_value(value, key)
 
 
 def _reverse_text_sort_key(value: object) -> tuple[int, ...]:

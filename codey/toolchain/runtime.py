@@ -798,7 +798,19 @@ def read_file(
     try:
         start_line = bounded_positive_int(offset, "offset")
         line_limit = bounded_positive_int(limit, "limit", READ_MAX_LINES)
-        text = path.read_text(encoding="utf-8")
+    except ValueError as exc:
+        return ToolOutcome.error(str(exc))
+    # Streamed paging: O(page) memory, same total/offset/UTF-8 semantics.
+    lines: list[str] = []
+    total = 0
+    try:
+        with path.open("r", encoding="utf-8", errors="strict") as handle:
+            for raw in handle:
+                total += 1
+                if total % 500 == 0:
+                    cancellation.check()
+                if start_line <= total < start_line + line_limit:
+                    lines.append(raw)
         cancellation.check()
     except UnicodeDecodeError:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
@@ -806,9 +818,6 @@ def read_file(
         return ToolOutcome.error(str(exc))
     except OSError:
         return ToolOutcome.error(f"cannot read file: {rel}")
-
-    lines = text.splitlines(keepends=True)
-    total = len(lines)
     if total == 0:
         if start_line != 1:
             return ToolOutcome.error(f"offset {start_line} exceeds {rel} total lines 0")
@@ -818,7 +827,7 @@ def read_file(
             f"offset {start_line} exceeds {rel} total lines {total}"
         )
 
-    available = lines[start_line - 1 : start_line - 1 + line_limit]
+    available = lines
     first = available[0]
     if len(first) > READ_MAX_CHARS:
         preview, _ = clip_middle(first, READ_MAX_CHARS, LONG_LINE_MARKER)
@@ -1004,16 +1013,19 @@ def search_files(
             else:
                 unreadable_files += 1
             continue
-        for line_no, line in enumerate(text.splitlines(), start=1):
+        try:
+            rel_path = path.relative_to(resolved_root).as_posix()
+        except ValueError:
+            unreadable_files += 1
+            continue
+        for line_no, line in enumerate(text.splitlines(), start=1):  # per-file rel computed once
             if line_no == 1 or line_no % 200 == 0:
                 cancellation.check()
             if needle not in line.lower():
                 continue
-            rel_path = path.relative_to(resolved_root).as_posix()
             clean = line.strip()
             if len(clean) > 240:
                 clean = clean[:237] + "..."
-            # Streamed paging: count all, retain page + 1 sentinel only.
             seen_matches += 1
             if seen_matches >= page_offset and len(matches) < page_limit + 1:
                 matches.append(f"{rel_path}:{line_no}: {clean}")

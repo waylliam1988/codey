@@ -157,10 +157,6 @@ class ConversationStore:
     def delete(self, session_id: str) -> None:
         delete_file(self.path_for(session_id))
 
-    def _prune(self, keep: Path) -> None:
-        with with_file_lock(self.directory):
-            self._prune_locked(keep)
-
     def _prune_locked(self, keep: Path) -> None:
         try:
             candidates = [

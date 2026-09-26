@@ -2512,9 +2512,9 @@ def _list(value: object) -> list[object]:
 
 
 def _field(value: Any, key: str) -> object:
-    if isinstance(value, Mapping):
-        return value.get(key)
-    return getattr(value, key, "")
+    from codey.ghost._common import field_value
+
+    return field_value(value, key)
 
 
 def _future_ts(now: str, seconds: int) -> str:

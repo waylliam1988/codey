@@ -20,6 +20,7 @@ from codey.automation.browser import DEFAULT_PORT
 from codey.providers.catalog import WORKER_CHILD_ENV
 from codey.providers.diagnostics import (
     FAILURE_RESPONSE_MISSING,
+    FAILURE_SUBMISSION_UNCERTAIN,
     ProviderActionError,
     ProviderFailure,
 )
@@ -642,15 +643,16 @@ class WorkerChatProvider:
         if write_error:
             # The writer already cleared its slot; drop the orphaned pending
             # slot (no waiter exists yet) and retire when still current.
-            # Keep the structured failure taxonomy: a stdin failure is a
-            # protocol-class failure, never a bare RuntimeError.
+            # stdin.write+flush is one try: a flush failure cannot prove the
+            # child never received the frame, so classify as uncertain to
+            # avoid automatic resubmission of a possibly-executed request.
             with self._life_lock:
                 if self._session is session:
                     self._retire_session_locked(session)
             with session.lock:
                 if session.pending is pending:
                     session.pending = None
-            raise self._protocol_error(pending.method, write_error)
+            raise self._submission_uncertain_error(pending.method, write_error)
 
     def _wait_for_response(
         self,
@@ -792,20 +794,17 @@ class WorkerChatProvider:
         self.last_failure = failure
         return ProviderActionError(failure)
 
-    def _protocol_error(
-        self, method: str, message: str
-    ) -> ProviderActionError:
-        failure = ProviderFailure(
-            self.provider_id,
-            method,
-            "",
-            "",
-            message or "provider worker sent a malformed frame",
-            "",
-            FAILURE_RESPONSE_MISSING,
-        )
+    def _action_error(self, method: str, message: str, kind: str, default: str) -> ProviderActionError:
+        failure = ProviderFailure(self.provider_id, method, "", "", message or default, "", kind)
         self.last_failure = failure
         return ProviderActionError(failure)
+
+    def _protocol_error(self, method: str, message: str) -> ProviderActionError:
+        return self._action_error(method, message, FAILURE_RESPONSE_MISSING, "provider worker sent a malformed frame")
+
+    def _submission_uncertain_error(self, method: str, message: str) -> ProviderActionError:
+        # stdin write/flush failure: receipt is unknown, never 'missing'.
+        return self._action_error(method, message, FAILURE_SUBMISSION_UNCERTAIN, "provider worker stdin write failed")
 
     def _retire_session_locked(
         self, session: _WorkerSession, *, retry_live_child: bool = False

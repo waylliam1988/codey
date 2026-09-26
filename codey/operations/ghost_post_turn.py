@@ -540,7 +540,34 @@ def _record_ghost_warning(
 def _run_projection(deps: GhostTaskPolicyDeps, session_id: str, run_id: str):
     if deps.run_ledgers is None:
         return None
-    return load_run_projection(deps.run_ledgers, session_id, run_id)
+    try:
+        projection = load_run_projection(deps.run_ledgers, session_id, run_id)
+    except Exception as exc:
+        _record_ghost_warning(
+            deps, "ledger_incomplete", exc,
+            event={"session_id": session_id, "run_id": run_id},
+            run_id=run_id,
+        )
+        return None
+    if projection is None:
+        # Distinguish "no ledger yet" from "file exists but unreadable":
+        # only the latter means Ghost would learn from an incomplete stream.
+        try:
+            ledger_path = deps.run_ledgers.path_for(session_id, run_id)
+        except Exception:
+            return None
+        try:
+            exists = ledger_path.is_file()
+        except OSError:
+            exists = False
+        if exists:
+            _record_ghost_warning(
+                deps, "ledger_incomplete",
+                ValueError("ledger file present but projection unavailable"),
+                event={"session_id": session_id, "run_id": run_id},
+                run_id=run_id,
+            )
+    return projection
 
 
 __all__ = [

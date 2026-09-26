@@ -358,8 +358,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         end = HTML.index("if (data.type === 'teach_request')", start)
         block = HTML[start:end]
         self.assertIn("type: 'info'", block)
-        self.assertIn("Post-turn warning", block)
-        self.assertIn("ghost-post-turn:", block)
+        self.assertIn("Local update paused", block)
+        self.assertIn("Local context", block)
+        self.assertNotIn("Post-turn warning (", block)
+        self.assertIn("local-health:", block)
         self.assertIn("eventKey: sseEventKey(data", block)
 
     def test_shell_approval_renders_risk_explanation(self) -> None:

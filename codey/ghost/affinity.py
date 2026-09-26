@@ -2620,9 +2620,9 @@ def _filter_values(value: object, allowed: frozenset[str]) -> set[str]:
 
 
 def _field(value: Any, name: str) -> object:
-    if isinstance(value, Mapping):
-        return value.get(name)
-    return getattr(value, name, "")
+    from codey.ghost._common import field_value
+
+    return field_value(value, name)
 
 
 def _list(value: object) -> tuple[object, ...]:

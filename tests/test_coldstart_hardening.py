@@ -1910,6 +1910,8 @@ class ProviderProbeErrorTests(unittest.TestCase):
 
 class ConversationPruneTests(unittest.TestCase):
     def test_prune_skips_unstatable_files_instead_of_abandoning(self) -> None:
+        from codey.storage.file_lock import with_file_lock
+
         with tempfile.TemporaryDirectory() as td:
             store = ConversationStore(Path(td))
             store.directory.mkdir(parents=True, exist_ok=True)
@@ -1923,13 +1925,13 @@ class ConversationPruneTests(unittest.TestCase):
             victim = store.directory / "c000.json"
             real_stat = Path.stat
 
-            def flaky_stat(self: Path):
+            def flaky_stat(self: Path, *args: object, **kwargs: object):
                 if self.name == victim.name:
                     raise OSError("disk hiccup")
-                return real_stat(self)
+                return real_stat(self, *args, **kwargs)  # type: ignore[arg-type]
 
-            with mock.patch.object(Path, "stat", flaky_stat):
-                store._prune(keep)  # must not raise
+            with mock.patch.object(Path, "stat", flaky_stat), with_file_lock(store.directory):
+                store._prune_locked(keep)  # must not raise
             remaining = list(store.directory.glob("*.json"))
             # 63 newest stat-able + keep + the un-statable survivor.
             self.assertEqual(len(remaining), 65)

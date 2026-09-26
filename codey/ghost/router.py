@@ -731,6 +731,7 @@ def normalize_route_mode(value: object) -> str:
 
 
 def route_error_cost(expected: str, observed: str) -> int:
+    """Eval-only severity for manual AB router probes (not a production wire)."""
     expected = normalize_route_mode(expected)
     observed = normalize_route_mode(observed)
     if expected == observed:
@@ -1131,5 +1132,4 @@ __all__ = [
     "normalize_route_mode",
     "parse_route_reply",
     "render_route_prompt",
-    "route_error_cost",
 ]

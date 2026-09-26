@@ -10,7 +10,6 @@ Mode behavior lives in the mode flow modules.
 from __future__ import annotations
 
 import contextlib
-import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -21,7 +20,7 @@ if TYPE_CHECKING:
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
-from codey.app import sibling_probe
+from codey.app.sibling_probe import bind_provider_handlers
 from codey.ghost.work_queue import GhostWorkItem
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import release_work_item, run_ghost_post_turn
@@ -49,7 +48,6 @@ from codey.operations.task_phases import (
 )
 from codey.operations.task_state import TaskState
 from codey.providers import controls as provider_controls
-from codey.providers import flow as provider_flow
 from codey.runtime.core import cancellation
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
@@ -222,8 +220,58 @@ def _fail_early_run(
     return operation_outcome_from_task_done_event(error_event)
 
 
+def _release_setup_resources(
+    state: TaskState,
+    project: str | None,
+    previous_cancel_event: Any,
+    task_context_started: bool,
+    writer_acquired: bool,
+) -> None:
+    """Release setup-owned resources exactly once (no terminal event here)."""
+    if writer_acquired:
+        with contextlib.suppress(Exception):
+            release = getattr(state, "release_project_writer", None)
+            if callable(release):
+                release(project)
+    if task_context_started:
+        with contextlib.suppress(Exception):
+            cancellation.set_event(previous_cancel_event)
+        with contextlib.suppress(Exception):
+            provider_controls.end_task_context()
+
+
+def _finish_setup_failure(
+    state: TaskState,
+    request: TaskSubmission,
+    run_id: str,
+    summary: str,
+    *,
+    outcome_reason: str,
+    task_kind: str,
+) -> OperationOutcome:
+    """Single setup-failure exit: exactly one user-visible terminal event.
+
+    ``finish_run`` already releases the slot and emits ``task_done``, so
+    callers must not also call ``release_run``. Resources are released by
+    ``_release_setup_resources`` before this call.
+    """
+    event = task_done_event(
+        run_id=run_id,
+        session_id=request.session_id,
+        summary=summary,
+        stop_reason="error",
+        max_turns=request.max_turns,
+        provider=request.provider_id,
+        mode=ui_mode(task_kind, request.project),
+    )
+    with contextlib.suppress(Exception):
+        state.finish_run(run_id, event)
+    return OperationOutcome.failed(reason=outcome_reason, summary=summary)
+
+
 def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSetup | None, OperationOutcome | None]:
     """Phase 1 -- RunSetup: reserve the slot, open trace, load config."""
+    from codey.storage.local_store import StoreCorruption
     from codey.workspace.changes import ProjectWriteBusy
 
     state = deps.state
@@ -245,13 +293,11 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
         trace_sink = FailOpenPromptTrace(trace)
         project_config_result = load_project_config(project) if project else ProjectConfigLoadResult()
 
-        provider_controls.set_teach_handler(functools.partial(sibling_probe.handle_control_teach, state))
-        provider_controls.set_doctor_handler(functools.partial(sibling_probe.handle_profile_doctor, state))
-        provider_flow.set_recovery_handler(functools.partial(sibling_probe.handle_flow_recovery, state))
+        bind_provider_handlers(state)
         provider_controls.begin_task_context(session_id)
+        task_context_started = True
         state.run_registry.set_last_provider_failure(None)
         previous_cancel_event = cancellation.set_event(state.run_registry.stop_flag)
-        task_context_started = True
 
         # Single persistent writer: snapshot projects claim cross-process
         # ownership here; a busy project fails fast instead of forking baselines.
@@ -272,13 +318,17 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
                 except ProjectWriteBusy:
                     writer_acquired = False
                 if not writer_acquired:
-                    cancellation.set_event(previous_cancel_event)
-                    provider_controls.end_task_context()
-                    state.release_run(run_id)
-                    return None, OperationOutcome.failed(
-                        reason="project_write_busy",
-                        summary="another task is writing this project",
+                    _release_setup_resources(
+                        state, project, previous_cancel_event,
+                        task_context_started, False,
                     )
+                    outcome = _finish_setup_failure(
+                        state, request, run_id,
+                        "another task is writing this project",
+                        outcome_reason="project_write_busy",
+                        task_kind=baseline_task_kind,
+                    )
+                    return None, outcome
 
         review_deps = review_flow_deps(deps)
         ghost_deps = ghost_task_deps(deps, review_deps)
@@ -302,20 +352,32 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
             previous_cancel_event=previous_cancel_event,
             writer_acquired=writer_acquired,
         ), None
-    except Exception:
-        if writer_acquired:
-            with contextlib.suppress(Exception):
-                release = getattr(state, "release_project_writer", None)
-                if callable(release):
-                    release(project)
-        if task_context_started:
-            with contextlib.suppress(Exception):
-                cancellation.set_event(previous_cancel_event)
-            with contextlib.suppress(Exception):
-                provider_controls.end_task_context()
-        with contextlib.suppress(Exception):
-            state.release_run(run_id)
-        raise
+    except StoreCorruption as exc:
+        _release_setup_resources(
+            state, project, previous_cancel_event,
+            task_context_started, writer_acquired,
+        )
+        outcome = _finish_setup_failure(
+            state, request, run_id, "snapshot needs repair",
+            outcome_reason="snapshot_corrupt",
+            task_kind=baseline_task_kind,
+        )
+        logger.warning("run setup snapshot corrupt: %s", exc)
+        return None, outcome
+    except Exception as exc:
+        _release_setup_resources(
+            state, project, previous_cancel_event,
+            task_context_started, writer_acquired,
+        )
+        summary = f"run setup failed: {type(exc).__name__}"
+        outcome = _finish_setup_failure(
+            state, request, run_id, summary,
+            outcome_reason="setup_failed",
+            task_kind=baseline_task_kind,
+        )
+        logger.warning("run setup failed: %r", exc)
+        return None, outcome
+
 
 
 def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | None, OperationOutcome | None]:

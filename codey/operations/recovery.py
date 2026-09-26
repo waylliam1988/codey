@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,8 @@ from codey.runtime.effects.safe_tool_replay import (
 )
 from codey.runtime.write.drive import peek_next_action
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -132,6 +135,9 @@ def recover_effects_for_resume(
 
 
 def _runtime_mutations(deps: Any) -> RuntimeMutationLine | None:
+    # None means "no durable runtime attached (e.g. chat-only), nothing to
+    # recover", not "recovery succeeded despite failure". Callers distinguish
+    # via ResumeRecoveryResult.ok.
     return getattr(deps, "runtime_mutations", None)
 
 
@@ -166,6 +172,13 @@ def _try_replay_safe_tool(
     settle: bool = True,
 ) -> RecoveredToolOutcome | None:
     if candidate is None or project_path is None:
+        logger.warning(
+            "safe replay skipped: run=%s effect=%s tool=%s reason=%s",
+            run_id,
+            getattr(candidate, "effect_id", ""),
+            getattr(getattr(candidate, "call", None), "name", ""),
+            "no_candidate_or_project",
+        )
         return None
     try:
         policy_decision, replay_decision = evaluate_tool_call_policy_for(
@@ -176,6 +189,13 @@ def _try_replay_safe_tool(
             phase="writer",
         )
         if policy_denied(policy_decision) or replay_decision.replay_class != ReplayClass.SAFE:
+            logger.warning(
+                "safe replay denied: run=%s effect=%s tool=%s reason=%s",
+                run_id,
+                candidate.effect_id,
+                candidate.call.name,
+                "policy_or_replay_class",
+            )
             return None
         outcome = execute_information_tool_call(project_path, tool_fns, candidate.call)
         status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
@@ -206,7 +226,15 @@ def _try_replay_safe_tool(
         )
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
-    except Exception:
+    except Exception as exc:
+        # One bounded diagnostic with IDs only; never log arg bodies.
+        logger.warning(
+            "safe replay failed: run=%s effect=%s tool=%s reason=%s",
+            run_id,
+            getattr(candidate, "effect_id", ""),
+            getattr(getattr(candidate, "call", None), "name", ""),
+            type(exc).__name__[:40],
+        )
         return None
 
 

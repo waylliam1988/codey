@@ -8,12 +8,21 @@ directly; tests patch ``codey.ghost._common`` so there is exactly one seam.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from codey.ghost.schema import clip_signal_text
 
 VALID_SCOPES = ("user", "project", "session")
+
+
+def field_value(value: Any, name: str) -> object:
+    """Read a dict-or-object field without inventing a default type."""
+    if isinstance(value, Mapping):
+        return value.get(name)
+    return getattr(value, name, "")
 
 
 def now_iso_z() -> str:
@@ -30,4 +39,4 @@ def normalize_project(value: object) -> str:
         return clip_signal_text(text, 240)
 
 
-__all__ = ["VALID_SCOPES", "normalize_project", "now_iso_z"]
+__all__ = ["VALID_SCOPES", "field_value", "normalize_project", "now_iso_z"]

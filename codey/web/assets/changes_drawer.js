@@ -19,8 +19,7 @@ async function openChangesDrawer(project) {
   if (!project) return;
   if (deps.closeOtherDrawers) deps.closeOtherDrawers('changes');
   deps.setActiveProject(project);
-  $('changes-drawer').classList.add('open');
-  $('changes-drawer').setAttribute('aria-hidden', 'false');
+  window.CodeyUiState.setDrawerOpen('changes-drawer', true);
   await loadChangesDrawer(project);
 }
 
@@ -41,8 +40,7 @@ async function loadChangesDrawer(project) {
 }
 
 function closeChangesDrawer() {
-  $('changes-drawer').classList.remove('open');
-  $('changes-drawer').setAttribute('aria-hidden', 'true');
+  window.CodeyUiState.setDrawerOpen('changes-drawer', false);
 }
 
 function renderChangesDrawer(data) {

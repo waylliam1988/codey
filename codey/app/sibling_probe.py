@@ -140,6 +140,19 @@ def handle_flow_recovery(
     return None
 
 
+def bind_provider_handlers(ctx: TaskState) -> None:
+    """Bind teach/doctor/recovery handlers to one task state (single seam).
+
+    Both server startup and task entry call this; task entry rebinds per run
+    so headless runs without server init still get handlers.
+    """
+    import functools
+
+    provider_controls.set_teach_handler(functools.partial(handle_control_teach, ctx))
+    provider_controls.set_doctor_handler(functools.partial(handle_profile_doctor, ctx))
+    provider_flow.set_recovery_handler(functools.partial(handle_flow_recovery, ctx))
+
+
 def handle_control_teach(ctx: TaskState, request: provider_controls.ControlTeachRequest):
     """Run the click-capture loop for one provider-control teach request."""
     while True:
@@ -188,6 +201,7 @@ def handle_control_teach(ctx: TaskState, request: provider_controls.ControlTeach
 __all__ = [
     "CONTROL_TEACH_TIMEOUT",
     "PROFILE_DOCTOR_TIMEOUT",
+    "bind_provider_handlers",
     "borrow_open_provider",
     "handle_control_teach",
     "handle_flow_recovery",

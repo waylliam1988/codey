@@ -381,18 +381,16 @@ class AppContext:
         persistent: bool,
     ) -> ChangeTracker:
         key = str(Path(project).expanduser().resolve())
+        if not persistent:
+            # Read-only/Git view: never mutate a cached tracker a task may
+            # hold, and never delete durable recovery data on a query path.
+            # Explicit cleanup owns deletion.
+            return ChangeTracker(key, None)
         with self.lock:
             tracker = self.change_trackers.get(key)
             current_persistent = tracker is not None and tracker.store is not None
-            if tracker is None or current_persistent != persistent:
-                if not persistent:
-                    if tracker is not None:
-                        tracker.disable_persistence()
-                    self.snapshot_store.delete(key)
-                tracker = ChangeTracker(
-                    key,
-                    self.snapshot_store if persistent else None,
-                )
+            if tracker is None or not current_persistent:
+                tracker = ChangeTracker(key, self.snapshot_store)
                 self.change_trackers[key] = tracker
             else:
                 self.change_trackers.move_to_end(key)

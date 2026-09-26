@@ -242,37 +242,16 @@ def _result_label(call: ToolCall) -> str:
 
 
 def extract_json_objects(text: str) -> list[dict[str, Any]]:
+    from codey.protocols.json_scanner import balanced_json_spans
+
     objects: list[dict[str, Any]] = []
-    depth = 0
-    start = -1
-    in_string = False
-    escape = False
-    for index, char in enumerate(text):
-        if in_string:
-            if escape:
-                escape = False
-            elif char == "\\":
-                escape = True
-            elif char == '"':
-                in_string = False
+    for start, end in balanced_json_spans(str(text or "")):
+        try:
+            value = json.loads(text[start:end], strict=False)
+        except json.JSONDecodeError:
             continue
-        if char == '"':
-            in_string = True
-        elif char == "{":
-            if depth == 0:
-                start = index
-            depth += 1
-        elif char == "}" and depth > 0:
-            depth -= 1
-            if depth == 0 and start >= 0:
-                chunk = text[start : index + 1]
-                try:
-                    value = json.loads(chunk, strict=False)
-                except json.JSONDecodeError:
-                    value = None
-                if isinstance(value, dict):
-                    objects.append(value)
-                start = -1
+        if isinstance(value, dict):
+            objects.append(value)
     return objects
 
 

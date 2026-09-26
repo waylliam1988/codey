@@ -1,5 +1,55 @@
 # Codey Test Report
 
+## Recovery ownership and small-subtraction full suite (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/workspace/changes.py            (null key-exists block; disk-lock capacity; pre-check + cached revalidate)
+codey/app/context.py + app/api.py     (ephemeral Git tracker; read-only GET; Restore writer lease 409)
+codey/operations/task_run.py          (single _finish_setup_failure task_done; _release_setup_resources once)
+codey/providers/worker.py             (stdin failure -> submission_uncertain; shared _action_error)
+codey/runs/ledger.py + task_phases/hooks.py + ghost_post_turn.py (LedgerWriteFailed; middle-corrupt unavailable; ledger_incomplete warn)
+codey/policies/shell_risk.py          (npx vite/next dev merged dev-server; other npx install)
+codey/operations/recovery.py          (one bounded replay diagnostic, no arg bodies)
+codey/protocols/json_scanner.py + json_codec.py + research/protocols.py (shared spans, local acceptance)
+codey/research/runner.py              (_review_done_candidate/_build_research_result, yields intact)
+codey/agents/loop.py                  (_finish_max_turns + pure _decide_done)
+codey/operations/project_completion_flow.py (_persist/_settle/_build helpers in file)
+codey/ghost/_common.py + affinity.py + work_queue.py + directive.py (field_value convergence)
+codey/ghost/router.py                 (route_error_cost eval-only, out of __all__)
+codey/policies/action.py              (drop unconnected research_url/local_context_action kinds/guards/tests)
+codey/app/sibling_probe.py + server.py + task_run.py (bind_provider_handlers single seam)
+codey/storage/conversation_store.py   (drop _prune wrapper; _prune_locked + lock in test)
+codey/toolchain/runtime.py            (streamed read_file; per-file relative_to)
+codey/web/assets/ui_state.js + drawers + index.html (setDrawerOpen; Local update paused)
+tests/test_recovery_ownership_regression.py (null/capacity/concurrent/cached/GET/lease/setup/ledger/npx)
+tests/test_task_setup_cleanup.py       (single task_done outcomes, no raise; drop no-op patch)
+tests/test_run_ledger.py               (LedgerWriteFailed fail-fast + observable reason)
+tests/test_action_policy.py            (drop fake research_url wiring; keep denial_reason)
+tests/test_worker_local_fixes.py       (assert submission_uncertain kind)
+tests/test_coldstart_hardening.py      (locked prune + follow_symlinks-tolerant stat)
+tests/test_coldstart_review_batch.py   (persistent-only cache + ephemeral bypass)
+tests/test_server.py                   (Git view preserves manifest/tracker; git task still snapshot-free)
+tests/test_ui.py                       (quiet Local update copy + local-health key)
+tests/test_architecture.py             (worker 983, runner 1326, toolchain 1300, changes 1120 within ceiling)
+```
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check .`, `python -m compileall -q
+  codey tests`, and `git diff --check` passed; targeted ownership suites
+  (`test_recovery_ownership_regression` + `test_changes` + `test_action_policy` +
+  `test_worker_local_fixes` + `test_task_setup_cleanup` + ledger/ghost/runner/loop
+  suites) green.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4294 passed, 7 skipped, 1374 subtests passed in 371.21s (0:06:11)`,
+  then 1 flaky `LocalProviderApiTests.test_foreign_host_header_is_rejected_before_any_handler`
+  aborted with `ConnectionAbortedError WinError 10053` and passed on single retry
+  (`1 passed in 1.24s`). Skips are the known Windows POSIX/opt-in family.
+- This entry was written after the full suite. No release was made. Ghost was kept;
+  no `ghost/explain.py`, Epoch, or worker-rewrite shells were added.
+
 ## Verified recovery and lifecycle hardening full suite (2026-09-26)
 
 Scope (production, no release):

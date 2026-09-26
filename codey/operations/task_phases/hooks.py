@@ -99,7 +99,13 @@ def build_hooks(
             return
         try:
             action(work.ledger)
-        except Exception:
+        except Exception as exc:
+            # IO failure marks this run's ledger unavailable; the task itself
+            # still completes. One bounded diagnostic, no new persisted file.
+            logger.warning(
+                "run ledger unavailable: %s",
+                str(exc)[:120],
+            )
             work.ledger = None
 
     def append_ledger_provider_failure(pid: str, failure: ProviderFailure) -> None:

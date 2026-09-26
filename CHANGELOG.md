@@ -2,6 +2,54 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Recovery ownership and small-subtraction hardening (no release)
+
+- Snapshot single-writer closure: `put_baseline()` uses key-existence (`rel in files`)
+  so a `null` entry raises `StoreCorruption` instead of overwriting the body;
+  file-count/size guards run inside the manifest lock on the disk view;
+  `capture_before()` pre-checks memory capacity before touching disk, publishes
+  first-wins persisted values, and revalidates cached paths via the read-only
+  branch. Regressions cover null-overwrite, 201st-file/total-bytes, concurrent
+  trackers, and second-edit validation.
+- Read-only Changes and single-writer Restore: `change_tracker_for(persistent=False)`
+  returns an ephemeral tracker without mutating the cached task tracker or deleting
+  durable snapshots; `changes_response()` GET stays read-only across git init;
+  `restore_changes_response()` holds `acquire_project_writer()` across
+  read-basis-to-write with 409 on contention. Git-conversion and two-context
+  lease regressions added.
+- Setup failures emit one terminal: `_setup_run_state()` routes busy/corrupt/init
+  errors through `_finish_setup_failure()` (`task_done` error + `finish_run`,
+  no duplicate `release_run`); `task_context_started` moves right after
+  `begin_task_context`; writer/task-context/cancel release once via
+  `_release_setup_resources()`. Setup tests assert exactly one `task_done`,
+  cleared run, and reusable writer.
+- Uncertain submission, honest ledger, quiet prompts: worker stdin write/flush
+  failures use `FAILURE_SUBMISSION_UNCERTAIN` (no new kind); ledger IO failures
+  raise `LedgerWriteFailed` so `hooks.append_ledger()` marks the run unavailable
+  and logs once, tasks still complete; `read_ledger()` treats middle corruption
+  as unavailable (torn tail only); Ghost post-turn warns `ledger_incomplete`
+  instead of learning from spliced facts; `npx vite dev`/`next dev` get a merged
+  dev-server explanation, other `npx` stays install; replay logs one bounded
+  `run/effect/tool/reason` line without arg bodies.
+- Small subtractions, no compat: shared `protocols/json_scanner.balanced_json_spans()`
+  backs both codecs (acceptance rules stay local); `runner.run()` extracts
+  `_review_done_candidate`/`_build_research_result` with yields in place;
+  agent loop converges max-turns exits via `_finish_max_turns()` plus pure
+  `_decide_done()`; `_finalize_project()` splits persist/settle/build-event in
+  file; Ghost `_field` converges on `_common.field_value`; `route_error_cost`
+  leaves production `__all__`; unconnected `research_url`/`local_context_action`
+  kinds/guards/fake wiring removed (research stays on `check_fetch_url`);
+  provider handlers bind via `sibling_probe.bind_provider_handlers()`; pruned
+  `ConversationStore._prune` wrapper; `read_file()` streams pages, `search_files()`
+  computes `relative_to` per file; drawers share `CodeyUiState.setDrawerOpen()`;
+  Ghost warning renders `Local update paused — see Local context`.
+- Verification: `python -m ruff check .`, `python -m compileall -q codey tests`,
+  `git diff --check`, targeted ownership suites, and final
+  `python -m pytest -q -o faulthandler_timeout=120` (`4294 passed, 7 skipped,
+  1374 subtests passed in 371.21s`; one flaky `LocalProviderApiTests` host-header
+  run aborted with WinError 10053 then passed on retry). No release was made.
+  Ghost kept as the local adaptive layer; no worker rewrite, no new compat shims.
+
 ## Unreleased - Verified recovery and lifecycle hardening (no release)
 
 - Snapshot corruption blocks instead of silent reset: `load()`,

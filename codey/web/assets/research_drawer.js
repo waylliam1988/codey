@@ -23,16 +23,14 @@ function disposeResearchGraph() {
 
 function openResearchDrawer(sessionId) {
   if (deps.closeOtherDrawers) deps.closeOtherDrawers('research');
-  $('research-drawer').classList.add('open');
-  $('research-drawer').setAttribute('aria-hidden', 'false');
+  window.CodeyUiState.setDrawerOpen('research-drawer', true);
   renderResearchDrawer(sessionId);
 }
 
 function closeResearchDrawer() {
   disposeResearchGraph();
-  $('research-drawer').classList.remove('open');
+  window.CodeyUiState.setDrawerOpen('research-drawer', false);
   $('research-drawer').classList.remove('graph-open');
-  $('research-drawer').setAttribute('aria-hidden', 'true');
 }
 
 function renderResearchDrawer(sessionId) {

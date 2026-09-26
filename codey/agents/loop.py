@@ -459,18 +459,7 @@ def _run_loop(
                         return _finish(session, msg, "no_progress", turn)
 
                 if turn >= session.config.max_turns:
-                    emit(
-                        session,
-                        RunEvent.status(
-                            f"[agent] hit max_turns={session.config.max_turns}, stopping."
-                        ),
-                    )
-                    return _finish(
-                        session,
-                        f"hit max_turns={session.config.max_turns}",
-                        "max_turns",
-                        turn,
-                    )
+                    return _finish_max_turns(session, turn)
 
                 protocol_reminder = "\n\nNote: Please remember to include a <continue> or <done> control element in your response."
                 if guard_reason:
@@ -542,17 +531,8 @@ def _run_loop(
                     ),
                 )
                 if turn >= session.config.max_turns:
-                    emit(
-                        session,
-                        RunEvent.status(
-                            f"[agent] hit max_turns={session.config.max_turns}, stopping."
-                        ),
-                    )
-                    return _finish(
-                        session,
-                        "verification required before done",
-                        "max_turns",
-                        turn,
+                    return _finish_max_turns(
+                        session, turn, "verification required before done"
                     )
                 reminder = requested_verification_reminder(session)
                 reply = _send_followup(session, reminder, restart_request=reminder)
@@ -581,11 +561,8 @@ def _run_loop(
                         ),
                     )
                     if turn >= session.config.max_turns:
-                        return _finish(
-                            session,
-                            "verification did not pass",
-                            "max_turns",
-                            turn,
+                        return _finish_max_turns(
+                            session, turn, "verification did not pass"
                         )
                     reminder = default_candidate_reminder(candidate)
                     reply = _send_followup(session, reminder, restart_request=reminder)
@@ -617,18 +594,7 @@ def _run_loop(
                 return _finish(session, msg, "no_progress", turn)
 
         if turn >= session.config.max_turns:
-            emit(
-                session,
-                RunEvent.status(
-                    f"[agent] hit max_turns={session.config.max_turns}, stopping."
-                ),
-            )
-            return _finish(
-                session,
-                control.body or f"hit max_turns={session.config.max_turns}",
-                "max_turns",
-                turn,
-            )
+            return _finish_max_turns(session, turn, control.body or "")
 
         try:
             reply = _deliver(turn_state, turn, f"\n\n{guard_reason}" if guard_reason else "")
@@ -637,6 +603,43 @@ def _run_loop(
         _report_reply(session, turn + 1, reply)
 
     return _finish(session, "(max turns reached)", "max_turns", session.config.max_turns)
+
+
+def _finish_max_turns(session, turn: int, summary: str = "") -> RunResult:
+    """Single max-turns exit so copy stays in one place."""
+    body = summary or f"hit max_turns={session.config.max_turns}"
+    emit(
+        session,
+        RunEvent.status(f"[agent] hit max_turns={session.config.max_turns}, stopping."),
+    )
+    return _finish(session, body, "max_turns", turn)
+
+
+def _decide_done(session, calls: list, control) -> str:
+    """Classify a done control without side effects.
+
+    Returns one of "followup_info", "need_verification", "need_default_check",
+    "accept". Emits nothing; the caller owns reminders and yields.
+    """
+    if any(call.name in INFORMATION_TOOL_NAMES for call in calls):
+        return "followup_info"
+    if (
+        session.config.verification_required
+        and session.progress.wrote_files
+        and not verification_attempted_after_latest_edit(session)
+    ):
+        return "need_verification"
+    candidate = selected_verification_candidate(session)
+    trusted_green = verification_is_fresh(session, candidate)
+    if (
+        not session.config.verification_required
+        and not session.config.verification_forbidden
+        and candidate is not None
+        and not trusted_green
+        and session.verification.default_reminded_epoch != session.verification.edit_epoch
+    ):
+        return "need_default_check"
+    return "accept"
 
 
 def run(request: AgentRequest) -> RunResult:

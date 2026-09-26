@@ -54,10 +54,8 @@ PATH_ACTIONS = READ_ACTIONS | WRITE_ACTIONS | frozenset({
     "shell",
 })
 KNOWN_ACTIONS = PATH_ACTIONS | frozenset({
-    "research_url",
     "provider_fallback",
     "managed_output",
-    "local_context_action",
 })
 
 
@@ -240,6 +238,8 @@ class ActionPolicyPipeline:
 
 
 def default_action_policy_pipeline() -> ActionPolicyPipeline:
+    # Research URLs are guarded at the connector layer by
+    # policies.network.check_fetch_url, not via an action kind.
     return ActionPolicyPipeline((
         unknown_action_guard,
         permission_profile_guard,
@@ -247,8 +247,6 @@ def default_action_policy_pipeline() -> ActionPolicyPipeline:
         write_scope_guard,
         run_command_guard,
         shell_approval_guard,
-        research_url_guard,
-        local_context_action_guard,
         provider_fallback_guard,
         managed_output_size_guard,
     ))
@@ -281,7 +279,7 @@ def unknown_action_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
 
 
 def permission_profile_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
-    if subject.kind not in PATH_ACTIONS | frozenset({"research_url", "managed_output"}):
+    if subject.kind not in PATH_ACTIONS | frozenset({"managed_output"}):
         return None
     profile = _profile(subject)
     if profile is None:
@@ -298,8 +296,6 @@ def permission_profile_guard(subject: ActionSubject) -> ActionPolicyDecision | N
     if subject.kind == "run_command" and "project_verify" not in profile.coding_permissions:
         return _permission_denied(subject)
     if subject.kind == "shell" and not profile.can_request_shell:
-        return _permission_denied(subject)
-    if subject.kind == "research_url" and "open_url" not in profile.research_tools:
         return _permission_denied(subject)
     if subject.kind == "managed_output" and (
         "project_verify" not in profile.coding_permissions and "open_url" not in profile.research_tools
@@ -399,33 +395,6 @@ def shell_approval_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
     )
 
 
-def research_url_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
-    if subject.kind != "research_url":
-        return None
-    reason = research_url_denial_reason(subject.url)
-    if reason:
-        return ActionPolicyDecision.deny(
-            subject,
-            guard_id="research_url_guard",
-            reason_code=_reason_code(reason),
-            display=reason,
-        )
-    return None
-
-
-def local_context_action_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
-    if subject.kind != "local_context_action":
-        return None
-    if subject.tool_name in {"prompt_patch", "router_override", "provider_override", "permission_override"}:
-        return ActionPolicyDecision.deny(
-            subject,
-            guard_id="local_context_action_guard",
-            reason_code="local_context_scope_violation",
-            display="local context cannot change prompt, router, provider, or permissions",
-        )
-    return None
-
-
 def provider_fallback_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
     if subject.kind != "provider_fallback":
         return None
@@ -486,12 +455,6 @@ def _permission_denied(subject: ActionSubject) -> ActionPolicyDecision:
         reason_code="permission_profile_denied",
         display="action denied by permission profile",
     )
-
-
-def _reason_code(reason: str) -> str:
-    text = reason.lower().replace("(", " ").replace(")", " ")
-    code = "_".join(part for part in text.replace("/", " ").split() if part)
-    return _identifier(code, MAX_REASON_CHARS) or "research_url_denied"
 
 
 def _identifier(value: object, limit: int = 80) -> str:

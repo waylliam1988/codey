@@ -107,43 +107,17 @@ def __getattr__(name: str) -> str:
 
 def _balanced_json_objects(text: str) -> list[dict[str, Any]]:
     """Extract JSON objects from raw web replies without accepting prose."""
+    from codey.protocols.json_scanner import balanced_json_spans
+
     text = _strip_think_blocks(text)
     objects: list[dict[str, Any]] = []
-    in_string = False
-    escaped = False
-    start: int | None = None
-    depth = 0
-
-    for index, char in enumerate(text):
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
+    for start, end in balanced_json_spans(text):
+        try:
+            value = json.loads(text[start:end])
+        except json.JSONDecodeError:
             continue
-
-        if char == '"':
-            in_string = True
-            continue
-        if char == "{":
-            if depth == 0:
-                start = index
-            depth += 1
-            continue
-        if char == "}" and depth:
-            depth -= 1
-            if depth == 0 and start is not None:
-                raw = text[start : index + 1]
-                try:
-                    value = json.loads(raw)
-                except json.JSONDecodeError:
-                    start = None
-                    continue
-                if isinstance(value, dict):
-                    objects.append(value)
-                start = None
+        if isinstance(value, dict):
+            objects.append(value)
     return objects
 
 

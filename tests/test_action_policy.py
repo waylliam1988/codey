@@ -344,18 +344,6 @@ class ActionPolicyTests(unittest.TestCase):
         self.assertEqual(deny.decision, DECISION_DENY)
         self.assertEqual(deny.reason_code, "approval_unavailable")
 
-    def test_research_url_guard_rejects_invalid_port_without_exception(self) -> None:
-        decision = evaluate_action(ActionSubject(
-            "research_url",
-            phase="research",
-            permission_profile="research",
-            url="http://example.com:99999/path",
-        ))
-
-        self.assertEqual(decision.decision, DECISION_DENY)
-        self.assertEqual(decision.reason_code, "invalid_url_port")
-        self.assertEqual(decision.display, "invalid URL port")
-
     def test_research_url_guard_rejects_invalid_port_without_dns_resolution(self) -> None:
         self.assertEqual(
             research_url_denial_reason("http://example.com:99999/path", resolve=False),
@@ -384,20 +372,6 @@ class ActionPolicyTests(unittest.TestCase):
         self.assertIsNone(
             research_url_denial_reason("https://sec.gov/report", resolve=False)
         )
-
-    def test_research_url_guard_rejects_local_targets(self) -> None:
-        decision = evaluate_action(ActionSubject(
-            "research_url",
-            phase="research",
-            permission_profile="research",
-            url="http://127.0.0.1/private",
-        ))
-
-        payload = decision.to_audit_payload()
-
-        self.assertEqual(decision.decision, DECISION_DENY)
-        self.assertIn("non_public", decision.reason_code)
-        self.assertNotIn("127.0.0.1", json.dumps(payload))
 
     def test_research_url_guard_rejects_cgnat_and_non_global_ips(self) -> None:
         # 100.64.0.0/10 (Shared Address Space / CGNAT) is not global and must be rejected

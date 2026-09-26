@@ -19,8 +19,7 @@ function $(id) { return deps.$(id); }
 
 function openLocalContextDrawer() {
   if (deps.closeOtherDrawers) deps.closeOtherDrawers('local_context');
-  $('local-context-drawer').classList.add('open');
-  $('local-context-drawer').setAttribute('aria-hidden', 'false');
+  window.CodeyUiState.setDrawerOpen('local-context-drawer', true);
   loadLocalContextDrawer();
 }
 
@@ -28,8 +27,7 @@ function closeLocalContextDrawer() {
   closeRowMenu();
   disarmDangerButtons();
   loadedScope = null;
-  $('local-context-drawer').classList.remove('open');
-  $('local-context-drawer').setAttribute('aria-hidden', 'true');
+  window.CodeyUiState.setDrawerOpen('local-context-drawer', false);
 }
 
 async function loadLocalContextDrawer() {

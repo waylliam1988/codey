@@ -48,6 +48,24 @@ def classify_shell_risk(command: str) -> ShellRisk:
     text = " ".join(argv)
     if _has_shell_chain(text, argv):
         return GENERIC_RISK
+    if _is_npx_dev_server(argv):
+        return ShellRisk(
+            label="dev_server",
+            title="Dev server",
+            detail=(
+                "May download packages on first run and start a long-running "
+                "local process; Codey does not manage background dev servers "
+                "in this flow."
+            ),
+            post_approval_instructions=(
+                "Post-approval checklist:\n"
+                "- Inspect the shell exit code and output before claiming success.\n"
+                "- Codey is not managing a background dev server here; a synchronous "
+                "shell command may time out for long-running servers.\n"
+                "- If the project changed, run a trusted local check before done "
+                "when available."
+            ),
+        )
     if _is_dependency_install(argv):
         return ShellRisk(
             label="dependency_install",
@@ -191,6 +209,16 @@ def _starts_with(argv: list[str], *prefix: str) -> bool:
     return len(argv) >= len(prefix) and tuple(argv[:len(prefix)]) == prefix
 
 
+def _is_npx_dev_server(argv: list[str]) -> bool:
+    """Recognized npx dev-server invocations (display-only, not permission).
+
+    ``npx vite dev`` / ``npx next dev`` may both fetch a package and start a
+    long-lived server, so they get a merged explanation instead of the plain
+    install label. All other ``npx`` forms stay dependency installs.
+    """
+    return len(argv) >= 3 and argv[0] == "npx" and argv[1] in {"vite", "next"} and argv[2] == "dev"
+
+
 def _is_dependency_install(argv: list[str]) -> bool:
     return (
         _node_package_install(argv)
@@ -202,7 +230,7 @@ def _is_dependency_install(argv: list[str]) -> bool:
         or _starts_with(argv, "go", "get")
         or _starts_with(argv, "cargo", "add")
         or _starts_with(argv, "deno", "install")
-        or (len(argv) >= 2 and argv[0] == "npx")
+        or (len(argv) >= 2 and argv[0] == "npx" and not _is_npx_dev_server(argv))
     )
 
 
