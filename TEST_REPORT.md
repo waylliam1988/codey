@@ -1,5 +1,47 @@
 # Codey Test Report
 
+## Post-boot default live-read, executable shrink lock, verification correction (2026-09-27)
+
+Scope (review follow-up, no release):
+
+```text
+codey/web/index.html (added liveDefaultProvider(); currentProviderId/deleteProject/attachCurrentChatToPickedProject/retryTask read live default; boot snapshot passing unchanged)
+codey/web/assets/composer.js (added liveDefaultProvider(); setActiveProvider/sendTaskFromSession/continueTask read live default)
+tests/test_ui.py (new test_post_boot_default_fallback_reads_live_source, 2 subtests red before; new executable test_provider_shrink_and_default_change_applies_live, Node-only; updated 2 stale DEFAULT_PROVIDER assertions to live helper)
+tests/test_deadcode_cleanup_locks.py (deleted tautological `or True`; stability covered by test_stepfun refill/reject)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry + Node correction)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (deterministic stale-default bug locked before the fix):
+
+- `tests/test_ui.py::test_post_boot_default_fallback_reads_live_source` failed
+  before (`function liveDefaultProvider()` missing in both assets, 2 subtests);
+  after adding the helper and switching the 7 fallback sites to
+  `liveDefaultProvider()`, it passes. The bug is latent (server default is a
+  constant), but a post-boot catalog flipping the default would otherwise leave
+  `index.html`/`composer.js` falling back to the old id for missing/removed
+  session providers while `provider_ui.js` already resynced.
+- Executable `test_provider_shrink_and_default_change_applies_live` boots two
+  providers in Node, applies a shrink-to-one catalog (asserts `applyConfig`
+  returns true and `PROVIDERS` shrinks), flips the default to `mimo`, inits
+  composer with a stale `deepseek` snapshot, and asserts
+  `setActiveProvider('removed-id')` assigns/syncs `mimo`. Skipped without Node
+  in this worker; review verified the same shrink + live-default scenario with
+  a temp DOM harness, and Node 24.19.0 `node --check` passed for all 12 JS
+  assets (correcting the prior "no local Node" record).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted suites green (`test_ui` 74 passed + 1
+  skipped Node-only; `test_deadcode_cleanup_locks` 26 passed;
+  `test_stepfun` 31 passed).
+- Final full suite: `python -m pytest -q`:
+  `4606 passed, 10 skipped, 1435 subtests passed in 349.39s (0:05:49)`.
+  Skips are the known Windows/opt-in family plus the Node-only executable test.
+  No release was made.
+
 ## Dead-param / dedup / provider-hierarchy cleanup, frontend shrink fix (2026-09-27)
 
 Scope (dead code + true duplicates + hierarchy, no release):

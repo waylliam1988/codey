@@ -114,7 +114,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", COMPOSER_JS)
         send_click = COMPOSER_JS[COMPOSER_JS.index("async function sendActiveDraft()"):COMPOSER_JS.index("async function continueTask")]
         self.assertIn("const provider = currentProviderId();", send_click)
-        self.assertIn("provider: s.provider || DEFAULT_PROVIDER", COMPOSER_JS)
+        self.assertIn("provider: s.provider || liveDefaultProvider()", COMPOSER_JS)
         self.assertIn("intent: 'project'", COMPOSER_JS)
         self.assertIn("provider: PROVIDERS.includes(raw.provider)", UI_STATE_JS)
         self.assertIn("Continue the unfinished task in this same conversation.", COMPOSER_JS)
@@ -282,7 +282,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         retry_start = HTML.index("function retryTask(sessionId)")
         retry_end = HTML.index("function sessionProjectPath", retry_start)
         retry_block = HTML[retry_start:retry_end]
-        self.assertIn("syncProviderUI(s.provider || DEFAULT_PROVIDER)", retry_block)
+        self.assertIn("syncProviderUI(s.provider || liveDefaultProvider())", retry_block)
         self.assertIn("$('send').click()", retry_block)
         self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", COMPOSER_JS)
 
@@ -1366,6 +1366,153 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("window.CodeyUiState.setProviders(catalog.ids, catalog.labels, data.default)", adopt_body)
         self.assertNotIn("typeof window.CodeyUiState.setProviders", adopt_body)
         self.assertNotIn("PROVIDERS = ", adopt_body)
+
+    def test_post_boot_default_fallback_reads_live_source(self) -> None:
+        # P2 red-first: index.html + composer.js must not freeze DEFAULT_PROVIDER
+        # at boot. Fallbacks for missing/removed session providers must read the
+        # live catalog source at use time.
+        for name, src in (("index.html", HTML), ("composer.js", COMPOSER_JS)):
+            with self.subTest(asset=name):
+                self.assertIn("function liveDefaultProvider()", src)
+                self.assertIn("window.CodeyUiState.DEFAULT_PROVIDER", src)
+        # index.html fallbacks use the live helper.
+        self.assertIn(
+            "PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()",
+            HTML,
+        )
+        self.assertIn("defaultSession(null, liveDefaultProvider())", HTML)
+        self.assertIn("s.provider || liveDefaultProvider()", HTML)
+        # composer.js fallbacks use the live helper.
+        self.assertIn("PROVIDERS.includes(id) ? id : liveDefaultProvider()", COMPOSER_JS)
+        self.assertIn("s.provider) ? s.provider : liveDefaultProvider()", COMPOSER_JS)
+        self.assertIn("s.provider || liveDefaultProvider()", COMPOSER_JS)
+
+    def test_provider_shrink_and_default_change_applies_live(self) -> None:
+        # Executable behavior lock (not just source strings): simulate boot with
+        # two providers, then a post-boot catalog that removes one and flips the
+        # default. Requires node; skipped where node is unavailable.
+        import shutil
+        import subprocess
+        import tempfile
+
+        if shutil.which("node") is None:
+            self.skipTest("node unavailable for executable JS behavior check")
+        harness = r"""
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const webDir = process.argv[2];
+function loadAsset(name) {
+  return fs.readFileSync(path.join(webDir, name), 'utf8');
+}
+// Minimal browser stubs.
+const menuButtons = [];
+const fakeMenu = {
+  querySelectorAll: () => [],
+  remove: () => {},
+  insertBefore: () => {},
+  appendChild: () => {},
+  classList: { remove: () => {}, toggle: () => {}, contains: () => false },
+};
+global.document = {
+  createElement: () => ({
+    className: '', dataset: {}, textContent: '', innerHTML: '',
+    setAttribute: () => {}, append: () => {}, querySelector: () => null,
+    classList: { toggle: () => {} }, onclick: null,
+  }),
+  querySelectorAll: () => [],
+  getElementById: (id) => {
+    if (id === 'provider-menu') return fakeMenu;
+    if (id === 'provider-probe-warning') return null;
+    if (id === 'provider-button') return { classList: { remove: () => {}, toggle: () => {} } };
+    if (id === 'provider-name') return { textContent: '' };
+    if (id === 'provider-dot') return { className: '' };
+    return null;
+  },
+  addEventListener: () => {},
+};
+global.localStorage = { getItem: () => null, setItem: () => {} };
+global.window = {};
+global.navigator = {};
+const uiStateSrc = loadAsset('assets/ui_state.js');
+const providerUiSrc = loadAsset('assets/provider_ui.js');
+const composerSrc = loadAsset('assets/composer.js');
+vm.runInThisContext(uiStateSrc);
+vm.runInThisContext(providerUiSrc);
+vm.runInThisContext(composerSrc);
+// Boot with two providers, default deepseek.
+window.CodeyUiState.setProviders(['deepseek', 'mimo'], { deepseek: 'DeepSeek', mimo: 'MiMo' }, 'deepseek');
+if (window.CodeyUiState.PROVIDERS.length !== 2) throw new Error('boot catalog not applied');
+if (window.CodeyUiState.DEFAULT_PROVIDER !== 'deepseek') throw new Error('boot default not applied');
+// Init provider_ui with live references (as index.html does).
+const PROVIDERS = window.CodeyUiState.PROVIDERS;
+const PROVIDER_LABELS = window.CodeyUiState.PROVIDER_LABELS;
+let current = 'mimo';
+window.CodeyProviderUI.init({
+  $: (id) => global.document.getElementById(id),
+  escapeHtml: (s) => String(s),
+  PROVIDERS, PROVIDER_LABELS,
+  DEFAULT_PROVIDER: window.CodeyUiState.DEFAULT_PROVIDER,
+  currentProviderId: () => current,
+  setActiveProvider: (id) => { current = id; },
+});
+// Post-boot catalog: remove mimo, flip default to deepseek (already) then to a new default.
+// First shrink: only deepseek remains.
+const shrunk = window.CodeyProviderUI.applyConfig({
+  providers: [{ id: 'deepseek', label: 'DeepSeek' }],
+  default: 'deepseek',
+});
+if (shrunk !== true) throw new Error('shrink must rebuild menu (returned false)');
+if (window.CodeyUiState.PROVIDERS.length !== 1) throw new Error('menu did not shrink');
+if (window.CodeyUiState.PROVIDERS[0] !== 'deepseek') throw new Error('wrong survivor');
+// Default flip: re-add mimo with new default mimo, then verify live helpers would see it.
+window.CodeyUiState.setProviders(['deepseek', 'mimo'], { deepseek: 'DeepSeek', mimo: 'MiMo' }, 'mimo');
+if (window.CodeyUiState.DEFAULT_PROVIDER !== 'mimo') throw new Error('default flip not applied');
+// Composer live fallback: init composer with stale snapshot, then verify live helper sees new default.
+const composerProviders = window.CodeyUiState.PROVIDERS;
+const liveSession = { id: 's1', provider: 'removed-id' };
+let syncedTo = null;
+window.CodeyComposer.init({
+  $: (id) => ({ value: '', style: {}, disabled: false, textContent: '', addEventListener: () => {}, click: () => {} }),
+  PROVIDERS: composerProviders,
+  DEFAULT_PROVIDER: 'deepseek',
+  getRunningSessionId: () => null,
+  getActiveId: () => 's1',
+  activeSession: () => liveSession,
+  findSession: () => liveSession,
+  sessionProject: () => null,
+  sessionProjectPath: () => '',
+  currentIntentForSession: () => 'project',
+  currentProviderId: () => liveSession.provider,
+  persistActiveNow: () => {},
+  updateComposerContext: () => {},
+  renderChat: () => {},
+  pushMsgToSession: () => {},
+  addToSession: () => {},
+  addSendError: () => {},
+  acceptRunResponse: async () => {},
+  syncProviderUI: (id) => { syncedTo = id; },
+  openLocalProviderConfig: () => {},
+  projectPickerBusy: () => false,
+  attachCurrentChatToPickedProject: () => {},
+});
+window.CodeyComposer.setActiveProvider('removed-id');
+if (liveSession.provider !== 'mimo') throw new Error('composer fallback must use live default mimo, got ' + liveSession.provider);
+if (syncedTo !== 'mimo') throw new Error('composer sync must target live default mimo, got ' + syncedTo);
+console.log('EXECUTABLE_SHRINK_LIVE_OK');
+"""
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tmp:
+            tmp.write(harness)
+            harness_path = tmp.name
+        try:
+            completed = subprocess.run(
+                ["node", harness_path, str(WEB_DIR)],
+                capture_output=True, text=True, timeout=30,
+            )
+        finally:
+            Path(harness_path).unlink(missing_ok=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("EXECUTABLE_SHRINK_LIVE_OK", completed.stdout)
 
 
 if __name__ == "__main__":

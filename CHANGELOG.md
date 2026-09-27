@@ -2,6 +2,40 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Post-boot default live-read, executable shrink lock, verification correction (no release)
+
+- Fixed the remaining stale-default scope (P2, red-first
+  `tests/test_ui.py::test_post_boot_default_fallback_reads_live_source`, 2
+  subtests failed before): `index.html` and `composer.js` froze
+  `DEFAULT_PROVIDER` at boot, so a post-boot catalog that also flips the
+  default fell back to the old id for missing/removed session providers.
+  Both now expose `liveDefaultProvider()` reading
+  `window.CodeyUiState.DEFAULT_PROVIDER` at use time
+  (`currentProviderId`, `deleteProject`, `attachCurrentChatToPickedProject`,
+  `retryTask`, `setActiveProvider`, `sendTaskFromSession`, `continueTask`);
+  boot snapshot passing to `init()` is unchanged. Deterministic but latent:
+  server default is currently constant, so single-process runs never trigger
+  it.
+- Hardened frontend locks (P3): deleted the tautological
+  `... or True` assertion in
+  `tests/test_deadcode_cleanup_locks.py` (stability is covered executably by
+  `tests/test_stepfun.py` refill/reject tests); added executable
+  `tests/test_ui.py::test_provider_shrink_and_default_change_applies_live`
+  that boots two providers in Node, removes one, flips the default, and
+  asserts the menu shrinks and composer falls back to the live default
+  (skipped without Node; complements the existing source-string shrink lock).
+- Corrected the verification record: the prior entry claimed no local Node.
+  Review re-ran all 12 JS assets with Node 24.19.0 `node --check`, all passed;
+  this worker still has no Node in PATH, so JS here is verified via `test_ui`
+  locks plus Python sanity (11 JS assets non-empty). Future entries carry the
+  Node 24.19.0 result forward.
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted suites green before the full run; then
+  final `python -m pytest -q`:
+  `4606 passed, 10 skipped, 1435 subtests passed in 349.39s (0:05:49)`.
+  Skips are the known Windows/opt-in family plus the Node-only executable
+  test. No release was made.
+
 ## Unreleased - Dead-param / dedup / provider-hierarchy cleanup, frontend shrink fix (no release)
 
 - Removed the unreachable frontend compat branch (red-first

@@ -8,6 +8,10 @@ let PROVIDERS = [];
 let DEFAULT_PROVIDER = '';
 let handlersBound = false;
 
+function liveDefaultProvider() {
+  return (window.CodeyUiState && window.CodeyUiState.DEFAULT_PROVIDER) || DEFAULT_PROVIDER;
+}
+
 function $(id) { return deps.$(id); }
 function runningSessionId() { return deps.getRunningSessionId(); }
 function activeId() { return deps.getActiveId(); }
@@ -46,7 +50,7 @@ function toggleResearchForActive() {
 }
 
 function setActiveProvider(id) {
-  const provider = PROVIDERS.includes(id) ? id : DEFAULT_PROVIDER;
+  const provider = PROVIDERS.includes(id) ? id : liveDefaultProvider();
   const s = deps.activeSession();
   if (!s) return;
   s.provider = provider;
@@ -71,7 +75,7 @@ async function sendTaskFromSession(sessionId, task, providerId = '', onSendStart
   if (!s) return false;
   const provider = PROVIDERS.includes(providerId)
     ? providerId
-    : (PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER);
+    : (PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider());
   if (typeof onSendStarted === 'function') onSendStarted();
   deps.pushMsgToSession(sessionId, { type: 'user', text });
   const project = deps.sessionProjectPath(sessionId);
@@ -127,7 +131,7 @@ async function continueTask(sessionId) {
         project: p.path,
         task,
         continue_task: true,
-        provider: s.provider || DEFAULT_PROVIDER,
+        provider: s.provider || liveDefaultProvider(),
         intent: 'project',
       }),
     });

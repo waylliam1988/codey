@@ -2,6 +2,32 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 启动后默认 live 化、可执行缩减锁定、验证记录补正（未发布）
+
+- 补完剩余的默认过期范围（P2，红测先行，
+  `tests/test_ui.py::test_post_boot_default_fallback_reads_live_source`，
+  2 个子项先失败）：`index.html` 与 `composer.js` 在启动时冻结
+  `DEFAULT_PROVIDER`，启动后目录若同时换默认，缺失/已删 session 会回退到旧
+  ID。两者新增 `liveDefaultProvider()`，在使用时读取
+  `window.CodeyUiState.DEFAULT_PROVIDER`
+ （`currentProviderId`、`deleteProject`、`attachCurrentChatToPickedProject`、
+  `retryTask`、`setActiveProvider`、`sendTaskFromSession`、`continueTask`）；
+  传给 `init()` 的启动快照不变。确定性但潜伏：服务端默认现为常量，单进程
+  正常运行不触发。
+- 加固前端锁定（P3）：删除
+  `tests/test_deadcode_cleanup_locks.py` 中恒为真的 `... or True` 断言
+  （稳定性由 `tests/test_stepfun.py` 的重填/报错用例可执行覆盖）；新增可执行
+  `tests/test_ui.py::test_provider_shrink_and_default_change_applies_live`，
+  在 Node 中启动双 provider、删其一并翻转默认，断言菜单缩减且 composer 回退
+  到 live 默认（无 Node 时跳过，与源码字符串锁互补）。
+- 补正验证记录：上一条称本地无 Node。复核以 Node 24.19.0 对 12 个 JS 资产
+  `node --check` 全过；本 worker PATH 仍无 Node，JS 以 `test_ui` 锁定加
+  Python  sanity（11 个 JS 资产非空）验证，后续记录沿用 Node 24.19.0 结果。
+- 验证：`python -m ruff check codey tests tools`、`git diff --check` 通过。
+  全量前相关套件全绿；最终 `python -m pytest -q`：
+  **4606 passed、10 skipped、1435 subtests passed，349.39s（0:05:49）**。
+  跳过为已知 Windows/opt-in 项加 Node 专属可执行测试。未发布。
+
 ## Unreleased - 死参数/重复实现/Provider 层级清理，前端缩减修复（未发布）
 
 - 删除前端不可达兼容分支（红测先行，

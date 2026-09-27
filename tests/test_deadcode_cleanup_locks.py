@@ -340,9 +340,9 @@ def test_stepfun_submission_chain_has_no_dead_text_params() -> None:
     submit_params = inspect.signature(sf._submit).parameters
     assert "submitted_text" not in submit_params
     assert "textarea" not in submit_params
-    # filling still checks text stability
+    # filling still checks text stability (covered executably by test_stepfun
+    # refill/reject tests; no tautology here)
     assert "submitted_text" in inspect.signature(sf._composer_retains_text).parameters
-    assert "submitted_text" in inspect.signature(sf._fill_message_until_stable).parameters or True
 
 
 def test_provider_ids_single_source_is_catalog() -> None:

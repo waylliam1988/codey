@@ -190,6 +190,9 @@ const receiptChangedCount = window.CodeyRender.receiptChangedCount;
 let DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER;
 const PROVIDER_LABELS = window.CodeyUiState.PROVIDER_LABELS;
 const PROVIDERS = window.CodeyUiState.PROVIDERS;
+function liveDefaultProvider() {
+  return (window.CodeyUiState && window.CodeyUiState.DEFAULT_PROVIDER) || DEFAULT_PROVIDER;
+}
 
 let sessions = [];
 let projects = [];
@@ -241,7 +244,7 @@ function currentProjectPath() {
 }
 function currentProviderId() {
   const s = activeSession();
-  return s && PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER;
+  return s && PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider();
 }
 // Provider picker UI lives in /assets/provider_ui.js.
 function syncProviderUI(providerId) {
@@ -846,7 +849,7 @@ async function deleteProject(id) {
   if (!cleared.every(Boolean)) return;
   projects = projects.filter(x => x.id !== id);
   sessions = sessions.filter(s => s.projectId !== id);
-  if (!sessions.length) sessions = [defaultSession(null, DEFAULT_PROVIDER)];
+  if (!sessions.length) sessions = [defaultSession(null, liveDefaultProvider())];
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
   persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();
 }
@@ -923,7 +926,7 @@ async function attachCurrentChatToPickedProject({ sendDraft = false } = {}) {
   const s = sessions.find(x => x.id === sid);
   if (!s || sessionProject(s)) return;
   const draft = $('task').value.trim();
-  const provider = PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER;
+  const provider = PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider();
   const data = await pickProjectPath('new', currentProjectPath());
   if (!data) return;
   const p = ensureProject(data.path, data.name);
@@ -1459,7 +1462,7 @@ function retryTask(sessionId) {
   if (!s) return;
   const lastUser = [...s.messages].reverse().find(m => m.type === 'user' && m.text);
   if (!lastUser) return;
-  syncProviderUI(s.provider || DEFAULT_PROVIDER);
+  syncProviderUI(s.provider || liveDefaultProvider());
   $('task').value = lastUser.text;
   resizeTask();
   updateSend();
