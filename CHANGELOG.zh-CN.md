@@ -2,6 +2,26 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - proof 校验文档写明 str-coercion（未发布）
+
+- 文档口径修复（无行为变更，TDD 先红后绿）：`research_proof_ref()`
+  先以 `str(value or "")` 转成字符串（继承自两处原校验器）再 strip 校验，
+  因此旧文案“拒绝非字符串输入”没有把机制写准。现已明确写出 coercion：
+  非字符串标量全部 fail-closed，只有转后恰为
+  `research_proof:<16 位小写十六进制>` 的值才通过。顺带做了确定性 bug
+  排查，该区域没有别的确定性代码 bug（falsy 标量、`bytes`、容器经共享函数与
+  两条委托路径的表现完全一致，都是 fail-closed）。
+- 测试：`tests/test_proof_ref_parity.py` 新增先红后绿的 docstring-coercion
+  锁定，以及非字符串 fail-closed 电池（`None`、整数、浮点、布尔、`bytes`、
+  list/dict/tuple/set），同时走共享函数与 Ghost/Research 两条路径。
+- 验证：`ruff check codey` 全过，`git diff --check` 全过，未改前端 JS。先过针
+  对性套件（proof_ref_parity、ghost_work_queue、ghost_post_turn_work_queue、
+  proof_quality、completion_gate、query_planner、brief_projection、
+  evidence_runtime：`133 passed、40 subtests passed`），再跑全量
+  `python -m pytest -q -p no:cacheprovider`：
+  `4588 passed、7 skipped、1452 subtests passed，340.48s`。跳过为已知
+  Windows/手动启用项。未发布。
+
 ## Unreleased - 共享截断预算、工具示例单源、共享 proof 校验（未发布）
 
 - 截断预算修复（确定性 bug，TDD 先红后绿）：新增

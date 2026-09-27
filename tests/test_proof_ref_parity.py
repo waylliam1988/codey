@@ -61,6 +61,41 @@ class ProofRefParityTests(unittest.TestCase):
             "research_proof:" + "b" * 16,
         )
 
+    def test_docstring_documents_str_coercion(self) -> None:
+        # Doc wording must match the implementation: inputs are coerced with
+        # str(value or "") (inherited behavior), not rejected by type check.
+        from codey.utils.refs import research_proof_ref
+
+        doc = (research_proof_ref.__doc__ or "").lower()
+        self.assertTrue(
+            "str(" in doc or "coerc" in doc,
+            "docstring must document str-coercion semantics",
+        )
+
+    def test_non_string_scalars_fail_closed_through_all_paths(self) -> None:
+        from codey.ghost.work_queue import _research_proof_ref as ghost_ref
+        from codey.research.proof_quality import _proof_ref_or_empty as research_ref
+        from codey.utils.refs import research_proof_ref as shared
+
+        cases = [
+            None,
+            123,
+            0,
+            0.0,
+            True,
+            False,
+            b"research_proof:" + b"a" * 16,
+            ["research_proof:" + "a" * 16],
+            {"ref": "research_proof:" + "a" * 16},
+            ("research_proof:" + "a" * 16,),
+            {"research_proof:" + "a" * 16},
+        ]
+        for value in cases:
+            with self.subTest(value=repr(value)):
+                self.assertEqual(shared(value), "")
+                self.assertEqual(ghost_ref(value), "")
+                self.assertEqual(research_ref(value), "")
+
 
 if __name__ == "__main__":
     unittest.main()

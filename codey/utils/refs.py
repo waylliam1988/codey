@@ -109,8 +109,11 @@ def research_proof_ref(value: object) -> str:
     """Validate a ``research_proof:<16 lowercase hex>`` ref, else ``""``.
 
     Shared by Ghost completion gating and Research proof review so the two
-    judgments cannot drift. Fail-closed: uppercase hex, wrong length, wrong
-    prefix, and non-string inputs are all rejected.
+    judgments cannot drift. Inputs are coerced with ``str(value or "")``
+    (inherited from both original validators) and stripped before validation,
+    so non-string scalars fail closed; only values coercing to exactly the
+    canonical shape pass. Fail-closed: uppercase hex, wrong length, and wrong
+    prefix are all rejected.
     """
     text = str(value or "").strip()
     if not text.startswith(_RESEARCH_PROOF_PREFIX):

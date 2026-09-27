@@ -1,5 +1,46 @@
 # Codey Test Report
 
+## Proof-ref docstring documents str-coercion (2026-09-27)
+
+Scope (doc wording only, behavior unchanged, TDD red-first, no release):
+
+```text
+codey/utils/refs.py                 (research_proof_ref docstring: coercion via str(value or "") made explicit)
+tests/test_proof_ref_parity.py      (new docstring-coercion lock + non-string fail-closed battery)
+CHANGELOG.md / CHANGELOG.zh-CN.md   (new Unreleased entry)
+TEST_REPORT.md                      (this entry, written after the full suite)
+```
+
+Repro (deterministic, red-first, no live model):
+
+- Doc inconsistency (not a regression, inherited behavior): the docstring said
+  "non-string inputs are all rejected" while the implementation coerces with
+  `str(value or "")` first. The new `test_docstring_documents_str_coercion`
+  failed red pre-fix and passes post-fix; the behavior battery (`None`, 123,
+  0, 0.0, bools, `bytes` of a valid ref, list/dict/tuple/set) passes both
+  pre- and post-fix through the shared helper and both Ghost/Research paths,
+  pinning the unchanged fail-closed behavior.
+- Opportunistic bug scan (deterministic only): falsy scalars, `bytes`, and
+  containers were driven through `research_proof_ref`, `_research_proof_ref`,
+  and `_proof_ref_or_empty` — all fail closed identically on every path, so
+  no code change was warranted beyond the docstring. No speculative hardening
+  (e.g. strict `isinstance` gating or falsy-object `__str__` semantics) was
+  applied.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check codey` clean plus the touched test file,
+  `git diff --check` clean, no frontend JS changed; targeted suites green
+  (`test_proof_ref_parity`, `test_ghost_work_queue`,
+  `test_ghost_post_turn_work_queue`, `test_research_proof_quality`,
+  `test_research_completion_gate`, `test_query_planner`,
+  `test_brief_projection`, `test_evidence_runtime`:
+  `133 passed, 40 subtests passed`).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4588 passed, 7 skipped, 1452 subtests passed in 340.48s (0:05:40)`.
+  Skips are the known Windows/opt-in family. No live kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Shared truncation budget, single-source examples, shared proof ref (2026-09-27)
 
 Scope (production cleanup, TDD red-first, no release):

@@ -2,6 +2,30 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Proof-ref docstring documents str-coercion (no release)
+
+- Doc wording fix (no behavior change, TDD red-first): `research_proof_ref()`
+  coerces inputs with `str(value or "")` (inherited from both original
+  validators) and strips before validating, so the old "non-string inputs are
+  all rejected" line understated the mechanism. The docstring now states the
+  coercion explicitly: non-string scalars fail closed and only values
+  coercing to exactly `research_proof:<16 lowercase hex>` pass. A focused
+  scan found no other deterministic code bug in this area (falsy scalars,
+  bytes, and containers all fail closed identically through the shared helper
+  and both delegated paths).
+- Tests: extended `tests/test_proof_ref_parity.py` with a red-first
+  docstring-coercion lock plus a non-string fail-closed battery (`None`, ints,
+  floats, bools, `bytes`, list/dict/tuple/set) driven through the shared
+  helper and both Ghost/Research paths.
+- Verification: `ruff check codey` clean, `git diff --check` clean, no
+  frontend JS changed. Targeted suites green (proof_ref_parity,
+  ghost_work_queue, ghost_post_turn_work_queue, proof_quality,
+  completion_gate, query_planner, brief_projection, evidence_runtime:
+  `133 passed, 40 subtests passed`), then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4588 passed, 7 skipped, 1452 subtests passed in 340.48s`. Skips are the
+  known Windows/opt-in family. No release was made.
+
 ## Unreleased - Shared truncation budget, single-source tool examples, shared proof ref (no release)
 
 - Truncation budget fix (deterministic, TDD red-first): added
