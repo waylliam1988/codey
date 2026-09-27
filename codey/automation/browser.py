@@ -324,12 +324,6 @@ def _isolated_profile_dir(profile: Path, port: int) -> Path:
     return Path(profile) / f"isolated-{int(port)}"
 
 
-def _ensure_cdp_port(
-    **kwargs,
-) -> int:
-    return _ensure_cdp_endpoint(**kwargs).port
-
-
 def _ensure_cdp_endpoint(
     *,
     preferred: int,

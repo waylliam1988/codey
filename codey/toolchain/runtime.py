@@ -22,7 +22,6 @@ from codey.policies.action import (
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
-    is_allowed_run_command,
     is_suite_run_command,
 )
 from codey.runtime.core import cancellation
@@ -35,7 +34,7 @@ from codey.storage.atomic_io import write_text_atomic
 from codey.toolchain.constants import MAX_REPLACEMENTS
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.utils.references import find_reference_hints
-from codey.utils.scan_report import render_scan_coverage
+from codey.utils.scan_report import byte_limit_label, render_scan_coverage
 from codey.utils.text_budget import clip_middle, prune_dependency_stack_frames
 from codey.workspace.bounded_scan import (
     DEFAULT_MAX_DIR_ENTRIES,
@@ -229,14 +228,6 @@ def _utc_now_iso() -> str:
 
 def _first_model_line(text: object, limit: int) -> str:
     return next(iter(str(text or "").splitlines()), "")[:limit]
-
-
-def _byte_limit_label(value: int) -> str:
-    if value >= 1024 * 1024:
-        return f"{value // (1024 * 1024)} MiB"
-    if value >= 1024:
-        return f"{value // 1024} KiB"
-    return f"{value} bytes"
 
 
 @dataclass(frozen=True)
@@ -1057,12 +1048,12 @@ def _append_search_footers(
     if state.oversized_files:
         matches.append(
             f"... skipped {state.oversized_files} file(s) larger than "
-            f"{_byte_limit_label(SEARCH_MAX_FILE_BYTES)}; omitted files may "
+            f"{byte_limit_label(SEARCH_MAX_FILE_BYTES)}; omitted files may "
             "contain more matches"
         )
     if state.byte_limited:
         matches.append(
-            f"... search scan stopped at {_byte_limit_label(SEARCH_MAX_SCAN_BYTES)} "
+            f"... search scan stopped at {byte_limit_label(SEARCH_MAX_SCAN_BYTES)} "
             "read budget; omitted files may contain more matches"
         )
     if budget.limited:
@@ -1198,10 +1189,6 @@ def _raw_path_symlink_reason(root: Path, rel: str, *, tool: str) -> str:
             # never silently allow a possible symlink escape.
             return f"symlink check failed for {tool}: {rel}"
     return ""
-
-
-def _is_allowed_run_command(argv: list[str]) -> bool:
-    return is_allowed_run_command(argv)
 
 
 def _is_suite_run_command(argv: list[str]) -> bool:

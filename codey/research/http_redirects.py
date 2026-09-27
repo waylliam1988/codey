@@ -38,6 +38,15 @@ def close_response(response) -> None:
         response.close()
 
 
+def response_charset(headers) -> str:
+    """Charset of an HTTP response, tolerating varied response objects."""
+    try:
+        charset = headers.get_content_charset()
+    except AttributeError:
+        charset = ""
+    return str(charset or "utf-8")
+
+
 __all__ = [
     "NoRedirectHandler",
     "REDIRECT_STATUSES",
@@ -45,4 +54,5 @@ __all__ = [
     "close_response",
     "is_redirect_status",
     "redirect_target",
+    "response_charset",
 ]

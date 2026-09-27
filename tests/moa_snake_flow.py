@@ -20,6 +20,7 @@ if __package__ in (None, ""):
 from codey.agents.consensus import run_project_audit_advisor
 from codey.app import provider_services, sibling_probe
 from codey.app import server as codey_server
+from codey.app import task_submit as task_submit
 from codey.policies.limits import REVIEW_TIMEOUT
 from codey.providers import controls as provider_controls
 from codey.providers.registry import (
@@ -367,13 +368,14 @@ def run_task(
     max_turns: int,
     continue_task: bool = False,
 ) -> dict:
-    codey_server._run_task(
+    task_submit.run_task(
         session_id=session_id,
         project=str(project) if project is not None else None,
         task=task,
         max_turns=max_turns,
         continue_task=continue_task,
         provider_id=WRITER_ID,
+        get_state=codey_server.get_state,
     )
     terminal = state.run_registry.last_terminal_event() or {}
     recorder.event("task_terminal", terminal=terminal)

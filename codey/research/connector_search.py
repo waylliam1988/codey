@@ -20,6 +20,7 @@ from codey.research.guards import bounded_limit as _bounded_limit
 from codey.research.guards import connector_id as _connector_id
 from codey.research.http_redirects import (
     build_no_redirect_opener,
+    response_charset,
 )
 from codey.research.http_redirects import (
     close_response as _close_response,
@@ -471,12 +472,7 @@ def _open_connector_url(req, timeout: float):
     return _CONNECTOR_OPENER.open(req, timeout=timeout)
 
 
-def _response_charset(headers) -> str:
-    try:
-        charset = headers.get_content_charset()
-    except AttributeError:
-        charset = ""
-    return str(charset or "utf-8")
+
 
 
 def _remaining_timeout(deadline: float) -> float:
@@ -511,7 +507,7 @@ def _read_url_text(url: str, *, timeout: float) -> str:
                     current_url = next_url
                     continue
                 data = response.read(1024 * 1024)
-                return data.decode(_response_charset(response.headers), errors="replace")
+                return data.decode(response_charset(response.headers), errors="replace")
         except urllib.error.HTTPError as exc:
             if _is_redirect_status(exc.code):
                 try:

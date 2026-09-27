@@ -9,6 +9,7 @@ from unittest import mock
 
 from codey.agents.handoff import ConversationSnapshot
 from codey.app import consensus_service, server
+from codey.app import task_submit as task_submit
 from codey.storage.conversation_store import (
     MAX_PERSISTED_CONVERSATIONS,
     ConversationStore,
@@ -248,7 +249,7 @@ class ConversationStoreTests(unittest.TestCase):
                 mock.patch.object(restarted, "get_provider", return_value=provider),
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
-                server._run_task("chat-1", None, "Continue", 4, False, "deepseek", "chat")
+                task_submit.run_task("chat-1", None, "Continue", 4, False, "deepseek", "chat", get_state=server.get_state)
 
             first.wait_for_ghost_sleep(timeout=30)
             restarted.wait_for_ghost_sleep(timeout=30)

@@ -192,7 +192,6 @@ class JsonToolCodec:
         self._tool_by_name = self._tool_definition_index(self._definitions)
         self._system_prompt = render_coding_system_prompt(
             self._definitions,
-            profile_name=self.profile.name,
             allowed_tool_names=set(names),
         )
         self._model_tool_contract_hash = coding_model_tool_contract_hash(self._definitions)

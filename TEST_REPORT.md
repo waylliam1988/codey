@@ -1,5 +1,66 @@
 # Codey Test Report
 
+## Readonly audit cleanup: dead params, test-only shims, shared helpers (2026-09-27)
+
+Scope (production cleanup, TDD red-first, no release):
+
+```text
+codey/toolchain/tool_prompt.py      (drop dead profile_name param)
+codey/protocols/json_codec.py       (call site follows)
+codey/toolchain/runtime.py          (drop _is_allowed_run_command; import byte_limit_label)
+codey/automation/browser.py         (drop _ensure_cdp_port)
+codey/workspace/context_epoch.py    (drop ContextSnapshot)
+codey/providers/diagnostics.py      (drop ReadinessStale; keep FAILURE_READINESS_STALE)
+codey/policies/action.py            (drop research_url_denial_reason + unused import)
+codey/app/server.py                 (drop _run_task compat wrapper)
+codey/utils/scan_report.py          (byte_limit_label becomes shared public helper)
+codey/research/http_redirects.py    (new shared response_charset)
+codey/research/browser_search.py    (reuse shared charset)
+codey/research/connector_search.py  (reuse shared charset)
+codey/providers/web_drivers/common.py (new wait_late_response_by_snapshot)
+codey/providers/web_drivers/glm.py  (delegate late polling)
+codey/providers/web_drivers/qwen.py (delegate late polling)
+tests/test_readonly_cleanup_locks.py (new, 19 deterministic red-first locks)
+tests/test_server.py etc.           (~100 call sites migrated to task_submit.run_task)
+tests/manual/search_coverage_ab.py  (follow shared byte_limit_label)
+tests/moa_snake_flow.py             (follow task_submit.run_task)
+CHANGELOG.md / CHANGELOG.zh-CN.md   (new Unreleased entry)
+TEST_REPORT.md                      (this entry, written after the full suite)
+```
+
+Repro (deterministic, no live model):
+
+- Dead-param lock red-first: `render_coding_system_prompt` had `profile_name`
+  before (immediately `del`-ed); after, the signature has no such param while
+  writer/readonly separation via `allowed_tool_names` is preserved.
+- Shim locks red-first: `tool_runtime._is_allowed_run_command`,
+  `browser._ensure_cdp_port`, `context_epoch.ContextSnapshot`,
+  `diagnostics.ReadinessStale`, `action.research_url_denial_reason`, and
+  `server._run_task` all existed before and are gone after; their replacements
+  (`is_allowed_run_command`, `_ensure_cdp_endpoint().port`, `ContextEpoch`,
+  local stub exception + `sanitize_failure_facts`, `check_fetch_url`,
+  `task_submit.run_task(..., get_state=...)`) are pinned by behavior tests.
+- Dedup locks red-first: `runtime._byte_limit_label` vs
+  `scan_report._byte_limit_label` were distinct objects before, now one shared
+  `byte_limit_label` (bytes/KiB/MiB boundaries pinned); the two charset helpers
+  were distinct before, now one shared `response_charset` (including
+  `AttributeError -> utf-8` tolerance); `wait_late_response_by_snapshot` did not
+  exist before, now GLM/Qwen delegate to it (replaced-text and completion-gate
+  behavior pinned).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check codey` clean, `git diff --check` clean,
+  no frontend JS changed; targeted suites green (locks, prompt/golden, runtime,
+  browser, context-epoch, diagnostics, action-policy, ghost-warnings, GLM/Qwen,
+  conversation/project-facts/run-ledger/work-checkpoint/self-repair, full
+  `test_server`: 209 passed).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4634 passed, 7 skipped, 1471 subtests passed in 338.21s (0:05:38)`.
+  Skips are the known Windows/opt-in family (delta vs the 4615/1471 baseline is
+  exactly the 19 new locks). No live kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Prompt rules single-source plus strict allowed/definitions check (2026-09-27)
 
 Scope (production cleanup, TDD red-first, no release):

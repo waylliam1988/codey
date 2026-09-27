@@ -1122,7 +1122,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 # tests: with koboldcpp serving it stalls ~2min via faulthandler.
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
-                server._run_task("session-self-repair", td, "task", 8, False, "deepseek", "project")
+                task_submit.run_task("session-self-repair", td, "task", 8, False, "deepseek", "project", get_state=server.get_state)
 
             state.wait_for_ghost_sleep(timeout=30)
             state.self_repair.maybe_enqueue.assert_called_once()

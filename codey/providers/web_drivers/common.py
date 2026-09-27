@@ -82,9 +82,43 @@ def poll_late_response(
     return default()
 
 
+def wait_late_response_by_snapshot(
+    *,
+    response_count: Callable[[], int],
+    last_text: Callable[[], str],
+    generation_complete: Callable[[], bool],
+    final_text: Callable[[], str],
+    baseline: int,
+    baseline_text: str = "",
+    grace: float,
+    tick: float,
+) -> str:
+    """Shared late-window read for drivers with count/text/completion signals.
+
+    Returns the final text once a new or replaced answer is visible and the
+    driver reports generation as complete; otherwise empty. Callers keep
+    their own selectors, thresholds, and defaults -- this owns only the
+    snapshot comparison so GLM/Qwen cannot drift apart.
+    """
+
+    def _ready() -> str:
+        count = response_count()
+        current = last_text() if count else ""
+        if (
+            current
+            and (count > baseline or current != baseline_text)
+            and generation_complete()
+        ):
+            return final_text()
+        return ""
+
+    return poll_late_response(_ready, grace=grace, tick=tick)
+
+
 __all__ = [
     "message_box",
     "poll_late_response",
     "rate_limit_visible",
     "response_count",
+    "wait_late_response_by_snapshot",
 ]

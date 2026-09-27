@@ -2,6 +2,60 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Readonly audit cleanup: dead params, test-only shims, shared helpers (no release)
+
+- Item1 `toolchain/tool_prompt`: deleted the dead `profile_name` parameter from
+  `render_coding_system_prompt()` (it was immediately `del`-ed; rules already
+  follow `allowed_tool_names`). Updated the single production caller
+  (`protocols/json_codec.py`) and all direct test callers; kept the
+  restricted-toolset behavior test without the name argument. Golden
+  writer/readonly prompts remain byte-identical.
+- Item2 test-only shims: deleted `toolchain/runtime._is_allowed_run_command()`
+  (tests now call `policies/run_command_semantics.is_allowed_run_command()`
+  directly; the production `_is_suite_run_command()` path is untouched) and
+  `automation/browser._ensure_cdp_port()` (tests now assert on
+  `_ensure_cdp_endpoint(...).port` directly).
+- Item3 test-exclusive models/aliases: deleted `workspace/context_epoch.ContextSnapshot`
+  (tests now assemble `ContextEpoch` for the admission projection),
+  `providers/diagnostics.ReadinessStale` (tests use a local stub exception; the
+  `FAILURE_READINESS_STALE` category constant stays and is still consumed by
+  supervisor/repair paths), and `policies/action.research_url_denial_reason()`
+  (tests call `policies/network.check_fetch_url()` directly; dropped the now-unused
+  `DEFAULT_NETWORK_POLICY` import).
+- Item4 `app/server._run_task()`: migrated ~100 call sites across
+  `test_server`, `test_project_facts`, `test_run_ledger`,
+  `test_conversation_store`, `test_adapter_self_repair`,
+  `test_work_checkpoint_flow`, and `tests/moa_snake_flow` to
+  `task_submit.run_task(..., get_state=server.get_state)` (honors patched
+  `server.STATE`), replaced the module-level ghost-wait monkeypatch in
+  `test_server.py` with a local `_run_task_with_ghost_wait` helper around
+  `task_submit.run_task`, then deleted the compat wrapper. `_submit_task`
+  seams are untouched.
+- Item5 dedup: `utils/scan_report.byte_limit_label()` is now the single shared
+  helper (renamed from private; `toolchain/runtime` imports it and its copy is
+  deleted; `tests/manual/search_coverage_ab.py` follows); response charset
+  detection lives once as `research/http_redirects.response_charset()` (keeps
+  the `AttributeError -> utf-8` tolerance; both search modules import it and
+  their copies are deleted); GLM/Qwen late-response polling shares
+  `web_drivers/common.wait_late_response_by_snapshot()` (count-unchanged-but-text-updated
+  plus generation-complete gate; per-driver defaults and `_wait_late_response`
+  signatures kept so existing mocks still apply).
+- Left untouched per audit: web control locating, research fetch, provider
+  switching, runtime event recovery, `prompt_envelope` trace fallback, and the
+  `shell_approval` missing-`command_preview` branch (live event paths).
+- Tests: added `tests/test_readonly_cleanup_locks.py` (19 deterministic
+  red-first locks: dead-param absence, wrapper absence, model/alias absence,
+  compat-entry absence with direct-entry signature, shared-helper identity,
+  boundary outputs, charset tolerance, snapshot polling behavior).
+- Verification: `ruff check codey` clean, `git diff --check` clean, no frontend
+  JS changed. Targeted suites green before the full run (locks, prompt/golden,
+  runtime, browser, context-epoch, diagnostics, action-policy, ghost-warnings,
+  GLM/Qwen, conversation/project-facts/run-ledger/work-checkpoint/self-repair,
+  full `test_server`). Then full `python -m pytest -q -p no:cacheprovider`:
+  `4634 passed, 7 skipped, 1471 subtests passed in 338.21s (0:05:38)`. Skips are
+  the known Windows/opt-in family (delta vs the 4615/1471 baseline is exactly
+  the 19 new locks). No release was made.
+
 ## Unreleased - Prompt rules single-source plus strict allowed/definitions check (no release)
 
 - `toolchain/tool_prompt`: identical rule lines now live exactly once as shared

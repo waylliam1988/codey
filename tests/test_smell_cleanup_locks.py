@@ -11,8 +11,8 @@ import unittest
 
 
 class ToolPromptUnificationLocks(unittest.TestCase):
-    def test_writer_profile_respects_allowed_tool_names(self) -> None:
-        """RED before fix: writer path ignores allowed_tool_names."""
+    def test_restricted_toolset_yields_readonly_rules(self) -> None:
+        """Rules follow allowed_tool_names (no dead profile_name label)."""
         from codey.toolchain import definition as tool_defs
         from codey.toolchain.tool_prompt import render_coding_system_prompt
 
@@ -23,10 +23,9 @@ class ToolPromptUnificationLocks(unittest.TestCase):
         defs = tool_defs.definitions_for_tool_names(readonly_names)
         prompt = render_coding_system_prompt(
             defs,
-            profile_name="coding_writer",
             allowed_tool_names=set(readonly_names),
         )
-        # A writer label with a readonly toolset must not emit writer-only rules.
+        # A readonly toolset must not emit writer-only rules.
         self.assertNotIn("Use edit for all file changes", prompt)
         self.assertNotIn("Use run only for verification", prompt)
         self.assertIn("This phase is read-only", prompt)
@@ -95,7 +94,6 @@ class ToolPromptSingleSourceLocks(unittest.TestCase):
         with self.assertRaises(ValueError):
             render_coding_system_prompt(
                 tuple(without_edit),
-                profile_name="coding_writer",
                 allowed_tool_names=set(allowed),
             )
 

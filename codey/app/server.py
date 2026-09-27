@@ -145,29 +145,6 @@ def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
 # Implementation lives in task_submit.py; these bind the HTTP-layer get_state
 # so existing mock.patch.object(server, "_submit_task") seams keep working.
 
-def _run_task(
-    session_id: str,
-    project: str | None,
-    task: str,
-    max_turns: int,
-    continue_task: bool,
-    provider_id: str,
-    intent: str = "auto",
-    run_id: str = "",
-) -> None:
-    task_submit.run_task(
-        session_id,
-        project,
-        task,
-        max_turns,
-        continue_task,
-        provider_id,
-        intent,
-        run_id,
-        get_state=get_state,
-    )
-
-
 def _submit_task(
     session_id: str,
     project: str | None,

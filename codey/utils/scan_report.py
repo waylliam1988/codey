@@ -46,7 +46,7 @@ def render_scan_coverage(report: ScanReport) -> str:
     if report.oversized:
         plural = "file" if report.oversized == 1 else "files"
         limit = (
-            f" over {_byte_limit_label(report.size_limit_bytes)}"
+            f" over {byte_limit_label(report.size_limit_bytes)}"
             if report.size_limit_bytes is not None
             else ""
         )
@@ -82,7 +82,7 @@ def _append_examples(lines: list[str], label: str, examples: list[str]) -> None:
         lines.append(f"- {label}: {', '.join(examples)}")
 
 
-def _byte_limit_label(value: int) -> str:
+def byte_limit_label(value: int) -> str:
     if value >= 1024 * 1024:
         return f"{value // (1024 * 1024)} MiB"
     if value >= 1024:

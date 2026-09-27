@@ -377,7 +377,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
-                server._run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek", "project")
+                task_submit.run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek", "project", get_state=server.get_state)
 
             # Explicit ghost wait replaces the removed sync flag: no daemon
             # may hold state files while TemporaryDirectory cleans up.
@@ -455,7 +455,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
-                server._run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek")
+                task_submit.run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek", get_state=server.get_state)
 
             state.wait_for_ghost_sleep(timeout=30)
             self.assertEqual(state.run_registry.last_terminal_event()["stop_reason"], "done")
@@ -478,7 +478,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
-                server._run_task(
+                task_submit.run_task(
                     "session-error-ledger",
                     str(project),
                     "Update app.py",
@@ -486,6 +486,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                     False,
                     "deepseek",
                     "project",
+                    get_state=server.get_state,
                 )
 
             run_id = state.run_registry.last_terminal_event()["run_id"]

@@ -9,9 +9,9 @@ from codey.providers.diagnostics import (
     FAILURE_READINESS_STALE,
     ProviderActionError,
     ProviderFailure,
-    ReadinessStale,
     capture_provider_failure,
     run_provider_action,
+    sanitize_failure_facts,
 )
 
 
@@ -66,11 +66,19 @@ class ProviderDiagnosticsTests(unittest.TestCase):
         self.assertEqual(failure.stage, "completion")
 
     def test_readiness_stale_carries_only_bounded_safe_facts(self) -> None:
+        class _ReadinessStale(TimeoutError):
+            provider_failure_kind = FAILURE_READINESS_STALE
+            provider_failure_stage = "new_chat"
+
+            def __init__(self, message: str, *, facts=None) -> None:
+                self.provider_failure_facts = sanitize_failure_facts(facts)
+                super().__init__(message)
+
         failure = capture_provider_failure(
             model="Qwen",
             action="new_chat",
             page=SimpleNamespace(url="https://chat.qwen.ai/", title=lambda: "Qwen"),
-            error=ReadinessStale(
+            error=_ReadinessStale(
                 "bootstrap signal did not arrive",
                 facts={
                     "composer_visible": True,

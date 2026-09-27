@@ -515,14 +515,16 @@ def _wait_late_response(
     grace: float = TIMEOUT_GRACE,
     tick: float = 0.8,
 ) -> str:
-    def _ready() -> str:
-        count = _response_count(page)
-        current = _last_text(page) if count else ""
-        if current and (count > baseline or current != baseline_text) and _generation_complete(page):
-            return _final_text(page)
-        return ""
-
-    return driver_common.poll_late_response(_ready, grace=grace, tick=tick)
+    return driver_common.wait_late_response_by_snapshot(
+        response_count=lambda: _response_count(page),
+        last_text=lambda: _last_text(page),
+        generation_complete=lambda: _generation_complete(page),
+        final_text=lambda: _final_text(page),
+        baseline=baseline,
+        baseline_text=baseline_text,
+        grace=grace,
+        tick=tick,
+    )
 
 
 def _chat(

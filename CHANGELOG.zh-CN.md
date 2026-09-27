@@ -2,6 +2,51 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 只读审计清理：死参数、测试专用垫片、共享函数（未发布）
+
+- 第 1 项 `toolchain/tool_prompt`：删除 `render_coding_system_prompt()` 的死参数
+  `profile_name`（进函数即 `del`，规则本就只看 `allowed_tool_names`）。同步更新
+  唯一生产调用（`protocols/json_codec.py`）与所有直接调用测试；受限工具集行为
+  测试保留但不再传名称。golden writer/readonly 提示逐字节不变。
+- 第 2 项测试专用垫片：删除 `toolchain/runtime._is_allowed_run_command()`（测试
+  改为直调 `policies/run_command_semantics.is_allowed_run_command()`；生产用的
+  `_is_suite_run_command()` 未动）与 `automation/browser._ensure_cdp_port()`
+ （测试改为直接断言 `_ensure_cdp_endpoint(...).port`）。
+- 第 3 项测试独占模型/别名：删除
+  `workspace/context_epoch.ContextSnapshot`（测试改用 `ContextEpoch` 验证
+  admission 投影）、`providers/diagnostics.ReadinessStale`（测试内构造异常验证
+  失败事实清洗；`FAILURE_READINESS_STALE` 常量保留，修复与监督逻辑仍在使用）、
+  `policies/action.research_url_denial_reason()`（测试改调
+  `policies/network.check_fetch_url()`；同时删去无用的
+  `DEFAULT_NETWORK_POLICY` 导入）。
+- 第 4 项 `app/server._run_task()`：把 `test_server`、`test_project_facts`、
+  `test_run_ledger`、`test_conversation_store`、`test_adapter_self_repair`、
+  `test_work_checkpoint_flow` 与 `tests/moa_snake_flow` 约 100 处调用迁到
+  `task_submit.run_task(..., get_state=server.get_state)`（兼容已 patch 的
+  `server.STATE`）；`test_server.py` 的 ghost-wait 猴子补丁改为围绕
+  `task_submit.run_task` 的本地 helper，然后删除兼容包装。`_submit_task` 相关
+  seam 未动。
+- 第 5 项去重：`utils/scan_report.byte_limit_label()` 成为唯一共享实现（由私有
+  改公开；`toolchain/runtime` 改导入并删副本；`tests/manual/search_coverage_ab.py`
+  跟随）；响应编码识别收敛为 `research/http_redirects.response_charset()`（保留
+  `AttributeError → utf-8` 容错；两处搜索模块改导入并删副本）；GLM/Qwen 延迟
+  轮询共享 `web_drivers/common.wait_late_response_by_snapshot()`（数量不变但文本
+  更新 + 生成完成门控；各驱动默认超时与 `_wait_late_response` 签名保留，现有
+  mock 继续有效）。
+- 按审计结论未动：网页控件定位、Research 抓取、provider 切换、runtime 事件恢复、
+  `prompt_envelope` trace 回退、`shell_approval` 无 `command_preview` 分支（均为
+  实际事件路径）。
+- 测试：新增 `tests/test_readonly_cleanup_locks.py`（19 个确定性红测锁：死参数缺
+  失、包装缺失、模型/别名缺失、兼容入口缺失与直接入口签名、共享函数同一性、边界
+  输出、编码容错、快照轮询行为）。
+- 验证：`ruff check codey` 全过，`git diff --check` 全过，未改前端 JS。全量前先过
+  针对性套件（锁测试、提示词/golden、runtime、browser、context-epoch、diagnostics、
+  action-policy、ghost-warnings、GLM/Qwen、conversation/project-facts/run-ledger/
+  work-checkpoint/self-repair、完整 `test_server`）。再跑全量
+  `python -m pytest -q -p no:cacheprovider`：
+  `4634 passed、7 skipped、1471 subtests passed，338.21s（0:05:38）`。跳过为已知
+  Windows/手动启用项（相对 4615/1471 基线的增量恰为 19 个新锁）。未发布。
+
 ## Unreleased - 提示词规则单源 + allowed/definitions 严格一致校验（未发布）
 
 - `toolchain/tool_prompt`：相同规则行只保留一份共享片段（`_RULE_OUTPUT_JSON`、

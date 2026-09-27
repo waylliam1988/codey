@@ -10,7 +10,6 @@ from codey.workspace.context_epoch import (
     SOURCE_REF_PREFIX,
     ContextAdmission,
     ContextEpoch,
-    ContextSnapshot,
     admission_from_rendered_source,
     context_epoch_id,
     context_source_ref,
@@ -147,7 +146,7 @@ class SnapshotProjectionTests(unittest.TestCase):
 
     def test_admission_projection_is_the_single_shared_vocabulary(self) -> None:
         # Production trace (runs/trace.py) consumes admission_from_rendered_source
-        # directly; the snapshot is just a thin ContextSnapshot assembly over it.
+        # directly; the epoch is the thin ContextEpoch assembly over it.
         source = _admission_input(
             "research_brief",
             "brief body",
@@ -158,12 +157,12 @@ class SnapshotProjectionTests(unittest.TestCase):
         direct = admission_from_rendered_source(source)
         self.assertIsNotNone(direct)
         assert direct is not None
-        snapshot = ContextSnapshot(
+        epoch = ContextEpoch(
             epoch_id="ctx_epoch:" + "2" * 16,
             admissions=(direct,),
         )
 
-        self.assertEqual(snapshot.admissions[0], direct)
+        self.assertEqual(epoch.admissions[0], direct)
 
     def test_admission_projection_projects_expected_fields(self) -> None:
         sources = (
@@ -186,14 +185,14 @@ class SnapshotProjectionTests(unittest.TestCase):
             )
             if item is not None
         )
-        snapshot = ContextSnapshot(
+        epoch = ContextEpoch(
             epoch_id=context_epoch_id("outbound prompt"),
             admissions=admissions,
         )
 
-        self.assertIsInstance(snapshot, ContextSnapshot)
-        self.assertEqual(len(snapshot.admissions), 1)
-        admission = snapshot.admissions[0]
+        self.assertIsInstance(epoch, ContextEpoch)
+        self.assertEqual(len(epoch.admissions), 1)
+        admission = epoch.admissions[0]
         self.assertEqual(admission.source_key, "project_map")
         self.assertEqual(admission.source_ref, "context_source:project_map")
         self.assertEqual(admission.capability_id, "agent_runner")
@@ -201,7 +200,7 @@ class SnapshotProjectionTests(unittest.TestCase):
         self.assertEqual(admission.chars, len("alpha body"))
         self.assertFalse(admission.truncated)
         self.assertTrue(admission.digest.startswith("sha256:"))
-        self.assertNotIn("alpha body", repr(snapshot.to_payload()))
+        self.assertNotIn("alpha body", repr(epoch.to_payload()))
 
     def test_admission_projection_skips_empty_sources(self) -> None:
         sources = [

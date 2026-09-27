@@ -17,8 +17,8 @@ from codey.policies.action import (
     ActionSubject,
     evaluate_action,
     merge_decisions,
-    research_url_denial_reason,
 )
+from codey.policies.network import check_fetch_url
 
 
 class ActionPolicyTests(unittest.TestCase):
@@ -346,7 +346,7 @@ class ActionPolicyTests(unittest.TestCase):
 
     def test_research_url_guard_rejects_invalid_port_without_dns_resolution(self) -> None:
         self.assertEqual(
-            research_url_denial_reason("http://example.com:99999/path", resolve=False),
+            check_fetch_url("http://example.com:99999/path", resolve=False),
             "invalid URL port",
         )
 
@@ -362,28 +362,28 @@ class ActionPolicyTests(unittest.TestCase):
         ):
             for resolve in (True, False):
                 with self.subTest(url=url, resolve=resolve):
-                    reason = research_url_denial_reason(url, resolve=resolve)
+                    reason = check_fetch_url(url, resolve=resolve)
                     self.assertEqual(reason, "invalid URL host")
 
     def test_research_url_guard_still_allows_well_formed_hosts(self) -> None:
         self.assertIsNone(
-            research_url_denial_reason("https://example.com/doc", resolve=False)
+            check_fetch_url("https://example.com/doc", resolve=False)
         )
         self.assertIsNone(
-            research_url_denial_reason("https://sec.gov/report", resolve=False)
+            check_fetch_url("https://sec.gov/report", resolve=False)
         )
 
     def test_research_url_guard_rejects_cgnat_and_non_global_ips(self) -> None:
         # 100.64.0.0/10 (Shared Address Space / CGNAT) is not global and must be rejected
         self.assertEqual(
-            research_url_denial_reason("http://100.64.0.1/", resolve=False),
+            check_fetch_url("http://100.64.0.1/", resolve=False),
             "refusing to open a non-public address",
         )
 
         with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("100.64.0.1", 443))]
             self.assertEqual(
-                research_url_denial_reason("https://cgnat-domain.example/", resolve=True),
+                check_fetch_url("https://cgnat-domain.example/", resolve=True),
                 "refusing to open a non-public address",
             )
 

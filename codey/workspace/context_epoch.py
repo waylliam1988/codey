@@ -112,20 +112,6 @@ class ContextEpoch:
         }
 
 
-@dataclass(frozen=True)
-class ContextSnapshot:
-    """Bounded read model of one epoch's admitted sources."""
-
-    epoch_id: str
-    admissions: tuple[ContextAdmission, ...] = ()
-
-    def to_payload(self) -> dict[str, object]:
-        return {
-            "epoch_id": _identifier(self.epoch_id, 80),
-            "admissions": [item.to_payload() for item in self.admissions],
-        }
-
-
 def admission_from_rendered_source(
     rendered_source: object,
     *,

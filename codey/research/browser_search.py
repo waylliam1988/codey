@@ -21,6 +21,7 @@ from codey.policies.network import check_fetch_url
 from codey.research.extract import extract_text, extract_title
 from codey.research.http_redirects import (
     build_no_redirect_opener,
+    response_charset,
 )
 from codey.research.http_redirects import (
     close_response as _close_response,
@@ -846,12 +847,7 @@ def _is_pdf_url(url: str) -> bool:
     return path.endswith(".pdf")
 
 
-def _text_response_charset(headers) -> str:
-    try:
-        charset = headers.get_content_charset()
-    except AttributeError:
-        charset = ""
-    return str(charset or "utf-8")
+
 
 
 def _download_text_fallback(url: str) -> dict:
@@ -924,7 +920,7 @@ def _download_text_fallback(url: str) -> dict:
             truncated = len(data) > _FETCH_HTTP_MAX_BYTES
             if truncated:
                 data = data[:_FETCH_HTTP_MAX_BYTES]
-            html = data.decode(_text_response_charset(headers), errors="replace")
+            html = data.decode(response_charset(headers), errors="replace")
             text = extract_text(html)
             if not _usable_fetch_page_text(text):
                 return {

@@ -36,14 +36,13 @@ from codey.toolchain.runtime import (
     SEARCH_MAX_SCAN_DIRS,
     SEARCH_MAX_SCAN_FILES,
     ToolOutcome,
-    _byte_limit_label,
     _raw_path_symlink_reason,
     safe_join,
 )
 from codey.toolchain.runtime import (
     read_file as runtime_read_file,
 )
-from codey.utils.scan_report import ScanReport
+from codey.utils.scan_report import ScanReport, byte_limit_label
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 
 ARMS = ("baseline", "coverage")
@@ -255,12 +254,12 @@ def _search_scan_outcome(
     if report.oversized:
         matches.append(
             f"... skipped {report.oversized} file(s) larger than "
-            f"{_byte_limit_label(max_file_bytes)}; omitted files may "
+            f"{byte_limit_label(max_file_bytes)}; omitted files may "
             "contain more matches"
         )
     if byte_limited:
         matches.append(
-            f"... search scan stopped at {_byte_limit_label(SEARCH_MAX_SCAN_BYTES)} "
+            f"... search scan stopped at {byte_limit_label(SEARCH_MAX_SCAN_BYTES)} "
             "read budget; omitted files may contain more matches"
         )
     if budget.limited:

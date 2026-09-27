@@ -498,13 +498,13 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             mock.patch.object(browser, "_wait_port") as wait_port,
             mock.patch.object(browser, "_save_cdp_port"),
         ):
-            port = browser._ensure_cdp_port(
+            port = browser._ensure_cdp_endpoint(
                 preferred=9222,
                 profile=Path("profile"),
                 start_url="https://chat.deepseek.com/",
                 url_contains="chat.deepseek.com",
                 open_if_missing=True,
-            )
+            ).port
 
         self.assertEqual(port, 9223)
         launch.assert_called_once_with(9223, Path("profile"), "https://chat.deepseek.com/")
@@ -516,13 +516,13 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             mock.patch.object(browser, "_find_existing_cdp_port", return_value=9333),
             mock.patch.object(browser, "_launch_browser") as launch,
         ):
-            port = browser._ensure_cdp_port(
+            port = browser._ensure_cdp_endpoint(
                 preferred=9222,
                 profile=Path("profile"),
                 start_url="https://chat.deepseek.com/",
                 url_contains="chat.deepseek.com",
                 open_if_missing=True,
-            )
+            ).port
 
         self.assertEqual(port, 9333)
         launch.assert_not_called()
@@ -536,14 +536,14 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             mock.patch.object(browser, "_wait_port") as wait_port,
             mock.patch.object(browser, "_save_cdp_port") as save,
         ):
-            port = browser._ensure_cdp_port(
+            port = browser._ensure_cdp_endpoint(
                 preferred=9222,
                 profile=Path("worker-profile"),
                 start_url="https://chat.qwen.ai/",
                 url_contains="chat.qwen.ai",
                 open_if_missing=True,
                 isolated=True,
-            )
+            ).port
 
         self.assertEqual(port, 9444)
         find_target.assert_not_called()

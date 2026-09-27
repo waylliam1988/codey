@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey.policies.run_command_semantics import is_allowed_run_command
 from codey.runtime.core import cancellation
 from codey.toolchain import runtime as tool_runtime
 from codey.toolchain.runtime import (
@@ -494,7 +495,7 @@ class ToolOutcomeTests(unittest.TestCase):
         ):
             argv = command.split()
             self.assertTrue(
-                tool_runtime._is_allowed_run_command(argv),
+                is_allowed_run_command(argv),
                 f"expected allowed: {command}",
             )
 
@@ -535,7 +536,7 @@ class ToolOutcomeTests(unittest.TestCase):
         ):
             argv = command.split()
             self.assertFalse(
-                tool_runtime._is_allowed_run_command(argv),
+                is_allowed_run_command(argv),
                 f"expected rejected: {command}",
             )
 
@@ -573,7 +574,7 @@ class ToolOutcomeTests(unittest.TestCase):
         ):
             argv = command.split()
             self.assertFalse(
-                tool_runtime._is_allowed_run_command(argv),
+                is_allowed_run_command(argv),
                 f"expected rejected: {command}",
             )
 

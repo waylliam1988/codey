@@ -272,8 +272,8 @@ class ProjectFactsTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                server._run_task("session-1", td, "first", 4, False, "deepseek", "project")
-                server._run_task("session-1", td, "second", 4, False, "deepseek", "project")
+                task_submit.run_task("session-1", td, "first", 4, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", td, "second", 4, False, "deepseek", "project", get_state=server.get_state)
 
             state.close()
             self.assertEqual(captured_facts[0], "")
@@ -336,7 +336,7 @@ class ProjectFactsTests(unittest.TestCase):
                     return_value="npm",
                 ),
             ):
-                server._run_task("session-1", str(project), "Update backend", 8, False, "deepseek", "project")
+                task_submit.run_task("session-1", str(project), "Update backend", 8, False, "deepseek", "project", get_state=server.get_state)
 
             state.wait_for_ghost_sleep(timeout=30)
             facts = state.project_facts.load(project)
@@ -371,7 +371,7 @@ class ProjectFactsTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                server._run_task("session-1", td, "first", 4, False, "qwen", "project")
+                task_submit.run_task("session-1", td, "first", 4, False, "qwen", "project", get_state=server.get_state)
 
             rendered = state.project_facts.render(td)
             state.close()
@@ -406,7 +406,7 @@ class ProjectFactsTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                server._run_task("session-1", td, "task", 4, False, "deepseek", "project")
+                task_submit.run_task("session-1", td, "task", 4, False, "deepseek", "project", get_state=server.get_state)
 
             state.wait_for_ghost_sleep(timeout=30)
             self.assertEqual(state.run_registry.last_stop_reason(), "done")

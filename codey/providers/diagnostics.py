@@ -63,15 +63,6 @@ class ResponseMissing(TimeoutError):
         super().__init__(message)
 
 
-class ReadinessStale(TimeoutError):
-    provider_failure_kind = FAILURE_READINESS_STALE
-    provider_failure_stage = STAGE_NEW_CHAT
-
-    def __init__(self, message: str, *, facts: dict[str, object] | None = None) -> None:
-        self.provider_failure_facts = sanitize_failure_facts(facts)
-        super().__init__(message)
-
-
 class RateLimited(TimeoutError):
     provider_failure_kind = FAILURE_RATE_LIMITED
     provider_failure_stage = STAGE_RETRY

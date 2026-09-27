@@ -197,16 +197,12 @@ def _is_full_writer_toolset(allowed_tool_names: set[str]) -> bool:
 def render_coding_system_prompt(
     definitions: tuple[object, ...],
     *,
-    profile_name: str,
     allowed_tool_names: set[str],
 ) -> str:
     """Single prompt entry: rules always follow ``allowed_tool_names``.
 
-    ``profile_name`` is kept for API compatibility but no longer selects a
-    separate concatenation path. The full writer toolset reproduces the
-    frozen writer text verbatim (see golden fixtures); any restricted set
-    follows the profile rule builder so a ``coding_writer`` label can never
-    smuggle writer-only rules when the tools are not actually allowed.
+    The full writer toolset reproduces the frozen writer text verbatim (see
+    golden fixtures); any restricted set follows the profile rule builder.
 
     ``allowed_tool_names`` must exactly match the tool names in
     ``definitions`` (the model-visible contract). A mismatch raises
@@ -214,7 +210,6 @@ def render_coding_system_prompt(
     does not show (or vice versa).
     """
 
-    del profile_name
     tool_contract = render_coding_tool_contract_text(definitions)  # type: ignore[arg-type]
     allowed = _normalize_tool_names(set(allowed_tool_names or set()))
     defined = _defined_tool_names(tuple(definitions or ()))

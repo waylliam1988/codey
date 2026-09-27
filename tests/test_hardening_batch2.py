@@ -607,7 +607,6 @@ class CodecPromptSingleSourceTests(unittest.TestCase):
 
         expected = render_coding_system_prompt(
             tool_defs.TOOL_DEFINITIONS,
-            profile_name="coding_writer",
             allowed_tool_names={d.name for d in tool_defs.TOOL_DEFINITIONS},
         )
         self.assertEqual(JsonToolCodec().system_prompt(), expected)

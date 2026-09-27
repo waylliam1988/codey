@@ -14,7 +14,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from codey.policies.network import DEFAULT_NETWORK_POLICY
 from codey.policies.permissions import PermissionProfile, profile_for_name
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
@@ -433,10 +432,6 @@ def managed_output_size_guard(subject: ActionSubject) -> ActionPolicyDecision | 
             display="managed output is too large to retain completely",
         )
     return None
-
-
-def research_url_denial_reason(url: str, *, resolve: bool = True) -> str | None:
-    return DEFAULT_NETWORK_POLICY.check_url(url, resolve=resolve)
 
 
 def _profile(subject: ActionSubject) -> PermissionProfile | None:
