@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codey.ghost import _common
-from codey.ghost._warnings import slice_event_warnings
+from codey.ghost._warnings import event_read_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
     count_jsonl_rows,
@@ -1201,4 +1201,4 @@ def _compact_timestamp() -> str:
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    return slice_event_warnings(warnings, stream="hebbian_events", limit=MAX_HEBBIAN_WARNINGS)
+    return event_read_warnings(warnings, stream="hebbian_events", limit=MAX_HEBBIAN_WARNINGS)

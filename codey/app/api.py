@@ -427,7 +427,7 @@ def run_submit_response(
 
 
 def _stopped_shell_denial(
-    ctx: Any, pending: dict, approval_id: str, session_id: str, command: object
+    ctx: Any, pending: dict, approval_id: str, session_id: str
 ) -> tuple[int, dict]:
     event = {
         "type": "shell_result",
@@ -436,7 +436,7 @@ def _stopped_shell_denial(
         "id": approval_id,
         "approved": False,
         "status": "stopped",
-        **shell_command_event_fields(pending or {"command": command}),
+        **shell_command_event_fields(pending),
         "cwd": pending["cwd"],
         "output": "Task stopped; command approval expired.",
         "exit_code": None,
@@ -460,7 +460,6 @@ def shell_approval_response(
             return 404, {"error": "approval not found"}
         pending.pop("_approval_generation", None)
         session_id = pending["session_id"]
-        command = pending["command"]
         event = {
             "type": "shell_result",
             "run_id": pending.get("run_id") or "",
@@ -491,13 +490,12 @@ def shell_approval_response(
     project = str(pending.get("project") or "").strip()
     max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
     session_id = pending["session_id"]
-    command = pending["command"]
     if ticket is None:
-        return _stopped_shell_denial(ctx, pending, approval_id, session_id, command)
+        return _stopped_shell_denial(ctx, pending, approval_id, session_id)
 
     result = shell_service.execute_shell_ticket(ctx, ticket)
     if result.get("status") == "stopped" or result.get("stopped"):
-        return _stopped_shell_denial(ctx, pending, approval_id, session_id, command)
+        return _stopped_shell_denial(ctx, pending, approval_id, session_id)
     event = {
         "type": "shell_result",
         "run_id": pending.get("run_id") or "",
@@ -505,7 +503,7 @@ def shell_approval_response(
         "id": approval_id,
         "approved": True,
         "status": str(result.get("status") or "exit"),
-        **shell_command_event_fields(pending or {"command": command}),
+        **shell_command_event_fields(pending),
         "cwd": pending["cwd"],
         "output": result.get("output") or result.get("error") or "",
         "exit_code": result.get("exit_code"),

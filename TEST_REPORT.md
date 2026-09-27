@@ -1,5 +1,69 @@
 # Codey Test Report
 
+## Smell cleanup: prompt single-path, router eval move, ui-state shape, shell fallback, ghost warnings (2026-09-27)
+
+Scope (production cleanup, TDD red-first, no release):
+
+```text
+codey/toolchain/tool_prompt.py      (single render entry; drop _system_prompt; writer frozen)
+tests/manual/ghost_router_ab.py     (new home for eval-only route_error_cost)
+codey/ghost/router.py               (delete eval-only helper; keep normalize_route_mode)
+codey/storage/ui_state_store.py     (always emit researchRuns/research canonical shape)
+codey/app/api.py                    (drop dead pending-or fallback + command locals/param)
+codey/ghost/_warnings.py            (delete legacy slice_event_warnings)
+codey/ghost/inbox.py                (use shared event_read_warnings)
+codey/ghost/hebbian.py              (use shared event_read_warnings)
+tests/test_smell_cleanup_locks.py   (new, 11 deterministic red-first locks)
+tests/test_ghost_warnings.py        (unified-loop parity + dedupe/drop/clip)
+CHANGELOG.md / CHANGELOG.zh-CN.md   (new Unreleased entry)
+TEST_REPORT.md                      (this entry, written after the full suite)
+```
+
+Repro (deterministic, no live model):
+
+- Item1 red-first: `render_coding_system_prompt(..., profile_name="coding_writer",
+  allowed_tool_names=<readonly set>)` emitted writer-only `edit`/`run` rules
+  before the fix (ignored `allowed_tool_names`); after the fix it emits the
+  read-only branch. `hasattr(tool_prompt, "_system_prompt")` was True before,
+  False after. Golden fixtures
+  (`coding_coding_writer_system_prompt.txt`,
+  `coding_planning_readonly_system_prompt.txt`) are byte-identical before/after.
+- Item2 red-first: `hasattr(codey.ghost.router, "route_error_cost")` was True
+  before, False after; `tests.manual.ghost_router_ab.route_error_cost` preserves
+  scoring (`planning_readonly` vs `project_writer` >= 5, `chat` vs
+  `planning_readonly` == 1, `chat` vs `chat` == 0).
+- Item3 red-first: saving a session without `researchRuns`/`research` loaded back
+  without those keys before (shape-unstable vs frontend `normalizeSessions`
+  which always emits them); after, it loads `researchRuns == []` and
+  `research is False`, and `_clean_sessions` without-vs-explicit compares equal.
+- Item4 red-first: `codey/app/api.py` contained two
+  `pending or {"command": command}` fallbacks plus two
+  `command = pending["command"]` locals and a `command` param on
+  `_stopped_shell_denial`; after, none remain and
+  `shell_command_event_fields(pending)` is called directly. The
+  `command_preview` fallback in `agents/shell_approval.py:111` was not touched.
+- Item5 red-first: `slice_event_warnings` existed before with map-only semantics
+  (duplicates/empties/500-char strings passed through); after, it is gone and
+  `inbox`/`hebbian` helpers equal `event_read_warnings` (deduped, no empties,
+  every item <= 180 chars). Real event-log warnings are short unique ids, so
+  stored `last_warnings` for existing cases are unchanged.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check codey tests/test_smell_cleanup_locks.py
+  tests/test_ghost_warnings.py tests/manual/ghost_router_ab.py
+  tests/manual/ghost_router_production_ab.py` clean, `git diff --check` clean,
+  no frontend JS changed; targeted suites green
+  (`test_smell_cleanup_locks`, `test_tool_prompt`, `test_golden_parity`,
+  `test_ghost_router_ab`, `test_ui_state_store`, `test_ghost_warnings`,
+  `test_ghost_inbox`, `test_ghost_hebbian`, `test_protocols`,
+  shell-approval slices).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4612 passed, 7 skipped, 1471 subtests passed in 385.55s (0:06:25)`.
+  Skips are the known Windows/opt-in family (delta vs the 4601/1471 baseline is
+  exactly the 11 new lock tests). No live kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Api import-cost lock: graph stack stays unloaded (2026-09-27)
 
 Scope (test-only follow-up, deterministic, no release):

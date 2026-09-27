@@ -2,6 +2,60 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Smell cleanup: prompt single-path, router eval move, ui-state shape, shell fallback, ghost warnings (no release)
+
+- Item1 `toolchain/tool_prompt`: removed the legacy `_system_prompt()` independent
+  path; `render_coding_system_prompt()` is now the single entry and derives rules
+  from `allowed_tool_names` only (`profile_name` kept for API compat). The full
+  writer toolset reproduces the frozen writer text verbatim via shared
+  `_render_preface()` + `_WRITER_RULE_LINES` (golden fixtures unchanged); any
+  restricted set follows `_profile_system_prompt()`. Deterministic bug locked
+  red-first by `test_writer_profile_respects_allowed_tool_names`: a
+  `coding_writer` label with a readonly toolset previously still emitted
+  writer-only `edit`/`run` rules while ignoring `allowed_tool_names`.
+- Item2 `ghost/router`: deleted eval-only `route_error_cost()` from the production
+  module (`normalize_route_mode()` stays for production routing). The helper now
+  lives in `tests/manual/ghost_router_ab.py` with a local `_EVAL_WRITE_MODES`
+  set and identical scoring; `tests/manual/ghost_router_production_ab.py` keeps
+  importing it from the harness. Locked red-first by
+  `test_production_router_has_no_eval_helper`.
+- Item3 `storage/ui_state_store`: `_clean_sessions()` now always emits the
+  canonical `researchRuns: []` / `research: False` shape instead of preserving
+  the keys only when present, matching frontend `defaultSession` /
+  `normalizeSessions` (`codey/web/assets/ui_state.js`). Deterministic bug locked
+  red-first: omitted-vs-explicit shapes compared unequal under `_content_equal`,
+  causing spurious revision bumps. Existing `test_ui_state_store.py` cases still
+  pass unchanged (round-trip equality now holds on the canonical shape).
+- Item4 `app/api`: removed the unreachable `pending or {"command": command}`
+  fallbacks (two sites) and the dead `command = pending["command"]` locals; the
+  pending dict is always truthy with `cwd` at those points, and the fallback
+  could never rescue the subsequent `pending["cwd"]` lookup. `_stopped_shell_denial()`
+  drops the `command` parameter and calls `shell_command_event_fields(pending)`
+  directly. `agents/shell_approval.shell_command_event_fields()` handling for
+  missing `command_preview` is intentionally untouched. Locked red-first by
+  signature/source guards in `tests/test_smell_cleanup_locks.py`.
+- Item5 `ghost/_warnings`: deleted the legacy `slice_event_warnings()` path
+  (map-only, no clip/dedupe) and removed it from `__all__`. `inbox` and `hebbian`
+  `_event_read_warnings()` now use the shared `event_read_warnings()` loop
+  (clip to 180, dedupe, drop empties, limit), matching `affinity`/`continuity`/
+  `work_queue`. Deterministic bug locked red-first: duplicate/empty/overlong
+  warnings survived the slice path but are normalized by the shared loop;
+  real event-log ids are short and unique so production warnings are unchanged.
+  `tests/test_ghost_warnings.py` now asserts harness parity plus
+  dedupe/drop/clip properties.
+- Tests: added `tests/test_smell_cleanup_locks.py` (11 deterministic locks, all
+  verified red before each fix, green after). Updated
+  `tests/test_ghost_warnings.py` for the unified loop.
+- Verification: `ruff check codey tests/test_smell_cleanup_locks.py tests/test_ghost_warnings.py tests/manual/ghost_router_ab.py tests/manual/ghost_router_production_ab.py` clean, `git diff --check` clean, no frontend
+  JS changed. Targeted suites green before the full run (`test_smell_cleanup_locks`
+  + `test_tool_prompt` + `test_golden_parity` + `test_ghost_router_ab` +
+  `test_ui_state_store` + `test_ghost_warnings` + `test_ghost_inbox` +
+  `test_ghost_hebbian` + `test_protocols` + shell approval slices). Then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4612 passed, 7 skipped, 1471 subtests passed in 385.55s (0:06:25)`. Skips are
+  the known Windows/opt-in family (delta vs the 4601/1471 baseline is exactly
+  the 11 new lock tests). No release was made.
+
 ## Unreleased - Api import-cost lock: graph stack stays unloaded (no release)
 
 - Test-only follow-up (no production behavior change, deterministic): the Item5

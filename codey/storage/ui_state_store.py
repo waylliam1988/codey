@@ -242,12 +242,12 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
             "projectId": _str(item.get("projectId")) or None,
             "provider": _str(item.get("provider"), 40),
         }
-        # Research fields are preserved when present; the sanitizer never
-        # invents empty keys so older payloads stay byte-shape stable.
-        if isinstance(item.get("researchRuns"), list):
-            entry["researchRuns"] = _clean_research_runs(item.get("researchRuns"))
-        if "research" in item:
-            entry["research"] = _clean_research(item.get("research"))
+        # Canonical session shape always carries research fields (frontend
+        # defaultSession/normalizeSessions always emit researchRuns/research).
+        # Always emitting []/False keeps backend/frontend byte-shape stable
+        # and avoids spurious revision bumps from _content_equal.
+        entry["researchRuns"] = _clean_research_runs(item.get("researchRuns"))
+        entry["research"] = _clean_research(item.get("research"))
         sessions.append(entry)
     return sessions
 

@@ -2,6 +2,51 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 异味清理：提示词单路径、路由评测移出、UI 状态形状、shell 回退、Ghost 警告（未发布）
+
+- 第 1 项 `toolchain/tool_prompt`：删除旧 `_system_prompt()` 独立拼接路径；
+  `render_coding_system_prompt()` 成为唯一入口，只按 `allowed_tool_names` 生成
+  规则（`profile_name` 仅为 API 兼容保留）。完整 writer 工具集经共享
+  `_render_preface()` + `_WRITER_RULE_LINES` 逐字节复现冻结 writer 文本（golden
+  夹具不变）；受限集合走 `_profile_system_prompt()`。确定性 bug 先红后绿锁定
+  （`test_writer_profile_respects_allowed_tool_names`）：`coding_writer` 标签配
+  只读工具集时，旧路径无视 `allowed_tool_names`，仍输出 writer 专属
+  `edit`/`run` 规则。
+- 第 2 项 `ghost/router`：从生产模块删除仅供评测的 `route_error_cost()`，
+  `normalize_route_mode()` 仍留生产路由使用。该函数现位于
+  `tests/manual/ghost_router_ab.py`（自带 `_EVAL_WRITE_MODES`，评分逻辑不变）；
+  `tests/manual/ghost_router_production_ab.py` 继续从该手工脚本导入。由
+  `test_production_router_has_no_eval_helper` 先红后绿锁定。
+- 第 3 项 `storage/ui_state_store`：`_clean_sessions()` 恒输出规范形状
+  `researchRuns: []` / `research: False`，不再是有才保留，与前端
+  `defaultSession` / `normalizeSessions`（`codey/web/assets/ui_state.js`）对齐。
+  确定性 bug 先红后绿锁定：省略键与显式 `[]/False` 在 `_content_equal` 下不等，
+  会导致多余 revision 递增。现有 `test_ui_state_store.py` 用例无需改动即可通过
+  （往返相等在新规范形状下依然成立）。
+- 第 4 项 `app/api`：删除两处不可达的 `pending or {"command": command}` 回退及
+  仅为回退服务的 `command = pending["command"]` 局部变量；到达这些路径时
+  pending 恒为真字典且随后直接读 `pending["cwd"]`，回退不可能生效。
+  `_stopped_shell_denial()` 去掉 `command` 参数，直接传 `pending` 给
+  `shell_command_event_fields()`。`agents/shell_approval` 中缺
+  `command_preview` 的处理（含截断与哈希保护）按要求未动。由签名与源码静态守卫
+  先红后绿锁定。
+- 第 5 项 `ghost/_warnings`：删除旧式 `slice_event_warnings()` 路径（仅映射截断，
+  无裁剪/去重）并移出 `__all__`；`inbox` 与 `hebbian` 的
+  `_event_read_warnings()` 改走共享 `event_read_warnings()` 循环（180 字符裁剪、
+  去重、去空、限长），与 `affinity`/`continuity`/`work_queue` 一致。确定性 bug
+  先红后绿锁定：重复/空/超长警告在旧切片路径下会原样保留，新循环会规范化；
+  真实事件日志 id 短且唯一，生产警告不变。`tests/test_ghost_warnings.py` 同步
+  更新为共享循环等价断言及去重/去空/裁剪性质断言。
+- 测试：新增 `tests/test_smell_cleanup_locks.py`（11 个确定性锁，修改前全红、
+  修改后全绿）；更新 `tests/test_ghost_warnings.py`。
+- 验证：`ruff check` 全过，`git diff --check` 全过，未改前端 JS。全量前先过
+  针对性套件（锁测试 + `test_tool_prompt` + golden + `test_ghost_router_ab` +
+  `test_ui_state_store` + `test_ghost_warnings`/`inbox`/`hebbian` +
+  `test_protocols` + shell 审批切片）。再跑全量
+  `python -m pytest -q -p no:cacheprovider`：
+  `4612 passed、7 skipped、1471 subtests passed，385.55s（0:06:25）`。跳过为已知
+  Windows/手动启用项（相对 4601/1471 基线的增量恰为 11 个新锁测试）。未发布。
+
 ## Unreleased - api 导入成本锁定：图谱栈保持未加载（未发布）
 
 - 纯测试跟进（无生产行为变更，确定性）：第 5 项旧锁只覆盖了图构建调用路径，

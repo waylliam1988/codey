@@ -730,21 +730,6 @@ def normalize_route_mode(value: object) -> str:
     return MODE_ALIASES.get(text, text)
 
 
-def route_error_cost(expected: str, observed: str) -> int:
-    """Eval-only severity for manual AB router probes (not a production wire)."""
-    expected = normalize_route_mode(expected)
-    observed = normalize_route_mode(observed)
-    if expected == observed:
-        return 0
-    if not observed:
-        return 6
-    if expected in _WRITE_MODES or observed in _WRITE_MODES:
-        return 5
-    if expected in {"research", "review"} or observed in {"research", "review"}:
-        return 3
-    return 1
-
-
 def _confidence_threshold(baseline: str, selected: str) -> float:
     if selected in _WRITE_MODES and baseline in {"chat", "planning_readonly"}:
         return WRITE_UPGRADE_CONFIDENCE

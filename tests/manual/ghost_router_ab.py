@@ -27,7 +27,6 @@ from codey.ghost.router import (
     GhostRouteRequest,
     normalize_route_mode,
     parse_route_reply,
-    route_error_cost,
 )
 from codey.ghost.router import (
     GhostRouteDecision as RouterDecision,
@@ -45,6 +44,23 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "router")
 MODES = ROUTER_MODES
 parse_router_reply = parse_route_reply
+
+_EVAL_WRITE_MODES = frozenset({"project", "hybrid"})
+
+
+def route_error_cost(expected: str, observed: str) -> int:
+    """Eval-only severity for manual AB router probes (not a production wire)."""
+    expected = normalize_route_mode(expected)
+    observed = normalize_route_mode(observed)
+    if expected == observed:
+        return 0
+    if not observed:
+        return 6
+    if expected in _EVAL_WRITE_MODES or observed in _EVAL_WRITE_MODES:
+        return 5
+    if expected in {"research", "review"} or observed in {"research", "review"}:
+        return 3
+    return 1
 
 
 @dataclass(frozen=True)

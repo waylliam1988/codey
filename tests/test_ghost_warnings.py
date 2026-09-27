@@ -7,7 +7,6 @@ from codey.ghost._warnings import (
     bounded_warnings,
     event_read_warnings,
     map_event_warnings,
-    slice_event_warnings,
 )
 
 
@@ -55,11 +54,23 @@ class GhostWarningsEquivalenceTests(unittest.TestCase):
         )
         self.assertEqual(
             hebbian._event_read_warnings(["hebbian_events.jsonl:too_large", "x"]),
-            slice_event_warnings(
+            event_read_warnings(
                 ["hebbian_events.jsonl:too_large", "x"],
                 stream="hebbian_events",
                 limit=hebbian.MAX_HEBBIAN_WARNINGS,
             ),
+        )
+        # Unified loop must dedupe, drop empties, and clip (legacy slice kept all).
+        sample = ["b", "a", "b", "", "a", "c", "x" * 500]
+        self.assertEqual(
+            hebbian._event_read_warnings(sample),
+            event_read_warnings(
+                sample, stream="hebbian_events", limit=hebbian.MAX_HEBBIAN_WARNINGS
+            ),
+        )
+        self.assertEqual(
+            inbox._event_read_warnings(sample),
+            event_read_warnings(sample, stream="events", limit=inbox.MAX_EVENT_WARNINGS),
         )
         self.assertEqual(
             inbox._event_read_warnings(["events.jsonl:unreadable"]),

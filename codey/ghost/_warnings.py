@@ -64,20 +64,9 @@ def event_read_warnings(
     )
 
 
-def slice_event_warnings(
-    warnings: Iterable[str],
-    *,
-    stream: str,
-    limit: int,
-) -> tuple[str, ...]:
-    """Map event-file warnings without clipping (legacy slice stores)."""
-    return tuple(map_event_warnings(warnings, stream=stream)[:max(1, int(limit))])
-
-
 __all__ = [
     "WARNING_TEXT_LIMIT",
     "bounded_warnings",
     "event_read_warnings",
     "map_event_warnings",
-    "slice_event_warnings",
 ]

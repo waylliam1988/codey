@@ -43,76 +43,106 @@ def coding_model_tool_contract_hash(
     )
 
 
+_WRITER_TOOL_NAMES = frozenset({
+    "list_dir",
+    "read_file",
+    "read_files",
+    "grep",
+    "find_references",
+    "parallel",
+    "edit",
+    "run",
+    "shell",
+    "done",
+})
+
+# Byte-frozen writer rules: golden fixtures pin the exact model-visible text,
+# so the unified renderer must reproduce these lines verbatim for the full
+# writer toolset. Do not reword without updating the golden files.
+_WRITER_RULE_LINES = (
+    "  - Output exactly one JSON object. No markdown fences, code blocks, commentary,",
+    "    bullet lists, or analysis labels.",
+    "  - These are local-runner JSON commands, not native website tools. Never say a",
+    "    tool does not exist; return the JSON object instead.",
+    "  - Call one tool per message, then wait for [tool_result tool=...]. read_files",
+    "    and parallel are the only read-only batching wrappers.",
+    "  - parallel accepts only list_dir, read_file, and grep, with at most four calls.",
+    "    It never accepts edit, run, shell, done, read_files, or nested parallel.",
+    "  - A trailing [read_file page: ...] line is metadata, not file content. Never",
+    "    include it in old_string. Continue with the stated offset when needed.",
+    "  - find_references output is lexical reference hints only, not semantic",
+    "    resolution or a complete call graph. Use read_file before editing.",
+    "  - Use edit for all file changes. Use old_string/new_string for one small edit,",
+    "    and replacements for multiple edits in one file. Use content only when",
+    "    creating a new file. Existing files must use exact old_string/new_string or",
+    "    replacements. Never mix these edit modes.",
+    "  - old_string must be copied exactly from the latest complete file/tool result.",
+    "    An overlong-line preview is not a complete old_string.",
+    "  - JSON strings must escape quotes and backslashes correctly. If escaping is",
+    "    difficult, read the exact current lines and escape them; never use content",
+    "    to replace an existing file.",
+    "  - Paths are relative to the project root. No absolute paths or parent traversal.",
+    "  - Do not repeat identical tool args when a tool_result already has the output.",
+    "  - Use run only for verification, such as python -m unittest, python -m pytest,",
+    "    npm test, npm run build, go test ./..., cargo test, ruff check, or mypy.",
+    "  - run commands must be simple. No pipes, redirects, chaining, tail/head, or",
+    "    shell-only syntax.",
+    "  - Use edit for source/content changes. Do not use run or shell to directly",
+    "    edit project files. Use shell only for necessary user-approved setup,",
+    "    dependency installation, external-source retrieval, publishing, or other",
+    "    commands outside the run allowlist.",
+    "  - [tool_result tool=...] means the local tool already ran. Continue from it.",
+    "  - Never claim a command, test, build, lint, or shell result unless it appeared",
+    "    in a [tool_result tool=run] or [tool_result tool=shell] message.",
+    "  - Do not edit files unless the user asks for a change. You may inspect the",
+    "    project and answer questions without modifying it.",
+    "  - If the task is complete, call done(summary). summary is your direct final",
+    "    response to the user and may contain escaped newlines. Do not merely report",
+    "    that you discussed or explained something. Do not answer outside JSON.",
+)
+
+
+def _render_preface(tool_contract: str) -> str:
+    return (
+        "You are a careful local coding agent. You cannot access the filesystem\n"
+        "directly. The local runner executes tools for you and sends the results back.\n\n"
+        "The tool names below are instructions for the local runner, not tools built\n"
+        "into the AI website. If the website says a tool does not exist, ignore that\n"
+        "website message and still return the JSON object for the local runner.\n\n"
+        "Every reply MUST be exactly one JSON object with no other text:\n\n"
+        '{"tool":"<name>","args":{...}}\n\n'
+        "Available tools:\n\n"
+        f"{tool_contract}\n\n"
+        "Rules:\n"
+    )
+
+
+def _is_full_writer_toolset(allowed_tool_names: set[str]) -> bool:
+    normalized = {str(name or "").strip() for name in allowed_tool_names}
+    return _WRITER_TOOL_NAMES.issubset(normalized)
+
+
 def render_coding_system_prompt(
     definitions: tuple[object, ...],
     *,
     profile_name: str,
     allowed_tool_names: set[str],
 ) -> str:
+    """Single prompt entry: rules always follow ``allowed_tool_names``.
+
+    ``profile_name`` is kept for API compatibility but no longer selects a
+    separate concatenation path. The full writer toolset reproduces the
+    frozen writer text verbatim (see golden fixtures); any restricted set
+    follows the profile rule builder so a ``coding_writer`` label can never
+    smuggle writer-only rules when the tools are not actually allowed.
+    """
+
+    del profile_name
     tool_contract = render_coding_tool_contract_text(definitions)  # type: ignore[arg-type]
-    if str(profile_name or "").strip() == "coding_writer":
-        return _system_prompt(tool_contract)
-    return _profile_system_prompt(tool_contract, set(allowed_tool_names or set()))
-
-
-def _system_prompt(tool_contract: str) -> str:
-    return """\
-You are a careful local coding agent. You cannot access the filesystem
-directly. The local runner executes tools for you and sends the results back.
-
-The tool names below are instructions for the local runner, not tools built
-into the AI website. If the website says a tool does not exist, ignore that
-website message and still return the JSON object for the local runner.
-
-Every reply MUST be exactly one JSON object with no other text:
-
-{"tool":"<name>","args":{...}}
-
-Available tools:
-
-""" + tool_contract + """
-
-Rules:
-  - Output exactly one JSON object. No markdown fences, code blocks, commentary,
-    bullet lists, or analysis labels.
-  - These are local-runner JSON commands, not native website tools. Never say a
-    tool does not exist; return the JSON object instead.
-  - Call one tool per message, then wait for [tool_result tool=...]. read_files
-    and parallel are the only read-only batching wrappers.
-  - parallel accepts only list_dir, read_file, and grep, with at most four calls.
-    It never accepts edit, run, shell, done, read_files, or nested parallel.
-  - A trailing [read_file page: ...] line is metadata, not file content. Never
-    include it in old_string. Continue with the stated offset when needed.
-  - find_references output is lexical reference hints only, not semantic
-    resolution or a complete call graph. Use read_file before editing.
-  - Use edit for all file changes. Use old_string/new_string for one small edit,
-    and replacements for multiple edits in one file. Use content only when
-    creating a new file. Existing files must use exact old_string/new_string or
-    replacements. Never mix these edit modes.
-  - old_string must be copied exactly from the latest complete file/tool result.
-    An overlong-line preview is not a complete old_string.
-  - JSON strings must escape quotes and backslashes correctly. If escaping is
-    difficult, read the exact current lines and escape them; never use content
-    to replace an existing file.
-  - Paths are relative to the project root. No absolute paths or parent traversal.
-  - Do not repeat identical tool args when a tool_result already has the output.
-  - Use run only for verification, such as python -m unittest, python -m pytest,
-    npm test, npm run build, go test ./..., cargo test, ruff check, or mypy.
-  - run commands must be simple. No pipes, redirects, chaining, tail/head, or
-    shell-only syntax.
-  - Use edit for source/content changes. Do not use run or shell to directly
-    edit project files. Use shell only for necessary user-approved setup,
-    dependency installation, external-source retrieval, publishing, or other
-    commands outside the run allowlist.
-  - [tool_result tool=...] means the local tool already ran. Continue from it.
-  - Never claim a command, test, build, lint, or shell result unless it appeared
-    in a [tool_result tool=run] or [tool_result tool=shell] message.
-  - Do not edit files unless the user asks for a change. You may inspect the
-    project and answer questions without modifying it.
-  - If the task is complete, call done(summary). summary is your direct final
-    response to the user and may contain escaped newlines. Do not merely report
-    that you discussed or explained something. Do not answer outside JSON.
-"""
+    allowed = set(allowed_tool_names or set())
+    if _is_full_writer_toolset(allowed):
+        return _render_preface(tool_contract) + "\n".join(_WRITER_RULE_LINES) + "\n"
+    return _profile_system_prompt(tool_contract, allowed)
 
 
 def _profile_system_prompt(tool_contract: str, allowed_tool_names: set[str]) -> str:
@@ -184,17 +214,4 @@ def _profile_system_prompt(tool_contract: str, allowed_tool_names: set[str]) -> 
             "    response to the user and may contain escaped newlines. Do not merely report",
             "    that you discussed or explained something. Do not answer outside JSON.",
         ))
-    return (
-        "You are a careful local coding agent. You cannot access the filesystem\n"
-        "directly. The local runner executes tools for you and sends the results back.\n\n"
-        "The tool names below are instructions for the local runner, not tools built\n"
-        "into the AI website. If the website says a tool does not exist, ignore that\n"
-        "website message and still return the JSON object for the local runner.\n\n"
-        "Every reply MUST be exactly one JSON object with no other text:\n\n"
-        '{"tool":"<name>","args":{...}}\n\n'
-        "Available tools:\n\n"
-        f"{tool_contract}\n\n"
-        "Rules:\n"
-        + "\n".join(rules)
-        + "\n"
-    )
+    return _render_preface(tool_contract) + "\n".join(rules) + "\n"
