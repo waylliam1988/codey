@@ -2,6 +2,36 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Review 策略边界缺口：提交前失败、入口校验、槽位释放（未发布）
+
+- 提交前失败（busy 槽泄漏已修）：`submit_task()` 在预约运行槽之前先经
+  `load_review_policy()` 校验 `REVIEW_POLICY`，拼错直接抛 `ValueError` 且不
+  占槽（HTTP 以 500 返回明确信息）。校验通过的值以
+  `run_task(..., review_policy=...)` 透传给 worker，worker 不再二次读取环境
+  变量（无竞态）。`run_task()` 新增可选 `review_policy`（`None`
+  时同步/直接调用路径加载一次）；`TaskRuntime` 接管槽位之前的其他初始化异常
+  也会释放已预约槽位（幂等 `release_run`），worker 初始化失败不再永久 pin
+  住 busy。进入执行后的失败仍归 `TaskRuntime` 所有。
+- 服务入口契约补齐：`run_review()` 开头即经 `allow_self_review()` 校验策略，
+  并复用结果做自审门控；拼错策略即使有可用网页 reviewer 也直接抛错（之前会
+  经网页路径成功返回）。Review-only 模式本来就把这类错误降级为
+  "Review unavailable"，不引入新的泄漏类型。
+- 确定性 bug 经 TDD 修复（先红后绿）：3 个锁定测试在旧代码上失败（提交不报
+  错；`run_task` 报错不释放；有网页 reviewer 时 `run_review` 对坏策略成功），
+  修复后转绿。永久锁定：`test_submit_task_rejects_invalid_policy_before_
+  reserve`（含“无效提交后槽位仍可用”：被拒后紧接着的有效提交仍能预约）、
+  `test_run_task_releases_reserved_slot_on_policy_error`、
+  `test_run_review_invalid_policy_raises_with_web_reviewer_available` +
+  `..._without_web_reviewer`。其余触达路径（延续提交、review-only 降级、
+  执行内 review 错误）复查后无新的槽位泄漏类型、无其他确定性正确性 bug。
+- 文档顺手修正：修“belle page”笔误，收敛上一批次“无其他 bug”表述的作用域。
+- 验证：`ruff check` 全过，`git diff --check` 全过，未改前端 JS（本环境无
+  node，JS 检查不适用）。先过针对性套件（task_submit、bootstrap review、
+  hardening submit、lazy-state、architecture delegation、server
+  review/submit），再跑全量 `python -m pytest -q -p no:cacheprovider`：
+  `4568 passed、7 skipped、1391 subtests passed，336.40s`。跳过为已知
+  Windows/手动启用项。未发布。
+
 ## Unreleased - 冷启动收敛：严格 Review 策略、校验函数归一、死路径删除（未发布）
 
 - Review 策略收紧（fail-closed）：`codey/reviews/review_policy.py` 仅保留
@@ -15,8 +45,9 @@
 - 确定性 bug 经 TDD 修复（先红后绿）：旧实现把拼错/未知值静默映射为默认，
   `allow_self_review()` 对未知值返回 `True`，`REVIEW_POLICY=require_weeb`
   会静默放宽审查。临时锁定测试先复现 fail-open（9 个失败），修复后转绿；
-  永久锁定为 `test_review_policy_misspelled_must_raise`。其余触达路径复查后
-  无其他确定性正确性 bug。
+  永久锁定为 `test_review_policy_misspelled_must_raise`。本批次去重/删除路径
+  复查后无其他确定性正确性 bug；提交链与 review 入口的两处边界缺口另起修复
+ （见新条目）。
 - 概念图去重：删除 `codey/knowledge/concepts.py` 第二处 `_bounded_int`
   定义（保留第一处，行为一致）。概念图相关套件全绿。
 - Ghost 校验归一：`ghost/affinity.py` 与 `ghost/work_queue.py` 中逐字相同的
@@ -42,7 +73,7 @@
   `write_tool_output(tool_name="run", ...)` 后删除包装；删除
   `codey/toolchain/runtime.py` 的 `strip_line_number_prefixes` 重导出（内部
   改为 `_strip_...`，测试改从 `codey.toolchain.line_prefix` 导入）；删除
-  `codey/toolchain/search_page.py` 历史首 belle 页截断文案
+  `codey/toolchain/search_page.py` 历史第一页截断文案
   `legacy_truncated_line` 分支，统一为 `[grep page: ...]` 分页提示（会改变模
   型可见文本，已同步更新 grep 测试）。
 - 刻意保留、未删除：网页正文失败回退 HTTP、非 Git 快照、provider 故障切换、

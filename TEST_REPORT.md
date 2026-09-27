@@ -1,5 +1,53 @@
 # Codey Test Report
 
+## Review policy boundary gaps: fail-fast submit + entry validation + slot release (2026-09-27)
+
+Scope (production, no release):
+
+```text
+codey/app/task_submit.py             (submit_task validates policy before reserve; passes validated review_policy to worker; run_task takes optional review_policy, None loads once; init-phase failures release preset reservation)
+codey/app/review_service.py          (run_review validates policy up front via allow_self_review; reuses result for self-review gate)
+tests/test_task_submit.py            (new: rejects-invalid-before-reserve incl. slot-still-usable; releases-reserved-on-policy-error)
+tests/test_local_bootstrap.py        (new: invalid-policy raises with/without web reviewer; connect never called)
+CHANGELOG.md / CHANGELOG.zh-CN.md    (fixed "belle page" typo; scoped prior no-other-bugs claim)
+```
+
+Repro (all deterministic, temp dirs / synthetic fakes, no live model):
+
+- Busy-slot leak: with `REVIEW_POLICY=require_weeb`, old `submit_task()` never
+  read the env (no raise, slot reserved, worker queued); the worker-side
+  `run_task()` then raised `ValueError` before `TaskRuntime` owned the slot,
+  the worker recorded a failed job, and the reservation stayed — the next
+  reserve was refused (busy forever). Now `submit_task()` raises before
+  reserve (no slot taken, worker never queued) and a valid submit right after
+  still reserves; `run_task()` releases a preset reservation on any
+  pre-`TaskRuntime` failure.
+- Entry bypass: old `run_review(review_policy="require_weeb")` with an
+  available web reviewer succeeded via the web path (validation only ran at
+  the self-review fallback). Now it raises before any provider work
+  (`connect_existing_provider` never called); without a reviewer it also
+  raises (`connect_fresh_provider_tab` never called).
+- Lock proof: the 4 new tests (3 red on old code — submit-raise,
+  run_task-release, web-available-raise — plus 1 pin for the no-reviewer
+  branch that already raised) pass after the fix. The temporary-probe
+  `ValueError + released: ['run-9']` run confirmed the worker-side release
+  before cleanup.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check` clean on the repo,
+  `git diff --check` clean, no frontend JS changed (node unavailable, JS
+  check not applicable); targeted suites green
+  (`test_task_submit` 8 + `test_local_bootstrap -k review` +
+  `test_hardening_batch2 -k submit` + `test_server_lazy_state` 9 +
+  `test_architecture -k delegation` + `test_server -k review/submit` 36).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4568 passed, 7 skipped, 1391 subtests passed in 336.40s (0:05:36)`.
+  Skips are the known Windows/opt-in family (no real-browser runs, so green
+  pytest still does not prove interactive or local-model latency). No live
+  kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Cold-start convergence batch: strict review policy + dedup + dead-path removal (2026-09-27)
 
 Scope (production, no release):

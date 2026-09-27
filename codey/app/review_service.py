@@ -119,6 +119,9 @@ def run_review(
     review_policy: str = WEB_IF_AVAILABLE,
 ) -> tuple[str, ReviewResult] | None:
     cancellation.check()
+    # Validate up front so a misspelled policy fails even when a web reviewer
+    # is available; the result is reused for the self-review gate below.
+    self_review_allowed = allow_self_review(review_policy)
     last_error: Exception | None = None
     if review_impact_map is None:
         review_impact_map = safe_review_impact_map(project, changes)
@@ -150,7 +153,7 @@ def run_review(
         except Exception as exc:
             last_error = exc
     cancellation.check()
-    if not allow_self_review(review_policy):
+    if not self_review_allowed:
         emit_review(ctx, session_id, "Review unavailable: no web reviewer is open.")
         return None
     try:

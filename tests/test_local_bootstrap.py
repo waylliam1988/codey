@@ -572,6 +572,77 @@ def test_run_review_require_web_refuses_self_review() -> None:
     assert any("no web reviewer" in str(event.get("text", "")) for event in ctx.emitted)
 
 
+def test_run_review_invalid_policy_raises_with_web_reviewer_available() -> None:
+    import pytest
+
+    from codey.app import review_service
+
+    ctx = SimpleNamespace(
+        providers=SimpleNamespace(supervisor=SimpleNamespace(is_available=lambda _pid: False)),
+        emitted=[],
+    )
+    ctx.emit = lambda event: ctx.emitted.append(event)  # type: ignore[method-assign]
+    ctx.set_provider_session = lambda *args: None  # type: ignore[method-assign]
+    reviewer = mock.Mock()
+    reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
+    with (
+        mock.patch.object(
+            review_service.providers, "reviewer_candidates", return_value=("stepfun",),
+        ),
+        mock.patch.object(
+            review_service.providers, "connect_existing_provider", return_value=reviewer,
+        ) as connect,
+        pytest.raises(ValueError),
+    ):
+        review_service.run_review(
+            ctx,  # type: ignore[arg-type]
+            session_id="s",
+            project=".",
+            task="t",
+            writer_summary="w",
+            changes={},
+            recent_log="",
+            writer_id="local",
+            review_policy="require_weeb",
+        )
+    connect.assert_not_called()
+
+
+def test_run_review_invalid_policy_raises_without_web_reviewer() -> None:
+    import pytest
+
+    from codey.app import review_service
+
+    ctx = SimpleNamespace(
+        providers=SimpleNamespace(supervisor=SimpleNamespace(is_available=lambda _pid: False)),
+        emitted=[],
+    )
+    ctx.emit = lambda event: ctx.emitted.append(event)  # type: ignore[method-assign]
+    ctx.set_provider_session = lambda *args: None  # type: ignore[method-assign]
+    with (
+        mock.patch.object(
+            review_service.providers, "reviewer_candidates", return_value=(),
+        ),
+        mock.patch.object(
+            review_service.providers, "connect_fresh_provider_tab",
+            side_effect=AssertionError("must not self-review"),
+        ) as connect_fresh,
+        pytest.raises(ValueError),
+    ):
+        review_service.run_review(
+            ctx,  # type: ignore[arg-type]
+            session_id="s",
+            project=".",
+            task="t",
+            writer_summary="w",
+            changes={},
+            recent_log="",
+            writer_id="local",
+            review_policy="require_weeb",
+        )
+    connect_fresh.assert_not_called()
+
+
 def test_queue_scope_covers_search_and_references(tmp_path: Path) -> None:
     from codey.runtime.core.models import ToolCall
     from codey.runtime.write.file_mutation_queue import (

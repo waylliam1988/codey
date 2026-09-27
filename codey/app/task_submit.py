@@ -11,6 +11,7 @@ use, never on ``import codey.app.task_submit`` (cold start).
 
 from __future__ import annotations
 
+import contextlib
 import time
 from collections.abc import Callable
 
@@ -19,6 +20,7 @@ from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.operations.task_state import TaskState
 from codey.providers.diagnostics import capture_provider_failure
+from codey.reviews.review_policy import load_review_policy
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes, is_git_repository
 
@@ -36,41 +38,52 @@ def run_task(
     run_id: str = "",
     *,
     get_state: Callable[[], TaskState],
+    review_policy: str | None = None,
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
     # must not load operations/service modules/research (see test_server_lazy_state).
+    # review_policy itself stays import-light (os + env names only).
     from codey.app import consensus_service, review_service
     from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
     from codey.operations.task_entry import TaskRunDeps, run_task_submission
-    from codey.reviews.review_policy import load_review_policy
 
     state = get_state()
-    review_policy = load_review_policy()
-    deps = TaskRunDeps(
-        state=state,
-        agent_run=agent_run,
-        collect_changes=collect_changes,
-        run_review=lambda **kwargs: review_service.run_review(
-            state, review_policy=review_policy, **kwargs
-        ),
-        capture_provider_failure=capture_provider_failure,
-        run_consensus=lambda **kwargs: consensus_service.run_consensus(state, **kwargs),
-        run_project_audit=lambda **kwargs: consensus_service.run_project_audit(state, **kwargs),
-        run_research_advisors=lambda **kwargs: consensus_service.run_research_advisors(state, **kwargs),
-        project_facts=state.project_facts,
-        work_checkpoints=state.work_checkpoints,
-        workspace_revisions=state.workspace_revisions,
-        run_ledgers=state.run_ledgers,
-        run_traces=state.run_traces,
-        evidence_ledgers=state.evidence_ledgers,
-        managed_outputs=state.managed_outputs,
-        knowledge_store=state.knowledge_store,
-        is_git_repository=is_git_repository,
-        review_fix_turns=REVIEW_FIX_TURNS,
-        review_log_lines=REVIEW_LOG_LINES,
-        runtime_mutations=state.runtime_mutations,
-        runtime_effects=state.runtime_effects,
-    )
+    try:
+        if review_policy is None:
+            review_policy = load_review_policy()
+        deps = TaskRunDeps(
+            state=state,
+            agent_run=agent_run,
+            collect_changes=collect_changes,
+            run_review=lambda **kwargs: review_service.run_review(
+                state, review_policy=review_policy, **kwargs
+            ),
+            capture_provider_failure=capture_provider_failure,
+            run_consensus=lambda **kwargs: consensus_service.run_consensus(state, **kwargs),
+            run_project_audit=lambda **kwargs: consensus_service.run_project_audit(state, **kwargs),
+            run_research_advisors=lambda **kwargs: consensus_service.run_research_advisors(state, **kwargs),
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            is_git_repository=is_git_repository,
+            review_fix_turns=REVIEW_FIX_TURNS,
+            review_log_lines=REVIEW_LOG_LINES,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
+        )
+    except Exception:
+        # Init-phase failure happens before TaskRuntime owns the slot: release
+        # a preset reservation so the worker exception cannot pin busy forever.
+        # Post-entry failures stay owned by TaskRuntime (release is idempotent).
+        if run_id:
+            with contextlib.suppress(Exception):
+                get_state().release_run(run_id)
+        raise
     try:
         run_task_submission(
             deps,
@@ -104,6 +117,9 @@ def submit_task(
     get_state: Callable[[], TaskState],
     abort_if_stopped: bool = False,
 ) -> str | None:
+    # Fail fast on config error before taking the slot; the validated value is
+    # passed through so the worker never re-reads the environment (no race).
+    review_policy = load_review_policy()
     reserved = get_state().reserve_run(
         session_id=session_id,
         project=project,
@@ -125,6 +141,7 @@ def submit_task(
             intent,
             reserved.run_id,
             get_state=get_state,
+            review_policy=review_policy,
         )
     except Exception:
         get_state().release_run(reserved.run_id)

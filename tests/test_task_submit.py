@@ -63,6 +63,51 @@ class TaskSubmitTests(unittest.TestCase):
             task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
         self.assertEqual(state.released, ["run-1"])
 
+    def test_submit_task_rejects_invalid_policy_before_reserve(self) -> None:
+        import os
+
+        state = _FakeState(reserved=True)
+        reserve_calls: list[dict] = []
+        original_reserve = state.reserve_run
+
+        def tracking_reserve(**kwargs):
+            reserve_calls.append(kwargs)
+            return original_reserve(**kwargs)
+
+        state.reserve_run = tracking_reserve  # type: ignore[method-assign]
+        with (
+            mock.patch.dict(os.environ, {"REVIEW_POLICY": "require_weeb"}),
+            mock.patch.object(task_submit, "submit_browser_task") as queued,
+            self.assertRaises(ValueError),
+        ):
+            task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
+        # Fail fast: no slot taken, nothing to release, worker never queued.
+        self.assertEqual(reserve_calls, [])
+        self.assertEqual(state.released, [])
+        queued.assert_not_called()
+        # The slot stays usable afterwards: a valid submit still reserves.
+        with mock.patch.object(task_submit, "submit_browser_task", return_value=True):
+            run_id = task_submit.submit_task(
+                "s", None, "t", 8, False, "deepseek", get_state=lambda: state
+            )
+        self.assertEqual(run_id, "run-1")
+        self.assertEqual(len(reserve_calls), 1)
+        self.assertEqual(state.expired, ["run-1"])
+
+    def test_run_task_releases_reserved_slot_on_policy_error(self) -> None:
+        import os
+
+        state = _FakeState(reserved=True)
+        with (
+            mock.patch.dict(os.environ, {"REVIEW_POLICY": "require_weeb"}),
+            self.assertRaises(ValueError),
+        ):
+            task_submit.run_task(
+                "s", None, "t", 8, False, "deepseek", "auto", "run-9",
+                get_state=lambda: state,
+            )
+        self.assertEqual(state.released, ["run-9"])
+
     def test_after_slot_release_returns_none_when_stopped(self) -> None:
         state = _FakeState(reserved=True)
         state.run_registry = SimpleNamespace(

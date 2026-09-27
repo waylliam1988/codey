@@ -2,6 +2,43 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Review policy boundary gaps: fail-fast submit, entry validation, slot release (no release)
+
+- Fail-fast submit (busy-slot leak fixed): `submit_task()` now validates
+  `REVIEW_POLICY` via `load_review_policy()` before reserving the run slot, so
+  a misspelled policy raises `ValueError` with no slot taken (HTTP surfaces
+  500 with the explicit message). The validated value is passed to the worker
+  as `run_task(..., review_policy=...)`, so the worker never re-reads the
+  environment (no read race). `run_task()` accepts an optional
+  `review_policy` (`None` loads once for sync/direct callers); any other
+  init-phase exception before `TaskRuntime` owns the slot now releases a
+  preset reservation (idempotent `release_run`), so a worker init failure can
+  no longer pin busy forever. Post-entry failures stay owned by `TaskRuntime`.
+- Service-entry contract closed: `run_review()` validates `review_policy` up
+  front via `allow_self_review()` and reuses the result for the self-review
+  gate, so a misspelled policy raises even when a web reviewer is available
+  (previously it succeeded via the web path). Review-only mode already degrades
+  such errors to "Review unavailable", so no new leak class is introduced.
+- Deterministic bugs fixed via TDD (red-first): three lock tests failed on old
+  code (`submit` did not raise; `run_task` raised without releasing;
+  `run_review` succeeded with a web reviewer on a bad policy) and pass after
+  the fix. Permanent pins: `test_submit_task_rejects_invalid_policy_before_
+  reserve` (incl. "slot still usable afterwards": a valid submit reserves
+  right after the rejected one), `test_run_task_releases_reserved_slot_on_
+  policy_error`, `test_run_review_invalid_policy_raises_with_web_reviewer_
+  available` + `..._without_web_reviewer`. Other touched paths (continuation
+  submit, review-only degradation, in-execution review errors) were re-checked:
+  no new slot-leak class, no other deterministic correctness bug.
+- Doc touch-ups: fixed the "belle page" typo and scoped the prior batch's
+  no-other-bugs claim in both changelogs.
+- Verification: `ruff check` clean, `git diff --check` clean, no frontend JS
+  changed (node unavailable, JS check not applicable). Targeted suites green
+  (task_submit, bootstrap review, hardening submit, lazy-state, architecture
+  delegation, server review/submit), then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4568 passed, 7 skipped, 1391 subtests passed in 336.40s`. Skips are the
+  known Windows/opt-in family. No release was made.
+
 ## Unreleased - Cold-start convergence: strict review policy, deduped validators, dead-path removal (no release)
 
 - Review policy strict (fail-closed): `codey/reviews/review_policy.py` now
@@ -18,8 +55,9 @@
   `True` for unknown values, so `REVIEW_POLICY=require_weeb` silently widened
   review. A temporary lock test reproduced the fail-open (9 failures), then the
   fix turned it green; the permanent pin lives in
-  `test_review_policy_misspelled_must_raise`. Other touched paths were
-  re-checked and have no other deterministic correctness bug.
+  `test_review_policy_misspelled_must_raise`. The dedup/removal paths of this
+  batch were re-checked with no other deterministic correctness bug; the two
+  submit-chain/review-entry boundary gaps are fixed separately (see new entry).
 - Concept Graph dedup: removed the second `_bounded_int` definition in
   `codey/knowledge/concepts.py` (kept the first; behavior identical).
   Concept Graph suites green.
