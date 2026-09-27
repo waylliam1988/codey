@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.ghost.router import MAX_ROUTER_STATE_BYTES, _read_json_dict
 from codey.ghost.sleep import GhostSleepStore
 from codey.providers import controls as provider_controls
 from codey.providers import revival as provider_revival
@@ -102,14 +101,6 @@ class StrictStoreLoadTests(unittest.TestCase):
             _corrupt(path)
 
             self.assertEqual(provider_controls.load_controls(path), {})
-            self.assertTrue(path.with_name(path.name + ".corrupt").exists())
-
-    def test_router_dict_reader_backs_up_corrupt_file(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "router.json"
-            _corrupt(path)
-
-            self.assertIsNone(_read_json_dict(path, max_bytes=MAX_ROUTER_STATE_BYTES))
             self.assertTrue(path.with_name(path.name + ".corrupt").exists())
 
     def test_adapter_override_index_resets_with_backup(self) -> None:

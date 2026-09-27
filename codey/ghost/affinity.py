@@ -428,7 +428,6 @@ class GhostAffinityStore:
         hebbian_store: Any = None,
         work_queue_store: Any = None,
         research_interest_candidates: Iterable[Any] = (),
-        router_store: Any = None,
         run_projection: Any = None,
         terminal_event: Mapping[str, object] | None = None,
         session_id: str = "",
@@ -439,7 +438,6 @@ class GhostAffinityStore:
                 hebbian_store=hebbian_store,
                 work_queue_store=work_queue_store,
                 research_interest_candidates=research_interest_candidates,
-                router_store=router_store,
                 run_projection=run_projection,
                 terminal_event=terminal_event,
                 session_id=session_id,
@@ -1066,7 +1064,6 @@ class GhostAffinityStore:
         hebbian_store: Any,
         work_queue_store: Any,
         research_interest_candidates: Iterable[Any],
-        router_store: Any,
         run_projection: Any,
         terminal_event: Mapping[str, object] | None,
         session_id: str,
@@ -1085,9 +1082,6 @@ class GhostAffinityStore:
         )
         node_specs.extend(research_nodes)
         edge_specs.extend(research_edges)
-        router_nodes, router_edges = _specs_from_router(router_store)
-        node_specs.extend(router_nodes)
-        edge_specs.extend(router_edges)
         provider_nodes, provider_edges = _specs_from_provider_outcome(
             run_projection=run_projection,
             terminal_event=terminal_event,
@@ -1495,82 +1489,6 @@ def _specs_from_research_candidates(
                             proof_refs=(),
                         )
                     )
-    return node_specs, edge_specs
-
-
-def _specs_from_router(router_store: Any) -> tuple[list[_NodeSpec], list[_EdgeSpec]]:
-    if router_store is None:
-        return [], []
-    try:
-        exported = router_store.export_state()
-        records = _list((exported.get("router") if isinstance(exported, Mapping) else {}).get("records"))
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception:
-        return [], []
-    node_specs: list[_NodeSpec] = []
-    edge_specs: list[_EdgeSpec] = []
-    for record in records:
-        if not isinstance(record, Mapping) or not bool(record.get("ok", True)):
-            continue
-        final_mode = _clean_key(record.get("final_mode"), 80)
-        baseline_mode = _clean_key(record.get("baseline_mode"), 80)
-        if not final_mode or not baseline_mode:
-            continue
-        if clip_signal_text(record.get("session_ref"), 120):
-            scope = "session"
-            scope_ref = clip_signal_text(record.get("session_ref"), 120)
-        elif clip_signal_text(record.get("project_ref"), 120):
-            scope = "project"
-            scope_ref = clip_signal_text(record.get("project_ref"), 120)
-        else:
-            scope = "user"
-            scope_ref = ""
-        refs = _bounded_refs(
-            (
-                f"router:{clip_signal_text(record.get('run_id'), 120)}:{clip_signal_text(record.get('task_hash'), 80)}:{final_mode}",
-            )
-        )
-        confidence = _unit_float(record.get("confidence"))
-        final_spec = _NodeSpec(
-            kind="task_type",
-            key=f"mode:{final_mode}",
-            label=f"mode:{final_mode}",
-            scope=scope,
-            scope_ref=scope_ref,
-            confidence=confidence,
-            reward=0.35,
-            source_refs=refs,
-            metadata={"source": "router", "reason_code": clip_signal_text(record.get("reason"), 80)},
-        )
-        node_specs.append(final_spec)
-        if final_mode != baseline_mode:
-            baseline_spec = _NodeSpec(
-                kind="task_type",
-                key=f"mode:{baseline_mode}",
-                label=f"mode:{baseline_mode}",
-                scope=scope,
-                scope_ref=scope_ref,
-                confidence=confidence,
-                reward=0.2,
-                source_refs=refs,
-                metadata={"source": "router"},
-            )
-            node_specs.append(baseline_spec)
-            edge_specs.append(
-                _EdgeSpec(
-                    source=_node_id(
-                        baseline_spec.kind, baseline_spec.scope, baseline_spec.scope_ref, baseline_spec.key
-                    ),
-                    target=_node_id(final_spec.kind, final_spec.scope, final_spec.scope_ref, final_spec.key),
-                    relation="associated_with",
-                    scope=scope,
-                    scope_ref=scope_ref,
-                    confidence=confidence,
-                    reward=0.25,
-                    source_refs=refs,
-                )
-            )
     return node_specs, edge_specs
 
 

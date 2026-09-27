@@ -2,6 +2,63 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Ghost cold-start retirement: learning loop + pre-turn router removed, icon packaging, revival/meta + helper dedup (no release)
+
+- Packaging fix (deterministic bug, red-first): `pyproject.toml` package-data
+  listed only HTML/CSS/JS, so wheels missed `codey/web/icon.ico` while
+  `server.py` (`/icon.ico`) and the desktop bootstrap reference it. Added
+  `"web/icon.ico"` to `codey` package-data. New
+  `tests/test_web_packaging.py` locks it (package-data contains the icon, source
+  file exists, `GET /icon.ico` serves `image/x-icon`); verified the built wheel
+  contains `codey/web/icon.ico`.
+- Retired `GhostLearningLoop` (not wired into production; conflicts with the
+  observation-only terminal state in `observations.py`). Deleted
+  `codey/ghost/learning_loop.py`, `extractor.py`, `signal_codec.py`, `store.py`
+  (`GhostSignalStore`), plus `typed_fields.extractor_metadata_guidance()` and
+  `schema.MAX_EXTRACTOR_*` (codec-only). Removed `AppContext.ghost_signals`,
+  control-surface `signals` export/delete/reset wiring, and the `api.py` seam.
+  Deleted extraction-only tests/manual harnesses/fixtures
+  (`test_ghost_learning_loop`, `test_ghost_signal_extractor`,
+  `GhostSignalStoreScopeTests`, manual `ghost_signal_extractor_ab` /
+  `ghost_learning_loop_ab`). `inbox.ingest_signals` and
+  `hebbian.sync_from_inbox` stay as store logic with test coverage; inbox/hebbian/
+  work-queue stores themselves are untouched per their live production uses.
+- Retired `GhostRouter` + `GhostRouteStore` (no production writes; pre-turn extra
+  model call replaced by unified auto where the first normal call decides).
+  Deleted `codey/ghost/router.py` and its prompt/parse/decision code. Removed
+  `AppContext.ghost_router`, control-surface `router` export/cleanup, affinity
+  `router_store` input + `_specs_from_router`, sleep `router_store` plumbing,
+  `ghost_post_turn` router pass-through, and session-forget router cleanup.
+  Kept the current route trace (`dispatch.record_route_trace`: actual
+  `auto`/user choice). Deleted router-only tests/manual harnesses/fixtures
+  (`test_ghost_router`, `test_ghost_router_ab`, manual `ghost_router_ab` /
+  `ghost_router_production_ab`, `ghost_router_cases.jsonl`) and rewrote
+  `test_cli` / `test_server` forget / `test_event_state` / `test_strict` /
+  `test_smell` / `test_learning_switch` / `test_architecture` (baseline + retired
+  file/import locks) to the router-free shape.
+- Provider revival cold-start (red-first): readers no longer fall back to legacy
+  `meta["actions"]`; only `changed_actions` / `required_actions` are read, missing
+  or non-list fields mean no actions, unknown names stay filtered. New
+  `tests/test_revival_coldstart.py` locks legacy-ignored + canonical-wins +
+  missing/non-list/unknown behavior; existing `test_provider_revival` still green.
+- Shared helpers (red-first, `tests/test_shared_helpers.py`): `toolchain/definition.call_arg`
+  is now the single source (internal uses switched, `agents/tool_execution` imports
+  and re-exports it for `tool_turn`); `GhostMemoryCandidate.scope_ref` is the shared
+  read-only property, with `inbox._scope_ref` / `hebbian._scope_ref_for_candidate`
+  delegating to it.
+- Retirement shape bug (red-first, `tests/test_control_surface_retirement.py`):
+  export/delete/reset dropped `router`/`signals` keys but the schema version stayed
+  at 1. Bumped `CONTROL_SURFACE_SCHEMA_VERSION` to 2 and locked the key absence.
+- Docs: `docs/ghost_future_direction.zh-CN.md` marks the five retired modules and
+  the current observation + bounded-retrieval + unified-auto path;
+  `tests/manual/README.md` marks the four retired harnesses; architecture test
+  locks the retired files/imports.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean.
+  Targeted suites green before the full run; then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4570 passed, 7 skipped, 1449 subtests passed in 344.88s (0:05:44)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Test gate fix: repo-wide ruff, redundant CDP test, deterministic polling clock (no release)
 
 - P1 test-only fix (CI-blocking): `tests/test_readonly_cleanup_locks.py`

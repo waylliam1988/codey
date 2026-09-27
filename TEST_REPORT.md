@@ -1,5 +1,89 @@
 # Codey Test Report
 
+## Ghost cold-start retirement: learning loop + pre-turn router removed, icon packaging, revival/meta + helper dedup (2026-09-27)
+
+Scope (production cleanup, TDD red-first, no release):
+
+```text
+pyproject.toml                          (add web/icon.ico to codey package-data)
+codey/ghost/learning_loop.py            (deleted)
+codey/ghost/extractor.py                (deleted)
+codey/ghost/signal_codec.py             (deleted)
+codey/ghost/store.py                    (deleted, GhostSignalStore)
+codey/ghost/router.py                   (deleted, GhostRouter + GhostRouteStore)
+codey/ghost/typed_fields.py             (drop extractor_metadata_guidance)
+codey/ghost/schema.py                   (drop MAX_EXTRACTOR_*; inbox candidate gains scope_ref)
+codey/ghost/inbox.py                    (GhostMemoryCandidate.scope_ref; _scope_ref delegates)
+codey/ghost/hebbian.py                  (_scope_ref_for_candidate delegates)
+codey/ghost/affinity.py                 (drop router_store + _specs_from_router)
+codey/ghost/sleep.py                    (drop router_store plumbing)
+codey/ghost/control_surface.py          (drop router/signals; schema version 1 -> 2)
+codey/app/context.py                    (drop ghost_router/ghost_signals + sleep/forget wiring)
+codey/app/api.py                        (drop router/signals seam)
+codey/operations/ghost_post_turn.py     (drop router_store pass-through)
+codey/providers/revival.py              (drop legacy meta["actions"] fallback)
+codey/toolchain/definition.py           (public call_arg single source)
+codey/agents/tool_execution.py          (import shared call_arg)
+docs/ghost_future_direction.zh-CN.md    (mark retired modules + current path)
+tests/manual/README.md                  (mark four retired harnesses)
+tests/test_web_packaging.py             (new: icon packaging + /icon.ico serve)
+tests/test_revival_coldstart.py         (new: legacy actions ignored)
+tests/test_shared_helpers.py            (new: shared call_arg + scope_ref)
+tests/test_control_surface_retirement.py (new: no router/signals + version 2)
+tests/test_ghost_inbox.py               (drop signal-store scope tests; export/reset without signals)
+tests/test_ghost_control_surface.py     (drop signal-store wiring)
+tests/test_ghost_warnings.py            (drop router import/assert)
+tests/test_cli.py                       (export/reset/delete-scope without router)
+tests/test_server.py                    (forget-conversation without router)
+tests/test_event_state.py               (six stores, not seven)
+tests/test_strict_store_loads.py        (drop router reader test)
+tests/test_smell_cleanup_locks.py       (router retirement lock)
+tests/test_learning_switch_fail_closed.py (drop GhostLearningLoop; gate via _ghost_learning_enabled)
+tests/test_architecture.py              (drop router baseline/ceiling; retired file/import locks)
+tests/test_ghost_learning_loop.py       (deleted)
+tests/test_ghost_signal_extractor.py    (deleted)
+tests/test_ghost_router.py              (deleted)
+tests/test_ghost_router_ab.py           (deleted)
+tests/manual/ghost_signal_extractor_ab.py, ghost_learning_loop_ab.py,
+  ghost_router_ab.py, ghost_router_production_ab.py (deleted)
+tests/fixtures/ghost_router_cases.jsonl (deleted)
+CHANGELOG.md / CHANGELOG.zh-CN.md       (new Unreleased entry)
+TEST_REPORT.md                          (this entry, written after the full suite)
+```
+
+Repro (deterministic, no live model):
+
+- Icon red: new `tests/test_web_packaging.py::test_package_data_includes_icon`
+  failed with `'web/icon.ico' not found in ['web/index.html', ...]`; after adding
+  the entry, all 3 pass and the rebuilt wheel contains `codey/web/icon.ico`.
+- Revival red: new `tests/test_revival_coldstart.py::test_legacy_actions_field_is_ignored`
+  failed (`{'send_button','response'}` read from `actions`); after dropping the
+  fallback, all 5 pass and `test_provider_revival` (19) stays green.
+- Helpers red: new `tests/test_shared_helpers.py` failed with
+  `definition has no attribute 'call_arg'` and `candidate has no attribute 'scope_ref'`;
+  after the single-source edits, all 3 (+8 subtests) pass.
+- Retirement-shape red: new
+  `tests/test_control_surface_retirement.py::test_schema_version_bumped_for_retired_shape`
+  failed (`1 != 2`); after bumping `CONTROL_SURFACE_SCHEMA_VERSION` to 2, all 3 pass.
+- Collection catch: the first full run stopped on
+  `test_ghost_warnings.py: cannot import name 'router'`; removed the router import
+  and its `_event_read_warnings` assertion (plus the now-unused `map_event_warnings`
+  import). `pytest --collect-only` then collected 4577 tests cleanly.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `python -m ruff check .` clean, `git diff --check` clean,
+  `py_compile` on touched production modules clean; targeted suites green
+  (packaging, revival, helpers, retirement, ghost inbox/hebbian/continuity/directive/
+  work-queue/post-turn, control-surface, event-state, strict, learning-switch, smell,
+  cli, architecture, warnings, server forget-case).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4570 passed, 7 skipped, 1449 subtests passed in 344.88s (0:05:44)`.
+  Skips are the known Windows/opt-in family. Delta vs the 4633/1471 baseline is the
+  retired router/learning/extractor coverage minus the 4 new lock files
+  (packaging 3, revival-coldstart 5, shared-helpers 3+8 subtests, retirement 3).
+- This entry was written after the full suite. No release was made.
+
 ## Test gate fix: repo-wide ruff, redundant CDP test, deterministic polling clock (2026-09-27)
 
 Scope (test-only follow-up, deterministic, no release):

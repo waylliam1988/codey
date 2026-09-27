@@ -1877,7 +1877,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         import codey.agents.runaway_guard as runaway_guard
         import codey.ghost._common as ghost_common
         import codey.ghost.affinity as ghost_affinity
-        import codey.ghost.learning_loop as ghost_learning
         import codey.operations.ghost_context as ghost_context
         import codey.operations.research_flow as research_flow
         import codey.providers.base as provider_base
@@ -1895,7 +1894,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             (openai_tools, ("research_openai_tools",)),
             (ghost_affinity, ("apply_affinity_research_boost",)),
             (ghost_common, ("normalize_scope",)),
-            (ghost_learning, ("ClosableSignalProvider",)),
         ):
             exported = set(getattr(module, "__all__", ()))
             for name in names:
@@ -1909,6 +1907,24 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # services.py was split into review/consensus/shell_service (+ provider
         # warmup into provider_services): no forwarder facade may come back.
         self.assertFalse((ROOT / "codey" / "app" / "services.py").exists())
+        # Ghost cold-start retirement (2026-09-27): the extra-model-call
+        # learning loop and pre-turn router were replaced by observation
+        # write + bounded retrieval and unified auto. Their modules, manual
+        # harnesses, and router cases must not come back.
+        for retired in (
+            "codey/ghost/router.py",
+            "codey/ghost/store.py",
+            "codey/ghost/extractor.py",
+            "codey/ghost/signal_codec.py",
+            "codey/ghost/learning_loop.py",
+            "tests/manual/ghost_router_ab.py",
+            "tests/manual/ghost_router_production_ab.py",
+            "tests/manual/ghost_signal_extractor_ab.py",
+            "tests/manual/ghost_learning_loop_ab.py",
+            "tests/fixtures/ghost_router_cases.jsonl",
+        ):
+            with self.subTest(retired=retired):
+                self.assertFalse((ROOT / retired).exists())
         offenders: list[str] = []
         for path in sorted((ROOT / "codey").rglob("*.py")):
             imported = imported_modules(path)
@@ -1916,6 +1932,19 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(offenders, [])
         service_offenders: list[str] = []
+        retired_ghost = {
+            "codey.ghost.router",
+            "codey.ghost.store",
+            "codey.ghost.extractor",
+            "codey.ghost.signal_codec",
+            "codey.ghost.learning_loop",
+        }
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            imported = imported_modules(path)
+            if not retired_ghost.isdisjoint(imported):
+                service_offenders.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(service_offenders, [])
+        service_offenders = []
         for path in sorted((ROOT / "codey").rglob("*.py")):
             imported = imported_modules(path)
             if "codey.app.services" in imported:
@@ -2014,7 +2043,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/continuity.py",
             "ghost/hebbian.py",
             "ghost/inbox.py",
-            "ghost/router.py",
             "ghost/work_queue.py",
             "operations/project_completion_flow.py",
             "providers/controls.py",
@@ -2046,7 +2074,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/continuity.py": 1350,
             "ghost/hebbian.py": 1300,
             "ghost/inbox.py": 1200,
-            "ghost/router.py": 1180,
             # PLR split 2026-09-26: 2780 lines after per-action split.
             "ghost/work_queue.py": 2840,
             "operations/project_completion_flow.py": 1750,

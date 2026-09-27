@@ -395,28 +395,12 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(zero_budget_payload["selected_count"], 0)
         self.assertTrue(zero_budget_payload["truncated"])
 
-    def test_cmd_ghost_export_includes_router_and_sleep_state(self) -> None:
+    def test_cmd_ghost_export_includes_sleep_state_without_router(self) -> None:
         from codey.ghost.affinity import GhostAffinityStore
-        from codey.ghost.router import GhostRouteDecision, GhostRouteRequest, GhostRouteStore, finalize_route_decision
         from codey.ghost.sleep import GhostSleepStore
         from codey.knowledge.research_interest import ResearchInterestCandidate
 
         with tempfile.TemporaryDirectory() as td:
-            router = GhostRouteStore(td)
-            request = GhostRouteRequest(
-                task="do not store this full task",
-                baseline_mode="chat",
-                session_id="s1",
-                run_id="r1",
-                provider_id="deepseek",
-            )
-            router.append_result(
-                finalize_route_decision(
-                    request,
-                    GhostRouteDecision("research", 0.9, "fresh", True),
-                ),
-                request,
-            )
             GhostSleepStore(td).run_once(run_id="r1", session_id="s1")
             GhostAffinityStore(td).sync_from_sources(
                 research_interest_candidates=(ResearchInterestCandidate(
@@ -445,30 +429,19 @@ class ProviderCliTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertTrue(payload["ok"])
-        self.assertIn("router", payload)
-        self.assertIn("router_events", payload["router"])
-        self.assertNotIn("do not store this full task", json.dumps(payload, ensure_ascii=False))
+        self.assertNotIn("router", payload)
+        self.assertNotIn("signals", payload)
         self.assertIn("sleep", payload)
         self.assertIn("sleep_events", payload["sleep"])
         self.assertIn("affinity", payload)
         self.assertIn("affinity_events", payload["affinity"])
 
-    def test_cmd_ghost_reset_deletes_router_and_sleep_files(self) -> None:
+    def test_cmd_ghost_reset_deletes_sleep_files_without_router(self) -> None:
         from codey.ghost.affinity import GhostAffinityStore
-        from codey.ghost.router import GhostRouteDecision, GhostRouteRequest, GhostRouteStore, finalize_route_decision
         from codey.ghost.sleep import GhostSleepStore
         from codey.knowledge.research_interest import ResearchInterestCandidate
 
         with tempfile.TemporaryDirectory() as td:
-            router = GhostRouteStore(td)
-            request = GhostRouteRequest(task="route", baseline_mode="chat", session_id="s1")
-            router.append_result(
-                finalize_route_decision(
-                    request,
-                    GhostRouteDecision("research", 0.9, "fresh", True),
-                ),
-                request,
-            )
             sleep = GhostSleepStore(td)
             sleep.run_once(run_id="r1", session_id="s1")
             affinity = GhostAffinityStore(td)
@@ -490,8 +463,6 @@ class ProviderCliTests(unittest.TestCase):
                 ),),
                 session_id="s1",
             )
-            self.assertTrue(router.state_path.exists())
-            self.assertTrue(router.events_path.exists())
             self.assertTrue(sleep.state_path.exists())
             self.assertTrue(sleep.events_path.exists())
             self.assertTrue(affinity.projection_path.exists())
@@ -502,8 +473,6 @@ class ProviderCliTests(unittest.TestCase):
             with mock.patch("sys.stdout", stdout):
                 exit_code = cli.cmd_ghost(args)
 
-            self.assertFalse(router.state_path.exists())
-            self.assertFalse(router.events_path.exists())
             self.assertFalse(sleep.state_path.exists())
             self.assertFalse(sleep.events_path.exists())
             self.assertFalse(affinity.projection_path.exists())
@@ -513,26 +482,17 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["action"], "reset_all")
-        self.assertTrue(payload["results"]["router"])
+        self.assertNotIn("router", payload["results"])
+        self.assertNotIn("signals", payload["results"])
         self.assertTrue(payload["results"]["sleep"])
         self.assertTrue(payload["results"]["affinity"])
 
-    def test_cmd_ghost_delete_scope_cleans_router_and_sleep_session_refs(self) -> None:
+    def test_cmd_ghost_delete_scope_cleans_sleep_session_refs_without_router(self) -> None:
         from codey.ghost.affinity import GhostAffinityStore
-        from codey.ghost.router import GhostRouteDecision, GhostRouteRequest, GhostRouteStore, finalize_route_decision
         from codey.ghost.sleep import GhostSleepStore
         from codey.knowledge.research_interest import ResearchInterestCandidate
 
         with tempfile.TemporaryDirectory() as td:
-            router = GhostRouteStore(td)
-            request = GhostRouteRequest(task="route", baseline_mode="chat", session_id="session-delete")
-            router.append_result(
-                finalize_route_decision(
-                    request,
-                    GhostRouteDecision("research", 0.9, "fresh", True),
-                ),
-                request,
-            )
             sleep = GhostSleepStore(td)
             sleep.run_once(run_id="r1", session_id="session-delete")
             affinity = GhostAffinityStore(td)
@@ -568,19 +528,17 @@ class ProviderCliTests(unittest.TestCase):
                 exit_code = cli.cmd_ghost(args)
 
             exported = sleep.export_state()
-            router_exported = router.export_state()
             affinity_exported = affinity.export_state()
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["action"], "delete_scope")
-        self.assertEqual(payload["results"]["router"], 1)
+        self.assertNotIn("router", payload["results"])
         self.assertEqual(payload["results"]["sleep"]["reports"], 1)
         self.assertEqual(payload["results"]["work_queue"]["removed"], 0)
         self.assertGreater(payload["results"]["affinity"]["nodes"], 0)
         self.assertEqual(exported["sleep"], {})
-        self.assertEqual(router_exported["router"]["records"], [])
         self.assertEqual(affinity_exported["affinity"]["nodes"], [])
 
 

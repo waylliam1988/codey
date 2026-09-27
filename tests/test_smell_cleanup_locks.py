@@ -98,22 +98,24 @@ class ToolPromptSingleSourceLocks(unittest.TestCase):
             )
 
 
-class RouterEvalHelperLocks(unittest.TestCase):
-    def test_production_router_has_no_eval_helper(self) -> None:
-        """RED before fix: eval-only helper lives in production module."""
-        import codey.ghost.router as router
+class RouterRetirementLocks(unittest.TestCase):
+    def test_retired_router_and_eval_harness_do_not_exist(self) -> None:
+        """Cold-start retirement: pre-turn Ghost router + eval harness are gone.
 
-        self.assertFalse(
-            hasattr(router, "route_error_cost"),
-            "route_error_cost is eval-only and must not live in codey.ghost.router",
-        )
+        Unified auto (first normal model call) replaced the extra router
+        model call; the eval-only severity helper retired with the harness.
+        """
+        from pathlib import Path
 
-    def test_eval_helper_lives_in_manual_harness(self) -> None:
-        from tests.manual.ghost_router_ab import route_error_cost
-
-        self.assertGreaterEqual(route_error_cost("planning_readonly", "project_writer"), 5)
-        self.assertEqual(route_error_cost("chat", "planning_readonly"), 1)
-        self.assertEqual(route_error_cost("chat", "chat"), 0)
+        root = Path(__file__).resolve().parents[1]
+        for retired in (
+            "codey/ghost/router.py",
+            "tests/manual/ghost_router_ab.py",
+            "tests/manual/ghost_router_production_ab.py",
+            "tests/fixtures/ghost_router_cases.jsonl",
+        ):
+            with self.subTest(retired=retired):
+                self.assertFalse((root / retired).exists())
 
 
 class UiStateCanonicalShapeLocks(unittest.TestCase):

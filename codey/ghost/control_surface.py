@@ -12,13 +12,11 @@ from codey.ghost.continuity import GhostContinuityItem, GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.observations import GhostObservationStore
-from codey.ghost.router import GhostRouteStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.sleep import GhostSleepStore
-from codey.ghost.store import GhostSignalStore
 from codey.ghost.work_queue import GhostWorkItem, GhostWorkQueueStore
 
-CONTROL_SURFACE_SCHEMA_VERSION = 1
+CONTROL_SURFACE_SCHEMA_VERSION = 2
 MAX_SUMMARY_ITEMS = 20
 MAX_CONTEXT_ITEMS = 8
 MAX_UI_TEXT_CHARS = 140
@@ -41,11 +39,9 @@ class GhostControlSurface:
     inbox: GhostInboxStore | None = None
     hebbian: GhostHebbianStore | None = None
     continuity: GhostContinuityStore | None = None
-    router: GhostRouteStore | None = None
     sleep: GhostSleepStore | None = None
     work_queue: GhostWorkQueueStore | None = None
     affinity: GhostAffinityStore | None = None
-    signals: GhostSignalStore | None = None
     observations: GhostObservationStore | None = None
 
     @classmethod
@@ -56,11 +52,9 @@ class GhostControlSurface:
             inbox=GhostInboxStore(state_home),
             hebbian=GhostHebbianStore(state_home),
             continuity=GhostContinuityStore(state_home),
-            router=GhostRouteStore(state_home),
             sleep=GhostSleepStore(state_home),
             work_queue=GhostWorkQueueStore(state_home),
             affinity=GhostAffinityStore(state_home),
-            signals=GhostSignalStore(state_home),
             observations=GhostObservationStore(state_home),
         )
 
@@ -215,10 +209,8 @@ class GhostControlSurface:
                 return {"error": f"{name}_export_failed"}
 
         payload["inbox"] = _export("inbox", lambda: self.inbox.export_state()) if self.inbox is not None else {}
-        payload["signals"] = _export("signals", lambda: list(self.signals.read_all())) if self.signals is not None else []
         payload["hebbian"] = _export("hebbian", lambda: self.hebbian.export_state()) if self.hebbian is not None else {}
         payload["continuity"] = _export("continuity", lambda: self.continuity.export_state()) if self.continuity is not None else {}
-        payload["router"] = _export("router", lambda: self.router.export_state()) if self.router is not None else {}
         payload["sleep"] = _export("sleep", lambda: self.sleep.export_state()) if self.sleep is not None else {}
         payload["work_queue"] = _export("work_queue", lambda: self.work_queue.export_state()) if self.work_queue is not None else {}
         payload["affinity"] = _export("affinity", lambda: self.affinity.export_state()) if self.affinity is not None else {}
@@ -323,7 +315,6 @@ class GhostControlSurface:
         results, errors = self._mutate_all_stores(
             "delete_scope",
             lambda store: store.delete_scope(scope, project=project, session_id=session_id),
-            include_signals=True,
         )
         return (200 if not errors else 500), {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
@@ -342,15 +333,7 @@ class GhostControlSurface:
             lambda store: store.reset_all(preserve_settings=True)
             if isinstance(store, GhostInboxStore)
             else store.reset_all(),
-            include_signals=False,
         )
-        if self.signals is not None:
-            try:
-                self.signals.delete_all()
-                results["signals"] = True
-            except OSError:
-                results["signals"] = False
-                errors.append("signals_reset_failed")
         return (200 if not errors else 500), {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
             "ok": not errors,
@@ -363,21 +346,16 @@ class GhostControlSurface:
         self,
         action_name: str,
         mutate: Callable[[object], object],
-        *,
-        include_signals: bool,
     ) -> tuple[dict[str, object], list[str]]:
         stores: list[tuple[str, object | None]] = [
             ("inbox", self.inbox),
             ("hebbian", self.hebbian),
             ("continuity", self.continuity),
-            ("router", self.router),
             ("sleep", self.sleep),
             ("work_queue", self.work_queue),
             ("affinity", self.affinity),
             ("observations", self.observations),
         ]
-        if include_signals:
-            stores.insert(1, ("signals", self.signals))
         results: dict[str, object] = {}
         errors: list[str] = []
         for name, store in stores:

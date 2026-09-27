@@ -294,25 +294,11 @@ def dangerous_text(value: object) -> bool:
     return bool(_DANGEROUS_CN_ACTION_RE.search(text) and _DANGEROUS_CN_OBJECT_RE.search(text))
 
 
-def extractor_metadata_guidance() -> str:
-    return (
-        "For style_preference only, include metadata when the preference fits a known field. "
-        "Allowed metadata conflict_key/value_key pairs: "
-        "reply_structure=answer_first|answer_first_concise; "
-        "reply_length=concise|brief|detailed; "
-        "format=bullets|table|markdown; "
-        "tone=direct|technical; "
-        "freshness=fresh. "
-        "If no allowed pair fits, omit metadata."
-    )
-
-
 __all__ = [
     "ALLOWED_TYPED_FIELD_PAIRS",
     "SLOT_PHRASES",
     "VALUE_PHRASES",
     "dangerous_text",
-    "extractor_metadata_guidance",
     "is_renderable_signal_typed_field",
     "is_renderable_typed_field",
     "metadata_conflict_key",

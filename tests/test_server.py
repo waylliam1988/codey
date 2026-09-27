@@ -2862,11 +2862,6 @@ class RunSnapshotTests(unittest.TestCase):
     def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
         from codey.ghost.affinity import GhostAffinityStore
         from codey.ghost.continuity import build_ghost_continuity
-        from codey.ghost.router import (
-            GhostRouteDecision,
-            GhostRouteRequest,
-            finalize_route_decision,
-        )
         from codey.ghost.work_queue import GhostWorkQueueStore
         from codey.knowledge.research_interest import ResearchInterestCandidate
 
@@ -2899,33 +2894,6 @@ class RunSnapshotTests(unittest.TestCase):
                 session_id="session-2",
                 run_id="run-continuity-2",
                 text="Should Session two scoped focus continue?",
-            )
-            assert state.ghost_router is not None
-            keep_request = GhostRouteRequest(
-                task="keep",
-                baseline_mode="chat",
-                session_id="session-1",
-                run_id="run-router-1",
-            )
-            delete_request = GhostRouteRequest(
-                task="delete",
-                baseline_mode="chat",
-                session_id="session-2",
-                run_id="run-router-2",
-            )
-            state.ghost_router.append_result(
-                finalize_route_decision(
-                    keep_request,
-                    GhostRouteDecision("research", 0.9, "fresh", True),
-                ),
-                keep_request,
-            )
-            state.ghost_router.append_result(
-                finalize_route_decision(
-                    delete_request,
-                    GhostRouteDecision("research", 0.9, "fresh", True),
-                ),
-                delete_request,
             )
             assert state.ghost_work_queue is not None
             GhostWorkQueueStore(td).sync_from_sources(
@@ -2974,11 +2942,9 @@ class RunSnapshotTests(unittest.TestCase):
             )
 
             state.forget_conversation("session-2")
-            router_records = state.ghost_router.export_state()["router"]["records"]
             work_items = state.ghost_work_queue.export_state()["work_queue"]["items"]
             affinity_nodes = state.ghost_affinity.export_state()["affinity"]["nodes"]
             self.assertIsNotNone(state.run_registry.last_terminal_event())
-            self.assertEqual([row["session_id"] for row in router_records], ["session-1"])
             self.assertEqual(len(work_items), 1)
             self.assertEqual([row["key"] for row in affinity_nodes], ["session-one"])
             self.assertIn(
@@ -2999,7 +2965,6 @@ class RunSnapshotTests(unittest.TestCase):
                 "Session one scoped focus",
                 build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
             )
-            self.assertEqual(state.ghost_router.export_state()["router"]["records"], [])
             self.assertEqual(state.ghost_work_queue.export_state()["work_queue"]["items"], [])
             self.assertEqual(state.ghost_affinity.export_state()["affinity"]["nodes"], [])
 

@@ -1269,7 +1269,12 @@ repairs only; it does not change coding's existing
 multiple-top-level-JSON compatibility behavior, add an allowed-tools gate, or
 introduce verification candidate IDs.
 
-`ghost_signal_extractor_ab.py` is a Ghost-only A/B probe for 0.3.0's explicit
+> 2026-09-27 冷启动退役：`ghost_signal_extractor_ab.py` 已删除（连同
+> `codey/ghost/signal_codec.py`、`extractor.py`、`store.py`）。现行路径是
+> settlement 写入 observation、下轮有界检索，不再为每轮发起额外抽取模型调用。
+> 以下为历史记录（0.3.0），命令不再可用。
+
+`ghost_signal_extractor_ab.py` was a Ghost-only A/B probe for 0.3.0's explicit
 learning signal extractor. The `baseline` arm emits no signals; the
 `extractor` arm asks one live provider at a time to classify current user
 messages into candidate signals such as style preferences, corrections,
@@ -1347,7 +1352,11 @@ Run providers one at a time. A failure row means the provider/CDP path or the
 model response did not satisfy the narrow probe; it should not be hidden by
 retrying all providers in one batch.
 
-`ghost_learning_loop_ab.py` is a Ghost-only A/B probe for 0.3.4's post-turn
+> 2026-09-27 冷启动退役：`ghost_learning_loop_ab.py` 已删除（连同
+> `codey/ghost/learning_loop.py`）。普通回合不再发起额外模型调用，改为记录
+> 已完成经历供下轮检索。以下为历史记录（0.3.4），命令不再可用。
+
+`ghost_learning_loop_ab.py` was a Ghost-only A/B probe for 0.3.4's post-turn
 learning loop. It runs against a temporary `state_home`, sends a baseline chat
 prompt, teaches an explicit typed style preference in a separate learning turn,
 uses a fresh provider tab for extraction, and then sends the same task with the
@@ -1390,7 +1399,13 @@ session:
 - StepFun: passed. It also produced one extra candidate row, but only the two
   renderable typed preferences were active.
 
-`ghost_router_ab.py` and `ghost_router_production_ab.py` cover 0.3.7 automatic
+> 2026-09-27 冷启动退役：`ghost_router_ab.py` 和
+> `ghost_router_production_ab.py` 已删除（连同 `codey/ghost/router.py`）。
+> 预路由额外模型调用已移除，`auto` 由任务本来需要的首次模型调用决定下一步；
+> 当前任务路由 trace 记录实际 `auto`/用户选择结果。以下为历史记录（0.3.7），
+> 命令不再可用。
+
+`ghost_router_ab.py` and `ghost_router_production_ab.py` covered 0.3.7 automatic
 task routing. The router-only probe asks a live provider for one JSON route
 decision. The production-spine probe runs the real `task_entry` routing entry
 point with safe mode-body stubs, so it verifies `task_start.mode`,

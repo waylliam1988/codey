@@ -1123,11 +1123,7 @@ def _coactivation_evidence_ref(
 
 
 def _scope_ref_for_candidate(candidate: GhostMemoryCandidate) -> str:
-    if candidate.scope == "project":
-        return candidate.project
-    if candidate.scope == "session":
-        return candidate.session_id
-    return ""
+    return candidate.scope_ref
 
 
 def _scope_ref_for_filter(scope: str, *, project: str, session_id: str) -> str:

@@ -34,9 +34,7 @@ from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.observations import GhostObservationStore
-from codey.ghost.router import GhostRouteStore
 from codey.ghost.sleep import GhostSleepStore
-from codey.ghost.store import GhostSignalStore
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.store import KnowledgeStore
 from codey.research.evidence_ledger import EvidenceLedgerStore
@@ -133,11 +131,9 @@ class AppContext:
         self._ghost_inbox: GhostInboxStore | None = None
         self._ghost_hebbian: GhostHebbianStore | None = None
         self._ghost_continuity: GhostContinuityStore | None = None
-        self._ghost_router: GhostRouteStore | None = None
         self._ghost_sleep: GhostSleepStore | None = None
         self._ghost_work_queue: GhostWorkQueueStore | None = None
         self._ghost_affinity: GhostAffinityStore | None = None
-        self._ghost_signals: GhostSignalStore | None = None
         self._ghost_observations: GhostObservationStore | None = None
         self.ghost_sleep_daemon = GhostSleepDaemon(
             lock=self.lock,
@@ -254,17 +250,6 @@ class AppContext:
         self._ghost_continuity = value
 
     @property
-    def ghost_router(self) -> GhostRouteStore | None:
-        return cast(
-            GhostRouteStore | None,
-            self._ghost_store("_ghost_router", GhostRouteStore),
-        )
-
-    @ghost_router.setter
-    def ghost_router(self, value: GhostRouteStore | None) -> None:
-        self._ghost_router = value
-
-    @property
     def ghost_sleep(self) -> GhostSleepStore | None:
         return cast(
             GhostSleepStore | None,
@@ -296,17 +281,6 @@ class AppContext:
     @ghost_affinity.setter
     def ghost_affinity(self, value: GhostAffinityStore | None) -> None:
         self._ghost_affinity = value
-
-    @property
-    def ghost_signals(self) -> GhostSignalStore | None:
-        return cast(
-            GhostSignalStore | None,
-            self._ghost_store("_ghost_signals", GhostSignalStore),
-        )
-
-    @ghost_signals.setter
-    def ghost_signals(self, value: GhostSignalStore | None) -> None:
-        self._ghost_signals = value
 
     @property
     def ghost_observations(self) -> GhostObservationStore | None:
@@ -664,7 +638,6 @@ class AppContext:
             continuity_store=getattr(self, "ghost_continuity", None),
             work_queue_store=getattr(self, "ghost_work_queue", None),
             affinity_store=getattr(self, "ghost_affinity", None),
-            router_store=getattr(self, "ghost_router", None),
             knowledge_store=getattr(self, "knowledge_store", None),
             run_projection=payload.get("run_projection"),
             trigger=str(payload.get("trigger") or "post_turn"),
@@ -771,7 +744,6 @@ class AppContext:
                 break
         for store_name, attr_name, method in (
             ("ghost_continuity", "ghost_continuity", lambda s: s.delete_scope("session", session_id=session_id)),
-            ("ghost_router", "ghost_router", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_sleep", "ghost_sleep", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_work_queue", "ghost_work_queue", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_affinity", "ghost_affinity", lambda s: s.delete_scope("session", session_id=session_id)),

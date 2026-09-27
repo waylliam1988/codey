@@ -271,7 +271,6 @@ def maybe_sync_work_queue(
                 hebbian_store=getattr(deps.state, "ghost_hebbian", None),
                 work_queue_store=store,
                 research_interest_candidates=research_interest_candidates,
-                router_store=getattr(deps.state, "ghost_router", None),
                 run_projection=run_projection,
                 terminal_event=event,
                 session_id=frame.request.session_id,
@@ -299,7 +298,6 @@ def sync_affinity_terminal_event(
         affinity_store.sync_from_sources(
             hebbian_store=getattr(deps.state, "ghost_hebbian", None),
             work_queue_store=getattr(deps.state, "ghost_work_queue", None),
-            router_store=getattr(deps.state, "ghost_router", None),
             run_projection=run_projection,
             terminal_event=event,
             session_id=session_id,

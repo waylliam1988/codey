@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from codey.ghost import affinity, continuity, directive, hebbian, inbox, router, sleep, work_queue
+from codey.ghost import affinity, continuity, directive, hebbian, inbox, sleep, work_queue
 from codey.ghost._warnings import (
     bounded_warnings,
     event_read_warnings,
-    map_event_warnings,
 )
 
 
@@ -75,10 +74,6 @@ class GhostWarningsEquivalenceTests(unittest.TestCase):
         self.assertEqual(
             inbox._event_read_warnings(["events.jsonl:unreadable"]),
             ("events_unreadable",),
-        )
-        self.assertEqual(
-            router._event_read_warnings(["router_events.jsonl:too_large", "x"]),
-            tuple(map_event_warnings(["router_events.jsonl:too_large", "x"], stream="router_events")),
         )
         self.assertEqual(
             sleep._sleep_event_read_warnings(["sleep_events.jsonl:too_large"]),

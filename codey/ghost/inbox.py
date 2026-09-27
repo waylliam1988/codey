@@ -118,6 +118,14 @@ class GhostMemoryCandidate:
     reviewed_by: str = ""
     superseded_by: str = ""
 
+    @property
+    def scope_ref(self) -> str:
+        if self.scope == "project":
+            return self.project
+        if self.scope == "session":
+            return self.session_id
+        return ""
+
     def to_payload(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -1010,11 +1018,7 @@ def _token_slug(value: object) -> str:
 
 
 def _scope_ref(candidate: GhostMemoryCandidate) -> str:
-    if candidate.scope == "project":
-        return candidate.project
-    if candidate.scope == "session":
-        return candidate.session_id
-    return ""
+    return candidate.scope_ref
 
 
 def _scope_filter_matches(

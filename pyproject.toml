@@ -35,6 +35,7 @@ exclude = ["tests*", "tools*"]
 [tool.setuptools.package-data]
 codey = [
     "web/index.html",
+    "web/icon.ico",
     "web/assets/*.css",
     "web/assets/*.js",
 ]

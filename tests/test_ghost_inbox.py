@@ -20,7 +20,6 @@ from codey.ghost.inbox import (
     value_key_for_signal,
 )
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
-from codey.ghost.store import GhostSignalStore
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -753,119 +752,6 @@ class GhostInboxStoreTests(unittest.TestCase):
         self.assertIsNone(AppContext().ghost_sleep)
 
 
-class GhostSignalStoreScopeTests(unittest.TestCase):
-    def test_signal_store_delete_scope_filters_raw_signal_audit(self) -> None:
-        with tempfile.TemporaryDirectory() as state_td, tempfile.TemporaryDirectory() as project_td:
-            store = GhostSignalStore(state_td)
-            store.append_extraction(
-                _result(
-                    _signal("style_preference", summary="User signal", quote="以后回答短一点"),
-                    _signal(
-                        "research_interest",
-                        scope="project",
-                        summary="Project signal should disappear",
-                        quote="这个项目要记住 raw audit",
-                    ),
-                ),
-                session_id="s1",
-                run_id="r1",
-                project=project_td,
-            )
-
-            removed = store.delete_scope("project", project=project_td)
-
-            self.assertEqual(removed, 1)
-            rows = store.read_all()
-            self.assertEqual(len(rows), 1)
-            self.assertEqual([signal["scope"] for signal in rows[0]["signals"]], ["user"])
-            self.assertNotIn("Project signal should disappear", store.path.read_text(encoding="utf-8"))
-
-    def test_signal_store_delete_scope_removes_empty_raw_audit_rows(self) -> None:
-        with tempfile.TemporaryDirectory() as state_td:
-            store = GhostSignalStore(state_td)
-            store.append_extraction(
-                _result(_signal("style_preference", summary="User signal", quote="以后回答短一点")),
-                session_id="s1",
-                run_id="r1",
-                project=state_td,
-            )
-
-            removed = store.delete_scope("user")
-
-            self.assertEqual(removed, 1)
-            self.assertEqual(store.read_all(), ())
-            self.assertEqual(store.path.read_text(encoding="utf-8"), "")
-
-    def test_signal_store_delete_scope_keeps_concurrent_append(self) -> None:
-        import threading
-        import time
-
-        import codey.ghost.store as signal_store_module
-
-        with tempfile.TemporaryDirectory() as state_td, tempfile.TemporaryDirectory() as project_a_td, tempfile.TemporaryDirectory() as project_b_td:
-            store = GhostSignalStore(state_td)
-            store.append_extraction(
-                _result(_signal(
-                    "research_interest",
-                    scope="project",
-                    summary="Project A signal",
-                    quote="记住 A 项目",
-                )),
-                session_id="s1",
-                run_id="r1",
-                project=project_a_td,
-            )
-
-            original_match = signal_store_module._signal_scope_match
-            entered_filter = threading.Event()
-
-            def slow_match(*args: object, **kwargs: object) -> bool:
-                if not entered_filter.is_set():
-                    entered_filter.set()
-                    # Hold the delete path open so the append below lands
-                    # between the snapshot read and the rewrite. Under the
-                    # file lock this blocks the appender; without the lock
-                    # the appender wins and would be overwritten.
-                    time.sleep(0.5)
-                return original_match(*args, **kwargs)
-
-            with mock.patch.object(signal_store_module, "_signal_scope_match", side_effect=slow_match):
-                delete_outcome: dict[str, object] = {}
-
-                def do_delete() -> None:
-                    delete_outcome["removed"] = store.delete_scope("project", project=project_a_td)
-
-                deleter = threading.Thread(target=do_delete)
-                deleter.start()
-                self.assertTrue(entered_filter.wait(timeout=10.0))
-                # Interleaved append for an untouched project scope.
-                appended = store.append_extraction(
-                    _result(_signal(
-                        "research_interest",
-                        scope="project",
-                        summary="Project B signal",
-                        quote="记住 B 项目",
-                    )),
-                    session_id="s2",
-                    run_id="r2",
-                    project=project_b_td,
-                )
-                deleter.join(timeout=10.0)
-
-            self.assertFalse(deleter.is_alive())
-            self.assertTrue(appended)
-            self.assertEqual(delete_outcome.get("removed"), 1)
-            rows = store.read_all()
-            survivors = [
-                str(signal.get("summary"))
-                for row in rows
-                for signal in (row.get("signals") if isinstance(row.get("signals"), list) else [])
-                if isinstance(signal, dict)
-            ]
-            self.assertIn("Project B signal", survivors)
-            self.assertNotIn("Project A signal", survivors)
-
-
 class GhostCliTests(unittest.TestCase):
     def test_ghost_help_mentions_signals_for_export_and_reset(self) -> None:
         stdout = io.StringIO()
@@ -882,14 +768,15 @@ class GhostCliTests(unittest.TestCase):
         self.assertIn("accept", help_text)
         self.assertIn("rebuild-state", help_text)
 
-    def test_ghost_export_and_reset_cover_raw_signal_audit(self) -> None:
+    def test_ghost_export_and_reset_cover_inbox_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            signal_store = GhostSignalStore(td)
-            signal_store.append_extraction(
+            inbox = GhostInboxStore(td)
+            inbox.ingest_signals(
                 _result(_signal("style_preference")),
                 session_id="s1",
                 run_id="r1",
                 project=td,
+                user_text="以后回答短一点",
             )
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
@@ -897,7 +784,7 @@ class GhostCliTests(unittest.TestCase):
             export_payload = json.loads(stdout.getvalue())
 
             self.assertEqual(export_code, 0)
-            self.assertEqual(len(export_payload["signals"]), 1)
+            self.assertIn("inbox", export_payload)
             self.assertIn("hebbian", export_payload)
 
             stdout = io.StringIO()
@@ -907,7 +794,7 @@ class GhostCliTests(unittest.TestCase):
 
             self.assertEqual(reset_code, 0)
             self.assertTrue(reset_payload["ok"])
-            self.assertFalse(signal_store.path.exists())
+            self.assertEqual(GhostInboxStore(td).list_candidates(), ())
 
     def test_ghost_accept_reject_state_and_rebuild_state_cli(self) -> None:
         with tempfile.TemporaryDirectory() as td:

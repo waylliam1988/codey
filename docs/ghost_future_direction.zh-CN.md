@@ -110,9 +110,7 @@ Evidence / Verification / CompletionProof
 ```text
 codey/ghost/schema.py
   显式学习信号 schema：style_preference / correction / research_interest / long_term_goal / action_tendency
-
-codey/ghost/signal_codec.py
-  从用户消息中抽取 bounded learning signals
+  （inbox 候选仍用该 schema；抽取侧已退役，见下）
 
 codey/ghost/inbox.py
   候选记忆 inbox；区分 pending / accepted / rejected
@@ -132,12 +130,18 @@ codey/ghost/continuity.py
 codey/ghost/work_queue.py
   把可继续工作的事项变成 bounded queue
 
-codey/ghost/router.py
-  窄路由辅助，只能选择 mode，不能授予权限或执行工具
-
 codey/ghost/sleep.py
   post-turn maintenance：健康检查、衰减、刷新、压缩、报告
 ```
+
+> 2026-09-27 冷启动退役：`codey/ghost/signal_codec.py`（抽取 JSON 合同）、
+> `codey/ghost/extractor.py`、`codey/ghost/learning_loop.py`（每轮额外模型调用）、
+> `codey/ghost/store.py`（`GhostSignalStore` 抽取审计）、`codey/ghost/router.py`
+> （`GhostRouter` + `GhostRouteStore` 预路由模型调用）已删除。现行路径是
+> settlement 写入 observation、下轮有界检索、统一 auto 由本来需要的首次模型
+> 调用决定下一步；affinity/sleep 不再接收 `router_store`，control-surface
+> 导出/清理不再含 `router`/`signals`（schema version 2）。历史 ROADMAP 中
+> “Learning Loop v1 / Router v1 已完成”是阶段记录，不代表现行能力。
 
 这些模块已经说明一个方向：Ghost 是事件和投影系统，不是新的 Agent runtime。
 

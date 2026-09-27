@@ -337,33 +337,37 @@ def runtime_definition(tool_name: str) -> ToolDefinition | None:
 def render_tool_activity(call: ToolCall) -> str:
     definition = runtime_definition(call.name)
     hint = definition.render_hint if definition is not None else ""
-    path = _call_arg(call, "path", ".")
+    path = call_arg(call, "path", ".")
     if hint == "read":
         return f"Reading {path}"
     if hint == "list":
         return f"Listing {path}"
     if hint == "search":
-        query = _clip_activity(_call_arg(call, "query"))
+        query = _clip_activity(call_arg(call, "query"))
         return f"Searching {path} for {query}" if query else f"Searching {path}"
     if hint == "references":
-        symbol = _clip_activity(_call_arg(call, "symbol"))
+        symbol = _clip_activity(call_arg(call, "symbol"))
         return f"Finding references for {symbol}" if symbol else "Finding references"
     if hint == "edit":
         return f"Writing {path}" if "content" in call.args else f"Editing {path}"
     if hint == "run":
-        command = _clip_activity(_call_arg(call, "command"))
+        command = _clip_activity(call_arg(call, "command"))
         return f"Running {command}" if command else "Running command"
     if hint == "shell":
-        command = _clip_activity(_call_arg(call, "command"))
+        command = _clip_activity(call_arg(call, "command"))
         return f"Requesting shell approval for {command}" if command else "Requesting shell approval"
     return f"Using {call.name}"
 
 
-def _call_arg(call: ToolCall, name: str, default: str = "") -> str:
+def call_arg(call: ToolCall, name: str, default: str = "") -> str:
     value = call.args.get(name, default)
     if value is None:
         return default
     return str(value)
+
+
+def _call_arg(call: ToolCall, name: str, default: str = "") -> str:
+    return call_arg(call, name, default)
 
 
 def _clip_activity(value: object, limit: int = 80) -> str:

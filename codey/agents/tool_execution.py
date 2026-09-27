@@ -30,6 +30,7 @@ from codey.runtime.observe.events import RunEvent
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,
+    call_arg,
     render_tool_activity,
 )
 from codey.toolchain.runtime import ToolOutcome, safe_join
@@ -150,13 +151,6 @@ class TurnState:
     made_progress: bool = False
     delivery_batch_id: str = ""
     delivery_batch_digest: str = ""
-
-
-def call_arg(call: ToolCall, name: str, default: str = "") -> str:
-    value = call.args.get(name, default)
-    if value is None:
-        return default
-    return str(value)
 
 
 def action_subject_for_call(

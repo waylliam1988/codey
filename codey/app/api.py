@@ -293,11 +293,9 @@ def ghost_control_surface(ctx: Any) -> GhostControlSurface:
         inbox=ctx.ghost_inbox,
         hebbian=ctx.ghost_hebbian,
         continuity=ctx.ghost_continuity,
-        router=ctx.ghost_router,
         sleep=ctx.ghost_sleep,
         work_queue=ctx.ghost_work_queue,
         affinity=ctx.ghost_affinity,
-        signals=ctx.ghost_signals,
         observations=ctx.ghost_observations,
     )
 

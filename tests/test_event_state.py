@@ -191,9 +191,8 @@ class ResetEventBackedStateTests(unittest.TestCase):
     def test_compaction_returns_ok_false_on_lock_timeout(self) -> None:
         import codey.storage.file_lock as fl
         from codey.ghost.affinity import GhostAffinityStore
-        from codey.ghost.router import GhostRouteStore
 
-        for store_cls in (GhostWorkQueueStore, GhostAffinityStore, GhostRouteStore):
+        for store_cls in (GhostWorkQueueStore, GhostAffinityStore):
             store = store_cls(state_home=self.root)
             store.events_path.parent.mkdir(parents=True, exist_ok=True)
             store.events_path.write_text("event\n", encoding="utf-8")
@@ -222,12 +221,11 @@ class ResetEventBackedStateTests(unittest.TestCase):
                 stop.set()
                 t.join()
 
-    def test_all_seven_ghost_stores_public_reads_block_on_events_lock(self) -> None:
+    def test_all_six_ghost_stores_public_reads_block_on_events_lock(self) -> None:
         from codey.ghost.affinity import GhostAffinityStore
         from codey.ghost.continuity import GhostContinuityStore
         from codey.ghost.hebbian import GhostHebbianStore
         from codey.ghost.inbox import GhostInboxStore
-        from codey.ghost.router import GhostRouteStore
         from codey.ghost.sleep import GhostSleepStore
 
         read_operations = [
@@ -248,7 +246,6 @@ class ResetEventBackedStateTests(unittest.TestCase):
             (GhostInboxStore, lambda s: s.applicable_candidates()),
             (GhostInboxStore, lambda s: s.export_state()),
             (GhostInboxStore, lambda s: s.learning_enabled()),
-            (GhostRouteStore, lambda s: s.export_state()),
             (GhostSleepStore, lambda s: s.export_state()),
         ]
 

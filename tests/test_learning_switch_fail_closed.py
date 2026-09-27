@@ -132,7 +132,6 @@ class LearningSwitchFailClosedTests(unittest.TestCase):
 
     def test_off_corrupt_blocks_write_retrieval_and_background(self) -> None:
         """贯穿：关闭学习 → 配置损坏 → 下一轮三不写/不检/不学；修复后恢复."""
-        from codey.ghost.learning_loop import GhostLearningLoop
         from codey.operations import ghost_post_turn
 
         with tempfile.TemporaryDirectory() as td:
@@ -177,24 +176,16 @@ class LearningSwitchFailClosedTests(unittest.TestCase):
                 )
             self.assertEqual(text, "")
             self.assertEqual(spy_read.call_count, 0)
-            # 3) background learning must stay off (both gates).
+            # 3) background learning must stay off.
             self.assertFalse(
                 ghost_post_turn._ghost_learning_enabled(state)
             )
-            loop2 = GhostLearningLoop(
-                signal_store=mock.Mock(), inbox_store=inbox,
-                hebbian_store=mock.Mock(),
-            )
-            result = loop2.learn_from_turn(
-                SimpleNamespace(
-                    user_text="hi", assistant_text="hello",
-                    session_id="s", run_id="r2", project="",
-                    provider_id="local",
-                ),
-                provider_factory=None,
-            )
-            self.assertTrue(result.ok)
-            self.assertIn("settings_corrupt", result.skipped_reason)
+            try:
+                inbox.learning_enabled()
+            except Exception:
+                pass
+            else:
+                self.fail("corrupt settings must raise or read as disabled")
             # 4) explicit repair recovers.
             self.assertTrue(inbox.set_learning_enabled(True))
             self.assertTrue(inbox.learning_enabled())

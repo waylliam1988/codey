@@ -334,14 +334,14 @@ def _restore_previous(provider: dict[str, Any], meta: dict[str, Any]) -> None:
 
 
 def _changed_actions(meta: dict[str, Any]) -> set[str]:
-    raw = meta.get("changed_actions", meta.get("actions", []))
+    raw = meta.get("changed_actions", [])
     return {action for action in raw if action in REVIVAL_ACTIONS} if isinstance(
         raw, list
     ) else set()
 
 
 def _required_actions(meta: dict[str, Any]) -> set[str]:
-    raw = meta.get("required_actions", meta.get("actions", []))
+    raw = meta.get("required_actions", [])
     return {action for action in raw if action in REVIVAL_ACTIONS} if isinstance(
         raw, list
     ) else set()

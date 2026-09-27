@@ -2,6 +2,51 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Ghost 冷启动退役：学习环 + 预路由移除，图标打包，revival/助手去重（未发布）
+
+- 打包修复（确定性 bug，先红后绿）：`pyproject.toml` 的 package-data 只列了
+  HTML/CSS/JS，wheel 丢了 `codey/web/icon.ico`，而 `server.py`（`/icon.ico`）
+  与桌面启动都引用它。已把 `"web/icon.ico"` 加入 `codey` 的 package-data。
+  新增 `tests/test_web_packaging.py` 锁定（package-data 含图标、源码文件存在、
+  `GET /icon.ico` 返回 `image/x-icon`）；已验证构建产物含 `codey/web/icon.ico`。
+- 退役 `GhostLearningLoop`（生产未接入，且与 `observations.py` 的纯观察终态冲突）。
+  删除 `codey/ghost/learning_loop.py`、`extractor.py`、`signal_codec.py`、
+  `store.py`（`GhostSignalStore`），以及仅服务于抽取的
+  `typed_fields.extractor_metadata_guidance()` 与 `schema.MAX_EXTRACTOR_*`。
+  移除 `AppContext.ghost_signals`、控制面 `signals` 导出/清理、`api.py` 接线。
+  删除抽取专用测试/手工脚本/固件（`test_ghost_learning_loop`、
+  `test_ghost_signal_extractor`、`GhostSignalStoreScopeTests`、手工
+  `ghost_signal_extractor_ab` / `ghost_learning_loop_ab`）。
+  `inbox.ingest_signals` 与 `hebbian.sync_from_inbox` 作为存储逻辑保留测试覆盖；
+  inbox/hebbian/work-queue 本体按现行生产用途保留。
+- 退役 `GhostRouter` + `GhostRouteStore`（生产无写入；预路由额外模型调用已由统一
+  auto 取代，首次正常调用即定下一步）。删除 `codey/ghost/router.py` 及其 prompt/
+  解析/决策代码。移除 `AppContext.ghost_router`、控制面 `router` 导出/清理、
+  affinity `router_store` 输入与 `_specs_from_router`、sleep `router_store` 透传、
+  `ghost_post_turn` 透传、会话清理中的 router 项。保留当前路由 trace
+  （`dispatch.record_route_trace`：实际 `auto`/用户选择）。删除路由专用测试/手工/
+  固件并重写 `test_cli` / `test_server` 会话清理 / `test_event_state` /
+  `test_strict` / `test_smell` / `test_learning_switch` / `test_architecture`
+  （基线 + 退役文件/导入锁）为无 router 形态。
+- Provider revival 冷启动（先红后绿）：读取不再回退旧 `meta["actions"]`，只读
+  `changed_actions` / `required_actions`；缺失或非 list 即无动作，未知名过滤。
+  新增 `tests/test_revival_coldstart.py` 锁定旧字段忽略 + 现行字段优先 +
+  缺失/非 list/未知名行为；既有 `test_provider_revival` 仍全绿。
+- 共享助手（先红后绿，`tests/test_shared_helpers.py`）：`toolchain/definition.call_arg`
+  为唯一来源（内部调用已切，`agents/tool_execution` 导入并重导出供 `tool_turn`）；
+  `GhostMemoryCandidate.scope_ref` 为共享只读属性，
+  `inbox._scope_ref` / `hebbian._scope_ref_for_candidate` 委托给它。
+- 退役形状 bug（先红后绿，`tests/test_control_surface_retirement.py`）：导出/清理
+  已去掉 `router`/`signals` 键，但 schema 版本仍为 1。已升
+  `CONTROL_SURFACE_SCHEMA_VERSION` 到 2 并锁定键缺失。
+- 文档：`docs/ghost_future_direction.zh-CN.md` 标注五个退役模块与现行
+  observation + 有界检索 + 统一 auto 路径；`tests/manual/README.md` 标注四个退役
+  手工探针；架构测试锁定退役文件/导入。
+- 验证：`python -m ruff check .` 全过，`git diff --check` 全过。
+  全量前先过针对性套件；再跑全量 `python -m pytest -q -p no:cacheprovider`：
+  `4570 passed、7 skipped、1449 subtests passed，344.88s（0:05:44）`。跳过为已知
+  Windows/手动启用项。未发布。
+
 ## Unreleased - 测试门禁修复：全仓 ruff、冗余 CDP 测试、确定性轮询时钟（未发布）
 
 - P1 纯测试修复（阻断 CI）：`tests/test_readonly_cleanup_locks.py` 违反全仓

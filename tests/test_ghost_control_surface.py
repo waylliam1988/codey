@@ -10,7 +10,6 @@ from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
-from codey.ghost.store import GhostSignalStore
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
 
@@ -348,13 +347,6 @@ class GhostControlSurfaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             project = Path(td, "project")
             project.mkdir()
-            signal_store = GhostSignalStore(td)
-            signal_store.append_extraction(
-                GhostSignalParseResult(signals=(_signal(scope="project"),), ok=True, provider_id="test"),
-                session_id="s1",
-                run_id="r1",
-                project=str(project),
-            )
             candidate = _ingest_candidate(
                 td,
                 signal=_signal(scope="project"),
@@ -375,7 +367,6 @@ class GhostControlSurfaceTests(unittest.TestCase):
                 "confirm": True,
             })
             remaining = GhostInboxStore(td).list_candidates(project=str(project))
-            signal_rows = GhostSignalStore(td).read_all()
 
         self.assertEqual(disable_status, 200)
         self.assertTrue(disable_payload["ok"])
@@ -386,7 +377,6 @@ class GhostControlSurfaceTests(unittest.TestCase):
         self.assertTrue(delete_payload["ok"])
         self.assertGreaterEqual(delete_payload["results"]["inbox"], 1)
         self.assertEqual(remaining, ())
-        self.assertEqual(signal_rows, ())
         self.assertEqual(candidate.scope, "project")
 
     def test_reset_all_requires_confirm_and_preserves_update_setting(self) -> None:
