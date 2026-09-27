@@ -2,6 +2,29 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Api import-cost lock: graph stack stays unloaded (no release)
+
+- Test-only follow-up (no production behavior change, deterministic): the Item5
+  lock covered the builder call path but not the "importing `api` must not
+  load the knowledge graph stack" property. Added two guards to
+  `tests/test_coldstart_cleanup_locks.py`: a fresh-interpreter subprocess probe
+  asserting `codey.knowledge.concepts` stays out of `sys.modules` after
+  `import codey.app.api`, and a static check that no top-level
+  `knowledge.concepts` import exists in `api.py` (the lazy import inside
+  `research_graph_response()` is still required and asserted present).
+  A negative probe (importing concepts explicitly) prints `LOADED`, proving
+  the subprocess test would fail red on a regression.
+- Opportunistic scan of the touched area found no other deterministic bug:
+  `api.py` top-level imports contain no `knowledge.concepts`, the facade is
+  still absent, and the lazy import is intact, so no production edit was made.
+- Verification: `ruff check codey` clean, `git diff --check` clean, no frontend
+  JS changed. Targeted suites green before the full run (locks +
+  `ResearchServerHelperTests` + `test_knowledge`: `64 passed`), then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4601 passed, 7 skipped, 1471 subtests passed in 358.70s (0:05:58)`. Skips are
+  the known Windows/opt-in family (delta vs the 4599/1452 baseline is exactly
+  the 2 new tests + 19 new subtests). No release was made.
+
 ## Unreleased - Cold-start cleanup: facts checks, prompt source, shared clip, dead code, api facade (no release)
 
 - Item1 `workspace/facts`: `_successful_check_from_object()` no longer coerces

@@ -16,10 +16,14 @@ Post-cleanup expectations for items 1-5 + AppContext isolation:
 from __future__ import annotations
 
 import inspect
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class Item1FactsCompatTests(unittest.TestCase):
@@ -137,6 +141,55 @@ class Item5ApiFacadeTests(unittest.TestCase):
         self.assertFalse(hasattr(api, "build_unified_research_graph"))
         source = Path(api.__file__).read_text(encoding="utf-8")
         self.assertNotIn("mock.patch.object", source)
+
+    def test_importing_api_keeps_graph_stack_unloaded(self) -> None:
+        # Low-cost guard against future regression: importing api must not
+        # pull the knowledge graph stack. Checked in a fresh interpreter
+        # because this process may already have concepts loaded.
+        probe = (
+            "import sys; "
+            "import codey.app.api; "
+            "loaded = [m for m in sys.modules "
+            "if m == 'codey.knowledge.concepts' "
+            "or m.startswith('codey.knowledge.concepts.')]; "
+            "print('LOADED' if loaded else 'CLEAN')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CLEAN", result.stdout)
+
+    def test_graph_import_is_lazy_not_top_level(self) -> None:
+        import ast
+
+        import codey.app.api as api
+
+        source = Path(api.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        top_level = [
+            node
+            for node in tree.body
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+        ]
+        for node in top_level:
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            else:
+                names = [f"{node.module or ''}.{alias.name}" for alias in node.names]
+            with self.subTest(import_names=names):
+                self.assertFalse(
+                    any("knowledge.concepts" in name for name in names),
+                    f"top-level graph import would raise api startup cost: {names}",
+                )
+        self.assertIn(
+            "from codey.knowledge.concepts import build_unified_research_graph",
+            source,
+        )
 
     def test_research_graph_response_uses_real_builder_lazily(self) -> None:
         from types import SimpleNamespace

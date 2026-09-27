@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Api import-cost lock: graph stack stays unloaded (2026-09-27)
+
+Scope (test-only follow-up, deterministic, no release):
+
+```text
+tests/test_coldstart_cleanup_locks.py (2 new guards: fresh-interpreter import probe + lazy-import static check)
+CHANGELOG.md / CHANGELOG.zh-CN.md   (new Unreleased entry)
+TEST_REPORT.md                      (this entry, written after the full suite)
+```
+
+Repro (deterministic, no live model):
+
+- Fresh-interpreter probe pre-change: `import codey.app.api` leaves
+  `codey.knowledge.concepts` out of `sys.modules` (`CLEAN`), so the new
+  subprocess test passes green on the current tree with no production edit
+  required. A negative probe (explicitly importing concepts after api) prints
+  `LOADED`, proving the guard would fail red if a top-level graph import were
+  reintroduced. The static check additionally pins that no top-level
+  `knowledge.concepts` import exists in `api.py` while the lazy import inside
+  `research_graph_response()` remains present.
+- Opportunistic bug scan (deterministic only): enumerated `api.py` top-level
+  imports via `ast`, confirmed the facade is still absent and the lazy import
+  intact — no other deterministic bug in the touched area, so no production
+  change and no speculative hardening.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check codey` clean, `git diff --check` clean,
+  no frontend JS changed; targeted suites green
+  (`test_coldstart_cleanup_locks`, `ResearchServerHelperTests`,
+  `test_knowledge`: `64 passed, 19 subtests passed`).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4601 passed, 7 skipped, 1471 subtests passed in 358.70s (0:05:58)`.
+  Skips are the known Windows/opt-in family (delta vs the 4599/1452 baseline
+  is exactly the 2 new tests + 19 new subtests). No live kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Cold-start cleanup: facts checks, prompt source, shared clip, dead code, api facade (2026-09-27)
 
 Scope (production cleanup, TDD red-first, no release):

@@ -2,6 +2,24 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - api 导入成本锁定：图谱栈保持未加载（未发布）
+
+- 纯测试跟进（无生产行为变更，确定性）：第 5 项旧锁只覆盖了图构建调用路径，
+  未锁住“导入 `api` 时不加载知识图谱栈”这一性质。在
+  `tests/test_coldstart_cleanup_locks.py` 补两项守卫：全新解释器子进程探针，
+  断言 `import codey.app.api` 后 `codey.knowledge.concepts` 不在
+  `sys.modules` 中；静态检查 `api.py` 顶层无 `knowledge.concepts` 导入
+  （`research_graph_response()` 内的延迟导入仍要求存在）。反向探针（显式导入
+  concepts 会打印 `LOADED`）证明该子进程测试在退化时会变红。
+- 顺带对触及区域做确定性 bug 排查：`api.py` 顶层无 `knowledge.concepts`、转发
+  层仍缺失、延迟导入完好，未发现其他确定性 bug，因此未改生产代码。
+- 验证：`ruff check codey` 全过，`git diff --check` 全过，未改前端 JS。全量前
+  先过针对性套件（锁测试 + `ResearchServerHelperTests` + `test_knowledge`：
+  `64 passed`），再跑全量 `python -m pytest -q -p no:cacheprovider`：
+  `4601 passed、7 skipped、1471 subtests passed，358.70s（0:05:58）`。跳过为已知
+  Windows/手动启用项（相对 4599/1452 基线的增量恰为 2 个新测试 + 19 个新
+  subtest）。未发布。
+
 ## Unreleased - 冷启动清理：facts 检查、提示源、共享裁剪、死代码、api 转发层（未发布）
 
 - 第 1 项 `workspace/facts`：`_successful_check_from_object()`
