@@ -56,25 +56,6 @@ class ThinWrapperLocks(unittest.TestCase):
 
         self.assertFalse(hasattr(browser, "_ensure_cdp_port"))
 
-    def test_cdp_endpoint_carries_port(self) -> None:
-        from unittest import mock
-
-        from codey.automation import browser as browser
-
-        endpoint = mock.Mock()
-        endpoint.port = 9333
-        with mock.patch.object(browser, "_ensure_cdp_endpoint", return_value=endpoint) as ensure:
-            result = browser._ensure_cdp_endpoint(
-                preferred=9222,
-                profile="profile",
-                start_url="https://chat.deepseek.com/",
-                url_contains="chat.deepseek.com",
-                open_if_missing=True,
-            )
-            self.assertEqual(result.port, 9333)
-            ensure.assert_called_once()
-
-
 class TestExclusiveModelLocks(unittest.TestCase):
     def test_no_test_only_context_snapshot_model(self) -> None:
         from codey.workspace import context_epoch as context_epoch
@@ -92,8 +73,9 @@ class TestExclusiveModelLocks(unittest.TestCase):
         self.assertEqual(diagnostics.FAILURE_READINESS_STALE, "readiness_stale")
 
     def test_failure_facts_cleaned_without_test_only_class(self) -> None:
-        from codey.providers.diagnostics import FAILURE_READINESS_STALE, capture_provider_failure
         from types import SimpleNamespace
+
+        from codey.providers.diagnostics import FAILURE_READINESS_STALE, capture_provider_failure
 
         class _Stale(TimeoutError):
             provider_failure_kind = FAILURE_READINESS_STALE
@@ -204,7 +186,20 @@ class LateResponsePollingLocks(unittest.TestCase):
             self.assertIn("wait_late_response_by_snapshot", source)
 
     def test_snapshot_helper_detects_replaced_text_and_completion_gate(self) -> None:
+        from unittest import mock
+
+        from codey.providers.web_drivers import common as driver_common
         from codey.providers.web_drivers.common import wait_late_response_by_snapshot
+
+        # Controlled virtual clock: no wall-clock dependence, so busy CI
+        # cannot flake on a 50ms real-time window.
+        now = {"t": 1000.0}
+
+        def _now() -> float:
+            return now["t"]
+
+        def _wait(seconds: float) -> None:
+            now["t"] += seconds
 
         # Count unchanged but text updated + generation complete -> final text.
         calls = {"complete": 0}
@@ -213,29 +208,33 @@ class LateResponsePollingLocks(unittest.TestCase):
             calls["complete"] += 1
             return calls["complete"] >= 2
 
-        reply = wait_late_response_by_snapshot(
-            response_count=lambda: 1,
-            last_text=lambda: "replacement reply",
-            generation_complete=_complete,
-            final_text=lambda: "raw replacement reply",
-            baseline=1,
-            baseline_text="old reply",
-            grace=0.05,
-            tick=0,
-        )
-        self.assertEqual(reply, "raw replacement reply")
+        with (
+            mock.patch.object(driver_common.time, "time", side_effect=_now),
+            mock.patch.object(driver_common.cancellation, "wait", side_effect=_wait),
+        ):
+            reply = wait_late_response_by_snapshot(
+                response_count=lambda: 1,
+                last_text=lambda: "replacement reply",
+                generation_complete=_complete,
+                final_text=lambda: "raw replacement reply",
+                baseline=1,
+                baseline_text="old reply",
+                grace=10,
+                tick=1,
+            )
+            self.assertEqual(reply, "raw replacement reply")
 
-        # Generation never completes -> empty.
-        empty = wait_late_response_by_snapshot(
-            response_count=lambda: 2,
-            last_text=lambda: "final reply",
-            generation_complete=lambda: False,
-            final_text=lambda: "raw final reply",
-            baseline=1,
-            grace=0.01,
-            tick=0,
-        )
-        self.assertEqual(empty, "")
+            # Generation never completes -> empty.
+            empty = wait_late_response_by_snapshot(
+                response_count=lambda: 2,
+                last_text=lambda: "final reply",
+                generation_complete=lambda: False,
+                final_text=lambda: "raw final reply",
+                baseline=1,
+                grace=10,
+                tick=1,
+            )
+            self.assertEqual(empty, "")
 
 
 if __name__ == "__main__":

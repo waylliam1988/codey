@@ -2,6 +2,26 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 测试门禁修复：全仓 ruff、冗余 CDP 测试、确定性轮询时钟（未发布）
+
+- P1 纯测试修复（阻断 CI）：`tests/test_readonly_cleanup_locks.py` 违反全仓
+  `python -m ruff check .` 门禁（CI 即跑此命令），I001：函数内
+  `from types import SimpleNamespace` 排在 `codey.providers.diagnostics` 导入之后。
+  已把标准库导入前移。此前报告只跑了 `ruff check codey`，故漏掉；此后以全仓命令为准。
+  生产代码未动。
+- 删除冗余 `test_cdp_endpoint_carries_port` 锁：它 mock 掉被测函数后再调用，永远无法
+  验证真实行为。真实覆盖保留在 `tests/test_browser.py`（仅 mock 端口发现/启动内部函数，
+  断言返回 `.port` 与复用/启动语义）。
+- 轮询锁改为确定性：原测试依赖 50ms 墙钟窗口内完成两轮调用（`grace=0.05, tick=0`），
+  繁忙 CI 上偶发失败。现以虚拟时钟驱动 `wait_late_response_by_snapshot`
+ （mock `time.time` + `cancellation.wait`，`grace=10, tick=1`），同时覆盖“文本替换 +
+  完成门控返回终值”与“永不完成返回空”，零墙钟依赖（本地连跑 3 次全绿）。
+- 验证：`python -m ruff check .` 全过（与 CI 命令一致），`git diff --check` 全过，
+  未改前端 JS。全量前先过针对性套件（锁测试、browser、GLM/Qwen、轮询重复跑）。
+  再跑全量 `python -m pytest -q -p no:cacheprovider`：
+  `4633 passed、7 skipped、1471 subtests passed，350.17s（0:05:50）`。跳过为已知
+  Windows/手动启用项（相对 4634/1471 基线恰为删除的 1 个冗余测试）。未发布。
+
 ## Unreleased - 只读审计清理：死参数、测试专用垫片、共享函数（未发布）
 
 - 第 1 项 `toolchain/tool_prompt`：删除 `render_coding_system_prompt()` 的死参数

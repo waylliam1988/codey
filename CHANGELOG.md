@@ -2,6 +2,33 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Test gate fix: repo-wide ruff, redundant CDP test, deterministic polling clock (no release)
+
+- P1 test-only fix (CI-blocking): `tests/test_readonly_cleanup_locks.py`
+  violated the repo-wide `python -m ruff check .` gate (CI runs it) with I001:
+  a function-level `from types import SimpleNamespace` sorted after the
+  `codey.providers.diagnostics` import. Moved the stdlib import first. Prior
+  reports ran `ruff check codey` only, which is why it was missed; this entry
+  records the full-gate check going forward. No production code changed.
+- Removed the redundant `test_cdp_endpoint_carries_port` lock: it mocked
+  `browser._ensure_cdp_endpoint` and then called it, so it could never verify
+  real behavior. Real coverage stays in `tests/test_browser.py`, which mocks
+  only the port-discovery/launch internals and asserts the returned
+  `.port` plus launch/reuse semantics.
+- Made the late-response snapshot lock deterministic: it previously needed two
+  polls inside a 50ms wall-clock window (`grace=0.05, tick=0`), flaky on busy
+  CI. It now drives `wait_late_response_by_snapshot` with a virtual clock
+  (`time.time` + `cancellation.wait` mocked, `grace=10, tick=1`), covering both
+  "replaced text + completion gate returns final text" and "never completes
+  returns empty" with zero wall-clock dependence (re-ran 3x green locally).
+- Verification: `python -m ruff check .` clean (the exact CI command),
+  `git diff --check` clean, no frontend JS changed. Targeted suites green
+  before the full run (locks, browser, GLM/Qwen, late-response repeats). Then
+  full `python -m pytest -q -p no:cacheprovider`:
+  `4633 passed, 7 skipped, 1471 subtests passed in 350.17s (0:05:50)`. Skips are
+  the known Windows/opt-in family (delta vs the 4634/1471 baseline is exactly
+  the one deleted redundant test). No release was made.
+
 ## Unreleased - Readonly audit cleanup: dead params, test-only shims, shared helpers (no release)
 
 - Item1 `toolchain/tool_prompt`: deleted the dead `profile_name` parameter from

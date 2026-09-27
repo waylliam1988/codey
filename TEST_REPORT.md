@@ -1,5 +1,43 @@
 # Codey Test Report
 
+## Test gate fix: repo-wide ruff, redundant CDP test, deterministic polling clock (2026-09-27)
+
+Scope (test-only follow-up, deterministic, no release):
+
+```text
+tests/test_readonly_cleanup_locks.py   (import order; drop tautological CDP test; virtual-clock polling)
+CHANGELOG.md / CHANGELOG.zh-CN.md      (new Unreleased entry)
+TEST_REPORT.md                         (this entry, written after the full suite)
+```
+
+Repro (deterministic, no live model):
+
+- P1 red: `python -m ruff check .` (the exact CI command) reported exactly one
+  error, `I001` at `tests/test_readonly_cleanup_locks.py:95` (stdlib import
+  after a `codey.*` import). `ruff check codey` stayed green, which is why the
+  prior report missed it. After moving `from types import SimpleNamespace`
+  first, the full gate is clean.
+- Redundant-test note: `test_cdp_endpoint_carries_port` patched
+  `browser._ensure_cdp_endpoint` with a Mock and then asserted the Mock's
+  `.port` — it passed regardless of the real implementation, so it locked
+  nothing. Deleted; real `.port`/launch/reuse behavior stays locked by
+  `tests/test_browser.py` (which mocks only discovery/launch internals).
+- Flake note: the snapshot polling lock needed a second poll inside a 50ms
+  wall-clock window. Rewrote it on a virtual clock (`time.time` and
+  `cancellation.wait` mocked, `grace=10, tick=1`); ran the lock 3x plus the
+  Qwen late-response subset repeatedly, all green with no real sleeping.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `python -m ruff check .` clean, `git diff --check`
+  clean, no frontend JS changed; targeted suites green (locks, browser,
+  GLM/Qwen, repeated late-response runs).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4633 passed, 7 skipped, 1471 subtests passed in 350.17s (0:05:50)`.
+  Skips are the known Windows/opt-in family (delta vs the 4634/1471 baseline is
+  exactly the one deleted redundant test). No live kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Readonly audit cleanup: dead params, test-only shims, shared helpers (2026-09-27)
 
 Scope (production cleanup, TDD red-first, no release):
