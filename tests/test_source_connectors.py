@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -19,9 +18,6 @@ from codey.research.source_connectors import (
     SourceHit,
     built_in_connector_registry,
     connector_query_has_secret_signal,
-    fetch_csv_tsv_file,
-    fetch_json_file,
-    fetch_local_file,
     fetch_recorded_hit,
     parse_arxiv_atom_fixture,
     parse_pubmed_fixture,
@@ -50,22 +46,10 @@ def _imports(path: Path) -> set[str]:
 def test_builtin_connector_registry_is_stable_and_marks_minimum_shipped_fixtures() -> None:
     registry = built_in_connector_registry()
 
-    assert registry.ids() == (
-        "arxiv",
-        "csv_tsv",
-        "json_file",
-        "local_file",
-        "openalex",
-        "pubmed",
-        "rss",
-    )
-    assert {"local_file", "csv_tsv", "arxiv", "pubmed"}.issubset(registry.shipped_fixture_ids())
+    assert registry.ids() == ("arxiv", "pubmed")
+    assert registry.shipped_fixture_ids() == ("arxiv", "pubmed")
     assert registry.get("arxiv").status == "available"
     assert registry.get("pubmed").status == "available"
-    assert "openalex" not in registry.shipped_fixture_ids()
-    assert "rss" not in registry.shipped_fixture_ids()
-    assert registry.get("openalex").status == "unavailable"
-    assert registry.get("rss").status == "optional"
 
 
 def test_connector_registry_does_not_import_runtime_browser_or_provider_layers() -> None:
@@ -318,54 +302,31 @@ def test_safe_connector_query_terms_drop_path_like_slash_tokens() -> None:
     assert "IL-6/JAK/STAT" in terms
 
 
-def test_local_file_fetch_is_confined_to_allowed_roots_and_payload_hides_raw_path() -> None:
-    with tempfile.TemporaryDirectory() as root_td, tempfile.TemporaryDirectory() as outside_td:
-        root = Path(root_td)
-        outside = Path(outside_td)
-        source = root / "nested" / "secret_note.txt"
-        source.parent.mkdir()
-        source.write_text("local evidence body", encoding="utf-8")
-        outside_file = outside / "escape.txt"
-        outside_file.write_text("outside", encoding="utf-8")
+def test_local_csv_json_questions_never_claim_unexecutable_connectors() -> None:
+    from codey.research.query_planner import build_research_plan
 
-        fetched = fetch_local_file("nested/secret_note.txt", allowed_roots=(root,))
-        payload = fetched.to_payload()
-        serialized = json.dumps(payload, ensure_ascii=False)
-
-        assert fetched.document.text == "local evidence body"
-        assert fetched.source_ref.startswith("source_ref:")
-        assert fetched.source_id.startswith("connector_source:")
-        assert payload["fetched"] is True
-        assert payload["evidence_ready"] is False
-        assert str(root) not in serialized
-        assert str(source) not in serialized
-        assert "local evidence body" not in serialized
-        with pytest.raises(ValueError, match="escapes allowed roots"):
-            fetch_local_file(outside_file, allowed_roots=(root,))
-
-
-def test_csv_tsv_and_json_fixtures_fetch_stable_documents_with_standard_parsing() -> None:
-    csv_fetched = fetch_csv_tsv_file(FIXTURES / "table.csv", allowed_roots=(FIXTURES,))
-    tsv_fetched = fetch_csv_tsv_file(FIXTURES / "table.tsv", allowed_roots=(FIXTURES,))
-    json_fetched = fetch_json_file(FIXTURES / "data.json", allowed_roots=(FIXTURES,))
-
-    assert "alpha, beta" in csv_fetched.document.text
-    assert "delimiter: ," in csv_fetched.document.text
-    assert "delimiter: \\t" in tsv_fetched.document.text
-    assert '"dataset": "fixture"' in json_fetched.document.text
-    assert csv_fetched.source_ref == fetch_csv_tsv_file(FIXTURES / "table.csv", allowed_roots=(FIXTURES,)).source_ref
-    assert json_fetched.source_ref.startswith("source_ref:")
-
-
-def test_csv_tsv_truncation_only_marks_when_extra_rows_exist() -> None:
-    exact = fetch_csv_tsv_file(FIXTURES / "table.csv", allowed_roots=(FIXTURES,), max_rows=3)
-    truncated = fetch_csv_tsv_file(FIXTURES / "table.csv", allowed_roots=(FIXTURES,), max_rows=2)
-
-    assert exact.document.truncated is False
-    assert "rows_truncated" not in exact.warnings
-    assert truncated.document.truncated is True
-    assert "rows_truncated" in truncated.warnings
-    assert "label=beta" not in truncated.document.text
+    review: dict[str, object] = {
+        "proof_ref": "research_proof:" + "a" * 16,
+        "question_digest": "sha256:" + "b" * 64,
+        "ok": False,
+        "answers_question": False,
+        "answer_status": "partial",
+        "coverage_gaps": [{"reason_code": "x", "term_ref": "hepatotoxicity"}],
+        "followup_questions": [{"text": "Find clinical evidence gap"}],
+        "query_rewrite_candidates": [],
+        "missing_evidence": ["answer_coverage_gap"],
+    }
+    for question in (
+        "Use the local CSV table dataset to compare rows",
+        "Use the local JSON file data",
+        "本地文件 CSV 数据 JSON 调查",
+    ):
+        plan = build_research_plan(review, question=question)
+        ids = [item.connector_id for item in plan.source_preferences]
+        assert "local_file" not in ids
+        assert "csv_tsv" not in ids
+        assert "json_file" not in ids
+        assert set(ids) <= {"arxiv", "pubmed"}
 
 
 def test_arxiv_recorded_fixture_produces_stable_source_refs_without_raw_url_payload() -> None:

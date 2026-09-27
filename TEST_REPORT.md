@@ -1,5 +1,40 @@
 # Codey Test Report
 
+## Dead-code cleanup: executable connectors, unified browser open, mode-selection trace (2026-09-27)
+
+Scope (consistency + dead code, no release):
+
+```text
+codey/research/source_connectors.py (registry only arxiv/pubmed; removed local fetch + helpers + MAX_* + __all__; trimmed hit kinds; kept data words as _DATA_WORD_BOUNDARY_TERMS)
+codey/research/connector_terms.py   (removed LOCAL_CONNECTOR_TERMS + local branches; only pubmed/arxiv routing)
+codey/research/query_planner.py     (removed local scores/suffixes, evidence_profile, _PROFILE_CONNECTOR_KINDS/_profile_connector_kinds, openalex/rss warnings)
+codey/research/domain_profiles.py   (deleted; also updated source_trust.py doc reference)
+codey/research/review_finding.py    (removed failed_analysis_findings/apply_finding_events/ReviewFindingEvent/EVENT_*/CONFIRMATION_SOURCES/_append_reason; kept audit projections)
+codey/automation/browser.py         (removed five open_* wrappers; open_chat_page + maps stay)
+codey/providers/web_provider.py     (removed opener_name; connect() resolves maps by provider_id)
+codey/runs/trace.py                 (RouterTrace->ModeSelectionTrace, record_router->record_mode_selection, router->mode_selection; no migration)
+codey/operations/task_phases/dispatch.py + codey/operations/task_run.py (call-site rename)
+tests/test_deadcode_cleanup_locks.py (new: 10 red-first locks)
+tests/test_source_connectors.py / test_query_planner.py / test_research_review_finding.py / test_browser.py / test_providers.py / test_coldstart_v1_locks.py / test_task_entry_run_trace.py / test_architecture.py (updated to post-cleanup expectations; deleted tests/test_domain_profiles.py)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (new `tests/test_deadcode_cleanup_locks.py`, 9 of 9 failed before the fix; plus 1 redaction-stability lock found mid-cleanup):
+
+- `test_registry_only_lists_executable_connectors` failed (`('arxiv','csv_tsv',...) != ('arxiv','pubmed')`); after registry trim it passes and `shipped_fixture_ids == ('arxiv','pubmed')`.
+- `test_local_csv_json_questions_never_plan_unexecutable_connectors` failed (`['pubmed','local_file','csv_tsv']` contains `local_file`); after planner/terms trim, local/CSV/JSON questions never plan `local_file`/`csv_tsv`/`json_file`/`openalex`/`rss` and suffixes avoid `table evidence`/`structured data`/`local source`.
+- `test_planner_has_no_openalex_rss_warnings` failed (`('openalex_deferred','rss_optional')` present); after warning trim it passes.
+- `test_local_fetch_helpers_are_removed`, `test_connector_terms_only_route_pubmed_arxiv`, `test_domain_profile_system_is_removed`, `test_finding_lifecycle_is_removed_audit_projection_kept`, `test_browser_openers_are_unified`, `test_mode_selection_trace_replaces_router` all failed (symbols still present); after deletions they pass while keeping `findings_from_proof_review`/`planner_gaps_from_findings`, `open_chat_page` + five map entries, and `ModeSelectionTrace`/`record_mode_selection`/`mode_selection`.
+- `test_secret_boundary_still_keeps_data_words_after_marker` was added after spotting a mid-cleanup regression: dropping `LOCAL_CONNECTOR_TERMS` from `_SECRET_VALUE_BOUNDARY_TERMS` made `safe_connector_query('api key csv clinical cancer')` return `('clinical','cancer')` (ate `csv`); it failed before the `_DATA_WORD_BOUNDARY_TERMS` fix and passes after (`csv`/`json`/`table`/`dataset`/`local`/`file` survive, only the marker is redacted).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey` clean, `git diff --check` clean; targeted suites green (`test_deadcode_cleanup_locks` 10 passed; `test_source_connectors`/`test_query_planner`/`test_research_review_finding`/`test_connector_search` 76 passed; `test_browser`/`test_providers` 78 passed + 5 subtests; `test_coldstart_v1_locks`/`test_run_trace`/`test_architecture` 166 passed + 346 subtests; `test_task_entry_run_trace`/`test_research_pipeline`/`test_research_plan_executor` 46 passed).
+- Final full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4579 passed, 9 skipped, 1433 subtests passed in 335.05s (0:05:35)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Strict shell event hash/marker binding (2026-09-27)
 
 Scope (deterministic P2s, no release):

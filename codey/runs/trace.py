@@ -245,14 +245,8 @@ class PromptSurfaceTrace:
 
 
 @dataclass(frozen=True)
-class RouterTrace:
-    """Mode-selection trace (historical name ``router`` kept for compat).
-
-    The old Ghost Router is retired, but this record is still written by the
-    live task-dispatch path to capture user choice, default mode, and
-    recovery. Renaming the persisted ``router`` field would break trace
-    readers, so the name stays intentionally.
-    """
+class ModeSelectionTrace:
+    """Mode-selection trace written by the live task-dispatch path."""
 
     baseline_mode: str = ""
     selected_mode: str = ""
@@ -299,7 +293,7 @@ class RunTraceManifest:
     provider_final: str = ""
     permission_profile: str = ""
     permission_profiles: list[dict[str, str]] = field(default_factory=list)
-    router: RouterTrace | None = None
+    mode_selection: ModeSelectionTrace | None = None
     prompt_sections: list[PromptSectionTrace] = field(default_factory=list)
     prompt_surfaces: list[PromptSurfaceTrace] = field(default_factory=list)
     model_tool_contract_hash: str = ""
@@ -346,7 +340,7 @@ class RunTraceManifest:
             "provider_final": _identifier(self.provider_final, 80),
             "permission_profile": _identifier(self.permission_profile, 80),
             "permission_profiles": self.permission_profiles[:MAX_PERMISSION_PROFILES],
-            "router": self.router.to_payload() if self.router else {},
+            "mode_selection": self.mode_selection.to_payload() if self.mode_selection else {},
             "prompt_sections": [
                 item.to_payload() for item in self.prompt_sections[:MAX_PROMPT_SECTIONS]
             ],
@@ -488,7 +482,7 @@ class RunTraceRecorder:
         self._prompt_surface_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
-    def record_router(
+    def record_mode_selection(
         self,
         *,
         baseline_mode: str,
@@ -498,8 +492,8 @@ class RunTraceRecorder:
         reason_code: str,
         overridden_by_user: bool = False,
     ) -> None:
-        """Record mode selection (name kept; old Ghost Router is retired)."""
-        self.manifest.router = RouterTrace(
+        """Record mode selection."""
+        self.manifest.mode_selection = ModeSelectionTrace(
             baseline_mode=baseline_mode,
             selected_mode=selected_mode,
             final_mode=final_mode,

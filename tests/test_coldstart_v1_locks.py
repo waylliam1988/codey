@@ -340,18 +340,18 @@ def test_shell_event_accepts_current_complete_record() -> None:
     assert long_out["command_sha256"] == hashlib.sha256(long_cmd.encode()).hexdigest()
 
 
-def test_router_trace_is_live_not_dead_code() -> None:
+def test_mode_selection_trace_is_live_not_dead_code() -> None:
     from codey.runs.trace import RunTraceManifest, RunTraceRecorder
 
     manifest = RunTraceManifest(run_id="r1", session_id="s1")
     rec = RunTraceRecorder.__new__(RunTraceRecorder)
     rec.manifest = manifest
-    # Bypass __init__ side effects; record_router only touches manifest + flush.
+    # Bypass __init__ side effects; record_mode_selection only touches manifest + flush.
     # Monkey-patch flush to no-op for this unit lock.
     rec.flush = lambda: None  # type: ignore[method-assign]
     rec.path = None  # type: ignore[assignment]
     rec.disabled = False
-    rec.record_router(
+    rec.record_mode_selection(
         baseline_mode="project",
         selected_mode="project",
         final_mode="project",
@@ -359,5 +359,6 @@ def test_router_trace_is_live_not_dead_code() -> None:
         reason_code="baseline_kept",
     )
     payload = manifest.to_payload()
-    assert payload["router"]["final_mode"] == "project"
+    assert payload["mode_selection"]["final_mode"] == "project"
     assert payload["mode_final"] == "project"
+    assert "router" not in payload

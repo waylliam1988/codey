@@ -1,22 +1,17 @@
 """Source connector contracts and recorded fixture readers.
 
-The connector layer is a local Research boundary. It describes source types and
-turns recorded/local inputs into stable source hits or fetched sources. It does
-not call models, open browsers, dispatch runtime tools, or write state.
+The connector layer is a local Research boundary. It describes the executable
+PubMed/arXiv sources and turns recorded inputs into stable source hits or
+fetched sources. It does not call models, open browsers, dispatch runtime
+tools, or write state.
 """
 
 from __future__ import annotations
 
-import csv
-import io
-import json
-import mimetypes
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
-from urllib.parse import quote
 
 from codey.policies.network import check_fetch_url
 from codey.policies.redaction import (
@@ -27,7 +22,6 @@ from codey.policies.redaction import (
 )
 from codey.research.connector_terms import (
     ARXIV_CONNECTOR_TERMS,
-    LOCAL_CONNECTOR_TERMS,
     MEDICAL_CONNECTOR_TERMS,
 )
 from codey.research.guards import (
@@ -43,7 +37,6 @@ from codey.research.guards import (
     valid_digest_ref,
 )
 from codey.research.identity import (
-    path_ref,
     sanitize_research_url_ref,
 )
 from codey.research.source_document import SourceDocument
@@ -67,10 +60,6 @@ CONNECTOR_AVAILABLE_STATUSES = frozenset({
     CONNECTOR_STATUS_EXPERIMENTAL,
 })
 MAX_CONNECTOR_HITS = 12
-MAX_FETCH_BYTES = 512 * 1024
-MAX_FETCH_CHARS = 120_000
-MAX_TABLE_ROWS = 24
-MAX_JSON_CHARS = 80_000
 _SPACE_RE = re.compile(r"\s+")
 _SAFE_QUERY_TOKEN_RE = re.compile(
     r"[A-Za-z0-9][A-Za-z0-9_+-]*(?:/[A-Za-z0-9][A-Za-z0-9_+-]*)+|"
@@ -168,10 +157,26 @@ _MULTI_TOKEN_VALUE_SECRET_MARKERS = frozenset({
     "authorization",
 })
 _MULTI_TOKEN_SECRET_VALUE_LIMIT = 6
+# Ordinary data words stay secret-value boundaries even though the local
+# connectors are removed: they are never secret values, only query terms.
+_DATA_WORD_BOUNDARY_TERMS = frozenset({
+    "csv",
+    "dataset",
+    "file",
+    "json",
+    "local",
+    "spreadsheet",
+    "table",
+    "tsv",
+    "本地",
+    "文件",
+    "表格",
+    "数据",
+})
 _SECRET_VALUE_BOUNDARY_TERMS = frozenset({
     *ARXIV_CONNECTOR_TERMS,
-    *LOCAL_CONNECTOR_TERMS,
     *MEDICAL_CONNECTOR_TERMS,
+    *_DATA_WORD_BOUNDARY_TERMS,
     "budget",
     "consent",
     "cryptography",
@@ -197,10 +202,7 @@ _ALLOWED_FETCHED_MIME_TYPES = frozenset({
 })
 _ALLOWED_HIT_SOURCE_KINDS = frozenset({
     "biomedical_literature",
-    "dataset",
-    "local_file",
     "preprint",
-    "table",
 })
 _SAFE_PUBLISHED_AT_RE = re.compile(
     r"^\d{4}(?:-\d{2}(?:-\d{2})?)?"
@@ -470,50 +472,6 @@ def built_in_connector_registry() -> SourceConnectorRegistry:
             failure_modes=("rate_limited", "fixture_parse_failed", "url_denied"),
         ),
         SourceConnectorSpec(
-            id="csv_tsv",
-            kind="table_file",
-            status=CONNECTOR_STATUS_FIXTURE,
-            fetch_supported=True,
-            fixture_supported=True,
-            shipped=True,
-            local=True,
-            source_quality_hint={"level": "primary", "kind": "data", "freshness": "undated"},
-            failure_modes=("workspace_escape", "file_too_large", "parse_failed"),
-        ),
-        SourceConnectorSpec(
-            id="json_file",
-            kind="structured_file",
-            status=CONNECTOR_STATUS_FIXTURE,
-            fetch_supported=True,
-            fixture_supported=True,
-            shipped=True,
-            local=True,
-            source_quality_hint={"level": "primary", "kind": "data", "freshness": "undated"},
-            failure_modes=("workspace_escape", "file_too_large", "parse_failed"),
-        ),
-        SourceConnectorSpec(
-            id="local_file",
-            kind="local_file",
-            status=CONNECTOR_STATUS_FIXTURE,
-            fetch_supported=True,
-            fixture_supported=True,
-            shipped=True,
-            local=True,
-            source_quality_hint={"level": "primary", "kind": "local_file", "freshness": "undated"},
-            failure_modes=("workspace_escape", "file_too_large", "decode_failed"),
-        ),
-        SourceConnectorSpec(
-            id="openalex",
-            kind="citation_metadata",
-            status=CONNECTOR_STATUS_UNAVAILABLE,
-            search_supported=True,
-            fetch_supported=False,
-            fixture_supported=False,
-            shipped=False,
-            source_quality_hint={"level": "metadata", "kind": "citation_graph", "freshness": "dated"},
-            failure_modes=("deferred_connector_pack",),
-        ),
-        SourceConnectorSpec(
             id="pubmed",
             kind="biomedical_literature",
             status=CONNECTOR_STATUS_AVAILABLE,
@@ -524,17 +482,6 @@ def built_in_connector_registry() -> SourceConnectorRegistry:
             rate_limit_seconds=0.34,
             source_quality_hint={"level": "primary", "kind": "medical_literature", "freshness": "dated"},
             failure_modes=("rate_limited", "fixture_parse_failed", "url_denied"),
-        ),
-        SourceConnectorSpec(
-            id="rss",
-            kind="feed",
-            status=CONNECTOR_STATUS_OPTIONAL,
-            search_supported=True,
-            fetch_supported=True,
-            fixture_supported=False,
-            shipped=False,
-            source_quality_hint={"level": "secondary", "kind": "feed", "freshness": "dated"},
-            failure_modes=("optional_connector_pack",),
         ),
     ))
 
@@ -879,133 +826,6 @@ def _safe_scientific_slash_term(text: str) -> bool:
     return all(_SAFE_SCIENTIFIC_SLASH_PART_RE.fullmatch(part) for part in parts)
 
 
-def fetch_local_file(
-    path: str | Path,
-    *,
-    allowed_roots: Iterable[str | Path],
-    connector_id: str = "local_file",
-    max_bytes: int = MAX_FETCH_BYTES,
-) -> FetchedSource:
-    resolved, root = resolve_local_source_path(path, allowed_roots=allowed_roots)
-    data = _read_limited_bytes(resolved, max_bytes=max_bytes)
-    text = data.decode("utf-8", errors="replace")
-    truncated = len(text) > MAX_FETCH_CHARS
-    if truncated:
-        text = text[:MAX_FETCH_CHARS]
-    source_ref = _source_ref_for_path(connector_id, resolved, root)
-    source_id = stable_ref("connector_source", connector_id, source_ref)
-    document = SourceDocument(
-        requested_url=_connector_locator(connector_id, source_ref, resolved.name),
-        final_url=_connector_locator(connector_id, source_ref, resolved.name),
-        title=resolved.name,
-        content_kind="text",
-        mime_type=mimetypes.guess_type(resolved.name)[0] or "text/plain",
-        text=text,
-        truncated=truncated,
-    )
-    return FetchedSource.from_document(
-        connector_id=connector_id,
-        source_ref=source_ref,
-        source_id=source_id,
-        document=document,
-        warnings=("text_truncated",) if truncated else (),
-    )
-
-
-def fetch_csv_tsv_file(
-    path: str | Path,
-    *,
-    allowed_roots: Iterable[str | Path],
-    max_bytes: int = MAX_FETCH_BYTES,
-    max_rows: int = MAX_TABLE_ROWS,
-) -> FetchedSource:
-    resolved, root = resolve_local_source_path(path, allowed_roots=allowed_roots)
-    data = _read_limited_bytes(resolved, max_bytes=max_bytes)
-    text = data.decode("utf-8-sig", errors="replace")
-    delimiter = "\t" if resolved.suffix.lower() == ".tsv" else ","
-    row_limit = _positive_int(max_rows, MAX_TABLE_ROWS)
-    rows = _read_csv_rows(text, delimiter=delimiter, max_rows=row_limit + 1)
-    truncated = len(rows) > row_limit
-    rendered = _render_table_rows(rows[:row_limit], delimiter=delimiter)
-    source_ref = _source_ref_for_path("csv_tsv", resolved, root)
-    source_id = stable_ref("connector_source", "csv_tsv", source_ref)
-    document = SourceDocument(
-        requested_url=_connector_locator("csv_tsv", source_ref, resolved.name),
-        final_url=_connector_locator("csv_tsv", source_ref, resolved.name),
-        title=resolved.name,
-        content_kind="table",
-        mime_type="text/tab-separated-values" if delimiter == "\t" else "text/csv",
-        text=rendered,
-        truncated=truncated,
-    )
-    return FetchedSource.from_document(
-        connector_id="csv_tsv",
-        source_ref=source_ref,
-        source_id=source_id,
-        document=document,
-        warnings=("rows_truncated",) if truncated else (),
-    )
-
-
-def fetch_json_file(
-    path: str | Path,
-    *,
-    allowed_roots: Iterable[str | Path],
-    max_bytes: int = MAX_FETCH_BYTES,
-) -> FetchedSource:
-    resolved, root = resolve_local_source_path(path, allowed_roots=allowed_roots)
-    data = _read_limited_bytes(resolved, max_bytes=max_bytes)
-    text = data.decode("utf-8-sig", errors="replace")
-    parsed = json.loads(text)
-    rendered = json.dumps(parsed, ensure_ascii=False, sort_keys=True, indent=2)
-    truncated = len(rendered) > MAX_JSON_CHARS
-    if truncated:
-        rendered = rendered[:MAX_JSON_CHARS]
-    source_ref = _source_ref_for_path("json_file", resolved, root)
-    source_id = stable_ref("connector_source", "json_file", source_ref)
-    document = SourceDocument(
-        requested_url=_connector_locator("json_file", source_ref, resolved.name),
-        final_url=_connector_locator("json_file", source_ref, resolved.name),
-        title=resolved.name,
-        content_kind="json",
-        mime_type="application/json",
-        text=rendered,
-        truncated=truncated,
-    )
-    return FetchedSource.from_document(
-        connector_id="json_file",
-        source_ref=source_ref,
-        source_id=source_id,
-        document=document,
-        warnings=("json_truncated",) if truncated else (),
-    )
-
-
-def resolve_local_source_path(
-    path: str | Path,
-    *,
-    allowed_roots: Iterable[str | Path],
-) -> tuple[Path, Path]:
-    roots = tuple(_resolved_root(item) for item in allowed_roots if str(item or "").strip())
-    if not roots:
-        raise ValueError("allowed_roots required")
-    raw = Path(path).expanduser()
-    last_error: Exception | None = None
-    for root in roots:
-        try:
-            candidate = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
-        except (OSError, RuntimeError, ValueError) as exc:
-            last_error = exc
-            continue
-        if candidate == root or root in candidate.parents:
-            if not candidate.is_file():
-                raise ValueError("source path is not a file")
-            return candidate, root
-    if last_error is not None:
-        raise ValueError("source path resolution failed") from last_error
-    raise ValueError("source path escapes allowed roots")
-
-
 def parse_arxiv_atom_fixture(xml_text: str, *, query: str = "", limit: int = MAX_CONNECTOR_HITS) -> SourceConnectorResult:
     hits: list[SourceHit] = []
     hit_limit = _bounded_limit(limit, default=MAX_CONNECTOR_HITS, upper=MAX_CONNECTOR_HITS)
@@ -1127,55 +947,6 @@ def fetch_recorded_hit(hit: SourceHit) -> FetchedSource:
     )
 
 
-def _resolved_root(path: str | Path) -> Path:
-    root = Path(path).expanduser().resolve()
-    if not root.exists() or not root.is_dir():
-        raise ValueError("allowed root is not a directory")
-    return root
-
-
-def _read_limited_bytes(path: Path, *, max_bytes: int) -> bytes:
-    size = path.stat().st_size
-    if size > max(1, int(max_bytes)):
-        raise ValueError("source file is too large")
-    return path.read_bytes()
-
-
-def _read_csv_rows(text: str, *, delimiter: str, max_rows: int) -> list[list[str]]:
-    rows: list[list[str]] = []
-    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
-    row_limit = _positive_int(max_rows, MAX_TABLE_ROWS)
-    for row in reader:
-        rows.append([clip(cell, 120) for cell in row])
-        if len(rows) >= row_limit:
-            break
-    return rows
-
-
-def _render_table_rows(rows: list[list[str]], *, delimiter: str) -> str:
-    if not rows:
-        return "empty table"
-    separator = "\\t" if delimiter == "\t" else ","
-    headers = rows[0]
-    lines = [
-        "table source",
-        f"delimiter: {separator}",
-        "columns: " + " | ".join(headers),
-    ]
-    for index, row in enumerate(rows[1:], 1):
-        cells = []
-        for col_index, value in enumerate(row):
-            name = headers[col_index] if col_index < len(headers) and headers[col_index] else f"col{col_index + 1}"
-            cells.append(f"{name}={value}")
-        lines.append(f"{index}. " + "; ".join(cells))
-    return "\n".join(lines)
-
-
-def _source_ref_for_path(connector_id: str, path: Path, root: Path) -> str:
-    ref = path_ref(path, project=root)
-    return stable_ref("source_ref", connector_id, ref.get("digest", ""), ref.get("basename", ""))
-
-
 def _source_ref_for_url(connector_id: str, url: str) -> str:
     ref = sanitize_research_url_ref(url)
     return stable_ref("source_ref", connector_id, ref.get("url_digest", ""), ref.get("host", ""))
@@ -1199,10 +970,6 @@ def _connector_canonical_url(connector_id: str, url: str) -> str:
             return text
         return parsed._replace(scheme="https", netloc="arxiv.org").geturl()
     return text
-
-
-def _connector_locator(connector_id: str, source_ref: str, basename: str) -> str:
-    return f"codey-source://{_connector_id(connector_id)}/{quote(source_ref, safe='')}/{quote(basename)}"
 
 
 def _xml_text(element: ET.Element, path: str) -> str:
@@ -1342,16 +1109,6 @@ def _score(value: object) -> float:
     return max(0.0, min(1.0, round(score, 3)))
 
 
-def _positive_int(value: object, default: int) -> int:
-    if isinstance(value, bool):
-        return max(1, int(default or 1))
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = int(default or 1)
-    return max(1, parsed)
-
-
 __all__ = [
     "CONNECTOR_AVAILABLE_STATUSES",
     "CONNECTOR_STATUS_AVAILABLE",
@@ -1368,15 +1125,11 @@ __all__ = [
     "SourceHit",
     "connector_query_has_secret_signal",
     "built_in_connector_registry",
-    "fetch_csv_tsv_file",
-    "fetch_json_file",
-    "fetch_local_file",
     "fetch_recorded_hit",
     "is_valid_arxiv_id",
     "is_valid_pubmed_id",
     "parse_arxiv_atom_fixture",
     "parse_pubmed_fixture",
-    "resolve_local_source_path",
     "safe_connector_query",
     "safe_connector_query_terms",
     "safe_connector_signal_text",

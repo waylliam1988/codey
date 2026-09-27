@@ -163,7 +163,7 @@ def test_rag_nlp_benchmark_question_prefers_arxiv_without_explicit_preprint_word
     assert "paper_preprint_source" in plan.source_preferences[0].reason_codes
 
 
-def test_local_table_and_json_questions_prefer_local_connectors() -> None:
+def test_local_table_and_json_questions_never_claim_unexecutable_connectors() -> None:
     table_plan = build_research_plan(
         _review(followup_questions=(), query_rewrite_candidates=(), coverage_gaps=()),
         question="Use the local CSV table dataset to compare rows",
@@ -173,14 +173,17 @@ def test_local_table_and_json_questions_prefer_local_connectors() -> None:
         question="Use the local JSON file data",
     )
 
-    assert [item.connector_id for item in table_plan.source_preferences[:3]] == [
-        "local_file",
-        "csv_tsv",
-    ]
-    assert [item.connector_id for item in json_plan.source_preferences[:2]] == [
-        "local_file",
-        "json_file",
-    ]
+    for plan in (table_plan, json_plan):
+        ids = [item.connector_id for item in plan.source_preferences]
+        assert "local_file" not in ids
+        assert "csv_tsv" not in ids
+        assert "json_file" not in ids
+        assert set(ids) <= {"arxiv", "pubmed"}
+        for candidate in plan.query_candidates:
+            low = candidate.query_preview.casefold()
+            assert "table evidence" not in low
+            assert "structured data" not in low
+            assert "local source" not in low
 
 
 def test_planner_payload_and_trace_do_not_store_raw_secret_prompt_url_or_path() -> None:
@@ -337,7 +340,7 @@ def test_planner_bounds_query_count_and_does_not_execute_registry_connectors() -
     assert plan.source_preferences[0].connector_id == "pubmed"
 
 
-def test_unavailable_openalex_and_optional_rss_are_not_source_preferences() -> None:
+def test_removed_connectors_are_never_planned_and_never_warned() -> None:
     plan = build_research_plan(
         _review(followup_questions=(), query_rewrite_candidates=(), coverage_gaps=()),
         question="Use OpenAlex RSS feed metadata for topic discovery",
@@ -346,60 +349,27 @@ def test_unavailable_openalex_and_optional_rss_are_not_source_preferences() -> N
     ids = [item.connector_id for item in plan.source_preferences]
     assert "openalex" not in ids
     assert "rss" not in ids
-    assert "openalex_deferred" in plan.warnings
-    assert "rss_optional" in plan.warnings
+    assert "local_file" not in ids
+    assert "csv_tsv" not in ids
+    assert "json_file" not in ids
+    assert "openalex_deferred" not in plan.warnings
+    assert "rss_optional" not in plan.warnings
 
 
-def test_default_plan_is_byte_identical_without_evidence_profile() -> None:
+def test_default_plan_is_byte_identical() -> None:
     review = _review()
     question = "clinical disease therapy"
 
-    without_profile = build_research_plan(review, question=question).to_payload()
-    default_again = build_research_plan(review, question=question).to_payload()
+    first = build_research_plan(review, question=question).to_payload()
+    second = build_research_plan(review, question=question).to_payload()
 
-    assert json.dumps(without_profile, sort_keys=True) == json.dumps(default_again, sort_keys=True)
-
-
-def test_science_profile_adds_bounded_connector_preferences_with_reason_codes() -> None:
-    from codey.research.domain_profiles import SCIENCE_PROFILE
-
-    plan = build_research_plan(
-        _review(),
-        question="unrelated topic",
-        evidence_profile=SCIENCE_PROFILE,
-    )
-    profiled = [
-        item for item in plan.source_preferences
-        if "domain_profile_source_preference" in item.reason_codes
-    ]
-
-    assert [item.connector_id for item in profiled] == ["arxiv", "pubmed", "csv_tsv", "json_file"]
-    assert all(item.score == 0.92 for item in profiled)
-    assert "domain_profile_source_preference" in plan.reason_codes
+    assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
 
 
-def test_profile_with_unknown_or_unavailable_kinds_warns_but_stays_bounded() -> None:
-    from codey.research.domain_profiles import EvidenceProfile
-
-    profile = EvidenceProfile(
-        profile_id="finance",
-        preferred_connector_kinds=("mystical_kind",),
-    )
-    plan = build_research_plan(_review(), question="topic", evidence_profile=profile)
-
-    assert all(
-        item.connector_id != "mystical_kind" for item in plan.source_preferences
-    )
-    assert "domain_profile_kind_unavailable" in plan.reason_codes
-
-
-def test_proof_ok_short_circuit_ignores_profile_preferences() -> None:
-    from codey.research.domain_profiles import SCIENCE_PROFILE
-
+def test_proof_ok_short_circuit_builds_noop_plan() -> None:
     plan = build_research_plan(
         _review(ok=True, answers_question=True, coverage_gaps=(), missing_evidence=(), answer_status="answered"),
         question="anything",
-        evidence_profile=SCIENCE_PROFILE,
     )
 
     assert plan.query_candidates == ()

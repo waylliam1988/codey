@@ -962,18 +962,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     sorted(forbidden & imports),
                 )
 
-    def test_profile_source_trust_combination_has_single_owner(self) -> None:
-        # Composing evidence profiles with source trust must live in exactly
-        # one place. Today nothing combines them; if a consumer ever needs
-        # to, it must become a dedicated owner module -- not another import
-        # site that quietly grows policy logic.
-        offenders = []
-        for path in sorted((ROOT / "codey").rglob("*.py")):
-            imports = imported_modules(path)
-            if "codey.research.domain_profiles" in imports and "codey.research.source_trust" in imports:
-                offenders.append(path.relative_to(ROOT).as_posix())
-        self.assertEqual(offenders, [])
-
     def test_refs_and_redaction_are_stdlib_leaves(self) -> None:
         # The bounded ref vocabulary and redaction predicates are the shared
         # dialect of every refs-only read model (coding, research, future
@@ -1220,28 +1208,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if bad:
                 offenders.append(f"{path.relative_to(ROOT).as_posix()}: {sorted(bad)}")
         self.assertEqual(offenders, [])
-
-    def test_domain_profiles_is_a_stdlib_data_leaf(self) -> None:
-        # Profiles are data only: no planner, no I/O, no codey imports at all.
-        path = ROOT / "codey" / "research" / "domain_profiles.py"
-        imports = imported_modules(path)
-
-        self.assertEqual(
-            [name for name in imports if name == "codey" or name.startswith("codey.")],
-            [],
-        )
-        source = path.read_text(encoding="utf-8")
-        for token in (
-            "write_text(",
-            "write_json",
-            "open(",
-            "eval(",
-            "exec(",
-            "subprocess",
-            "urllib",
-            "importlib",
-        ):
-            self.assertNotIn(token, source)
 
     def test_source_trust_and_brief_projection_stay_projection_only(self) -> None:
         # Source trust classifies sources; brief projection structures handoff

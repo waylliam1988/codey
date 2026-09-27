@@ -26,7 +26,6 @@ class WebProviderSpec:
     provider_id: str
     name: str
     driver: Any                      # site-specific driver module
-    opener_name: str                 # attribute on codey.automation.browser
     grace_attr: str = "TIMEOUT_GRACE"
     blank_message: str = ""          # non-empty: reject blank sends
 
@@ -56,8 +55,9 @@ class WebChatProvider:
         isolated: bool = False,
         fresh_tab: bool = False,
     ) -> WebChatProvider:
-        opener = getattr(browser, cls.spec.opener_name)
-        return cls(opener(
+        return cls(browser.open_chat_page(
+            browser.PROVIDER_START_URLS[cls.spec.provider_id],
+            browser.PROVIDER_URL_CONTAINS[cls.spec.provider_id],
             port=port,
             profile=profile,
             open_if_missing=open_if_missing,
@@ -116,7 +116,6 @@ class DeepSeekWebProvider(_provider_class(WebProviderSpec(
     provider_id="deepseek",
     name="DeepSeek Web",
     driver=_deepseek_driver,
-    opener_name="open_deepseek",
 ))):
     pass
 
@@ -125,7 +124,6 @@ class MimoWebProvider(_provider_class(WebProviderSpec(
     provider_id="mimo",
     name="Xiaomi MiMo Chat",
     driver=_mimo_driver,
-    opener_name="open_mimo",
 ))):
     pass
 
@@ -134,7 +132,6 @@ class StepFunWebProvider(_provider_class(WebProviderSpec(
     provider_id="stepfun",
     name="StepFun Chat",
     driver=_stepfun_driver,
-    opener_name="open_stepfun",
 ))):
     pass
 
@@ -143,7 +140,6 @@ class QwenWebProvider(_provider_class(WebProviderSpec(
     provider_id="qwen",
     name="Qwen Studio",
     driver=_qwen_driver,
-    opener_name="open_qwen",
 ))):
     pass
 
@@ -152,7 +148,6 @@ class GlmWebProvider(_provider_class(WebProviderSpec(
     provider_id="glm",
     name="GLM",
     driver=_glm_driver,
-    opener_name="open_glm",
     grace_attr="RESPONSE_TIMEOUT_GRACE",
     blank_message="GLM message cannot be blank",
 ))):

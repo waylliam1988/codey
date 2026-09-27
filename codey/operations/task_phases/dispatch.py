@@ -334,7 +334,7 @@ def record_route_trace(
         route_source = "local_work_item"
         route_reason = "claimed_work_item"
     trace_sink.call(
-        "record_router",
+        "record_mode_selection",
         baseline_mode=trace_mode(baseline_task_kind, project),
         selected_mode=trace_mode(route_selected_mode, project),
         final_mode=trace_mode(task_kind, project),

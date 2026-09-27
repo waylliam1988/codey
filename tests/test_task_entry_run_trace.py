@@ -230,7 +230,7 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
         assert payload["provider_initial"] == "deepseek"
         assert payload["provider_final"] == "deepseek"
         assert payload["permission_profile"] == "coding_writer"
-        assert payload["router"]["source"] == "explicit_user_choice"
+        assert payload["mode_selection"]["source"] == "explicit_user_choice"
         assert payload["model_tool_contract_hash"].startswith("sha256:")
         assert "fake_prompt" in [item["name"] for item in payload["prompt_sections"]]
         assert secret_prompt not in serialized
@@ -299,8 +299,8 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         assert payload["mode_initial"] == "chat"
         assert payload["mode_final"] == "research"
         assert payload["permission_profile"] == "research"
-        assert payload["router"]["source"] == "baseline"
-        assert payload["router"]["reason_code"] == "baseline_kept"
+        assert payload["mode_selection"]["source"] == "baseline"
+        assert payload["mode_selection"]["reason_code"] == "baseline_kept"
         assert len(main_provider.prompts) == 1
         assert set(payload["research_note_ids"]) == {"note-created", "note-updated", "synth-1"}
         assert payload["research_source_refs"][0]["host"] == "example.com"

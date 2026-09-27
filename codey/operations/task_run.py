@@ -487,7 +487,7 @@ def _route_ghost_work(
                 mode=ui_mode(setup.baseline_task_kind, setup.project),
             )
             setup.trace_sink.call(
-                "record_router",
+                "record_mode_selection",
                 baseline_mode=trace_mode(setup.baseline_task_kind, setup.project),
                 selected_mode=trace_mode(setup.task_kind, setup.project),
                 final_mode=trace_mode(setup.task_kind, setup.project),

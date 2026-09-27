@@ -7,9 +7,8 @@ It never judges whether a claim is true, never fetches anything, never reads
 page bodies, and never deletes or filters evidence -- consumers may only turn
 projections into warnings, preferences, or threshold hints.
 
-The projection and the domain profile are orthogonal: profiles state what a
-task needs (``codey.research.domain_profiles``), projections state what a
-source is. Combining both is the consumer's job.
+The projection states what a source is. Evidence expectations are the
+consumer's job.
 """
 
 from __future__ import annotations

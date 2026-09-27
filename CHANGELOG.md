@@ -2,6 +2,54 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Dead-code cleanup: executable connectors, unified browser open, mode-selection trace (no release)
+
+- Tightened Research connectors to real execution capability (red-first
+  `tests/test_deadcode_cleanup_locks.py`, 9 failed before, 10 with redaction
+  stability after): `built_in_connector_registry()` now lists only
+  `arxiv`/`pubmed`; removed `local_file`/`csv_tsv`/`json_file` plus
+  unimplemented `openalex`/`rss` placeholders; removed
+  `fetch_local_file`/`fetch_csv_tsv_file`/`fetch_json_file`,
+  `resolve_local_source_path` and helpers used only by them
+  (`_resolved_root`, `_read_limited_bytes`, `_read_csv_rows`,
+  `_render_table_rows`, `_source_ref_for_path`, `_connector_locator`,
+  `_positive_int`, `MAX_FETCH_*`/`MAX_TABLE_ROWS`/`MAX_JSON_CHARS`) and the
+  `__all__` exports; `connector_terms` routes only `pubmed`/`arxiv` (removed
+  `LOCAL_CONNECTOR_TERMS`); planner scores/suffixes/warnings trimmed
+  (`openalex_deferred`/`rss_optional` gone); local/CSV/JSON questions no
+  longer claim unexecutable connectors in plans.
+- Removed the test-only domain profile system: deleted
+  `codey/research/domain_profiles.py`; dropped `evidence_profile` from
+  `build_research_plan`/`_source_preferences` plus
+  `_PROFILE_CONNECTOR_KINDS`/`_profile_connector_kinds`/`PROFILE_PREFERENCE_SCORE`;
+  deleted `tests/test_domain_profiles.py` and profile-specific planner tests;
+  kept keyword-based connector selection.
+- Removed the test-only finding lifecycle: deleted
+  `failed_analysis_findings`, `apply_finding_events`, `ReviewFindingEvent`,
+  `EVENT_*`, `CONFIRMATION_SOURCES`, `_append_reason`; kept
+  `findings_from_proof_review`, `planner_gaps_from_findings`, and audit
+  projections; tests now cover the real produce-and-record paths.
+- Unified the browser open path: `WebChatProvider.connect()` now resolves
+  `PROVIDER_START_URLS`/`PROVIDER_URL_CONTAINS` by `provider_id` and calls
+  `browser.open_chat_page()` once; removed `opener_name` and the five
+  `open_*` wrappers; tests assert one generic call plus five mapping values.
+- Renamed the compat-kept router trace with no migration layer:
+  `RouterTrace` -> `ModeSelectionTrace`,
+  `record_router` -> `record_mode_selection`, persisted `router` ->
+  `mode_selection`; updated dispatch/task_run call sites and trace tests.
+- Deterministic fix during cleanup: dropping `LOCAL_CONNECTOR_TERMS` from
+  `_SECRET_VALUE_BOUNDARY_TERMS` turned ordinary data words
+  (`csv`/`json`/`table`/...) after a secret marker into secret values
+  (over-redaction). Locked with
+  `test_secret_boundary_still_keeps_data_words_after_marker` (failed before),
+  then kept those words as `_DATA_WORD_BOUNDARY_TERMS` so only the marker is
+  redacted.
+- Verification: `python -m ruff check codey` clean, `git diff --check` clean.
+  Targeted suites green before the full run; then final
+  `python -m pytest -q -p no:cacheprovider`:
+  `4579 passed, 9 skipped, 1433 subtests passed in 335.05s (0:05:35)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Strict shell event hash/marker binding (no release)
 
 - Fixed two deterministic P2s in `agents/shell_approval._event_record_fields`

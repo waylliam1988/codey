@@ -1,22 +1,17 @@
 """Deterministic ReviewFinding core over evidence facts.
 
 ReviewFindingRecord is an audit read model: it says which claim, evidence,
-source, analysis run, or record has a proof problem, how severe it is, and
-whether a later verification event resolved it. Findings are projected from
-facts that already exist (proof-review diagnostics, failed analysis runs);
-they never call models, execute searches, or mutate research state.
-
-``confirmed`` status can only be reached through :class:`ReviewFindingEvent`
-with a ``verified_by`` value from the deterministic allowlist. A model
-claiming "fixed" is not a verification.
+source, analysis run, or record has a proof problem and how severe it is.
+Findings are projected from facts that already exist (proof-review
+diagnostics); they never call models, execute searches, or mutate research
+state. Records stay as produced (``open``); there is no event lifecycle.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
-from codey.research.analysis_run import REPRODUCTION_FAILED
 from codey.research.evidence_runtime import (
     EvidenceRuntimeSnapshot,
     normalize_runtime_ref,
@@ -58,20 +53,6 @@ STATUS_ADDRESSED = "addressed"
 STATUS_CONFIRMED = "confirmed"
 STATUS_REJECTED = "rejected"
 FINDING_STATUSES = frozenset({STATUS_OPEN, STATUS_ADDRESSED, STATUS_CONFIRMED, STATUS_REJECTED})
-
-EVENT_ADDRESSED = "addressed"
-EVENT_CONFIRMED = "confirmed"
-EVENT_REJECTED = "rejected"
-EVENT_ACTIONS = frozenset({EVENT_ADDRESSED, EVENT_CONFIRMED, EVENT_REJECTED})
-
-# A finding may only be confirmed by a verification fact, never by a model
-# self-report that the problem went away.
-CONFIRMATION_SOURCES = frozenset({
-    "deterministic_check",
-    "analysis_run",
-    "opened_source_evidence",
-    "reviewer_pass",
-})
 
 GAP_FOLLOWUP_SEARCH = "followup_search"
 GAP_LOCATOR_VERIFICATION = "locator_verification"
@@ -174,14 +155,6 @@ class PlannerGap:
         }
 
 
-@dataclass(frozen=True)
-class ReviewFindingEvent:
-    action: str
-    finding_ref: str = ""
-    verified_by: str = ""
-    reason_code: str = ""
-
-
 def findings_from_proof_review(
     review: ResearchProofReview | Mapping[str, object] | None,
     snapshot: EvidenceRuntimeSnapshot | None = None,
@@ -281,35 +254,6 @@ def findings_from_proof_review(
     return tuple(findings)
 
 
-def failed_analysis_findings(
-    analysis_runs: Iterable[object],
-) -> tuple[ReviewFindingRecord, ...]:
-    """Project failed AnalysisRun records into support findings.
-
-    v1 wiring note: ResearchPipeline does not execute local commands, so no
-    producer feeds this projection yet; it exists as the deterministic core
-    for the version where reports start citing ``analysis_run:<id>``.
-    """
-
-    findings: list[ReviewFindingRecord] = []
-    for run in analysis_runs or ():
-        run_ref = normalize_runtime_ref(_field(run, "analysis_run_id"), kind="analysis_run")
-        if not run_ref:
-            continue
-        status = identifier(_field(run, "reproduction_status"), 40)
-        if bool(_field(run, "ok")) or status != REPRODUCTION_FAILED:
-            continue
-        findings.append(ReviewFindingRecord(
-            finding_id=stable_ref("review_finding", FINDING_FAILED_ANALYSIS_SUPPORT, run_ref),
-            kind=FINDING_FAILED_ANALYSIS_SUPPORT,
-            severity=SEVERITY_CRITICAL,
-            target_ref=run_ref,
-            analysis_run_ref=run_ref,
-            reason_codes=("failed_analysis",),
-        ))
-    return tuple(findings)
-
-
 def planner_gaps_from_findings(
     findings: Iterable[object],
     *,
@@ -349,55 +293,6 @@ def planner_gaps_from_findings(
             finding_refs=(finding_id,) if finding_id else (),
         ))
     return tuple(gaps)
-
-
-def apply_finding_events(
-    findings: Iterable[object],
-    events: Iterable[object],
-) -> tuple[ReviewFindingRecord, ...]:
-    """Apply lifecycle events append-only; unknown or invalid events no-op.
-
-    Lifecycle rules:
-
-    - ``addressed`` moves open findings forward.
-    - ``confirmed`` requires ``verified_by`` from CONFIRMATION_SOURCES; model
-      self-reports fail closed and leave the finding untouched.
-    - ``rejected`` closes open/addressed findings.
-    """
-
-    rows = [item for item in (findings or ()) if isinstance(item, ReviewFindingRecord)]
-    if not rows:
-        return ()
-    updated = {row.finding_id: row for row in rows}
-    for event in events or ():
-        action = identifier(_field(event, "action"), 20)
-        if action not in EVENT_ACTIONS:
-            continue
-        ref = normalize_runtime_ref(_field(event, "finding_ref"), kind="review_finding")
-        current = updated.get(ref)
-        if current is None:
-            continue
-        if action == EVENT_ADDRESSED:
-            if current.status == STATUS_OPEN:
-                updated[ref] = replace(
-                    current,
-                    status=STATUS_ADDRESSED,
-                    addressed_by=_append_reason(current.addressed_by, event),
-                )
-        elif action == EVENT_CONFIRMED:
-            verified_by = identifier(_field(event, "verified_by"), 40)
-            if (
-                current.status in {STATUS_OPEN, STATUS_ADDRESSED}
-                and verified_by in CONFIRMATION_SOURCES
-            ):
-                updated[ref] = replace(
-                    current,
-                    status=STATUS_CONFIRMED,
-                    confirmed_by=_append_reason(current.confirmed_by, event),
-                )
-        elif action == EVENT_REJECTED and current.status in {STATUS_OPEN, STATUS_ADDRESSED}:
-            updated[ref] = replace(current, status=STATUS_REJECTED)
-    return tuple(updated[row.finding_id] for row in rows)
 
 
 def review_finding_trace_payloads(findings: Iterable[object]) -> list[dict[str, object]]:
@@ -499,13 +394,6 @@ def _resolve(ref: str, kind: str, snapshot: EvidenceRuntimeSnapshot | None) -> s
     return normalized
 
 
-def _append_reason(reasons: tuple[str, ...], event: object) -> tuple[str, ...]:
-    code = identifier(_field(event, "reason_code"), 80) or identifier(_field(event, "verified_by"), 80)
-    if not code or code in reasons:
-        return reasons
-    return (*bounded_refs(reasons, limit=MAX_FINDING_REASONS), code)
-
-
 def _field(item: object, name: str) -> object:
     if isinstance(item, Mapping):
         return item.get(name)
@@ -531,8 +419,6 @@ def _text_items(value: object) -> tuple[str, ...]:
 
 
 __all__ = [
-    "CONFIRMATION_SOURCES",
-    "EVENT_ACTIONS",
     "FINDING_CITATION_MISMATCH",
     "FINDING_CONTRADICTORY_SOURCES",
     "FINDING_FAILED_ANALYSIS_SUPPORT",
@@ -548,14 +434,11 @@ __all__ = [
     "GAP_KINDS",
     "MAX_PLANNER_GAPS",
     "PlannerGap",
-    "ReviewFindingEvent",
     "ReviewFindingRecord",
     "SEVERITY_CRITICAL",
     "SEVERITY_INFO",
     "SEVERITY_WARNING",
     "STATUS_CONFIRMED",
-    "apply_finding_events",
-    "failed_analysis_findings",
     "findings_from_proof_review",
     "planner_gap_trace_payloads",
     "planner_gaps_from_findings",

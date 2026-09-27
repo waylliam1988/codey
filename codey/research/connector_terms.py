@@ -1,6 +1,6 @@
 """Shared query-term routing hints for Research source connectors.
 
-Term tables only (which query words prefer pubmed/arxiv/local connectors).
+Term tables only (which query words prefer pubmed/arxiv).
 Host-trust tables live in ``source_domains``; the similar historical name
 (``connector_domains``) was renamed to end the confusion.
 """
@@ -67,22 +67,6 @@ ARXIV_CONNECTOR_TERMS = frozenset({
     "算法",
     "物理",
 })
-LOCAL_CONNECTOR_TERMS = frozenset({
-    "csv",
-    "dataset",
-    "file",
-    "json",
-    "local",
-    "spreadsheet",
-    "table",
-    "tsv",
-    "本地",
-    "文件",
-    "表格",
-    "数据",
-})
-
-
 def preferred_connector_ids(
     terms: object,
     *,
@@ -95,20 +79,6 @@ def preferred_connector_ids(
         preferred.append("pubmed")
     if "arxiv" in available and term_set & ARXIV_CONNECTOR_TERMS:
         preferred.append("arxiv")
-    if "local_file" in available and term_set & LOCAL_CONNECTOR_TERMS:
-        preferred.append("local_file")
-    if "csv_tsv" in available and {
-        "csv",
-        "dataset",
-        "spreadsheet",
-        "table",
-        "tsv",
-        "表格",
-        "数据",
-    } & term_set:
-        preferred.append("csv_tsv")
-    if "json_file" in available and "json" in term_set:
-        preferred.append("json_file")
     return tuple(preferred)
 
 
@@ -126,7 +96,6 @@ def _iter_terms(value: object):
 
 __all__ = [
     "ARXIV_CONNECTOR_TERMS",
-    "LOCAL_CONNECTOR_TERMS",
     "MEDICAL_CONNECTOR_TERMS",
     "preferred_connector_ids",
 ]

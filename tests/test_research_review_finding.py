@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from codey.research.analysis_run import analysis_run_record
 from codey.research.evidence_runtime import EvidenceRuntimeSnapshot
 from codey.research.proof_quality import ProofDiagnostic, ResearchProofReview
 from codey.research.review_finding import (
-    CONFIRMATION_SOURCES,
     FINDING_CITATION_MISMATCH,
     FINDING_MISSING_COUNTEREVIDENCE,
     FINDING_OVERREACH,
@@ -12,15 +10,9 @@ from codey.research.review_finding import (
     FINDING_UNSUPPORTED_CLAIM,
     SEVERITY_CRITICAL,
     SEVERITY_WARNING,
-    STATUS_ADDRESSED,
-    STATUS_CONFIRMED,
     STATUS_OPEN,
-    STATUS_REJECTED,
     PlannerGap,
-    ReviewFindingEvent,
     ReviewFindingRecord,
-    apply_finding_events,
-    failed_analysis_findings,
     findings_from_proof_review,
     planner_gap_trace_payloads,
     planner_gaps_from_findings,
@@ -193,32 +185,15 @@ def test_findings_without_any_anchor_are_skipped() -> None:
     assert findings_from_proof_review(review_with_diag) == ()
 
 
-def test_failed_analysis_runs_project_support_findings() -> None:
-    failed = analysis_run_record({
-        "command": "python script.py",
-        "tool_id": "1:1",
-        "tool_name": "run",
-        "ok": False,
-        "exit_code": 2,
-    })
-    ok_run = analysis_run_record({
-        "command": "python good.py",
-        "tool_id": "1:2",
-        "tool_name": "run",
-        "ok": True,
-        "exit_code": 0,
-    })
-    assert failed is not None and ok_run is not None
+def test_removed_finding_lifecycle_has_no_production_entry_point() -> None:
+    import codey.research.review_finding as rf
 
-    findings = failed_analysis_findings([failed, ok_run, {"analysis_run_id": "junk"}, None])
-
-    assert len(findings) == 1
-    finding = findings[0]
-    assert finding.kind == "failed_analysis_support"
-    assert finding.severity == SEVERITY_CRITICAL
-    assert finding.analysis_run_ref == failed.analysis_run_id
-    assert finding.target_ref == failed.analysis_run_id
-    assert finding.reason_codes == ("failed_analysis",)
+    assert not hasattr(rf, "apply_finding_events")
+    assert not hasattr(rf, "ReviewFindingEvent")
+    assert not hasattr(rf, "failed_analysis_findings")
+    # audit projection stays executable
+    assert callable(rf.findings_from_proof_review)
+    assert callable(rf.planner_gaps_from_findings)
 
 
 def test_planner_gaps_map_each_actionable_finding_kind() -> None:
@@ -281,71 +256,6 @@ def test_planner_gap_dedupe_and_limit() -> None:
 
     assert len([gap for gap in gaps if gap.target_ref == same_target]) == 1
     assert len(gaps) <= 16
-
-
-def test_apply_finding_events_requires_verification_for_confirmed() -> None:
-    target = _claim("known")
-    finding = ReviewFindingRecord(
-        finding_id="review_finding:" + _stable_hex("lifecycle"),
-        kind=FINDING_UNSUPPORTED_CLAIM,
-        severity=SEVERITY_CRITICAL,
-        target_ref=target,
-        claim_ref=target,
-    )
-
-    self_reported = apply_finding_events([finding], [
-        ReviewFindingEvent(action="confirmed", finding_ref=finding.finding_id, verified_by="model_said_fixed"),
-    ])
-    assert self_reported[0].status == STATUS_OPEN
-
-    confirmed = apply_finding_events(self_reported, [
-        ReviewFindingEvent(
-            action="confirmed",
-            finding_ref=finding.finding_id,
-            verified_by=sorted(CONFIRMATION_SOURCES)[0],
-        ),
-    ])
-    assert confirmed[0].status == STATUS_CONFIRMED
-    assert confirmed[0].confirmed_by == (sorted(CONFIRMATION_SOURCES)[0],)
-
-
-def test_apply_finding_events_lifecycle_and_no_ops() -> None:
-    finding = ReviewFindingRecord(
-        finding_id="review_finding:" + _stable_hex("flow"),
-        kind=FINDING_STALE_SOURCE,
-        severity=SEVERITY_WARNING,
-        target_ref=_proof_ref(),
-    )
-
-    addressed = apply_finding_events([finding], [
-        ReviewFindingEvent(action="addressed", finding_ref=finding.finding_id, reason_code="refresh_done"),
-    ])
-    assert addressed[0].status == STATUS_ADDRESSED
-    assert addressed[0].addressed_by == ("refresh_done",)
-
-    rejected = apply_finding_events([finding], [
-        ReviewFindingEvent(action="rejected", finding_ref=finding.finding_id),
-    ])
-    assert rejected[0].status == STATUS_REJECTED
-
-    untouched = apply_finding_events([finding], [
-        ReviewFindingEvent(action="bogus", finding_ref=finding.finding_id),
-        ReviewFindingEvent(action="confirmed", finding_ref="review_finding:" + _stable_hex("other")),
-    ])
-    assert untouched == (finding,)
-    # Order is preserved even when only some findings change.
-    other = ReviewFindingRecord(
-        finding_id="review_finding:" + _stable_hex("other"),
-        kind=FINDING_OVERREACH,
-        severity=SEVERITY_WARNING,
-        target_ref=_proof_ref(),
-    )
-    mixed = apply_finding_events([finding, other], [
-        ReviewFindingEvent(action="addressed", finding_ref=other.finding_id),
-    ])
-    assert [row.finding_id for row in mixed] == [finding.finding_id, other.finding_id]
-    assert mixed[0].status == STATUS_OPEN
-    assert mixed[1].status == STATUS_ADDRESSED
 
 
 def test_review_finding_record_has_no_freeform_message_field() -> None:

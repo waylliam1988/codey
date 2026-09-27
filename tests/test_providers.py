@@ -29,11 +29,13 @@ class DeepSeekWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("profile")
-        with mock.patch.object(web_provider.browser, "open_deepseek", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_chat_page", return_value=session) as opened:
             provider = DeepSeekWebProvider.connect(port=9333, profile=profile)
 
         self.assertIs(provider.session, session)
         opened.assert_called_once_with(
+            web_provider.browser.PROVIDER_START_URLS["deepseek"],
+            web_provider.browser.PROVIDER_URL_CONTAINS["deepseek"],
             port=9333,
             profile=profile,
             open_if_missing=True,
@@ -90,11 +92,13 @@ class QwenWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("qwen-profile")
-        with mock.patch.object(web_provider.browser, "open_qwen", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_chat_page", return_value=session) as opened:
             provider = QwenWebProvider.connect(port=9444, profile=profile)
 
         self.assertIs(provider.session, session)
         opened.assert_called_once_with(
+            web_provider.browser.PROVIDER_START_URLS["qwen"],
+            web_provider.browser.PROVIDER_URL_CONTAINS["qwen"],
             port=9444,
             profile=profile,
             open_if_missing=True,
@@ -140,11 +144,13 @@ class StepFunWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("stepfun-profile")
-        with mock.patch.object(web_provider.browser, "open_stepfun", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_chat_page", return_value=session) as opened:
             provider = StepFunWebProvider.connect(port=9555, profile=profile)
 
         self.assertIs(provider.session, session)
         opened.assert_called_once_with(
+            web_provider.browser.PROVIDER_START_URLS["stepfun"],
+            web_provider.browser.PROVIDER_URL_CONTAINS["stepfun"],
             port=9555,
             profile=profile,
             open_if_missing=True,
@@ -180,11 +186,13 @@ class MimoWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("mimo-profile")
-        with mock.patch.object(web_provider.browser, "open_mimo", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_chat_page", return_value=session) as opened:
             provider = MimoWebProvider.connect(port=9555, profile=profile)
 
         self.assertIs(provider.session, session)
         opened.assert_called_once_with(
+            web_provider.browser.PROVIDER_START_URLS["mimo"],
+            web_provider.browser.PROVIDER_URL_CONTAINS["mimo"],
             port=9555,
             profile=profile,
             open_if_missing=True,
@@ -220,11 +228,13 @@ class GlmWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("glm-profile")
-        with mock.patch.object(web_provider.browser, "open_glm", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_chat_page", return_value=session) as opened:
             provider = GlmWebProvider.connect(port=9666, profile=profile)
 
         self.assertIs(provider.session, session)
         opened.assert_called_once_with(
+            web_provider.browser.PROVIDER_START_URLS["glm"],
+            web_provider.browser.PROVIDER_URL_CONTAINS["glm"],
             port=9666,
             profile=profile,
             open_if_missing=True,
@@ -520,6 +530,20 @@ class ProviderRegistryTests(unittest.TestCase):
     def test_connect_provider_rejects_unknown_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported provider"):
             registry.connect_provider("unknown")
+
+    def test_web_provider_specs_have_no_opener_indirection(self) -> None:
+        import dataclasses
+
+        self.assertNotIn("opener_name", {f.name for f in dataclasses.fields(web_provider.WebProviderSpec)})
+        for cls in (
+            DeepSeekWebProvider,
+            MimoWebProvider,
+            StepFunWebProvider,
+            QwenWebProvider,
+            GlmWebProvider,
+        ):
+            self.assertIn(cls.spec.provider_id, web_provider.browser.PROVIDER_START_URLS)
+            self.assertIn(cls.spec.provider_id, web_provider.browser.PROVIDER_URL_CONTAINS)
 
 
 if __name__ == "__main__":

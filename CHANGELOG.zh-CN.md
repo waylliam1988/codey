@@ -2,6 +2,49 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 死代码清理：可执行 connector、统一浏览器打开、mode-selection 轨迹（未发布）
+
+- 按真实执行能力收紧 Research connector（红测先行，
+  `tests/test_deadcode_cleanup_locks.py`，先 9 项失败，含 redaction 稳定后 10 项）：
+  `built_in_connector_registry()` 仅保留 `arxiv`/`pubmed`；删除 `local_file`/
+  `csv_tsv`/`json_file` 与未实现的 `openalex`/`rss` 占位；删除
+  `fetch_local_file`/`fetch_csv_tsv_file`/`fetch_json_file`、
+  `resolve_local_source_path` 及仅供它们使用的辅助函数（`_resolved_root`、
+  `_read_limited_bytes`、`_read_csv_rows`、`_render_table_rows`、
+  `_source_ref_for_path`、`_connector_locator`、`_positive_int`、
+  `MAX_FETCH_*`/`MAX_TABLE_ROWS`/`MAX_JSON_CHARS`）与 `__all__` 导出；
+  `connector_terms` 仅路由 `pubmed`/`arxiv`（删除 `LOCAL_CONNECTOR_TERMS`）；
+  规划器分数/后缀/警告同步收紧（去掉 `openalex_deferred`/`rss_optional`）；
+  含本地文件/CSV/JSON 的研究问题不再在计划中声称使用不可执行 connector。
+- 删除仅测试启用的领域 profile 系统：删除
+  `codey/research/domain_profiles.py`；从 `build_research_plan`/
+  `_source_preferences` 删除 `evidence_profile` 参数及分支，删除
+  `_PROFILE_CONNECTOR_KINDS`/`_profile_connector_kinds`/
+  `PROFILE_PREFERENCE_SCORE`；删除 `tests/test_domain_profiles.py` 与相关
+  规划器测试；保留基于问题关键词的 connector 选择。
+- 删除仅测试调用的 finding 生命周期：删除 `failed_analysis_findings`、
+  `apply_finding_events`、`ReviewFindingEvent`、`EVENT_*`、
+  `CONFIRMATION_SOURCES`、`_append_reason`；保留
+  `findings_from_proof_review`、`planner_gaps_from_findings` 及审计投影；
+  测试集中在真实产生和记录 finding 的路径。
+- 合并重复浏览器打开函数：`WebChatProvider.connect()` 直接用
+  `provider_id` 从 `PROVIDER_START_URLS`/`PROVIDER_URL_CONTAINS` 取值并调用
+  `browser.open_chat_page()`；删除 `opener_name` 字段与五个 `open_*` 函数；
+  测试改为一次通用打开调用加五个 provider 映射值。
+- 清理兼容保留旧命名（无迁移层）：`RouterTrace`→`ModeSelectionTrace`、
+  `record_router`→`record_mode_selection`、持久化 `router`→`mode_selection`；
+  同步任务与分发调用点及相关测试。
+- 清理中发现并修复的确定性问题：从 `_SECRET_VALUE_BOUNDARY_TERMS` 去掉本地
+  词后，`csv`/`json`/`table` 等普通数据词在 secret marker 后会被当成 secret
+  值吞掉（过度脱敏）。先用
+  `test_secret_boundary_still_keeps_data_words_after_marker` 锁定（先失败），
+  再以 `_DATA_WORD_BOUNDARY_TERMS` 保留这些边界词，仅脱敏 marker 本身。
+- 验证：`python -m ruff check codey`、`git diff --check` 通过。
+  全量前相关模块套件全绿；最终
+  `python -m pytest -q -p no:cacheprovider`：
+  **4579 passed、9 skipped、1433 subtests passed，335.05s（0:05:35）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - shell 事件哈希/marker 严格绑定（未发布）
 
 - 修复 `agents/shell_approval._event_record_fields` 两个确定性 P2

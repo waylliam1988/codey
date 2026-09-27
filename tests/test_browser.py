@@ -119,95 +119,27 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         args = popen.call_args.args[0]
         self.assertEqual(args[0], str(exe))
 
-    def test_deepseek_wrapper_uses_generic_chat_page(self) -> None:
-        session = object()
-        profile = Path("deepseek-profile")
-        with mock.patch.object(browser, "open_chat_page", return_value=session) as opened:
-            result = browser.open_deepseek(port=9333, profile=profile)
-
-        self.assertIs(result, session)
-        opened.assert_called_once_with(
-            browser.DEEPSEEK_URL,
-            "chat.deepseek.com",
-            port=9333,
-            profile=profile,
-            open_if_missing=True,
-            bring_to_front=True,
-            isolated=False,
-            fresh_tab=False,
+    def test_provider_maps_cover_all_five_ids_without_per_provider_wrappers(self) -> None:
+        for name in ("open_deepseek", "open_qwen", "open_mimo", "open_stepfun", "open_glm"):
+            self.assertFalse(hasattr(browser, name), name)
+        self.assertEqual(
+            set(browser.PROVIDER_START_URLS),
+            {"deepseek", "qwen", "mimo", "stepfun", "glm"},
         )
-
-    def test_qwen_wrapper_uses_generic_chat_page(self) -> None:
-        session = object()
-        profile = Path("qwen-profile")
-        with mock.patch.object(browser, "open_chat_page", return_value=session) as opened:
-            result = browser.open_qwen(port=9444, profile=profile)
-
-        self.assertIs(result, session)
-        opened.assert_called_once_with(
-            browser.QWEN_URL,
-            "chat.qwen.ai",
-            port=9444,
-            profile=profile,
-            open_if_missing=True,
-            bring_to_front=True,
-            isolated=False,
-            fresh_tab=False,
+        self.assertEqual(
+            set(browser.PROVIDER_URL_CONTAINS),
+            {"deepseek", "qwen", "mimo", "stepfun", "glm"},
         )
-
-    def test_stepfun_wrapper_uses_generic_chat_page(self) -> None:
-        session = object()
-        profile = Path("stepfun-profile")
-        with mock.patch.object(browser, "open_chat_page", return_value=session) as opened:
-            result = browser.open_stepfun(port=9555, profile=profile)
-
-        self.assertIs(result, session)
-        opened.assert_called_once_with(
-            browser.STEPFUN_URL,
-            "chat.stepfun.com",
-            port=9555,
-            profile=profile,
-            open_if_missing=True,
-            bring_to_front=True,
-            isolated=False,
-            fresh_tab=False,
-        )
-
-    def test_mimo_wrapper_uses_generic_chat_page(self) -> None:
-        session = object()
-        profile = Path("mimo-profile")
-        with mock.patch.object(browser, "open_chat_page", return_value=session) as opened:
-            result = browser.open_mimo(port=9555, profile=profile)
-
-        self.assertIs(result, session)
-        opened.assert_called_once_with(
-            browser.MIMO_URL,
-            "aistudio.xiaomimimo.com",
-            port=9555,
-            profile=profile,
-            open_if_missing=True,
-            bring_to_front=True,
-            isolated=False,
-            fresh_tab=False,
-        )
-
-    def test_glm_wrapper_uses_generic_chat_page(self) -> None:
-        session = object()
-        profile = Path("glm-profile")
-        with mock.patch.object(browser, "open_chat_page", return_value=session) as opened:
-            result = browser.open_glm(port=9666, profile=profile)
-
-        self.assertIs(result, session)
-        opened.assert_called_once_with(
-            browser.GLM_URL,
-            "chatglm.cn",
-            port=9666,
-            profile=profile,
-            open_if_missing=True,
-            bring_to_front=True,
-            isolated=False,
-            fresh_tab=False,
-        )
+        self.assertEqual(browser.PROVIDER_START_URLS["deepseek"], browser.DEEPSEEK_URL)
+        self.assertEqual(browser.PROVIDER_START_URLS["qwen"], browser.QWEN_URL)
+        self.assertEqual(browser.PROVIDER_START_URLS["mimo"], browser.MIMO_URL)
+        self.assertEqual(browser.PROVIDER_START_URLS["stepfun"], browser.STEPFUN_URL)
+        self.assertEqual(browser.PROVIDER_START_URLS["glm"], browser.GLM_URL)
+        self.assertEqual(browser.PROVIDER_URL_CONTAINS["deepseek"], "chat.deepseek.com")
+        self.assertEqual(browser.PROVIDER_URL_CONTAINS["qwen"], "chat.qwen.ai")
+        self.assertEqual(browser.PROVIDER_URL_CONTAINS["mimo"], "aistudio.xiaomimimo.com")
+        self.assertEqual(browser.PROVIDER_URL_CONTAINS["stepfun"], "chat.stepfun.com")
+        self.assertEqual(browser.PROVIDER_URL_CONTAINS["glm"], "chatglm.cn")
 
     def test_research_pdf_request_user_agent_does_not_name_product(self) -> None:
         from codey.research import browser_search
