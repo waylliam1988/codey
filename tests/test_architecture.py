@@ -391,6 +391,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.log.session_log",
             "codey.runtime.log.session_view",
             "codey.runtime.observe.terminalizer",
+            "codey.utils.refs",
             "codey.runtime.write.delivery_recovery",
             "codey.runtime.write.drive",
             "codey.runtime.write.provider_effects",

@@ -170,6 +170,9 @@ class RecordingTrace:
     def record_prompt_section(self, *args, **kwargs) -> None:
         self.calls.append(("record_prompt_section", args, kwargs))
 
+    def record_provider_prompt_boundary(self, *args, **kwargs) -> None:
+        self.calls.append(("record_provider_prompt_boundary", args, kwargs))
+
     def record_research_connector_errors(self, *args, **kwargs) -> None:
         self.calls.append(("record_research_connector_errors", args, kwargs))
 

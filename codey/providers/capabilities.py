@@ -9,30 +9,18 @@ from typing import Literal
 from codey.providers.ids import normalize_provider_id
 
 ProviderFit = Literal["ok", "avoid"]
-Reliability = Literal["high", "medium", "low"]
 
 FIT_OK: ProviderFit = "ok"
 FIT_AVOID: ProviderFit = "avoid"
-
-RELIABILITY_HIGH: Reliability = "high"
-RELIABILITY_MEDIUM: Reliability = "medium"
-RELIABILITY_LOW: Reliability = "low"
 
 
 @dataclass(frozen=True)
 class ProviderCapability:
     provider_id: str
-    json_reliability: Reliability
     coding_fit: ProviderFit
     research_fit: ProviderFit
     review_fit: ProviderFit
-    context_budget_hint: int
-    native_tool_interference_risk: Reliability
-    needs_canary_by_default: bool
-    failure_families: tuple[str, ...] = ()
-    tool_protocol: str = "json_text"
     supports_native_tools: bool = False
-    max_tools_per_turn: int = 4
     native_tools_default: bool = False
     context_window_tokens: int = 200_000
     context_reserve_tokens: int = 16_384
@@ -41,86 +29,49 @@ class ProviderCapability:
 
 DEFAULT_PROVIDER_CAPABILITY = ProviderCapability(
     provider_id="default",
-    json_reliability=RELIABILITY_MEDIUM,
     coding_fit=FIT_OK,
     research_fit=FIT_OK,
     review_fit=FIT_OK,
-    context_budget_hint=12000,
-    native_tool_interference_risk=RELIABILITY_MEDIUM,
-    needs_canary_by_default=False,
-    failure_families=(),
 )
 
 
 PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
     "deepseek": ProviderCapability(
         provider_id="deepseek",
-        json_reliability=RELIABILITY_MEDIUM,
         coding_fit=FIT_OK,
         research_fit=FIT_OK,
         review_fit=FIT_OK,
-        context_budget_hint=16000,
-        native_tool_interference_risk=RELIABILITY_MEDIUM,
-        needs_canary_by_default=False,
-        failure_families=("response_missing", "submission_uncertain"),
     ),
     "mimo": ProviderCapability(
         provider_id="mimo",
-        json_reliability=RELIABILITY_MEDIUM,
         coding_fit=FIT_OK,
         research_fit=FIT_AVOID,
         review_fit=FIT_OK,
-        context_budget_hint=12000,
-        native_tool_interference_risk=RELIABILITY_MEDIUM,
-        needs_canary_by_default=False,
-        failure_families=("response_missing",),
     ),
     "stepfun": ProviderCapability(
         provider_id="stepfun",
-        json_reliability=RELIABILITY_MEDIUM,
         coding_fit=FIT_OK,
         research_fit=FIT_OK,
         review_fit=FIT_OK,
-        context_budget_hint=12000,
-        native_tool_interference_risk=RELIABILITY_MEDIUM,
-        needs_canary_by_default=False,
-        failure_families=("response_missing", "submission_uncertain"),
     ),
     "qwen": ProviderCapability(
         provider_id="qwen",
-        json_reliability=RELIABILITY_MEDIUM,
         coding_fit=FIT_OK,
         research_fit=FIT_OK,
         review_fit=FIT_OK,
-        context_budget_hint=12000,
-        native_tool_interference_risk=RELIABILITY_HIGH,
-        needs_canary_by_default=False,
-        failure_families=("control_missing", "readiness_stale"),
     ),
     "glm": ProviderCapability(
         provider_id="glm",
-        json_reliability=RELIABILITY_MEDIUM,
         coding_fit=FIT_OK,
         research_fit=FIT_OK,
         review_fit=FIT_OK,
-        context_budget_hint=12000,
-        native_tool_interference_risk=RELIABILITY_MEDIUM,
-        needs_canary_by_default=False,
-        failure_families=("response_missing",),
     ),
     "local": ProviderCapability(
         provider_id="local",
-        json_reliability=RELIABILITY_HIGH,
         coding_fit=FIT_OK,
         research_fit=FIT_OK,
         review_fit=FIT_OK,
-        context_budget_hint=16000,
-        native_tool_interference_risk=RELIABILITY_LOW,
-        needs_canary_by_default=False,
-        failure_families=("transient",),
-        tool_protocol="openai_native",
         supports_native_tools=True,
-        max_tools_per_turn=4,
         native_tools_default=True,
         context_window_tokens=32_768,
         context_reserve_tokens=8_192,
@@ -215,10 +166,6 @@ __all__ = [
     "PROVIDER_CAPABILITIES",
     "ProviderCapability",
     "ProviderFit",
-    "RELIABILITY_HIGH",
-    "RELIABILITY_LOW",
-    "RELIABILITY_MEDIUM",
-    "Reliability",
     "capability_for",
     "rank_providers",
 ]

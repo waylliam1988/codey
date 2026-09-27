@@ -1,5 +1,55 @@
 # Codey Test Report
 
+## Cold-start cleanup round2: provider dead fields, prompt boundary only, ghost single entry, strict int share (2026-09-27)
+
+Scope (cold-start, keep real runtime fault-tolerance, no release):
+
+```text
+codey/providers/capabilities.py (deleted 7 dead fields + Reliability helpers; kept fit/native/context)
+tests/test_provider_capabilities.py (assert live fields only; dropped budget/families checks)
+codey/runtime/observe/prompt_envelope.py (boundary-only send; deleted inspect/fallback/_is_trace_cancellation)
+tests/test_prompt_surface.py / tests/test_prompt_envelope.py (doubles use boundary; deleted fallback-only test)
+tests/test_consensus.py / tests/test_agent.py / tests/test_run_trace.py (3) / tests/test_server.py (boundary doubles/asserts)
+codey/app/cli.py (single main entry + _build_ghost_only_parser cold-start fast path; deleted _main_ghost)
+tests/test_architecture.py (allow codey.utils.refs leaf in kernel gate)
+codey/utils/refs.py (new strict_nonnegative_int + export)
+codey/policies/action.py / codey/runtime/core/models.py (import shared strict; drop local copies)
+tests/test_coldstart_cleanup_round2.py (new, 12 tests red-first)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (all four items locked before the fix):
+
+- New `test_coldstart_cleanup_round2.py` asserted the cleaned state and failed
+  before (19 failures: dead fields present, legacy fallback present,
+  `_main_ghost` present, no shared strict helper) and passes after
+  (12 passed, 31 subtests passed).
+- Full-suite reds caught two deeper deterministic regressions after the first
+  bulk edit: `test_runtime_kernel_stays_below_app_provider_and_domain_layers`
+  flagged `codey/runtime/core/models.py: ['codey.utils.refs']`, and
+  `test_ghost_list_cli_outputs_json_without_provider_stack` got
+  `tool_runtime: True` (unified parser pulled `agents.request`). Fixed by
+  allowing the leaf in the architecture gate and by adding the ghost-only
+  fast path that skips `providers`/`agents.request` imports; both pass after.
+- Intermediate targeted reds also fixed deterministically: `test_consensus`
+  (2, missing `model_visible` via boundary), `test_run_trace`
+  (3, missing `coding_outbound_prompt` rows), `test_server` review envelope
+  (1, `record_prompt_section` mock empty). All fixed by giving capturing
+  traces a `record_provider_prompt_boundary` that mirrors the old section
+  shape.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted suites green (`provider+prompt+cli+locks`
+  82 passed, 93 subtests; `consensus+action+models+run_trace` 153 passed;
+  `architecture cold-start` 14 passed, 50 subtests; `ghost --help`/`ghost list`
+  exit 0 and missing subcommand exit 2 verified manually).
+- Final full suite: `python -m pytest -q`:
+  `4616 passed, 10 skipped, 1460 subtests passed in 332.88s (0:05:32)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Executable harness fix, continueTask removed-provider guard, helper direct-read (2026-09-27)
 
 Scope (review follow-up, no release):

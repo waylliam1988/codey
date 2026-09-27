@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from codey.utils.refs import strict_nonnegative_int
+
 TRUNCATED_RESULT_NOTICE = (
     "[truncated result: omitted content may contain relevant "
     "errors or code. Do not assume omitted content is clean. "
@@ -72,8 +74,8 @@ def normalized_managed_output(value: object) -> dict[str, object]:
         return {}
     return {
         "handle": handle,
-        "original_bytes": _nonnegative_int(value.get("original_bytes")),
-        "stored_bytes": _nonnegative_int(value.get("stored_bytes")),
+        "original_bytes": strict_nonnegative_int(value.get("original_bytes")),
+        "stored_bytes": strict_nonnegative_int(value.get("stored_bytes")),
         "sha256": _managed_output_sha256(value.get("sha256")),
         "original_sha256": _managed_output_sha256(value.get("original_sha256")),
         "stored_truncated": bool(value.get("stored_truncated")),
@@ -84,18 +86,6 @@ def _managed_output_sha256(value: object) -> str:
     if not isinstance(value, str) or not MANAGED_OUTPUT_SHA256_RE.fullmatch(value):
         return ""
     return value
-
-
-def _nonnegative_int(value: object) -> int:
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return max(value, 0)
-    if isinstance(value, float) and math.isfinite(value):
-        return max(int(value), 0)
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
-    return 0
 
 
 @dataclass

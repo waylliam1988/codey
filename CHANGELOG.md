@@ -2,6 +2,53 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start cleanup round2: provider dead fields, prompt boundary only, ghost single entry, strict int share (no release)
+
+- Removed seven unread provider capability fields (`json_reliability`,
+  `context_budget_hint`, `native_tool_interference_risk`,
+  `needs_canary_by_default`, `failure_families`, `tool_protocol`,
+  `max_tools_per_turn`) plus `Reliability`/`RELIABILITY_*`; kept
+  `coding_fit`/`research_fit`/`review_fit`/`supports_native_tools`/
+  `native_tools_default`/`context_*_tokens` which the run path reads.
+  Updated `test_provider_capabilities.py` to assert live fields only.
+- Converged `record_provider_send_prompt()` to boundary-only:
+  `trace is None` returns early, then
+  `trace.record_provider_prompt_boundary(section_args, surface_payload=...)`
+  with fail-open (cancellation propagates). Deleted the old
+  `record_prompt_section`/`record_prompt_surface` fallback, the `inspect`
+  import, three unreachable `_is_trace_cancellation` branches and the helper
+  itself. Updated `test_prompt_surface.py`/`test_prompt_envelope.py` doubles
+  to the current method; deleted the missing-method fallback test; kept
+  normal/fail-open/cancellation coverage. Fixed deterministic regressions in
+  `test_consensus.py`, `test_agent.py`, `test_run_trace.py` (3 cases) and
+  `test_server.py` review-envelope assertion by adding boundary methods to
+  their capturing traces.
+- Merged ghost CLI to a single `main()` entry: `sp_ghost` plus
+  `required=True` subparsers via existing `_add_ghost_subcommands`; deleted
+  `_main_ghost` and the `argv[0] == "ghost"` dispatch. Kept a cold-start fast
+  path (`_build_ghost_only_parser()`) so `ghost list` still runs without
+  loading `codey.providers`/`codey.toolchain.runtime` (locked by
+  `test_ghost_list_cli_outputs_json_without_provider_stack`). Verified
+  `codey --help`, `codey ghost --help`, `codey ghost list`, and missing
+  subcommand exit 2.
+- Shared strict int conversion once in `codey.utils.refs`:
+  new `strict_nonnegative_int()` keeps the exact legacy semantics
+  (`bool`→`0`, finite `float`→`max(int,0)`, digit-only `str`→`int`, else `0`,
+  unlike loose `nonnegative_int(True)==1`). `codey.policies.action` and
+  `codey.runtime.core.models` now import it and drop local copies
+  (`math` import removed from `action.py`, kept in `models.py`).
+  Allowed `codey.utils.refs` in the runtime-kernel architecture gate
+  (`test_architecture.py`) since it is a stdlib leaf.
+- Red-first locks in new `tests/test_coldstart_cleanup_round2.py` (12 tests,
+  31 subtests; failed before with 19 failures, pass after).
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted suites green before the final run
+  (`provider+prompt+cli+locks` 82 passed; `consensus+action+models+run_trace`
+  153 passed; `architecture cold-start` 14 passed). Then final
+  `python -m pytest -q`:
+  `4616 passed, 10 skipped, 1460 subtests passed in 332.88s (0:05:32)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Executable harness fix, continueTask removed-provider guard, helper direct-read (no release)
 
 - Fixed the executable lock so it passes under Node (P1, red-first harness

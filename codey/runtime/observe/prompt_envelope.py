@@ -7,7 +7,6 @@ assembly helper plus a trace sink, not a plugin system or prompt policy layer.
 
 from __future__ import annotations
 
-import inspect
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -125,8 +124,6 @@ class FailOpenPromptTrace:
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
-            if _is_trace_cancellation(exc):
-                raise
             logger.debug("prompt trace %s failed: %r", method, exc, exc_info=True)
             return
 
@@ -158,8 +155,6 @@ class FailOpenPromptTrace:
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
-            if _is_trace_cancellation(exc):
-                raise
             logger.debug("prompt trace section normalize failed: %r", exc, exc_info=True)
             return
         # Admission metadata is appended only when present so sparse trace
@@ -313,22 +308,20 @@ def record_provider_send_prompt(
     ``prompt_digest`` remains the content identity. If no ``send_ref`` is
     supplied, only the existing ``prompt_sections`` row is recorded.
     """
+    if trace is None:
+        return
     resolved_epoch = str(epoch_id or "").strip() or context_epoch_id(text)
-    surface_payload = (
-        _build_validated_surface_payload(
-            text=text,
-            name=name,
-            source_ref=source_ref,
-            resolved_epoch=resolved_epoch,
-            capability_id=capability_id,
-            phase=phase,
-            send_ref=send_ref,
-            provider_effect_id=provider_effect_id,
-            model_tool_contract_hash=model_tool_contract_hash,
-            runtime_tool_contract_hash=runtime_tool_contract_hash,
-        )
-        if trace is not None
-        else None
+    surface_payload = _build_validated_surface_payload(
+        text=text,
+        name=name,
+        source_ref=source_ref,
+        resolved_epoch=resolved_epoch,
+        capability_id=capability_id,
+        phase=phase,
+        send_ref=send_ref,
+        provider_effect_id=provider_effect_id,
+        model_tool_contract_hash=model_tool_contract_hash,
+        runtime_tool_contract_hash=runtime_tool_contract_hash,
     )
 
     section_args = {
@@ -341,44 +334,12 @@ def record_provider_send_prompt(
         "admission_reason": PROVIDER_TURN_ADMISSION,
         "capability_id": capability_id,
     }
-    boundary_fn = None
-    if trace is not None:
-        try:
-            boundary_decl = inspect.getattr_static(trace, "record_provider_prompt_boundary", None)
-            if boundary_decl is not None:
-                boundary_fn = getattr(trace, "record_provider_prompt_boundary", None)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            if _is_trace_cancellation(exc):
-                raise
-            boundary_fn = None
-    if callable(boundary_fn):
-        try:
-            boundary_fn(section_args, surface_payload=surface_payload)
-            return
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            return
-
-    # Fallback for adapter/mock traces without record_provider_prompt_boundary
-    FailOpenPromptTrace(trace).record_section(PromptEnvelopeSection(
-        name=name,
-        text=text,
-        purpose=purpose,
-        freshness=PROVIDER_TURN_BOUNDARY,
-        source_refs=(source_ref,),
-        epoch_id=resolved_epoch,
-        admission_reason=PROVIDER_TURN_ADMISSION,
-        capability_id=capability_id,
-    ))
-    if surface_payload is not None:
-        FailOpenPromptTrace(trace).call("record_prompt_surface", surface_payload)
-
-
-def _is_trace_cancellation(exc: BaseException) -> bool:
-    return isinstance(exc, (cancellation.TaskCancelled, cancellation.DeadlineExceeded))
+    try:
+        trace.record_provider_prompt_boundary(section_args, surface_payload=surface_payload)
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        return
 
 
 def _source_refs(values: Iterable[object], fallback_name: object) -> tuple[str, ...]:

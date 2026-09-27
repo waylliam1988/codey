@@ -12,7 +12,7 @@ from codey.providers.capabilities import (
     capability_for,
     rank_providers,
 )
-from codey.providers.diagnostics import FAILURE_KINDS, ProviderFailure
+from codey.providers.diagnostics import ProviderFailure
 from codey.providers.registry import PROVIDER_LABELS
 from codey.providers.supervisor import ProviderSupervisor
 
@@ -28,12 +28,12 @@ class ProviderCapabilityTests(unittest.TestCase):
             with self.subTest(provider=provider_id):
                 capability = capability_for(provider_id)
                 self.assertEqual(capability.provider_id, provider_id)
-                self.assertGreater(capability.context_budget_hint, 0)
-
-    def test_failure_families_are_known_provider_failure_kinds(self) -> None:
-        for provider_id, capability in PROVIDER_CAPABILITIES.items():
-            with self.subTest(provider=provider_id):
-                self.assertLessEqual(set(capability.failure_families), FAILURE_KINDS)
+                self.assertIn(capability.coding_fit, (FIT_OK, FIT_AVOID))
+                self.assertIn(capability.research_fit, (FIT_OK, FIT_AVOID))
+                self.assertIn(capability.review_fit, (FIT_OK, FIT_AVOID))
+                self.assertGreater(capability.context_window_tokens, 0)
+                self.assertGreater(capability.context_reserve_tokens, 0)
+                self.assertGreater(capability.context_keep_recent_tokens, 0)
 
     def test_unknown_provider_uses_default_without_raising(self) -> None:
         capability = capability_for("future_provider")

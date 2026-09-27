@@ -2,6 +2,44 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 冷启动清理第二轮：provider 死字段、prompt 仅边界、ghost 单入口、严格整数共享（未发布）
+
+- 删除 7 个无消费者 provider 能力字段（`json_reliability`、
+  `context_budget_hint`、`native_tool_interference_risk`、
+  `needs_canary_by_default`、`failure_families`、`tool_protocol`、
+  `max_tools_per_turn`）及 `Reliability`/`RELIABILITY_*`；保留运行路径真实读取的
+  `coding_fit`/`research_fit`/`review_fit`/`supports_native_tools`/
+  `native_tools_default`/`context_*_tokens`。同步更新
+  `test_provider_capabilities.py`，只断言 live 字段。
+- 收敛 `record_provider_send_prompt()` 为仅边界：`trace is None` 直接返回，
+  之后只调 `trace.record_provider_prompt_boundary(...)`，fail-open（取消异常透传）。
+  删除旧 `record_prompt_section`/`record_prompt_surface` 回退、`inspect` 导入、
+  三处不可达 `_is_trace_cancellation` 分支及 helper 本身。更新
+  `test_prompt_surface.py`/`test_prompt_envelope.py` 替身为当前方法，删除仅验证缺失
+  方法仍可记录的用例，保留正常/故障不中断/取消透传。顺带修复
+  `test_consensus.py`、`test_agent.py`、`test_run_trace.py`（3 例）与
+  `test_server.py` 评审包络断言的确定性回归（为捕获 trace 补边界方法）。
+- 合并 ghost CLI 为单一 `main()` 入口：主解析器下建 `sp_ghost` 及
+  `required=True` 子解析器并复用 `_add_ghost_subcommands`；删除 `_main_ghost` 与
+  `argv[0] == "ghost"` 分流。为保留冷启动（`ghost list` 不加载
+  `providers`/`toolchain.runtime`，由
+  `test_ghost_list_cli_outputs_json_without_provider_stack` 锁定），保留
+  `_build_ghost_only_parser()` 轻量快照路径。已核对 `codey --help`、
+  `codey ghost --help`、`codey ghost list` 及缺子命令退出码 2。
+- 在 `codey.utils.refs` 共享严格整数转换一次：新增 `strict_nonnegative_int()`，
+  完整保留旧语义（`bool`→`0`、有限 `float`→`max(int,0)`、纯数字串→`int`，其余→`0`，
+  与 `nonnegative_int(True)==1` 明确区分）。`policies/action.py` 与
+  `runtime/core/models.py` 改为导入并删除副本（`action.py` 去掉无用 `math`，
+  `models.py` 保留其他用途）。架构门禁允许 `codey.utils.refs`（stdlib 叶子）。
+- 新增 `tests/test_coldstart_cleanup_round2.py` 红测锁定（12 测试、31 子项；
+  清理前 19 失败，清理后全过）。
+- 验证：`python -m ruff check codey tests tools`、`git diff --check` 通过。
+  全量前目标套件全绿（`provider+prompt+cli+locks` 82 通过；
+  `consensus+action+models+run_trace` 153 通过；`architecture cold-start` 14 通过）。
+  最终 `python -m pytest -q`：
+  **4616 passed、10 skipped、1460 subtests passed，332.88s（0:05:32）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - 可执行桩修复、Continue 已删 provider 守卫、helper 直读（未发布）
 
 - 修复可执行锁使其在 Node 下通过（P1，桩完备性断言先红）：假 DOM 补齐

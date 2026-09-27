@@ -17,18 +17,12 @@ from codey.runtime.observe.prompt_surface import (
 
 
 class _BrokenTrace:
-    def record_prompt_section(self, *_args, **_kwargs) -> None:
-        raise OSError("trace unavailable")
-
-    def record_prompt_surface(self, *_args, **_kwargs) -> None:
+    def record_provider_prompt_boundary(self, _section_args, surface_payload=None) -> None:
         raise OSError("trace unavailable")
 
 
 class _StoppingTrace:
-    def record_prompt_section(self, *_args, **_kwargs) -> None:
-        raise cancellation.TaskCancelled("stop")
-
-    def record_prompt_surface(self, *_args, **_kwargs) -> None:
+    def record_provider_prompt_boundary(self, _section_args, surface_payload=None) -> None:
         raise cancellation.TaskCancelled("stop")
 
 
@@ -37,11 +31,10 @@ class _CaptureTrace:
         self.sections: list[dict] = []
         self.surfaces: list[dict] = []
 
-    def record_prompt_section(self, name, text, **kwargs) -> None:
-        self.sections.append({"name": name, "text": text, **kwargs})
-
-    def record_prompt_surface(self, payload) -> None:
-        self.surfaces.append(dict(payload))
+    def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+        self.sections.append(dict(section_args))
+        if surface_payload is not None:
+            self.surfaces.append(dict(surface_payload))
 
 
 class PromptSurfaceTests(unittest.TestCase):
@@ -577,42 +570,20 @@ class PromptSurfaceTests(unittest.TestCase):
         self.assertEqual(derived.boundary_calls[0][0]["name"], "coding_outbound_prompt")
         self.assertEqual(derived.boundary_calls[0][1]["send_ref"], "effect_inherited_1")
 
-    def test_record_provider_prompt_boundary_descriptor_error_falls_back(self) -> None:
-        class DescriptorTrace(_CaptureTrace):
-            @property
-            def record_provider_prompt_boundary(self):
-                raise OSError("trace descriptor unavailable")
-
-        trace = DescriptorTrace()
-        record_provider_send_prompt(
-            trace,
-            name="coding_outbound_prompt",
-            text="hello descriptor fallback",
-            purpose="test descriptor fallback",
-            source_ref="provider_send:test",
-            phase="writer",
-            send_ref="effect_descriptor_1",
-        )
-
-        self.assertEqual(len(trace.sections), 1)
-        self.assertEqual(len(trace.surfaces), 1)
-        self.assertEqual(trace.surfaces[0]["send_ref"], "effect_descriptor_1")
-
-    def test_record_provider_prompt_boundary_descriptor_cancellation_propagates(self) -> None:
-        class StoppingDescriptorTrace(_CaptureTrace):
-            @property
-            def record_provider_prompt_boundary(self):
+    def test_record_provider_prompt_boundary_cancellation_propagates(self) -> None:
+        class StoppingBoundaryTrace(_CaptureTrace):
+            def record_provider_prompt_boundary(self, _section_args, surface_payload=None) -> None:
                 raise cancellation.DeadlineExceeded("stop")
 
         with self.assertRaises(cancellation.DeadlineExceeded):
             record_provider_send_prompt(
-                StoppingDescriptorTrace(),
+                StoppingBoundaryTrace(),
                 name="coding_outbound_prompt",
-                text="hello descriptor stop",
-                purpose="test descriptor stop",
+                text="hello boundary stop",
+                purpose="test boundary stop",
                 source_ref="provider_send:test",
                 phase="writer",
-                send_ref="effect_descriptor_stop",
+                send_ref="effect_boundary_stop",
             )
 
 

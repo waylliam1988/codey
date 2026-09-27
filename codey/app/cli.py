@@ -501,12 +501,14 @@ def _add_ghost_subcommands(sub) -> None:
     sp_ghost_disable.set_defaults(func=cmd_ghost)
 
 
-def _main_ghost(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog="codey ghost")
-    sub = ap.add_subparsers(dest="ghost_cmd", required=True)
-    _add_ghost_subcommands(sub)
-    args = ap.parse_args(argv)
-    return args.func(args)
+def _build_ghost_only_parser() -> argparse.ArgumentParser:
+    """Minimal parser for the ghost cold-start path (no provider/toolchain import)."""
+    ap = argparse.ArgumentParser(prog="codey")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sp_ghost = sub.add_parser("ghost", help="inspect and control Ghost memory inbox")
+    sp_ghost_sub = sp_ghost.add_subparsers(dest="ghost_cmd", required=True)
+    _add_ghost_subcommands(sp_ghost_sub)
+    return ap
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -516,8 +518,12 @@ def main(argv: list[str] | None = None) -> int:
     if not argv or argv[0] not in {"ui", "chat", "agent", "ghost", "-h", "--help"}:
         argv = ["ui", *argv]
 
+    # Cold-start fast path: ghost CLI must not pull the provider/toolchain
+    # stack (see ghost list without provider test). Single registration via
+    # _add_ghost_subcommands; no separate ghost entry point.
     if argv[0] == "ghost":
-        return _main_ghost(argv[1:])
+        args = _build_ghost_only_parser().parse_args(argv)
+        return args.func(args)
 
     from codey.providers import DEFAULT_PROVIDER_ID, provider_ids
 
@@ -548,7 +554,9 @@ def main(argv: list[str] | None = None) -> int:
     sp_agent.add_argument("task", nargs="+")
     sp_agent.set_defaults(func=cmd_agent)
 
-    sub.add_parser("ghost", help="inspect and control Ghost memory inbox")
+    sp_ghost = sub.add_parser("ghost", help="inspect and control Ghost memory inbox")
+    sp_ghost_sub = sp_ghost.add_subparsers(dest="ghost_cmd", required=True)
+    _add_ghost_subcommands(sp_ghost_sub)
 
     args = ap.parse_args(argv)
     return args.func(args)

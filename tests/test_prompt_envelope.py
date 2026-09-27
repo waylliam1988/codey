@@ -26,6 +26,21 @@ class _Trace:
     def record_prompt_section(self, name, text, **kwargs) -> None:
         self.sections.append({"name": name, "text": text, **kwargs})
 
+    def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+        payload = dict(section_args)
+        # surface is validated metadata only; boundary tests ignore it here.
+        del surface_payload
+        self.sections.append({
+            "name": payload.get("name"),
+            "text": payload.get("text"),
+            "freshness": payload.get("freshness"),
+            "source_refs": payload.get("source_refs"),
+            "epoch_id": payload.get("epoch_id"),
+            "admission_reason": payload.get("admission_reason"),
+            "capability_id": payload.get("capability_id"),
+            "purpose": payload.get("purpose"),
+        })
+
     def record_permission_profile(self, *args, **kwargs) -> None:
         self.calls.append(("record_permission_profile", args, kwargs))
 
@@ -34,9 +49,15 @@ class _BrokenTrace:
     def record_prompt_section(self, *_args, **_kwargs) -> None:
         raise OSError("trace unavailable")
 
+    def record_provider_prompt_boundary(self, *_args, **_kwargs) -> None:
+        raise OSError("trace unavailable")
+
 
 class _StoppingTrace:
     def record_prompt_section(self, *_args, **_kwargs) -> None:
+        raise cancellation.TaskCancelled("stop")
+
+    def record_provider_prompt_boundary(self, *_args, **_kwargs) -> None:
         raise cancellation.TaskCancelled("stop")
 
 
@@ -239,8 +260,9 @@ class PromptEnvelopeTests(unittest.TestCase):
 
         def capture(store: list[dict[str, object]]):
             class _Sink:
-                def record_prompt_section(self, _name, _text, **kwargs) -> None:
-                    store.append(kwargs)
+                def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+                    del surface_payload
+                    store.append(dict(section_args))
 
             return _Sink()
 

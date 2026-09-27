@@ -1392,6 +1392,12 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
                 del text
                 rows.append({"kind": "section", "name": name, **kwargs})
 
+            def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+                del surface_payload
+                payload = dict(section_args)
+                payload.pop("text", None)
+                rows.append({"kind": "section", **payload})
+
             def record_context_sources(self, sources, **kwargs) -> None:
                 for source in sources:
                     rows.append({
@@ -1488,6 +1494,12 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
                 del text
                 recorded.append({"name": name, **kwargs})
 
+            def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+                del surface_payload
+                payload = dict(section_args)
+                payload.pop("text", None)
+                recorded.append(payload)
+
             def record_context_sources(self, sources, **kwargs) -> None:
                 del kwargs
                 for source in sources:
@@ -1544,6 +1556,12 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
             def record_prompt_section(self, name, text, **kwargs) -> None:
                 del text
                 recorded.append({"name": name, **kwargs})
+
+            def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+                del surface_payload
+                payload = dict(section_args)
+                payload.pop("text", None)
+                recorded.append(payload)
 
             def record_context_sources(self, sources, **kwargs) -> None:
                 epoch = kwargs.get("epoch_id", "")

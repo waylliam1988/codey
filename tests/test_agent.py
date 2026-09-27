@@ -1569,6 +1569,14 @@ class RunLoopTests(unittest.TestCase):
             def record_prompt_section(self, name, text, **kwargs) -> None:
                 recorded.append({"name": name, "text": text, **kwargs})
 
+            def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+                del surface_payload
+                payload = dict(section_args)
+                payload.setdefault("model_visible", True)
+                payload.setdefault("budget", 0)
+                payload.setdefault("truncated", False)
+                recorded.append(payload)
+
             def record_context_sources(self, *_args, **_kwargs) -> None:
                 return None
 

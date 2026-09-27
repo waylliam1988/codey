@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,7 +18,7 @@ from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
 )
-from codey.utils.refs import digest_text
+from codey.utils.refs import digest_text, strict_nonnegative_int
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +84,8 @@ class ActionSubject:
         object.__setattr__(self, "project", str(self.project or "").strip())
         object.__setattr__(self, "command", str(self.command or "").strip())
         object.__setattr__(self, "url", str(self.url or "").strip())
-        object.__setattr__(self, "byte_count", _nonnegative_int(self.byte_count))
-        object.__setattr__(self, "item_count", _nonnegative_int(self.item_count))
+        object.__setattr__(self, "byte_count", strict_nonnegative_int(self.byte_count))
+        object.__setattr__(self, "item_count", strict_nonnegative_int(self.item_count))
         object.__setattr__(self, "approval_available", bool(self.approval_available))
 
     @property
@@ -475,18 +474,6 @@ def _clip_ref(value: object) -> str:
     if text.startswith("action:") and len(text) == len("action:") + 64:
         return text
     return _clip(text, 80)
-
-
-def _nonnegative_int(value: object) -> int:
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return max(value, 0)
-    if isinstance(value, float) and math.isfinite(value):
-        return max(int(value), 0)
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
-    return 0
 
 
 def _normcase_path(value: object) -> str:

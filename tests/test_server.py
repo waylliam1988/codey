@@ -969,10 +969,9 @@ class ProviderStatusTests(unittest.TestCase):
 
         self.assertIsNotNone(reviewed)
         self.assertEqual(
-            [call.args[0] for call in trace.record_prompt_section.call_args_list],
+            [call.args[0].get("name") for call in trace.record_provider_prompt_boundary.call_args_list],
             ["review_prompt", "review_repair_prompt"],
         )
-        self.assertTrue(all(call.kwargs["model_visible"] for call in trace.record_prompt_section.call_args_list))
         trace.record_permission_profile.assert_called_once_with("reviewer", phase="review")
 
     def test_run_review_self_review_cancellation_closes_temp_reviewer(self) -> None:
