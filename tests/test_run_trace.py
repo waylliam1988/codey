@@ -1965,7 +1965,7 @@ class ReviewFindingTraceTests(unittest.TestCase):
             # Duplicate is ignored.
             recorder.record_planner_gaps([{
                 "gap_id": "planner_gap:" + "e" * 16,
-                "gap_kind": "rerun_analysis",
+                "gap_kind": "followup_search",
             }])
             recorder.finish(status="done")
 

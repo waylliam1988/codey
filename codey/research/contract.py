@@ -7,9 +7,10 @@ models, fetches sources, reads Ghost state, or persists anything, and its
 payloads carry only statuses, reason codes, and bounded refs.
 
 Blocking semantics are inherited from the proof review: a review that passes
-cannot have open critical findings (critical finding kinds are projections of
+cannot have critical findings (critical finding kinds are projections of
 hard review failures), so adding the findings check to the contract cannot
-flip any previously completing queued item.
+flip any previously completing queued item. Findings are open-only audit
+snapshots; every critical finding blocks regardless of any hand-set status.
 """
 
 from __future__ import annotations
@@ -29,7 +30,6 @@ from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.research.proof_quality import ResearchProofReview, proof_ref_for_review
 from codey.research.review_finding import (
     SEVERITY_CRITICAL,
-    STATUS_OPEN,
     findings_from_proof_review,
 )
 from codey.utils.refs import bounded_refs, identifier
@@ -43,7 +43,7 @@ CHECK_COUNTER_CHECKED = "counterevidence_checked"
 CHECK_LEDGER_RECORD = "ledger_record_verified"
 CHECK_BLOCKING_FINDINGS = "blocking_findings_clear"
 
-BLOCKING_FINDINGS_REASON = "open_blocking_findings"
+BLOCKING_FINDINGS_REASON = "blocking_findings"
 
 
 def research_blocked_reason(review: ResearchProofReview | None) -> str:
@@ -59,17 +59,16 @@ def research_blocked_reason(review: ResearchProofReview | None) -> str:
 
 
 def blocking_finding_refs(findings: Iterable[object]) -> tuple[str, ...]:
-    """Open critical finding refs; they block a clean complete."""
+    """Critical finding refs; they block a clean complete."""
 
     refs: list[str] = []
     for finding in findings or ():
         severity = identifier(getattr(finding, "severity", ""), 20)
-        status = identifier(getattr(finding, "status", ""), 20)
         ref = normalize_runtime_ref(
             getattr(finding, "finding_id", ""),
             kind="review_finding",
         )
-        if not ref or status != STATUS_OPEN or severity != SEVERITY_CRITICAL:
+        if not ref or severity != SEVERITY_CRITICAL:
             continue
         if ref not in refs:
             refs.append(ref)

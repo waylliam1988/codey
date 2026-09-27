@@ -26,7 +26,6 @@ from codey.research.review_finding import (
     FINDING_UNSUPPORTED_CLAIM,
     SEVERITY_CRITICAL,
     SEVERITY_WARNING,
-    STATUS_ADDRESSED,
     STATUS_OPEN,
     findings_from_proof_review,
 )
@@ -162,7 +161,7 @@ def test_ok_review_projects_to_complete() -> None:
     assert f"research_record:{'a' * 16}" in proof.evidence_refs
 
 
-def test_critical_open_findings_block_but_addressed_ones_do_not() -> None:
+def test_all_critical_findings_block_regardless_of_status() -> None:
     critical = findings_from_proof_review(_review(
         diagnostics=(ProofDiagnostic(
             reason_code="claim_not_evidence_backed",
@@ -176,11 +175,14 @@ def test_critical_open_findings_block_but_addressed_ones_do_not() -> None:
     assert rows[CHECK_BLOCKING_FINDINGS].status == CHECK_FAIL
     assert rows[CHECK_BLOCKING_FINDINGS].reason_code == BLOCKING_FINDINGS_REASON
 
-    addressed = tuple(
-        type(finding)(**{**finding.__dict__, "status": STATUS_ADDRESSED})
-        for finding in critical
-    )
-    assert blocking_finding_refs(addressed) == ()
+    # Findings are open-only audit snapshots: no lifecycle can clear a
+    # critical finding, so a hand-marked non-open status still blocks.
+    for status in ("addressed", "confirmed", "rejected"):
+        relabelled = tuple(
+            type(finding)(**{**finding.__dict__, "status": status})
+            for finding in critical
+        )
+        assert blocking_finding_refs(relabelled) == refs, status
 
     warning_only = (
         type(critical[0])(

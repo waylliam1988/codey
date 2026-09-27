@@ -2,6 +2,29 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Finding open-only contract, planner/matrix residue removal (no release)
+
+- Closed the finding-lifecycle residue as an open-only audit contract
+  (red-first `tests/test_finding_status_contract_locks.py`, 5 failed before):
+  deleted unreachable `STATUS_ADDRESSED`/`STATUS_CONFIRMED`/`STATUS_REJECTED`
+  and provenance fields `addressed_by`/`confirmed_by` from
+  `ReviewFindingRecord` (payload `status` is always `open`);
+  `blocking_finding_refs` now blocks every critical finding regardless of any
+  hand-set status (`BLOCKING_FINDINGS_REASON` renamed
+  `open_blocking_findings` -> `blocking_findings`); trace projections always
+  emit `open`. Removed the producer-less `failed_analysis_support` kind and
+  its `rerun_analysis` gap mapping. Updated the contract test to lock that a
+  critical finding blocks as `open` and as `addressed`/`confirmed`/`rejected`.
+- Removed two small residues: `_planner_warnings` no longer takes the unused
+  `registry` parameter (call site updated); deleted the already-removed
+  `domain_evidence_profiles` capability from `docs/codey_event_matrix.md`
+  (no production code stamps it; matrix tests pass).
+- Verification: `python -m ruff check codey` clean, `git diff --check` clean.
+  Targeted suites green before the full run; then final
+  `python -m pytest -q -p no:cacheprovider`:
+  `4584 passed, 9 skipped, 1433 subtests passed in 342.61s (0:05:42)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Dead-code cleanup: executable connectors, unified browser open, mode-selection trace (no release)
 
 - Tightened Research connectors to real execution capability (red-first

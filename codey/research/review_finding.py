@@ -27,7 +27,6 @@ FINDING_OVERREACH = "overreach"
 FINDING_MISSING_COUNTEREVIDENCE = "missing_counterevidence"
 FINDING_CONTRADICTORY_SOURCES = "contradictory_sources"
 FINDING_SOURCE_CONFLICT = "source_conflict"
-FINDING_FAILED_ANALYSIS_SUPPORT = "failed_analysis_support"
 FINDING_QUALIFIED_SUPPORT = "qualified_support"
 
 FINDING_KINDS = frozenset({
@@ -38,7 +37,6 @@ FINDING_KINDS = frozenset({
     FINDING_MISSING_COUNTEREVIDENCE,
     FINDING_CONTRADICTORY_SOURCES,
     FINDING_SOURCE_CONFLICT,
-    FINDING_FAILED_ANALYSIS_SUPPORT,
     FINDING_QUALIFIED_SUPPORT,
 })
 
@@ -49,22 +47,17 @@ FINDING_SEVERITIES = frozenset({SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITIC
 _SEVERITY_RANK = {SEVERITY_INFO: 0, SEVERITY_WARNING: 1, SEVERITY_CRITICAL: 2}
 
 STATUS_OPEN = "open"
-STATUS_ADDRESSED = "addressed"
-STATUS_CONFIRMED = "confirmed"
-STATUS_REJECTED = "rejected"
-FINDING_STATUSES = frozenset({STATUS_OPEN, STATUS_ADDRESSED, STATUS_CONFIRMED, STATUS_REJECTED})
+FINDING_STATUSES = frozenset({STATUS_OPEN})
 
 GAP_FOLLOWUP_SEARCH = "followup_search"
 GAP_LOCATOR_VERIFICATION = "locator_verification"
 GAP_COUNTEREVIDENCE_SEARCH = "counterevidence_search"
 GAP_REFRESH_QUERY = "refresh_query"
-GAP_RERUN_ANALYSIS = "rerun_analysis"
 GAP_KINDS = frozenset({
     GAP_FOLLOWUP_SEARCH,
     GAP_LOCATOR_VERIFICATION,
     GAP_COUNTEREVIDENCE_SEARCH,
     GAP_REFRESH_QUERY,
-    GAP_RERUN_ANALYSIS,
 })
 
 # One table owns reason-code interpretation for both finding kind and severity.
@@ -90,7 +83,6 @@ _GAP_KIND_BY_FINDING: dict[str, str] = {
     FINDING_CITATION_MISMATCH: GAP_LOCATOR_VERIFICATION,
     FINDING_MISSING_COUNTEREVIDENCE: GAP_COUNTEREVIDENCE_SEARCH,
     FINDING_STALE_SOURCE: GAP_REFRESH_QUERY,
-    FINDING_FAILED_ANALYSIS_SUPPORT: GAP_RERUN_ANALYSIS,
 }
 
 MAX_FINDING_REASONS = 8
@@ -112,15 +104,13 @@ class ReviewFindingRecord:
     artifact_ref: str = ""
     proof_ref: str = ""
     reason_codes: tuple[str, ...] = ()
-    addressed_by: tuple[str, ...] = ()
-    confirmed_by: tuple[str, ...] = ()
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
             "finding_id": self.finding_id,
             "kind": identifier(self.kind, 40),
             "severity": identifier(self.severity, 20),
-            "status": identifier(self.status, 20),
+            "status": STATUS_OPEN,
             "target_ref": self.target_ref,
             "claim_ref": self.claim_ref,
             "evidence_ref": self.evidence_ref,
@@ -129,8 +119,6 @@ class ReviewFindingRecord:
             "artifact_ref": self.artifact_ref,
             "proof_ref": self.proof_ref,
             "reason_codes": list(bounded_refs(self.reason_codes, limit=MAX_FINDING_REASONS)),
-            "addressed_by": list(bounded_refs(self.addressed_by, limit=MAX_FINDING_REASONS)),
-            "confirmed_by": list(bounded_refs(self.confirmed_by, limit=MAX_FINDING_REASONS)),
         }
         return payload
 
@@ -305,12 +293,11 @@ def review_finding_trace_payloads(findings: Iterable[object]) -> list[dict[str, 
         if not finding_id or kind not in FINDING_KINDS:
             continue
         severity = identifier(_field(finding, "severity"), 20)
-        status = identifier(_field(finding, "status"), 20)
         payload: dict[str, object] = {
             "finding_id": finding_id,
             "kind": kind,
             "severity": severity if severity in FINDING_SEVERITIES else SEVERITY_WARNING,
-            "status": status if status in FINDING_STATUSES else STATUS_OPEN,
+            "status": STATUS_OPEN,
             "target_ref": normalize_runtime_ref(_field(finding, "target_ref")),
             "reason_codes": [
                 code
@@ -421,7 +408,6 @@ def _text_items(value: object) -> tuple[str, ...]:
 __all__ = [
     "FINDING_CITATION_MISMATCH",
     "FINDING_CONTRADICTORY_SOURCES",
-    "FINDING_FAILED_ANALYSIS_SUPPORT",
     "FINDING_MISSING_COUNTEREVIDENCE",
     "FINDING_OVERREACH",
     "FINDING_QUALIFIED_SUPPORT",
@@ -438,7 +424,7 @@ __all__ = [
     "SEVERITY_CRITICAL",
     "SEVERITY_INFO",
     "SEVERITY_WARNING",
-    "STATUS_CONFIRMED",
+    "STATUS_OPEN",
     "findings_from_proof_review",
     "planner_gap_trace_payloads",
     "planner_gaps_from_findings",

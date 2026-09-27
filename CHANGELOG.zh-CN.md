@@ -2,6 +2,27 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - finding open-only 契约、规划器/矩阵残留清理（未发布）
+
+- 补完 finding 生命周期清理为 open-only 审计契约（红测先行，
+  `tests/test_finding_status_contract_locks.py`，5 项先失败）：删除不可达的
+  `STATUS_ADDRESSED`/`STATUS_CONFIRMED`/`STATUS_REJECTED` 与来源字段
+  `addressed_by`/`confirmed_by`（payload `status` 恒为 `open`）；
+  `blocking_finding_refs` 对所有 critical finding 生效，不再检查手写状态
+  （`BLOCKING_FINDINGS_REASON` 由 `open_blocking_findings` 改为
+  `blocking_findings`）；轨迹投影恒写 `open`。删除已无生产者的
+  `failed_analysis_support` kind 及其 `rerun_analysis` gap 映射。契约测试已
+  改为锁定同一 critical finding 在 `open` 与 `addressed`/`confirmed`/
+  `rejected` 下都会阻止完成。
+- 清掉两处小残留：`_planner_warnings` 删除未使用的 `registry` 参数（同步调用
+  点）；从 `docs/codey_event_matrix.md` 移除已删除的
+  `domain_evidence_profiles` 能力（无生产代码再引用，矩阵测试通过）。
+- 验证：`python -m ruff check codey`、`git diff --check` 通过。
+  全量前相关模块套件全绿；最终
+  `python -m pytest -q -p no:cacheprovider`：
+  **4584 passed、9 skipped、1433 subtests passed，342.61s（0:05:42）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - 死代码清理：可执行 connector、统一浏览器打开、mode-selection 轨迹（未发布）
 
 - 按真实执行能力收紧 Research connector（红测先行，

@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## Finding open-only contract, planner/matrix residue removal (2026-09-27)
+
+Scope (P2 contract completion + residue, no release):
+
+```text
+codey/research/review_finding.py (deleted STATUS_ADDRESSED/CONFIRMED/REJECTED, addressed_by/confirmed_by; FINDING_STATUSES={open}; payload/trace always open; removed failed_analysis_support kind + rerun_analysis gap mapping)
+codey/research/contract.py       (blocking_finding_refs blocks every critical finding regardless of status; BLOCKING_FINDINGS_REASON open_blocking_findings -> blocking_findings)
+codey/runs/trace.py              (record_review_findings always emits open; dropped FINDING_STATUSES import)
+codey/research/query_planner.py  (_planner_warnings(payload, preferences); call site updated)
+docs/codey_event_matrix.md       (removed domain_evidence_profiles capability)
+tests/test_finding_status_contract_locks.py (new: 5 red-first locks)
+tests/test_research_contract.py  (all-critical-block test replaces open-vs-addressed test)
+tests/test_run_trace.py          (duplicate-gap entry uses a live kind)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (new `tests/test_finding_status_contract_locks.py`, 5 of 5 failed before the fix):
+
+- `test_no_unreachable_finding_statuses_or_provenance_fields` failed (`STATUS_ADDRESSED` still present); after deleting the three statuses, collapsing `FINDING_STATUSES` to `{open}`, and dropping `addressed_by`/`confirmed_by` (payload has no such keys, `STATUS_OPEN` in `__all__`), it passes.
+- `test_all_critical_findings_block_regardless_of_status` failed (same critical finding as `addressed` returned `()`); after dropping the `status != STATUS_OPEN` gate in `blocking_finding_refs`, open/addressed/confirmed/rejected all return the finding ref while warnings still return `()`.
+- `test_failed_analysis_support_mapping_is_gone` failed (kind + `rerun_analysis` still present); after removing the kind, the gap kind, and the mapping entry, the orphan kind yields no gaps.
+- `test_planner_warnings_takes_no_registry` failed (signature still `(payload, registry, preferences)`); after the signature is `(payload, preferences)` it passes (`{"ok": False}` -> `("no_connector_preference",)`).
+- `test_event_matrix_no_longer_lists_deleted_profile_capability` failed (matrix still listed `domain_evidence_profiles`); after removing that line it passes, and `tests/test_event_matrix.py` (7 passed, 210 subtests) confirms no production code stamps the deleted capability.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey` clean, `git diff --check` clean; targeted suites green (new locks 5 passed; contract/review-finding/run-trace/planner/connectors/pipeline/plan-executor/deadcode locks 188 passed; coldstart/task-trace/architecture 118 passed + 346 subtests; event matrix 7 passed + 210 subtests).
+- Final full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4584 passed, 9 skipped, 1433 subtests passed in 342.61s (0:05:42)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Dead-code cleanup: executable connectors, unified browser open, mode-selection trace (2026-09-27)
 
 Scope (consistency + dead code, no release):

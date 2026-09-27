@@ -225,7 +225,7 @@ def build_research_plan(
             else ()
         ),
     ], limit=MAX_PLAN_REASON_CODES))
-    warnings = list(_planner_warnings(payload, registry, preferences))
+    warnings = list(_planner_warnings(payload, preferences))
     plan_ref = stable_ref(
         "research_plan",
         question_digest,
@@ -526,10 +526,8 @@ def _reason_codes_from_review(payload: Mapping[str, object]) -> tuple[str, ...]:
 
 def _planner_warnings(
     payload: Mapping[str, object],
-    registry: SourceConnectorRegistry,
     preferences: tuple[SourcePreference, ...],
 ) -> tuple[str, ...]:
-    del registry
     warnings: list[str] = []
     if not payload:
         warnings.append("missing_proof_review")

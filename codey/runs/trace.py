@@ -55,7 +55,6 @@ from codey.research.guards import (
 from codey.research.review_finding import (
     FINDING_KINDS,
     FINDING_SEVERITIES,
-    FINDING_STATUSES,
     GAP_KINDS,
     SEVERITY_WARNING,
     STATUS_OPEN,
@@ -1228,12 +1227,11 @@ class RunTraceRecorder:
             if not finding_id or kind not in FINDING_KINDS or finding_id in self._review_finding_keys:
                 continue
             severity = _safe_trace_code(raw.get("severity"), 20)
-            status = _safe_trace_code(raw.get("status"), 20)
             payload: dict[str, object] = {
                 "finding_id": finding_id,
                 "kind": kind,
                 "severity": severity if severity in FINDING_SEVERITIES else SEVERITY_WARNING,
-                "status": status if status in FINDING_STATUSES else STATUS_OPEN,
+                "status": STATUS_OPEN,
                 "target_ref": _normalize_runtime_ref(raw.get("target_ref")),
                 "reason_codes": [
                     code

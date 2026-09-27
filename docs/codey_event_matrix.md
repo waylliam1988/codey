@@ -41,7 +41,6 @@ not runtime dispatch objects.
 - `consensus_advisors`
 - `context_epoch`
 - `conversation_handoff`
-- `domain_evidence_profiles`
 - `local_context`
 - `permission_profile_catalog`
 - `policy_guard`
