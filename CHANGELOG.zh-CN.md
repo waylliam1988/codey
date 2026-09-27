@@ -2,6 +2,49 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 冷启动清理：facts 检查、提示源、共享裁剪、死代码、api 转发层（未发布）
+
+- 第 1 项 `workspace/facts`：`_successful_check_from_object()`
+  不再把纯字符串检查转成对象（fail-closed，直接返回 `None`）；持久化读取限定为
+  当前 `{command, cwd}` 字典结构，内存中保留 `CheckEvidence` 类对象的处理。
+  `record_successful_change()` 删除 `check_commands` 参数与 `raw_checks` 分支，
+  签名现为 `(project, *, task, files, checks=(), receipt="")`。旧字符串持久化
+  按忽略处理（无有效检查则整行丢弃），由改名后的
+  `test_successful_change_ignores_legacy_check_strings` 锁定。
+- 第 2 项 `protocols/json_codec`：删除模块级 `get_system_prompt()`、PEP 562
+  `__getattr__` 的 `SYSTEM_PROMPT` 导出及 `lru_cache` 导入。唯一来源为
+  `JsonToolCodec().system_prompt()`（仍由 `render_coding_system_prompt` 渲染）。
+  `tests/test_protocols.py`、`tests/test_tool_prompt.py`、
+  `tests/test_hardening_batch2.py` 改为直接与渲染后的 writer 提示比对；手工脚本
+  `tests/manual/large_project_ab.py` 改用 codec 获取基线提示。
+- 第 3 项 `runs` 裁剪：新增 `codey/runs/text_clip.py`
+ （`TRUNCATED_TEXT_SUFFIX` 为 `"..."` + `clip_text()`，锁定历史 `...`
+  在小 limit 下返回原文前缀的行为；这与 `clip_tail` 的 `"\n[truncated]"`
+  标记前缀不同，不可直接替换）。`ledger`、`details`、`trace` 改为
+  `clip_text as _clip`，删除各自的 `def _clip` 与 `TRUNCATED_TEXT_SUFFIX` 副本；
+  调用点行为不变（修复前已对三处做采样一致性校验）。
+- 第 4 项死代码：删除 `storage/ui_state_store._version` 与
+  `toolchain/runtime._line_body_without_eol`（`codey/`、`tests/`、`tools/` 均无
+  引用）。相关套件（`test_ui_state_store`、`test_tool_runtime`）保持全绿。
+- 第 5 项（可选）`app/api`：删除 `build_unified_research_graph` 测试兼容转发层；
+  `research_graph_response()` 内部延迟导入真正的
+  `codey.knowledge.concepts.build_unified_research_graph`（`api` 导入时仍不加载
+  知识图谱栈，启动成本不变）。`tests/test_server.py` 改为 patch 真实函数路径。
+- 测试隔离：`tests/test_project_facts.py` 不再使用无参 `AppContext()`（其余存储
+  会指向用户目录）；两处补全测试改为 `AppContext(state_td)`，并在临时目录回收
+  前 `state.close()` 以释放 Windows 文件锁。文件中旧 `check_commands` 调用改为
+  `checks=[CheckEvidence(...)]`。
+- 测试（TDD 先红后绿）：新增 `tests/test_coldstart_cleanup_locks.py`（11 项），
+  修复前 8 红、修复后全绿，并用临时复现脚本确认每处遗留面。顺带对触及区域做确
+  定性 bug 排查（裁剪采样一致性、提示词相等性、引用扫描均干净），未发现其他确
+  定性 bug，未做推测性加固。
+- 验证：`ruff check codey` 全过，`git diff --check` 全过，未改前端 JS。全量前先
+  过针对性套件（facts/protocols/prompt/ledger/details/trace/ui-state/tool-runtime/server
+  共 `323 passed`；architecture/knowledge/checkpoint/json-codec/drift/golden 共
+  `162 passed`），再跑全量 `python -m pytest -q -p no:cacheprovider`：
+  `4599 passed、7 skipped、1452 subtests passed，340.60s（0:05:40）`。跳过为已知
+  Windows/手动启用项。未发布。
+
 ## Unreleased - proof 校验文档写明 str-coercion（未发布）
 
 - 文档口径修复（无行为变更，TDD 先红后绿）：`research_proof_ref()`

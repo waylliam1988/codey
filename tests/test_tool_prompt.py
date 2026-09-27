@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.protocols.json_codec import SYSTEM_PROMPT, JsonToolCodec
+from codey.protocols.json_codec import JsonToolCodec
 from codey.research.controller import controller_action_contract_hash, controller_system_prompt
 from codey.research.protocols import JsonToolCodec as ResearchCodec
 from codey.toolchain.definition import TOOL_DEFINITIONS
@@ -64,7 +64,6 @@ class ToolPromptTests(unittest.TestCase):
             allowed_tool_names={d.name for d in TOOL_DEFINITIONS},
         )
         self.assertEqual(codec.system_prompt(), expected)
-        self.assertEqual(codec.system_prompt(), SYSTEM_PROMPT)
 
     def test_coding_readonly_system_prompt_filters_tools(self) -> None:
         codec = JsonToolCodec(permission_profile="planning_readonly")

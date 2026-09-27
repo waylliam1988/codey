@@ -1,5 +1,70 @@
 # Codey Test Report
 
+## Cold-start cleanup: facts checks, prompt source, shared clip, dead code, api facade (2026-09-27)
+
+Scope (production cleanup, TDD red-first, no release):
+
+```text
+codey/workspace/facts.py            (reject str checks; drop check_commands/raw_checks)
+codey/protocols/json_codec.py       (drop get_system_prompt/SYSTEM_PROMPT/__getattr__/lru_cache)
+codey/runs/text_clip.py             (new shared clip_text + TRUNCATED_TEXT_SUFFIX)
+codey/runs/ledger.py                (use shared clip_text as _clip)
+codey/runs/details.py               (use shared clip_text as _clip)
+codey/runs/trace.py                 (use shared clip_text as _clip, drop default-limit def)
+codey/storage/ui_state_store.py     (delete dead _version)
+codey/toolchain/runtime.py          (delete dead _line_body_without_eol)
+codey/app/api.py                    (drop build_unified_research_graph facade; lazy import real builder)
+tests/test_coldstart_cleanup_locks.py (new, 11 permanent locks)
+tests/test_project_facts.py         (checks=CheckEvidence, legacy-strings ignored, AppContext(state_td)+close)
+tests/test_protocols.py             (writer prompt asserted against rendered prompt)
+tests/test_tool_prompt.py           (drop SYSTEM_PROMPT import/assert)
+tests/test_hardening_batch2.py      (lazy-prompt test -> codec single-source test)
+tests/test_server.py                (patch real concepts builder)
+tests/manual/large_project_ab.py    (baseline from codec, not SYSTEM_PROMPT)
+CHANGELOG.md / CHANGELOG.zh-CN.md   (new Unreleased entry)
+TEST_REPORT.md                      (this entry, written after the full suite)
+```
+
+Repro (deterministic, red-first, no live model):
+
+- A temp script (`repro_coldstart_cleanup.py`, not committed) confirmed each
+  legacy surface pre-fix: `isinstance(value, str)` branch + `check_commands`
+  param + legacy string payload loading in `facts.py`; `get_system_prompt` /
+  `SYSTEM_PROMPT` / `lru_cache` in `json_codec.py`; three `def _clip(` copies
+  with sample parity (`ledger`/`details`/`trace` agree) while `clip_tail`
+  differs on tiny limits (`clip_tail("abcdef", 2) == '\n['` vs
+  `_clip("abcdef", 2) == 'ab'`, so no direct swap); dead `_version` /
+  `_line_body_without_eol` with zero external references; `api.py` facade with
+  the `mock.patch.object` compat comment plus the facade-patching test; bare
+  `AppContext()` in `test_project_facts.py`.
+- New `tests/test_coldstart_cleanup_locks.py` failed 8/11 pre-fix (the 3 passes
+  were already-true positive locks: structured checks, codec/render parity,
+  real-builder patch compatibility) and passes 11/11 post-fix, including the
+  pinned clip boundaries (empty/strip/CRLF, limits 2/3/5/6, rstrip-before-suffix,
+  and the `clip_tail` small-limit inequality guard).
+- Opportunistic bug scan (deterministic only): clip sample parity, codec vs
+  rendered prompt equality, and reference scans for the removed symbols were
+  all clean; no other deterministic bug was found in the touched areas, so no
+  speculative hardening was applied.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check codey` clean, `git diff --check` clean,
+  no frontend JS changed; targeted suites green
+  (`test_coldstart_cleanup_locks`, `test_project_facts`, `test_protocols`,
+  `test_tool_prompt`, `test_hardening_batch2`, `test_run_ledger`,
+  `test_run_details`, `test_run_trace`, `test_ui_state_store`,
+  `test_tool_runtime`, `ResearchServerHelperTests`:
+  `323 passed, 89 subtests passed`; plus `test_architecture`,
+  `test_knowledge`, `test_work_checkpoint_flow`, `test_json_codec`,
+  `test_tool_contract_drift`, `test_golden_parity`:
+  `162 passed, 362 subtests passed`).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4599 passed, 7 skipped, 1452 subtests passed in 340.60s (0:05:40)`.
+  Skips are the known Windows/opt-in family (baseline was 4588 passed; +11 is
+  exactly the new lock file). No live kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Proof-ref docstring documents str-coercion (2026-09-27)
 
 Scope (doc wording only, behavior unchanged, TDD red-first, no release):

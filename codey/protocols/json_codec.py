@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from functools import lru_cache
 from typing import Any
 
 from codey.policies.permissions import allowed_coding_tool_names, profile_for_name
@@ -83,26 +82,6 @@ def _tool_call_key(call: ToolCall) -> tuple[str, str]:
         separators=(",", ":"),
     )
     return call.name, args
-
-
-@lru_cache(maxsize=1)
-def get_system_prompt() -> str:
-    """Default writer system prompt, rendered once on first use.
-
-    Module import stays cheap: the render runs only when a caller actually
-    needs the prompt (cold-start friendly).
-    """
-    return render_coding_system_prompt(
-        tool_defs.TOOL_DEFINITIONS,
-        profile_name="coding_writer",
-        allowed_tool_names={definition.name for definition in tool_defs.TOOL_DEFINITIONS},
-    )
-
-
-def __getattr__(name: str) -> str:
-    if name == "SYSTEM_PROMPT":
-        return get_system_prompt()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _balanced_json_objects(text: str) -> list[dict[str, Any]]:

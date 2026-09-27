@@ -14,7 +14,6 @@ from codey.protocols.json_codec import (
     PROTOCOL_NESTED_TOOL_IN_DONE,
     PROTOCOL_NO_JSON,
     PROTOCOL_UNKNOWN_TOOL,
-    SYSTEM_PROMPT,
 )
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.definition import (
@@ -117,7 +116,15 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertNotIn('{"tool":"grep","args":{"pattern":', prompt)
 
     def test_default_system_prompt_is_writer_prompt(self) -> None:
-        self.assertEqual(JsonToolCodec().system_prompt(), SYSTEM_PROMPT)
+        from codey.toolchain import definition as tool_defs
+        from codey.toolchain.tool_prompt import render_coding_system_prompt
+
+        expected = render_coding_system_prompt(
+            tool_defs.TOOL_DEFINITIONS,
+            profile_name="coding_writer",
+            allowed_tool_names={d.name for d in tool_defs.TOOL_DEFINITIONS},
+        )
+        self.assertEqual(JsonToolCodec().system_prompt(), expected)
 
     def test_planning_readonly_prompt_filters_mutating_tools(self) -> None:
         prompt = JsonToolCodec(permission_profile="planning_readonly").system_prompt()

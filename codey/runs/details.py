@@ -17,6 +17,7 @@ from codey.runs.receipt import (
     VERIFICATION_TRUST_NEEDS_REVIEW,
     VERIFICATION_TRUST_TRUSTED,
 )
+from codey.runs.text_clip import clip_text as _clip
 from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, TRACE_KIND
 from codey.runtime.core import cancellation
 from codey.runtime.core.operation_state import (
@@ -28,7 +29,6 @@ from codey.storage.local_store import StoreCorruption, backup_corrupt_file, read
 
 MAX_ROW_VALUE_CHARS = 180
 MAX_WARNING_CHARS = 120
-TRUNCATED_TEXT_SUFFIX = "..."
 DETAILS_TITLE = "Run details"
 PROVIDER_LABELS = {
     "deepseek": "DeepSeek",
@@ -514,17 +514,6 @@ def _load_trace_payload(store: Any, session_id: str, run_id: str) -> dict[str, o
 
 def _safe_key(value: object) -> str:
     return _clip(value, 120)
-
-
-def _clip(value: object, limit: int) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not text:
-        return ""
-    if limit <= len(TRUNCATED_TEXT_SUFFIX):
-        return text[:limit]
-    if len(text) <= limit:
-        return text
-    return text[: limit - len(TRUNCATED_TEXT_SUFFIX)].rstrip() + TRUNCATED_TEXT_SUFFIX
 
 
 def _identifier(value: object) -> str:

@@ -30,17 +30,6 @@ from codey.storage.local_store import StoreCorruption
 from codey.workspace.changes import collect_changes, is_git_repository, restore_snapshot_changes
 
 
-def build_unified_research_graph(*args: object, **kwargs: object) -> object:
-    """Lazy facade: importing api must not load the knowledge graph stack.
-
-    Keeps its historical module-attribute name so existing
-    ``mock.patch.object(app_api, ...)`` doubles keep working.
-    """
-    from codey.knowledge.concepts import build_unified_research_graph as _build
-
-    return _build(*args, **kwargs)
-
-
 def query_list(query: dict[str, list[str]], key: str) -> list[str]:
     values: list[str] = []
     for raw in query.get(key, []):
@@ -214,6 +203,9 @@ def research_unconfigured_response() -> tuple[int, dict]:
 def research_graph_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict]:
     if ctx.knowledge_store is None:
         return research_unconfigured_response()
+    # Lazy import: importing api must not load the knowledge graph stack.
+    from codey.knowledge.concepts import build_unified_research_graph
+
     focus_ids = query_list(query, "focus")
     synthesis_id = query_value(query, "synthesis_id")
     if synthesis_id and synthesis_id not in focus_ids:

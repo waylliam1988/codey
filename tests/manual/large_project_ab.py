@@ -25,7 +25,7 @@ import contextlib
 
 from codey.agents.runner import run
 from codey.agents.tools import AgentToolFns
-from codey.protocols.json_codec import SYSTEM_PROMPT, JsonToolCodec
+from codey.protocols.json_codec import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider
 from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
@@ -71,7 +71,7 @@ class CountingProvider:
 
 def baseline_prompt() -> str:
     """Render the pre-navigation contract without maintaining a second prompt."""
-    prompt = SYSTEM_PROMPT
+    prompt = JsonToolCodec().system_prompt()
     for name in NAVIGATION_TOOLS:
         spec = TOOL_DEFINITION_BY_NAME[name]
         examples = "\n".join(f"  {example}" for example in spec.examples)

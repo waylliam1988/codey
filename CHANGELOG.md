@@ -2,6 +2,58 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start cleanup: facts checks, prompt source, shared clip, dead code, api facade (no release)
+
+- Item1 `workspace/facts`: `_successful_check_from_object()` no longer coerces
+  plain-string checks (fail closed, `None`); persisted payloads stay limited to
+  the current `{command, cwd}` dict shape plus in-memory `CheckEvidence`-like
+  objects. `record_successful_change()` drops the `check_commands` parameter
+  and the `raw_checks` fallback; the signature is now
+  `(project, *, task, files, checks=(), receipt="")`. Legacy string payloads
+  load as ignored (the change row drops when no check survives), which is
+  pinned by the renamed `test_successful_change_ignores_legacy_check_strings`.
+- Item2 `protocols/json_codec`: removed the module-level `get_system_prompt()`,
+  the PEP 562 `__getattr__` `SYSTEM_PROMPT` export, and the `lru_cache` import.
+  The single source is `JsonToolCodec().system_prompt()` (still rendered from
+  `render_coding_system_prompt`). `tests/test_protocols.py`,
+  `tests/test_tool_prompt.py`, and `tests/test_hardening_batch2.py` now assert
+  against the rendered writer prompt directly; the manual
+  `tests/manual/large_project_ab.py` baseline uses the codec instead of the
+  removed module constant.
+- Item3 `runs` clipping: added `codey/runs/text_clip.py` (`TRUNCATED_TEXT_SUFFIX`
+  `"..."` + `clip_text()`, pinning the historical `...` raw-prefix behavior on
+  tiny limits, which differs from `clip_tail`'s `"\n[truncated]"` marker
+  prefix). `ledger`, `details`, and `trace` now use `clip_text as _clip` with
+  their local `def _clip`/`TRUNCATED_TEXT_SUFFIX` copies deleted; no call-site
+  behavior changes (verified by sample parity across all three pre-fix).
+- Item4 dead code: deleted `storage/ui_state_store._version` and
+  `toolchain/runtime._line_body_without_eol` (zero references in `codey/`,
+  `tests/`, and `tools/`). Related suites (`test_ui_state_store`,
+  `test_tool_runtime`) stay green.
+- Item5 (optional) `app/api`: deleted the `build_unified_research_graph`
+  test-compat facade; `research_graph_response()` now lazily imports the real
+  `codey.knowledge.concepts.build_unified_research_graph` inside the function
+  (startup cost unchanged, no graph import at `api` import time).
+  `tests/test_server.py` now patches the real builder path.
+- Test isolation: `tests/test_project_facts.py` no longer builds a bare
+  `AppContext()` whose non-facts stores point at the user directory; both
+  completion tests now use `AppContext(state_td)` (plus `state.close()` before
+  temp-dir teardown so Windows file locks are released). The legacy
+  `check_commands` call sites in that file now use `checks=[CheckEvidence(...)]`.
+- Tests (TDD red-first): new `tests/test_coldstart_cleanup_locks.py` (11 tests)
+  locked all five removals plus the boundary clip behavior red pre-fix and
+  green post-fix; a temp repro script confirmed each legacy surface pre-fix.
+  Opportunistic scan of the touched areas found no other deterministic bug
+  (parity checks on clip samples, prompt equality, and reference scans were
+  all clean, so no speculative hardening was applied).
+- Verification: `ruff check codey` clean, `git diff --check` clean, no frontend
+  JS changed. Targeted suites green before the full run (323 passed across the
+  facts/protocols/prompt/ledger/details/trace/ui-state/tool-runtime/server
+  helpers, plus 162 passed across architecture/knowledge/checkpoint/json-codec
+  drift/golden parity), then full `python -m pytest -q -p no:cacheprovider`:
+  `4599 passed, 7 skipped, 1452 subtests passed in 340.60s (0:05:40)`. Skips are
+  the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Proof-ref docstring documents str-coercion (no release)
 
 - Doc wording fix (no behavior change, TDD red-first): `research_proof_ref()`

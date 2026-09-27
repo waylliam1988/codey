@@ -434,9 +434,6 @@ def _replace_unique(content: str, search: str, replace: str) -> tuple[str, bool]
     return content, False
 
 
-def _line_body_without_eol(line: str) -> str:
-    return line.removesuffix("\n").removesuffix("\r")
-
 def _bounded_failure_output(lines: list[str]) -> str:
     max_chars = EDIT_FAILURE_MAX_CHARS - len("ERROR: ")
     rendered: list[str] = []

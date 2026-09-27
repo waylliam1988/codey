@@ -274,10 +274,6 @@ def _clean_projects(value: object) -> list[dict[str, Any]]:
     return projects
 
 
-def _version(state: dict[str, Any]) -> tuple[int, int]:
-    return _int(state.get("updated_at")), _int(state.get("revision"))
-
-
 def _clean_payload(payload: object) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return _empty_state()

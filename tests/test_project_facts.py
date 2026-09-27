@@ -102,13 +102,16 @@ class ProjectFactsTests(unittest.TestCase):
                 td,
                 task="Implement feature",
                 files=["app.py"],
-                check_commands=["python app.py"],
+                checks=[CheckEvidence("python app.py", ".")],
             ))
             self.assertTrue(store.record_successful_change(
                 td,
                 task="Implement feature",
                 files=["app.py", "../secret.py", "tests/test_app.py"],
-                check_commands=["python -m unittest", "python app.py"],
+                checks=[
+                    CheckEvidence("python -m unittest", "."),
+                    CheckEvidence("python app.py", "."),
+                ],
                 receipt="2 files changed · checks passed",
             ))
 
@@ -150,7 +153,9 @@ class ProjectFactsTests(unittest.TestCase):
         self.assertIn("checks: backend/: pnpm test", rendered)
         self.assertNotIn("python app.py", rendered)
 
-    def test_successful_change_loads_legacy_check_strings(self) -> None:
+    def test_successful_change_ignores_legacy_check_strings(self) -> None:
+        # Cold start: plain-string checks are not a persisted format and are
+        # ignored instead of being coerced.
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             store = ProjectFactsStore(state_td)
             path = store.path_for(td)
@@ -165,9 +170,8 @@ class ProjectFactsTests(unittest.TestCase):
             facts = store.load(td)
             rendered = store.render(td)
 
-        self.assertEqual(facts.successful_changes[0].checks[0].command, "python -m unittest")
-        self.assertEqual(facts.successful_changes[0].checks[0].cwd, ".")
-        self.assertIn("checks: python -m unittest", rendered)
+        self.assertEqual(facts.successful_changes, ())
+        self.assertNotIn("python -m unittest", rendered)
 
     def test_successful_change_loads_structured_checks_safely(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
@@ -240,8 +244,7 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_project_completion_records_success_and_injects_it_into_next_task(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.AppContext()
-            state.project_facts = ProjectFactsStore(state_td)
+            state = server.AppContext(state_td)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             captured_facts: list[str] = []
@@ -272,6 +275,7 @@ class ProjectFactsTests(unittest.TestCase):
                 server._run_task("session-1", td, "first", 4, False, "deepseek", "project")
                 server._run_task("session-1", td, "second", 4, False, "deepseek", "project")
 
+            state.close()
             self.assertEqual(captured_facts[0], "")
             self.assertIn("python -m unittest", captured_facts[1])
 
@@ -345,8 +349,7 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_project_completion_does_not_record_failed_run(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.AppContext()
-            state.project_facts = ProjectFactsStore(state_td)
+            state = server.AppContext(state_td)
             provider = mock.Mock()
             provider.name = "Qwen Studio"
 
@@ -370,7 +373,9 @@ class ProjectFactsTests(unittest.TestCase):
             ):
                 server._run_task("session-1", td, "first", 4, False, "qwen", "project")
 
-            self.assertEqual(state.project_facts.render(td), "")
+            rendered = state.project_facts.render(td)
+            state.close()
+            self.assertEqual(rendered, "")
 
     def test_facts_persistence_failure_does_not_fail_task(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:

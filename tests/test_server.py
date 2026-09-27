@@ -1388,7 +1388,10 @@ class ResearchServerHelperTests(unittest.TestCase):
         graph = SimpleNamespace(to_dict=lambda: {"nodes": [], "edges": []})
 
         with (
-            mock.patch.object(app_api, "build_unified_research_graph", return_value=graph) as build,
+            mock.patch(
+                "codey.knowledge.concepts.build_unified_research_graph",
+                return_value=graph,
+            ) as build,
         ):
             status, payload = app_api.research_graph_response(
                 state,

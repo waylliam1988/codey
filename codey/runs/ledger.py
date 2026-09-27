@@ -15,6 +15,7 @@ from pathlib import Path
 
 from codey.providers.diagnostics import ProviderFailure
 from codey.runs.receipt import task_receipt_from_payload
+from codey.runs.text_clip import clip_text as _clip
 from codey.runtime.observe.events import RunEvent
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key
@@ -29,20 +30,10 @@ MAX_CHANGE_FILES = 64
 MAX_LEDGER_EVENTS = 512
 LEDGER_BYTES_PER_EVENT_BUDGET = 1024
 MAX_LEDGER_BYTES = MAX_LEDGER_EVENTS * LEDGER_BYTES_PER_EVENT_BUDGET
-TRUNCATED_TEXT_SUFFIX = "..."
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _clip(value: object, limit: int) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    if limit <= len(TRUNCATED_TEXT_SUFFIX):
-        return text[:limit]
-    if len(text) <= limit:
-        return text
-    return text[: limit - len(TRUNCATED_TEXT_SUFFIX)].rstrip() + TRUNCATED_TEXT_SUFFIX
 
 
 def _json_line(payload: dict[str, object]) -> str:

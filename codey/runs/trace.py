@@ -61,6 +61,7 @@ from codey.research.review_finding import (
     STATUS_OPEN,
 )
 from codey.research.source_trust import SOURCE_CLASSES as _SOURCE_TRUST_CLASSES
+from codey.runs.text_clip import clip_text as _clip
 from codey.runtime.observe.prompt_envelope import is_model_boundary_freshness
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.utils.refs import digest_text
@@ -107,7 +108,6 @@ MAX_PROTOCOL_UNKNOWN_TOOLS = 8
 MAX_PROTOCOL_VALID_TURNS = 64
 MAX_PROMPT_SURFACES = 80
 CHECKPOINT_FLUSH_INTERVAL = 8
-TRUNCATED_TEXT_SUFFIX = "..."
 REVIEW_FINDING_REF_KINDS: dict[str, str] = {
     "claim_ref": "claim",
     "evidence_ref": "evidence",
@@ -2373,17 +2373,6 @@ def _unit_float(value: object) -> float:
 
 def _is_hex_64(value: str) -> bool:
     return len(value) == 64 and all(ch in "0123456789abcdef" for ch in value)
-
-
-def _clip(value: object, limit: int = MAX_TEXT_CHARS) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not text:
-        return ""
-    if limit <= len(TRUNCATED_TEXT_SUFFIX):
-        return text[:limit]
-    if len(text) <= limit:
-        return text
-    return text[: limit - len(TRUNCATED_TEXT_SUFFIX)].rstrip() + TRUNCATED_TEXT_SUFFIX
 
 
 def _identifier(value: object, limit: int = MAX_TEXT_CHARS) -> str:

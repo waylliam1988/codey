@@ -599,11 +599,18 @@ class BrowserFetchAbandonTests(unittest.TestCase):
         fake_page.close.assert_called()
 
 
-class SystemPromptLazyTests(unittest.TestCase):
-    def test_module_prompt_matches_codec_prompt(self) -> None:
-        from codey.protocols.json_codec import SYSTEM_PROMPT, JsonToolCodec
+class CodecPromptSingleSourceTests(unittest.TestCase):
+    def test_codec_prompt_matches_rendered_writer_prompt(self) -> None:
+        from codey.protocols.json_codec import JsonToolCodec
+        from codey.toolchain import definition as tool_defs
+        from codey.toolchain.tool_prompt import render_coding_system_prompt
 
-        self.assertEqual(SYSTEM_PROMPT, JsonToolCodec().system_prompt())
+        expected = render_coding_system_prompt(
+            tool_defs.TOOL_DEFINITIONS,
+            profile_name="coding_writer",
+            allowed_tool_names={d.name for d in tool_defs.TOOL_DEFINITIONS},
+        )
+        self.assertEqual(JsonToolCodec().system_prompt(), expected)
 
 
 if __name__ == "__main__":

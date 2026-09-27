@@ -151,12 +151,14 @@ def _safe_receipt(value: object) -> str:
 
 
 def _successful_check_from_object(value: object) -> SuccessfulCheck | None:
+    # Cold start: persisted checks are always {command, cwd} dicts; in-memory
+    # checks are CheckEvidence-like objects. Legacy plain-string checks are
+    # rejected (fail closed) instead of being coerced.
+    if isinstance(value, str):
+        return None
     if isinstance(value, dict):
         command = value.get("command", "")
         cwd = value.get("cwd", ".")
-    elif isinstance(value, str):
-        command = value
-        cwd = "."
     else:
         command = getattr(value, "command", "")
         cwd = getattr(value, "cwd", ".")
@@ -284,15 +286,13 @@ class ProjectFactsStore:
         *,
         task: object,
         files: Sequence[object],
-        checks: Sequence[object] | None = None,
-        check_commands: Sequence[object] | None = None,
+        checks: Sequence[object] = (),
         receipt: object = "",
     ) -> bool:
-        raw_checks = checks if checks is not None else check_commands
         change = _successful_change(
             task=task,
             files=files,
-            checks=raw_checks or (),
+            checks=checks or (),
             receipt=receipt,
         )
         if change is None:
