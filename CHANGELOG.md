@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Strict shell event hash/marker binding (no release)
+
+- Fixed two deterministic P2s in `agents/shell_approval._event_record_fields`
+  (red-first, `tests/test_shell_event_p2_locks.py`, 3 of 4 failed before):
+  non-truncated commands containing `"[truncated; command_sha256="` were
+  wrongly rejected by a substring ban even though the text is legal;
+  non-truncated events accepted any 64-hex digest (`"0"*64` for `"echo hi"`)
+  and truncated events accepted the marker prefix and digest as two separate
+  substrings. Non-truncated events now recompute `sha256(command)` and require
+  `command_chars == len(command)` with no marker ban; truncated events require
+  the exact trailing `"\n[truncated; command_sha256={digest}]"` (or the exact
+  `marker[:limit]` prefix when the limit is smaller than the marker), keeping
+  full-command hash binding in the pending path that generated the event.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean.
+  Targeted shell/headless/registry suites green before the full run; then final
+  `python -m pytest -q -p no:cacheprovider`:
+  `4601 passed, 9 skipped, 1448 subtests passed in 343.91s (0:05:43)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Cold-start v1 convergence, strict reads, exact profiles, strict shell events (no release)
 
 - Schemas to v1 (red-first, `tests/test_coldstart_v1_locks.py`): `runtime_operation_state`

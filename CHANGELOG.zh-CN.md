@@ -2,6 +2,23 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - shell 事件哈希/marker 严格绑定（未发布）
+
+- 修复 `agents/shell_approval._event_record_fields` 两个确定性 P2
+ （红测先行，`tests/test_shell_event_p2_locks.py`，4 项中 3 项先失败）：
+  未截断命令即使合法包含 `"[truncated; command_sha256="` 也被子串检查误拒；
+  未截断事件只验 64 位十六进制（`echo hi` 配 `"0"*64` 也能通过），
+  截断事件只分别搜索 marker 片段与摘要。现未截断事件重算 `sha256(command)`，
+  并要求 `command_chars == len(command)`，不再禁用普通 marker 文本；
+  截断事件要求精确末尾 `"\n[truncated; command_sha256={digest}]"`（limit 小于
+  marker 时要求精确 `marker[:limit]` 前缀），完整命令与摘要的一致性仍由生成
+  该事件的 pending 路径保证。
+- 验证：`python -m ruff check .`、`git diff --check` 通过。
+  全量前 shell/headless/registry 相关套件全绿；最终
+  `python -m pytest -q -p no:cacheprovider`：
+  **4601 passed、9 skipped、1448 subtests passed，343.91s（0:05:43）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - 冷启动 v1 收敛、严格读取、精确画像、严格 shell 事件（未发布）
 
 - 三个 schema 定为 v1（红测先行，`tests/test_coldstart_v1_locks.py`）：

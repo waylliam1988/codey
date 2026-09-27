@@ -1,5 +1,41 @@
 # Codey Test Report
 
+## Strict shell event hash/marker binding (2026-09-27)
+
+Scope (deterministic P2s, no release):
+
+```text
+codey/agents/shell_approval.py   (_event_record_fields: non-truncated recomputes sha256 + chars check, no marker-substring ban; truncated requires exact trailing marker)
+tests/test_shell_event_p2_locks.py (new: 4 red-first locks)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (new `tests/test_shell_event_p2_locks.py`, 3 of 4 failed before the fix):
+
+- `test_event_accepts_legal_marker_substring_when_not_truncated` failed
+  (`ValueError: non-truncated event must not carry truncation marker`) for
+  `shell_command_payload('echo "[truncated; command_sha256="')`; after removing
+  the substring ban and recomputing the digest, it passes and the headless
+  `shell_request` path no longer throws on legal text.
+- `test_event_rejects_wrong_digest_when_not_truncated` failed (no raise for
+  `command="echo hi"`, `sha="0"*64`, `chars=7`); after `digest == sha256(command)`
+  it raises.
+- `test_event_rejects_loose_marker_when_truncated` failed (no raise when the
+  marker prefix and digest appear separately); after requiring the exact
+  trailing `"\n[truncated; command_sha256={digest}]"` it raises.
+- `test_event_accepts_exact_trailing_marker_when_truncated` passed before and
+  after (guards the valid truncated event shape).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check .` clean, `git diff --check` clean,
+  `py_compile` on the touched module clean; targeted suites green (P2 locks, v1 locks,
+  server shell cases, headless/registry/CLI shell shapes).
+- Final full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4601 passed, 9 skipped, 1448 subtests passed in 343.91s (0:05:43)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Cold-start v1 convergence: schemas, strict local config, exact profiles, strict shell events (2026-09-27)
 
 Scope (cold-start, no release):

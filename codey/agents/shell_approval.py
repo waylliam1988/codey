@@ -123,9 +123,11 @@ def shell_command_event_fields(
       preview/sha/chars/flag are recomputed from the full text and must
       match exactly (truncation bound + hash are the security boundary).
     - event record: bounded ``command`` (already a preview) plus
-      ``command_sha256``, ``command_chars``, ``command_truncated``. The
-      preview stays bounded, the digest stays valid hex, and the
-      truncation marker stays consistent with the flag.
+      ``command_sha256``, ``command_chars``, ``command_truncated``. When
+      not truncated the digest is recomputed from the command, so plain
+      marker-like text stays legal; when truncated the exact trailing
+      marker is required (full-command hash binding stays in the pending
+      path that generated the event).
     """
 
     if not isinstance(record, Mapping):
@@ -203,18 +205,20 @@ def _event_record_fields(
         raise ValueError("command_sha256 must be lowercase hex")
     if len(command) > limit:
         raise ValueError("event command exceeds display bound")
-    marker_prefix = "[truncated; command_sha256="
-    has_marker = marker_prefix in command
     if truncated:
         if chars <= limit or chars <= len(command):
             raise ValueError("truncated event must carry full length above bound")
-        if not has_marker or digest not in command:
-            raise ValueError("truncated event must carry digest marker")
+        exact_marker = TRUNCATED_COMMAND_MARKER.format(digest=digest)
+        if limit < len(exact_marker):
+            if command != exact_marker[:limit]:
+                raise ValueError("truncated event must carry exact marker prefix")
+        elif not command.endswith(exact_marker):
+            raise ValueError("truncated event must carry exact trailing marker")
     else:
         if chars != len(command):
             raise ValueError("event command_chars must match preview length")
-        if has_marker:
-            raise ValueError("non-truncated event must not carry truncation marker")
+        if digest != _sha256_text(command):
+            raise ValueError("event command_sha256 must match command")
     return {
         "command": command,
         "command_sha256": digest,
