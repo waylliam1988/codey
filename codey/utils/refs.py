@@ -44,12 +44,13 @@ def strict_nonnegative_int(value: object) -> int:
     """Strict nonnegative int: bools are 0, only finite floats and digit strings pass.
 
     Differs from :func:`nonnegative_int` (which maps ``True`` to ``1`` via
-    ``int(value)`` and accepts ``"+12"``/``"12.0"``-style strings). This is the
-    shared strict copy previously duplicated in ``codey.policies.action`` and
-    ``codey.runtime.core.models``: ``bool`` → ``0``, ``int`` → ``max(0, v)``,
-    finite ``float`` → ``max(int(v), 0)``, digit-only ``str`` (after strip) →
-    ``int``, everything else (including ``nan``/``inf``, signed/decimal
-    strings, ``None``) → ``0``.
+    ``int(value)`` and accepts ``"+12"`` but rejects ``"12.0"`` like strict).
+    This is the shared strict copy previously duplicated in
+    ``codey.policies.action`` and ``codey.runtime.core.models``: ``bool`` →
+    ``0``, ``int`` → ``max(0, v)``, finite ``float`` → ``max(int(v), 0)``,
+    digit-only ``str`` (after strip) → ``int``, everything else (including
+    ``nan``/``inf``, signed/decimal strings, unicode digits such as ``"²"``
+    whose ``isdigit()`` is true but ``int()`` raises, ``None``) → ``0``.
     """
     if isinstance(value, bool):
         return 0
@@ -58,7 +59,10 @@ def strict_nonnegative_int(value: object) -> int:
     if isinstance(value, float) and math.isfinite(value):
         return max(int(value), 0)
     if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
+        try:
+            return int(value.strip())
+        except ValueError:
+            return 0
     return 0
 
 

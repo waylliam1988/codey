@@ -54,6 +54,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     project = Path(args.project).resolve()
     json_mode = getattr(args, "json", False) is True
     _safe_print(f"[codey] project: {project}", file=sys.stderr)
+    from codey.agents.request import DEFAULT_MAX_TURNS
     from codey.app.headless_runner import (
         HeadlessRequest,
         emit_jsonl,
@@ -68,11 +69,13 @@ def cmd_agent(args: argparse.Namespace) -> int:
         else DEFAULT_STATE_HOME
     )
     project.mkdir(parents=True, exist_ok=True)
+    raw_max_turns = getattr(args, "max_turns", None)
+    max_turns = DEFAULT_MAX_TURNS if raw_max_turns is None else raw_max_turns
     request = HeadlessRequest(
         project=project,
         task=task,
         provider_id=args.provider,
-        max_turns=args.max_turns,
+        max_turns=max_turns,
         intent=(
             "planning_readonly"
             if getattr(args, "readonly", False) is True
@@ -501,16 +504,6 @@ def _add_ghost_subcommands(sub) -> None:
     sp_ghost_disable.set_defaults(func=cmd_ghost)
 
 
-def _build_ghost_only_parser() -> argparse.ArgumentParser:
-    """Minimal parser for the ghost cold-start path (no provider/toolchain import)."""
-    ap = argparse.ArgumentParser(prog="codey")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    sp_ghost = sub.add_parser("ghost", help="inspect and control Ghost memory inbox")
-    sp_ghost_sub = sp_ghost.add_subparsers(dest="ghost_cmd", required=True)
-    _add_ghost_subcommands(sp_ghost_sub)
-    return ap
-
-
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
 
@@ -518,13 +511,9 @@ def main(argv: list[str] | None = None) -> int:
     if not argv or argv[0] not in {"ui", "chat", "agent", "ghost", "-h", "--help"}:
         argv = ["ui", *argv]
 
-    # Cold-start fast path: ghost CLI must not pull the provider/toolchain
-    # stack (see ghost list without provider test). Single registration via
-    # _add_ghost_subcommands; no separate ghost entry point.
-    if argv[0] == "ghost":
-        args = _build_ghost_only_parser().parse_args(argv)
-        return args.func(args)
-
+    # Single parser tree: ghost shares the root parser so its registration
+    # exists exactly once. Parser build stays cold (no toolchain import);
+    # DEFAULT_MAX_TURNS is resolved lazily in cmd_agent.
     from codey.providers import DEFAULT_PROVIDER_ID, provider_ids
 
     ap = argparse.ArgumentParser(prog="codey")
@@ -543,8 +532,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sp_agent = sub.add_parser("agent", help="CLI agent loop")
     sp_agent.add_argument("--project", required=True)
-    from codey.agents.request import DEFAULT_MAX_TURNS
-    sp_agent.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
+    sp_agent.add_argument("--max-turns", type=int, default=None)
     sp_agent.add_argument("--port", type=int, default=9222)
     sp_agent.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
     sp_agent.add_argument("--json", action="store_true", help="emit JSONL events on stdout")

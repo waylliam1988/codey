@@ -213,6 +213,27 @@ class GhostSingleParserTests(unittest.TestCase):
             cli.main(["ghost"])
         self.assertEqual(ctx.exception.code, 2)
 
+    def test_ghost_registered_once_with_deferred_agent_default(self) -> None:
+        import inspect as std_inspect
+        import pathlib
+
+        import codey.app.cli as cli
+
+        cli_path = pathlib.Path(cli.__file__)
+        cli_source = cli_path.read_text(encoding="utf-8")
+        # Single registration: one def + exactly one call site.
+        self.assertEqual(cli_source.count("def _add_ghost_subcommands"), 1)
+        self.assertEqual(cli_source.count("_add_ghost_subcommands("), 2)
+        # No ghost-only fast-path split and no extra parser builder.
+        self.assertFalse(hasattr(cli, "_build_ghost_only_parser"))
+        main_source = std_inspect.getsource(cli.main)
+        self.assertNotIn('_build_ghost_only_parser', main_source)
+        self.assertNotIn('argv[0] == "ghost"', main_source)
+        # Agent default must not be fetched at parser-build time (loads toolchain).
+        self.assertNotIn("from codey.agents.request import DEFAULT_MAX_TURNS", main_source)
+        cmd_agent_source = std_inspect.getsource(cli.cmd_agent)
+        self.assertIn("DEFAULT_MAX_TURNS", cmd_agent_source)
+
 
 class StrictNonnegativeIntSharedTests(unittest.TestCase):
     def test_strict_helper_lives_once_in_refs(self) -> None:
@@ -261,6 +282,41 @@ class StrictNonnegativeIntSharedTests(unittest.TestCase):
         # they must import the shared helper instead
         self.assertIn("strict_nonnegative_int", std_inspect.getsource(action_mod))
         self.assertIn("strict_nonnegative_int", std_inspect.getsource(models_mod))
+
+    def test_strict_unicode_superscript_is_fail_closed(self) -> None:
+        from codey.policies.action import ActionSubject
+        from codey.runtime.core.models import normalized_managed_output
+        from codey.utils.refs import strict_nonnegative_int as strict
+
+        # "²".isdigit() is True but int("²") raises ValueError; must not propagate.
+        self.assertTrue("²".isdigit())
+        self.assertEqual(strict("²"), 0)
+        self.assertEqual(strict("  ²  "), 0)
+        self.assertEqual(ActionSubject(kind="read_file", byte_count="²").byte_count, 0)
+        payload = normalized_managed_output({
+            "handle": "out_abc",
+            "original_bytes": "²",
+            "stored_bytes": "²",
+            "sha256": "a" * 64,
+            "original_sha256": "",
+            "stored_truncated": False,
+        })
+        self.assertEqual(payload["original_bytes"], 0)
+        self.assertEqual(payload["stored_bytes"], 0)
+
+    def test_loose_helper_doc_matches_real_behavior(self) -> None:
+        import inspect as std_inspect
+
+        from codey.utils import refs as refs_mod
+
+        # Loose accepts "+12" via int() but rejects "12.0" (ValueError -> 0).
+        self.assertEqual(refs_mod.nonnegative_int("+12"), 12)
+        self.assertEqual(refs_mod.nonnegative_int("12.0"), 0)
+        doc = std_inspect.getsource(refs_mod.strict_nonnegative_int)
+        # Doc must not claim loose accepts "12.0"; it must state the split.
+        self.assertNotIn('accepts ``"+12"``/``"12.0"``', doc)
+        self.assertIn('"12.0"', doc)
+        self.assertIn("reject", doc.lower())
 
 
 if __name__ == "__main__":

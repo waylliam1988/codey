@@ -1,5 +1,46 @@
 # Codey Test Report
 
+## Cold-start follow-up: strict int unicode guard, true single ghost parser (2026-09-27)
+
+Scope (deterministic follow-up, no release):
+
+```text
+codey/utils/refs.py (strict int try/except ValueError for unicode digits like "²"; fixed loose "12.0" doc)
+codey/app/cli.py (single parser tree; --max-turns default None; DEFAULT_MAX_TURNS resolved lazily in cmd_agent)
+tests/test_coldstart_cleanup_round2.py (extended to 15 tests: unicode fail-closed + single-registration + doc locks)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry + prior "deleted argv[0] dispatch" correction)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (all three locked before the fix):
+
+- `test_strict_unicode_superscript_is_fail_closed` raised
+  `ValueError: invalid literal for int() ... '\xb2'` before; after the
+  `try/except` it returns `0` for `"²"`/`"  ²  "`, plus `ActionSubject` and
+  `normalized_managed_output` `0` without raising.
+- `test_ghost_registered_once_with_deferred_agent_default` got
+  `_add_ghost_subcommands(` count `3 != 2` before (def + two call sites);
+  after deleting `_build_ghost_only_parser` and the `argv[0] == "ghost"`
+  split it is `2`, with no fast-path helper and no
+  `from codey.agents.request import DEFAULT_MAX_TURNS` in `main()` source
+  (lazy in `cmd_agent` instead).
+- `test_loose_helper_doc_matches_real_behavior` found the old
+  `accepts ``"+12"``/``"12.0"``` claim before; after, the doc states loose
+  accepts `"+12"` but rejects `"12.0"`, matching
+  `nonnegative_int("+12")==12` / `nonnegative_int("12.0")==0`.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted suites green (`round2+cli+ghost-coldstart+
+  provider+action+models` 105 passed, 49 subtests; `cli+architecture` 103
+  passed, 346 subtests; `codey --help`/`ghost --help`/`ghost list` exit 0 and
+  missing subcommand exit 2 verified manually; agent default still resolves
+  via `cmd_agent`).
+- Final full suite: `python -m pytest -q`:
+  `4619 passed, 10 skipped, 1460 subtests passed in 350.85s (0:05:50)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Cold-start cleanup round2: provider dead fields, prompt boundary only, ghost single entry, strict int share (2026-09-27)
 
 Scope (cold-start, keep real runtime fault-tolerance, no release):

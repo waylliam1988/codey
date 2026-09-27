@@ -2,6 +2,31 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 冷启动跟进：严格整数 Unicode 兜底、ghost 真单解析器（未发布）
+
+- 修复 `strict_nonnegative_int()` 遇到 Unicode 数字抛错（P2，确定性，红测先行）：
+  `"²".isdigit()` 为真但 `int("²")` 抛 `ValueError`，导致 `strict("²")`、
+  `ActionSubject(byte_count="²")`、`normalized_managed_output(...)` 均抛错。
+  系两个旧副本遗留，非本次共享引入。现对 `int()` 包 `try/except ValueError`
+  返回 `0`（fail-closed），并补 `"²"` 及两侧调用方用例。
+- 修复 ghost 双注册（P3，确定性，红测先行）：`main()` 既按 `argv[0]=="ghost"`
+  分流到轻量解析器，又在主解析器完整注册 ghost 子命令，后者执行不到。
+  现 `main()` 只构建一棵解析器、`_add_ghost_subcommands` 仅一处调用；
+  导致 toolchain 加载的 `DEFAULT_MAX_TURNS` 延后到 `cmd_agent` 内懒加载
+  （`--max-turns` 默认 `None`→默认值），`ghost list` 仍保持冷启动
+ （`providers.registry`/`toolchain.runtime` 未加载）且无分流。订正上一轮
+  “已删除 `argv[0]` 分流”的表述：上一轮实为快照路径保留分流，本轮才真正删除。
+- 修正文档笔误：原称宽松 `nonnegative_int` 接受 `"12.0"`，实际返回 `0`（仅接受
+  `"+12"`）；现已明确区分。
+- `tests/test_coldstart_cleanup_round2.py` 扩展到 15 测试；新增 3 项清理前失败、
+  清理后通过。
+- 验证：`python -m ruff check codey tests tools`、`git diff --check` 通过。
+  全量前目标套件全绿（`round2+cli+ghost冷启动+provider+action+models` 105 通过、
+  49 子项；`cli+architecture` 103 通过、346 子项；`ghost --help`/`list` exit 0、
+  缺子命令 exit 2 已手验）。最终 `python -m pytest -q`：
+  **4619 passed、10 skipped、1460 subtests passed，350.85s（0:05:50）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - 冷启动清理第二轮：provider 死字段、prompt 仅边界、ghost 单入口、严格整数共享（未发布）
 
 - 删除 7 个无消费者 provider 能力字段（`json_reliability`、

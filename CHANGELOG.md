@@ -2,6 +2,41 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start follow-up: strict int unicode guard, true single ghost parser (no release)
+
+- Fixed `strict_nonnegative_int()` raising `ValueError` on unicode digits
+  (P2, deterministic, red-first): `"²".isdigit()` is true but `int("²")`
+  raises, so `strict_nonnegative_int("²")`, `ActionSubject(byte_count="²")`
+  and `normalized_managed_output(...)` all raised. This was inherited from
+  the two old copies, not introduced by the share. Now the `int()` is wrapped
+  in `try/except ValueError` returning `0` (fail-closed); added `"²"` cases
+  plus `ActionSubject`/`normalized_managed_output` locks.
+- Fixed ghost double registration (P3, deterministic, red-first): `main()`
+  built a ghost-only fast-path parser and registered the full ghost subtree
+  again, so the second registration never executed. Now `main()` builds
+  exactly one parser tree with a single `_add_ghost_subcommands` call site;
+  `DEFAULT_MAX_TURNS` is no longer fetched at parser-build time (it pulled
+  `codey.toolchain.runtime`) and is resolved lazily in `cmd_agent`
+  (`--max-turns` default `None` → `DEFAULT_MAX_TURNS`), so `ghost list` stays
+  cold (`providers.registry`/`toolchain.runtime` unloaded) without a split.
+  Corrects the prior entry's "deleted `argv[0]` dispatch" wording: the prior
+  round kept the split via `_build_ghost_only_parser`, this round truly
+  deletes it.
+- Fixed `strict_nonnegative_int` doc typo: it claimed loose
+  `nonnegative_int` accepts `"12.0"`-style strings, but it returns `0`
+  (`ValueError` path) while accepting `"+12"`. Doc now states the split
+  explicitly.
+- Red-first locks extended in `tests/test_coldstart_cleanup_round2.py`
+  (now 15 tests; 3 new ones failed before, pass after).
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted suites green before the final run
+  (`round2+cli+ghost-coldstart+provider+action+models` 105 passed, 49
+  subtests; `cli+architecture` 103 passed, 346 subtests; `ghost --help`/
+  `ghost list` exit 0 and missing subcommand exit 2 verified manually).
+  Then final `python -m pytest -q`:
+  `4619 passed, 10 skipped, 1460 subtests passed in 350.85s (0:05:50)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Cold-start cleanup round2: provider dead fields, prompt boundary only, ghost single entry, strict int share (no release)
 
 - Removed seven unread provider capability fields (`json_reliability`,
