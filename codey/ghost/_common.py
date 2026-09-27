@@ -77,13 +77,28 @@ def find_work_item_by_id(items: Iterable[Any], item_id: str) -> Any | None:
     return None
 
 
+def event_ts(event: Mapping[str, object]) -> str:
+    return clip_signal_text(event.get("ts"), 80)
+
+
+def valid_nonnegative_int_payload(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def reverse_text_sort_key(value: object) -> tuple[int, ...]:
+    return tuple(-ord(ch) for ch in str(value or ""))
+
+
 __all__ = [
     "VALID_SCOPES",
+    "event_ts",
     "field_value",
     "filter_values",
     "find_work_item_by_id",
     "mapping_keys_within",
     "normalize_project",
     "now_iso_z",
+    "reverse_text_sort_key",
     "strict_payload_equal",
+    "valid_nonnegative_int_payload",
 ]

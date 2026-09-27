@@ -2,6 +2,53 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start cleanup round4: package export layers + Ghost shared helpers + native-tools unify (no release)
+
+- Removed internal package-convenience export layers (no prod-module deletions):
+  `research/__init__.py`, `knowledge/__init__.py`, `providers/__init__.py`
+  shrink to purpose docstrings (`_EXPORTS`/`__all__`/`__getattr__`/`Any` gone);
+  call sites now import from defining leaves: `ChatProvider` ->
+  `providers.base`, `DEFAULT_PROVIDER_ID`/`PROVIDER_LABELS`/`provider_ids` ->
+  `providers.catalog`, `connect_provider` -> `providers.registry`,
+  `*WebProvider` -> `providers.web_provider`, `KnowledgeBriefBuilder` ->
+  `knowledge.brief`, `KnowledgeChanges`/`RestoreResult` -> `knowledge.changes`,
+  `KnowledgeGraphBuilder` -> `knowledge.graph`, `KnowledgeNote` ->
+  `knowledge.note`, `KnowledgeStore` -> `knowledge.store`; submodule imports
+  such as `from codey.providers import controls` stay supported. Touched
+  `agents/request`, `agents/writer_failover`, `app/cli`, `app/headless_runner`,
+  `app/provider_registry`, `app/run_registry`, `operations/*` (4 files),
+  `tests/test_knowledge`, `test_project_task_context`, `test_research`,
+  `test_server`, `test_coldstart_hardening`, `test_providers`.
+- Merged Ghost byte-identical pure helpers into `ghost/_common.py`:
+  `event_ts`, `valid_nonnegative_int_payload` (keeps `bool`-is-not-`int`),
+  `reverse_text_sort_key`; `affinity`/`work_queue`/`continuity`/`directive`
+  drop local defs and call `_common.*`. Decay weights and event-corruption
+  paths intentionally left untouched.
+- Unified native-tools enable check beside `provider_supports_structured` as
+  `prompt_context.session_uses_native_tools`; removed `loop._use_native` and
+  `result_delivery._use_native_delivery`. Kept the recovered-delivery text
+  fallback and rewrote its comment to the current flow
+  (`candidate_from_intent` rebuilds `ToolCall` without `call_id`).
+- Fixed 1 deterministic cleanup-induced bug, red-first:
+  `tests/test_cli` patched the removed `codey.providers.connect_provider`
+  string (would `AttributeError` after the shrink); now patches
+  `codey.providers.registry.connect_provider` (2 sites, failed before, pass
+  after). Updated two old-behavior locks to the cleaned state:
+  `test_provider_catalog_cold` now asserts the package exposes no statics,
+  `test_research` quality-gate imports `provenance_problem`/
+  `review_report_quality` from leaves.
+- Coverage: 12 new locks in `tests/test_coldstart_cleanup_round4.py`
+  (10 failed before as missing `_common`/unified helpers/export tables, plus
+  the string-patch guard; `test_direct_leaf_imports_resolve` already green).
+  All pass after.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean.
+  Targeted green before final (`round4` 12 passed; `cli+catalog+knowledge+
+  project_task+providers` 123 passed, 5 subtests; `research-gate+hardening+
+  native+ghost` 105 passed; `round4+cli` 28 passed). Then final
+  `python -m pytest -q`:
+  `4738 passed, 10 skipped, 1473 subtests passed in 350.62s (0:05:50)`.
+  Delta vs 4726 is exactly the 12 new locks. No release was made.
+
 ## Unreleased - Full-red round3: OverflowError hardening + hostname strict + bad-row skip + ascii-digit gate (no release)
 
 - Fixed 22 deterministic bugs, all red-first (22 failed before, pass after):

@@ -13,7 +13,7 @@ from codey.agents.shell_approval import ShellApprovalRequest
 from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
 from codey.protocols import ProtocolCodec
-from codey.providers import ChatProvider
+from codey.providers.base import ChatProvider
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent, print_run_event
 from codey.toolchain.runtime import ToolOutcome

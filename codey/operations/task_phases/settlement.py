@@ -22,7 +22,7 @@ from codey.operations.task_phases.lifecycle import (
     finish_run_operation,
 )
 from codey.operations.task_state import TaskState
-from codey.providers import PROVIDER_LABELS
+from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.ledger_projection import event_with_projected_receipt

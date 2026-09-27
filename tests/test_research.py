@@ -14,7 +14,8 @@ from unittest import mock
 
 from codey.agents.consensus import ConsensusAdvice
 from codey.automation import browser_worker
-from codey.knowledge import KnowledgeChanges, KnowledgeStore
+from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.store import KnowledgeStore
 from codey.policies.network import check_fetch_url
 from codey.research import browser_search
 from codey.research.advisors import EvidencePack, render_research_advisor_prompt, run_research_advisors
@@ -389,9 +390,14 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_package_exports_quality_gate_not_legacy_evidence_review(self) -> None:
         import codey.research as research
+        from codey.research.provenance import provenance_problem
+        from codey.research.report_quality import review_report_quality
 
-        self.assertTrue(callable(research.provenance_problem))
-        self.assertTrue(callable(research.review_report_quality))
+        self.assertTrue(callable(provenance_problem))
+        self.assertTrue(callable(review_report_quality))
+        # Convenience re-export layer removed: leaves are the single source.
+        self.assertFalse(hasattr(research, "provenance_problem"))
+        self.assertFalse(hasattr(research, "review_report_quality"))
         self.assertFalse(hasattr(research, "review_final_summary"))
         self.assertFalse(hasattr(research, "EvidenceReviewResult"))
         self.assertFalse((Path(__file__).resolve().parents[1] / "codey" / "research" / "evidence_review.py").exists())
@@ -4913,7 +4919,7 @@ class ConceptRelationsTests(unittest.TestCase):
         )
 
     def test_run_concept_tags_ranks_run_note_tags_and_skips_machine_or_inactive_tags(self) -> None:
-        from codey.knowledge import KnowledgeNote
+        from codey.knowledge.note import KnowledgeNote
         from codey.research.runner import _run_concept_tags
 
         with tempfile.TemporaryDirectory() as td:

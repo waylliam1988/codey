@@ -51,7 +51,7 @@ class ProviderCliTests(unittest.TestCase):
         provider.send.return_value = "reply"
 
         with (
-            mock.patch("codey.providers.connect_provider", return_value=provider),
+            mock.patch("codey.providers.registry.connect_provider", return_value=provider),
             mock.patch("codey.providers.controls.begin_task_context") as begin_context,
             mock.patch("codey.providers.controls.end_task_context") as end_context,
             mock.patch.object(cli, "_safe_print"),
@@ -70,7 +70,7 @@ class ProviderCliTests(unittest.TestCase):
         provider.close.side_effect = RuntimeError("CDP disconnected")
 
         with (
-            mock.patch("codey.providers.connect_provider", return_value=provider),
+            mock.patch("codey.providers.registry.connect_provider", return_value=provider),
             mock.patch("codey.providers.controls.begin_task_context"),
             mock.patch("codey.providers.controls.end_task_context") as end_context,
             mock.patch.object(cli, "_safe_print"),self.assertRaisesRegex(RuntimeError, "CDP disconnected")

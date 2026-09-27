@@ -56,8 +56,8 @@ from codey.operations.task_context import (
     safe_verification_candidates,
 )
 from codey.operations.task_state import TaskState
-from codey.providers import PROVIDER_LABELS
 from codey.providers.capabilities import rank_providers
+from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.supervisor import run_half_open_canary
 from codey.research.analysis_run import analysis_run_record

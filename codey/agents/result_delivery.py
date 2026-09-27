@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from codey.agents.prompt_context import (
     append_coding_context,
-    provider_supports_structured,
     send_prompt,
     send_structured_results,
+    session_uses_native_tools,
 )
 from codey.agents.state import AgentLoopSession
 from codey.agents.tool_execution import TurnState
@@ -132,10 +132,6 @@ def build_next_tool_prompt(
     return append_coding_context(session, raw_prompt)
 
 
-def _use_native_delivery(session: AgentLoopSession) -> bool:
-    return session.config.native_tools is not None and provider_supports_structured(session)
-
-
 def deliver_turn_results(
     session: AgentLoopSession,
     turn_state: TurnState,
@@ -145,7 +141,7 @@ def deliver_turn_results(
 ) -> str | object:
     """Deliver a turn's tool results to the provider with durable delivery receipts."""
     batch_id = ensure_result_batch_intent(session, turn_state, turn)
-    if _use_native_delivery(session):
+    if session_uses_native_tools(session):
         from codey.protocols.native_openai import NativeOpenAIToolCodec
 
         tool_messages = NativeOpenAIToolCodec.tool_messages(turn_state.results)
@@ -195,13 +191,15 @@ def deliver_recovered_results(
 ) -> str | object:
     """Deliver recovered tool results on resume, marking delivery receipt on send."""
     batch_id = recovered_batch_id or ensure_result_batch_intent(session, turn_state, turn)
-    if _use_native_delivery(session):
+    if session_uses_native_tools(session):
         from codey.protocols.native_openai import NativeOpenAIToolCodec, NativeToolResultError
 
         try:
             tool_messages = NativeOpenAIToolCodec.tool_messages(turn_state.results)
         except NativeToolResultError:
-            # Recovered calls predate native call_ids; fall back to text delivery.
+            # candidate_from_intent rebuilds ToolCall without call_id, so
+            # recovered results still lack native call_ids today; fall back
+            # to text delivery rather than dropping the turn.
             tool_messages = []
         if tool_messages:
             def _recovered_fallback_text() -> str:

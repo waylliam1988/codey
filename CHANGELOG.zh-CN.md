@@ -2,6 +2,50 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 冷启动清理第四轮：包导出层 + Ghost公共函数 + native-tools统一（未发布）
+
+- 删除内部包便捷导出层（未删除任何生产模块）：
+  `research/__init__.py`、`knowledge/__init__.py`、`providers/__init__.py`
+  精简为用途 docstring（删除 `_EXPORTS`/`__all__`/`__getattr__`/`Any`）；
+  调用点改从定义模块导入：`ChatProvider` -> `providers.base`，
+  `DEFAULT_PROVIDER_ID`/`PROVIDER_LABELS`/`provider_ids` ->
+  `providers.catalog`，`connect_provider` -> `providers.registry`，
+  `*WebProvider` -> `providers.web_provider`，`KnowledgeBriefBuilder` ->
+  `knowledge.brief`，`KnowledgeChanges`/`RestoreResult` ->
+  `knowledge.changes`，`KnowledgeGraphBuilder` -> `knowledge.graph`，
+  `KnowledgeNote` -> `knowledge.note`，`KnowledgeStore` ->
+  `knowledge.store`；`from codey.providers import controls` 这类子模块导入
+  保留。涉及 `agents/request`、`writer_failover`、`app/cli`、
+  `headless_runner`、`provider_registry`、`run_registry`、`operations/*`
+  共 4 处，以及 `test_knowledge`、`test_project_task_context`、
+  `test_research`、`test_server`、`test_coldstart_hardening`、
+  `test_providers`。
+- 合并 Ghost 字节级相同纯函数到 `ghost/_common.py`：`event_ts`、
+  `valid_nonnegative_int_payload`（保留 `bool` 不当整数）、
+  `reverse_text_sort_key`；`affinity`/`work_queue`/`continuity`/`directive`
+  删除本地定义，统一走 `_common.*`。衰减权重与事件损坏路径按语义保留不动。
+- 统一 native-tools 启用判断：在 `provider_supports_structured` 旁新增
+  `prompt_context.session_uses_native_tools`，删除 `loop._use_native` 与
+  `result_delivery._use_native_delivery`。保留崩溃恢复文本投递 fallback，
+  注释改为当前数据流（`candidate_from_intent` 重建 `ToolCall` 时不恢复
+  `call_id`）。
+- 修复 1 个清理引入的确定性 bug（红测先行）：
+  `tests/test_cli` 仍 patch 已删除的 `codey.providers.connect_provider`
+  字符串（精简后会 `AttributeError`），改为
+  `codey.providers.registry.connect_provider`（2 处，修复前失败、修复后通过）。
+  另将两个旧行为锁更新到清理后状态：`test_provider_catalog_cold` 断言包不再
+  暴露静态量，`test_research` 质量门从 leaf 导入 `provenance_problem`/
+  `review_report_quality`。
+- 覆盖：新增 12 锁（`tests/test_coldstart_cleanup_round4.py`），10 个在清理前
+  失败（缺 `_common`/统一函数/导出表），另有字符串 patch 守卫 1 失败；
+  `test_direct_leaf_imports_resolve` 清理前后皆绿。清理后全过。
+- 验证：`python -m ruff check .`、`git diff --check` 通过；目标套件全绿
+  （`round4` 12 通过；`cli+catalog+knowledge+project_task+providers` 123 通过
+  5 子项；`research门禁+hardening+native+ghost` 105 通过；`round4+cli` 28 通过）。
+  最终 `python -m pytest -q`：
+  **4738 passed、10 skipped、1473 subtests passed，350.62s（0:05:50）**。
+  增量正好 12 个新锁。未发布。
+
 ## Unreleased - 全量红测第三轮：OverflowError硬化 + 域名严格 + 坏行跳过 + ASCII数字门禁（未发布）
 
 - 修复 22 个确定性 bug，全部红测先行（修复前 22 失败，修复后全过）：

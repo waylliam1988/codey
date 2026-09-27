@@ -1,5 +1,82 @@
 # Codey Test Report
 
+## Cold-start cleanup round4: exports + Ghost _common + native unify (2026-09-28)
+
+Scope (refactor, red-first, no release):
+
+```text
+codey/research/__init__.py (docstring only; _EXPORTS/__getattr__/Any gone)
+codey/knowledge/__init__.py (docstring only; _EXPORTS/__getattr__/Any gone)
+codey/providers/__init__.py (docstring only; _EXPORTS/__getattr__/Any gone)
+codey/agents/request.py (ChatProvider -> providers.base)
+codey/agents/writer_failover.py (TYPE_CHECKING ChatProvider -> providers.base)
+codey/app/cli.py (connect_provider -> registry; statics -> catalog)
+codey/app/headless_runner.py (DEFAULT_PROVIDER_ID -> catalog; connect -> registry)
+codey/app/provider_registry.py + run_registry.py (PROVIDER_LABELS/DEFAULT -> catalog)
+codey/operations/project_completion_flow.py + provider_preflight.py (LABELS -> catalog)
+codey/operations/task_phases/hooks.py + settlement.py (LABELS -> catalog)
+codey/ghost/_common.py (+event_ts/+valid_nonnegative_int_payload/+reverse_text_sort_key)
+codey/ghost/affinity.py (-_event_ts/-_valid_nonnegative; -> _common.*)
+codey/ghost/work_queue.py (-_event_ts/-_valid_nonnegative/-_reverse; -> _common.*)
+codey/ghost/continuity.py + directive.py (-_reverse_text_sort_key; -> _common.*)
+codey/agents/prompt_context.py (+session_uses_native_tools; __all__)
+codey/agents/loop.py (-_use_native; 3 call sites -> session_uses_native_tools)
+codey/agents/result_delivery.py (-_use_native_delivery; 2 sites unified; fallback comment -> candidate_from_intent)
+tests/test_coldstart_cleanup_round4.py (new, 12)
+tests/test_cli.py (registry.connect_provider patch target, 2 sites)
+tests/test_provider_catalog_cold.py (package exposes no statics now)
+tests/test_research.py (quality-gate imports leaves; package has no re-exports)
+tests/test_knowledge.py + test_project_task_context.py + test_server.py (knowledge leaves)
+tests/test_providers.py (WebProviders -> web_provider)
+tests/test_coldstart_hardening.py (statics -> catalog)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (11 failed before, all pass after):
+
+- `PackageExportLayerTests::test_init_files_have_no_lazy_export_table` failed
+  (`_EXPORTS` present); after docstring-only passes.
+- `test_no_package_convenience_imports_in_codebase` failed (14 files with
+  package-convenience imports); after leaf migration passes.
+- `test_no_string_references_to_removed_package_attrs` failed
+  (`tests/test_cli.py: codey.providers.connect_provider`); after registry
+  patch target passes (deterministic cleanup-induced bug).
+- `GhostCommonHelperTests::test_common_owns_shared_pure_helpers` /
+  `test_no_local_duplicate_defs_remain` / `test_call_sites_use_common_helpers` /
+  `test_shared_helpers_keep_exact_semantics` failed (`_common` had no helpers,
+  4 files kept local defs); after `_common.*` passes (bool-not-int, 80-clip,
+  reverse-key exact).
+- `NativeToolsUnifyTests::test_prompt_context_owns_single_native_check` /
+  `test_old_wrappers_removed_and_callers_unified` /
+  `test_native_check_matches_legacy_condition` /
+  `test_recovered_fallback_comment_names_current_flow` failed (no
+  `session_uses_native_tools`, old wrappers present, `predate` comment);
+  after unify + `candidate_from_intent` comment passes.
+- `test_direct_leaf_imports_resolve` passed before and after (leaves already
+  resolvable; kept as non-regression guard).
+
+Non-bugs / intentionally untouched (per reproduce-or-it-is-not-a-bug):
+
+- `worker_child.py` stays: launched by subprocess at
+  `codey/providers/worker.py:170`, not dead code.
+- Ghost decay weights / event-corruption paths: distinct business semantics,
+  not merged.
+- Web/provider failover, web-read, no-git fallbacks: runtime fault tolerance,
+  out of scope.
+- `registry` re-exports catalog statics (`DEFAULT_PROVIDER_ID`,
+  `PROVIDER_LABELS`, ...): kept; only the top-level package layer was removed.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before final: `python -m ruff check .` clean, `git diff --check` clean;
+  targeted green (`round4` 12 passed; `cli+catalog+knowledge+project_task+
+  providers` 123 passed, 5 subtests; `research-gate+hardening+native+ghost`
+  105 passed; `round4+cli` 28 passed).
+- Final full suite: `python -m pytest -q`:
+  `4738 passed, 10 skipped, 1473 subtests passed in 350.62s (0:05:50)`.
+  Delta vs 4726 is exactly the 12 new locks. No release was made.
+
 ## Full-red round3: OverflowError + hostname + bad-row + ascii-digit (2026-09-28)
 
 Scope (22 deterministic bugs, red-first, no release):

@@ -32,9 +32,14 @@ class ProviderCatalogColdTests(unittest.TestCase):
         import codey.providers as providers
         import codey.providers.catalog as catalog
 
-        self.assertIs(providers.DEFAULT_PROVIDER_ID, catalog.DEFAULT_PROVIDER_ID)
-        self.assertIs(providers.PROVIDER_LABELS, catalog.PROVIDER_LABELS)
-        self.assertEqual(providers.provider_ids(), catalog.provider_ids())
+        # Convenience re-export layer removed: leaves are the single source.
+        self.assertFalse(hasattr(providers, "DEFAULT_PROVIDER_ID"))
+        self.assertFalse(hasattr(providers, "PROVIDER_LABELS"))
+        self.assertFalse(hasattr(providers, "provider_ids"))
+        self.assertFalse(hasattr(providers, "_EXPORTS"))
+        self.assertIsInstance(catalog.DEFAULT_PROVIDER_ID, str)
+        self.assertIsInstance(catalog.PROVIDER_LABELS, dict)
+        self.assertTrue(callable(catalog.provider_ids))
 
     def test_registry_statics_match_catalog(self) -> None:
         import codey.providers.catalog as catalog

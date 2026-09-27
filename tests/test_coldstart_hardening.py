@@ -25,7 +25,7 @@ from codey.app import api as app_api
 from codey.app.context import AppContext
 from codey.app.event_bus import EventBus, EventSubscriber, SsePayload
 from codey.app.headless_runner import HeadlessAppContext
-from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
+from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.worker import (
     WORKER_LINE_MAX_CHARS,
     WORKER_STDERR_CHUNK_CHARS,

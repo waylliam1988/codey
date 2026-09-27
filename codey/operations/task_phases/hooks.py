@@ -21,7 +21,7 @@ from codey.operations.project_completion_flow import (
 )
 from codey.operations.task_state import TaskState
 from codey.policies.shell_risk import classify_shell_risk
-from codey.providers import PROVIDER_LABELS
+from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderFailure
 from codey.providers.supervisor import HealthStoreError
 from codey.runs.ledger import LedgerWriteFailed, RunLedgerWriter

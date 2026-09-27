@@ -6,7 +6,7 @@ from typing import Any
 
 from codey.operations.task_state import TaskState
 from codey.policies.action import DECISION_DENY, ActionSubject, evaluate_action
-from codey.providers import PROVIDER_LABELS
+from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.supervisor import run_half_open_canary
 from codey.runs.ledger import RunLedgerWriter

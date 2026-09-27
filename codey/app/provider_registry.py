@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from codey.providers import PROVIDER_LABELS
+from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.supervisor import ProviderSupervisor
 
 logger = logging.getLogger(__name__)

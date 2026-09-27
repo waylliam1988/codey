@@ -6,9 +6,9 @@ from codey.agents.context import load_project_instructions
 from codey.agents.prompt_context import (
     initial_reply,
     initial_structured_reply,
-    provider_supports_structured,
     send_prompt,
     send_structured_prompt,
+    session_uses_native_tools,
 )
 from codey.agents.protocol import protocol_repair_prompt
 from codey.agents.request import AgentRequest
@@ -241,10 +241,6 @@ def _finish(
     )
 
 
-def _use_native(session: AgentLoopSession) -> bool:
-    return session.config.native_tools is not None and provider_supports_structured(session)
-
-
 def _send_followup(
     session: AgentLoopSession,
     prompt: str,
@@ -252,7 +248,7 @@ def _send_followup(
     restart_request: str | None = None,
     include_ghost_directive: bool = True,
 ) -> str | object:
-    if _use_native(session):
+    if session_uses_native_tools(session):
         return send_structured_prompt(session, prompt, restart_request=restart_request or prompt)
     return send_prompt(
         session, prompt, restart_request=restart_request, include_ghost_directive=include_ghost_directive,
@@ -294,7 +290,7 @@ def _handle_protocol_error(
         plan,
         previous_reply=_reply_display_text(reply),
     )
-    if _use_native(session) and not isinstance(reply, str):
+    if session_uses_native_tools(session) and not isinstance(reply, str):
         # The assistant already emitted tool_calls: answering with a plain
         # user repair prompt would leave dangling tool_call_ids (most
         # OpenAI-compatible servers reject that with a 400). Answer every
@@ -670,7 +666,7 @@ def _finish_max_turns(session, turn: int, summary: str = "") -> RunResult:
 def run(request: AgentRequest) -> RunResult:
     session = _setup_loop(request)
     if not request.recovered_tool_outcomes:
-        if _use_native(session):
+        if session_uses_native_tools(session):
             return _run_loop(session, initial_structured_reply(session), start_turn=1)
         return _run_loop(session, initial_reply(session), start_turn=1)
 

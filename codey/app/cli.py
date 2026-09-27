@@ -29,8 +29,8 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
 
 def cmd_chat(args: argparse.Namespace) -> int:
-    from codey.providers import connect_provider
     from codey.providers import controls as provider_controls
+    from codey.providers.registry import connect_provider
 
     prompt = " ".join(args.prompt)
     _safe_print(f"[codey] connecting provider ({args.provider}) ...", file=sys.stderr)
@@ -514,7 +514,7 @@ def main(argv: list[str] | None = None) -> int:
     # Single parser tree: ghost shares the root parser so its registration
     # exists exactly once. Parser build stays cold (no toolchain import);
     # DEFAULT_MAX_TURNS is resolved lazily in cmd_agent.
-    from codey.providers import DEFAULT_PROVIDER_ID, provider_ids
+    from codey.providers.catalog import DEFAULT_PROVIDER_ID, provider_ids
 
     ap = argparse.ArgumentParser(prog="codey")
     sub = ap.add_subparsers(dest="cmd", required=True)

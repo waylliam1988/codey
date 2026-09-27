@@ -1193,7 +1193,7 @@ class GhostWorkQueueStore:
         by_id: dict[str, GhostWorkItem] = {}
         for index, event in enumerate(rows, start=1):
             event_type = str(event.get("type") or "")
-            now = _event_ts(event)
+            now = _common.event_ts(event)
             if event_type == "ghost_work_snapshot":
                 by_id = {item.id: item for item in _snapshot_items(event)}
             elif event_type == "ghost_work_item_observed":
@@ -1741,7 +1741,7 @@ def _item_sort_key(item: GhostWorkItem) -> tuple[int, int, float, tuple[int, ...
         STATUS_PRIORITY.get(item.status, 99),
         KIND_PRIORITY.get(item.kind, 99),
         -item.priority,
-        _reverse_text_sort_key(item.updated_at),
+        _common.reverse_text_sort_key(item.updated_at),
         item.id,
     )
 
@@ -1754,7 +1754,7 @@ def _claim_sort_key(
         SCOPE_PRIORITY.get(item.scope, 99),
         -priority,
         item.retry_count,
-        _reverse_text_sort_key(item.updated_at),
+        _common.reverse_text_sort_key(item.updated_at),
         item.id,
     )
 
@@ -1794,7 +1794,7 @@ def _items_from_events(events: Iterable[dict[str, object]]) -> list[GhostWorkIte
     by_id: dict[str, GhostWorkItem] = {}
     for event in events:
         event_type = str(event.get("type") or "")
-        now = _event_ts(event)
+        now = _common.event_ts(event)
         if event_type == "ghost_work_snapshot":
             by_id = {item.id: item for item in _snapshot_items(event)}
         elif event_type == "ghost_work_item_observed":
@@ -1981,7 +1981,7 @@ def _valid_claim_transition(
     if "retry_count" not in patch:
         return False
     retry_count = patch["retry_count"]
-    if not _valid_nonnegative_int_payload(retry_count):
+    if not _common.valid_nonnegative_int_payload(retry_count):
         return False
     if retry_count < 1 or retry_count != expected_retry_count + 1:
         return False
@@ -2085,7 +2085,7 @@ def _valid_queue_transition(
     if "retry_count" not in patch:
         return False
     retry_count = patch["retry_count"]
-    if not _valid_nonnegative_int_payload(retry_count) or retry_count != 0:
+    if not _common.valid_nonnegative_int_payload(retry_count) or retry_count != 0:
         return False
     if clip_signal_text(patch.get("started_run_id"), 120):
         return False
@@ -2119,7 +2119,7 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
     expected_status = _clean_status(precondition.get("expected_status"))
     expected_started_run_id = clip_signal_text(precondition.get("expected_started_run_id"), 120)
     expected_retry_count = precondition.get("expected_retry_count")
-    if not _valid_nonnegative_int_payload(expected_retry_count):
+    if not _common.valid_nonnegative_int_payload(expected_retry_count):
         return False
 
     if action == "claim":
@@ -2173,11 +2173,7 @@ def _valid_work_precondition(value: object, *, require_id: bool = False) -> bool
         return False
     if not _valid_canonical_text(value.get("expected_started_run_id"), 120):
         return False
-    return _valid_nonnegative_int_payload(value.get("expected_retry_count"))
-
-
-def _event_ts(event: Mapping[str, object]) -> str:
-    return clip_signal_text(event.get("ts"), 80)
+    return _common.valid_nonnegative_int_payload(value.get("expected_retry_count"))
 
 
 def _transition_patch_payload(patch: Mapping[str, object]) -> dict[str, object]:
@@ -2214,7 +2210,7 @@ def _apply_claim_transition(
     if not started_run_id or not lease_expires_at or "retry_count" not in patch:
         return None
     retry_count = patch["retry_count"]
-    if not _valid_nonnegative_int_payload(retry_count):
+    if not _common.valid_nonnegative_int_payload(retry_count):
         return None
     if retry_count < 1 or retry_count != current.retry_count + 1:
         return None
@@ -2692,10 +2688,6 @@ def _valid_canonical_text(value: object, limit: int, *, required: bool = False) 
     return clip_signal_text(value, limit) == value and not contains_sensitive_signal_text(value)
 
 
-def _valid_nonnegative_int_payload(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
-
-
 def _meaningful_item_payload(item: GhostWorkItem) -> tuple[object, ...]:
     return (
         item.kind,
@@ -2722,10 +2714,6 @@ def _meaningful_item_payload(item: GhostWorkItem) -> tuple[object, ...]:
 
 def _item_payloads(items: Iterable[GhostWorkItem]) -> tuple[tuple[object, ...], ...]:
     return tuple(_meaningful_item_payload(item) for item in _bounded_items(items))
-
-
-def _reverse_text_sort_key(value: object) -> tuple[int, ...]:
-    return tuple(-ord(ch) for ch in str(value or ""))
 
 
 def _normalize_continuation_text(value: object) -> str:

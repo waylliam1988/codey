@@ -273,7 +273,7 @@ def _suppress_lower_scope_conflicts(
         key=lambda item: (
             SCOPE_PRIORITY.get(item.scope, 99),
             -item.weight,
-            _reverse_text_sort_key(item.updated_at),
+            _common.reverse_text_sort_key(item.updated_at),
         ),
     ):
         if node.conflict_key in seen_conflicts:
@@ -290,7 +290,7 @@ def _node_sort_key(node: GhostNode, hint_weights: dict[str, float] | None = None
         KIND_PRIORITY.get(node.kind, 99),
         SCOPE_PRIORITY.get(node.scope, 99),
         -(node.weight + min(0.2, hint)),
-        _reverse_text_sort_key(node.updated_at),
+        _common.reverse_text_sort_key(node.updated_at),
     )
 
 
@@ -350,10 +350,6 @@ def _field(value: Any, key: str) -> object:
     from codey.ghost._common import field_value
 
     return field_value(value, key)
-
-
-def _reverse_text_sort_key(value: object) -> tuple[int, ...]:
-    return tuple(-ord(ch) for ch in str(value or ""))
 
 
 __all__ = [

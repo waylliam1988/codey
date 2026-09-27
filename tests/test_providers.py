@@ -7,11 +7,6 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey.providers import (
-    DeepSeekWebProvider,
-    GlmWebProvider,
-    MimoWebProvider,
-    QwenWebProvider,
-    StepFunWebProvider,
     local_config,
     local_discovery,
     local_openai,
@@ -21,6 +16,13 @@ from codey.providers import (
 )
 from codey.providers.diagnostics import FAILURE_RESPONSE_MISSING, ProviderActionError
 from codey.providers.web_drivers import deepseek, glm, mimo, qwen, stepfun
+from codey.providers.web_provider import (
+    DeepSeekWebProvider,
+    GlmWebProvider,
+    MimoWebProvider,
+    QwenWebProvider,
+    StepFunWebProvider,
+)
 from codey.repairs.adapter_overrides import AdapterOverride
 from codey.runtime.core import cancellation
 

@@ -611,6 +611,10 @@ def provider_supports_structured(session: AgentLoopSession) -> bool:
     )
 
 
+def session_uses_native_tools(session: AgentLoopSession) -> bool:
+    return session.config.native_tools is not None and provider_supports_structured(session)
+
+
 def session_native_tools(session: AgentLoopSession) -> list[dict[str, object]] | None:
     tools = session.config.native_tools
     if tools is not None:
@@ -849,5 +853,6 @@ __all__ = [
     "send_structured_prompt",
     "send_structured_results",
     "session_native_tools",
+    "session_uses_native_tools",
     "with_completion_repair_context",
 ]

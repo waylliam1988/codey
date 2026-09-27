@@ -7,7 +7,8 @@ from dataclasses import fields
 from pathlib import Path
 from unittest import mock
 
-from codey.knowledge import KnowledgeNote, KnowledgeStore
+from codey.knowledge.note import KnowledgeNote
+from codey.knowledge.store import KnowledgeStore
 from codey.operations import task_context as operations_task_context
 from codey.operations.task_context import ProjectTaskContext, ProjectTaskContextBuilder
 from codey.runs.work_checkpoint import WorkCheckpointStore

@@ -25,13 +25,9 @@ from codey.app.context import (
     AppContext,
 )
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
-from codey.providers import (
-    DEFAULT_PROVIDER_ID,
-)
-from codey.providers import (
-    connect_provider as default_connect_provider,
-)
+from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers.diagnostics import capture_provider_failure as default_capture_provider_failure
+from codey.providers.registry import connect_provider as default_connect_provider
 from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.model import TaskSubmission

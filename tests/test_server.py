@@ -25,11 +25,13 @@ from codey.app import context as app_context
 from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.completion.verification_policy import VerificationCandidate
-from codey.knowledge import KnowledgeNote, KnowledgeStore
+from codey.knowledge.note import KnowledgeNote
+from codey.knowledge.store import KnowledgeStore
 from codey.operations.project_completion_flow import project_has_user_files
-from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, profile_doctor
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
+from codey.providers import profile_doctor
+from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.discovery import Discovery
 from codey.providers.local_discovery import LocalEndpoint
@@ -2639,7 +2641,9 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(replay.call_args[0][0], 1)
 
     def test_state_snapshot_reports_only_restorable_research_runs(self) -> None:
-        from codey.knowledge import KnowledgeChanges, KnowledgeNote, KnowledgeStore
+        from codey.knowledge.changes import KnowledgeChanges
+        from codey.knowledge.note import KnowledgeNote
+        from codey.knowledge.store import KnowledgeStore
 
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
@@ -4869,7 +4873,7 @@ class SessionThreadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
             seed_ghost_style_memory(state, session_id="session-research")
-            from codey.knowledge import KnowledgeStore
+            from codey.knowledge.store import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             conversation = state.conversation_for("session-research")
@@ -5006,7 +5010,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             state = self._state(td)
-            from codey.knowledge import KnowledgeStore
+            from codey.knowledge.store import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             events = state.subscribe()
@@ -5119,7 +5123,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
-            from codey.knowledge import KnowledgeStore
+            from codey.knowledge.store import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             provider = mock.Mock()
@@ -5199,7 +5203,7 @@ class SessionThreadingTests(unittest.TestCase):
             project.mkdir()
             project_text = str(project.resolve())
             state = server.AppContext(td)
-            from codey.knowledge import KnowledgeStore
+            from codey.knowledge.store import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             state.set_provider_session("deepseek", "session-hybrid")

@@ -5,21 +5,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from codey.knowledge import (
-    KnowledgeBriefBuilder,
-    KnowledgeChanges,
-    KnowledgeGraphBuilder,
-    KnowledgeNote,
-    KnowledgeStore,
-    RestoreResult,
-)
+from codey.knowledge.brief import KnowledgeBriefBuilder
+from codey.knowledge.changes import KnowledgeChanges, RestoreResult
 from codey.knowledge.concept_schema import (
     CONCEPT_EDGE_KINDS,
     clean_relations,
     normalize_concept,
 )
 from codey.knowledge.concepts import ConceptGraphBuilder, build_unified_research_graph
-from codey.knowledge.note import LINK_KINDS
+from codey.knowledge.graph import KnowledgeGraphBuilder
+from codey.knowledge.note import LINK_KINDS, KnowledgeNote
+from codey.knowledge.store import KnowledgeStore
 
 
 class KnowledgeStoreTests(unittest.TestCase):

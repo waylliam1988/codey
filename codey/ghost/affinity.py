@@ -1773,7 +1773,7 @@ def _rows_from_events(events: Iterable[dict[str, object]]) -> tuple[list[Affinit
     edges: dict[str, AffinityEdge] = {}
     for event in events:
         event_type = str(event.get("type") or "")
-        now = _event_ts(event)
+        now = _common.event_ts(event)
         if event_type == "ghost_affinity_snapshot":
             snapshot_nodes, snapshot_edges = _snapshot_rows(event)
             nodes = {node.id: node for node in snapshot_nodes}
@@ -2028,7 +2028,7 @@ def _affinity_events_replay_cleanly(events: Iterable[dict[str, object]]) -> bool
     edges: dict[str, AffinityEdge] = {}
     for event in events:
         event_type = str(event.get("type") or "")
-        now = _event_ts(event)
+        now = _common.event_ts(event)
         if event_type == "ghost_affinity_snapshot":
             snapshot_nodes, snapshot_edges = _snapshot_rows(event)
             nodes = {node.id: node for node in snapshot_nodes}
@@ -2075,10 +2075,6 @@ def _affinity_events_replay_cleanly(events: Iterable[dict[str, object]]) -> bool
         else:
             return False
     return True
-
-
-def _event_ts(event: Mapping[str, object]) -> str:
-    return clip_signal_text(event.get("ts"), 80)
 
 
 def _node_spec_payload(spec: _NodeSpec) -> dict[str, object]:
@@ -2492,9 +2488,9 @@ def _valid_scope_deleted_payload(payload: object) -> bool:
         return False
     if contains_sensitive_signal_text(scope_ref):
         return False
-    if not _valid_nonnegative_int_payload(payload.get("removed_nodes")):
+    if not _common.valid_nonnegative_int_payload(payload.get("removed_nodes")):
         return False
-    if not _valid_nonnegative_int_payload(payload.get("removed_edges")):
+    if not _common.valid_nonnegative_int_payload(payload.get("removed_edges")):
         return False
     if scope == "user":
         return scope_ref == ""
@@ -2506,11 +2502,7 @@ def _valid_decay_payload(payload: object) -> bool:
         return False
     if set(payload.keys()) != _DECAY_PAYLOAD_KEYS:
         return False
-    return all(_valid_nonnegative_int_payload(payload.get(key)) for key in _DECAY_PAYLOAD_KEYS)
-
-
-def _valid_nonnegative_int_payload(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    return all(_common.valid_nonnegative_int_payload(payload.get(key)) for key in _DECAY_PAYLOAD_KEYS)
 
 
 def _field(value: Any, name: str) -> object:

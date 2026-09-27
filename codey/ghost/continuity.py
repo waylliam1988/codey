@@ -1126,7 +1126,7 @@ def _item_sort_key(item: GhostContinuityItem) -> tuple[int, int, float, tuple[in
         KIND_PRIORITY.get(item.kind, 99),
         SCOPE_PRIORITY.get(item.scope, 99),
         -item.weight,
-        _reverse_text_sort_key(item.updated_at),
+        _common.reverse_text_sort_key(item.updated_at),
         item.id,
     )
 
@@ -1277,10 +1277,6 @@ def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
     return event_read_warnings(
         warnings, stream="continuity_events", limit=MAX_CONTINUITY_WARNINGS
     )
-
-
-def _reverse_text_sort_key(value: object) -> tuple[int, ...]:
-    return tuple(-ord(ch) for ch in str(value or ""))
 
 
 __all__ = [
