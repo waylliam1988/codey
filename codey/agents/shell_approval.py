@@ -263,7 +263,10 @@ def _nonnegative_int(value: object) -> int:
     if isinstance(value, int):
         return max(value, 0)
     if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
+        try:
+            return int(value.strip())
+        except ValueError:
+            return 0
     return 0
 
 

@@ -102,7 +102,9 @@ def _scan_ledger_file(path: Path) -> tuple[list[dict[str, object]], bool, int, b
             payload = json.loads(line)
         except json.JSONDecodeError:
             return [], False, 0, False, bytes_written
-        if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+        if not isinstance(payload, dict) or type(payload.get("schema_version")) is not int:
+            return [], False, 0, False, bytes_written
+        if payload.get("schema_version") != SCHEMA_VERSION:
             return [], False, 0, False, bytes_written
         seq = _int_or_none(payload.get("seq"))
         if seq is None or seq != expected_seq:

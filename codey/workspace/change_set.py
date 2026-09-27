@@ -296,6 +296,8 @@ def _text(value: object) -> str:
 
 
 def _nonnegative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
     try:
         return max(0, int(value or 0))
     except (TypeError, ValueError):

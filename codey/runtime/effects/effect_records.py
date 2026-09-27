@@ -225,7 +225,7 @@ class RuntimeEffectIntent:
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != SCHEMA_VERSION or isinstance(self.schema_version, bool):
+        if type(self.schema_version) is not int or self.schema_version != SCHEMA_VERSION:
             raise RuntimeEffectError(f"invalid schema_version: {self.schema_version}")
         _require_bounded_str(self.effect_id, "effect_id", MAX_EFFECT_ID_CHARS)
         _require_bounded_str(self.session_id, "session_id", MAX_REF_CHARS)
@@ -294,7 +294,7 @@ class RuntimeEffectIntent:
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_INTENT:
             raise RuntimeEffectError("invalid payload kind for RuntimeEffectIntent")
         version = payload.get("schema_version")
-        if version != SCHEMA_VERSION or isinstance(version, bool):
+        if type(version) is not int or version != SCHEMA_VERSION:
             raise RuntimeEffectError(f"unsupported schema version: {version}")
         effect_id = _require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS)
         _require_ref(payload, f"effect:{effect_id}")
@@ -350,7 +350,7 @@ class RuntimeEffectSettlement:
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != SCHEMA_VERSION or isinstance(self.schema_version, bool):
+        if type(self.schema_version) is not int or self.schema_version != SCHEMA_VERSION:
             raise RuntimeEffectError(f"invalid schema_version: {self.schema_version}")
         _require_bounded_str(self.effect_id, "effect_id", MAX_EFFECT_ID_CHARS)
         _require_bounded_str(self.session_id, "session_id", MAX_REF_CHARS)
@@ -404,7 +404,7 @@ class RuntimeEffectSettlement:
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_SETTLEMENT:
             raise RuntimeEffectError("invalid payload kind for RuntimeEffectSettlement")
         version = payload.get("schema_version")
-        if version != SCHEMA_VERSION or isinstance(version, bool):
+        if type(version) is not int or version != SCHEMA_VERSION:
             raise RuntimeEffectError(f"unsupported schema version: {version}")
         effect_id = _require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS)
         _require_ref(payload, f"effect_settlement:{effect_id}")

@@ -40,7 +40,9 @@ class GhostEventLog:
         event_validator: Callable[[dict[str, object]], bool] | None = None,
     ) -> None:
         self.path = Path(path)
-        self.schema_version = int(schema_version)
+        if type(schema_version) is not int:
+            raise ValueError(f"schema_version must be int, got {schema_version!r}")
+        self.schema_version = schema_version
         self.max_bytes = max_bytes
         self.max_warnings = max(0, int(max_warnings))
         self.source_name = source_name or self.path.name
@@ -207,7 +209,7 @@ class GhostEventLog:
         row = f"{self.source_name}:{index}" if index else self.source_name
         if not isinstance(payload, dict):
             return f"{row}:not_object"
-        if payload.get("schema_version") != self.schema_version:
+        if type(payload.get("schema_version")) is not int or payload.get("schema_version") != self.schema_version:
             return f"{row}:unsupported_schema"
         if self.allowed_event_kinds:
             event_kind = str(payload.get("type") or payload.get("kind") or "").strip()
@@ -332,8 +334,10 @@ def control_event(
     event_id_prefix: str = "",
     payload_cleaner: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None,
 ) -> dict[str, object]:
+    if type(schema_version) is not int:
+        raise ValueError(f"schema_version must be int, got {schema_version!r}")
     event: dict[str, object] = {
-        "schema_version": int(schema_version),
+        "schema_version": schema_version,
         event_field: event_name,
         timestamp_field: now,
     }

@@ -83,7 +83,7 @@ class RuntimeLogEntry:
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != SCHEMA_VERSION:
+        if type(self.schema_version) is not int or self.schema_version != SCHEMA_VERSION:
             raise RuntimeLogCorruption("unsupported runtime log schema")
         for field_name in ("session_id", "lane", "operation_id", "kind"):
             value = getattr(self, field_name)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -69,9 +70,17 @@ def _empty_state() -> dict[str, Any]:
 
 
 def _int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
     try:
-        return max(0, int(float(value or 0)))
+        number = float(value or 0)
     except (TypeError, ValueError):
+        return 0
+    if not math.isfinite(number):
+        return 0
+    try:
+        return max(0, int(number))
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
@@ -356,7 +365,7 @@ class UiStateStore:
         except StoreCorruption:
             backup_corrupt_file(self.path)
             payload = None
-        if not payload or payload.get("schema_version") != SCHEMA_VERSION:
+        if not payload or type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:
             state = _empty_state()
         else:
             state = _clean_payload(payload.get("state"))

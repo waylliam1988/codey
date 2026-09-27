@@ -271,7 +271,7 @@ def _validate_delivery_record_envelope(
     if not isinstance(payload, dict):
         raise ToolResultDeliveryError(f"invalid payload type: {type(payload)}")
     _check_no_forbidden_keys(payload)
-    if payload.get("schema_version") != SCHEMA_VERSION:
+    if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:
         raise ToolResultDeliveryError(
             f"schema_version mismatch: expected {SCHEMA_VERSION}, got {payload.get('schema_version')!r}"
         )

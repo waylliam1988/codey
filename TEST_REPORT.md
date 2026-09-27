@@ -1,5 +1,70 @@
 # Codey Test Report
 
+## Unicode digit hardening + strict schema_version v1 follow-up (2026-09-27)
+
+Scope (deterministic bugs only, red-first, no release):
+
+```text
+codey/providers/local_config.py (guard int("²") -> None)
+codey/agents/protocol.py (guard int("²") -> None)
+codey/repairs/adapter_overrides.py (ASCII-only generation keys, try/except)
+codey/research/pdf_extract.py (ASCII [0-9] ranges + guarded chunks)
+codey/toolchain/runtime.py (bounded_positive_int domain error from None)
+codey/workspace/config.py (guard -> None)
+codey/agents/shell_approval.py (guard -> 0)
+codey/toolchain/tool_args_repair.py (guard -> ToolArgsRepairError from None)
+codey/storage/ui_state_store.py (_int bool->0, inf/nan->0 via math.isfinite)
+codey/workspace/change_set.py (_nonnegative_int bool->0)
+codey/research/source_connectors.py (pubmed ASCII-only)
+codey/research/connector_search.py (pubmed URL ASCII-only)
+codey/research/controller.py (source_id ASCII-only)
+codey/runs/trace.py (_tool_instance_id ASCII-only)
+codey/workspace/revision.py + facts.py + changes.py + config.py (strict schema)
+codey/storage/conversation_store.py + ui_state_store.py (strict schema)
+codey/runs/ledger.py + ledger_projection.py + details.py + receipt.py + work_checkpoint.py (strict)
+codey/ghost/continuity.py + directive.py + inbox.py x2 + sleep.py x2 + work_queue.py + event_log.py + event_projection.py (strict)
+codey/research/evidence_ledger.py (strict)
+codey/runtime/effects/effect_records.py x4 + tool_result_delivery.py + runtime/log/entries.py (strict)
+tests/test_unicode_int_hardening_locks.py (new, 14 tests red-first)
+tests/test_schema_version_strict_locks.py (new, 5 tests red-first)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (all locked before the fix):
+
+- `test_unicode_int_hardening_locks.py` 14 failed before (`ValueError:
+  invalid literal ... '²'` in 8 crash sites, `OverflowError`/`1 == 0` in
+  `_int`/`change_set`, `True is False` in 4 ASCII-ID sites, domain-message
+  mismatch in `bounded_positive_int`), all pass after. Valid ASCII inputs
+  (`"12"`, `5`, `(4,)`, `"123"`, `"s12"`, `"1:2"`) pass before and after.
+- `test_schema_version_strict_locks.py` 5 failed before (`True` loaded as
+  valid: revision `5 == 5`, facts 1 command, conversation `123`, ui_state
+  `7`, source-guard missing in 22 files), all pass after. Valid v1 still
+  loads (`revision 5`).
+- Ruff B904 caught post-fix (`raise ... from` missing in the two new domain
+  raises); fixed with `from None`, gate clean without touching other files.
+
+Non-bugs (investigated, no failing repro, left untouched per
+reproduce-or-it-is-not-a-bug):
+
+- trace `count or 1` / ghost `limit or 1`: intentional missing->1 defaults;
+  producers never emit explicit `0`, no crash, no test failure.
+- frontend `PROVIDERS`/`DEFAULT_PROVIDER` sync, browser `in` markers, shell
+  `cwd` display, digest `[:16]` display refs: no deterministic failing repro.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted suites green (`unicode+schema+v1+round2+
+  round3+profiles+bootstrap+operation` 133 passed, 53 subtests;
+  `research+trace+revision+conversation+ui_state+ghost+tool_runtime`
+  485 passed, 109 subtests; `architecture+cli+server` 316 passed, 346 subtests).
+- Final full suite: `python -m pytest -q`:
+  `4673 passed, 10 skipped, 1473 subtests passed in 341.16s (0:05:41)`.
+  Skips are the known Windows/opt-in family. Delta vs the 4654/1473 baseline
+  is exactly the 19 new locks (14 + 5). No release was made.
+
 ## Readability: read_file read/format split, gate stays at 20, round3 digest asserts, stale C901 comment removed (2026-09-28)
 
 Scope (no release; only `read_file` split, others intentionally untouched):

@@ -2,6 +2,53 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Unicode 数字硬化 + schema_version v1 严格化收尾（未发布）
+
+- 修复确定性 unicode 数字崩溃（P1，红测先行）：`str.isdigit()` 对 `"²"` 为
+  True，但 `int("²")` 抛 `ValueError`。已硬化
+  `providers/local_config._parse_positive_int`、`agents/protocol.
+  positive_int_value`、`repairs/adapter_overrides._next_generation` /
+  `_trim_generations`（仅 ASCII generation 键）、`research/pdf_extract.
+  parse_pages`（ASCII `[0-9]` 区间 + 受保护 chunk）、`toolchain/runtime.
+  bounded_positive_int`（`from None` 的领域错误 `must be a positive integer`）、
+  `workspace/config._positive_int`、`agents/shell_approval._nonnegative_int`、
+  `toolchain/tool_args_repair._bounded_positive_int`（只抛
+  `ToolArgsRepairError`，不漏原始 `ValueError`）。合法 ASCII 输入行为不变。
+- 修复确定性 int 边界（P1，红测先行）：`storage/ui_state_store._int` 拒绝
+  `bool`（`True` -> `0`），对 `inf`/`-inf`/`nan`/`"inf"` 返回 `0` 而不是抛
+  `OverflowError`（新增 `math.isfinite` 守卫）；
+  `workspace/change_set._nonnegative_int` 拒绝 `bool`。
+- 修复确定性 ASCII-ID 放行（P2，红测先行）：`research/source_connectors.
+  is_valid_pubmed_id`、`research/connector_search._pubmed_id_from_url`、
+  `research/controller._looks_like_source_id`、`runs/trace._tool_instance_id`
+  要求 `isascii() + isdigit()`，`"²"`/`"s²"`/`"²:³"` 不再当合法 ID。
+- `schema_version` v1 严格化收尾（P2，确定性，红测先行）：把
+  `type(x) is int` 门禁从 operation_state/local_config/profiles/prompt_surface/
+  topic-repair 扩展到剩余 22 处（`workspace/revision|facts|changes|config`、
+  `storage/conversation|ui_state`、`runs/ledger|ledger_projection|details|
+  receipt|work_checkpoint`、`ghost/continuity|directive|inbox x2|sleep x2|
+  work_queue|event_log|event_projection`、`research/evidence_ledger`、
+  `runtime/effects/effect_records x4|tool_result_delivery`、`runtime/log/
+  entries`）。`True`/`1.0`/`"1"` 不再当 `1`；`GhostEventLog` 构造与
+  `control_event` 要求 `type(schema_version) is int`，不再 `int(...)` 归一。
+  生产者本来就写 int `1`。
+- 新增红测锁定 `tests/test_unicode_int_hardening_locks.py`（14 测试；修复前全
+  失败 `ValueError`/`OverflowError`/`True is False`，修复后全过）与
+  `tests/test_schema_version_strict_locks.py`（5 测试；修复前 5 失败 `True` 当
+  合法加载，修复后全过；含 22 处源码守卫）。两处领域抛错补 `from None` 过
+  Ruff B904。
+- 其余疑似家族已排查，按“无法复现就不是 bug”规则不是确定性 bug：trace
+  `count or 1` / ghost `limit or 1` 是有意的缺失->1 默认（生产者从不发显式
+  `0`）；前端 `PROVIDERS`/`DEFAULT_PROVIDER` 同步、browser 子串 marker、
+  shell `cwd` 展示、digest 截断展示均无失败复现，保持不动。
+- 验证：`python -m ruff check codey tests tools`、`git diff --check` 通过。
+  全量前目标套件全绿（`unicode+schema+v1+round2+round3+profiles+bootstrap+
+  operation` 133 通过、53 子项；`research+trace+revision+conversation+ui_state+
+  ghost+tool_runtime` 485 通过、109 子项；`architecture+cli+server` 316 通过、
+  346 子项）。最终 `python -m pytest -q`：
+  **4673 passed、10 skipped、1473 subtests passed，341.16s（0:05:41）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - 可读性：read_file 读取/格式化拆分、门禁保持 20、round3 digest 断言、删除过时 C901 注释（未发布）
 
 - 仅按自然职责边界拆分 `read_file`（确定性，红测先行）：811–870 行提成

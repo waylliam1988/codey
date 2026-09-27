@@ -343,7 +343,7 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
 
     if not isinstance(payload, dict):
         return None
-    if payload.get("schema_version") != RECEIPT_SCHEMA_VERSION:
+    if type(payload.get("schema_version")) is not int or payload.get("schema_version") != RECEIPT_SCHEMA_VERSION:
         return None
     display = payload.get("display")
     work = payload.get("work")

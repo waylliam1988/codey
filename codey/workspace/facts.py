@@ -235,7 +235,7 @@ class ProjectFactsStore:
         except StoreCorruption:
             backup_corrupt_file(path)
             return ProjectFacts()
-        if not payload or payload.get("schema_version") != SCHEMA_VERSION:
+        if not payload or type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:
             return ProjectFacts()
         commands: list[VerifiedCommand] = []
         for item in payload.get("commands") or []:

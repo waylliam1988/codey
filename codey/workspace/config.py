@@ -120,7 +120,7 @@ def load_project_config(project: str | Path) -> ProjectConfigLoadResult:
             path=path_text,
             warning_count=1,
         )
-    if data.get("schema_version") != PROJECT_CONFIG_SCHEMA_VERSION:
+    if type(data.get("schema_version")) is not int or data.get("schema_version") != PROJECT_CONFIG_SCHEMA_VERSION:
         return ProjectConfigLoadResult(
             warnings=(f"ignored .codey/config.json because schema_version must be {PROJECT_CONFIG_SCHEMA_VERSION}",),
             path=path_text,
@@ -338,7 +338,10 @@ def _positive_int(value: object) -> int | None:
     if isinstance(value, int):
         return value if value > 0 else None
     if isinstance(value, str) and value.strip().isdigit():
-        number = int(value.strip())
+        try:
+            number = int(value.strip())
+        except ValueError:
+            return None
         return number if number > 0 else None
     return None
 

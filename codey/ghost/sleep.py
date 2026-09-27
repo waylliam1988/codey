@@ -131,7 +131,7 @@ class GhostSleepReport:
     def from_payload(cls, payload: object) -> GhostSleepReport | None:
         if not isinstance(payload, dict):
             return None
-        if payload.get("schema_version") != SLEEP_SCHEMA_VERSION:
+        if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SLEEP_SCHEMA_VERSION:
             return None
         steps = tuple(
             step for step in (_step_from_payload(row) for row in _list(payload.get("steps"))) if step is not None
@@ -620,7 +620,7 @@ class GhostSleepStore:
             return None
         if not isinstance(payload, dict):
             return None
-        if payload.get("schema_version") != SLEEP_SCHEMA_VERSION:
+        if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SLEEP_SCHEMA_VERSION:
             return None
         if payload.get("kind") != _STATE_KIND:
             return None

@@ -1166,7 +1166,7 @@ class GhostWorkQueueStore:
             return ()
         if not isinstance(payload, dict):
             return ()
-        if payload.get("schema_version") != WORK_QUEUE_SCHEMA_VERSION:
+        if type(payload.get("schema_version")) is not int or payload.get("schema_version") != WORK_QUEUE_SCHEMA_VERSION:
             return ()
         if payload.get("kind") != _PROJECTION_KIND:
             return ()

@@ -359,7 +359,15 @@ def _current_generation(index: dict[str, Any]) -> int:
 
 def _next_generation(index: dict[str, Any]) -> int:
     generations = _generations(index)
-    numbers = [int(key) for key in generations if str(key).isdigit()]
+    numbers: list[int] = []
+    for key in generations:
+        text = str(key)
+        if not text.isascii() or not text.isdigit():
+            continue
+        try:
+            numbers.append(int(text))
+        except ValueError:
+            continue
     return (max(numbers) if numbers else 0) + 1
 
 
@@ -421,7 +429,16 @@ def _trim_generations(
         if provider_id
         else None
     )
-    ordered = sorted((int(key), key) for key in generations if str(key).isdigit())
+    ordered: list[tuple[int, str]] = []
+    for key in generations:
+        text = str(key)
+        if not text.isascii() or not text.isdigit():
+            continue
+        try:
+            ordered.append((int(text), key))
+        except ValueError:
+            continue
+    ordered.sort()
     for _number, key in ordered[:-MAX_GENERATIONS]:
         if key in keep:
             continue

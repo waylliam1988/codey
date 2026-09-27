@@ -38,16 +38,22 @@ def parse_pages(
         chunk = chunk.strip()
         if not chunk:
             continue
-        match = re.fullmatch(r"(\d+)\s*-\s*(\d+)", chunk)
+        match = re.fullmatch(r"([0-9]+)\s*-\s*([0-9]+)", chunk)
         if match:
-            start = max(1, int(match.group(1)))
-            end = max(1, int(match.group(2)))
+            try:
+                start = max(1, int(match.group(1)))
+                end = max(1, int(match.group(2)))
+            except ValueError:
+                continue
             if end < start:
                 start, end = end, start
             numbers.extend(range(start, end + 1))
             continue
-        if chunk.isdigit():
-            numbers.append(max(1, int(chunk)))
+        if chunk.isascii() and chunk.isdigit():
+            try:
+                numbers.append(max(1, int(chunk)))
+            except ValueError:
+                continue
     if not numbers and value:
         return parse_pages("", default=default, max_pages=max_pages)
     out: list[int] = []

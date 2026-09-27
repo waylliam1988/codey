@@ -242,7 +242,7 @@ class WorkspaceRevisionStore:
             raise WorkspaceRevisionCorruption("workspace revision is unreadable") from exc
         if not isinstance(payload, dict):
             raise WorkspaceRevisionCorruption("workspace revision root must be an object")
-        if payload.get("schema_version") != SCHEMA_VERSION:
+        if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:
             raise WorkspaceRevisionCorruption("unsupported workspace revision schema")
         revision = valid_workspace_revision(payload.get("revision"))
         if not revision:

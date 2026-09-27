@@ -190,7 +190,7 @@ class WorkCheckpointStore:
                 checkpoint=None,
                 corrupt_backup_path=backup_corrupt_file(path),
             )
-        if not payload or payload.get("schema_version") != SCHEMA_VERSION:
+        if not payload or type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:
             return WorkCheckpointLoadResult(checkpoint=None)
         try:
             status = str(payload.get("status") or "")

@@ -505,7 +505,7 @@ def _load_trace_payload(store: Any, session_id: str, run_id: str) -> dict[str, o
         return None
     if not isinstance(payload, dict):
         return None
-    if payload.get("schema_version") != SCHEMA_VERSION:
+    if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:
         return None
     if payload.get("kind") != TRACE_KIND:
         return None

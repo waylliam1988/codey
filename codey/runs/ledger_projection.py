@@ -335,7 +335,7 @@ def _sorted_payloads(records: Iterable[RunLedgerRecord]) -> list[dict[str, objec
         payload = record.payload if isinstance(record, RunLedgerRecord) else None
         if not isinstance(payload, dict):
             continue
-        if payload.get("schema_version") != SCHEMA_VERSION:
+        if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:
             continue
         payloads.append((_int(payload.get("seq"), default=index), index, payload))
     return [payload for _seq, _index, payload in sorted(payloads, key=lambda item: (item[0], item[1]))]

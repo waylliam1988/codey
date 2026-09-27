@@ -537,7 +537,12 @@ def _is_arxiv_url(url: str) -> bool:
 def _pubmed_id_from_url(url: str) -> str:
     parsed = parsed_url(url)
     parts = [item for item in parsed.path.split("/") if item]
-    return parts[0] if parts and parts[0].isdigit() else ""
+    if not parts:
+        return ""
+    candidate = parts[0]
+    if candidate.isascii() and candidate.isdigit():
+        return candidate
+    return ""
 
 
 def _arxiv_id_from_url(url: str) -> str:

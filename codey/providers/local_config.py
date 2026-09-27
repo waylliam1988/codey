@@ -185,8 +185,13 @@ def _parse_positive_int(value: object) -> int | None:
         return int(value)
     if isinstance(value, str):
         text = value.strip().replace("_", "").replace(",", "")
-        if text.isdigit() and int(text) > 0:
-            return int(text)
+        if text.isdigit():
+            try:
+                number = int(text)
+            except ValueError:
+                return None
+            if number > 0:
+                return number
     return None
 
 

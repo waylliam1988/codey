@@ -2,6 +2,59 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Unicode digit hardening + strict schema_version v1 follow-up (no release)
+
+- Fixed deterministic unicode-digit crashes (P1, red-first): `str.isdigit()`
+  is true for `"²"` but `int("²")` raises `ValueError`. Hardened
+  `providers/local_config._parse_positive_int`, `agents/protocol.
+  positive_int_value`, `repairs/adapter_overrides._next_generation` /
+  `_trim_generations` (ASCII-only generation keys), `research/pdf_extract.
+  parse_pages` (ASCII `[0-9]` ranges + guarded chunks), `toolchain/runtime.
+  bounded_positive_int` (domain `must be a positive integer` via `from None`),
+  `workspace/config._positive_int`, `agents/shell_approval._nonnegative_int`,
+  `toolchain/tool_args_repair._bounded_positive_int` (raises
+  `ToolArgsRepairError`, never raw `ValueError`). Valid ASCII inputs unchanged.
+- Fixed deterministic int edge cases (P1, red-first): `storage/ui_state_store.
+  _int` now rejects `bool` (`True` -> `0`) and returns `0` for
+  `inf`/`-inf`/`nan`/`"inf"` instead of raising `OverflowError` (added `math.
+  isfinite` guard); `workspace/change_set._nonnegative_int` rejects `bool`.
+- Fixed deterministic ASCII-ID fail-opens (P2, red-first): `research/
+  source_connectors.is_valid_pubmed_id`, `research/connector_search.
+  _pubmed_id_from_url`, `research/controller._looks_like_source_id`, and
+  `runs/trace._tool_instance_id` now require `isascii() + isdigit()`, so
+  `"²"`/`"s²"`/`"²:³"` no longer pass as valid IDs.
+- Strict `schema_version` v1 follow-up (P2, deterministic, red-first):
+  extended the `type(x) is int` gate from operation_state/local_config/
+  profiles/prompt_surface/topic-repair to 22 remaining readers
+  (`workspace/revision|facts|changes|config`, `storage/conversation|ui_state`,
+  `runs/ledger|ledger_projection|details|receipt|work_checkpoint`,
+  `ghost/continuity|directive|inbox x2|sleep x2|work_queue|event_log|
+  event_projection`, `research/evidence_ledger`, `runtime/effects/
+  effect_records x4|tool_result_delivery`, `runtime/log/entries`).
+  `True`/`1.0`/`"1"` no longer pass as `1`; `GhostEventLog` constructor and
+  `control_event` now require `type(schema_version) is int` instead of
+  `int(...)` coercion. Producers already write int `1`.
+- Red-first locks in new `tests/test_unicode_int_hardening_locks.py` (14 tests;
+  all failed before with `ValueError`/`OverflowError`/`True is False`, pass
+  after) and `tests/test_schema_version_strict_locks.py` (5 tests; 5 failed
+  before with `True` loading as valid, pass after; includes source-guard for
+  all 22 strict readers). Ruff B904 fix (`from None`) for the two new domain
+  raises.
+- Other suspected families were investigated and are not deterministic bugs
+  per the reproduce-or-it-is-not-a-bug rule: trace `count or 1` / ghost
+  `limit or 1` are intentional missing->1 defaults (explicit `0` never occurs
+  from producers); frontend `PROVIDERS`/`DEFAULT_PROVIDER` sync, browser
+  substring markers, shell `cwd` display, and digest-truncation display refs
+  have no failing repro and were left untouched.
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted suites green before the final run
+  (`unicode+schema+v1+round2+round3+profiles+bootstrap+operation` 133 passed,
+  53 subtests; `research+trace+revision+conversation+ui_state+ghost+tool_runtime`
+  485 passed, 109 subtests; `architecture+cli+server` 316 passed, 346 subtests).
+  Then final `python -m pytest -q`:
+  `4673 passed, 10 skipped, 1473 subtests passed in 341.16s (0:05:41)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Readability: read_file read/format split, gate stays at 20, round3 digest asserts, stale C901 comment removed (no release)
 
 - Split only `read_file` on its natural read/format boundary (deterministic,

@@ -809,7 +809,7 @@ class GhostInboxStore:
         if not isinstance(payload, dict):
             self._quarantine(self.inbox_path)
             return None
-        if payload.get("schema_version") != INBOX_SCHEMA_VERSION:
+        if type(payload.get("schema_version")) is not int or payload.get("schema_version") != INBOX_SCHEMA_VERSION:
             self._quarantine(self.inbox_path)
             return None
         if payload.get("kind") != _PROJECTION_KIND:
@@ -864,7 +864,7 @@ class GhostInboxStore:
             raise GhostSettingsError(self.settings_path, str(exc)) from exc
         if not isinstance(payload, dict):
             raise GhostSettingsError(self.settings_path, "not a dict")
-        if payload.get("schema_version") != INBOX_SCHEMA_VERSION:
+        if type(payload.get("schema_version")) is not int or payload.get("schema_version") != INBOX_SCHEMA_VERSION:
             raise GhostSettingsError(self.settings_path, "schema mismatch")
         if "learning_enabled" not in payload:
             raise GhostSettingsError(self.settings_path, "learning_enabled missing")

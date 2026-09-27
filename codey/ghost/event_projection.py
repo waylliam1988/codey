@@ -62,7 +62,11 @@ def read_projection_payload(
     if payload is None:
         # Raced deletion between the exists() check and the read.
         return None, "missing"
-    if payload.get("schema_version") != schema_version or payload.get("kind") != kind:
+    if (
+        type(payload.get("schema_version")) is not int
+        or payload.get("schema_version") != schema_version
+        or payload.get("kind") != kind
+    ):
         return None, "wrong_schema"
     return dict(payload), ""
 

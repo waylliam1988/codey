@@ -223,7 +223,13 @@ def _bounded_positive_int(
     if isinstance(value, int):
         parsed = value
     elif isinstance(value, str) and value.strip().isdigit():
-        parsed = int(value.strip())
+        try:
+            parsed = int(value.strip())
+        except ValueError:
+            raise ToolArgsRepairError(
+                f"{name} must be a positive integer",
+                repair_kind="invalid_args",
+            ) from None
         coerced = True
     else:
         raise ToolArgsRepairError(

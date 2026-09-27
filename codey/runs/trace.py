@@ -2385,7 +2385,13 @@ def _identifier(value: object, limit: int = MAX_TEXT_CHARS) -> str:
 def _tool_instance_id(value: object) -> str:
     text = _identifier(value, 40)
     turn, sep, index = text.partition(":")
-    return text if sep and turn.isdigit() and index.isdigit() else ""
+    if not sep:
+        return ""
+    if not turn.isascii() or not turn.isdigit():
+        return ""
+    if not index.isascii() or not index.isdigit():
+        return ""
+    return text
 
 
 def _bounded_refs(values: Iterable[object], *, limit: int = MAX_REFS) -> tuple[str, ...]:

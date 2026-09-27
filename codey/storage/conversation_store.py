@@ -111,7 +111,7 @@ class ConversationStore:
         except StoreCorruption:
             backup_corrupt_file(path)
             return ConversationContext()
-        if not payload or payload.get("schema_version") != SCHEMA_VERSION:
+        if not payload or type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:
             return ConversationContext()
         defaults = ConversationContext()
         return ConversationContext(

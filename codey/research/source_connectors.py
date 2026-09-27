@@ -649,7 +649,7 @@ def _secret_query_spans(text: str) -> tuple[tuple[int, int], ...]:
 
 def is_valid_pubmed_id(value: object) -> bool:
     text = str(value or "").strip()
-    return bool(text) and text.isdigit() and len(text) <= 12
+    return bool(text) and text.isascii() and text.isdigit() and len(text) <= 12
 
 
 def is_valid_arxiv_id(value: object) -> bool:

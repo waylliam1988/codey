@@ -547,7 +547,8 @@ def _record_payload(record: object) -> dict[str, object]:
         return {}
     payload = record.to_jsonable()
     if (
-        payload.get("schema_version") != RESEARCH_RECORD_SCHEMA_VERSION
+        type(payload.get("schema_version")) is not int
+        or payload.get("schema_version") != RESEARCH_RECORD_SCHEMA_VERSION
         or payload.get("kind") != RESEARCH_RECORD_KIND
         or not _record_id(payload.get("record_id"))
         # A record without its own content digest is invalid input: storing

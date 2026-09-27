@@ -84,7 +84,7 @@ def _manifest_files_or_raise(payload: dict, manifest_path: Path) -> dict:
     blocks writes so one edit never rebuilds an empty index over good bodies.
     The corrupt file stays in place for explicit repair.
     """
-    if payload.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
+    if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
         raise StoreCorruption(manifest_path, "manifest schema_version")
     raw_files = payload.get("files")
     if not isinstance(raw_files, dict):

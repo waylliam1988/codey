@@ -815,7 +815,7 @@ def _normalized_id(value: object) -> str:
 
 
 def _looks_like_source_id(value: str) -> bool:
-    return len(value) > 1 and value[0] == "s" and value[1:].isdigit()
+    return len(value) > 1 and value[0] == "s" and value[1:].isascii() and value[1:].isdigit()
 
 
 def _as_int(value: object, default: int = 0) -> int:
