@@ -219,7 +219,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_local_context_empty_state_is_single_summary(self) -> None:
         self.assertIn("No local context yet", LOCAL_CONTEXT_DRAWER_JS)
         self.assertIn("No local context yet · Updates ${state}", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("const hasContent = !!(contextRows.length || reviewRows.length || activeRows.length || taskRows.length);", LOCAL_CONTEXT_DRAWER_JS)
         self.assertIn("const hasWarning = !!warnings.length;", LOCAL_CONTEXT_DRAWER_JS)
         self.assertIn("if (!hasContent && !hasWarning)", LOCAL_CONTEXT_DRAWER_JS)
         self.assertIn("appendGroup(body, 'Recent focus', contextRows, rowNode);", LOCAL_CONTEXT_DRAWER_JS)

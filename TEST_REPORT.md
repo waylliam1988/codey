@@ -1,5 +1,56 @@
 # Codey Test Report
 
+## Ghost manual preference path and local context fixes (2026-09-27)
+
+Scope: preserve the Ghost 0.6 foundation, add an explicit memory input without
+an extra model call, remove historical retirement locks, and fix deterministic
+control-surface defects. No release.
+
+Red-first cases:
+
+- `test_local_context_render`: a saved observation alone rendered “No local
+  context yet” instead of a Recent experiences group.
+- `test_ghost_control_surface`: observation read failure left health `ok`;
+  summary with no chat returned another chat's committed experience.
+- `test_ghost_manual_memory`: `propose_preference` was unsupported; after
+  implementation, proposing an already accepted preference returned `200`
+  with status `accepted` rather than a pending candidate.
+
+Implementation and coverage:
+
+- `codey/ghost/control_surface.py`, `gate.py`: validate committed observation
+  provenance and a grounded quote; only allow typed style preferences; manual
+  signals stay pending until review. Existing inbox, Hebbian, Directive,
+  observations, affinity, continuity, sleep, and work queue remain.
+- `codey/web/assets/local_context_drawer.js`, `app.css`: show experiences and
+  an explicit preference form. Node DOM test exercises the rendered row and
+  menu/form path; API integration test proves proposal → accept → Directive.
+- `codey/toolchain/definition.py`: remove unused `_call_arg` alias. Remove
+  `test_control_surface_retirement.py` and duplicate retired-file assertions;
+  current export/reset shape has a positive store-set test.
+- Existing server tests retain one normal model call for chat observation
+  settlement. Learning-switch, Ghost storage, directive, auto dispatch, and
+  current UI tests were included in targeted checks.
+
+Preflight: `ruff check .`, `git diff --check`, `node --check` on the drawer,
+`pytest --collect-only` (4583 tests), and targeted tests (294 passed, 474
+subtests) all passed. `tests/test_server.py` plus new control-surface tests
+passed separately (229 passed, 1 skipped, 6 subtests). The first broad targeted
+run hit sandbox permission errors at the default user `.codey` directory; a
+temporary `USERPROFILE` resolved that environment issue without product code
+changes.
+
+Single full run, after preflight:
+
+```text
+python -m pytest -q -p no:cacheprovider
+4552 passed, 31 skipped, 1441 subtests passed in 352.23s (0:05:52)
+```
+
+The full test process used a temporary `USERPROFILE` for writable local state.
+This report and the changelogs were updated after that run; no full rerun was
+performed for documentation changes.
+
 ## Ghost cold-start retirement: learning loop + pre-turn router removed, icon packaging, revival/meta + helper dedup (2026-09-27)
 
 Scope (production cleanup, TDD red-first, no release):

@@ -2,6 +2,30 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Ghost manual preference path and local context fixes (no release)
+
+- Kept Ghost's observation retrieval, inbox, Hebbian, Directive, affinity,
+  continuity, sleep, and work queue foundations for the 0.6 roadmap. No
+  post-turn extractor or pre-turn router model call was restored.
+- Added a user-initiated path from a committed experience in the Local context
+  drawer to a typed preference candidate. The action verifies the exact chat,
+  project, run, and quote against saved user text; it obeys the update switch
+  and requires Pending review before Hebbian reinforcement and Directive use.
+  The drawer now shows Recent experiences and a small preference form.
+- Fixed four deterministic control-surface bugs with failing tests first:
+  observation-only state showed an empty drawer; observation read failures did
+  not appear in health; an empty chat scope exposed other chats' experiences;
+  re-proposing an accepted preference falsely claimed it was pending.
+- Removed the unused `_call_arg` forwarding helper and historical retirement
+  tests that asserted deleted files or obsolete export keys. Current export
+  and reset store coverage remains in `test_ghost_control_surface.py`.
+- Verification: repo-wide `ruff check .`, `git diff --check`, JavaScript syntax,
+  and 4583-test collection passed before the single full run. Full
+  `python -m pytest -q -p no:cacheprovider`: **4552 passed, 31 skipped,
+  1441 subtests passed in 352.23s (0:05:52)**. The test process used a
+  temporary `USERPROFILE` because the sandbox blocks the default `.codey`
+  state directory. No release was made.
+
 ## Unreleased - Ghost cold-start retirement: learning loop + pre-turn router removed, icon packaging, revival/meta + helper dedup (no release)
 
 - Packaging fix (deterministic bug, red-first): `pyproject.toml` package-data

@@ -143,6 +143,19 @@ codey/ghost/sleep.py
 > 导出/清理不再含 `router`/`signals`（schema version 2）。历史 ROADMAP 中
 > “Learning Loop v1 / Router v1 已完成”是阶段记录，不代表现行能力。
 
+当前冷启动产品保留两条相互衔接的路径：
+
+```text
+正常回合结算 → 已提交经历 observation → 下一轮有界检索（不增加模型调用）
+用户在 Local context 选中经历 → 选择类型化偏好与作用域、确认原话引用
+  → inbox 待审候选 → 用户接受 → Hebbian 节点 → Ghost Directive
+```
+
+第二条路径是用户显式操作，不是对普通对话的自动抽取。服务端验证经历的会话、
+项目、run 和原话引用，更新开关关闭时拒绝新候选；重复提交已审偏好也不会假报
+待审。inbox/Hebbian/Directive 与 affinity、continuity、sleep、work queue
+继续作为 0.6 的重要底座，不能因旧抽取器和预路由退役而一并删除。
+
 这些模块已经说明一个方向：Ghost 是事件和投影系统，不是新的 Agent runtime。
 
 ## 核心原则

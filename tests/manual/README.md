@@ -1269,64 +1269,6 @@ repairs only; it does not change coding's existing
 multiple-top-level-JSON compatibility behavior, add an allowed-tools gate, or
 introduce verification candidate IDs.
 
-> 2026-09-27 冷启动退役：`ghost_signal_extractor_ab.py` 已删除（连同
-> `codey/ghost/signal_codec.py`、`extractor.py`、`store.py`）。现行路径是
-> settlement 写入 observation、下轮有界检索，不再为每轮发起额外抽取模型调用。
-> 以下为历史记录（0.3.0），命令不再可用。
-
-`ghost_signal_extractor_ab.py` was a Ghost-only A/B probe for 0.3.0's explicit
-learning signal extractor. The `baseline` arm emits no signals; the
-`extractor` arm asks one live provider at a time to classify current user
-messages into candidate signals such as style preferences, corrections,
-research interests, long-term goals, and action tendencies. It does not execute
-local tools, write accepted memory, inject a Ghost directive, or change
-production chat/coding/Research behavior.
-
-```powershell
-python -B tests\manual\ghost_signal_extractor_ab.py --self-test
-python -B tests\manual\ghost_signal_extractor_ab.py `
-  --provider qwen `
-  --port 9222 `
-  --timeout 90
-```
-
-Run providers one process at a time. The scorer tracks kind hits, no-signal
-false positives, JSON parse success, and whether every `evidence_quote` is
-grounded in the user message.
-
-2026-08-06 live A/B after prompt tightening:
-
-- DeepSeek: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
-  grounded quotes `7/7`; baseline `2/7`.
-- Qwen: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
-  grounded quotes `7/7`; baseline `2/7`.
-- MiMo: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
-  grounded quotes `7/7`; baseline `2/7`.
-- StepFun: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
-  grounded quotes `7/7`; baseline `2/7`.
-- GLM: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
-  grounded quotes `7/7`; baseline `2/7`.
-
-The model-visible extractor prompt is intentionally generic and does not expose
-internal product names. DeepSeek and Qwen initially showed useful boundary
-failures (`action_tendency` vs `correction`, then `style_preference` vs
-`action_tendency`); the current prompt fixes those distinctions.
-
-Privacy note: candidate signals that look like passwords, API keys, bearer
-tokens, private keys, or high-entropy secrets are rejected by the schema parser
-before they can be written to `state_home/ghost/signals.jsonl`.
-
-CDP note: this probe now always releases non-isolated Playwright automation,
-even when a caller passes `--keep-open`; regular `Session.close()` leaves reused
-provider tabs open. This avoids half-stale CDP attachments between one-provider
-manual runs. If `/json/version` responds but Playwright attach stalls, Codey
-fails fast instead of silently switching to another provider port, because the
-opened port may be the one with the user's logged-in provider tabs.
-
-Failure-path note: provider/CDP connection failures are written to the JSON
-output as bounded failure rows and the probe exits non-zero. The probe should not
-mask the original web-provider failure with its own reporting error.
-
 `ghost_directive_ab.py` is a Ghost-only A/B probe for 0.3.3's bounded prompt
 context. The `baseline` arm sends the task normally; the `directive` arm prepends
 the same short neutral `Local Context` that production chat/planning can receive
@@ -1351,90 +1293,6 @@ python -B tests\manual\ghost_directive_ab.py `
 Run providers one at a time. A failure row means the provider/CDP path or the
 model response did not satisfy the narrow probe; it should not be hidden by
 retrying all providers in one batch.
-
-> 2026-09-27 冷启动退役：`ghost_learning_loop_ab.py` 已删除（连同
-> `codey/ghost/learning_loop.py`）。普通回合不再发起额外模型调用，改为记录
-> 已完成经历供下轮检索。以下为历史记录（0.3.4），命令不再可用。
-
-`ghost_learning_loop_ab.py` was a Ghost-only A/B probe for 0.3.4's post-turn
-learning loop. It runs against a temporary `state_home`, sends a baseline chat
-prompt, teaches an explicit typed style preference in a separate learning turn,
-uses a fresh provider tab for extraction, and then sends the same task with the
-newly learned neutral `Local Context`. It checks that the typed style preference
-is accepted/reinforced, that a plain complaint such as "you are wrong" does not
-become accepted memory, that the directive text changes, and that model replies
-do not leak internal Ghost naming. It does not edit files, scan a project, call
-Research, enable Project Writer learning, or change permissions.
-
-```powershell
-python -B tests\manual\ghost_learning_loop_ab.py --self-test
-python -B tests\manual\ghost_learning_loop_ab.py `
-  --provider deepseek `
-  --port 9222 `
-  --timeout 90 `
-  --new-chat-timeout 45 `
-  --output tests\manual\results\ghost_learning_loop_deepseek.json
-```
-
-Run one provider per browser process. Restart the 9222 Edge CDP session between
-providers so stale pages, half-attached Playwright sessions, and unfinished
-extractor tabs cannot contaminate the next result.
-
-The live harness opens the extractor in a temporary sibling tab from the same
-provider browser context. That keeps the extractor prompt out of the user's
-current chat tab and avoids nested Playwright sync attachments in the manual
-process; production still receives its provider factory from the server.
-
-2026-08-09 Ghost Learning Loop live A/B, run one provider per restarted Edge CDP
-session:
-
-- DeepSeek: passed. The learning loop accepted/reinforced `reply_length=concise`
-  and `reply_structure=answer_first`; the next answer was shorter and did not
-  leak internal naming.
-- MiMo: passed. It produced one extra candidate row, but only the two safe typed
-  style preferences became active Hebbian nodes.
-- Qwen: passed. The directive arm was much shorter than baseline and preserved
-  the typed local context without internal naming leakage.
-- GLM: passed after a scoped restart of the 9222 Edge CDP session.
-- StepFun: passed. It also produced one extra candidate row, but only the two
-  renderable typed preferences were active.
-
-> 2026-09-27 冷启动退役：`ghost_router_ab.py` 和
-> `ghost_router_production_ab.py` 已删除（连同 `codey/ghost/router.py`）。
-> 预路由额外模型调用已移除，`auto` 由任务本来需要的首次模型调用决定下一步；
-> 当前任务路由 trace 记录实际 `auto`/用户选择结果。以下为历史记录（0.3.7），
-> 命令不再可用。
-
-`ghost_router_ab.py` and `ghost_router_production_ab.py` covered 0.3.7 automatic
-task routing. The router-only probe asks a live provider for one JSON route
-decision. The production-spine probe runs the real `task_entry` routing entry
-point with safe mode-body stubs, so it verifies `task_start.mode`,
-`task_done.mode`, and dispatch without editing the repository or running shell
-commands.
-
-```powershell
-python -B tests\manual\ghost_router_ab.py --self-test
-python -B tests\manual\ghost_router_ab.py `
-  --provider deepseek `
-  --port 9222 `
-  --timeout 90 `
-  --new-chat-timeout 45 `
-  --output tests\manual\results\ghost_router_deepseek.json
-
-python -B tests\manual\ghost_router_production_ab.py --self-test
-python -B tests\manual\ghost_router_production_ab.py `
-  --provider deepseek `
-  --port 9222 `
-  --output tests\manual\results\ghost_router_production_deepseek.json
-```
-
-Run one provider per restarted Edge CDP session. The score weights
-Writer/Hybrid confusion more heavily than Chat/Planning confusion because mode
-errors have different blast radii. Production A/B reports are written
-atomically after each case with `complete=false` until the full run finishes.
-The fixture also includes a project-attached chat regression where the user
-explicitly forbids project file access; production code must keep that case in
-chat even if the router model selects Writer.
 
 `ghost_work_queue_production_ab.py` covers 0.3.8 Work Queue continuation. It
 uses the production `task_entry` entry point and real queue claim/complete/block
@@ -1611,36 +1469,30 @@ per fresh webpage tab:
 Output JSON files are written under
 `tests/manual/results/ghost_affinity_quality_*.json`.
 
-0.3.11 Local Context Control Surface does not have a live provider A/B harness.
-It changes only local audit API/UI controls: `GET /api/ghost/summary`,
-`POST /api/ghost/action`, `GET /api/ghost/export`, and the topbar
-`Local context` drawer. It does not change model-visible prompts, Router,
-Research/Writer behavior, provider fallback, or permission boundaries.
+Local Context Control Surface has no live provider A/B harness. Its current
+API/UI path is `GET /api/ghost/summary`, `POST /api/ghost/action`,
+`GET /api/ghost/export`, and the topbar `Local context` drawer. Committed
+experiences appear under Recent experiences. A user can explicitly select a
+typed preference, scope, and exact quote from a saved request, then accept the
+Pending review candidate. Only accepted preferences enter the bounded
+model-visible Directive; this path makes no extra provider call and does not
+change provider fallback or permission boundaries.
 
 Validate it with deterministic API/UI/architecture tests and local browser
 smoke instead:
 
 ```powershell
-python -m pytest tests\test_ghost_control_surface.py tests\test_server.py `
-  tests\test_ui.py tests\test_ui_architecture.py tests\test_architecture.py `
+python -m pytest tests\test_ghost_manual_memory.py tests\test_local_context_render.py `
+  tests\test_ghost_control_surface.py tests\test_server.py tests\test_ui.py `
+  tests\test_ui_architecture.py tests\test_architecture.py `
   -q -p no:cacheprovider
 ```
 
 The smoke path should cover opening `Local context`, opening Changes/Research
 after it to verify drawer mutual exclusion, switching chat/project to verify
-stale-scope closure, reviewing candidates, queueing/rejecting non-running work
-items, delete-scope confirmation, reset confirmation, and copy/export.
-
-2026-08-11 Ghost Router live A/B, original 10-case matrix, run one provider per
-restarted Edge CDP session:
-
-- DeepSeek: router-only 10/10; production-spine 10/10.
-- Qwen: router-only 10/10; production-spine 10/10.
-- MiMo: router-only 10/10; production-spine 9/10. The miss was a
-  provider/CDP transient fallback; the failed case passed 1/1 when rerun alone.
-- GLM: router-only 10/10; production-spine 10/10.
-- StepFun: router-only 10/10; production-spine 9/10. The miss was a
-  provider/CDP transient fallback; the failed case passed 1/1 when rerun alone.
+stale-scope closure, showing a committed experience, proposing and accepting a
+preference, queueing/rejecting non-running work items, delete-scope confirmation,
+reset confirmation, and copy/export.
 
 2026-08-08 Ghost Directive live A/B, run one provider per process:
 

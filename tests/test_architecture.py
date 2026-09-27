@@ -1907,24 +1907,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # services.py was split into review/consensus/shell_service (+ provider
         # warmup into provider_services): no forwarder facade may come back.
         self.assertFalse((ROOT / "codey" / "app" / "services.py").exists())
-        # Ghost cold-start retirement (2026-09-27): the extra-model-call
-        # learning loop and pre-turn router were replaced by observation
-        # write + bounded retrieval and unified auto. Their modules, manual
-        # harnesses, and router cases must not come back.
-        for retired in (
-            "codey/ghost/router.py",
-            "codey/ghost/store.py",
-            "codey/ghost/extractor.py",
-            "codey/ghost/signal_codec.py",
-            "codey/ghost/learning_loop.py",
-            "tests/manual/ghost_router_ab.py",
-            "tests/manual/ghost_router_production_ab.py",
-            "tests/manual/ghost_signal_extractor_ab.py",
-            "tests/manual/ghost_learning_loop_ab.py",
-            "tests/fixtures/ghost_router_cases.jsonl",
-        ):
-            with self.subTest(retired=retired):
-                self.assertFalse((ROOT / retired).exists())
         offenders: list[str] = []
         for path in sorted((ROOT / "codey").rglob("*.py")):
             imported = imported_modules(path)
@@ -1932,19 +1914,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(offenders, [])
         service_offenders: list[str] = []
-        retired_ghost = {
-            "codey.ghost.router",
-            "codey.ghost.store",
-            "codey.ghost.extractor",
-            "codey.ghost.signal_codec",
-            "codey.ghost.learning_loop",
-        }
-        for path in sorted((ROOT / "codey").rglob("*.py")):
-            imported = imported_modules(path)
-            if not retired_ghost.isdisjoint(imported):
-                service_offenders.append(path.relative_to(ROOT).as_posix())
-        self.assertEqual(service_offenders, [])
-        service_offenders = []
         for path in sorted((ROOT / "codey").rglob("*.py")):
             imported = imported_modules(path)
             if "codey.app.services" in imported:

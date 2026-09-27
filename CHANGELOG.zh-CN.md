@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Ghost 显式偏好入口与本地上下文修复（未发布）
+
+- 保留 Ghost 的经历检索、inbox、Hebbian、Directive、affinity、continuity、sleep
+  和 work queue，作为 0.6 路线图底座；没有恢复回合后抽取或回合前路由的额外模型调用。
+- 在 Local context 面板展示 Recent experiences，并增加用户主动选择的偏好表单。
+  服务端按已提交的经历校验会话、项目、run 和用户原话引用；遵守更新开关，先进入
+  Pending review，接受后才强化 Hebbian 节点并进入 Directive。
+- 四个确定性 bug 均先写失败测试再修复：只有经历时面板误报空状态；经历读取错误
+  未进入健康告警；空会话作用域泄露其他会话经历；已接受偏好再次提交却误报进入待审。
+- 删除无调用的 `_call_arg` 转发，以及只断言退役文件/旧导出键不存在的历史测试锁；
+  当前导出与重置覆盖的存储仍由 `test_ghost_control_surface.py` 验证。
+- 全量前通过全仓 `ruff check .`、`git diff --check`、JS 语法、4583 项收集。
+  唯一一次全量 `python -m pytest -q -p no:cacheprovider`：**4552 passed、
+  31 skipped、1441 subtests passed，352.23s（0:05:52）**。测试进程使用临时
+  `USERPROFILE`，因为沙箱禁止写默认 `.codey` 状态目录。未发布。
+
 ## Unreleased - Ghost 冷启动退役：学习环 + 预路由移除，图标打包，revival/助手去重（未发布）
 
 - 打包修复（确定性 bug，先红后绿）：`pyproject.toml` 的 package-data 只列了

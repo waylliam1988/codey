@@ -366,10 +366,6 @@ def call_arg(call: ToolCall, name: str, default: str = "") -> str:
     return str(value)
 
 
-def _call_arg(call: ToolCall, name: str, default: str = "") -> str:
-    return call_arg(call, name, default)
-
-
 def _clip_activity(value: object, limit: int = 80) -> str:
     text = " ".join(str(value or "").split())
     if len(text) <= limit:

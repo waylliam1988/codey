@@ -1062,6 +1062,26 @@
     flex-shrink: 0;
   }
   .local-context-row:hover .local-context-more { visibility: visible; }
+  .local-context-row.editing { flex-wrap: wrap; }
+  .local-context-preference-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    flex-basis: 100%;
+  }
+  .local-context-preference-form select,
+  .local-context-preference-form input {
+    min-width: 0;
+    flex: 1 1 135px;
+    border: 1px solid var(--border-2);
+    border-radius: 5px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 5px 7px;
+    font: inherit;
+    font-size: 12px;
+  }
+  .local-context-preference-form input { flex-basis: 100%; }
   .local-context-more:hover {
     background: var(--hover);
     color: var(--text);

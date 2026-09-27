@@ -102,8 +102,9 @@ function renderLocalContext(data) {
   const reviewRows = Array.isArray(data.review) ? data.review : [];
   const activeRows = Array.isArray(data.active) ? data.active : [];
   const taskRows = Array.isArray(data.tasks) ? data.tasks : [];
+  const observationRows = Array.isArray(data.observations) ? data.observations : [];
   const warnings = Array.isArray(data.health && data.health.warnings) ? data.health.warnings : [];
-  const hasContent = !!(contextRows.length || reviewRows.length || activeRows.length || taskRows.length);
+  const hasContent = !!(contextRows.length || reviewRows.length || activeRows.length || taskRows.length || observationRows.length);
   const hasWarning = !!warnings.length;
 
   if (!hasContent && !hasWarning) {
@@ -115,6 +116,7 @@ function renderLocalContext(data) {
   appendGroup(body, 'Recent focus', contextRows, rowNode);
   appendGroup(body, 'Pending review', reviewRows, reviewRowNode);
   appendGroup(body, 'Active preferences', activeRows, rowNode);
+  appendGroup(body, 'Recent experiences', observationRows, (row) => observationRowNode(row, data.enabled));
   appendGroup(body, 'Follow-ups', taskRows, taskRowNode);
   if (hasWarning || hasContent) body.appendChild(healthNode(data.health || {}, data.enabled));
   body.appendChild(settingsNode(data.enabled));
@@ -151,6 +153,10 @@ function reviewRowNode(row) {
     ['accept_candidate', 'Accept'],
     ['reject_candidate', 'Reject'],
   ]);
+}
+
+function observationRowNode(row, enabled) {
+  return baseRowNode(row, enabled ? [['propose_preference', 'Remember preference']] : []);
 }
 
 function taskRowNode(row) {
@@ -276,7 +282,7 @@ function disarmDangerButtons() {
 
 function openRowMenu(anchor, row, actions) {
   if (deps.closeAllMenus) deps.closeAllMenus();
-  activeMenu = { row };
+  activeMenu = { row, wrap: anchor.parentElement };
   const menu = $('local-context-menu');
   menu.innerHTML = '';
   for (const [action, label] of actions) {
@@ -303,8 +309,83 @@ function onMenuClick(event) {
   if (!button || !activeMenu) return;
   const action = button.dataset.act;
   const row = activeMenu.row;
+  const wrap = activeMenu.wrap;
   closeRowMenu();
+  if (action === 'propose_preference') {
+    showPreferenceForm(row, wrap);
+    return;
+  }
   postAction(action, { id: row.id });
+}
+
+function showPreferenceForm(row, wrap) {
+  if (!wrap) return;
+  const existing = wrap.querySelector('.local-context-preference-form');
+  if (existing) { existing.remove(); wrap.classList.remove('editing'); return; }
+  const form = document.createElement('form');
+  form.className = 'local-context-preference-form';
+
+  const preference = document.createElement('select');
+  preference.required = true;
+  for (const [value, label] of [
+    ['', 'Choose a preference'],
+    ['reply_length:concise', 'Concise answers'],
+    ['reply_length:detailed', 'Detailed answers'],
+    ['reply_structure:answer_first', 'Answer first'],
+    ['format:bullets', 'Bullet lists'],
+    ['format:table', 'Tables'],
+    ['format:markdown', 'Markdown'],
+    ['tone:direct', 'Direct tone'],
+    ['tone:technical', 'Technical tone'],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    preference.appendChild(option);
+  }
+  preference.setAttribute('aria-label', 'Preference');
+
+  const scope = document.createElement('select');
+  scope.setAttribute('aria-label', 'Where to remember');
+  const scopes = [['session', 'This chat']];
+  if (actionScope().project) scopes.push(['project', 'Current project']);
+  scopes.push(['user', 'This device']);
+  for (const [value, label] of scopes) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    scope.appendChild(option);
+  }
+
+  const quote = document.createElement('input');
+  quote.type = 'text';
+  quote.maxLength = 240;
+  quote.required = true;
+  quote.placeholder = 'Exact words from this request';
+  quote.setAttribute('aria-label', 'Evidence quote');
+  quote.value = row.summary === 'Hidden item' ? '' : String(row.summary || '').replace(/\.\.\.$/, '').trim();
+
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'drawer-btn';
+  save.textContent = 'Add to pending review';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'drawer-btn';
+  cancel.textContent = 'Cancel';
+  cancel.onclick = () => { form.remove(); wrap.classList.remove('editing'); };
+  form.append(preference, scope, quote, save, cancel);
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    const [conflict_key, value_key] = preference.value.split(':');
+    postAction('propose_preference', {
+      id: row.id, scope: scope.value, conflict_key, value_key,
+      evidence_quote: quote.value.trim(),
+    });
+  };
+  wrap.classList.add('editing');
+  wrap.appendChild(form);
+  preference.focus();
 }
 
 async function postAction(action, payload) {
@@ -328,7 +409,7 @@ async function postAction(action, payload) {
     });
     const data = await response.json();
     if (!response.ok || !data.ok) {
-      $('local-context-subtitle').textContent = 'Update failed';
+      $('local-context-subtitle').textContent = data.error || 'Update failed';
       return;
     }
     await loadLocalContextDrawer();

@@ -2859,6 +2859,31 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["counts"]["active"], 1)
         self.assertNotIn("evidence_quote", encoded)
 
+    def test_ghost_action_api_proposes_observation_as_reviewed_preference(self) -> None:
+        from codey.ghost.directive import build_ghost_directive
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.AppContext(td)
+            assert state.ghost_observations is not None
+            self.assertTrue(state.ghost_observations.append_completed(
+                run_id="r1", session_id="s1", mode="chat",
+                user_text="Please keep answers concise.", assistant_text="Sure.", stop_reason="done",
+            ))
+            status, proposed = app_api.ghost_action_response(state, {
+                "action": "propose_preference", "id": "r1", "session_id": "s1",
+                "scope": "user", "conflict_key": "reply_length", "value_key": "concise",
+                "evidence_quote": "keep answers concise",
+            })
+            self.assertEqual(status, 200, proposed)
+            self.assertEqual(proposed["candidate"]["status"], "candidate")
+            accept_status, accepted = app_api.ghost_action_response(state, {
+                "action": "accept_candidate", "id": proposed["candidate"]["id"], "session_id": "s1",
+            })
+            self.assertEqual(accept_status, 200, accepted)
+            directive = build_ghost_directive(state.ghost_hebbian, session_id="s1")
+
+        self.assertIn("reply length = concise", directive.text)
+
     def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
         from codey.ghost.affinity import GhostAffinityStore
         from codey.ghost.continuity import build_ghost_continuity

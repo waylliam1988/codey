@@ -106,6 +106,8 @@ class GhostMemoryGate:
         if confidence < MIN_CANDIDATE_CONFIDENCE:
             return GhostGateDecision(candidate_type, "rejected", "confidence_below_candidate_threshold")
 
+        if getattr(signal, "source", "") == "manual":
+            return GhostGateDecision(candidate_type, "candidate", "manual_review_required")
         if kind == "style_preference" and confidence >= STYLE_AUTO_ACCEPT_CONFIDENCE:
             if is_renderable_signal_typed_field(signal):
                 return GhostGateDecision(candidate_type, "accepted", "high_confidence_style_preference")

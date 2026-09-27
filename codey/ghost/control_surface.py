@@ -11,9 +11,17 @@ from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityItem, GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
-from codey.ghost.observations import GhostObservationStore
-from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
+from codey.ghost.observations import MAX_OBSERVATIONS, GhostObservationStore
+from codey.ghost.schema import (
+    MAX_SIGNAL_QUOTE_CHARS,
+    GhostSignal,
+    GhostSignalParseResult,
+    clip_signal_text,
+    contains_sensitive_signal_text,
+    quote_is_grounded,
+)
 from codey.ghost.sleep import GhostSleepStore
+from codey.ghost.typed_fields import render_typed_field
 from codey.ghost.work_queue import GhostWorkItem, GhostWorkQueueStore
 
 CONTROL_SURFACE_SCHEMA_VERSION = 2
@@ -23,6 +31,7 @@ MAX_UI_TEXT_CHARS = 140
 MAX_EVIDENCE_PREVIEW_CHARS = 120
 
 _ACTIONS = frozenset({
+    "propose_preference",
     "accept_candidate",
     "reject_candidate",
     "queue_work_item",
@@ -118,16 +127,16 @@ class GhostControlSurface:
             default=False,
         )
 
-        warning_rows = _ui_warnings((*warnings, *affinity_health.get("warnings", ())))
         observation_rows = _safe_rows(
             lambda: self.observations.read_committed(
                 session_id=session_ref, project=project_ref, limit=MAX_SUMMARY_ITEMS,
             )
-            if self.observations is not None
+            if self.observations is not None and session_ref
             else (),
             warnings,
             "observation_read_failed",
         )
+        warning_rows = _ui_warnings((*warnings, *affinity_health.get("warnings", ())))
         return {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
             "ok": True,
@@ -168,6 +177,8 @@ class GhostControlSurface:
         if action not in _ACTIONS:
             return 400, _error_payload("unsupported action")
         try:
+            if action == "propose_preference":
+                return self._propose_preference(body)
             if action == "accept_candidate":
                 return self._review_candidate(body, review_action="accept")
             if action == "reject_candidate":
@@ -259,6 +270,67 @@ class GhostControlSurface:
         else:
             payload["state_removed"] = self.hebbian.remove_candidate(candidate)
         return 200, payload
+
+    def _propose_preference(self, body: Mapping[str, object]) -> tuple[int, dict[str, object]]:
+        if self.inbox is None or self.observations is None:
+            return 200, _unavailable_payload()
+        if not self.inbox.learning_enabled():
+            return 409, _error_payload("local updates are disabled")
+
+        run_id = str(body.get("id") or "").strip()
+        session_id = str(body.get("session_id") or "").strip()
+        project = _common.normalize_project(body.get("project"))
+        scope = str(body.get("scope") or "").strip()
+        quote = str(body.get("evidence_quote") or "").strip()
+        conflict_key = str(body.get("conflict_key") or "").strip()
+        value_key = str(body.get("value_key") or "").strip()
+        if not run_id or len(run_id) > 120 or not session_id or len(session_id) > 120:
+            return 400, _error_payload("id and session_id required")
+        if scope not in {"user", "project", "session"} or (scope == "project" and not project):
+            return 400, _error_payload("valid scope required")
+        if not quote or len(quote) > MAX_SIGNAL_QUOTE_CHARS:
+            return 400, _error_payload("short evidence quote required")
+        summary = render_typed_field("style_preference", conflict_key, value_key)
+        if not summary:
+            return 400, _error_payload("unsupported preference")
+        if contains_sensitive_signal_text(quote):
+            return 400, _error_payload("sensitive quote rejected")
+
+        rows = self.observations.read_committed(
+            session_id=session_id, project=project, limit=MAX_OBSERVATIONS,
+        )
+        source = next((row for row in rows if row.get("run_id") == run_id
+                       and row.get("session_id") == session_id
+                       and _common.normalize_project(row.get("project")) == project), None)
+        if source is None:
+            return 404, _error_payload("committed experience not found")
+        user_text = str(source.get("user_text") or "")
+        if not quote_is_grounded(quote, user_text):
+            return 400, _error_payload("quote is not in the saved request")
+
+        scope_ref = session_id if scope == "session" else project if scope == "project" else ""
+        if any(row.scope == scope and row.scope_ref == scope_ref
+               and row.conflict_key == f"style_preference:{conflict_key}" and row.value_key == value_key
+               and row.status != "candidate" for row in self.inbox.list_candidates()):
+            return 409, _error_payload("preference has already been reviewed")
+
+        signal = GhostSignal(
+            kind="style_preference", scope=scope, summary=summary,
+            evidence_quote=quote, confidence=1.0, source="manual",
+            metadata={"conflict_key": conflict_key, "value_key": value_key},
+        )
+        created = self.inbox.ingest_signals(
+            GhostSignalParseResult(signals=(signal,), provider_id="manual"),
+            session_id=session_id, run_id=run_id, project=project, user_text=user_text,
+        )
+        if not created:
+            return 500, _error_payload("preference could not be saved")
+        return 200, {
+            "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
+            "ok": True,
+            "action": "propose_preference",
+            "candidate": _candidate_payload(created[0]),
+        }
 
     def _transition_work_item(self, body: Mapping[str, object], *, work_action: str) -> tuple[int, dict[str, object]]:
         if self.work_queue is None:

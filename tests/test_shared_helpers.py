@@ -21,7 +21,7 @@ class CallArgSharedTests(unittest.TestCase):
         for call, name, default, expected in cases:
             with self.subTest(call=call, name=name):
                 self.assertEqual(tool_execution_module.call_arg(call, name, default), expected)
-                self.assertEqual(definition_module._call_arg(call, name, default), expected)
+                self.assertEqual(definition_module.call_arg(call, name, default), expected)
 
     def test_tool_execution_reuses_definition_helper(self) -> None:
         self.assertIs(tool_execution_module.call_arg, definition_module.call_arg)

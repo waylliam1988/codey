@@ -9,6 +9,7 @@ from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
+from codey.ghost.observations import GhostObservationStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
@@ -54,6 +55,44 @@ def _ingest_candidate(
 
 
 class GhostControlSurfaceTests(unittest.TestCase):
+    def test_export_and_reset_cover_current_ghost_stores(self) -> None:
+        stores = {"inbox", "hebbian", "continuity", "sleep", "work_queue", "affinity", "observations"}
+        with tempfile.TemporaryDirectory() as td:
+            surface = GhostControlSurface.from_state_home(td)
+            exported = surface.export_state()
+            reset_status, reset = surface.dispatch_action({"action": "reset_all", "confirm": True})
+
+        self.assertTrue(exported["ok"])
+        self.assertEqual(set(exported) - {"schema_version", "ok", "available", "generated_at"}, stores)
+        self.assertEqual(reset_status, 200)
+        self.assertEqual(set(reset["results"]), stores)
+
+    def test_observation_read_failure_appears_in_summary_health(self) -> None:
+        class BrokenObservations:
+            def read_committed(self, **_kwargs):
+                raise OSError("broken observation log")
+
+        with tempfile.TemporaryDirectory() as td:
+            surface = GhostControlSurface(
+                inbox=GhostInboxStore(td), observations=BrokenObservations(),
+            )
+            payload = surface.summary(session_id="s1")
+
+        self.assertEqual(payload["health"]["status"], "warning")
+        self.assertGreater(payload["counts"]["warnings"], 0)
+        self.assertIn("Some local context could not be read", payload["health"]["warnings"])
+
+    def test_summary_without_chat_does_not_show_other_chats_experiences(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            self.assertTrue(GhostObservationStore(td).append_completed(
+                run_id="r1", session_id="private-chat", mode="chat",
+                user_text="Private request", assistant_text="Done", stop_reason="done",
+            ))
+            payload = GhostControlSurface.from_state_home(td).summary(session_id="")
+
+        self.assertEqual(payload["counts"]["observations"], 0)
+        self.assertEqual(payload["observations"], [])
+
     def test_state_home_none_is_unavailable_and_actions_do_not_write(self) -> None:
         surface = GhostControlSurface.from_state_home(None)
 

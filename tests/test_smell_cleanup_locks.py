@@ -98,26 +98,6 @@ class ToolPromptSingleSourceLocks(unittest.TestCase):
             )
 
 
-class RouterRetirementLocks(unittest.TestCase):
-    def test_retired_router_and_eval_harness_do_not_exist(self) -> None:
-        """Cold-start retirement: pre-turn Ghost router + eval harness are gone.
-
-        Unified auto (first normal model call) replaced the extra router
-        model call; the eval-only severity helper retired with the harness.
-        """
-        from pathlib import Path
-
-        root = Path(__file__).resolve().parents[1]
-        for retired in (
-            "codey/ghost/router.py",
-            "tests/manual/ghost_router_ab.py",
-            "tests/manual/ghost_router_production_ab.py",
-            "tests/fixtures/ghost_router_cases.jsonl",
-        ):
-            with self.subTest(retired=retired):
-                self.assertFalse((root / retired).exists())
-
-
 class UiStateCanonicalShapeLocks(unittest.TestCase):
     def test_sessions_always_carry_research_shape(self) -> None:
         """RED before fix: missing keys stay missing instead of []/False."""
