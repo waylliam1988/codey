@@ -52,7 +52,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
 def cmd_agent(args: argparse.Namespace) -> int:
     task = " ".join(args.task)
     project = Path(args.project).resolve()
-    json_mode = getattr(args, "json", False) is True
+    json_mode = args.json is True
     _safe_print(f"[codey] project: {project}", file=sys.stderr)
     from codey.agents.request import DEFAULT_MAX_TURNS
     from codey.app.headless_runner import (
@@ -62,14 +62,14 @@ def cmd_agent(args: argparse.Namespace) -> int:
     )
     from codey.storage.local_store import DEFAULT_STATE_HOME
 
-    state_home_arg = getattr(args, "state_home", None)
+    state_home_arg = args.state_home
     state_home = (
         Path(state_home_arg).expanduser()
         if state_home_arg
         else DEFAULT_STATE_HOME
     )
     project.mkdir(parents=True, exist_ok=True)
-    raw_max_turns = getattr(args, "max_turns", None)
+    raw_max_turns = args.max_turns
     max_turns = DEFAULT_MAX_TURNS if raw_max_turns is None else raw_max_turns
     request = HeadlessRequest(
         project=project,
@@ -78,8 +78,8 @@ def cmd_agent(args: argparse.Namespace) -> int:
         max_turns=max_turns,
         intent=(
             "planning_readonly"
-            if getattr(args, "readonly", False) is True
-            else ("auto" if getattr(args, "auto", False) is True else "project")
+            if args.readonly is True
+            else ("auto" if args.auto is True else "project")
         ),
         state_home=state_home,
         port=args.port,

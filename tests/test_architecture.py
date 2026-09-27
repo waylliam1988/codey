@@ -1724,6 +1724,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.research.guards",
             "codey.research.review_finding",
             "codey.research.source_trust",
+            "codey.research.topic_continuity",
         }
         self.assertTrue(set(research_imports) <= allowed, sorted(set(research_imports) - allowed))
 

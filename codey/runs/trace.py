@@ -40,6 +40,9 @@ from codey.completion.edit_integrity import (
 from codey.completion.edit_integrity import (
     EDIT_INTEGRITY_STATUSES as _EDIT_INTEGRITY_STATUSES,
 )
+from codey.completion.repair_context import (
+    COMPLETION_REPAIR_SCHEMA_VERSION as _COMPLETION_REPAIR_SCHEMA_VERSION,
+)
 from codey.policies.redaction import looks_prompt_visible_secret, looks_sensitive_code
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
@@ -60,6 +63,9 @@ from codey.research.review_finding import (
     STATUS_OPEN,
 )
 from codey.research.source_trust import SOURCE_CLASSES as _SOURCE_TRUST_CLASSES
+from codey.research.topic_continuity import (
+    TOPIC_CONTINUITY_SCHEMA_VERSION as _TOPIC_CONTINUITY_SCHEMA_VERSION,
+)
 from codey.runs.text_clip import clip_text as _clip
 from codey.runtime.observe.prompt_envelope import is_model_boundary_freshness
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
@@ -220,7 +226,7 @@ class PromptSurfaceTrace:
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
-            "schema_version": int(self.schema_version or 1),
+            "schema_version": self.schema_version,
             "surface_id": _clip(self.surface_id, 120),
             "phase": _identifier(self.phase, 40),
             "prompt_digest": _clip(self.prompt_digest, 80),
@@ -648,9 +654,7 @@ class RunTraceRecorder:
             return False
         surface_id = _clip(payload.get("surface_id"), 120)
         send_ref = _clip(payload.get("send_ref"), 80)
-        if not surface_id or surface_id in self._prompt_surface_keys:
-            return False
-        if not send_ref:
+        if surface_id in self._prompt_surface_keys:
             return False
         # bounded section payloads already validated
         sections: tuple[dict[str, object], ...] = ()
@@ -683,7 +687,7 @@ class RunTraceRecorder:
             model_tool_contract_hash=_clip(payload.get("model_tool_contract_hash"), 80),
             runtime_tool_contract_hash=_clip(payload.get("runtime_tool_contract_hash"), 80),
             sections=sections,
-            schema_version=int(payload.get("schema_version") or 1),
+            schema_version=payload["schema_version"],
         )
         self._prompt_surface_keys.add(surface_id)
         self.manifest.prompt_surfaces.append(item)
@@ -1499,22 +1503,15 @@ class RunTraceRecorder:
         """
         if not isinstance(projection, Mapping) or not projection.get("admitted"):
             return
+        schema_version = projection.get("schema_version")
+        if type(schema_version) is not int or schema_version != _TOPIC_CONTINUITY_SCHEMA_VERSION:
+            return
         digest = valid_digest_ref(projection.get("digest"))
         if not digest or digest in self._topic_continuity_keys:
             return
         epoch = valid_context_epoch_ref(epoch_id)
         if not epoch:
             return
-
-        def _codes(key: str) -> list[str]:
-            return [
-                code
-                for code in (
-                    _safe_trace_code(value, 80)
-                    for value in _trace_list_items(projection.get(key))
-                )
-                if code
-            ][:MAX_WARNINGS]
 
         items: list[dict[str, object]] = []
         for row in _trace_list_items(projection.get("items")):
@@ -1572,7 +1569,7 @@ class RunTraceRecorder:
                 ][:MAX_WARNINGS],
             })
         payload: dict[str, object] = {
-            "schema_version": _nonnegative_int(projection.get("schema_version")) or 1,
+            "schema_version": projection["schema_version"],
             "context_source": _identifier(projection.get("context_source"), 80),
             "digest": digest,
             "epoch_id": epoch,
@@ -1580,8 +1577,8 @@ class RunTraceRecorder:
             "candidate_count": _nonnegative_int(projection.get("candidate_count")),
             "claim_ref_count": _nonnegative_int(projection.get("claim_ref_count")),
             "truncated": bool(projection.get("truncated")),
-            "reason_codes": _codes("reason_codes"),
-            "warnings": _codes("warnings"),
+            "reason_codes": _projection_codes(projection, "reason_codes"),
+            "warnings": _projection_codes(projection, "warnings"),
             "items": items,
             "candidates": candidates,
         }
@@ -1611,6 +1608,9 @@ class RunTraceRecorder:
         """
         if not isinstance(projection, Mapping) or not projection.get("admitted"):
             return
+        schema_version = projection.get("schema_version")
+        if type(schema_version) is not int or schema_version != _COMPLETION_REPAIR_SCHEMA_VERSION:
+            return
         digest = valid_digest_ref(projection.get("digest"))
         if not digest or digest in self._completion_repair_keys:
             return
@@ -1618,18 +1618,8 @@ class RunTraceRecorder:
         if not epoch:
             return
 
-        def _codes(key: str) -> list[str]:
-            return [
-                code
-                for code in (
-                    _safe_trace_code(value, 80)
-                    for value in _trace_list_items(projection.get(key))
-                )
-                if code
-            ][:MAX_WARNINGS]
-
         payload: dict[str, object] = {
-            "schema_version": _nonnegative_int(projection.get("schema_version")) or 1,
+            "schema_version": projection["schema_version"],
             "context_source": _identifier(projection.get("context_source"), 80),
             "digest": digest,
             "epoch_id": epoch,
@@ -1643,8 +1633,8 @@ class RunTraceRecorder:
             "finding_ref_count": _nonnegative_int(projection.get("finding_ref_count")),
             "summary_chars": _nonnegative_int(projection.get("summary_chars")),
             "truncated": bool(projection.get("truncated")),
-            "reason_codes": _codes("reason_codes"),
-            "warnings": _codes("warnings"),
+            "reason_codes": _projection_codes(projection, "reason_codes"),
+            "warnings": _projection_codes(projection, "warnings"),
         }
         proof_id = _generated_ref(projection.get("proof_id"), "completion_proof")
         contract_id = _generated_ref(projection.get("contract_id"), "completion_contract")
@@ -2299,6 +2289,17 @@ def _safe_trace_code(value: object, limit: int) -> str:
     if looks_sensitive_code(text):
         return ""
     return text
+
+
+def _projection_codes(projection: Mapping[str, object], key: str) -> list[str]:
+    return [
+        code
+        for code in (
+            _safe_trace_code(value, 80)
+            for value in _trace_list_items(projection.get(key))
+        )
+        if code
+    ][:MAX_WARNINGS]
 
 
 def _analysis_command_display(value: object) -> tuple[str, bool]:

@@ -101,8 +101,8 @@ def build_completion_decision(
         analysis_run_refs=analysis_refs,
         verification_forbidden=verification_forbidden,
         diagnostic_refs=diagnostic_refs,
-        workspace_revision=getattr(evidence, "workspace_revision", 0),
-        workspace_fingerprint=getattr(evidence, "workspace_fingerprint", ""),
+        workspace_revision=evidence.workspace_revision,
+        workspace_fingerprint=evidence.workspace_fingerprint,
         project=project,
     )
     failure_class = ""
@@ -120,22 +120,14 @@ def build_completion_decision(
             root=project or ".",
         )
         failure = environment or decisive
-        if environment is not None:
-            failure_class = classify_verification_failure(
-                proof_status="failed",
-                selected_check_present=selected_check is not None,
-                decisive_error_code=str(getattr(failure, "error_code", "") or ""),
-                decisive_exit_code=getattr(failure, "exit_code", None),
-                decisive_result_summary=str(getattr(failure, "result_summary", "") or ""),
-            )
-        else:
-            failure_class = classify_verification_failure(
-                proof_status=proof.status,
-                selected_check_present=selected_check is not None,
-                decisive_error_code=str(getattr(failure, "error_code", "") or ""),
-                decisive_exit_code=getattr(failure, "exit_code", None),
-                decisive_result_summary=str(getattr(failure, "result_summary", "") or ""),
-            )
+        proof_status = "failed" if environment is not None else proof.status
+        failure_class = classify_verification_failure(
+            proof_status=proof_status,
+            selected_check_present=selected_check is not None,
+            decisive_error_code=str(getattr(failure, "error_code", "") or ""),
+            decisive_exit_code=getattr(failure, "exit_code", None),
+            decisive_result_summary=str(getattr(failure, "result_summary", "") or ""),
+        )
     return CompletionDecision(
         proof=proof,
         provenance=provenance,

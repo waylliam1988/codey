@@ -2,6 +2,65 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start cleanup round3: strict trace schema, direct agent/evidence reads, projection dedup (no release)
+
+- Run Trace now rejects missing/invalid schema versions fail-closed
+  (P1, deterministic, red-first): `record_research_topic_continuity` and
+  `record_completion_repair_context` require `type(x) is int` and equality
+  with `TOPIC_CONTINUITY_SCHEMA_VERSION` /
+  `COMPLETION_REPAIR_SCHEMA_VERSION` before touching the digest dedupe key;
+  missing, `0`, `True`, `2`, `"1"` all write no row and leave the digest
+  admissible for a later valid send. The stored row uses the validated
+  `projection["schema_version"]`; the `or 1` backfill is gone. Producers
+  already write v1 explicitly.
+- Prompt-surface path drops unreachable guards (P2, deterministic,
+  red-first): `validate_prompt_surface_payload()` already rejects empty or
+  non-canonical `surface_id`/`send_ref`, so `if not surface_id` /
+  `if not send_ref` are removed while the `surface_id in
+  _prompt_surface_keys` dedupe stays. `schema_version` is taken directly
+  from `payload["schema_version"]`, and `PromptSurfaceTrace.to_payload()`
+  writes `self.schema_version` directly instead of `int(... or 1)` hiding
+  `0` as `1`.
+- `agent` CLI reads required fields directly (P2, deterministic, red-first):
+  `cmd_agent` uses `args.json` / `args.state_home` / `args.max_turns` /
+  `args.readonly` / `args.auto` (argparse guarantees them); missing fields
+  now raise `AttributeError` instead of masking a parser/executor contract
+  break. `max_turns is None` → `DEFAULT_MAX_TURNS` and empty `state_home`
+  → `DEFAULT_STATE_HOME` option defaults are kept. `ghost` getattr
+  fallbacks are untouched (per-subcommand fields differ).
+- Completion proof reads required workspace identity directly (P2,
+  deterministic, red-first): `decision.build_completion_decision` and
+  `engine._with_diagnostic_refs` use `evidence.workspace_revision` /
+  `evidence.workspace_fingerprint` (`ExecutionEvidence` always sets them);
+  a pseudo-object missing them now raises instead of forging an empty
+  identity. Failure-fact getattr defaults elsewhere are untouched.
+- Merged duplicate projection code (P3, deterministic, red-first):
+  the two identical `_codes` closures in `trace.py` become one module-level
+  `_projection_codes(projection, key)` keeping `_safe_trace_code(..., 80)`
+  and `MAX_WARNINGS`; the two `classify_verification_failure` calls in
+  `decision.py` become one call over `proof_status = "failed" if
+  environment is not None else proof.status`, keeping the environment
+  special value.
+- Red-first locks in new `tests/test_coldstart_cleanup_round3.py` (28 tests,
+  10 subtests; 32 failed before, all pass after). `tests/test_cli.py` now
+  builds `cmd_agent` args with fully-filled `argparse.Namespace` and adds
+  `test_agent_via_main_uses_parser_defaults` through `main(["agent", ...])`.
+- Deterministic follow-up found while editing (red-first): the new
+  `codey.research.topic_continuity` import tripped
+  `test_run_trace_only_consumes_research_projection_leaves`; the leaf is
+  stdlib-only (already locked pure by its own architecture test), so the
+  gate now allows it. No other deterministic deletable block was found;
+  provider fallbacks / network failures / close-path guards keep real
+  runtime use and were left alone.
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted suites green before the final run
+  (`round3` 28 passed, 10 subtests; `cli+verification+engine+prompt+surface+
+  repair+topic` 81 passed, 35 subtests; `architecture+round3` 116 passed,
+  356 subtests; `run_trace+round2+contract+envelope` 155 passed, 86 subtests).
+  Then final `python -m pytest -q`:
+  `4648 passed, 10 skipped, 1470 subtests passed in 335.25s (0:05:35)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Cold-start follow-up: strict int unicode guard, true single ghost parser (no release)
 
 - Fixed `strict_nonnegative_int()` raising `ValueError` on unicode digits

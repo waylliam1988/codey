@@ -190,8 +190,8 @@ class CompletionEngine:
             analysis_run_refs=decision.analysis_run_refs,
             verification_forbidden=verification_forbidden,
             diagnostic_refs=diagnostic_refs,
-            workspace_revision=getattr(evidence, "workspace_revision", 0),
-            workspace_fingerprint=getattr(evidence, "workspace_fingerprint", ""),
+            workspace_revision=evidence.workspace_revision,
+            workspace_fingerprint=evidence.workspace_fingerprint,
             project=project,
         )
         return CompletionDecision(

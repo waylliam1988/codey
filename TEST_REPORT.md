@@ -1,5 +1,60 @@
 # Codey Test Report
 
+## Cold-start cleanup round3: strict trace schema, direct agent/evidence reads, projection dedup (2026-09-27)
+
+Scope (deterministic cold-start residue, no release):
+
+```text
+codey/runs/trace.py (strict TOPIC/COMPLETION_REPAIR schema_version before dedupe; payload uses validated version; _projection_codes shared; prompt-surface drops unreachable empty checks + or 1)
+codey/app/cli.py (cmd_agent direct args.json/state_home/max_turns/readonly/auto; keeps None/empty option defaults; ghost getattr untouched)
+codey/completion/decision.py (direct evidence.workspace_*; single classify_verification_failure over env-forced proof_status)
+codey/completion/engine.py (direct evidence.workspace_*)
+tests/test_coldstart_cleanup_round3.py (new, 28 tests red-first)
+tests/test_cli.py (Namespace with full fields + main(["agent", ...]) entry test)
+tests/test_architecture.py (allow codey.research.topic_continuity pure leaf in trace gate)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (cleaned-state asserts failed before, pass after):
+
+- Topic/repair strict versions: missing/`0`/`True`/`2`/`"1"` wrote 1 row
+  before (`or 1` backfill); after they write 0 rows and the same digest
+  still admits 1 row on retry (dedupe key untouched). Valid v1 still admits
+  with `schema_version == 1`.
+- Prompt surface: `PromptSurfaceTrace(schema_version=0).to_payload()` was `1`
+  before, is `0` after; `_append_prompt_surface`/`to_payload` no longer
+  contain `or 1`, no `if not surface_id` / `if not send_ref`, but keep
+  `_prompt_surface_keys` dedupe.
+- Agent CLI: `cmd_agent` source had `getattr(args, ...)` and accepted a
+  `Namespace` missing all five fields; after it contains `args.json` etc.
+  and the missing-field call raises `AttributeError`. Option defaults
+  (`None` → `DEFAULT_MAX_TURNS`, `""` → `DEFAULT_STATE_HOME`) and
+  `main(["agent", ...])` still work; ghost `getattr` kept.
+- Evidence identity: `decision`/`engine` had
+  `getattr(evidence, "workspace_...")`; after they use direct attribute
+  reads, and a pseudo-evidence missing them raises `AttributeError`.
+- Dedup merge: `trace.py` had two `def _codes` and no `_projection_codes`;
+  after it has one `_projection_codes` (with `80` + `MAX_WARNINGS`) used
+  twice. `decision.py` had two `classify_verification_failure(` calls;
+  after it has one with `proof_status = "failed" if environment is not None`.
+- Intermediate deterministic red found while editing:
+  `test_run_trace_only_consumes_research_projection_leaves` failed with
+  `['codey.research.topic_continuity']` after the strict-version import;
+  allowed the stdlib-only leaf in the gate (its purity is locked by
+  `test_research_topic_continuity_is_pure_projection_leaf`).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted suites green (`round3` 28 passed,
+  10 subtests; `cli+verification+engine+prompt_surface+repair+topic` 81
+  passed, 35 subtests; `architecture+round3` 116 passed, 356 subtests;
+  `run_trace+round2+contract+envelope` 155 passed, 86 subtests).
+- Final full suite: `python -m pytest -q`:
+  `4648 passed, 10 skipped, 1470 subtests passed in 335.25s (0:05:35)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Cold-start follow-up: strict int unicode guard, true single ghost parser (2026-09-27)
 
 Scope (deterministic follow-up, no release):

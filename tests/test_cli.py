@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import io
 import json
 import tempfile
@@ -80,7 +81,7 @@ class ProviderCliTests(unittest.TestCase):
 
     def test_cmd_agent_propagates_headless_failure(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = mock.Mock(
+            args = argparse.Namespace(
                 provider="deepseek",
                 port=9222,
                 project=td,
@@ -103,7 +104,7 @@ class ProviderCliTests(unittest.TestCase):
 
     def test_cmd_agent_plain_mode_prints_human_summary(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = mock.Mock(
+            args = argparse.Namespace(
                 provider="deepseek",
                 port=9222,
                 project=td,
@@ -151,7 +152,7 @@ class ProviderCliTests(unittest.TestCase):
 
     def test_cmd_agent_json_emits_machine_readable_events(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = mock.Mock(
+            args = argparse.Namespace(
                 provider="qwen",
                 port=9222,
                 project=td,
@@ -159,6 +160,7 @@ class ProviderCliTests(unittest.TestCase):
                 max_turns=4,
                 json=True,
                 readonly=False,
+                auto=False,
                 state_home="",
             )
             stdout = io.StringIO()
@@ -201,7 +203,7 @@ class ProviderCliTests(unittest.TestCase):
 
     def test_cmd_agent_plain_mode_still_prints_summary_text(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = mock.Mock(
+            args = argparse.Namespace(
                 provider="deepseek",
                 port=9222,
                 project=td,
@@ -237,7 +239,7 @@ class ProviderCliTests(unittest.TestCase):
 
     def test_cmd_agent_json_readonly_maps_to_headless_intent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = mock.Mock(
+            args = argparse.Namespace(
                 provider="qwen",
                 port=9222,
                 project=td,
@@ -245,6 +247,7 @@ class ProviderCliTests(unittest.TestCase):
                 max_turns=4,
                 json=True,
                 readonly=True,
+                auto=False,
                 state_home="",
             )
             stdout = io.StringIO()
@@ -263,7 +266,7 @@ class ProviderCliTests(unittest.TestCase):
 
     def test_cmd_agent_json_auto_maps_to_headless_intent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = mock.Mock(
+            args = argparse.Namespace(
                 provider="qwen",
                 port=9222,
                 project=td,
@@ -287,6 +290,32 @@ class ProviderCliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(run_headless.call_args.args[0].intent, "auto")
+
+    def test_agent_via_main_uses_parser_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch(
+                    "codey.app.headless_runner.run_headless",
+                    return_value=HeadlessResult(0, "run-1", "session-1", "done"),
+                ) as run_headless,
+                mock.patch("sys.stdout", stdout),
+                mock.patch("sys.stderr", stderr),
+            ):
+                exit_code = cli.main([
+                    "agent",
+                    "--project",
+                    td,
+                    "--provider",
+                    "deepseek",
+                    "fix it",
+                ])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(run_headless.call_count, 1)
+            request = run_headless.call_args.args[0]
+            self.assertEqual(request.project, Path(td).resolve())
+            self.assertEqual(request.task, "fix it")
 
     def test_cmd_ghost_directive_exports_bounded_preview(self) -> None:
         from codey.ghost.hebbian import GhostHebbianStore

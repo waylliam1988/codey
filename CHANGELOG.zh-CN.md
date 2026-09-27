@@ -2,6 +2,55 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 冷启动清理第三轮：trace 严格版本、agent/evidence 直读、投影去重（未发布）
+
+- Run Trace 对缺失/非法 schema 版本直接 fail-closed（P1，确定性，红测先行）：
+  `record_research_topic_continuity` 与 `record_completion_repair_context`
+  在触碰 digest 去重键之前要求 `type(x) is int` 且等于各自的
+  `TOPIC_CONTINUITY_SCHEMA_VERSION` / `COMPLETION_REPAIR_SCHEMA_VERSION`；
+  缺字段、`0`、`True`、`2`、`"1"` 均不写行，且不占用 digest 键，后续合法发送
+  仍可写入。落盘行直接用已验证的 `projection["schema_version"]`，删除 `or 1`
+  回填。生产者本来就会明确写 v1。
+- Prompt-surface 去掉不可达守卫（P2，确定性，红测先行）：
+  `validate_prompt_surface_payload()` 已拒绝空或非规范 `surface_id` /
+  `send_ref`，故删除 `if not surface_id` / `if not send_ref`，保留
+  `surface_id in _prompt_surface_keys` 去重；`schema_version` 直接取
+  `payload["schema_version"]`，`PromptSurfaceTrace.to_payload()` 直接写
+  `self.schema_version`，不再把 `0` 悄悄改成 `1`。
+- `agent` CLI 直接读取必需字段（P2，确定性，红测先行）：`cmd_agent` 改用
+  `args.json` / `args.state_home` / `args.max_turns` / `args.readonly` /
+  `args.auto`（argparse 已保证存在）；缺字段现在抛 `AttributeError` 暴露契约
+  错误。保留 `max_turns is None`→`DEFAULT_MAX_TURNS` 与空 `state_home`→
+  `DEFAULT_STATE_HOME` 的正常选项默认。`ghost` 各子命令字段不同，其 `getattr`
+  不动。
+- 完成证明直接读取必需工作区身份（P2，确定性，红测先行）：
+  `decision.build_completion_decision` 与 `engine._with_diagnostic_refs` 改用
+  `evidence.workspace_revision` / `evidence.workspace_fingerprint`
+ （`ExecutionEvidence` 构造必有）；缺字段伪对象现在暴露契约错误，不再伪装成
+  空身份。其他对外部数据/可为 `None` 失败事实的默认值不动。
+- 合并重复投影代码（P3，确定性，红测先行）：`trace.py` 内两个完全相同的
+  `_codes` 提成模块级 `_projection_codes(projection, key)`，保持
+  `_safe_trace_code(..., 80)` 与 `MAX_WARNINGS`；`decision.py` 内两个仅
+  `proof_status` 不同的 `classify_verification_failure` 合并为先算
+  `proof_status = "failed" if environment is not None else proof.status`
+  再调一次，保留环境失败特殊值。
+- 新增 `tests/test_coldstart_cleanup_round3.py` 红测锁定（28 测试、10 子项；
+  清理前 32 失败，清理后全过）。`tests/test_cli.py` 直接调 `cmd_agent` 的用例
+  改用填齐字段的 `argparse.Namespace`，并补 `main(["agent", ...])` 入口用例。
+- 修改中顺带发现的确定性问题（红测先行）：新增的
+  `codey.research.topic_continuity` 引用触发
+  `test_run_trace_only_consumes_research_projection_leaves`；该叶子是纯
+  stdlib（已有架构测试锁定其纯洁性），故门禁放行该叶子。未发现其他可确定整块
+  删除的生产模块；网页 fallback、网络失败与关闭资源异常处理有实际运行时用途，
+  未动。
+- 验证：`python -m ruff check codey tests tools`、`git diff --check` 通过。
+  全量前目标套件全绿（`round3` 28 通过、10 子项；`cli+verification+engine+
+  prompt+surface+repair+topic` 81 通过、35 子项；`architecture+round3` 116
+  通过、356 子项；`run_trace+round2+contract+envelope` 155 通过、86 子项）。
+  最终 `python -m pytest -q`：
+  **4648 passed、10 skipped、1470 subtests passed，335.25s（0:05:35）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - 冷启动跟进：严格整数 Unicode 兜底、ghost 真单解析器（未发布）
 
 - 修复 `strict_nonnegative_int()` 遇到 Unicode 数字抛错（P2，确定性，红测先行）：
