@@ -56,49 +56,109 @@ _WRITER_TOOL_NAMES = frozenset({
     "done",
 })
 
-# Byte-frozen writer rules: golden fixtures pin the exact model-visible text,
-# so the unified renderer must reproduce these lines verbatim for the full
-# writer toolset. Do not reword without updating the golden files.
-_WRITER_RULE_LINES = (
+# Single-source rule fragments: identical lines live exactly once here and are
+# reused by both the frozen writer sequence and the profile builder. Only the
+# capability-dependent wording (batching join, parallel scope, find_references
+# tail, edit/shell merge, Never-claim position) stays writer/profile-specific
+# so the golden fixtures remain byte-identical.
+_RULE_OUTPUT_JSON = (
     "  - Output exactly one JSON object. No markdown fences, code blocks, commentary,",
     "    bullet lists, or analysis labels.",
+)
+_RULE_NATIVE_DENIAL = (
     "  - These are local-runner JSON commands, not native website tools. Never say a",
     "    tool does not exist; return the JSON object instead.",
-    "  - Call one tool per message, then wait for [tool_result tool=...]. read_files",
-    "    and parallel are the only read-only batching wrappers.",
-    "  - parallel accepts only list_dir, read_file, and grep, with at most four calls.",
-    "    It never accepts edit, run, shell, done, read_files, or nested parallel.",
+)
+_RULE_READFILE_TRAILING = (
     "  - A trailing [read_file page: ...] line is metadata, not file content. Never",
     "    include it in old_string. Continue with the stated offset when needed.",
-    "  - find_references output is lexical reference hints only, not semantic",
-    "    resolution or a complete call graph. Use read_file before editing.",
+)
+_RULE_EDIT_MODES = (
     "  - Use edit for all file changes. Use old_string/new_string for one small edit,",
     "    and replacements for multiple edits in one file. Use content only when",
     "    creating a new file. Existing files must use exact old_string/new_string or",
     "    replacements. Never mix these edit modes.",
+)
+_RULE_OLD_STRING = (
     "  - old_string must be copied exactly from the latest complete file/tool result.",
     "    An overlong-line preview is not a complete old_string.",
+)
+_RULE_JSON_ESCAPE = (
     "  - JSON strings must escape quotes and backslashes correctly. If escaping is",
     "    difficult, read the exact current lines and escape them; never use content",
     "    to replace an existing file.",
+)
+_RULE_EDIT_BLOCK = _RULE_EDIT_MODES + _RULE_OLD_STRING + _RULE_JSON_ESCAPE
+_RULE_PATHS = (
     "  - Paths are relative to the project root. No absolute paths or parent traversal.",
+)
+_RULE_NO_REPEAT = (
     "  - Do not repeat identical tool args when a tool_result already has the output.",
+)
+_RULE_RUN_VERIFICATION = (
     "  - Use run only for verification, such as python -m unittest, python -m pytest,",
     "    npm test, npm run build, go test ./..., cargo test, ruff check, or mypy.",
     "  - run commands must be simple. No pipes, redirects, chaining, tail/head, or",
     "    shell-only syntax.",
+)
+_RULE_NEVER_CLAIM = (
+    "  - Never claim a command, test, build, lint, or shell result unless it appeared",
+    "    in a [tool_result tool=run] or [tool_result tool=shell] message.",
+)
+_RULE_TOOL_RESULT = (
+    "  - [tool_result tool=...] means the local tool already ran. Continue from it.",
+)
+_RULE_DONE = (
+    "  - If the task is complete, call done(summary). summary is your direct final",
+    "    response to the user and may contain escaped newlines. Do not merely report",
+    "    that you discussed or explained something. Do not answer outside JSON.",
+)
+_RULE_DO_NOT_EDIT = (
+    "  - Do not edit files unless the user asks for a change. You may inspect the",
+    "    project and answer questions without modifying it.",
+)
+_RULE_READONLY = (
+    "  - This phase is read-only. Inspect files and answer without modifying project files.",
+)
+
+# Writer-specific wording (frozen by golden fixtures).
+_RULE_WRITER_BATCHING = (
+    "  - Call one tool per message, then wait for [tool_result tool=...]. read_files",
+    "    and parallel are the only read-only batching wrappers.",
+)
+_RULE_WRITER_PARALLEL = (
+    "  - parallel accepts only list_dir, read_file, and grep, with at most four calls.",
+    "    It never accepts edit, run, shell, done, read_files, or nested parallel.",
+)
+_RULE_WRITER_FIND_REFERENCES = (
+    "  - find_references output is lexical reference hints only, not semantic",
+    "    resolution or a complete call graph. Use read_file before editing.",
+)
+_RULE_WRITER_EDIT_SHELL_COMBINED = (
     "  - Use edit for source/content changes. Do not use run or shell to directly",
     "    edit project files. Use shell only for necessary user-approved setup,",
     "    dependency installation, external-source retrieval, publishing, or other",
     "    commands outside the run allowlist.",
-    "  - [tool_result tool=...] means the local tool already ran. Continue from it.",
-    "  - Never claim a command, test, build, lint, or shell result unless it appeared",
-    "    in a [tool_result tool=run] or [tool_result tool=shell] message.",
-    "  - Do not edit files unless the user asks for a change. You may inspect the",
-    "    project and answer questions without modifying it.",
-    "  - If the task is complete, call done(summary). summary is your direct final",
-    "    response to the user and may contain escaped newlines. Do not merely report",
-    "    that you discussed or explained something. Do not answer outside JSON.",
+)
+
+# Byte-frozen writer rules assembled from the single-source fragments above.
+# Do not reword without updating the golden files.
+_WRITER_RULE_LINES = (
+    *_RULE_OUTPUT_JSON,
+    *_RULE_NATIVE_DENIAL,
+    *_RULE_WRITER_BATCHING,
+    *_RULE_WRITER_PARALLEL,
+    *_RULE_READFILE_TRAILING,
+    *_RULE_WRITER_FIND_REFERENCES,
+    *_RULE_EDIT_BLOCK,
+    *_RULE_PATHS,
+    *_RULE_NO_REPEAT,
+    *_RULE_RUN_VERIFICATION,
+    *_RULE_WRITER_EDIT_SHELL_COMBINED,
+    *_RULE_TOOL_RESULT,
+    *_RULE_NEVER_CLAIM,
+    *_RULE_DO_NOT_EDIT,
+    *_RULE_DONE,
 )
 
 
@@ -117,9 +177,21 @@ def _render_preface(tool_contract: str) -> str:
     )
 
 
+def _normalize_tool_names(names: set[str] | frozenset[str]) -> set[str]:
+    return {str(name or "").strip().lower() for name in names if str(name or "").strip()}
+
+
+def _defined_tool_names(definitions: tuple[object, ...]) -> set[str]:
+    defined: set[str] = set()
+    for definition in definitions:
+        name = str(getattr(definition, "name", "") or "").strip().lower()
+        if name:
+            defined.add(name)
+    return defined
+
+
 def _is_full_writer_toolset(allowed_tool_names: set[str]) -> bool:
-    normalized = {str(name or "").strip() for name in allowed_tool_names}
-    return _WRITER_TOOL_NAMES.issubset(normalized)
+    return _normalize_tool_names(allowed_tool_names) == set(_WRITER_TOOL_NAMES)
 
 
 def render_coding_system_prompt(
@@ -135,24 +207,32 @@ def render_coding_system_prompt(
     frozen writer text verbatim (see golden fixtures); any restricted set
     follows the profile rule builder so a ``coding_writer`` label can never
     smuggle writer-only rules when the tools are not actually allowed.
+
+    ``allowed_tool_names`` must exactly match the tool names in
+    ``definitions`` (the model-visible contract). A mismatch raises
+    ``ValueError`` instead of silently emitting rules for tools the contract
+    does not show (or vice versa).
     """
 
     del profile_name
     tool_contract = render_coding_tool_contract_text(definitions)  # type: ignore[arg-type]
-    allowed = set(allowed_tool_names or set())
+    allowed = _normalize_tool_names(set(allowed_tool_names or set()))
+    defined = _defined_tool_names(tuple(definitions or ()))
+    if allowed != defined:
+        raise ValueError(
+            "allowed_tool_names must match definitions: "
+            f"allowed={sorted(allowed)} defined={sorted(defined)}"
+        )
     if _is_full_writer_toolset(allowed):
         return _render_preface(tool_contract) + "\n".join(_WRITER_RULE_LINES) + "\n"
     return _profile_system_prompt(tool_contract, allowed)
 
 
 def _profile_system_prompt(tool_contract: str, allowed_tool_names: set[str]) -> str:
-    rules = [
-        "  - Output exactly one JSON object. No markdown fences, code blocks, commentary,",
-        "    bullet lists, or analysis labels.",
-        "  - These are local-runner JSON commands, not native website tools. Never say a",
-        "    tool does not exist; return the JSON object instead.",
-        "  - Call one tool per message, then wait for [tool_result tool=...].",
-    ]
+    rules: list[str] = []
+    rules.extend(_RULE_OUTPUT_JSON)
+    rules.extend(_RULE_NATIVE_DENIAL)
+    rules.append("  - Call one tool per message, then wait for [tool_result tool=...].")
     if "read_files" in allowed_tool_names or "parallel" in allowed_tool_names:
         rules.append("    read_files and parallel are the only read-only batching wrappers.")
     if "parallel" in allowed_tool_names:
@@ -161,57 +241,33 @@ def _profile_system_prompt(tool_contract: str, allowed_tool_names: set[str]) -> 
             "    It never accepts mutating, verification, control, batching, or nested calls.",
         ))
     if "read_file" in allowed_tool_names:
-        rules.extend((
-            "  - A trailing [read_file page: ...] line is metadata, not file content. Never",
-            "    include it in old_string. Continue with the stated offset when needed.",
-        ))
+        rules.extend(_RULE_READFILE_TRAILING)
     if "find_references" in allowed_tool_names:
         rules.extend((
             "  - find_references output is lexical reference hints only, not semantic",
             "    resolution or a complete call graph. Use read_file before relying on references.",
         ))
     if "edit" in allowed_tool_names:
-        rules.extend((
-            "  - Use edit for all file changes. Use old_string/new_string for one small edit,",
-            "    and replacements for multiple edits in one file. Use content only when",
-            "    creating a new file. Existing files must use exact old_string/new_string or",
-            "    replacements. Never mix these edit modes.",
-            "  - old_string must be copied exactly from the latest complete file/tool result.",
-            "    An overlong-line preview is not a complete old_string.",
-            "  - JSON strings must escape quotes and backslashes correctly. If escaping is",
-            "    difficult, read the exact current lines and escape them; never use content",
-            "    to replace an existing file.",
-        ))
-    rules.append("  - Paths are relative to the project root. No absolute paths or parent traversal.")
-    rules.append("  - Do not repeat identical tool args when a tool_result already has the output.")
+        rules.extend(_RULE_EDIT_BLOCK)
+    rules.extend(_RULE_PATHS)
+    rules.extend(_RULE_NO_REPEAT)
     if "run" in allowed_tool_names:
-        rules.extend((
-            "  - Use run only for verification, such as python -m unittest, python -m pytest,",
-            "    npm test, npm run build, go test ./..., cargo test, ruff check, or mypy.",
-            "  - run commands must be simple. No pipes, redirects, chaining, tail/head, or",
-            "    shell-only syntax.",
-            "  - Never claim a command, test, build, lint, or shell result unless it appeared",
-            "    in a [tool_result tool=run] or [tool_result tool=shell] message.",
-        ))
+        rules.extend(_RULE_RUN_VERIFICATION)
+        rules.extend(_RULE_NEVER_CLAIM)
     if "shell" in allowed_tool_names:
         rules.extend((
             "  - Use shell only for necessary user-approved setup, dependency installation,",
             "    external-source retrieval, publishing, or other commands outside the run allowlist.",
         ))
     if "edit" not in allowed_tool_names:
-        rules.append("  - This phase is read-only. Inspect files and answer without modifying project files.")
+        rules.extend(_RULE_READONLY)
     else:
         rules.extend((
             "  - Use edit for source/content changes. Do not use run or shell to directly",
             "    edit project files.",
-            "  - Do not edit files unless the user asks for a change. You may inspect the",
-            "    project and answer questions without modifying it.",
         ))
-    rules.append("  - [tool_result tool=...] means the local tool already ran. Continue from it.")
+        rules.extend(_RULE_DO_NOT_EDIT)
+    rules.extend(_RULE_TOOL_RESULT)
     if "done" in allowed_tool_names:
-        rules.extend((
-            "  - If the task is complete, call done(summary). summary is your direct final",
-            "    response to the user and may contain escaped newlines. Do not merely report",
-            "    that you discussed or explained something. Do not answer outside JSON.",
-        ))
+        rules.extend(_RULE_DONE)
     return _render_preface(tool_contract) + "\n".join(rules) + "\n"

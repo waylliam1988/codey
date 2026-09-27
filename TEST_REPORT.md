@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Prompt rules single-source plus strict allowed/definitions check (2026-09-27)
+
+Scope (production cleanup, TDD red-first, no release):
+
+```text
+codey/toolchain/tool_prompt.py      (shared rule fragments; exact writer match; allowed==definitions check)
+tests/test_smell_cleanup_locks.py   (new ToolPromptSingleSourceLocks, 3 deterministic red-first locks)
+CHANGELOG.md / CHANGELOG.zh-CN.md   (new Unreleased entry)
+TEST_REPORT.md                      (this entry, written after the full suite)
+```
+
+Repro (deterministic, no live model):
+
+- Shared-fragment lock red-first: `_RULE_OUTPUT_JSON` and friends did not exist
+  before; after, they exist once and every line of the sampled shared fragments
+  is contained in `_WRITER_RULE_LINES`.
+- Exact-match lock red-first: `_is_full_writer_toolset(_WRITER_TOOL_NAMES |
+  {"bogus_extra_tool"})` was True under the old subset check, False after the
+  exact-equality check.
+- Inconsistency lock red-first: `render_coding_system_prompt(defs-without-edit,
+  allowed=writer-full)` silently returned writer rules demanding `edit` before;
+  after, it raises `ValueError` with the allowed/defined sets. `JsonToolCodec`
+  always passes consistent inputs, so golden writer/readonly prompts are
+  byte-identical before/after.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check codey tests/test_smell_cleanup_locks.py`
+  clean, `git diff --check` clean, no frontend JS changed; targeted suites green
+  (`test_smell_cleanup_locks`, `test_tool_prompt`, `test_golden_parity`,
+  `test_protocols`, `test_agent`).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4615 passed, 7 skipped, 1471 subtests passed in 348.22s (0:05:48)`.
+  Skips are the known Windows/opt-in family (delta vs the 4612/1471 baseline is
+  exactly the 3 new locks). No live kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Smell cleanup: prompt single-path, router eval move, ui-state shape, shell fallback, ghost warnings (2026-09-27)
 
 Scope (production cleanup, TDD red-first, no release):

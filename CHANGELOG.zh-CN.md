@@ -2,6 +2,31 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 提示词规则单源 + allowed/definitions 严格一致校验（未发布）
+
+- `toolchain/tool_prompt`：相同规则行只保留一份共享片段（`_RULE_OUTPUT_JSON`、
+  `_RULE_NATIVE_DENIAL`、`_RULE_READFILE_TRAILING`、`_RULE_EDIT_BLOCK`、
+  `_RULE_PATHS`、`_RULE_NO_REPEAT`、`_RULE_RUN_VERIFICATION`、`_RULE_NEVER_CLAIM`、
+  `_RULE_TOOL_RESULT`、`_RULE_DONE`，以及 `_RULE_DO_NOT_EDIT` / `_RULE_READONLY`）；
+  `_WRITER_RULE_LINES` 由这些片段加 writer 专属措辞组装，
+  `_profile_system_prompt()` 复用同一批片段，重叠规则不再两处维护。
+  writer/planning_readonly golden 夹具逐字节不变。
+- 确定性 bug 先红后绿锁定：`allowed_tool_names` 为全集但 `definitions` 缺 `edit`
+  时，旧逻辑仍输出要求使用 `edit` 的 writer 规则（契约与规则不一致）。
+  现要求 `allowed_tool_names` 与 `definitions` 中的工具名精确一致（不一致抛
+  `ValueError`），完整 writer 判断由子集检查改为精确相等。`JsonToolCodec`
+  始终从同一工具集生成两者，现有生产路径不受影响；该不一致输入在生产不可达，
+  现以行为测试锁定为快速失败。`del profile_name` 按要求保留为内部兼容参数，
+  未扩大已验证提交的改动面。
+- 测试：`tests/test_smell_cleanup_locks.py` 新增 `ToolPromptSingleSourceLocks`
+ （3 个确定性红测：共享片段存在且被 writer 行包含；超集不被判为 writer；
+  不一致输入抛错）。
+- 验证：`ruff check` 全过，`git diff --check` 全过，未改前端 JS。全量前先过
+  针对性套件（锁测试 + `test_tool_prompt` + golden + `test_protocols` +
+  `test_agent`）。再跑全量 `python -m pytest -q -p no:cacheprovider`：
+  `4615 passed、7 skipped、1471 subtests passed，348.22s（0:05:48）`。跳过为已知
+  Windows/手动启用项（相对 4612/1471 基线的增量恰为 3 个新锁）。未发布。
+
 ## Unreleased - 异味清理：提示词单路径、路由评测移出、UI 状态形状、shell 回退、Ghost 警告（未发布）
 
 - 第 1 项 `toolchain/tool_prompt`：删除旧 `_system_prompt()` 独立拼接路径；

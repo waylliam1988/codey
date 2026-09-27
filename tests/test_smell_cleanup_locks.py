@@ -1,4 +1,4 @@
-"""Deterministic locks for the five smell cleanups (TDD red-first).
+"""Deterministic locks for the five smell cleanups + prompt follow-up (TDD red-first).
 
 Each test pins a deterministic bug/shape before the fix so the fix can be
 verified without a full-suite run. Golden prompt fixtures remain the
@@ -39,6 +39,65 @@ class ToolPromptUnificationLocks(unittest.TestCase):
             hasattr(tool_prompt, "_system_prompt"),
             "legacy _system_prompt must be removed; single unified renderer only",
         )
+
+
+class ToolPromptSingleSourceLocks(unittest.TestCase):
+    def test_shared_rule_fragments_are_single_source(self) -> None:
+        """RED before follow-up: writer lines duplicate builder strings."""
+        import codey.toolchain.tool_prompt as tool_prompt
+
+        for attr in (
+            "_RULE_OUTPUT_JSON",
+            "_RULE_NATIVE_DENIAL",
+            "_RULE_READFILE_TRAILING",
+            "_RULE_EDIT_BLOCK",
+            "_RULE_PATHS",
+            "_RULE_NO_REPEAT",
+            "_RULE_RUN_VERIFICATION",
+            "_RULE_TOOL_RESULT",
+            "_RULE_DONE",
+        ):
+            self.assertTrue(
+                hasattr(tool_prompt, attr),
+                f"shared fragment {attr} must exist exactly once",
+            )
+        fragments: list[str] = []
+        for attr in (
+            "_RULE_OUTPUT_JSON",
+            "_RULE_NATIVE_DENIAL",
+            "_RULE_EDIT_BLOCK",
+            "_RULE_PATHS",
+            "_RULE_DONE",
+        ):
+            fragments.extend(getattr(tool_prompt, attr))
+        for line in fragments:
+            self.assertIn(line, tool_prompt._WRITER_RULE_LINES)
+
+    def test_writer_detection_requires_exact_match(self) -> None:
+        """RED before follow-up: subset check accepts a superset as writer."""
+        from codey.toolchain.tool_prompt import _WRITER_TOOL_NAMES, _is_full_writer_toolset
+
+        superset = set(_WRITER_TOOL_NAMES) | {"bogus_extra_tool"}
+        self.assertFalse(
+            _is_full_writer_toolset(superset),
+            "writer detection must be an exact match, not a subset check",
+        )
+        self.assertTrue(_is_full_writer_toolset(set(_WRITER_TOOL_NAMES)))
+
+    def test_inconsistent_allowed_and_definitions_raise(self) -> None:
+        """RED before follow-up: allowed-full + definitions-missing-edit silently demands edit."""
+        from codey.toolchain import definition as tool_defs
+        from codey.toolchain.tool_prompt import _WRITER_TOOL_NAMES, render_coding_system_prompt
+
+        allowed = set(_WRITER_TOOL_NAMES)
+        without_edit = [d for d in tool_defs.TOOL_DEFINITIONS if d.name != "edit"]
+        self.assertTrue(any(d.name == "edit" for d in tool_defs.TOOL_DEFINITIONS))
+        with self.assertRaises(ValueError):
+            render_coding_system_prompt(
+                tuple(without_edit),
+                profile_name="coding_writer",
+                allowed_tool_names=set(allowed),
+            )
 
 
 class RouterEvalHelperLocks(unittest.TestCase):

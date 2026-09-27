@@ -2,6 +2,39 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Prompt rules single-source plus strict allowed/definitions check (no release)
+
+- `toolchain/tool_prompt`: identical rule lines now live exactly once as shared
+  fragments (`_RULE_OUTPUT_JSON`, `_RULE_NATIVE_DENIAL`, `_RULE_READFILE_TRAILING`,
+  `_RULE_EDIT_BLOCK`, `_RULE_PATHS`, `_RULE_NO_REPEAT`, `_RULE_RUN_VERIFICATION`,
+  `_RULE_NEVER_CLAIM`, `_RULE_TOOL_RESULT`, `_RULE_DONE`, plus `_RULE_DO_NOT_EDIT` /
+  `_RULE_READONLY`); `_WRITER_RULE_LINES` is assembled from those fragments plus
+  writer-specific wording, and `_profile_system_prompt()` reuses the same
+  fragments, so overlapping rules are no longer maintained in two places. Golden
+  fixtures for writer/planning_readonly remain byte-identical.
+- Deterministic bug locked red-first: `allowed_tool_names`-full with
+  `definitions` missing `edit` previously still emitted writer rules demanding
+  `edit` (contract/rules mismatch). `render_coding_system_prompt()` now requires
+  `allowed_tool_names` to exactly match the tool names in `definitions`
+  (`ValueError` on mismatch), and the full-writer check changed from a subset
+  test to an exact equality test. `JsonToolCodec` builds both inputs from the
+  same toolset, so existing production paths are unaffected; the inconsistent
+  input is unreachable there and now fails fast with a behavior test.
+- Tests: extended `tests/test_smell_cleanup_locks.py` with
+  `ToolPromptSingleSourceLocks` (3 deterministic red-first locks: shared
+  fragments present and contained in writer lines; exact-match rejects a
+  superset; inconsistent allowed/definitions raises). `del profile_name` is
+  intentionally left as the internal compat parameter without touching the
+  already-verified commit surface beyond this file.
+- Verification: `ruff check codey tests/test_smell_cleanup_locks.py` clean,
+  `git diff --check` clean, no frontend JS changed. Targeted suites green before
+  the full run (`test_smell_cleanup_locks` + `test_tool_prompt` + golden +
+  `test_protocols` + `test_agent`). Then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4615 passed, 7 skipped, 1471 subtests passed in 348.22s (0:05:48)`. Skips are
+  the known Windows/opt-in family (delta vs the 4612/1471 baseline is exactly
+  the 3 new locks). No release was made.
+
 ## Unreleased - Smell cleanup: prompt single-path, router eval move, ui-state shape, shell fallback, ghost warnings (no release)
 
 - Item1 `toolchain/tool_prompt`: removed the legacy `_system_prompt()` independent
