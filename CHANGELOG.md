@@ -2,6 +2,30 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Worker init gap closed: lazy imports under slot release (no release)
+
+- Slot-release gap closed: `run_task()`'s lazy imports (`consensus_service`,
+  `review_service`, `context`, `task_entry`) and the initial `get_state()`
+  moved inside the guarded init block, so any init-phase failure — including
+  an `ImportError` while the worker loads `task_entry` for an already-reserved
+  run — releases the preset reservation instead of pinning busy forever. The
+  "any init-phase exception releases the slot" guarantee from the previous
+  entry now holds completely; post-entry failures stay owned by `TaskRuntime`.
+- Deterministic bug fixed via TDD (red-first): with `task_entry` import
+  blocked (`sys.modules[...] = None`), old `run_task()` raised `ImportError`
+  with no release (repro: still busy, next reserve refused). Permanent pin:
+  `test_run_task_releases_slot_when_lazy_import_fails`. The surrounding slice
+  (pre-reserve failures hold no slot, post-entry failures settle via
+  `TaskRuntime`, release idempotency) was re-checked: no other deterministic
+  correctness bug.
+- Verification: `ruff check` clean, `git diff --check` clean, no frontend JS
+  changed (node unavailable, JS check not applicable). Targeted suites green
+  (task_submit incl. the new lock test, bootstrap review, hardening submit,
+  lazy-state, server review/submit), then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4569 passed, 7 skipped, 1391 subtests passed in 350.55s`. Skips are the
+  known Windows/opt-in family. No release was made.
+
 ## Unreleased - Review policy boundary gaps: fail-fast submit, entry validation, slot release (no release)
 
 - Fail-fast submit (busy-slot leak fixed): `submit_task()` now validates

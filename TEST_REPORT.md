@@ -1,5 +1,40 @@
 # Codey Test Report
 
+## Worker init gap: lazy imports under slot release (2026-09-27)
+
+Scope (production, no release):
+
+```text
+codey/app/task_submit.py             (lazy imports + initial get_state() moved inside guarded init block; any init-phase failure releases preset reservation)
+tests/test_task_submit.py            (new lock: test_run_task_releases_slot_when_lazy_import_fails via sys.modules None injection)
+```
+
+Repro (deterministic, synthetic fake state, no live model):
+
+- With `codey.operations.task_entry` blocked (`sys.modules[...] = None`),
+  old `run_task()` with a preset `run-9` raised `ImportError` before the
+  guarded block: `released == []`, slot stayed busy, next reserve refused.
+  After the fix the same call raises `ImportError` with
+  `released == ["run-9"]`. The lock test failed red before the fix and passes
+  after; no other test needed changes (init vs post-entry ownership split is
+  unchanged: `TaskRuntime` still owns everything after submission entry, and
+  release stays idempotent).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check` clean on the repo,
+  `git diff --check` clean, no frontend JS changed (node unavailable, JS
+  check not applicable); targeted suites green
+  (`test_task_submit` 9 + `test_local_bootstrap -k review` +
+  `test_hardening_batch2 -k submit` + `test_server_lazy_state` 9 +
+  `test_server -k review/submit` 36).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4569 passed, 7 skipped, 1391 subtests passed in 350.55s (0:05:50)`.
+  Skips are the known Windows/opt-in family (no real-browser runs, so green
+  pytest still does not prove interactive or local-model latency). No live
+  kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Review policy boundary gaps: fail-fast submit + entry validation + slot release (2026-09-27)
 
 Scope (production, no release):

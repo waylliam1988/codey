@@ -43,12 +43,15 @@ def run_task(
     # Heavy task stack stays lazy: importing this module (and server.py)
     # must not load operations/service modules/research (see test_server_lazy_state).
     # review_policy itself stays import-light (os + env names only).
-    from codey.app import consensus_service, review_service
-    from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
-    from codey.operations.task_entry import TaskRunDeps, run_task_submission
-
-    state = get_state()
+    # The lazy imports and get_state() live inside the guarded block so any
+    # init-phase failure (import, state, policy, deps) releases a preset
+    # reservation instead of pinning busy forever.
     try:
+        from codey.app import consensus_service, review_service
+        from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
+        from codey.operations.task_entry import TaskRunDeps, run_task_submission
+
+        state = get_state()
         if review_policy is None:
             review_policy = load_review_policy()
         deps = TaskRunDeps(
@@ -80,6 +83,8 @@ def run_task(
         # Init-phase failure happens before TaskRuntime owns the slot: release
         # a preset reservation so the worker exception cannot pin busy forever.
         # Post-entry failures stay owned by TaskRuntime (release is idempotent).
+        # get_state() itself is guarded too: a broken accessor still surfaces
+        # the original error, just without a release to aim at.
         if run_id:
             with contextlib.suppress(Exception):
                 get_state().release_run(run_id)

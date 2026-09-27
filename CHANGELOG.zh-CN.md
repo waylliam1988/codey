@@ -2,6 +2,27 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Worker 初始化缺口补齐：惰性导入纳入槽位释放（未发布）
+
+- 槽位释放缺口补齐：`run_task()` 的惰性导入（`consensus_service`、
+  `review_service`、`context`、`task_entry`）及首次 `get_state()` 移入受保护
+  的初始化块；任何初始化阶段失败——包括已预约 worker 加载 `task_entry` 时
+  的 `ImportError`——都会释放已预约槽位，不再永久 pin 住 busy。上一条目
+  “任何初始化异常都会释放槽位”的完整保证至此成立；进入执行后的失败仍归
+  `TaskRuntime` 所有。
+- 确定性 bug 经 TDD 修复（先红后绿）：阻塞 `task_entry` 导入
+  （`sys.modules[...] = None`）时，旧 `run_task()` 抛 `ImportError` 且不释
+  放（复现：仍 busy，下次预约被拒）。永久锁定：
+  `test_run_task_releases_slot_when_lazy_import_fails`。周边切片（预约前失
+  败不占槽、执行内失败经 `TaskRuntime` 结算、释放幂等）复查后无其他确定性
+  正确性 bug。
+- 验证：`ruff check` 全过，`git diff --check` 全过，未改前端 JS（本环境无
+  node，JS 检查不适用）。先过针对性套件（task_submit 含新锁定测试、
+  bootstrap review、hardening submit、lazy-state、server review/submit），
+  再跑全量 `python -m pytest -q -p no:cacheprovider`：`4569 passed、7
+  skipped、1391 subtests passed，350.55s`。跳过为已知 Windows/手动启用项。
+  未发布。
+
 ## Unreleased - Review 策略边界缺口：提交前失败、入口校验、槽位释放（未发布）
 
 - 提交前失败（busy 槽泄漏已修）：`submit_task()` 在预约运行槽之前先经

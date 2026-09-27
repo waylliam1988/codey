@@ -108,6 +108,21 @@ class TaskSubmitTests(unittest.TestCase):
             )
         self.assertEqual(state.released, ["run-9"])
 
+    def test_run_task_releases_slot_when_lazy_import_fails(self) -> None:
+        import sys
+
+        state = _FakeState(reserved=True)
+        with (
+            mock.patch.dict(sys.modules, {"codey.operations.task_entry": None}),
+            self.assertRaises(ImportError),
+        ):
+            task_submit.run_task(
+                "s", None, "t", 8, False, "deepseek", "auto", "run-9",
+                get_state=lambda: state,
+                review_policy="web_if_available",
+            )
+        self.assertEqual(state.released, ["run-9"])
+
     def test_after_slot_release_returns_none_when_stopped(self) -> None:
         state = _FakeState(reserved=True)
         state.run_registry = SimpleNamespace(
