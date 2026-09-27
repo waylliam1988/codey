@@ -114,7 +114,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", COMPOSER_JS)
         send_click = COMPOSER_JS[COMPOSER_JS.index("async function sendActiveDraft()"):COMPOSER_JS.index("async function continueTask")]
         self.assertIn("const provider = currentProviderId();", send_click)
-        self.assertIn("provider: s.provider || liveDefaultProvider()", COMPOSER_JS)
+        self.assertIn("PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()", COMPOSER_JS)
         self.assertIn("intent: 'project'", COMPOSER_JS)
         self.assertIn("provider: PROVIDERS.includes(raw.provider)", UI_STATE_JS)
         self.assertIn("Continue the unfinished task in this same conversation.", COMPOSER_JS)
@@ -1382,21 +1382,46 @@ class ProviderSelectorUiTests(unittest.TestCase):
         )
         self.assertIn("defaultSession(null, liveDefaultProvider())", HTML)
         self.assertIn("s.provider || liveDefaultProvider()", HTML)
-        # composer.js fallbacks use the live helper.
+        # composer.js fallbacks use the live helper with an includes-guard
+        # (no bare `||` that would submit a removed id verbatim).
         self.assertIn("PROVIDERS.includes(id) ? id : liveDefaultProvider()", COMPOSER_JS)
         self.assertIn("s.provider) ? s.provider : liveDefaultProvider()", COMPOSER_JS)
-        self.assertIn("s.provider || liveDefaultProvider()", COMPOSER_JS)
+        self.assertNotIn("s.provider ||", COMPOSER_JS)
+        # P2-continue red lock: continueTask must not submit a removed provider
+        # id verbatim; it must use the same includes-guard as sendTaskFromSession.
+        continue_start = COMPOSER_JS.index("async function continueTask(sessionId)")
+        continue_end = COMPOSER_JS.index("function bindHandlers()", continue_start)
+        continue_block = COMPOSER_JS[continue_start:continue_end]
+        self.assertIn(
+            "PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()",
+            continue_block,
+        )
+        self.assertNotIn("provider: s.provider ||", continue_block)
+        # Cold-start residue red lock: helpers must read the live object
+        # directly (the page already dereferences it at parse time).
+        self.assertIn("return window.CodeyUiState.DEFAULT_PROVIDER;", HTML)
+        self.assertIn("return window.CodeyUiState.DEFAULT_PROVIDER;", COMPOSER_JS)
+        self.assertNotIn(
+            "(window.CodeyUiState && window.CodeyUiState.DEFAULT_PROVIDER)",
+            HTML,
+        )
+        self.assertNotIn(
+            "(window.CodeyUiState && window.CodeyUiState.DEFAULT_PROVIDER)",
+            COMPOSER_JS,
+        )
+        # Composer snapshot is dead once the helper is direct.
+        self.assertNotIn("let DEFAULT_PROVIDER", COMPOSER_JS)
+        self.assertNotIn("DEFAULT_PROVIDER = deps.DEFAULT_PROVIDER", COMPOSER_JS)
 
     def test_provider_shrink_and_default_change_applies_live(self) -> None:
         # Executable behavior lock (not just source strings): simulate boot with
         # two providers, then a post-boot catalog that removes one and flips the
-        # default. Requires node; skipped where node is unavailable.
+        # default. Harness completeness is asserted in Python (runs everywhere);
+        # Node execution is skipped where node is unavailable.
         import shutil
         import subprocess
         import tempfile
 
-        if shutil.which("node") is None:
-            self.skipTest("node unavailable for executable JS behavior check")
         harness = r"""
 const fs = require('fs');
 const path = require('path');
@@ -1405,28 +1430,64 @@ const webDir = process.argv[2];
 function loadAsset(name) {
   return fs.readFileSync(path.join(webDir, name), 'utf8');
 }
-// Minimal browser stubs.
+// Fake DOM that truly records provider menu buttons.
 const menuButtons = [];
-const fakeMenu = {
-  querySelectorAll: () => [],
-  remove: () => {},
-  insertBefore: () => {},
-  appendChild: () => {},
-  classList: { remove: () => {}, toggle: () => {}, contains: () => false },
-};
-global.document = {
-  createElement: () => ({
+function menuButtonCount() {
+  return fakeMenu.querySelectorAll('.provider-item').length;
+}
+function makeElement(tag) {
+  const el = {
+    tag, children: [],
     className: '', dataset: {}, textContent: '', innerHTML: '',
-    setAttribute: () => {}, append: () => {}, querySelector: () => null,
-    classList: { toggle: () => {} }, onclick: null,
-  }),
-  querySelectorAll: () => [],
+    onclick: null, disabled: false, value: '', style: {},
+    setAttribute: () => {},
+    append: (...kids) => { el.children.push(...kids); },
+    appendChild: (kid) => { el.children.push(kid); return kid; },
+    remove: () => {
+      const i = menuButtons.indexOf(el);
+      if (i >= 0) menuButtons.splice(i, 1);
+    },
+    querySelector: () => ({ className: '' }),
+    querySelectorAll: () => [],
+    classList: { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false },
+    addEventListener: () => {},
+    closest: () => null,
+    click: () => {},
+  };
+  return el;
+}
+const fakeMenu = {
+  querySelectorAll: (sel) => {
+    if (sel === '.provider-item') return menuButtons.slice();
+    return [];
+  },
+  insertBefore: (btn) => { menuButtons.push(btn); },
+  appendChild: (btn) => { menuButtons.push(btn); },
+  classList: { remove: () => {}, toggle: () => {}, contains: () => false },
+  contains: () => false,
+};
+const fakeButtons = {};
+function fakeButton() { return { onclick: null, disabled: false, classList: { add: () => {}, remove: () => {}, toggle: () => {} } }; }
+const fakePop = { classList: { add: () => {}, remove: () => {}, contains: () => false }, contains: () => false, setAttribute: () => {} };
+global.document = {
+  createElement: (tag) => makeElement(tag),
+  querySelectorAll: (sel) => {
+    if (sel === '.provider-item') return menuButtons.slice();
+    return [];
+  },
   getElementById: (id) => {
     if (id === 'provider-menu') return fakeMenu;
     if (id === 'provider-probe-warning') return null;
-    if (id === 'provider-button') return { classList: { remove: () => {}, toggle: () => {} } };
+    if (id === 'provider-button') return fakeButtons['provider-button'] || (fakeButtons['provider-button'] = fakeButton());
     if (id === 'provider-name') return { textContent: '' };
     if (id === 'provider-dot') return { className: '' };
+    if (id === 'local-config-pop') return fakePop;
+    if (id === 'local-config-close') return fakeButtons['local-config-close'] || (fakeButtons['local-config-close'] = fakeButton());
+    if (id === 'local-config-save') return fakeButtons['local-config-save'] || (fakeButtons['local-config-save'] = fakeButton());
+    if (id === 'task') return { value: '', style: {}, disabled: false, addEventListener: () => {}, click: () => {} };
+    if (id === 'composer-context') return { onclick: null, addEventListener: () => {} };
+    if (id === 'send' || id === 'stop') return { onclick: null, disabled: false, click: () => {} };
+    if (id === 'send-hint') return { textContent: '' };
     return null;
   },
   addEventListener: () => {},
@@ -1440,67 +1501,109 @@ const composerSrc = loadAsset('assets/composer.js');
 vm.runInThisContext(uiStateSrc);
 vm.runInThisContext(providerUiSrc);
 vm.runInThisContext(composerSrc);
-// Boot with two providers, default deepseek.
-window.CodeyUiState.setProviders(['deepseek', 'mimo'], { deepseek: 'DeepSeek', mimo: 'MiMo' }, 'deepseek');
-if (window.CodeyUiState.PROVIDERS.length !== 2) throw new Error('boot catalog not applied');
-if (window.CodeyUiState.DEFAULT_PROVIDER !== 'deepseek') throw new Error('boot default not applied');
-// Init provider_ui with live references (as index.html does).
-const PROVIDERS = window.CodeyUiState.PROVIDERS;
-const PROVIDER_LABELS = window.CodeyUiState.PROVIDER_LABELS;
-let current = 'mimo';
-window.CodeyProviderUI.init({
-  $: (id) => global.document.getElementById(id),
-  escapeHtml: (s) => String(s),
-  PROVIDERS, PROVIDER_LABELS,
-  DEFAULT_PROVIDER: window.CodeyUiState.DEFAULT_PROVIDER,
-  currentProviderId: () => current,
-  setActiveProvider: (id) => { current = id; },
-});
-// Post-boot catalog: remove mimo, flip default to deepseek (already) then to a new default.
-// First shrink: only deepseek remains.
-const shrunk = window.CodeyProviderUI.applyConfig({
-  providers: [{ id: 'deepseek', label: 'DeepSeek' }],
-  default: 'deepseek',
-});
-if (shrunk !== true) throw new Error('shrink must rebuild menu (returned false)');
-if (window.CodeyUiState.PROVIDERS.length !== 1) throw new Error('menu did not shrink');
-if (window.CodeyUiState.PROVIDERS[0] !== 'deepseek') throw new Error('wrong survivor');
-// Default flip: re-add mimo with new default mimo, then verify live helpers would see it.
-window.CodeyUiState.setProviders(['deepseek', 'mimo'], { deepseek: 'DeepSeek', mimo: 'MiMo' }, 'mimo');
-if (window.CodeyUiState.DEFAULT_PROVIDER !== 'mimo') throw new Error('default flip not applied');
-// Composer live fallback: init composer with stale snapshot, then verify live helper sees new default.
-const composerProviders = window.CodeyUiState.PROVIDERS;
-const liveSession = { id: 's1', provider: 'removed-id' };
-let syncedTo = null;
-window.CodeyComposer.init({
-  $: (id) => ({ value: '', style: {}, disabled: false, textContent: '', addEventListener: () => {}, click: () => {} }),
-  PROVIDERS: composerProviders,
-  DEFAULT_PROVIDER: 'deepseek',
-  getRunningSessionId: () => null,
-  getActiveId: () => 's1',
-  activeSession: () => liveSession,
-  findSession: () => liveSession,
-  sessionProject: () => null,
-  sessionProjectPath: () => '',
-  currentIntentForSession: () => 'project',
-  currentProviderId: () => liveSession.provider,
-  persistActiveNow: () => {},
-  updateComposerContext: () => {},
-  renderChat: () => {},
-  pushMsgToSession: () => {},
-  addToSession: () => {},
-  addSendError: () => {},
-  acceptRunResponse: async () => {},
-  syncProviderUI: (id) => { syncedTo = id; },
-  openLocalProviderConfig: () => {},
-  projectPickerBusy: () => false,
-  attachCurrentChatToPickedProject: () => {},
-});
-window.CodeyComposer.setActiveProvider('removed-id');
-if (liveSession.provider !== 'mimo') throw new Error('composer fallback must use live default mimo, got ' + liveSession.provider);
-if (syncedTo !== 'mimo') throw new Error('composer sync must target live default mimo, got ' + syncedTo);
-console.log('EXECUTABLE_SHRINK_LIVE_OK');
+async function main() {
+  // Boot with two providers, default deepseek.
+  window.CodeyUiState.setProviders(['deepseek', 'mimo'], { deepseek: 'DeepSeek', mimo: 'MiMo' }, 'deepseek');
+  if (window.CodeyUiState.PROVIDERS.length !== 2) throw new Error('boot catalog not applied');
+  if (window.CodeyUiState.DEFAULT_PROVIDER !== 'deepseek') throw new Error('boot default not applied');
+  // Init provider_ui with live references (as index.html does).
+  const PROVIDERS = window.CodeyUiState.PROVIDERS;
+  const PROVIDER_LABELS = window.CodeyUiState.PROVIDER_LABELS;
+  let current = 'mimo';
+  window.CodeyProviderUI.init({
+    $: (id) => global.document.getElementById(id),
+    escapeHtml: (s) => String(s),
+    PROVIDERS, PROVIDER_LABELS,
+    DEFAULT_PROVIDER: window.CodeyUiState.DEFAULT_PROVIDER,
+    currentProviderId: () => current,
+    setActiveProvider: (id) => { current = id; },
+  });
+  if (menuButtonCount() !== 2) throw new Error('boot menu must have 2 provider-item buttons, got ' + menuButtonCount());
+  // Post-boot catalog: remove mimo via applyConfig (not direct setProviders).
+  const shrunk = window.CodeyProviderUI.applyConfig({
+    providers: [{ id: 'deepseek', label: 'DeepSeek' }],
+    default: 'deepseek',
+  });
+  if (shrunk !== true) throw new Error('shrink must rebuild menu (returned false)');
+  if (window.CodeyUiState.PROVIDERS.length !== 1) throw new Error('state array did not shrink');
+  if (window.CodeyUiState.PROVIDERS[0] !== 'deepseek') throw new Error('wrong survivor');
+  if (menuButtonCount() !== 1) throw new Error('menu buttons did not shrink, got ' + menuButtonCount());
+  if (!menuButtons[0].dataset || menuButtons[0].dataset.provider !== 'deepseek') throw new Error('menu button has wrong provider');
+  // Default flip via applyConfig: re-add mimo with new default mimo.
+  const flipped = window.CodeyProviderUI.applyConfig({
+    providers: [{ id: 'deepseek', label: 'DeepSeek' }, { id: 'mimo', label: 'MiMo' }],
+    default: 'mimo',
+  });
+  if (flipped !== true) throw new Error('default flip must rebuild menu (returned false)');
+  if (window.CodeyUiState.DEFAULT_PROVIDER !== 'mimo') throw new Error('default flip not applied');
+  if (menuButtonCount() !== 2) throw new Error('menu buttons must be 2 after flip, got ' + menuButtonCount());
+  // Composer live fallback: no snapshot dep; stale removed-id must resolve to live mimo.
+  const composerProviders = window.CodeyUiState.PROVIDERS;
+  const liveSession = { id: 's1', provider: 'removed-id' };
+  let syncedTo = null;
+  const runBodies = [];
+  global.fetch = async (url, opts) => {
+    runBodies.push({ url, body: JSON.parse(opts.body) });
+    return { status: 200, ok: true, json: async () => ({}) };
+  };
+  window.CodeyComposer.init({
+    $: (id) => global.document.getElementById(id),
+    PROVIDERS: composerProviders,
+    getRunningSessionId: () => null,
+    getActiveId: () => 's1',
+    activeSession: () => liveSession,
+    findSession: () => liveSession,
+    sessionProject: (s) => ({ path: '/tmp/proj' }),
+    sessionProjectPath: () => '/tmp/proj',
+    currentIntentForSession: () => 'project',
+    currentProviderId: () => liveSession.provider,
+    persistActiveNow: () => {},
+    updateComposerContext: () => {},
+    renderChat: () => {},
+    pushMsgToSession: () => {},
+    addToSession: () => {},
+    addSendError: () => { throw new Error('addSendError must not run on ok'); },
+    acceptRunResponse: async () => {},
+    syncProviderUI: (id) => { syncedTo = id; },
+    openLocalProviderConfig: () => {},
+    projectPickerBusy: () => false,
+    attachCurrentChatToPickedProject: () => {},
+  });
+  window.CodeyComposer.setActiveProvider('removed-id');
+  if (liveSession.provider !== 'mimo') throw new Error('composer fallback must use live default mimo, got ' + liveSession.provider);
+  if (syncedTo !== 'mimo') throw new Error('composer sync must target live default mimo, got ' + syncedTo);
+  // continueTask must also guard removed ids (not `s.provider ||`).
+  liveSession.provider = 'removed-id';
+  runBodies.length = 0;
+  await window.CodeyComposer.continueTask('s1');
+  const continued = runBodies.find((r) => r.url === '/api/run' && r.body && r.body.continue_task);
+  if (!continued) throw new Error('continueTask did not POST /api/run with continue_task');
+  if (continued.body.provider !== 'mimo') throw new Error('continueTask must send live default mimo, got ' + continued.body.provider);
+  console.log('EXECUTABLE_SHRINK_LIVE_OK');
+}
+main().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
 """
+        # P1 harness completeness locks (fail red until the fake DOM is fixed).
+        self.assertIn("local-config-close", harness)
+        self.assertIn("local-config-save", harness)
+        self.assertIn("local-config-pop", harness)
+        # Fake menu must truly record/delete buttons.
+        self.assertIn("menuButtons", harness)
+        self.assertIn("menuButtons.slice()", harness)
+        self.assertIn("menuButtons.push(btn)", harness)
+        self.assertIn("menuButtons.splice", harness)
+        # Menu shrink must be asserted by button count, not just state array.
+        self.assertIn("provider-item", harness)
+        self.assertIn("menuButtonCount", harness)
+        # Default flip must go through applyConfig, not direct setProviders.
+        self.assertIn("applyConfig({", harness)
+        self.assertIn("default: 'mimo'", harness)
+        # continueTask removed-provider body must be covered.
+        self.assertIn("continueTask", harness)
+        self.assertIn("/api/run", harness)
+        self.assertIn("continue_task", harness)
+        if shutil.which("node") is None:
+            self.skipTest("node unavailable for executable JS behavior check")
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tmp:
             tmp.write(harness)
             harness_path = tmp.name

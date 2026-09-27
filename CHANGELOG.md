@@ -2,6 +2,39 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Executable harness fix, continueTask removed-provider guard, helper direct-read (no release)
+
+- Fixed the executable lock so it passes under Node (P1, red-first harness
+  completeness asserts failed before): the fake DOM now provides
+  `local-config-close` / `local-config-save` / `local-config-pop` nodes
+  (`provider_ui.init()` no longer throws on `onclick` binding), the fake menu
+  truly records/deletes `provider-item` buttons and the test asserts button
+  counts (not just the state array), and the default flip goes through
+  `CodeyProviderUI.applyConfig()` instead of direct `setProviders()`.
+- Fixed `continueTask` submitting a removed provider verbatim (P2,
+  deterministic, red-first `continue_block` includes-guard assert failed
+  before): `composer.js` used `s.provider || liveDefaultProvider()`, so
+  `"removed-id"` sailed through. It now uses
+  `PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()`,
+  matching `sendTaskFromSession()`; the executable harness captures
+  `/api/run` with `continue_task` and asserts the body carries the live
+  default.
+- Removed the cold-start fallback residue: both `liveDefaultProvider()`
+  helpers now return `window.CodeyUiState.DEFAULT_PROVIDER` directly (the
+  page dereferences it at parse time), and composer's dead
+  `DEFAULT_PROVIDER` snapshot (`let` + `init` assignment + init arg) is
+  deleted.
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted suites green before the full run
+  (`test_ui` 74 passed + 1 skipped Node-only; `deadcode` 26 passed;
+  `stepfun` 31 passed; `ui+deadcode+stepfun+providers` 160 passed + 1
+  skipped); prior review already has all 12 JS assets `node --check` passing
+  on Node 24.19.0 (this worker still has no Node in PATH). Then final
+  `python -m pytest -q`:
+  `4606 passed, 10 skipped, 1435 subtests passed in 356.59s (0:05:56)`.
+  Skips are the known Windows/opt-in family plus the Node-only executable
+  test. No release was made.
+
 ## Unreleased - Post-boot default live-read, executable shrink lock, verification correction (no release)
 
 - Fixed the remaining stale-default scope (P2, red-first

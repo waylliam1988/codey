@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## Executable harness fix, continueTask removed-provider guard, helper direct-read (2026-09-27)
+
+Scope (review follow-up, no release):
+
+```text
+codey/web/assets/composer.js (continueTask uses includes-guard; liveDefaultProvider() direct-read; deleted DEFAULT_PROVIDER snapshot + init assignment)
+codey/web/index.html (liveDefaultProvider() direct-read; dropped composer DEFAULT_PROVIDER init arg)
+tests/test_ui.py (harness: local-config-* fakes, real menuButtons record/delete + menuButtonCount asserts, default flip via applyConfig, continueTask /api/run body capture; strengthened string locks for includes-guard + direct-read + no snapshot; updated stale `||` assertions)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (both review items locked before the fix):
+
+- `test_post_boot_default_fallback_reads_live_source` failed on the new
+  `continue_block` includes-guard (`provider: s.provider ||` still present),
+  then on direct-read (`(window.CodeyUiState && ...)` still present) and
+  snapshot (`let DEFAULT_PROVIDER` still in composer). After switching
+  `continueTask` to `PROVIDERS.includes(s.provider) ? ...`, making both
+  helpers `return window.CodeyUiState.DEFAULT_PROVIDER;`, and deleting the
+  composer snapshot, it passes.
+- `test_provider_shrink_and_default_change_applies_live` Python completeness
+  asserts failed (`local-config-close` missing; `menuButtons.slice/push/splice`
+  and `menuButtonCount` missing; no `applyConfig({` flip; no `continueTask`
+  `/api/run` capture). After the harness rewrite they pass in Python; Node
+  execution is skipped here (no Node in PATH) and must pass in CI with Node 24
+  (review reproduced the old `local-config-close null.onclick` failure there).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted suites green (`test_ui` 74 passed + 1
+  skipped Node-only; `ui+deadcode+stepfun+providers` 160 passed + 1 skipped;
+  Python JS sanity 11 assets non-empty). Prior review already has all 12 JS
+  assets `node --check` passing on Node 24.19.0.
+- Final full suite: `python -m pytest -q`:
+  `4606 passed, 10 skipped, 1435 subtests passed in 356.59s (0:05:56)`.
+  Skips are the known Windows/opt-in family plus the Node-only executable test.
+  No release was made.
+
 ## Post-boot default live-read, executable shrink lock, verification correction (2026-09-27)
 
 Scope (review follow-up, no release):

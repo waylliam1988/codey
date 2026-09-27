@@ -2,6 +2,29 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 可执行桩修复、Continue 已删 provider 守卫、helper 直读（未发布）
+
+- 修复可执行锁使其在 Node 下通过（P1，桩完备性断言先红）：假 DOM 补齐
+  `local-config-close`/`local-config-save`/`local-config-pop` 节点
+  （`provider_ui.init()` 不再因 `onclick` 绑定抛错），假菜单真实记录/删除
+  `provider-item` 按钮并断言按钮数（不只断言状态数组），默认翻转改走
+  `CodeyProviderUI.applyConfig()` 而非直调 `setProviders()`。
+- 修复 `continueTask` 原样提交已删 provider（P2，确定性，`continue_block`
+  includes 断言先红）：`composer.js` 用 `s.provider ||` 导致
+  `"removed-id"` 直接发出，现改为与 `sendTaskFromSession()` 一致的
+  `PROVIDERS.includes(s.provider) ? ...`；可执行桩捕获带 `continue_task` 的
+  `/api/run` 请求体并断言其为 live 默认。
+- 去除冷启动残留：两处 `liveDefaultProvider()` 改为直读
+  `window.CodeyUiState.DEFAULT_PROVIDER`（页面解析期已依赖该对象），并删除
+  composer 不再需要的 `DEFAULT_PROVIDER` 快照（含 `init` 赋值与传参）。
+- 验证：`python -m ruff check codey tests tools`、`git diff --check` 通过。
+  全量前目标套件全绿（`test_ui` 74 通过 +1 跳过；`deadcode` 26 通过；
+  `stepfun` 31 通过；四套件 160 通过 +1 跳过）；复核已在 Node 24.19.0 下对
+  12 资产 `node --check` 全过（本 worker 仍无 Node）。最终
+  `python -m pytest -q`：
+  **4606 passed、10 skipped、1435 subtests passed，356.59s（0:05:56）**。
+  跳过为已知 Windows/opt-in 项加 Node 专属测试。未发布。
+
 ## Unreleased - 启动后默认 live 化、可执行缩减锁定、验证记录补正（未发布）
 
 - 补完剩余的默认过期范围（P2，红测先行，

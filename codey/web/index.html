@@ -191,7 +191,7 @@ let DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER;
 const PROVIDER_LABELS = window.CodeyUiState.PROVIDER_LABELS;
 const PROVIDERS = window.CodeyUiState.PROVIDERS;
 function liveDefaultProvider() {
-  return (window.CodeyUiState && window.CodeyUiState.DEFAULT_PROVIDER) || DEFAULT_PROVIDER;
+  return window.CodeyUiState.DEFAULT_PROVIDER;
 }
 
 let sessions = [];
@@ -1792,7 +1792,6 @@ async function boot() {
   window.CodeyComposer.init({
     $,
     PROVIDERS,
-    DEFAULT_PROVIDER,
     getActiveId: () => activeId,
     getRunningSessionId: () => runningSessionId,
     activeSession,

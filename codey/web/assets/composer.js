@@ -5,11 +5,10 @@
 
 let deps = null;
 let PROVIDERS = [];
-let DEFAULT_PROVIDER = '';
 let handlersBound = false;
 
 function liveDefaultProvider() {
-  return (window.CodeyUiState && window.CodeyUiState.DEFAULT_PROVIDER) || DEFAULT_PROVIDER;
+  return window.CodeyUiState.DEFAULT_PROVIDER;
 }
 
 function $(id) { return deps.$(id); }
@@ -20,7 +19,6 @@ function currentProviderId() { return deps.currentProviderId(); }
 function init(nextDeps) {
   deps = nextDeps;
   PROVIDERS = deps.PROVIDERS;
-  DEFAULT_PROVIDER = deps.DEFAULT_PROVIDER;
   bindHandlers();
 }
 
@@ -131,7 +129,7 @@ async function continueTask(sessionId) {
         project: p.path,
         task,
         continue_task: true,
-        provider: s.provider || liveDefaultProvider(),
+        provider: PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider(),
         intent: 'project',
       }),
     });
