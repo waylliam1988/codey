@@ -2,6 +2,24 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 锁定测试精度：只认 ImportError，保证限定作用域（未发布）
+
+- 收紧锁定测试：`test_worker_releases_slot_when_accessor_breaks_after_submit`
+  现只接受 `ImportError`（不容忍 accessor 错误覆盖），并断言原 accessor 恰
+  调用一次——即提交那一次。经 detached worktree 在修复前代码上验证为红
+  （旧代码：`released == []`；accessor 错误被吞掉，原 `ImportError`
+  无释放地抛出）。
+- 限定保证作用域：“任何初始化异常都会释放槽位”现明确限定为经
+  `submit_task` 预约的任务（worker 持有已捕获的 state）。直接以 preset
+  `run_id` 调用 `run_task`、且首次 `get_state()` 就持续失败时，仍没有可用
+  于释放的 state 对象——此处无代码可改，文档不再超范围承诺。
+- 验证：`ruff check` 全过，`git diff --check` 全过，未改前端 JS（本环境无
+  node，JS 检查不适用）。先过针对性套件（task_submit、bootstrap review、
+  hardening submit、lazy-state、server review/submit、architecture
+  delegation），再跑全量 `python -m pytest -q -p no:cacheprovider`：
+  `4570 passed、7 skipped、1391 subtests passed，359.31s`。跳过为已知
+  Windows/手动启用项。未发布。
+
 ## Unreleased - 槽位释放不再依赖 accessor：submit 捕获 state 传给 worker（未发布）
 
 - 释放不再依赖 accessor 二次可用：`submit_task()` 只取一次 state 对象
@@ -9,14 +27,17 @@
   用于预约、队列异常释放、队列满释放与过期审批清理。`run_task()` 初始化清
   理因此不再依赖 accessor 第二次可用：accessor 持续损坏叠加初始化失败，仍
   能释放已预约槽位。无签名变更、无新增回退路径——worker 只是经既有通道使
-  用已拿到的对象。
+  用已拿到的对象。作用域：经 `submit_task` 预约的任务（worker 持有已捕获的
+  state）。直接以 preset `run_id` 调用 `run_task`、且首次 `get_state()` 就持
+  续失败时，仍没有可用于释放的 state 对象——该路径从未经 `submit_task` 预约。
 - 确定性 bug 经 TDD 修复（先红后绿）：提交成功后 accessor 持续损坏、且
-  `task_entry` 导入被阻塞时，旧 `run_task()` 报错不释放（busy 卡死，accessor
-  错误甚至盖掉 `ImportError`）。锁定过程中还发现初版锁定测试把 worker 调用
-  写在了 import-block 之外、注入实际未生效——复核红灯输出时发现并修正（调
-  用移入块内）。永久锁定：
-  `test_worker_releases_slot_when_accessor_breaks_after_submit`（旧代码红，
-  `released == []`；修复后绿）。切片复查：预约前失败不占槽、执行内失败经
+  `task_entry` 导入被阻塞时，旧 `run_task()` 在清理中重新调用已损坏的
+  accessor，该错误被吞掉、预约从未释放（busy 卡死），而原 `ImportError` 照
+  常抛出。锁定过程中还发现初版锁定测试把 worker 调用写在了 import-block
+  之外、注入实际未生效——复核红灯输出时发现并修正（调用移入块内）。永久锁
+  定：`test_worker_releases_slot_when_accessor_breaks_after_submit`（旧代码
+  红，`released == []`；修复后绿；只接受 `ImportError` 并断言原 accessor 恰
+  调用一次，即提交那一次）。切片复查：预约前失败不占槽、执行内失败经
   `TaskRuntime` 结算、释放幂等——无其他确定性正确性 bug。
 - 验证：`ruff check` 全过，`git diff --check` 全过，未改前端 JS（本环境无
   node，JS 检查不适用）。先过针对性套件（task_submit 含新锁定测试、
@@ -29,10 +50,10 @@
 
 - 槽位释放缺口补齐：`run_task()` 的惰性导入（`consensus_service`、
   `review_service`、`context`、`task_entry`）及首次 `get_state()` 移入受保护
-  的初始化块；任何初始化阶段失败——包括已预约 worker 加载 `task_entry` 时
-  的 `ImportError`——都会释放已预约槽位，不再永久 pin 住 busy。上一条目
-  “任何初始化异常都会释放槽位”的完整保证至此成立；进入执行后的失败仍归
-  `TaskRuntime` 所有。
+  的初始化块；`submit_task` 路径上的任何初始化阶段失败——包括已预约 worker
+  加载 `task_entry` 时的 `ImportError`——都会释放已预约槽位，不再永久 pin
+  住 busy。上一条目“任何初始化异常都会释放槽位”的保证至此在 `submit_task`
+  路径上完整成立；进入执行后的失败仍归 `TaskRuntime` 所有。
 - 确定性 bug 经 TDD 修复（先红后绿）：阻塞 `task_entry` 导入
   （`sys.modules[...] = None`）时，旧 `run_task()` 抛 `ImportError` 且不释
   放（复现：仍 busy，下次预约被拒）。永久锁定：
@@ -53,9 +74,9 @@
   占槽（HTTP 以 500 返回明确信息）。校验通过的值以
   `run_task(..., review_policy=...)` 透传给 worker，worker 不再二次读取环境
   变量（无竞态）。`run_task()` 新增可选 `review_policy`（`None`
-  时同步/直接调用路径加载一次）；`TaskRuntime` 接管槽位之前的其他初始化异常
-  也会释放已预约槽位（幂等 `release_run`），worker 初始化失败不再永久 pin
-  住 busy。进入执行后的失败仍归 `TaskRuntime` 所有。
+  时同步/直接调用路径加载一次）；`submit_task` 路径上 `TaskRuntime` 接管槽位
+  之前的其他初始化异常也会释放已预约槽位（幂等 `release_run`），worker 初始化
+  失败不再永久 pin 住 busy。进入执行后的失败仍归 `TaskRuntime` 所有。
 - 服务入口契约补齐：`run_review()` 开头即经 `allow_self_review()` 校验策略，
   并复用结果做自审门控；拼错策略即使有可用网页 reviewer 也直接抛错（之前会
   经网页路径成功返回）。Review-only 模式本来就把这类错误降级为

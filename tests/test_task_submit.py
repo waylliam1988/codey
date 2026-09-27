@@ -127,9 +127,10 @@ class TaskSubmitTests(unittest.TestCase):
         import sys
 
         state = _FakeState(reserved=True)
-        holder = {"broken": False}
+        holder = {"broken": False, "calls": 0}
 
         def get_state():
+            holder["calls"] += 1
             if holder["broken"]:
                 raise RuntimeError("accessor down")
             return state
@@ -143,19 +144,19 @@ class TaskSubmitTests(unittest.TestCase):
             )
             self.assertEqual(run_id, "run-1")
             # The accessor breaks persistently after submit; nothing else can
-            # provide state. The queued worker must still release on init
-            # failure (pre-fix the accessor error masks the ImportError and
-            # busy sticks). The worker runs inside the import block so the
-            # injected ImportError is the deterministic init failure.
+            # provide state. The queued worker must surface the original
+            # ImportError (never the accessor error) and still release.
+            # The worker runs inside the import block so the injected
+            # ImportError is the deterministic init failure.
             holder["broken"] = True
             fn = queued.call_args.args[0]
             self.assertIs(fn, task_submit.run_task)
-            with self.assertRaises((ImportError, RuntimeError)) as ctx:
+            with self.assertRaises(ImportError):
                 fn(*queued.call_args.args[1:], **queued.call_args.kwargs)
-            if isinstance(ctx.exception, RuntimeError):
-                # Pre-fix mode: the broken accessor masks the init failure.
-                self.assertEqual(str(ctx.exception), "accessor down")
             self.assertEqual(state.released, ["run-1"])
+        # The original accessor ran exactly once (at submit); the worker never
+        # called it again — cleanup used the captured state object.
+        self.assertEqual(holder["calls"], 1)
 
     def test_after_slot_release_returns_none_when_stopped(self) -> None:
         state = _FakeState(reserved=True)

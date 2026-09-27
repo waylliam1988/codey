@@ -2,6 +2,27 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Lock-test accuracy: ImportError-only pin, scoped guarantee (no release)
+
+- Strict lock test: `test_worker_releases_slot_when_accessor_breaks_after_submit`
+  now pins `ImportError`-only surfacing (no accessor-error masking tolerated)
+  and asserts the original accessor ran exactly once — at submit. Verified
+  red on the pre-fix code via a detached worktree (old code: `released ==
+  []`; the accessor error was swallowed while the original `ImportError`
+  propagated without a release).
+- Scoped guarantee: the "any init-phase exception releases the slot" promise
+  is now explicitly limited to runs reserved through `submit_task` (the worker
+  holds the captured state). A direct `run_task` call with a preset `run_id`
+  and a persistently failing first `get_state()` still has no state object to
+  release from — no code change applies there; the docs no longer overclaim.
+- Verification: `ruff check` clean, `git diff --check` clean, no frontend JS
+  changed (node unavailable, JS check not applicable). Targeted suites green
+  (task_submit, bootstrap review, hardening submit, lazy-state, server
+  review/submit, architecture delegation), then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4570 passed, 7 skipped, 1391 subtests passed in 359.31s`. Skips are the
+  known Windows/opt-in family. No release was made.
+
 ## Unreleased - Accessor-proof slot release: submit captures state for the worker (no release)
 
 - Accessor-proof release: `submit_task()` captures the state object once
@@ -11,15 +32,22 @@
   longer depends on the accessor working a second time: a persistently broken
   accessor plus an init failure still releases the preset reservation. No
   signature changes, no new fallback paths — the worker just uses the
-  already-obtained object through the existing channel.
+  already-obtained object through the existing channel. Scope: runs reserved
+  through `submit_task` (the worker holds the captured state). A direct
+  `run_task` call with a preset `run_id` whose first `get_state()`
+  persistently fails still has no state object to release from — that path
+  never reserved through `submit_task`.
 - Deterministic bug fixed via TDD (red-first): with the accessor broken after
   a successful submit and `task_entry` import blocked, old `run_task()`
-  raised with no release (busy stuck; the accessor error even masked the
-  `ImportError`). While locking it, the first draft of the lock test invoked
-  the worker outside the import-block, so the injection was inactive — caught
-  on review of the red run and fixed by running the worker inside the block.
-  Permanent pin: `test_worker_releases_slot_when_accessor_breaks_after_submit`
-  (red on old code with `released == []`, green after). Re-checked the slice:
+  re-invoked the broken accessor during cleanup; that error was swallowed and
+  the preset reservation was never released (busy stuck), while the original
+  `ImportError` propagated. While locking it, the first draft of the lock test
+  invoked the worker outside the import-block, so the injection was
+  inactive — caught on review of the red run and fixed by running the worker
+  inside the block. Permanent pin:
+  `test_worker_releases_slot_when_accessor_breaks_after_submit` (red on old
+  code with `released == []`, green after; pins `ImportError`-only surfacing
+  plus exactly one accessor call, at submit). Re-checked the slice:
   pre-reserve failures hold no slot, post-entry failures settle via
   `TaskRuntime`, release stays idempotent — no other deterministic
   correctness bug.
@@ -35,11 +63,13 @@
 
 - Slot-release gap closed: `run_task()`'s lazy imports (`consensus_service`,
   `review_service`, `context`, `task_entry`) and the initial `get_state()`
-  moved inside the guarded init block, so any init-phase failure — including
-  an `ImportError` while the worker loads `task_entry` for an already-reserved
+  moved inside the guarded init block, so any init-phase failure on the
+  `submit_task` path (the worker holds the captured state) — including an
+  `ImportError` while the worker loads `task_entry` for an already-reserved
   run — releases the preset reservation instead of pinning busy forever. The
   "any init-phase exception releases the slot" guarantee from the previous
-  entry now holds completely; post-entry failures stay owned by `TaskRuntime`.
+  entry now holds for the `submit_task` path; post-entry failures stay owned
+  by `TaskRuntime`.
 - Deterministic bug fixed via TDD (red-first): with `task_entry` import
   blocked (`sys.modules[...] = None`), old `run_task()` raised `ImportError`
   with no release (repro: still busy, next reserve refused). Permanent pin:
@@ -64,9 +94,10 @@
   as `run_task(..., review_policy=...)`, so the worker never re-reads the
   environment (no read race). `run_task()` accepts an optional
   `review_policy` (`None` loads once for sync/direct callers); any other
-  init-phase exception before `TaskRuntime` owns the slot now releases a
-  preset reservation (idempotent `release_run`), so a worker init failure can
-  no longer pin busy forever. Post-entry failures stay owned by `TaskRuntime`.
+  init-phase exception on the `submit_task` path before `TaskRuntime` owns the
+  slot now releases a preset reservation (idempotent `release_run`), so a
+  worker init failure can no longer pin busy forever. Post-entry failures stay
+  owned by `TaskRuntime`.
 - Service-entry contract closed: `run_review()` validates `review_policy` up
   front via `allow_self_review()` and reuses the result for the self-review
   gate, so a misspelled policy raises even when a web reviewer is available

@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## Lock-test accuracy: ImportError-only pin, scoped guarantee (2026-09-27)
+
+Scope (no production code change this round; tests + docs only):
+
+```text
+tests/test_task_submit.py            (lock test tightened: ImportError-only + accessor-called-exactly-once)
+CHANGELOG.md / CHANGELOG.zh-CN.md    (guarantee scoped to the submit_task path; masking mechanics corrected)
+TEST_REPORT.md                       (same wording corrections)
+```
+
+Repro (deterministic, worktree check, no live model):
+
+- The tightened lock test was run against the pre-fix code in a detached
+  worktree (`453612f`): red with `released == []` — the cleanup re-invoked
+  the broken accessor, that error was swallowed, the original `ImportError`
+  propagated without a release. On fixed code: green with `released ==
+  ["run-1"]`, `ImportError`-only, accessor calls `== 1`.
+- Self-correction from the previous round stands: the first draft had invoked
+  the worker outside the `sys.modules` block (inactive injection); running it
+  inside the block is what makes the failure deterministic.
+- Guarantee scope made explicit: runs reserved through `submit_task` (worker
+  holds the captured state) are fully covered; a direct `run_task` call with
+  a preset `run_id` and a persistently failing first `get_state()` has no
+  state object to release from — documented, no code applies there.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check` clean on the repo,
+  `git diff --check` clean, no frontend JS changed (node unavailable, JS
+  check not applicable); targeted suites green
+  (`test_task_submit` 10 + `test_local_bootstrap -k review` +
+  `test_hardening_batch2 -k submit` + `test_server_lazy_state` 9 +
+  `test_server -k review/submit` 36 + `test_architecture -k delegation`).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4570 passed, 7 skipped, 1391 subtests passed in 359.31s (0:05:59)`.
+  Skips are the known Windows/opt-in family (no real-browser runs, so green
+  pytest still does not prove interactive or local-model latency). No live
+  kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Accessor-proof slot release: submit captures state for the worker (2026-09-27)
 
 Scope (production, no release):
@@ -12,11 +52,15 @@ tests/test_task_submit.py            (new lock: test_worker_releases_slot_when_a
 Repro (deterministic, synthetic fake state, no live model):
 
 - With a working accessor at submit time, a persistently broken accessor
-  afterwards, and `task_entry` import blocked, old `run_task()` raised the
-  accessor `RuntimeError` (masking the `ImportError`) with `released == []`:
-  busy stuck. After the fix the same sequence raises the original
-  `ImportError` with `released == ["run-1"]`, without ever calling the broken
-  accessor — the worker uses the submit-time object.
+  afterwards, and `task_entry` import blocked, old `run_task()` re-invoked
+  the broken accessor during cleanup: that error was swallowed while the
+  original `ImportError` propagated, and `released == []` (busy stuck). After
+  the fix the same sequence raises the original `ImportError` with
+  `released == ["run-1"]`, with the accessor called exactly once (at submit)
+  — the worker uses the submit-time object. Scope: runs reserved through
+  `submit_task`; a direct `run_task` call with a preset `run_id` and a
+  persistently failing first `get_state()` still has no state object to
+  release from.
 - Lock-test self-correction: the first draft invoked the queued worker
   outside the `sys.modules` block, so the injection was inactive (caught by
   reading the red output: failure at `project_facts` instead of the import).
@@ -45,7 +89,7 @@ Verification (local, Windows, no live browser/model re-run):
 Scope (production, no release):
 
 ```text
-codey/app/task_submit.py             (lazy imports + initial get_state() moved inside guarded init block; any init-phase failure releases preset reservation)
+codey/app/task_submit.py             (lazy imports + initial get_state() moved inside guarded init block; any init-phase failure on the submit_task path releases preset reservation)
 tests/test_task_submit.py            (new lock: test_run_task_releases_slot_when_lazy_import_fails via sys.modules None injection)
 ```
 
@@ -80,7 +124,7 @@ Verification (local, Windows, no live browser/model re-run):
 Scope (production, no release):
 
 ```text
-codey/app/task_submit.py             (submit_task validates policy before reserve; passes validated review_policy to worker; run_task takes optional review_policy, None loads once; init-phase failures release preset reservation)
+codey/app/task_submit.py             (submit_task validates policy before reserve; passes validated review_policy to worker; run_task takes optional review_policy, None loads once; init-phase failures on the submit_task path release preset reservation)
 codey/app/review_service.py          (run_review validates policy up front via allow_self_review; reuses result for self-review gate)
 tests/test_task_submit.py            (new: rejects-invalid-before-reserve incl. slot-still-usable; releases-reserved-on-policy-error)
 tests/test_local_bootstrap.py        (new: invalid-policy raises with/without web reviewer; connect never called)
@@ -96,7 +140,7 @@ Repro (all deterministic, temp dirs / synthetic fakes, no live model):
   reserve was refused (busy forever). Now `submit_task()` raises before
   reserve (no slot taken, worker never queued) and a valid submit right after
   still reserves; `run_task()` releases a preset reservation on any
-  pre-`TaskRuntime` failure.
+  pre-`TaskRuntime` failure on the `submit_task` path.
 - Entry bypass: old `run_review(review_policy="require_weeb")` with an
   available web reviewer succeeded via the web path (validation only ran at
   the self-review fallback). Now it raises before any provider work
