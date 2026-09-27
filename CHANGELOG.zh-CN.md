@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 删除 finding status 字段，open-only 收为类型约束（未发布）
+
+- 将 open-only 从投影规则收成类型约束（红测先行，
+  `tests/test_finding_openonly_shape_locks.py`，4 项中 2 项先失败）：删除
+  `ReviewFindingRecord` 的 `status` 字段（再传 `status=` 直接 `TypeError`，
+  对象与 payload 不可能再出现 `confirmed` 对 `open` 的分歧），删除只剩单值
+  的 `FINDING_STATUSES`；`STATUS_OPEN` 保留为 payload 固定标记，两处 payload
+  路径仍输出 `open`。非 open 输入只以外部模拟对象存在于测试
+  （`test_research_contract.py` 改用 `SimpleNamespace` 覆盖）。
+  同步更新上一轮锁定文件与仍带 `status="open"` 的 benchmark 用例。
+- 验证：`python -m ruff check codey`、`git diff --check` 通过。
+  全量前相关模块套件全绿；最终
+  `python -m pytest -q -p no:cacheprovider`：
+  **4588 passed、9 skipped、1433 subtests passed，342.02s（0:05:42）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - finding open-only 契约、规划器/矩阵残留清理（未发布）
 
 - 补完 finding 生命周期清理为 open-only 审计契约（红测先行，

@@ -94,7 +94,8 @@ def test_unsupported_claim_diagnostic_projects_critical_located_finding() -> Non
     finding = findings[0]
     assert finding.kind == FINDING_UNSUPPORTED_CLAIM
     assert finding.severity == SEVERITY_CRITICAL
-    assert finding.status == STATUS_OPEN
+    assert "status" not in type(finding).__dataclass_fields__
+    assert finding.to_payload()["status"] == "open"
     assert finding.claim_ref == claim
     assert finding.target_ref == claim
     assert finding.proof_ref == _proof_ref()

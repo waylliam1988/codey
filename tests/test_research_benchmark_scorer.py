@@ -222,7 +222,6 @@ def test_stale_source_flagged_from_warnings_findings_and_trust() -> None:
         finding_id="review_finding:" + "66" * 8,
         kind=FINDING_STALE_SOURCE,
         severity="warning",
-        status="open",
     )
     via_finding = build_regression_report(
         snapshot=_snapshot(), findings=(finding,), proof_review=_review()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from codey.completion.contract import (
     CHECK_FAIL,
     CHECK_PASS,
@@ -26,7 +28,6 @@ from codey.research.review_finding import (
     FINDING_UNSUPPORTED_CLAIM,
     SEVERITY_CRITICAL,
     SEVERITY_WARNING,
-    STATUS_OPEN,
     findings_from_proof_review,
 )
 
@@ -175,21 +176,25 @@ def test_all_critical_findings_block_regardless_of_status() -> None:
     assert rows[CHECK_BLOCKING_FINDINGS].status == CHECK_FAIL
     assert rows[CHECK_BLOCKING_FINDINGS].reason_code == BLOCKING_FINDINGS_REASON
 
-    # Findings are open-only audit snapshots: no lifecycle can clear a
-    # critical finding, so a hand-marked non-open status still blocks.
+    # The record type carries no status dimension; non-open inputs only
+    # exist as foreign mocks, and they still block when critical.
     for status in ("addressed", "confirmed", "rejected"):
-        relabelled = tuple(
-            type(finding)(**{**finding.__dict__, "status": status})
+        mocked = tuple(
+            SimpleNamespace(
+                finding_id=finding.finding_id,
+                kind=finding.kind,
+                severity=finding.severity,
+                status=status,
+            )
             for finding in critical
         )
-        assert blocking_finding_refs(relabelled) == refs, status
+        assert blocking_finding_refs(mocked) == refs, status
 
     warning_only = (
         type(critical[0])(
             finding_id="review_finding:" + "c" * 16,
             kind=FINDING_UNSUPPORTED_CLAIM,
             severity=SEVERITY_WARNING,
-            status=STATUS_OPEN,
         ),
     )
     assert blocking_finding_refs(warning_only) == ()
@@ -210,7 +215,7 @@ def test_ok_reviews_cannot_have_open_critical_findings() -> None:
         assert review.ok is False, reason
         findings = findings_from_proof_review(review)
         assert any(
-            finding.severity == SEVERITY_CRITICAL and finding.status == STATUS_OPEN
+            finding.severity == SEVERITY_CRITICAL
             for finding in findings
         ), reason
         assert blocking_finding_refs(findings)

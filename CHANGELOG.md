@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Finding status field removal, open-only as type constraint (no release)
+
+- Made open-only a type constraint instead of a projection rule (red-first
+  `tests/test_finding_openonly_shape_locks.py`, 2 of 4 failed before):
+  deleted the `status` field from `ReviewFindingRecord` (passing `status=`
+  now raises `TypeError`, so the object can never disagree with its payload)
+  and deleted the single-value `FINDING_STATUSES` set; `STATUS_OPEN` stays as
+  the fixed payload marker and both payload paths still report `open`.
+  Non-open inputs now exist only as foreign mocks in tests
+  (`test_research_contract.py` relabels via `SimpleNamespace`).
+  Updated the previous round's locks and the benchmark scorer fixture that
+  still constructed the record with `status="open"`.
+- Verification: `python -m ruff check codey` clean, `git diff --check` clean.
+  Targeted suites green before the full run; then final
+  `python -m pytest -q -p no:cacheprovider`:
+  `4588 passed, 9 skipped, 1433 subtests passed in 342.02s (0:05:42)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Finding open-only contract, planner/matrix residue removal (no release)
 
 - Closed the finding-lifecycle residue as an open-only audit contract

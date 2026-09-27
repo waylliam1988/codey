@@ -1,5 +1,33 @@
 # Codey Test Report
 
+## Finding status field removal, open-only as type constraint (2026-09-27)
+
+Scope (type-level completion of the open-only contract, no release):
+
+```text
+codey/research/review_finding.py (deleted ReviewFindingRecord.status field + single-value FINDING_STATUSES; STATUS_OPEN stays as payload marker; both payload paths fixed open)
+tests/test_finding_openonly_shape_locks.py (new: 4 red-first locks)
+tests/test_finding_status_contract_locks.py (updated to field-absent contract)
+tests/test_research_contract.py  (non-open inputs via SimpleNamespace mocks; dropped STATUS_OPEN import)
+tests/test_research_review_finding.py (field-absent + payload-open assertion)
+tests/test_research_benchmark_scorer.py (dropped status="open" kwarg)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (new `tests/test_finding_openonly_shape_locks.py`, 2 of 4 failed before the fix):
+
+- `test_record_type_has_no_status_field` failed (`'status'` still in `__dataclass_fields__`); after deleting the field, construction with `status="confirmed"` raises `TypeError`, closing the confirmed-in/open-out divergence the review flagged.
+- `test_single_value_status_set_is_gone_marker_stays` failed (`FINDING_STATUSES` still present); after deleting the set (`STATUS_OPEN` kept as the fixed marker, still in `__all__`), it passes.
+- `test_payloads_are_fixed_open_for_non_open_inputs` and `test_blocking_ignores_status_via_mocks` passed before and after (they guard the prior rounds' behavior: payloads fixed `open`, blocking ignores status).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey` clean, `git diff --check` clean; targeted suites green (new locks 4 passed; finding/contract/trace/benchmark/pipeline/planner/connectors 202 passed; event-matrix/coldstart/architecture 110 passed + 556 subtests).
+- Final full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4588 passed, 9 skipped, 1433 subtests passed in 342.02s (0:05:42)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Finding open-only contract, planner/matrix residue removal (2026-09-27)
 
 Scope (P2 contract completion + residue, no release):

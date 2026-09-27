@@ -4,7 +4,8 @@ ReviewFindingRecord is an audit read model: it says which claim, evidence,
 source, analysis run, or record has a proof problem and how severe it is.
 Findings are projected from facts that already exist (proof-review
 diagnostics); they never call models, execute searches, or mutate research
-state. Records stay as produced (``open``); there is no event lifecycle.
+state. Findings are open-only snapshots: the record carries no status
+dimension and every payload reports ``open``; there is no event lifecycle.
 """
 
 from __future__ import annotations
@@ -47,7 +48,6 @@ FINDING_SEVERITIES = frozenset({SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITIC
 _SEVERITY_RANK = {SEVERITY_INFO: 0, SEVERITY_WARNING: 1, SEVERITY_CRITICAL: 2}
 
 STATUS_OPEN = "open"
-FINDING_STATUSES = frozenset({STATUS_OPEN})
 
 GAP_FOLLOWUP_SEARCH = "followup_search"
 GAP_LOCATOR_VERIFICATION = "locator_verification"
@@ -95,7 +95,6 @@ class ReviewFindingRecord:
     finding_id: str
     kind: str
     severity: str
-    status: str = STATUS_OPEN
     target_ref: str = ""
     claim_ref: str = ""
     evidence_ref: str = ""
@@ -230,7 +229,6 @@ def findings_from_proof_review(
             ),
             kind=kind,
             severity=str(group["severity"]),  # type: ignore[arg-type]
-            status=STATUS_OPEN,
             target_ref=target,
             claim_ref=claim_ref,
             evidence_ref=evidence_ref,
@@ -412,7 +410,6 @@ __all__ = [
     "FINDING_OVERREACH",
     "FINDING_QUALIFIED_SUPPORT",
     "FINDING_SOURCE_CONFLICT",
-    "FINDING_STATUSES",
     "FINDING_STALE_SOURCE",
     "FINDING_UNSUPPORTED_CLAIM",
     "FINDING_SEVERITIES",

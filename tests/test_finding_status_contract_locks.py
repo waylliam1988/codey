@@ -1,15 +1,11 @@
-"""Red-first locks: findings are open-only audit snapshots.
+"""Locks: findings are open-only audit snapshots (type-level constraint).
 
-Post-cleanup contract (must FAIL before the fix, PASS after):
-
-- No unreachable lifecycle states or provenance fields on
-  ``ReviewFindingRecord``; trace projections always emit ``open``.
-- ``blocking_finding_refs`` blocks EVERY critical finding regardless of any
-  hand-set status (same critical finding blocks as open AND as addressed).
-- The producer-less ``failed_analysis_support -> rerun_analysis`` mapping is
-  gone.
-- ``_planner_warnings`` takes no ``registry`` argument.
-- The event matrix no longer lists the deleted ``domain_evidence_profiles``.
+Follow-up to the open-only contract: the record type carries no ``status``
+field at all (payloads still report ``open``) and the single-value
+``FINDING_STATUSES`` set is gone. Non-open inputs only exist as foreign
+mocks. The remaining locks below (blocking regardless of status, removed
+failed-analysis mapping, registry-free planner warnings, cleaned event
+matrix) guard the same contract.
 """
 from __future__ import annotations
 
@@ -32,11 +28,11 @@ def test_no_unreachable_finding_statuses_or_provenance_fields() -> None:
     for name in ("STATUS_ADDRESSED", "STATUS_CONFIRMED", "STATUS_REJECTED"):
         assert not hasattr(rf, name), name
     assert rf.STATUS_OPEN == "open"
-    assert frozenset({"open"}) == rf.FINDING_STATUSES
+    assert not hasattr(rf, "FINDING_STATUSES")
     fields = rf.ReviewFindingRecord.__dataclass_fields__
     assert "addressed_by" not in fields
     assert "confirmed_by" not in fields
-    assert "status" in fields
+    assert "status" not in fields
     payload = rf.ReviewFindingRecord(
         finding_id="review_finding:" + "a" * 16,
         kind="unsupported_claim",
