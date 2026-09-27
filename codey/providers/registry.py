@@ -96,7 +96,12 @@ def connect_provider(
     open_if_missing: bool = True,
     bring_to_front: bool = True,
 ) -> ChatProvider:
-    normalized = normalize_provider_id(provider_id) or DEFAULT_PROVIDER_ID
+    normalized = normalize_provider_id(provider_id)
+    if not normalized:
+        if provider_id is None or str(provider_id).strip() == "":
+            normalized = DEFAULT_PROVIDER_ID
+        else:
+            raise ValueError(f"unsupported provider: {provider_id}")
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
@@ -120,6 +125,8 @@ def connect_provider(
 
 def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | None:
     """Wrap an already-open sibling tab without creating another CDP connection."""
+    from codey.automation.browser import _url_host_matches
+
     normalized = normalize_provider_id(provider_id)
     if normalized == "local":
         return None
@@ -130,12 +137,16 @@ def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | No
         pages = tuple(owner_page.context.pages)
     except Exception:
         return None
+    def _matches(candidate: Any) -> bool:
+        if candidate is owner_page:
+            return False
+        try:
+            url = str(candidate.url or "")
+        except Exception:
+            return False
+        return _url_host_matches(url, marker)
     page = next(
-        (
-            candidate
-            for candidate in pages
-            if candidate is not owner_page and marker in str(candidate.url or "")
-        ),
+        (candidate for candidate in pages if _matches(candidate)),
         None,
     )
     if page is None:
@@ -162,7 +173,12 @@ def connect_fresh_provider_tab(
 ) -> ChatProvider:
     """Open a temporary provider tab for isolated review-style work."""
 
-    normalized = normalize_provider_id(provider_id) or DEFAULT_PROVIDER_ID
+    normalized = normalize_provider_id(provider_id)
+    if not normalized:
+        if provider_id is None or str(provider_id).strip() == "":
+            normalized = DEFAULT_PROVIDER_ID
+        else:
+            raise ValueError(f"unsupported provider: {provider_id}")
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")

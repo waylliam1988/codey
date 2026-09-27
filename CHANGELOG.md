@@ -2,6 +2,47 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Full-red round2: events/registry/writer/shell-expire/browser-host/safe-cwd/inbox strict (no release)
+
+- Fixed 7 deterministic bugs, all red-first (7 failed before, pass after):
+  `runtime/observe/events._safe_tool_index/_safe_byte_count` stops
+  `int(... or 0)` crashing on `"abc"/"²"/True/1.5` (falls back to `0`,
+  matching `project_completion_flow` defensive pattern);
+  `ghost/inbox._merge_metadata` now requires `dict` inputs (`TypeError`
+  instead of silently coercing `[("a",1)]` to `{"a":1}`);
+  `providers/registry.connect_provider/connect_fresh_provider_tab` no longer
+  silently defaults non-empty invalid ids (`"!!!"`) to `deepseek` (empty/None
+  still defaults; invalid raises `ValueError`);
+  `app/provider_services.reviewer_candidates` + `app/review_service` now use
+  canonical `normalize_provider_id` for writer self-exclusion (`"deepseek."`
+  can no longer self-review);
+  `app/approval_registry.expire_shell_results` skips legacy/bad rows instead
+  of crashing the whole expire (generation still bumps, good rows still emit);
+  `automation/browser` + `providers/registry.borrow_open_provider` now match
+  provider tabs by hostname (`_url_host_matches`, subdomain-aware) instead of
+  bare substring (`evil.test/?x=chat.deepseek.com` no longer hijacks);
+  `app/shell_service.safe_project_cwd` rejects empty project (`ValueError`,
+  consistent with `policies/run_command_semantics._project_root`; callers
+  already fail-closed to `pending, None`).
+- Full-red coverage: 31 new tests in `test_fullred_int_or_events` (8),
+  `test_fullred_provider` (6), `test_fullred_shell` (4),
+  `test_fullred_trace_ghost` (8), `test_fullred_front_browser_path` (5);
+  24 passed before (intentional clamps/history views/fail-open/timing-races
+  documented as non-bugs: `_expires_at` min-1-day, `bounded_limit`/`_turn_budget`/
+  `normalize_page_args` min-1, trace missing-count->1, ui `base_revision` bootstrap,
+  generation-0 init, `RunRegistry.payload` history, TTL cache, whole-file ledger
+  corrupt, prompt fail-open, ghost user scope, severity downgrade, empty-fingerprint
+  unobserved, static-cache/mtime, Windows fsync, TOCTOU races), 7 failed before
+  as above. Existing `test_server::test_shell_approval_response_uses_safe_defaults`
+  fixture completed with real `project=td` (was missing-project, now realistic;
+  `setup` + `submit project` asserts updated).
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted green before final
+  (`fullred+unicode+schema` 50 passed; `browser+providers+flow+arch+cli` 197 passed,
+  366 subtests; `server` 212 passed). Then final `python -m pytest -q`:
+  `4704 passed, 10 skipped, 1473 subtests passed in 344.80s (0:05:44)`.
+  Delta vs 4673 is exactly the 31 new fullred locks. No release was made.
+
 ## Unreleased - Unicode digit hardening + strict schema_version v1 follow-up (no release)
 
 - Fixed deterministic unicode-digit crashes (P1, red-first): `str.isdigit()`

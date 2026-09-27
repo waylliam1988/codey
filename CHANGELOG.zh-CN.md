@@ -2,6 +2,42 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 全量红测第二轮：events/registry/writer/shell过期/browser域名/safe-cwd/inbox严格化（未发布）
+
+- 修复 7 个确定性 bug，全部红测先行（修复前 7 失败，修复后全过）：
+  `runtime/observe/events` 新增 `_safe_tool_index/_safe_byte_count`，
+  `int(... or 0)` 在 `"abc"/"²"/True/1.5` 不再崩溃，回落 `0`（与
+  `project_completion_flow` 防御模式一致）；
+  `ghost/inbox._merge_metadata` 要求 `dict` 输入（`[("a",1)]` 抛
+  `TypeError`，不再静默转 `{"a":1}`）；
+  `providers/registry.connect_provider/connect_fresh_provider_tab` 对非空非法
+  id（`"!!!"`）不再静默回落 `deepseek`（空/None 仍回落默认，非法抛
+  `ValueError`）；
+  `app/provider_services.reviewer_candidates` + `app/review_service` 改用标准
+  `normalize_provider_id` 做 writer 自排除（`"deepseek."` 不再能自评）；
+  `app/approval_registry.expire_shell_results` 跳过 legacy/坏行而不是整个过期
+  崩溃（generation 照常 bump，好行照常 emitting）；
+  `automation/browser` + `providers/registry.borrow_open_provider` 改按 hostname
+  匹配（`_url_host_matches`，支持子域），`evil.test/?x=chat.deepseek.com`
+  不再劫持；
+  `app/shell_service.safe_project_cwd` 拒绝空 project（`ValueError`，与
+  `policies/run_command_semantics._project_root` 一致；调用方已 fail-closed
+  返回 `pending, None`）。
+- 全量红测覆盖：新增 31 测试（`int_or_events` 8、`provider` 6、`shell` 4、
+  `trace_ghost` 8、`front_browser_path` 5）；其中 24 通过为有意设计/不可达/
+  非确定性（`_expires_at` 最小1天、`bounded_limit`/`_turn_budget`/
+  `normalize_page_args` 最小1、trace 缺失 count->1、ui `base_revision` 冷启动、
+  generation-0 初始、`RunRegistry.payload` 历史视图、TTL 缓存、ledger 整文件腐、
+  prompt fail-open、ghost user 域、severity 降级、空指纹 unobserved、静态缓存/
+  mtime、Windows fsync、TOCTOU 竞争），7 失败为上述真 bug。既有
+  `test_server::test_shell_approval_response_uses_safe_defaults` 夹具补真实
+  `project=td`（原缺 project 不真实；`setup` + `submit project` 断言同步更新）。
+- 验证：`ruff`、`git diff --check` 通过；目标套件全绿（`fullred+unicode+schema`
+  50 通过；`browser+providers+flow+arch+cli` 197 通过 366 子项；`server` 212
+  通过）。最终 `python -m pytest -q`：
+  **4704 passed、10 skipped、1473 subtests passed，344.80s（0:05:44）**。
+  增量正好 31 个新锁。未发布。
+
 ## Unreleased - Unicode 数字硬化 + schema_version v1 严格化收尾（未发布）
 
 - 修复确定性 unicode 数字崩溃（P1，红测先行）：`str.isdigit()` 对 `"²"` 为

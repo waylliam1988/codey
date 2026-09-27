@@ -1,5 +1,66 @@
 # Codey Test Report
 
+## Full-red round2: events/registry/writer/shell-expire/browser-host/safe-cwd/inbox strict (2026-09-27)
+
+Scope (7 deterministic bugs, red-first, no release):
+
+```text
+codey/runtime/observe/events.py (_safe_tool_index/_safe_byte_count; no int(... or 0) crash)
+codey/ghost/inbox.py (_merge_metadata requires dict, TypeError on list)
+codey/providers/registry.py (invalid non-empty id raises; empty/None still defaults; borrow uses hostname)
+codey/app/provider_services.py + review_service.py (writer via normalize_provider_id)
+codey/app/approval_registry.py (expire skips bad rows, still bumps generation)
+codey/automation/browser.py (_url_host_matches hostname/subdomain; 5 substring sites fixed)
+codey/app/shell_service.py (safe_project_cwd rejects empty project)
+tests/test_fullred_int_or_events.py (new, 8)
+tests/test_fullred_provider.py (new, 6)
+tests/test_fullred_shell.py (new, 4)
+tests/test_fullred_trace_ghost.py (new, 8)
+tests/test_fullred_front_browser_path.py (new, 5)
+tests/test_server.py (shell safe-defaults fixture now uses real project=td)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (7 failed before, all pass after; 24 passed before and after as non-bugs):
+
+- `test_events_malformed_metadata_does_not_crash` failed (`ValueError: 'abc'`);
+  after `_safe_tool_index` passes for `"abc"/"²"/None/True/1.5` as `"1:0"`.
+- `test_merge_metadata_rejects_non_dict` failed (`{'a':1}` coerced);
+  after `TypeError` passes.
+- `test_registry_invalid_id_must_not_silently_default` failed (mocked deepseek
+  connect returned sentinel for `"!!!"`); after `ValueError` passes.
+  Empty/None still defaults (existing behavior kept).
+- `test_writer_normalization_must_use_canonical` failed (no `normalize` in
+  source); after both call sites use it passes.
+- `test_shell_legacy_pending_deny_must_not_500` failed (`ValueError` from
+  `shell_command_event_fields` aborted expire); after skip-bad-row passes and
+  generation still bumps (second test guards).
+- `test_browser_substring_marker_is_loose` failed (no `hostname` in source);
+  after `_url_host_matches` + 6 call sites passes; evil query URL no longer matches.
+- `test_safe_project_cwd_empty_project_must_reject` failed (resolved to CWD);
+  after `ValueError` passes; `mint/execute` callers already fail-closed.
+
+Non-bugs (24 passed before and after, documented in tests as intentional):
+
+- min-1 clamps (`_expires_at`, `bounded_limit`, `_turn_budget`,
+  `normalize_page_args`), trace missing-count->1, ui bootstrap, gen-0 init,
+  `payload` history, TTL, ledger whole-file, prompt fail-open, ghost user scope,
+  severity downgrade, empty-fingerprint, cache/mtime, Windows fsync, TOCTOU.
+- Intermediate deterministic catch: `test_server::test_shell_approval_response_
+  uses_safe_defaults` went red after `safe_project_cwd` strictness (409 != 200
+  for missing-project fixture); fixed by giving the fixture a real `project=td`
+  and updating `setup`/`submit` asserts (project now flows through).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before final: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted green (`fullred+unicode+schema` 50 passed;
+  `browser+providers+flow+arch+cli` 197 passed, 366 subtests; `server` 212 passed).
+- Final full suite: `python -m pytest -q`:
+  `4704 passed, 10 skipped, 1473 subtests passed in 344.80s (0:05:44)`.
+  Delta vs 4673 is exactly the 31 new fullred locks. No release was made.
+
 ## Unicode digit hardening + strict schema_version v1 follow-up (2026-09-27)
 
 Scope (deterministic bugs only, red-first, no release):

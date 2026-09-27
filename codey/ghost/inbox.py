@@ -1152,8 +1152,10 @@ def _merge_metadata(
     current: dict[str, object],
     incoming: dict[str, object],
 ) -> dict[str, object]:
-    merged = dict(current or {})
-    merged.update(dict(incoming or {}))
+    if not isinstance(current, dict) or not isinstance(incoming, dict):
+        raise TypeError("_merge_metadata requires dict inputs")
+    merged = dict(current)
+    merged.update(dict(incoming))
     return _clean_metadata(merged)
 
 

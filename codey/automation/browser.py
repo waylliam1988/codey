@@ -18,6 +18,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from playwright.sync_api import Browser, Page, Playwright, sync_playwright
@@ -59,6 +60,22 @@ PROVIDER_START_URLS = {
     "stepfun": STEPFUN_URL,
     "glm": GLM_URL,
 }
+
+
+def _url_host_matches(url: object, marker: object) -> bool:
+    """True when URL hostname equals marker or is a subdomain of it.
+
+    Rejects query-string / path smuggling like
+    ``https://evil.test/?x=chat.deepseek.com`` which bare ``in`` matches.
+    """
+    try:
+        host = (urlparse(str(url or "")).hostname or "").lower()
+    except (ValueError, TypeError, AttributeError):
+        return False
+    text = str(marker or "").strip().lower()
+    if not host or not text:
+        return False
+    return host == text or host.endswith("." + text)
 
 EDGE_PATHS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -253,7 +270,7 @@ def detect_open_provider_tabs(port: int = DEFAULT_PORT) -> dict[str, bool]:
                 continue
             url = str(target.get("url") or "")
             for provider_id, marker in PROVIDER_URL_CONTAINS.items():
-                if marker in url:
+                if _url_host_matches(url, marker):
                     statuses[provider_id] = True
     return statuses
 
@@ -271,7 +288,9 @@ def _find_cdp_port_with_target(url_contains: str, preferred: int = DEFAULT_PORT)
         if not _cdp_available(cdp_port):
             continue
         for target in list_cdp_targets(cdp_port):
-            if str(target.get("type") or "") == "page" and url_contains in str(target.get("url") or ""):
+            if str(target.get("type") or "") != "page":
+                continue
+            if _url_host_matches(str(target.get("url") or ""), url_contains):
                 return _remember_cdp_port(cdp_port)
     return None
 
@@ -429,7 +448,7 @@ def _page_urls(browser: Browser) -> tuple[str, ...]:
 
 def _has_provider_url(urls: tuple[str, ...], provider_id: str) -> bool:
     marker = PROVIDER_URL_CONTAINS.get(provider_id)
-    return bool(marker) and any(marker in url for url in urls)
+    return bool(marker) and any(_url_host_matches(url, marker) for url in urls)
 
 
 def _close_failed_warmup_page(page: Page | None, provider_id: str) -> None:
@@ -440,7 +459,7 @@ def _close_failed_warmup_page(page: Page | None, provider_id: str) -> None:
         url = str(page.url or "")
     except Exception:
         url = ""
-    if marker and marker in url:
+    if marker and _url_host_matches(url, marker):
         return
     with contextlib.suppress(Exception):
         page.close()
@@ -598,7 +617,11 @@ def open_chat_page(
         if not fresh_tab:
             for ctx in browser.contexts:
                 for p in ctx.pages:
-                    if url_contains in (p.url or ""):
+                    try:
+                        page_url = str(p.url or "")
+                    except Exception:
+                        continue
+                    if _url_host_matches(page_url, url_contains):
                         page = p
                         break
                 if page:

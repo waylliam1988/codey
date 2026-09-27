@@ -56,7 +56,9 @@ def reviewer_candidates(
     *,
     supervisor: object | None = None,
 ) -> tuple[str, ...]:
-    writer = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
+    from codey.providers.ids import normalize_provider_id
+
+    writer = normalize_provider_id(writer_id) or DEFAULT_PROVIDER_ID
     if supervisor is None:
         supervisor = ctx.providers.supervisor
     candidates = tuple(

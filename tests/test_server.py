@@ -3400,34 +3400,36 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_shell_approval_response_uses_safe_defaults_when_pending_fields_are_missing(self) -> None:
         state = server.AppContext()
-        state.add_pending_shell_approval("shell-1", _complete_shell_pending({
-            "id": "shell-1",
-            "session_id": "session-1",
-            "run_id": "run-1",
-            "command": "pytest",
-            "cwd": ".",
-            "continue_after": True,
-            "risk_label": "dependency_install",
-        }))
-        submit = mock.Mock(return_value=None)
+        with tempfile.TemporaryDirectory() as td:
+            state.add_pending_shell_approval("shell-1", _complete_shell_pending({
+                "id": "shell-1",
+                "session_id": "session-1",
+                "run_id": "run-1",
+                "project": td,
+                "command": "pytest",
+                "cwd": ".",
+                "continue_after": True,
+                "risk_label": "dependency_install",
+            }))
+            submit = mock.Mock(return_value=None)
 
-        with (
-            mock.patch.object(shell_service, "execute_shell_ticket", return_value={
-                "ok": True,
-                "exit_code": 0,
-                "output": "ok",
-                "truncated": False,
-            }) as execute,
-            mock.patch.object(shell_service, "safe_setup_context", return_value="Setup Context") as setup,
-            mock.patch.object(shell_service, "build_shell_approval_continuation", return_value="Continue prompt") as build,
-        ):
-            status, payload = app_api.shell_approval_response(
-                state,
-                {"id": "shell-1", "approved": True},
-                submit_task_after_slot_release=submit,
-            )
+            with (
+                mock.patch.object(shell_service, "execute_shell_ticket", return_value={
+                    "ok": True,
+                    "exit_code": 0,
+                    "output": "ok",
+                    "truncated": False,
+                }) as execute,
+                mock.patch.object(shell_service, "safe_setup_context", return_value="Setup Context") as setup,
+                mock.patch.object(shell_service, "build_shell_approval_continuation", return_value="Continue prompt") as build,
+            ):
+                status, payload = app_api.shell_approval_response(
+                    state,
+                    {"id": "shell-1", "approved": True},
+                    submit_task_after_slot_release=submit,
+                )
 
-        self.assertEqual(status, 200)
+            self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["continuation_requested"])
         self.assertFalse(payload["continued"])
@@ -3438,10 +3440,10 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(ticket.command, "pytest")
         self.assertEqual(ticket.generation, 0)
         self.assertTrue(str(ticket.cwd))
-        setup.assert_not_called()
+        setup.assert_called_once()
         build.assert_called_once()
         self.assertEqual(submit.call_args.args[0], "session-1")
-        self.assertIsNone(submit.call_args.args[1])
+        self.assertEqual(submit.call_args.args[1], td)
         self.assertEqual(submit.call_args.args[2], "Continue prompt")
         self.assertEqual(submit.call_args.args[3], app_api.DEFAULT_MAX_TURNS)
         self.assertEqual(submit.call_args.args[5], DEFAULT_PROVIDER_ID)

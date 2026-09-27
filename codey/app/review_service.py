@@ -157,7 +157,9 @@ def run_review(
         emit_review(ctx, session_id, "Review unavailable: no web reviewer is open.")
         return None
     try:
-        reviewer_id = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
+        from codey.providers.ids import normalize_provider_id
+
+        reviewer_id = normalize_provider_id(writer_id) or DEFAULT_PROVIDER_ID
         reviewer = providers.connect_fresh_provider_tab(reviewer_id)
         return run_review_attempt(
             ctx,

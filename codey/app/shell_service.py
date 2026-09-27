@@ -73,6 +73,8 @@ def _stopped_shell_result() -> dict:
 
 
 def safe_project_cwd(project: str | Path, rel: str) -> Path:
+    if project is None or str(project).strip() == "":
+        raise ValueError("project required")
     root = Path(project).expanduser().resolve()
     cwd = (root / (rel or ".")).resolve()
     if root not in cwd.parents and cwd != root:

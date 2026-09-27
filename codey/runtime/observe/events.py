@@ -13,6 +13,29 @@ TRUNCATED_TEXT_SUFFIX = "..."
 MAX_DISPLAY_TOOL_CHARS = 160
 
 
+def _safe_tool_index(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, str) and value.isascii() and value.isdigit():
+        try:
+            return max(0, int(value))
+        except ValueError:
+            return 0
+    return 0
+
+
+def _safe_byte_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, number)
+
+
 @dataclass(frozen=True)
 class RunEvent:
     kind: str
@@ -130,7 +153,7 @@ def run_event_ui_payload(
     if event.kind == "tool_start" and event.call is not None:
         path = str(event.call.args.get("path") or "")
         display_kind, display_path = display_tool(event.call.name, event.call.args, path)
-        tool_index = int(event.metadata.get("tool_index") or 0)
+        tool_index = _safe_tool_index(event.metadata.get("tool_index"))
         payload = {
             "type": "tool_started",
             "run_id": run_id,
@@ -150,7 +173,7 @@ def run_event_ui_payload(
     path = str(event.call.args.get("path") or "")
     display_kind, display_path = display_tool(event.call.name, event.call.args, path)
     result = event.outcome.presentation_result(MAX_EVENT_RESULT_CHARS)
-    tool_index = int(event.metadata.get("tool_index") or 0)
+    tool_index = _safe_tool_index(event.metadata.get("tool_index"))
     status = event.outcome.presentation_status()
     payload = {
         "type": "tool",
@@ -175,8 +198,8 @@ def run_event_ui_payload(
     managed = event.outcome.managed_output()
     if managed:
         payload["output_handle"] = str(managed.get("handle") or "")
-        payload["output_bytes"] = int(managed.get("original_bytes") or 0)
-        payload["output_stored_bytes"] = int(managed.get("stored_bytes") or 0)
+        payload["output_bytes"] = _safe_byte_count(managed.get("original_bytes"))
+        payload["output_stored_bytes"] = _safe_byte_count(managed.get("stored_bytes"))
         payload["output_sha256"] = str(managed.get("sha256") or "")
     return payload
 

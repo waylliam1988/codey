@@ -82,20 +82,26 @@ class ApprovalRegistry:
         # they remove something.
         if stale or (not run_id and not exclude_run_id and not session_id):
             self._generation += 1
-        return tuple(
-            {
-                "type": "shell_result",
-                "run_id": pending.get("run_id") or "",
-                "session_id": pending.get("session_id") or "",
-                "id": pending.get("id") or "",
-                "approved": False,
-                **shell_command_event_fields(pending),
-                "cwd": pending.get("cwd") or "",
-                "output": output,
-                "exit_code": None,
-            }
-            for pending in stale
-        )
+        results: list[dict] = []
+        for pending in stale:
+            try:
+                command_fields = shell_command_event_fields(pending)
+            except (ValueError, TypeError, KeyError):
+                continue
+            results.append(
+                {
+                    "type": "shell_result",
+                    "run_id": pending.get("run_id") or "",
+                    "session_id": pending.get("session_id") or "",
+                    "id": pending.get("id") or "",
+                    "approved": False,
+                    **command_fields,
+                    "cwd": pending.get("cwd") or "",
+                    "output": output,
+                    "exit_code": None,
+                }
+            )
+        return tuple(results)
 
     def expire_session(
         self,
