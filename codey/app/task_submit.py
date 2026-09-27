@@ -124,8 +124,11 @@ def submit_task(
 ) -> str | None:
     # Fail fast on config error before taking the slot; the validated value is
     # passed through so the worker never re-reads the environment (no race).
+    # The state object is captured once and handed to the worker as-is, so
+    # init-phase cleanup never depends on the accessor working a second time.
     review_policy = load_review_policy()
-    reserved = get_state().reserve_run(
+    state = get_state()
+    reserved = state.reserve_run(
         session_id=session_id,
         project=project,
         task=task,
@@ -145,16 +148,16 @@ def submit_task(
             provider_id,
             intent,
             reserved.run_id,
-            get_state=get_state,
+            get_state=lambda: state,
             review_policy=review_policy,
         )
     except Exception:
-        get_state().release_run(reserved.run_id)
+        state.release_run(reserved.run_id)
         raise
     if not accepted:
-        get_state().release_run(reserved.run_id)
+        state.release_run(reserved.run_id)
         raise BrowserWorkerBusy("browser worker busy: queue full")
-    get_state().expire_stale_shell_approvals(reserved.run_id)
+    state.expire_stale_shell_approvals(reserved.run_id)
     return reserved.run_id
 
 

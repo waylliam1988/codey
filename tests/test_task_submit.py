@@ -123,6 +123,40 @@ class TaskSubmitTests(unittest.TestCase):
             )
         self.assertEqual(state.released, ["run-9"])
 
+    def test_worker_releases_slot_when_accessor_breaks_after_submit(self) -> None:
+        import sys
+
+        state = _FakeState(reserved=True)
+        holder = {"broken": False}
+
+        def get_state():
+            if holder["broken"]:
+                raise RuntimeError("accessor down")
+            return state
+
+        with (
+            mock.patch.dict(sys.modules, {"codey.operations.task_entry": None}),
+            mock.patch.object(task_submit, "submit_browser_task", return_value=True) as queued,
+        ):
+            run_id = task_submit.submit_task(
+                "s", None, "t", 8, False, "deepseek", get_state=get_state
+            )
+            self.assertEqual(run_id, "run-1")
+            # The accessor breaks persistently after submit; nothing else can
+            # provide state. The queued worker must still release on init
+            # failure (pre-fix the accessor error masks the ImportError and
+            # busy sticks). The worker runs inside the import block so the
+            # injected ImportError is the deterministic init failure.
+            holder["broken"] = True
+            fn = queued.call_args.args[0]
+            self.assertIs(fn, task_submit.run_task)
+            with self.assertRaises((ImportError, RuntimeError)) as ctx:
+                fn(*queued.call_args.args[1:], **queued.call_args.kwargs)
+            if isinstance(ctx.exception, RuntimeError):
+                # Pre-fix mode: the broken accessor masks the init failure.
+                self.assertEqual(str(ctx.exception), "accessor down")
+            self.assertEqual(state.released, ["run-1"])
+
     def test_after_slot_release_returns_none_when_stopped(self) -> None:
         state = _FakeState(reserved=True)
         state.run_registry = SimpleNamespace(

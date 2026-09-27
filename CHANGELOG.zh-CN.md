@@ -2,6 +2,29 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 槽位释放不再依赖 accessor：submit 捕获 state 传给 worker（未发布）
+
+- 释放不再依赖 accessor 二次可用：`submit_task()` 只取一次 state 对象
+  （`state = get_state()`），以 `get_state=lambda: state` 交给 worker，并复
+  用于预约、队列异常释放、队列满释放与过期审批清理。`run_task()` 初始化清
+  理因此不再依赖 accessor 第二次可用：accessor 持续损坏叠加初始化失败，仍
+  能释放已预约槽位。无签名变更、无新增回退路径——worker 只是经既有通道使
+  用已拿到的对象。
+- 确定性 bug 经 TDD 修复（先红后绿）：提交成功后 accessor 持续损坏、且
+  `task_entry` 导入被阻塞时，旧 `run_task()` 报错不释放（busy 卡死，accessor
+  错误甚至盖掉 `ImportError`）。锁定过程中还发现初版锁定测试把 worker 调用
+  写在了 import-block 之外、注入实际未生效——复核红灯输出时发现并修正（调
+  用移入块内）。永久锁定：
+  `test_worker_releases_slot_when_accessor_breaks_after_submit`（旧代码红，
+  `released == []`；修复后绿）。切片复查：预约前失败不占槽、执行内失败经
+  `TaskRuntime` 结算、释放幂等——无其他确定性正确性 bug。
+- 验证：`ruff check` 全过，`git diff --check` 全过，未改前端 JS（本环境无
+  node，JS 检查不适用）。先过针对性套件（task_submit 含新锁定测试、
+  bootstrap review、hardening submit、lazy-state、server review/submit、
+  architecture delegation），再跑全量 `python -m pytest -q -p no:
+  cacheprovider`：`4570 passed、7 skipped、1391 subtests passed，
+  354.61s`。跳过为已知 Windows/手动启用项。未发布。
+
 ## Unreleased - Worker 初始化缺口补齐：惰性导入纳入槽位释放（未发布）
 
 - 槽位释放缺口补齐：`run_task()` 的惰性导入（`consensus_service`、

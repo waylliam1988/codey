@@ -2,6 +2,35 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Accessor-proof slot release: submit captures state for the worker (no release)
+
+- Accessor-proof release: `submit_task()` captures the state object once
+  (`state = get_state()`) and hands it to the worker as `get_state=lambda:
+  state`, reusing it for reserve, queue-error release, queue-full release,
+  and stale-approval expiry. Init-phase cleanup in `run_task()` therefore no
+  longer depends on the accessor working a second time: a persistently broken
+  accessor plus an init failure still releases the preset reservation. No
+  signature changes, no new fallback paths — the worker just uses the
+  already-obtained object through the existing channel.
+- Deterministic bug fixed via TDD (red-first): with the accessor broken after
+  a successful submit and `task_entry` import blocked, old `run_task()`
+  raised with no release (busy stuck; the accessor error even masked the
+  `ImportError`). While locking it, the first draft of the lock test invoked
+  the worker outside the import-block, so the injection was inactive — caught
+  on review of the red run and fixed by running the worker inside the block.
+  Permanent pin: `test_worker_releases_slot_when_accessor_breaks_after_submit`
+  (red on old code with `released == []`, green after). Re-checked the slice:
+  pre-reserve failures hold no slot, post-entry failures settle via
+  `TaskRuntime`, release stays idempotent — no other deterministic
+  correctness bug.
+- Verification: `ruff check` clean, `git diff --check` clean, no frontend JS
+  changed (node unavailable, JS check not applicable). Targeted suites green
+  (task_submit incl. the new lock test, bootstrap review, hardening submit,
+  lazy-state, server review/submit, architecture delegation), then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4570 passed, 7 skipped, 1391 subtests passed in 354.61s`. Skips are the
+  known Windows/opt-in family. No release was made.
+
 ## Unreleased - Worker init gap closed: lazy imports under slot release (no release)
 
 - Slot-release gap closed: `run_task()`'s lazy imports (`consensus_service`,

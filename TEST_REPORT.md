@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## Accessor-proof slot release: submit captures state for the worker (2026-09-27)
+
+Scope (production, no release):
+
+```text
+codey/app/task_submit.py             (submit_task captures state once; worker gets get_state=lambda: state; reserve/queue-error/queue-full/expiry all reuse it)
+tests/test_task_submit.py            (new lock: test_worker_releases_slot_when_accessor_breaks_after_submit)
+```
+
+Repro (deterministic, synthetic fake state, no live model):
+
+- With a working accessor at submit time, a persistently broken accessor
+  afterwards, and `task_entry` import blocked, old `run_task()` raised the
+  accessor `RuntimeError` (masking the `ImportError`) with `released == []`:
+  busy stuck. After the fix the same sequence raises the original
+  `ImportError` with `released == ["run-1"]`, without ever calling the broken
+  accessor — the worker uses the submit-time object.
+- Lock-test self-correction: the first draft invoked the queued worker
+  outside the `sys.modules` block, so the injection was inactive (caught by
+  reading the red output: failure at `project_facts` instead of the import).
+  Fixed by running the worker inside the block; red/green re-verified via
+  `git stash` (red: `released == []`; green after pop).
+- No signature changes; no caller updates needed (verified: no test asserts
+  `get_state` identity through to the worker).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check` clean on the repo,
+  `git diff --check` clean, no frontend JS changed (node unavailable, JS
+  check not applicable); targeted suites green
+  (`test_task_submit` 10 + `test_local_bootstrap -k review` +
+  `test_hardening_batch2 -k submit` + `test_server_lazy_state` 9 +
+  `test_server -k review/submit` 36 + `test_architecture -k delegation`).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4570 passed, 7 skipped, 1391 subtests passed in 354.61s (0:05:54)`.
+  Skips are the known Windows/opt-in family (no real-browser runs, so green
+  pytest still does not prove interactive or local-model latency). No live
+  kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Worker init gap: lazy imports under slot release (2026-09-27)
 
 Scope (production, no release):
