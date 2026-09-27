@@ -164,12 +164,12 @@ def _local_context_text(deps: AutoRunDeps, *, session_id: str, project: str) -> 
     if deps.ghost_directive_fn is not None:
         with contextlib.suppress(Exception):
             parts.append(str(getattr(
-                deps.ghost_directive_fn(session_id=session_id), "text", "",
+                deps.ghost_directive_fn(session_id=session_id, project=project), "text", "",
             ) or ""))
     if deps.ghost_continuity_fn is not None:
         with contextlib.suppress(Exception):
             parts.append(str(getattr(
-                deps.ghost_continuity_fn(session_id=session_id), "text", "",
+                deps.ghost_continuity_fn(session_id=session_id, project=project), "text", "",
             ) or ""))
     return "\n\n".join(part for part in parts if part.strip())
 

@@ -1763,6 +1763,37 @@ Ghost / World Model 写 EvidenceLedger 或 CompletionProof
 adapter 输出绕过 runtime validator
 ```
 
+### 单次模型调用下逐步补回 0.5.9 的 Ghost 能力
+
+0.5.9 在符合条件的 `auto` 任务前用独立 GhostRouter 调用模型，已完成的 chat
+回合后用 GhostLearningLoop 再调用模型提取结构化信号。现行产品已移除这两次
+额外调用：`auto` 的首次正常调用决定直接回答或请求动作；已提交经历在下一轮
+有界检索，用户可从经历提出并审核类型化偏好。0.6 逐步补回**用户价值**，
+不以恢复旧类、旧文件或额外调用次数作为目标。
+
+```text
+0.6.0  从已完成的验证事件投影项目验证习惯；显式项目配置优先。
+0.6.1  从 provider 协议失败、参数修复与最终 outcome 投影 bounded affinity。
+0.6.2  用确定性 Ghost Explain 展示 hint 的来源、选择与删除影响；
+       按用户显式信号扩充可审核的类型化候选，不把普通聊天自动确认为记忆。
+0.6.3–0.6.7  用冻结任务集和 shadow/manual A/B 衡量单次 auto 首次调用的
+       路由质量，以及显式候选路径相对 0.5.9 自动抽取的有效性与误报。
+0.6.8  仅在原生 structured provider 能力和 A/B 收益都成立时，试验让同一次
+       主调用返回有界 memory candidate 附属字段；web provider 不依赖该字段。
+```
+
+单次调用的不变式：Ghost 不额外 `send`、新建 provider 会话或重试主调用来获取
+路由/记忆分类；允许主调用在既有 token 预算内携带少量上下文，但增加的
+prompt/输出 token 和延迟须单独计量。候选必须绑定用户原话引用、作用域与 run，
+经过服务端校验和人工审核才进入 Hebbian/Directive；缺失或无效附属字段只
+丢弃候选，不能吞掉正常回答。Ghost hint 仍经 ContextEpoch admission，不能
+升级为 evidence、permission 或 completion verdict。
+
+验收按可观察结果而非类名：项目习惯是否帮助选对验证命令、协议修复是否减少
+失败回合、`auto` 是否减少误路由、候选是否低误报且可拒绝/删除、Ghost Explain
+是否能追到 provenance。若单次调用方案在冻结集与 live A/B 中没有净收益，
+保持当前经历检索与显式审核路径；不为追求与 0.5.9 形式一致而增加模型调用。
+
 ### 0.6.0 - Project Verification Habit Projection v1
 
 目标：让 Codey 记住项目实际验证习惯，帮助模型更容易选择正确验证命令，但不自动执行，

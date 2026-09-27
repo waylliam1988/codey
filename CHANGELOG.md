@@ -2,6 +2,19 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Auto Ghost project scope and 0.6 single-call roadmap (no release)
+
+- Fixed the `auto` first call dropping the project argument when reading Ghost
+  Directive and continuity. A failing test first confirmed project-scoped
+  hints were missing; the corrected prompt includes both hints with one
+  normal provider call.
+- Added a staged 0.6 plan to recover the useful outcomes of 0.5.9 routing and
+  learning through local facts, explicit review, shadow evaluation, and an
+  optional same-call structured path. The plan keeps Ghost from adding model
+  calls or turning memory into evidence or permission.
+- Preflight passed; the single full pytest run reported **4559 passed,
+  31 skipped, 1441 subtests passed in 348.64s (0:05:48)**. No release.
+
 ## Unreleased - Ghost foundation audit and UI repair (no release)
 
 - Audited current Ghost wiring and the 0.5.9 release commit. Preserved committed

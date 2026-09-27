@@ -2,6 +2,18 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Auto Ghost 项目作用域与 0.6 单次调用路线（未发布）
+
+- 修复 `auto` 首次正常调用读取 Ghost Directive/continuity 时漏传项目路径的问题。
+  先用失败测试锁定项目提示缺失；修复后两个提示均进入首次提示词，provider
+  仍只收到一次正常调用。
+- 0.6 路线图增加分阶段目标：从本地事实投影项目验证习惯和协议修复结果，
+  扩展显式审核与 Ghost Explain，以 shadow/A-B 衡量单次路由和候选效果；仅在
+  原生 structured provider 与收益得到验证后试验同次调用的候选附属字段。
+  Ghost 不增加模型调用，也不把记忆升级为 evidence 或 permission。
+- 全量前预检通过；唯一一次全量 pytest：**4559 passed、31 skipped、
+  1441 subtests passed，348.64s（0:05:48）**。未发布。
+
 ## Unreleased - Ghost 底座审查与 UI 修复（未发布）
 
 - 核对当前 Ghost 接线与 0.5.9 发布提交。保留已提交经历检索、手动候选审核、

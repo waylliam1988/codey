@@ -1,5 +1,36 @@
 # Codey Test Report
 
+## Auto Ghost project scope and 0.6 single-call roadmap (2026-09-27)
+
+Scope: carry project-scoped Ghost Directive and continuity into the first
+normal `auto` model call, and document how 0.6 will recover the user value of
+0.5.9 Ghost routing and learning without restoring their extra model calls.
+
+Red-first: `test_auto_first_prompt_receives_project_scoped_ghost_context`
+observed both callbacks called with an empty project and the scoped hints
+missing from the outbound prompt. After passing `project` to both callbacks,
+the test confirms both hints appear and the provider receives exactly one
+prompt. Production dispatch callbacks already accept the project keyword.
+
+`ROADMAP.zh-CN.md` now stages deterministic project verification habits,
+provider/protocol outcome learning, Ghost Explain, shadow/A-B evaluation of
+single-call routing and explicit memory candidates, and an optional same-call
+structured candidate path for capable API providers. It sets validation,
+review, cost, and no-extra-call boundaries.
+
+Before the single full run: targeted tests `270 passed, 1 skipped,
+42 subtests passed in 35.66s`; `ruff check .`, `git diff --check`, Python
+compilation, and collection of 4590 tests passed.
+
+```text
+python -m pytest -q -p no:cacheprovider
+4559 passed, 31 skipped, 1441 subtests passed in 348.64s (0:05:48)
+```
+
+The full run used a temporary `USERPROFILE` for writable test state. This
+report and the changelogs were updated only after the full run; no full rerun
+was performed for documentation changes. No release.
+
 ## Ghost foundation audit, manual-memory repair, project chat scope (2026-09-27)
 
 Scope: audit current Ghost backend/frontend against release 0.5.9, preserve the

@@ -8,6 +8,7 @@ The mode executor must own the ACTION-after reset.
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -76,6 +77,35 @@ def _ok(mode: str) -> ModeOutcome:
 
 
 class AutoFreshChatOwnershipTests(unittest.TestCase):
+    def test_auto_first_prompt_receives_project_scoped_ghost_context(self) -> None:
+        provider = _CountingProvider("ACTION: project\nPLAN: inspect")
+        frame = _frame("inspect", provider)
+        seen: list[tuple[str, str]] = []
+
+        def scoped_context(kind: str):
+            def load(*, session_id: str, project: str = ""):
+                seen.append((session_id, project))
+                text = f"{kind} project context" if project == "/repo" else ""
+                return SimpleNamespace(text=text)
+            return load
+
+        mode_deps = SimpleNamespace(
+            project=lambda *_args, **_kwargs: _ok("project"),
+            research=mock.Mock(), planning=mock.Mock(), review=mock.Mock(),
+        )
+        deps = replace(
+            _deps(mock.Mock(), mode_deps),
+            ghost_directive_fn=scoped_context("Directive"),
+            ghost_continuity_fn=scoped_context("Continuity"),
+        )
+
+        run_auto_mode(frame, SimpleNamespace(), SimpleNamespace(), deps)
+
+        self.assertEqual(seen, [("session-1", "/repo"), ("session-1", "/repo")])
+        self.assertIn("Directive project context", provider.prompts[0])
+        self.assertIn("Continuity project context", provider.prompts[0])
+        self.assertEqual(len(provider.prompts), 1)
+
     def test_project_handoff_is_fresh_and_auto_does_not_reset(self) -> None:
         provider = _CountingProvider("ACTION: project\nPLAN: fix it")
         frame = _frame("fix it", provider)
