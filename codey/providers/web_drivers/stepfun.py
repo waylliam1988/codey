@@ -432,7 +432,6 @@ def _control_text(control: Locator) -> str:
 def _submission_started(
     page: Page,
     baseline: int,
-    submitted_text: str,
 ) -> bool:
     try:
         if _response_count(page) > baseline:
@@ -460,23 +459,22 @@ def _submission_started(
 def _wait_submission_started(
     page: Page,
     baseline: int,
-    submitted_text: str,
     timeout: float = SUBMIT_CONFIRM_TIMEOUT,
 ) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if _submission_started(page, baseline, submitted_text):
+        if _submission_started(page, baseline):
             return True
         cancellation.wait(0.2)
     return False
 
 
-def _submit(page: Page, textarea: Locator, baseline: int, submitted_text: str) -> SendAttempt:
+def _submit(page: Page, baseline: int) -> SendAttempt:
     attempt = SendAttempt()
     button = _send_button(page, timeout=1.0, teach=False)
     if button is not None:
         attempt.submit("click", button.click)
-        if _wait_submission_started(page, baseline, submitted_text):
+        if _wait_submission_started(page, baseline):
             confirm_submission(attempt, PROVIDER_ID)
             return attempt
         cancellation.wait(0.6)
@@ -485,7 +483,7 @@ def _submit(page: Page, textarea: Locator, baseline: int, submitted_text: str) -
         # visible -- input cleared, response count moved, flow recorded --
         # the first click landed and a second forced click would post the
         # same message twice.
-        if _submission_started(page, baseline, submitted_text):
+        if _submission_started(page, baseline):
             confirm_submission(attempt, PROVIDER_ID)
             return attempt
         retry_button = _send_button(page, timeout=2.0, teach=False)
@@ -493,7 +491,7 @@ def _submit(page: Page, textarea: Locator, baseline: int, submitted_text: str) -
             return attempt
         retry = SendAttempt()
         retry.submit("click", lambda: retry_button.click(force=True))
-        if _wait_submission_started(page, baseline, submitted_text):
+        if _wait_submission_started(page, baseline):
             confirm_submission(retry, PROVIDER_ID)
         return retry
     controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON, page=page)
@@ -545,7 +543,7 @@ def chat(
             )
             raise ControlMissing("StepFun Chat input is not visible")
         try:
-            submitted_text = _fill_message_until_stable(textarea, text)
+            _fill_message_until_stable(textarea, text)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
@@ -554,7 +552,7 @@ def chat(
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
         cancellation.wait(0.3)
 
-        attempt = _submit(page, textarea, baseline, submitted_text)
+        attempt = _submit(page, baseline)
         if not attempt.confirmed:
             if attempt.method == "click" and attempt.action_error is not None:
                 controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)

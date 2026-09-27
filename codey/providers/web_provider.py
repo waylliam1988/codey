@@ -97,14 +97,6 @@ class WebChatProvider:
         self.session.close()
 
 
-def _provider_class(spec: WebProviderSpec) -> type[WebChatProvider]:
-    return type(
-        f"_{spec.provider_id.capitalize()}WebProviderBase",
-        (WebChatProvider,),
-        {"spec": spec},
-    )
-
-
 from codey.providers.web_drivers import deepseek as _deepseek_driver  # noqa: E402
 from codey.providers.web_drivers import glm as _glm_driver  # noqa: E402
 from codey.providers.web_drivers import mimo as _mimo_driver  # noqa: E402
@@ -112,46 +104,46 @@ from codey.providers.web_drivers import qwen as _qwen_driver  # noqa: E402
 from codey.providers.web_drivers import stepfun as _stepfun_driver  # noqa: E402
 
 
-class DeepSeekWebProvider(_provider_class(WebProviderSpec(
-    provider_id="deepseek",
-    name="DeepSeek Web",
-    driver=_deepseek_driver,
-))):
-    pass
+class DeepSeekWebProvider(WebChatProvider):
+    spec = WebProviderSpec(
+        provider_id="deepseek",
+        name="DeepSeek Web",
+        driver=_deepseek_driver,
+    )
 
 
-class MimoWebProvider(_provider_class(WebProviderSpec(
-    provider_id="mimo",
-    name="Xiaomi MiMo Chat",
-    driver=_mimo_driver,
-))):
-    pass
+class MimoWebProvider(WebChatProvider):
+    spec = WebProviderSpec(
+        provider_id="mimo",
+        name="Xiaomi MiMo Chat",
+        driver=_mimo_driver,
+    )
 
 
-class StepFunWebProvider(_provider_class(WebProviderSpec(
-    provider_id="stepfun",
-    name="StepFun Chat",
-    driver=_stepfun_driver,
-))):
-    pass
+class StepFunWebProvider(WebChatProvider):
+    spec = WebProviderSpec(
+        provider_id="stepfun",
+        name="StepFun Chat",
+        driver=_stepfun_driver,
+    )
 
 
-class QwenWebProvider(_provider_class(WebProviderSpec(
-    provider_id="qwen",
-    name="Qwen Studio",
-    driver=_qwen_driver,
-))):
-    pass
+class QwenWebProvider(WebChatProvider):
+    spec = WebProviderSpec(
+        provider_id="qwen",
+        name="Qwen Studio",
+        driver=_qwen_driver,
+    )
 
 
-class GlmWebProvider(_provider_class(WebProviderSpec(
-    provider_id="glm",
-    name="GLM",
-    driver=_glm_driver,
-    grace_attr="RESPONSE_TIMEOUT_GRACE",
-    blank_message="GLM message cannot be blank",
-))):
-    pass
+class GlmWebProvider(WebChatProvider):
+    spec = WebProviderSpec(
+        provider_id="glm",
+        name="GLM",
+        driver=_glm_driver,
+        grace_attr="RESPONSE_TIMEOUT_GRACE",
+        blank_message="GLM message cannot be blank",
+    )
 
 
 WEB_PROVIDER_CLASSES: dict[str, type[WebChatProvider]] = {

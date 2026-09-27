@@ -454,7 +454,7 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
 
 
 def _route_ghost_work(
-    deps: TaskRunDeps, setup: _RunSetup, workload: _PhaseWork
+    setup: _RunSetup, workload: _PhaseWork
 ) -> OperationOutcome | None:
     """Phase 3 -- GhostLifecycle (pre): claim or route ghost work.
 
@@ -562,7 +562,6 @@ def _connect_provider_frame(
         deps,
         state,
         setup.request,
-        workload.work,
         run_id=setup.run_id,
         task_kind=setup.task_kind,
         project=setup.project,
@@ -605,7 +604,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         if workload is None:
             return early
 
-        early = _route_ghost_work(deps, setup, workload)
+        early = _route_ghost_work(setup, workload)
         if early is not None:
             return early
 

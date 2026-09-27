@@ -217,8 +217,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         policy_decision, replay_decision = evaluate_tool_call_policy(
             session,
             call,
-            turn=1,
-            tool_index=0,
         )
 
         self.assertIsNotNone(policy_decision)
@@ -278,8 +276,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         policy_decision, replay_decision = evaluate_tool_call_policy(
             session,
             call,
-            turn=1,
-            tool_index=0,
         )
         self.assertFalse(policy_denied(policy_decision))
 
@@ -345,7 +341,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         # recovery fails closed.
         session = self._create_session(MockProvider())
         call = ToolCall(name="read", args={"path": "foo.py"})
-        _, replay_decision = evaluate_tool_call_policy(session, call, turn=1, tool_index=0)
+        _, replay_decision = evaluate_tool_call_policy(session, call)
         intent = build_tool_call_intent(
             session,
             call,
@@ -943,9 +939,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         # 1. Safe tool intent (read)
         call_read = ToolCall(name="read", args={"path": "foo.py", "offset": 5})
-        _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
+        _, replay_read = evaluate_tool_call_policy(session, call_read)
         call_edit = ToolCall(name="edit", args={"path": "foo.py", "content": "hello"})
-        _, replay_edit = evaluate_tool_call_policy(session, call_edit, turn=1, tool_index=1)
+        _, replay_edit = evaluate_tool_call_policy(session, call_edit)
         intent_read = build_tool_call_intent(
             session,
             call_read,
@@ -993,7 +989,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         # Record a pending read intent (simulating crash before settlement)
         session = self._create_session(MockProvider())
         call_read = ToolCall(name="read", args={"path": "target.txt"})
-        _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
+        _, replay_read = evaluate_tool_call_policy(session, call_read)
         intent = build_tool_call_intent(
             session,
             call_read,
@@ -1044,7 +1040,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         session = self._create_session(MockProvider())
         call_read = ToolCall(name="read", args={"path": "target.txt"})
-        _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
+        _, replay_read = evaluate_tool_call_policy(session, call_read)
         intent = build_tool_call_intent(
             session,
             call_read,
@@ -1251,7 +1247,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         session = self._create_session(MockProvider())
         call_read = ToolCall(name="read", args={"path": "target.txt"})
-        _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
+        _, replay_read = evaluate_tool_call_policy(session, call_read)
         intent = build_tool_call_intent(
             session,
             call_read,
@@ -1287,7 +1283,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
     def test_resume_synthesizes_interrupted_for_pending_unsafe_tool(self) -> None:
         session = self._create_session(MockProvider())
         call_edit = ToolCall(name="edit", args={"path": "foo.py", "content": "bar"})
-        _, replay_edit = evaluate_tool_call_policy(session, call_edit, turn=1, tool_index=0)
+        _, replay_edit = evaluate_tool_call_policy(session, call_edit)
         intent = build_tool_call_intent(
             session,
             call_edit,

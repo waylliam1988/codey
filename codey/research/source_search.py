@@ -78,7 +78,7 @@ def search_pages(
     return _rank_hits(hits, bounded_limit(limit))
 
 
-def render_results(final_url: str, hits: list[SourceSearchHit]) -> str:
+def render_results(hits: list[SourceSearchHit]) -> str:
     if not hits:
         return "no source_search matches"
     lines = [

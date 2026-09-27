@@ -158,7 +158,6 @@ def run_research_mode(
 
 
 def run_hybrid_mode(
-    deps: ResearchFlowDeps,
     frame: RunFrame,
     work: object,
     hooks: RunHooks,

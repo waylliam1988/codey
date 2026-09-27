@@ -457,7 +457,7 @@ class ProbeResearchTools(ResearchTools):
         self.ledger.record_source_search(final_url, query, [hit.to_dict() for hit in hits])
         if not hits:
             return "no source_search matches"
-        return render_results(final_url, hits)
+        return render_results(hits)
 
 
 def _fixture_document_header(document: SourceDocument) -> str:

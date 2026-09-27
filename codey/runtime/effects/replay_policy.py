@@ -77,7 +77,7 @@ def tool_replay_policy(
     )
 
 
-def provider_replay_policy(purpose: str = "") -> ReplayDecision:
+def provider_replay_policy() -> ReplayDecision:
     """Classify an outbound provider prompt send."""
     return ReplayDecision(
         replay_class=ReplayClass.UNSAFE,

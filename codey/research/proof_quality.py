@@ -549,7 +549,6 @@ def _review_relation_rows(
     relations: tuple[Mapping[str, object], ...],
     claims: Mapping[str, Mapping[str, object]],
     evidence: Mapping[str, Mapping[str, object]],
-    assumptions: Mapping[str, Mapping[str, object]],
     sources: Mapping[str, Mapping[str, object]],
     source_ids: set[str],
     assumption_ids: set[str],
@@ -741,7 +740,7 @@ def _review_relations(
     diagnostics: list[ProofDiagnostic] = []
 
     counter_from_relations = _review_relation_rows(
-        relations, claims, evidence, assumptions, sources,
+        relations, claims, evidence, sources,
         source_ids, assumption_ids, support_by_claim, hard, diagnostics,
     )
 

@@ -2,6 +2,49 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 死参数/重复实现/Provider 层级清理，前端缩减修复（未发布）
+
+- 删除前端不可达兼容分支（红测先行，
+  `tests/test_ui.py::test_provider_config_detects_removal_and_uses_single_source`，
+  1 项先失败）：`codey/web/assets/provider_ui.js` 的 `applyProviderConfig` 与
+  `adoptBackendCatalog` 改为直接调用
+  `window.CodeyUiState.setProviders(...)`（index.html 解析期即解引用
+  `CodeyUiState`，`else` 本地拷贝分支永不可达）。同路径修复两个确定性 bug：
+  `changed` 只遍历新列表导致服务端删 provider 时菜单不重建（现按长度、顺序、
+  每个标签、默认 ID 逐项比较），以及委托后本地 `DEFAULT_PROVIDER` 拷贝未同步
+  （现从 `window.CodeyUiState.DEFAULT_PROVIDER` 回填）。保留 `ui_state.js`
+  静态目录作为真正的离线容错。
+- 删除确认的死参数（红测先行，
+  `tests/test_deadcode_cleanup_locks.py`，含去重/层级共 16 项先失败）：
+  `evaluate_tool_call_policy` 去 `turn`/`tool_index`（意图构建函数保留）；
+  `_run_headless_task` 去 `emit_jsonl`（外层 `run_headless` 保留）；
+  `connect_and_build_frame` 去 `work`；`_route_ghost_work` 去 `deps`；
+  `run_hybrid_mode` 去 `deps`；`_resolve_path` 去 `root`
+  （边界检查留在 `_resolve_inside_project`）；`_research_note_payload` 去
+  `ctx`；`_require_supersedable_not_sent` 去 `delivery_batch_id`
+  （外层 builder 保留）；`_review_relation_rows` 去 `assumptions`
+  （保留 `assumption_ids`）；`provider_replay_policy` 去 `purpose`
+  （恒为 unsafe）；`render_results` 去 `final_url`（改为只收 `hits`）；
+  StepFun `_submission_started`/`_wait_submission_started`/`_submit` 去
+  `submitted_text`/`textarea`（填充稳定性检查保留）。同步修改全部生产调用方
+  与直接调用测试/手工脚本，未碰接口覆写所需的额外 `ARG001/ARG002`
+  （24 处多为必需参数）。
+- 合并确定重复：`registry.provider_ids` 即 `catalog.provider_ids` 同一对象
+  （registry 重导出，`providers/__init__` 懒导出本就指向 catalog，CLI 不加载
+  连接层）；共享 `clean_sha256_hex` 落在 `codey/utils/refs.py`，
+  `analysis_run.py`/`artifact_lineage.py` 以 `_clean_sha256` 别名导入
+  （各自正则删除；`valid_digest_ref` 要求 `sha256:` 前缀，契约不同未动）；
+  `knowledge/store.py` 与 `storage/managed_outputs.py` 直接从
+  `storage.atomic_io` 导入 `write_text_atomic`（包装函数删除）。
+- 压平网页 provider 层级：删除 `_provider_class` 中间基类，五个具名类直接继承
+  `WebChatProvider` 并各自赋值 `spec`。保留类名、`WebProviderSpec` 与注册表，
+  连接与诊断行为不变。
+- 验证：`python -m ruff check codey tests tools`、`git diff --check` 通过。
+  全量前相关套件全绿；最终 `python -m pytest -q`：
+  **4605 passed、9 skipped、1433 subtests passed，331.54s（0:05:31）**。
+  跳过为已知 Windows/opt-in 项。本地无 `node`，JS 以 `test_ui.py`
+ （73 通过）加括号配平校验。未发布。
+
 ## Unreleased - 删除 finding status 字段，open-only 收为类型约束（未发布）
 
 - 将 open-only 从投影规则收成类型约束（红测先行，

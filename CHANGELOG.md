@@ -2,6 +2,64 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Dead-param / dedup / provider-hierarchy cleanup, frontend shrink fix (no release)
+
+- Removed the unreachable frontend compat branch (red-first
+  `tests/test_ui.py::test_provider_config_detects_removal_and_uses_single_source`,
+  1 failed before): `applyProviderConfig` and `adoptBackendCatalog` in
+  `codey/web/assets/provider_ui.js` now call
+  `window.CodeyUiState.setProviders(...)` directly (index.html dereferences
+  `CodeyUiState` at parse time, so the `else` local-copy path was never live).
+  Fixed two deterministic bugs in the same path: `changed` only iterated the
+  new list so removing a provider never rebuilt the menu (now compares
+  length, order per index, each label, and default id), and the local
+  `DEFAULT_PROVIDER` copy stayed stale after delegation (now resyncs from
+  `window.CodeyUiState.DEFAULT_PROVIDER`). Kept the `ui_state.js` static
+  catalog as the real offline fallback.
+- Deleted confirmed-dead parameters (red-first
+  `tests/test_deadcode_cleanup_locks.py`, 16 failed before with the dedup /
+  hierarchy locks): `evaluate_tool_call_policy` loses `turn`/`tool_index`
+  (intent builder keeps them); `_run_headless_task` loses `emit_jsonl`
+  (outer `run_headless` keeps it); `connect_and_build_frame` loses `work`;
+  `_route_ghost_work` loses `deps`; `run_hybrid_mode` loses `deps`;
+  `_resolve_path` loses `root` (boundary stays in `_resolve_inside_project`);
+  `_research_note_payload` loses `ctx`; `_require_supersedable_not_sent`
+  loses `delivery_batch_id` (outer builder keeps it); `_review_relation_rows`
+  loses `assumptions` (keeps `assumption_ids`); `provider_replay_policy`
+  loses `purpose` (always unsafe); `render_results` loses `final_url`
+  (now `render_results(hits)`); StepFun `_submission_started` /
+  `_wait_submission_started` / `_submit` lose `submitted_text` / `textarea`
+  (fill stability check via `_composer_retains_text` kept). Updated all
+  production callers plus direct test/manual callers
+  (`tool_turn.py`, `task_run.py`, `dispatch.py`, `research_flow.py`,
+  `run_command_semantics.py`, `api.py`, `provider_effects.py`,
+  `proof_quality.py`, `prompt_context.py`, `tools.py`, `stepfun.py`,
+  `test_agent_effect_sandwich.py`, `test_stepfun.py`,
+  `test_tool_replay_policy.py`, `safe_tool_replay_smoke.py`,
+  `deep_research_core_ab.py`). Did not touch interface-override params
+  flagged by extra `ARG001/ARG002` (24 warnings, most are required).
+- Merged true duplicates: `registry.provider_ids` is now the single
+  `catalog.provider_ids` object (registry re-exports it, `providers/__init__`
+  lazy export already pointed at catalog, so CLI stays Playwright-free);
+  shared `clean_sha256_hex` lives in `codey/utils/refs.py` and both
+  `analysis_run.py` / `artifact_lineage.py` import it as `_clean_sha256`
+  (local `_SHA256_RE` regexes deleted; `valid_digest_ref` untouched because
+  it requires the `sha256:` prefix); `knowledge/store.py` and
+  `storage/managed_outputs.py` now import `write_text_atomic` directly from
+  `storage.atomic_io` (local wrappers deleted).
+- Flattened the web provider hierarchy: deleted `_provider_class`
+  intermediate; the five named providers now inherit `WebChatProvider`
+  directly with `spec = WebProviderSpec(...)`. Kept the five class names,
+  `WebProviderSpec`, and `WEB_PROVIDER_CLASSES` so registry dispatch and
+  diagnostics are unchanged.
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted suites green before the full run; then
+  final `python -m pytest -q`:
+  `4605 passed, 9 skipped, 1433 subtests passed in 331.54s (0:05:31)`.
+  Skips are the known Windows/opt-in family. JS syntax has no local runtime
+  (`node` unavailable); `provider_ui.js` verified via `test_ui.py`
+  (73 passed) plus manual brace/paren balance. No release was made.
+
 ## Unreleased - Finding status field removal, open-only as type constraint (no release)
 
 - Made open-only a type constraint instead of a projection rule (red-first

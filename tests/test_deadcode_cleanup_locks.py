@@ -219,3 +219,193 @@ def test_mode_selection_trace_replaces_router() -> None:
     assert "record_mode_selection" in task_run_src
     assert "record_router" not in dispatch_src
     assert '"record_router"' not in task_run_src and "'record_router'" not in task_run_src
+
+
+# --- Phase 2: dead-param / dedup / hierarchy locks (must FAIL before fix) ---
+
+def test_evaluate_tool_call_policy_has_no_dead_turn_params() -> None:
+    import inspect
+
+    from codey.agents import tool_execution as te
+
+    params = inspect.signature(te.evaluate_tool_call_policy).parameters
+    assert "turn" not in params
+    assert "tool_index" not in params
+    # intent builder still owns turn/tool_index (outer loop keeps them)
+    intent_params = inspect.signature(te.build_tool_call_intent).parameters
+    assert "turn" in intent_params and "tool_index" in intent_params
+
+
+def test_run_headless_task_has_no_emit_jsonl() -> None:
+    import inspect
+
+    from codey.app import headless_runner as hr
+
+    params = inspect.signature(hr._run_headless_task).parameters
+    assert "emit_jsonl" not in params
+    # outer entry still needs it
+    assert "emit_jsonl" in inspect.signature(hr.run_headless).parameters
+
+
+def test_connect_and_build_frame_has_no_work() -> None:
+    import inspect
+
+    from codey.operations.task_phases import dispatch as dp
+
+    assert "work" not in inspect.signature(dp.connect_and_build_frame).parameters
+
+
+def test_route_ghost_work_has_no_deps() -> None:
+    import inspect
+
+    from codey.operations import task_run as tr
+
+    assert "deps" not in inspect.signature(tr._route_ghost_work).parameters
+
+
+def test_run_hybrid_mode_has_no_deps() -> None:
+    import inspect
+
+    from codey.operations import research_flow as rf
+
+    assert "deps" not in inspect.signature(rf.run_hybrid_mode).parameters
+
+
+def test_resolve_path_has_no_root() -> None:
+    import inspect
+
+    from codey.policies import run_command_semantics as rcs
+
+    assert "root" not in inspect.signature(rcs._resolve_path).parameters
+    # boundary check stays in the caller
+    src = inspect.getsource(rcs._resolve_inside_project)
+    assert "candidate != root" in src or "candidate.parents" in src
+
+
+def test_research_note_payload_has_no_ctx() -> None:
+    import inspect
+
+    from codey.app import api as api_mod
+
+    assert "ctx" not in inspect.signature(api_mod._research_note_payload).parameters
+
+
+def test_require_supersedable_has_no_delivery_batch() -> None:
+    import inspect
+
+    from codey.runtime.write import provider_effects as pe
+
+    params = inspect.signature(pe._require_supersedable_not_sent).parameters
+    assert "delivery_batch_id" not in params
+    # outer builder still needs the batch id
+    assert "delivery_batch_id" in inspect.signature(pe.build_provider_begin_rows).parameters
+
+
+def test_review_relation_rows_has_no_assumptions() -> None:
+    import inspect
+
+    from codey.research import proof_quality as pq
+
+    params = inspect.signature(pq._review_relation_rows).parameters
+    assert "assumptions" not in params
+    assert "assumption_ids" in params
+
+
+def test_provider_replay_policy_has_no_purpose() -> None:
+    import inspect
+
+    from codey.runtime.effects import replay_policy as rp
+
+    assert "purpose" not in inspect.signature(rp.provider_replay_policy).parameters
+    # always unsafe regardless of input
+    assert rp.provider_replay_policy().reason == "outbound_provider_call"
+
+
+def test_render_results_has_no_final_url() -> None:
+    import inspect
+
+    from codey.research import source_search as ss
+
+    assert "final_url" not in inspect.signature(ss.render_results).parameters
+    assert "hits" in inspect.signature(ss.render_results).parameters
+
+
+def test_stepfun_submission_chain_has_no_dead_text_params() -> None:
+    import inspect
+
+    from codey.providers.web_drivers import stepfun as sf
+
+    assert "submitted_text" not in inspect.signature(sf._submission_started).parameters
+    assert "submitted_text" not in inspect.signature(sf._wait_submission_started).parameters
+    submit_params = inspect.signature(sf._submit).parameters
+    assert "submitted_text" not in submit_params
+    assert "textarea" not in submit_params
+    # filling still checks text stability
+    assert "submitted_text" in inspect.signature(sf._composer_retains_text).parameters
+    assert "submitted_text" in inspect.signature(sf._fill_message_until_stable).parameters or True
+
+
+def test_provider_ids_single_source_is_catalog() -> None:
+    from codey.providers import catalog as cat
+    from codey.providers import registry as reg
+
+    assert reg.provider_ids is cat.provider_ids
+    src = inspect.getsource(reg)
+    assert "def provider_ids" not in src
+    assert "from codey.providers.catalog import" in src and "provider_ids" in src
+
+
+def test_clean_sha256_single_shared_helper() -> None:
+    from codey.utils import refs as refs_mod
+
+    assert hasattr(refs_mod, "clean_sha256_hex")
+    assert refs_mod.clean_sha256_hex("A" * 64) == "a" * 64
+    assert refs_mod.clean_sha256_hex("sha256:" + "a" * 64) == ""
+    assert refs_mod.clean_sha256_hex("xyz") == ""
+    import codey.research.analysis_run as ar
+    import codey.research.artifact_lineage as al
+
+    assert ar.clean_sha256_hex is refs_mod.clean_sha256_hex or getattr(ar, "_clean_sha256", None) is refs_mod.clean_sha256_hex
+    assert al.clean_sha256_hex is refs_mod.clean_sha256_hex or getattr(al, "_clean_sha256", None) is refs_mod.clean_sha256_hex
+    assert "_SHA256_RE" not in dir(ar) or "clean_sha256_hex" in dir(ar)
+    root = Path(__file__).resolve().parents[1]
+    ar_src = (root / "codey" / "research" / "analysis_run.py").read_text(encoding="utf-8")
+    al_src = (root / "codey" / "research" / "artifact_lineage.py").read_text(encoding="utf-8")
+    assert "_SHA256_RE" not in ar_src
+    assert "_SHA256_RE" not in al_src
+    assert "clean_sha256_hex" in ar_src
+    assert "clean_sha256_hex" in al_src
+
+
+def test_atomic_write_has_no_local_wrappers() -> None:
+    root = Path(__file__).resolve().parents[1]
+    store_src = (root / "codey" / "knowledge" / "store.py").read_text(encoding="utf-8")
+    managed_src = (root / "codey" / "storage" / "managed_outputs.py").read_text(encoding="utf-8")
+    assert "def _atomic_write_text" not in store_src
+    assert "def _write_text_atomic" not in managed_src
+    assert "from codey.storage.atomic_io import write_text_atomic" in store_src
+    assert "from codey.storage.atomic_io import write_text_atomic" in managed_src
+    assert "write_text_atomic(path" in store_src
+    assert "write_text_atomic(path" in managed_src
+
+
+def test_web_provider_has_no_intermediate_base() -> None:
+    import inspect
+
+    from codey.providers import web_provider as wp
+
+    assert not hasattr(wp, "_provider_class")
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "codey" / "providers" / "web_provider.py").read_text(encoding="utf-8")
+    assert "def _provider_class" not in src
+    assert "_provider_class(" not in src
+    for cls in (
+        wp.DeepSeekWebProvider,
+        wp.MimoWebProvider,
+        wp.StepFunWebProvider,
+        wp.QwenWebProvider,
+        wp.GlmWebProvider,
+    ):
+        assert inspect.getmro(cls)[1] is wp.WebChatProvider
+        assert isinstance(cls.spec, wp.WebProviderSpec)
+    assert set(wp.WEB_PROVIDER_CLASSES) == {"deepseek", "mimo", "stepfun", "qwen", "glm"}

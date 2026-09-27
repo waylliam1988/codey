@@ -91,7 +91,7 @@ class ToolReplayPolicyTests(unittest.TestCase):
         self.assertEqual(decision.reason, "approval_required")
 
     def test_provider_and_repair_replay_policies_are_unsafe(self) -> None:
-        p_decision = provider_replay_policy("coding_prompt")
+        p_decision = provider_replay_policy()
         self.assertEqual(p_decision.replay_class, ReplayClass.UNSAFE)
         self.assertEqual(p_decision.reason, "outbound_provider_call")
 

@@ -42,7 +42,6 @@ from codey.runtime.log.session_view import (
 
 def _require_supersedable_not_sent(
     view: SessionView,
-    delivery_batch_id: str,
     supersede_effect_id: str,
 ) -> None:
     """Prove the voided attempt deterministically sent nothing usable.
@@ -93,7 +92,7 @@ def build_provider_begin_rows(
     rows = [effect_intent_entry(prepared)]
     if delivery_batch_id:
         if supersede_effect_id:
-            _require_supersedable_not_sent(view, delivery_batch_id, supersede_effect_id)
+            _require_supersedable_not_sent(view, supersede_effect_id)
             voided = send_superseded_entry(
                 session_id,
                 run_id,

@@ -19,6 +19,7 @@ from codey.policies.action import (
     evaluate_action,
 )
 from codey.runtime.core import cancellation
+from codey.storage.atomic_io import write_text_atomic
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import session_key, write_json_atomic
 from codey.toolchain import runtime as tool_runtime
@@ -85,7 +86,7 @@ class ManagedOutputStore:
                 handle = f"{HANDLE_PREFIX}{len(existing) + 1:04d}_{digest[:12]}"
                 path = self.path_for(session_id, run_id, handle)
                 metadata_path = self.metadata_path_for(session_id, run_id, handle)
-                _write_text_atomic(path, stored_text)
+                write_text_atomic(path, stored_text)
                 write_json_atomic(
                     metadata_path,
                     {
@@ -260,9 +261,3 @@ def _cap_utf8_text(text: object, max_bytes: int) -> tuple[str, int, int, bool]:
     )
     stored = clipped.encode("utf-8")
     return clipped, len(original), len(stored), True
-
-
-def _write_text_atomic(path: Path, text: str) -> None:
-    from codey.storage.atomic_io import write_text_atomic
-
-    write_text_atomic(path, text)

@@ -238,7 +238,7 @@ def _begin_provider_send(
         )
         from codey.runtime.effects.replay_policy import provider_replay_policy
 
-        replay_decision = provider_replay_policy(purpose)
+        replay_decision = provider_replay_policy()
         effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, session.request.run_id)
         driver = DRIVER_REPAIR if session.request.completion_repair_context else DRIVER_WRITER
         intent = RuntimeEffectIntent(

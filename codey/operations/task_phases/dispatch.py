@@ -61,7 +61,6 @@ def connect_and_build_frame(
     deps: TaskRunDeps,
     state: TaskState,
     request: TaskSubmission,
-    work: RunWork,
     *,
     run_id: str,
     task_kind: str,
@@ -252,7 +251,6 @@ def dispatch_run_mode(
             ),
         ),
         hybrid=lambda active_frame, active_work, active_hooks: run_hybrid_mode(
-            research_deps,
             active_frame,
             active_work,
             active_hooks,

@@ -15,13 +15,30 @@ from codey.automation.browser import (
     warm_provider_tabs as browser_warm_provider_tabs,
 )
 from codey.providers.base import ChatProvider
-from codey.providers.catalog import (
+from codey.providers.catalog import (  # noqa: F401 -- re-exported static catalog
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
     PROVIDER_WORKER_PORT_OFFSETS,
     WEB_PROVIDER_LABELS,
     WORKER_CHILD_ENV,
+    provider_ids,
 )
+
+__all__ = [
+    "DEFAULT_PROVIDER_ID",
+    "PROVIDER_LABELS",
+    "PROVIDER_TYPES",
+    "PROVIDER_WORKER_PORT_OFFSETS",
+    "WEB_PROVIDER_LABELS",
+    "WORKER_CHILD_ENV",
+    "borrow_open_provider",
+    "connect_existing_provider",
+    "connect_fresh_provider_tab",
+    "connect_provider",
+    "provider_ids",
+    "provider_tab_availability",
+    "warm_provider_tabs",
+]
 from codey.providers.ids import normalize_provider_id
 from codey.providers.local_discovery import local_endpoint_available
 from codey.providers.local_openai import LocalOpenAIProvider
@@ -51,10 +68,6 @@ class _BorrowedSession:
 
     def close(self) -> None:
         """The owning provider connection keeps this Playwright context alive."""
-
-
-def provider_ids() -> tuple[str, ...]:
-    return tuple(PROVIDER_LABELS)
 
 
 def provider_tab_availability() -> dict[str, bool]:

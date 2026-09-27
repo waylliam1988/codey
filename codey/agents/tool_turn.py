@@ -98,8 +98,6 @@ def execute_turn_tools(
         policy_decision, replay_decision = evaluate_tool_call_policy(
             session,
             call,
-            turn=turn,
-            tool_index=tool_index,
         )
         rclass_val = replay_class_value(replay_decision)
 

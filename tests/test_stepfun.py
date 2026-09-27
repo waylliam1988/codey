@@ -242,7 +242,7 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(stepfun, "_message_box", return_value=box),
             mock.patch.object(stepfun.controls, "flow_matches", return_value=False) as flow_matches,
         ):
-            started = stepfun._submission_started(page, baseline=0, submitted_text="hello")
+            started = stepfun._submission_started(page, baseline=0)
 
         self.assertFalse(started)
         flow_matches.assert_called_once()
@@ -258,7 +258,7 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(stepfun, "_message_box", return_value=box),
             mock.patch.object(stepfun.controls, "flow_matches") as flow_matches,
         ):
-            started = stepfun._submission_started(page, baseline=0, submitted_text="hello")
+            started = stepfun._submission_started(page, baseline=0)
 
         self.assertTrue(started)
         flow_matches.assert_not_called()
@@ -353,16 +353,14 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_submit_requires_profiled_send_button(self) -> None:
         page = mock.Mock()
-        textarea = mock.Mock()
 
         with (
             mock.patch.object(stepfun, "_send_button", return_value=None),
             mock.patch.object(stepfun.controls, "reject_control") as reject,
             self.assertRaisesRegex(ControlMissing, "send button"),
         ):
-            stepfun._submit(page, textarea, baseline=0, submitted_text="hello")
+            stepfun._submit(page, baseline=0)
 
-        textarea.press.assert_not_called()
         reject.assert_called_once_with(
             stepfun.PROVIDER_ID,
             stepfun.controls.CONTROL_SEND_BUTTON,
@@ -373,7 +371,6 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         # Regression guard: the confirmation watcher can lose a race with a
         # slow first submit; a second forced click would post twice.
         page = mock.Mock()
-        textarea = mock.Mock()
         first_button = mock.Mock()
         retry_button = mock.Mock()
 
@@ -384,7 +381,7 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(stepfun.cancellation, "wait"),
             mock.patch.object(stepfun.controls, "confirm_control") as confirm,
         ):
-            attempt = stepfun._submit(page, textarea, baseline=0, submitted_text="hello")
+            attempt = stepfun._submit(page, baseline=0)
 
         first_button.click.assert_called_once_with()
         retry_button.click.assert_not_called()
@@ -393,7 +390,6 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_submit_retries_click_when_first_click_does_not_start_submission(self) -> None:
         page = mock.Mock()
-        textarea = mock.Mock()
         first_button = mock.Mock()
         retry_button = mock.Mock()
 
@@ -405,11 +401,10 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(stepfun.controls, "reject_control") as reject,
             mock.patch.object(stepfun.controls, "confirm_control") as confirm,
         ):
-            attempt = stepfun._submit(page, textarea, baseline=0, submitted_text="hello")
+            attempt = stepfun._submit(page, baseline=0)
 
         first_button.click.assert_called_once_with()
         retry_button.click.assert_called_once_with(force=True)
-        textarea.press.assert_not_called()
         wait.assert_called_once_with(0.6)
         self.assertEqual(attempt.method, "click")
         self.assertTrue(attempt.confirmed)
@@ -418,7 +413,6 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_submit_does_not_press_enter_when_click_starts_submission(self) -> None:
         page = mock.Mock()
-        textarea = mock.Mock()
         button = mock.Mock()
 
         with (
@@ -427,10 +421,9 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(stepfun.controls, "reject_control") as reject,
             mock.patch.object(stepfun.controls, "confirm_control") as confirm,
         ):
-            attempt = stepfun._submit(page, textarea, baseline=0, submitted_text="hello")
+            attempt = stepfun._submit(page, baseline=0)
 
         button.click.assert_called_once_with()
-        textarea.press.assert_not_called()
         self.assertEqual(attempt.method, "click")
         self.assertTrue(attempt.confirmed)
         reject.assert_not_called()

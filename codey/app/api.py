@@ -238,14 +238,14 @@ def research_notes_response(ctx: Any, body: dict) -> tuple[int, dict]:
     notes: dict[str, dict] = {}
     missing: list[str] = []
     for note_id, (note, row) in ctx.knowledge_store.read_notes_with_rows(seen).items():
-        notes[note_id] = _research_note_payload(ctx, note, row)
+        notes[note_id] = _research_note_payload(note, row)
     for note_id in seen:
         if note_id not in notes:
             missing.append(note_id)
     return 200, {"ok": True, "notes": notes, "missing": missing}
 
 
-def _research_note_payload(ctx: Any, note: Any, row: dict) -> dict:
+def _research_note_payload(note: Any, row: dict) -> dict:
     return {
         "id": note.id,
         "type": note.type,

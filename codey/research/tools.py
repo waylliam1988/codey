@@ -161,7 +161,7 @@ class ResearchTools:
             return f"NEEDS_OPEN: {outcome.detail}"
         if outcome.status == "error":
             return f"ERROR: {outcome.detail}"
-        return render_results(outcome.final_url, list(outcome.hits))
+        return render_results(list(outcome.hits))
 
     def knowledge_search(self, query: str) -> str:
         query = (query or "").strip()

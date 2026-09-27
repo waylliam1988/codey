@@ -183,8 +183,6 @@ def _prepare_tool_intent(
     _, replay_decision = evaluate_tool_call_policy(
         mock_session,
         call,
-        turn=turn,
-        tool_index=tool_index,
     )
     intent = build_tool_call_intent(
         mock_session,

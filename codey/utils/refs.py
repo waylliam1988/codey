@@ -128,9 +128,25 @@ def _is_hex_64(value: str) -> bool:
     return len(value) == 64 and all(char in "0123456789abcdefABCDEF" for char in value)
 
 
+_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def clean_sha256_hex(value: object) -> str:
+    """Clean a bare 64-char lowercase hex sha256 digest, else ``""``.
+
+    Shared by AnalysisRun and Artifact lineage so the two projections cannot
+    drift. Contract differs from ``valid_digest_ref`` (which requires the
+    ``sha256:`` prefix) and from ``content_digest`` (which hashes); only exact
+    bare digests pass, uppercased input is lowercased first.
+    """
+    text = str(value or "").strip().lower()
+    return text if _SHA256_HEX_RE.fullmatch(text) else ""
+
+
 __all__ = [
     "DEFAULT_REF_LIMIT",
     "bounded_refs",
+    "clean_sha256_hex",
     "clip",
     "digest_json",
     "content_digest",

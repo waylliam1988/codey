@@ -420,7 +420,7 @@ def _project_root(project: str | Path) -> Path:
 
 def _resolve_inside_project(root: Path, cwd: Path, raw: str, *, subject: str) -> Path:
     try:
-        candidate = _resolve_path(root, cwd, raw)
+        candidate = _resolve_path(cwd, raw)
     except (OSError, RuntimeError, ValueError):
         raise RunCommandPolicyError(
             "path_resolution_failed",
@@ -441,7 +441,7 @@ def _resolve_inside_project(root: Path, cwd: Path, raw: str, *, subject: str) ->
     return candidate
 
 
-def _resolve_path(root: Path, cwd: Path, raw: str) -> Path:
+def _resolve_path(cwd: Path, raw: str) -> Path:
     text = _command_path_text(raw)
     if not text:
         return cwd

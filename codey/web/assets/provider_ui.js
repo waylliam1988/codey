@@ -81,21 +81,24 @@ function applyProviderConfig(data) {
   if (!catalog) return false;
   const { ids, labels } = catalog;
   let changed = false;
-  for (const id of ids) {
-    if (!PROVIDERS.includes(id)) { changed = true; break; }
-    if (PROVIDER_LABELS[id] !== labels[id]) { changed = true; break; }
+  if (PROVIDERS.length !== ids.length) {
+    changed = true;
+  } else {
+    for (let i = 0; i < ids.length; i++) {
+      if (PROVIDERS[i] !== ids[i]) { changed = true; break; }
+    }
+    if (!changed) {
+      for (const id of ids) {
+        if (PROVIDER_LABELS[id] !== labels[id]) { changed = true; break; }
+      }
+    }
   }
-  if (data.default && data.default !== DEFAULT_PROVIDER && labels[data.default]) changed = true;
+  if (!changed && data.default && data.default !== DEFAULT_PROVIDER && labels[data.default]) changed = true;
   applyRecommended(data);
   if (!changed) return false;
-  if (window.CodeyUiState && typeof window.CodeyUiState.setProviders === 'function') {
-    window.CodeyUiState.setProviders(ids, labels, data.default);
-    applyRecommended(data);
-  } else {
-    PROVIDER_LABELS = labels;
-    PROVIDERS = ids;
-    if (data.default && labels[data.default]) DEFAULT_PROVIDER = data.default;
-  }
+  window.CodeyUiState.setProviders(ids, labels, data.default);
+  DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER;
+  applyRecommended(data);
   providerStatus = Object.fromEntries(PROVIDERS.map(id => [id, !!providerStatus[id]]));
   providerUpdatedAt = Object.fromEntries(PROVIDERS.map(id => [id, providerUpdatedAt[id] || 0]));
   buildProviderMenu();
@@ -107,15 +110,15 @@ async function adoptBackendCatalog() {
   // Hits the cheap static catalog (no CDP/network probe); availability
   // stays on the async /api/providers refresh path. Do not touch DOM
   // here (deps is unset); menu is built later by init().
+  // index.html always loads ui_state.js and dereferences CodeyUiState at
+  // parse time, so the state module is guaranteed present here.
   try {
     const r = await fetch('/api/provider_catalog', { cache: 'no-store' });
     if (!r.ok) return;
     const data = await r.json();
     const catalog = extractCatalog(data);
     if (!catalog) return;
-    if (window.CodeyUiState && typeof window.CodeyUiState.setProviders === 'function') {
-      window.CodeyUiState.setProviders(catalog.ids, catalog.labels, data.default);
-    }
+    window.CodeyUiState.setProviders(catalog.ids, catalog.labels, data.default);
   } catch {}
 }
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.index import KnowledgeIndex
 from codey.knowledge.note import LINK_KINDS, KnowledgeNote, is_safe_id, now_iso, wikilink
+from codey.storage.atomic_io import write_text_atomic
 
 RELATED_HEADING = "## Related"
 
@@ -51,7 +52,7 @@ class KnowledgeStore:
             if moving and old_rel:
                 changes.capture_before(old_rel, self.root / old_rel)
         text = note.to_markdown()
-        _atomic_write_text(path, text)
+        write_text_atomic(path, text)
         self.index.upsert(note, path=rel, content_hash=_content_hash(text))
         self._rebuilt_after_index_miss = False
         self._index_body_links(note)
@@ -237,9 +238,3 @@ def content_hash_bytes(data: bytes) -> str:
 
 def _content_hash(text: str) -> str:
     return content_hash_bytes(text.encode("utf-8"))
-
-
-def _atomic_write_text(path: Path, text: str) -> None:
-    from codey.storage.atomic_io import write_text_atomic
-
-    write_text_atomic(path, text)

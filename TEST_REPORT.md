@@ -1,5 +1,72 @@
 # Codey Test Report
 
+## Dead-param / dedup / provider-hierarchy cleanup, frontend shrink fix (2026-09-27)
+
+Scope (dead code + true duplicates + hierarchy, no release):
+
+```text
+codey/web/assets/provider_ui.js (removed unreachable CodeyUiState else branch; fixed shrink detection length/order/labels/default + DEFAULT resync; adoptBackendCatalog direct call)
+codey/agents/tool_execution.py + tool_turn.py (evaluate_tool_call_policy loses turn/tool_index)
+codey/app/headless_runner.py (_run_headless_task loses emit_jsonl)
+codey/operations/task_phases/dispatch.py (connect_and_build_frame loses work; hybrid call drops deps)
+codey/operations/task_run.py (_route_ghost_work loses deps; connect caller drops work)
+codey/operations/research_flow.py (run_hybrid_mode loses deps)
+codey/policies/run_command_semantics.py (_resolve_path loses root)
+codey/app/api.py (_research_note_payload loses ctx)
+codey/runtime/write/provider_effects.py (_require_supersedable_not_sent loses delivery_batch_id)
+codey/research/proof_quality.py (_review_relation_rows loses assumptions)
+codey/runtime/effects/replay_policy.py + agents/prompt_context.py (provider_replay_policy loses purpose)
+codey/research/source_search.py + research/tools.py (render_results loses final_url)
+codey/providers/web_drivers/stepfun.py (submission chain loses submitted_text/textarea)
+codey/utils/refs.py (new shared clean_sha256_hex)
+codey/research/analysis_run.py + artifact_lineage.py (import shared helper, delete regexes)
+codey/knowledge/store.py + storage/managed_outputs.py (direct write_text_atomic, delete wrappers)
+codey/providers/registry.py (re-export catalog.provider_ids, no duplicate def)
+codey/providers/web_provider.py (deleted _provider_class; five classes inherit WebChatProvider directly)
+tests/test_ui.py (new shrink/single-source lock, 1 red before)
+tests/test_deadcode_cleanup_locks.py (new 16 red-first locks)
+tests/test_agent_effect_sandwich.py / test_stepfun.py / test_tool_replay_policy.py (caller updates)
+tests/manual/safe_tool_replay_smoke.py + deep_research_core_ab.py (caller updates)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (deterministic bugs locked before the fix):
+
+- `tests/test_ui.py::test_provider_config_detects_removal_and_uses_single_source` failed
+  (`'PROVIDERS = ids' unexpectedly found`); after deleting the `else` branch and
+  comparing `PROVIDERS.length !== ids.length`, `PROVIDERS[i] !== ids[i]`,
+  `PROVIDER_LABELS[id] !== labels[id]`, and `data.default !== DEFAULT_PROVIDER`
+  plus resyncing `DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER`, it
+  passes. This locks both the removal-shrink bug (old list never shrank) and the
+  stale-default bug.
+- `tests/test_deadcode_cleanup_locks.py` 16 new locks all failed before
+  (`turn`/`emit_jsonl`/`work`/`deps`/`root`/`ctx`/`delivery_batch_id`/
+  `assumptions`/`purpose`/`final_url`/`submitted_text` still in signatures,
+  `registry.provider_ids is catalog.provider_ids` false, no `clean_sha256_hex`,
+  wrappers still present, `_provider_class` still present); after the cleanup
+  all 26 pass (10 old + 16 new).
+- `tests/test_stepfun.py` 6 failures after the StepFun signature change
+  (`_submission_started() got an unexpected keyword argument 'submitted_text'`,
+  `_submit() got multiple values for argument 'baseline'`) confirmed the test
+  callers were the only remaining users; updating the 6 direct test calls to
+  `_submission_started(page, baseline=0)` / `_submit(page, baseline=0)` turns
+  them green without touching other drivers (deepseek/mimo/qwen keep their own
+  `submitted_text` where it is actually used).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted suites green (`test_ui` 73 passed;
+  `test_deadcode_cleanup_locks` 26 passed; `test_providers` +
+  `test_provider_catalog_cold` + `test_tool_replay_policy` + `test_stepfun`
+  171 passed + 20 subtests; `test_agent_effect_sandwich` + `test_headless_runner`
+  + `test_cli` + `test_research` 218 passed + 7 subtests; `test_server` +
+  `test_atomic_io` 230 passed + 2 skipped).
+- Final full suite: `python -m pytest -q`:
+  `4605 passed, 9 skipped, 1433 subtests passed in 331.54s (0:05:31)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Finding status field removal, open-only as type constraint (2026-09-27)
 
 Scope (type-level completion of the open-only contract, no release):

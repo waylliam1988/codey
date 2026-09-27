@@ -8,12 +8,11 @@ Managed Outputs are stored as UTF-8 text in v1.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from codey.research.evidence_runtime import is_valid_runtime_ref
-from codey.utils.refs import clip, stable_ref
+from codey.utils.refs import clean_sha256_hex, clip, stable_ref
 
 ARTIFACT_REF_PREFIX = "artifact:"
 ARTIFACT_VERSION_REF_PREFIX = "artifact_version:"
@@ -21,7 +20,7 @@ ARTIFACT_KIND_MANAGED_OUTPUT = "managed_output"
 ARTIFACT_MIME_TEXT = "text/plain"
 MAX_SIZE_BYTES = 10**12
 
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_clean_sha256 = clean_sha256_hex
 # Derived refs may only point at Source/Evidence/AnalysisRun/Run facts. The
 # value shapes are owned by evidence_runtime's single ref validator; this
 # module only keeps the narrow lineage-specific kind allowlist so URLs and
@@ -68,11 +67,6 @@ def is_valid_derived_ref(value: object) -> bool:
     """
 
     return is_valid_runtime_ref(value, kinds=_DERIVED_REF_KINDS)
-
-
-def _clean_sha256(value: object) -> str:
-    text = str(value or "").strip().lower()
-    return text if _SHA256_RE.fullmatch(text) else ""
 
 
 def _bounded_size(value: object) -> int:

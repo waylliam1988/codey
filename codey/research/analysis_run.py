@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.research.identity import path_ref
 from codey.utils.refs import (
+    clean_sha256_hex,
     clip,
     digest_json,
     digest_text,
@@ -36,8 +37,9 @@ MAX_WARNING_CHARS = 120
 MAX_WARNINGS = 8
 _MAX_DURATION_MS = 10**9
 
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TOOL_INSTANCE_RE = re.compile(r"^\d+:\d+$")
+
+_clean_sha256 = clean_sha256_hex
 
 
 @dataclass(frozen=True)
@@ -84,11 +86,6 @@ class AnalysisRunRecord:
             "environment_digest": self.environment_digest,
             "warnings": list(self.warnings),
         }
-
-
-def _clean_sha256(value: object) -> str:
-    text = str(value or "").strip().lower()
-    return text if _SHA256_RE.fullmatch(text) else ""
 
 
 def _bounded_duration(value: object) -> int | None:

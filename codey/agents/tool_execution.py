@@ -224,9 +224,6 @@ def evaluate_tool_call_policy_for(
 def evaluate_tool_call_policy(
     session: AgentLoopSession,
     call: ToolCall,
-    *,
-    turn: int,
-    tool_index: int,
 ) -> tuple[ActionPolicyDecision | None, Any]:
     policy_decision, replay_decision = evaluate_tool_call_policy_for(
         call,

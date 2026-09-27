@@ -1339,5 +1339,34 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("#", group_css.replace("var(--", ""))
 
 
+    def test_provider_config_detects_removal_and_uses_single_source(self) -> None:
+        # Red-first lock for dead-compat removal + shrink detection:
+        # applyProviderConfig must compare length/order/labels/default and
+        # delegate directly to CodeyUiState.setProviders (no local fallback).
+        start = PROVIDER_UI_JS.index("function applyProviderConfig(data)")
+        end = PROVIDER_UI_JS.index("async function adoptBackendCatalog()", start)
+        body = PROVIDER_UI_JS[start:end]
+        # Direct delegation to the single source of truth.
+        self.assertIn("window.CodeyUiState.setProviders(ids, labels, data.default)", body)
+        # No unreachable local-compat branch.
+        self.assertNotIn("PROVIDERS = ids", body)
+        self.assertNotIn("PROVIDER_LABELS = labels", body)
+        self.assertNotIn("typeof window.CodeyUiState.setProviders", body)
+        # Shrink detection: length + order + labels + default must all gate rebuild.
+        self.assertIn("PROVIDERS.length !== ids.length", body)
+        self.assertIn("PROVIDERS[i] !== ids[i]", body)
+        self.assertIn("PROVIDER_LABELS[id] !== labels[id]", body)
+        self.assertIn("data.default !== DEFAULT_PROVIDER", body)
+        # Local default must resync from the single source after delegation.
+        self.assertIn("DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER", body)
+        # adoptBackendCatalog must also delegate directly (no existence guard).
+        adopt_start = PROVIDER_UI_JS.index("async function adoptBackendCatalog()")
+        adopt_end = PROVIDER_UI_JS.index("function providerLabel(id)", adopt_start)
+        adopt_body = PROVIDER_UI_JS[adopt_start:adopt_end]
+        self.assertIn("window.CodeyUiState.setProviders(catalog.ids, catalog.labels, data.default)", adopt_body)
+        self.assertNotIn("typeof window.CodeyUiState.setProviders", adopt_body)
+        self.assertNotIn("PROVIDERS = ", adopt_body)
+
+
 if __name__ == "__main__":
     unittest.main()
