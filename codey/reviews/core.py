@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from codey.utils.positive_int import positive_int as _positive_int
 from codey.utils.text_budget import clip_tail
 from codey.workspace.change_set import ChangeAnchor, ChangeSet
 
@@ -372,16 +373,6 @@ def _normalized_anchor(
         _positive_int(new_line),
         _positive_int(old_line),
     )
-
-
-def _positive_int(value: object) -> int | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
 
 
 def _finding_location(finding: ReviewFinding) -> str:

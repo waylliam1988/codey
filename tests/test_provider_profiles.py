@@ -14,7 +14,8 @@ class ProviderProfileTests(unittest.TestCase):
 
         self.assertEqual(set(profiles), {"deepseek", "qwen", "mimo", "stepfun", "glm"})
         for profile in profiles.values():
-            self.assertGreaterEqual(profile.version, 1)
+            self.assertEqual(profile.version, 1)
+            self.assertIs(type(profile.version), int)
             self.assertTrue(profile.hosts)
             self.assertTrue(profile.selectors("message_box"))
             self.assertTrue(profile.selectors("send_button"))

@@ -185,7 +185,8 @@ class RuntimeOperationStateTests(unittest.TestCase):
         self.assertEqual(projection.operations[terminal.operation_id].outcome, "completed")
         self.assertEqual(projection.lanes[terminal.lane].open_operation_id, "")
 
-    def test_operation_state_payload_is_closed_schema_v2(self) -> None:
+    def test_operation_state_payload_is_closed_schema_v1(self) -> None:
+        self.assertEqual(SCHEMA_VERSION, 1)
         payload = _state(LEAF_ACCEPTED).to_payload()
         self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
         self.assertEqual(payload["kind"], KIND)
@@ -204,6 +205,13 @@ class RuntimeOperationStateTests(unittest.TestCase):
             with self.subTest(key=key):
                 mutated = dict(payload)
                 mutated[key] = value
+                self.assertIsNone(RuntimeOperationState.from_payload(mutated))
+        # Cold-start strictness: bool/float must not pass as int 1, and
+        # dev-period v2 logs fail closed under v1.
+        for bad_version in (True, False, 1.0, 2, 0, "1", None):
+            with self.subTest(bad_version=bad_version):
+                mutated = dict(payload)
+                mutated["schema_version"] = bad_version
                 self.assertIsNone(RuntimeOperationState.from_payload(mutated))
 
     def test_operation_state_projection_fails_closed_on_corrupt_latest_state(self) -> None:

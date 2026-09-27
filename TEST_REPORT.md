@@ -1,5 +1,50 @@
 # Codey Test Report
 
+## Cold-start v1 convergence: schemas, strict local config, exact profiles, strict shell events (2026-09-27)
+
+Scope (cold-start, no release):
+
+```text
+codey/runtime/core/operation_state.py  (SCHEMA_VERSION 2 -> 1; strict type(schema_version) is int)
+codey/providers/local_config.py        (SCHEMA_VERSION 2 -> 1; config_from_dict requires v1; load distinguishes missing vs bad-version with .corrupt backup)
+codey/ghost/control_surface.py         (CONTROL_SURFACE_SCHEMA_VERSION 2 -> 1)
+codey/providers/profiles.json          (mimo/stepfun version 2 -> 1)
+codey/providers/profiles.py            (file + per-profile require exact int 1)
+codey/agents/shell_approval.py         (drop legacy-only-command branch; pending + event shapes strictly verified, truncation + hash kept)
+codey/utils/positive_int.py            (new shared helper; reviews/core + workspace/change_set delegate)
+codey/ghost/_common.py                 (new find_work_item_by_id; control_surface + work_queue delegate)
+codey/runs/trace.py                    (RouterTrace/record_router kept with compat note; still live via dispatch + task_run)
+docs/runtime_architecture.zh-CN.md     (schema v1 wording)
+docs/ghost_future_direction.zh-CN.md   (schema v1 wording)
+tests/test_coldstart_v1_locks.py       (new: 15 red-first locks)
+tests/test_runtime_operation_state.py  (closed-schema v1 + bool/float/v2 rejection)
+tests/test_local_bootstrap.py          (schema1 roundtrip; unversioned/bad-version rejected, retired-flat-ignored removed)
+tests/test_provider_profiles.py        (exact int 1)
+tests/test_provider_flow.py            (hash sensitivity via hosts, no version-2 implication)
+tests/test_server.py                   (complete pendings; legacy test replaced with current + rejection lock)
+tests/test_approval_registry.py, test_forget_session_cleanup.py, test_coldstart_hardening.py,
+tests/test_shell_approval_epoch.py, tests/stress/*, test_ghost_cli_split.py (complete shell shapes)
+CHANGELOG.md / CHANGELOG.zh-CN.md      (new Unreleased entry)
+TEST_REPORT.md                         (this entry, written after the full suite)
+```
+
+Red-first (new `tests/test_coldstart_v1_locks.py`, 12 of 15 failed before the fix):
+
+- `test_operation_schema_is_v1`, `test_operation_rejects_v2_payload_after_coldstart` failed (`2 == 1`, v2 payload parsed); after `SCHEMA_VERSION = 1` + strict `type(...) is int`, all pass and `True/1.0/2` are rejected.
+- `test_local_config_schema_is_v1`, `test_config_from_dict_requires_v1`, `test_load_local_config_rejects_unversioned_and_bad_version` failed (missing/2/`True` silently parsed, stale address returned); after strict `config_from_dict` + missing-vs-bad `load_local_config` with `.corrupt` backup, all pass.
+- `test_control_surface_schema_is_v1`, `test_bundled_profiles_are_exact_v1`, `test_profile_parser_requires_exact_v1` failed (`2 == 1`, version 2/`True` parsed); after `CONTROL_SURFACE_SCHEMA_VERSION = 1`, `profiles.json` 1s, and exact-`1` parser, all pass.
+- `test_shell_event_rejects_legacy_only_command`, `test_shell_event_rejects_tampered_digest`, `test_shell_event_rejects_tampered_preview_and_counts` failed (legacy returned payload, tampered digest/preview/chars passed through); after pending-shape recompute verification + event-shape bound/marker/hash verification, legacy raises and tampered raises, while current complete records still bound + carry full hash.
+- `test_operation_rejects_bool_schema_version`, `test_load_local_config_missing_returns_default_without_backup`, `test_shell_event_accepts_current_complete_record` passed before and after (guards against naive `!= 1` and missing-file backup regressions).
+- `test_router_trace_is_live_not_dead_code` locks `record_router` as live (dispatch + task_run), not dead code; the persisted `router` name is kept intentionally with a compat note.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check .` clean, `git diff --check` clean, `py_compile` on touched production modules clean; targeted suites green (v1 locks, operation-state, local-bootstrap, profiles, flow, server shell cases, forget-cleanup, headless expiry, ghost control-surface/work-queue, inbox/hebbian, task-trace).
+- First full run exposed 14 legacy-shape failures (`approval_registry` 4, `shell_approval_epoch` 3, `ghost_cli_split` 1, stress world/scheduler/race/soak/mixed/timeout 6) where tests still built `command`-only pendings/events; fixed by completing those fixtures (no production relaxation).
+- Final full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4597 passed, 9 skipped, 1448 subtests passed in 335.60s (0:05:35)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Auto Ghost project scope and 0.6 single-call roadmap (2026-09-27)
 
 Scope: carry project-scoped Ghost Directive and continuity into the first

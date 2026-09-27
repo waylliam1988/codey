@@ -46,11 +46,18 @@ class _FakeCtx:
 
 
 def _pending() -> dict:
+    from codey.agents.shell_approval import shell_command_payload
+
+    fields = shell_command_payload("pytest -q")
     return {
         "id": "shell-1",
         "session_id": "session-1",
         "run_id": "run-1",
         "command": "pytest -q",
+        "command_preview": fields["command"],
+        "command_sha256": fields["command_sha256"],
+        "command_chars": fields["command_chars"],
+        "command_truncated": fields["command_truncated"],
         "cwd": ".",
         "project": None,
     }
@@ -187,14 +194,8 @@ class ShellStopLinearizationTests(unittest.TestCase):
         return server.AppContext()
 
     def _ticket(self, ctx: object, project: str):
-        pending = {
-            "id": "shell-1",
-            "session_id": "session-1",
-            "run_id": "run-1",
-            "command": "pytest -q",
-            "cwd": ".",
-            "project": project,
-        }
+        pending = _pending()
+        pending["project"] = project
         ctx.add_pending_shell_approval("shell-1", pending)
         claimed, ticket = shell_service.claim_shell_ticket(
             ctx, "shell-1", timeout=30, output_limit=4000

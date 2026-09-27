@@ -141,7 +141,7 @@ codey/ghost/sleep.py
 > （`GhostRouter` + `GhostRouteStore` 预路由模型调用）已删除。现行路径是
 > settlement 写入 observation、下轮有界检索、统一 auto 由本来需要的首次模型
 > 调用决定下一步；affinity/sleep 不再接收 `router_store`，control-surface
-> 导出/清理不再含 `router`/`signals`（schema version 2）。历史 ROADMAP 中
+> 导出/清理不再含 `router`/`signals`（schema version 1，冷启动收敛）。历史 ROADMAP 中
 > “Learning Loop v1 / Router v1 已完成”是阶段记录，不代表现行能力。
 
 与 0.5.9 发布提交 `d71683d` 对照：当时符合条件的 `auto` 任务实际接入了

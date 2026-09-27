@@ -18,7 +18,7 @@ from codey.agents.consensus import ConsensusAdvice, ConsensusResult
 from codey.agents.handoff import ConversationSnapshot
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
-from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS
+from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS, shell_command_payload
 from codey.app import api as app_api
 from codey.app import consensus_service, event_bus, http_plumbing, review_service, server, shell_service, sibling_probe
 from codey.app import context as app_context
@@ -45,6 +45,19 @@ from codey.workspace.changes import ChangeTracker
 from tests.app_state import make_app_state
 
 VALID_SHA256 = "a" * 64
+
+
+def _complete_shell_pending(base: dict) -> dict:
+    """Attach current command_preview/sha/chars/truncated to a test pending."""
+    command = str(base.get("command") or "")
+    fields = shell_command_payload(command)
+    pending = dict(base)
+    pending["command"] = command
+    pending["command_preview"] = fields["command"]
+    pending["command_sha256"] = fields["command_sha256"]
+    pending["command_chars"] = fields["command_chars"]
+    pending["command_truncated"] = fields["command_truncated"]
+    return pending
 
 
 # Product no longer auto-waits for ghost maintenance (cold start: no
@@ -2269,14 +2282,14 @@ class RunSnapshotTests(unittest.TestCase):
     def test_stop_expires_pending_shell_approvals_so_allow_cannot_execute(self) -> None:
         state = server.AppContext()
         events = state.subscribe()
-        state.add_pending_shell_approval("shell-9", {
+        state.add_pending_shell_approval("shell-9", _complete_shell_pending({
             "id": "shell-9",
             "session_id": "session-stop",
             "run_id": "run-stop",
             "command": "rm -rf /",
             "cwd": ".",
             "project": None,
-        })
+        }))
 
         state.expire_pending_shell_approvals()
 
@@ -2302,14 +2315,14 @@ class RunSnapshotTests(unittest.TestCase):
         )
         assert run is not None
         self.assertTrue(state.start_run(run.run_id))
-        state.add_pending_shell_approval("shell-err", {
+        state.add_pending_shell_approval("shell-err", _complete_shell_pending({
             "id": "shell-err",
             "session_id": run.session_id,
             "run_id": run.run_id,
             "command": "pytest",
             "cwd": ".",
             "project": run.project,
-        })
+        }))
 
         self.assertTrue(state.finish_run(run.run_id, {
             "type": "task_done",
@@ -2374,7 +2387,7 @@ class RunSnapshotTests(unittest.TestCase):
         )
         assert run is not None
         self.assertTrue(state.start_run(run.run_id))
-        state.add_pending_shell_approval("shell-1", {
+        state.add_pending_shell_approval("shell-1", _complete_shell_pending({
             "id": "shell-1",
             "session_id": run.session_id,
             "run_id": run.run_id,
@@ -2386,7 +2399,7 @@ class RunSnapshotTests(unittest.TestCase):
                 "session_id": run.session_id,
                 "id": "shell-1",
             },
-        })
+        }))
 
         self.assertTrue(state.finish_run(run.run_id, {
             "type": "task_done",
@@ -2408,13 +2421,13 @@ class RunSnapshotTests(unittest.TestCase):
     def test_new_task_expires_stale_shell_approval(self) -> None:
         state = server.AppContext()
         events = state.subscribe()
-        state.add_pending_shell_approval("shell-old", {
+        state.add_pending_shell_approval("shell-old", _complete_shell_pending({
             "id": "shell-old",
             "session_id": "session-old",
             "run_id": "run-old",
             "command": "pytest",
             "cwd": ".",
-        })
+        }))
 
         with (
             mock.patch.object(server, "STATE", state),
@@ -3336,7 +3349,7 @@ class RunSnapshotTests(unittest.TestCase):
             assert run is not None
             self.assertTrue(state.start_run(run.run_id))
             self.assertTrue(state.switch_run_provider(run.run_id, "qwen"))
-            state.add_pending_shell_approval("shell-1", {
+            state.add_pending_shell_approval("shell-1", _complete_shell_pending({
                 "id": "shell-1",
                 "session_id": run.session_id,
                 "run_id": run.run_id,
@@ -3347,7 +3360,7 @@ class RunSnapshotTests(unittest.TestCase):
                 "max_turns": 8,
                 "provider": "deepseek",
                 "risk_label": "generic",
-            })
+            }))
             httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
             thread = threading.Thread(target=httpd.serve_forever, daemon=True)
             thread.start()
@@ -3388,7 +3401,7 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_shell_approval_response_uses_safe_defaults_when_pending_fields_are_missing(self) -> None:
         state = server.AppContext()
-        state.add_pending_shell_approval("shell-1", {
+        state.add_pending_shell_approval("shell-1", _complete_shell_pending({
             "id": "shell-1",
             "session_id": "session-1",
             "run_id": "run-1",
@@ -3396,7 +3409,7 @@ class RunSnapshotTests(unittest.TestCase):
             "cwd": ".",
             "continue_after": True,
             "risk_label": "dependency_install",
-        })
+        }))
         submit = mock.Mock(return_value=None)
 
         with (
@@ -3434,11 +3447,11 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(submit.call_args.args[3], app_api.DEFAULT_MAX_TURNS)
         self.assertEqual(submit.call_args.args[5], DEFAULT_PROVIDER_ID)
 
-    def test_shell_approval_response_bounds_legacy_pending_command_event(self) -> None:
+    def test_shell_approval_response_bounds_current_pending_command_event(self) -> None:
         state = server.AppContext()
         command = "python -c \"print('" + ("x" * 1600) + "')\""
         with tempfile.TemporaryDirectory() as td:
-            state.add_pending_shell_approval("shell-1", {
+            state.add_pending_shell_approval("shell-1", _complete_shell_pending({
                 "id": "shell-1",
                 "session_id": "session-1",
                 "run_id": "run-1",
@@ -3446,7 +3459,7 @@ class RunSnapshotTests(unittest.TestCase):
                 "command": command,
                 "cwd": ".",
                 "continue_after": False,
-            })
+            }))
             with mock.patch.object(shell_service, "execute_shell_ticket", return_value={
                 "ok": True,
                 "exit_code": 0,
@@ -3467,6 +3480,18 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertTrue(event["command_truncated"])
         self.assertRegex(event["command_sha256"], r"^[0-9a-f]{64}$")
         self.assertIn("[truncated; command_sha256=", event["command"])
+
+    def test_shell_approval_response_rejects_legacy_pending_without_current_fields(self) -> None:
+        from codey.agents.shell_approval import shell_command_event_fields
+
+        with self.assertRaises((ValueError, TypeError, KeyError)):
+            shell_command_event_fields({
+                "id": "shell-1",
+                "session_id": "session-1",
+                "run_id": "run-1",
+                "command": "echo hi",
+                "cwd": ".",
+            })
 
     def test_shell_approval_continuation_plan_uses_active_run_and_pending_fallbacks(self) -> None:
         active = app_context.RunSnapshot(

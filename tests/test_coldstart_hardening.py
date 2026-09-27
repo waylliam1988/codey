@@ -1955,6 +1955,8 @@ class ResearchUrlKeyTests(unittest.TestCase):
 
 class HeadlessShellExpiryTests(unittest.TestCase):
     def test_shell_request_expires_pending_approvals(self) -> None:
+        from codey.agents.shell_approval import shell_command_payload
+
         rows: list[dict[str, object]] = []
         with tempfile.TemporaryDirectory() as td:
             ctx = HeadlessAppContext(
@@ -1962,11 +1964,16 @@ class HeadlessShellExpiryTests(unittest.TestCase):
                 port=19222,
                 emit_jsonl=rows.append,
             )
+            fields = shell_command_payload("pytest -q")
             ctx.add_pending_shell_approval("appr-1", {
                 "id": "appr-1",
                 "run_id": "r1",
                 "session_id": "s1",
                 "command": "pytest -q",
+                "command_preview": fields["command"],
+                "command_sha256": fields["command_sha256"],
+                "command_chars": fields["command_chars"],
+                "command_truncated": fields["command_truncated"],
                 "cwd": ".",
             })
             ctx.emit({
@@ -1974,7 +1981,10 @@ class HeadlessShellExpiryTests(unittest.TestCase):
                 "run_id": "r1",
                 "session_id": "s1",
                 "id": "appr-1",
-                "command": "pytest -q",
+                "command": fields["command"],
+                "command_sha256": fields["command_sha256"],
+                "command_chars": fields["command_chars"],
+                "command_truncated": fields["command_truncated"],
                 "cwd": ".",
             })
             pending = ctx.pending_shell_approvals()

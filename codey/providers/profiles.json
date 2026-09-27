@@ -27,7 +27,7 @@
       }
     },
     "mimo": {
-      "version": 2,
+      "version": 1,
       "hosts": ["aistudio.xiaomimimo.com"],
       "selectors": {
         "message_box": ["textarea"],
@@ -37,7 +37,7 @@
       }
     },
     "stepfun": {
-      "version": 2,
+      "version": 1,
       "hosts": ["chat.stepfun.com"],
       "selectors": {
         "message_box": ["textarea.Publisher_textarea__pMX9t:not([disabled])"],

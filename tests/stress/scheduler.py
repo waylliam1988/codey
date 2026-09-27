@@ -122,11 +122,18 @@ def shell_ctx(approvals: ApprovalRegistry) -> SimpleNamespace:
 
 
 def shell_pending_request(command: str, run_id: str, project: str = ".") -> dict:
+    from codey.agents.shell_approval import shell_command_payload
+
+    fields = shell_command_payload(command)
     return {
         "id": "shell-soak",
         "run_id": run_id,
         "session_id": "stress-session",
         "command": command,
+        "command_preview": fields["command"],
+        "command_sha256": fields["command_sha256"],
+        "command_chars": fields["command_chars"],
+        "command_truncated": fields["command_truncated"],
         "cwd": ".",
         "project": project,
     }

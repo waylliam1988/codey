@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from codey.providers.local_discovery import LocalEndpoint
 
 CONFIG_FILE = "local-openai.json"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 1
 
 NATIVE_TOOLS_AUTO = "auto"
 NATIVE_TOOLS_ON = "on"
@@ -230,9 +230,18 @@ def parse_native_tools_mode(value: object) -> str | None:
 
 
 def config_from_dict(raw: object) -> LocalProviderConfig:
-    """Coerce a schema-2 mapping to canonical config."""
+    """Coerce a schema-1 mapping to canonical config.
+
+    Cold-start contract: the mapping must carry ``schema_version`` with
+    ``type(schema_version) is int`` and value ``SCHEMA_VERSION`` (1).
+    Missing, boolean, float, string, or unknown versions are explicit
+    errors, never silent parses of a stale shape.
+    """
     if not isinstance(raw, dict):
-        return LocalProviderConfig()
+        raise TypeError("local config must be a mapping")
+    schema_version = raw.get("schema_version")
+    if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
+        raise ValueError(f"unsupported local config schema_version: {schema_version!r}")
     mode = parse_native_tools_mode(raw.get("native_tools_mode")) or NATIVE_TOOLS_AUTO
     context_raw = raw.get("context")
     context: LocalContextBudget | None = None
@@ -254,17 +263,29 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
 
 
 def load_local_config() -> LocalProviderConfig:
-    """Read the canonical config file."""
+    """Read the canonical config file.
+
+    Missing file -> default config (no backup). Present file must carry
+    schema v1 with ``type(schema_version) is int``; otherwise the file is
+    backed up for forensics and the default is returned fail-closed.
+    """
+    path = _config_path()
     try:
-        raw = read_json_strict(_config_path()) or {}
+        raw = read_json_strict(path)
     except StoreCorruption:
-        backup_corrupt_file(_config_path())
+        backup_corrupt_file(path)
         return LocalProviderConfig()
-    return config_from_dict(raw)
+    if raw is None:
+        return LocalProviderConfig()
+    try:
+        return config_from_dict(raw)
+    except (ValueError, TypeError):
+        backup_corrupt_file(path)
+        return LocalProviderConfig()
 
 
 def config_to_payload(config: LocalProviderConfig) -> dict[str, object]:
-    """Render the canonical schema-2 payload without touching disk."""
+    """Render the canonical schema-1 payload without touching disk."""
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "base_url": config.base_url.strip().rstrip("/"),
@@ -282,7 +303,7 @@ def config_to_payload(config: LocalProviderConfig) -> dict[str, object]:
 
 
 def save_local_config(config: LocalProviderConfig) -> None:
-    """Persist the canonical shape (always schema 2)."""
+    """Persist the canonical shape (always schema 1)."""
     write_json_atomic(_config_path(), config_to_payload(config), mode=0o600)
 
 

@@ -1728,11 +1728,7 @@ def _next_claimable_item(
 
 
 def _find_item(items: Iterable[GhostWorkItem], item_id: str) -> GhostWorkItem | None:
-    target = clip_signal_text(item_id, 120)
-    for item in items:
-        if item.id == target:
-            return item
-    return None
+    return _common.find_work_item_by_id(items, item_id)
 
 
 def _bounded_items(items: Iterable[GhostWorkItem]) -> list[GhostWorkItem]:

@@ -2,6 +2,38 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 冷启动 v1 收敛、严格读取、精确画像、严格 shell 事件（未发布）
+
+- 三个 schema 定为 v1（红测先行，`tests/test_coldstart_v1_locks.py`）：
+  `runtime_operation_state`、`local-openai.json`、`CONTROL_SURFACE_SCHEMA_VERSION`
+  均由 `2` 改为 `1`；读取统一用 `type(schema_version) is int`，
+  `True`/`1.0`/`"1"` 不得冒充 `1`，开发期 v2 日志 fail closed。
+  同步更新封闭测试、标准 roundtrip 测试与两份架构文档；历史记录不动。
+- Local 配置严格读取：`config_from_dict()` 要求映射携带精确 v1，
+  缺失/未知/非 int 版本一律显式报错，不再静默解析旧形状；
+  `load_local_config()` 文件缺失返回默认且不备份，文件存在但版本错误则
+  备份（`.corrupt`）后返回默认。删除“旧扁平字段被忽略”兼容契约，
+  改测无版本/错误版本被拒绝。mimo/stepfun 指纹变化属于可接受的冷启动重置。
+- 画像版本精确为 1：`profiles.json` 中 mimo/stepfun `version: 2` 改为 `1`；
+  `load_profiles()` 与 `_parse_profile()` 要求 `type(version) is int` 且恰为 `1`。
+  捆绑画像测试断言精确 `1`；哈希敏感测试改用 hosts 差异，不再暗示 version 2 合法。
+- shell 审批严格化：`shell_command_event_fields()` 删除只带 `command` 的旧分支。
+  pending 记录（完整 `command` + `command_preview`/`sha`/`chars`/`truncated`）
+  每次重算并要求完全一致；event 记录（有界 `command` + `sha`/`chars`/`truncated`）
+  要求不超展示上限且截断标记与标志一致。截断与哈希校验保留为安全边界。
+  server、registry、forget、headless、epoch、stress、CLI 用例均改为构造现行形状；
+  旧记录 bounds 测试替换为现行 bounds 测试 + 旧记录拒绝锁定。
+- 小范围去重（不建大抽象）：新增 `codey/utils/positive_int.py` 供
+  `reviews/core` 与 `workspace/change_set` 共用；新增
+  `ghost/_common.find_work_item_by_id` 供 `control_surface` 与 `work_queue` 共用。
+  `record_router`/`RouterTrace` 经任务分发仍在使用，不当死代码删除；
+  持久化 `router` 字段改名会破坏 trace 读取，故保留原名并加注。
+- 验证：`python -m ruff check .`、`git diff --check` 通过。
+  全量前相关套件全绿；首次全量暴露 14 处旧形状用例，补齐后未放宽生产；
+  最终 `python -m pytest -q -p no:cacheprovider`：
+  **4597 passed、9 skipped、1448 subtests passed，335.60s（0:05:35）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - Auto Ghost 项目作用域与 0.6 单次调用路线（未发布）
 
 - 修复 `auto` 首次正常调用读取 Ghost Directive/continuity 时漏传项目路径的问题。

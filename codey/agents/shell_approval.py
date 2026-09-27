@@ -113,35 +113,114 @@ def shell_command_event_fields(
     *,
     limit: int = MAX_APPROVAL_COMMAND_CHARS,
 ) -> dict[str, object]:
-    """Return event-safe command fields from a pending approval record.
+    """Return event-safe command fields from a current approval record.
 
-    New pending records carry ``command_preview`` from the original full
-    command. Legacy/test records may only carry ``command``; bound them here
-    so any event path remains safe by default.
+    Cold-start contract: legacy/test records carrying only ``command`` are
+    rejected. Two current shapes are accepted:
+
+    - pending record: full ``command`` plus ``command_preview``,
+      ``command_sha256``, ``command_chars``, ``command_truncated``. The
+      preview/sha/chars/flag are recomputed from the full text and must
+      match exactly (truncation bound + hash are the security boundary).
+    - event record: bounded ``command`` (already a preview) plus
+      ``command_sha256``, ``command_chars``, ``command_truncated``. The
+      preview stays bounded, the digest stays valid hex, and the
+      truncation marker stays consistent with the flag.
     """
 
-    digest = str(record.get("command_sha256") or "").strip().lower()
-    has_digest = _is_sha256_hex(digest)
-    preview = str(record.get("command_preview") or "")
-    if not preview and has_digest:
-        preview = _bounded_command_text(
-            str(record.get("command") or ""),
-            limit,
-            digest=digest,
-        )
-    if preview:
-        payload: dict[str, object] = {"command": preview}
-        if has_digest:
-            payload["command_sha256"] = digest
-        chars = _nonnegative_int(record.get("command_chars"))
-        if chars:
-            payload["command_chars"] = chars
-        if "command_truncated" in record:
-            payload["command_truncated"] = bool(record.get("command_truncated"))
-        else:
-            payload["command_truncated"] = len(str(record.get("command") or "")) > limit
-        return payload
-    return shell_command_payload(record.get("command"), limit=limit)
+    if not isinstance(record, Mapping):
+        raise TypeError("approval record must be a mapping")
+    effective_limit = max(0, int(limit))
+    if "command_preview" in record:
+        return _pending_event_fields(record, limit=effective_limit)
+    if (
+        "command_sha256" in record
+        and "command_chars" in record
+        and "command_truncated" in record
+    ):
+        return _event_record_fields(record, limit=effective_limit)
+    raise ValueError("approval record is missing current command fields")
+
+
+def _pending_event_fields(
+    record: Mapping[str, object],
+    *,
+    limit: int,
+) -> dict[str, object]:
+    for key in ("command", "command_preview", "command_sha256", "command_chars", "command_truncated"):
+        if key not in record:
+            raise ValueError(f"approval record is missing {key}")
+    expected = shell_command_payload(record.get("command"), limit=limit)
+    preview = record.get("command_preview")
+    digest = record.get("command_sha256")
+    chars = record.get("command_chars")
+    truncated = record.get("command_truncated")
+    if not isinstance(preview, str):
+        raise ValueError("command_preview must be a string")
+    if not isinstance(digest, str):
+        raise ValueError("command_sha256 must be a string")
+    if type(chars) is not int:
+        raise ValueError("command_chars must be an int")
+    if type(truncated) is not bool:
+        raise ValueError("command_truncated must be a bool")
+    if digest != digest.lower() or not _is_sha256_hex(digest):
+        raise ValueError("command_sha256 must be lowercase hex")
+    if (
+        preview != expected["command"]
+        or digest != expected["command_sha256"]
+        or chars != expected["command_chars"]
+        or truncated != expected["command_truncated"]
+    ):
+        raise ValueError("approval record command fields do not match full command")
+    return {
+        "command": expected["command"],
+        "command_sha256": expected["command_sha256"],
+        "command_chars": expected["command_chars"],
+        "command_truncated": expected["command_truncated"],
+    }
+
+
+def _event_record_fields(
+    record: Mapping[str, object],
+    *,
+    limit: int,
+) -> dict[str, object]:
+    command = record.get("command")
+    digest = record.get("command_sha256")
+    chars = record.get("command_chars")
+    truncated = record.get("command_truncated")
+    if not isinstance(command, str):
+        raise ValueError("command must be a string")
+    if not isinstance(digest, str):
+        raise ValueError("command_sha256 must be a string")
+    if type(chars) is not int:
+        raise ValueError("command_chars must be an int")
+    if type(truncated) is not bool:
+        raise ValueError("command_truncated must be a bool")
+    if chars < 0:
+        raise ValueError("command_chars must be non-negative")
+    if digest != digest.lower() or not _is_sha256_hex(digest):
+        raise ValueError("command_sha256 must be lowercase hex")
+    if len(command) > limit:
+        raise ValueError("event command exceeds display bound")
+    marker_prefix = "[truncated; command_sha256="
+    has_marker = marker_prefix in command
+    if truncated:
+        if chars <= limit or chars <= len(command):
+            raise ValueError("truncated event must carry full length above bound")
+        if not has_marker or digest not in command:
+            raise ValueError("truncated event must carry digest marker")
+    else:
+        if chars != len(command):
+            raise ValueError("event command_chars must match preview length")
+        if has_marker:
+            raise ValueError("non-truncated event must not carry truncation marker")
+    return {
+        "command": command,
+        "command_sha256": digest,
+        "command_chars": chars,
+        "command_truncated": truncated,
+    }
 
 
 def shell_command_text(command: object) -> str:

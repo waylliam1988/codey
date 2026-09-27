@@ -114,13 +114,20 @@ class GhostDispatchParityTests(unittest.TestCase):
 
 class HeadlessPayloadParityTests(unittest.TestCase):
     def test_all_event_types_bounded(self) -> None:
+        from codey.agents.shell_approval import shell_command_payload as _payload
+
+        _fields = _payload("echo hi")
         base = {"run_id": "r1", "session_id": "s1"}
         cases = [
             ({"type": "task_start", "project": "p", "provider": "q", "mode": "m",
               "max_turns": 3}, "project"),
             ({"type": "status", "status": "running"}, "status"),
             ({"type": "info", "text": "hi"}, "text"),
-            ({"type": "shell_request", "id": "x"}, "id"),
+            ({"type": "shell_request", "id": "x",
+              "command": _fields["command"],
+              "command_sha256": _fields["command_sha256"],
+              "command_chars": _fields["command_chars"],
+              "command_truncated": _fields["command_truncated"]}, "id"),
             ({"type": "turn", "turn": 1}, "turn"),
             ({"type": "tool_started", "turn": 1, "tool_id": "t",
               "kind": "k"}, "tool"),

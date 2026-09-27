@@ -276,13 +276,20 @@ class StressWorld:
         self.bus.emit({"event_key": event_id, **fields})
 
     def approve(self, command: str = "echo hi", run_id: str = "run-1") -> str:
+        from codey.agents.shell_approval import shell_command_payload
+
         self._approval_seq += 1
         approval_id = f"approval-{self._approval_seq:03d}"
+        fields = shell_command_payload(command)
         self.approvals.add_shell(approval_id, {
             "id": approval_id,
             "run_id": run_id,
             "session_id": self.session_id,
             "command": command,
+            "command_preview": fields["command"],
+            "command_sha256": fields["command_sha256"],
+            "command_chars": fields["command_chars"],
+            "command_truncated": fields["command_truncated"],
             "cwd": ".",
         })
         return approval_id

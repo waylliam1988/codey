@@ -57,9 +57,10 @@ def test_parse_update_derives_preset_and_mode() -> None:
     assert parsed2 is None and error2 != ""
 
 
-def test_canonical_schema2_roundtrip(tmp_path: Path) -> None:
+def test_canonical_schema1_roundtrip(tmp_path: Path) -> None:
     from codey.providers import local_config as canonical
 
+    assert canonical.SCHEMA_VERSION == 1
     path = tmp_path / "local-openai.json"
     with mock.patch.object(canonical, "_config_path", return_value=path):
         canonical.save_local_config(canonical.LocalProviderConfig(
@@ -71,22 +72,32 @@ def test_canonical_schema2_roundtrip(tmp_path: Path) -> None:
         assert loaded.context is not None and loaded.context.context_window_tokens == 262144
         import json
 
-        assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == 2
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        assert raw["schema_version"] == 1
+        assert type(raw["schema_version"]) is int
 
 
-def test_retired_flat_local_config_fields_are_ignored() -> None:
+def test_unversioned_and_bad_version_local_config_is_rejected() -> None:
+
+    import pytest
+
     from codey.providers import local_config as canonical
 
-    loaded = canonical.config_from_dict({
-        "base_url": "http://127.0.0.1:5001/v1",
-        "model": "g",
-        "native_tools": False,
-        "context_window_tokens": 8192,
-    })
-
-    assert loaded.base_url == "http://127.0.0.1:5001/v1"
-    assert loaded.native_tools_mode == canonical.NATIVE_TOOLS_AUTO
-    assert loaded.context is None
+    base = {
+        "schema_version": 1,
+        "base_url": "http://127.0.0.1:11434/v1",
+        "model": "qwen",
+    }
+    assert canonical.config_from_dict(dict(base)).base_url == "http://127.0.0.1:11434/v1"
+    # Missing version and non-int/unknown versions are explicit errors.
+    for bad in (None, 0, 2, "1", 1.0, True, False):
+        bad_payload = dict(base)
+        if bad is None:
+            bad_payload.pop("schema_version", None)
+        else:
+            bad_payload["schema_version"] = bad
+        with pytest.raises((ValueError, TypeError)):
+            canonical.config_from_dict(bad_payload)
 
 
 def test_effective_resolution(monkeypatch) -> None:

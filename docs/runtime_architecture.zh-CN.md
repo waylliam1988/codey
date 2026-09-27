@@ -49,7 +49,7 @@ runtime/observe/  events / evidence / prompt_* / terminalizer
 ## Pending 是派生的，不是存的
 
 `RuntimeOperationState` 只存 leaf / driver / task / turn 等坐标，不存
-`pending_effect_*` / `pending_delivery_batch_id`（payload schema v2，v1
+`pending_effect_*` / `pending_delivery_batch_id`（payload schema v1，其他版本
 直接 fail closed）。在飞事实一律现场算：
 
 - `pending_for(view)` 只看 `state.turn` 当 turn 的 unsettled intents。

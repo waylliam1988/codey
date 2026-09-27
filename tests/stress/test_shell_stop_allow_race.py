@@ -28,11 +28,18 @@ def _ctx(approvals: ApprovalRegistry):
 
 
 def _pending(project: str) -> dict:
+    from codey.agents.shell_approval import shell_command_payload
+
+    fields = shell_command_payload("echo hi")
     return {
         "id": "shell-race",
         "run_id": "run-1",
         "session_id": "sess-1",
         "command": "echo hi",
+        "command_preview": fields["command"],
+        "command_sha256": fields["command_sha256"],
+        "command_chars": fields["command_chars"],
+        "command_truncated": fields["command_truncated"],
         "cwd": ".",
         "project": project,
     }

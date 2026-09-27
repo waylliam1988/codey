@@ -2,6 +2,48 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start v1 convergence, strict reads, exact profiles, strict shell events (no release)
+
+- Schemas to v1 (red-first, `tests/test_coldstart_v1_locks.py`): `runtime_operation_state`
+  `SCHEMA_VERSION`, `local-openai.json` `SCHEMA_VERSION`, and
+  `CONTROL_SURFACE_SCHEMA_VERSION` are now `1` (were `2`); readers use
+  `type(schema_version) is int` so `True`/`1.0`/`"1"` never pass as `1`, and
+  dev-period v2 operation logs fail closed. Updated the closed-schema test,
+  the canonical roundtrip test, and the two architecture docs; history entries
+  are untouched.
+- Strict local config reads: `config_from_dict()` now requires a mapping with
+  exact v1 and raises on missing/unknown/non-int versions (no silent parse of
+  stale shapes); `load_local_config()` returns defaults for a missing file
+  with no backup, and backs up (`.corrupt`) + returns defaults for a present
+  but bad-version file. Removed the retired-flat-fields-ignored compat test;
+  added missing/bad-version rejection locks. Profile fingerprints change for
+  mimo/stepfun (acceptable cold-start reset).
+- Exact provider profiles: `profiles.json` mimo/stepfun `version: 2` -> `1`;
+  `load_profiles()` and `_parse_profile()` require `type(version) is int` and
+  `== 1`. Bundled-profile test now asserts exact `1`; hash-sensitivity test no
+  longer implies version 2 is valid.
+- Strict shell approval events: `shell_command_event_fields()` drops the
+  legacy-only-`command` branch. Pending records (full `command` +
+  `command_preview`/`sha`/`chars`/`truncated`) are recomputed and must match
+  exactly; event records (bounded `command` + `sha`/`chars`/`truncated`) must
+  stay within the display bound with a digest marker consistent with the flag.
+  Truncation and hash checks are kept as the security boundary. Updated server,
+  registry, forget-cleanup, headless, epoch, stress, and CLI fixtures to build
+  current shapes; replaced the legacy-bounds test with a current-bounds test
+  plus a legacy-rejection lock.
+- Small dedup (no new abstraction): new `codey/utils/positive_int.py` is the
+  single source for `reviews/core` + `workspace/change_set`; new
+  `ghost/_common.find_work_item_by_id` serves `control_surface` +
+  `work_queue`. `record_router`/`RouterTrace` stay live via task dispatch with
+  an explicit compat note (renaming the persisted `router` field would break
+  trace readers), so no dead-code deletion.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean.
+  Targeted suites green before the full run; first full run caught 14
+  legacy-shape fixtures, fixed without relaxing production; then final
+  `python -m pytest -q -p no:cacheprovider`:
+  `4597 passed, 9 skipped, 1448 subtests passed in 335.60s (0:05:35)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Auto Ghost project scope and 0.6 single-call roadmap (no release)
 
 - Fixed the `auto` first call dropping the project argument when reading Ghost

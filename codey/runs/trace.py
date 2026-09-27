@@ -246,6 +246,14 @@ class PromptSurfaceTrace:
 
 @dataclass(frozen=True)
 class RouterTrace:
+    """Mode-selection trace (historical name ``router`` kept for compat).
+
+    The old Ghost Router is retired, but this record is still written by the
+    live task-dispatch path to capture user choice, default mode, and
+    recovery. Renaming the persisted ``router`` field would break trace
+    readers, so the name stays intentionally.
+    """
+
     baseline_mode: str = ""
     selected_mode: str = ""
     final_mode: str = ""
@@ -490,6 +498,7 @@ class RunTraceRecorder:
         reason_code: str,
         overridden_by_user: bool = False,
     ) -> None:
+        """Record mode selection (name kept; old Ghost Router is retired)."""
         self.manifest.router = RouterTrace(
             baseline_mode=baseline_mode,
             selected_mode=selected_mode,

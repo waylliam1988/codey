@@ -12,6 +12,7 @@ from codey.utils.change_paths import (
 from codey.utils.change_paths import (
     safe_change_path as _safe_relpath,
 )
+from codey.utils.positive_int import positive_int as _positive_int
 
 MAX_SUMMARY_FILES = 20
 MAX_SUMMARY_HUNKS = 60
@@ -299,16 +300,6 @@ def _nonnegative_int(value: object) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
-
-
-def _positive_int(value: object) -> int | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
 
 
 def _contains_line(line: int, start: int, count: int) -> bool:

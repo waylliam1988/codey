@@ -64,10 +64,24 @@ def filter_values(value: object, allowed: frozenset[str]) -> set[str]:
     return {item for item in values if item in allowed}
 
 
+def find_work_item_by_id(items: Iterable[Any], item_id: str) -> Any | None:
+    """Shared work-item lookup (single source for identical helpers).
+
+    Clips the requested id to the UI bound before comparing, so callers
+    never match an overlong id against a stored id.
+    """
+    target = clip_signal_text(item_id, 120)
+    for item in items:
+        if getattr(item, "id", None) == target:
+            return item
+    return None
+
+
 __all__ = [
     "VALID_SCOPES",
     "field_value",
     "filter_values",
+    "find_work_item_by_id",
     "mapping_keys_within",
     "normalize_project",
     "now_iso_z",

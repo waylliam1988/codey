@@ -19,7 +19,7 @@ from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_projection import RuntimeProjection
 from codey.storage.local_store import project_key, session_key
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 1
 KIND = "runtime_operation_state"
 
 LEAF_ACCEPTED = "accepted"
@@ -289,7 +289,10 @@ class RuntimeOperationState:
     def from_payload(cls, payload: object) -> RuntimeOperationState | None:
         if not isinstance(payload, dict):
             return None
-        if payload.get("schema_version") != SCHEMA_VERSION or payload.get("kind") != KIND:
+        schema_version = payload.get("schema_version")
+        if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
+            return None
+        if payload.get("kind") != KIND:
             return None
         try:
             if set(payload) - _KNOWN_PAYLOAD_KEYS:

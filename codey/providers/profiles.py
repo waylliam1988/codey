@@ -38,7 +38,8 @@ def load_profiles(path: Path = PROFILE_PATH) -> dict[str, ProviderProfile]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Could not load provider profiles: {path}") from exc
-    if raw.get("schema_version") != SCHEMA_VERSION:
+    schema_version = raw.get("schema_version")
+    if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
         raise RuntimeError("Unsupported provider profile schema")
     profiles = raw.get("profiles")
     if not isinstance(profiles, dict):
@@ -62,7 +63,7 @@ def _parse_profile(provider_id: str, payload: Any) -> ProviderProfile:
     version = payload.get("version")
     hosts = payload.get("hosts")
     selectors = payload.get("selectors")
-    if not isinstance(version, int) or version < 1:
+    if type(version) is not int or version != 1:
         raise RuntimeError(f"Invalid profile version: {provider_id}")
     if not isinstance(hosts, list) or not hosts or not all(isinstance(item, str) and item for item in hosts):
         raise RuntimeError(f"Invalid profile hosts: {provider_id}")

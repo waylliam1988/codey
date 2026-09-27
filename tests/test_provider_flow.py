@@ -327,11 +327,13 @@ class ProviderFlowTests(unittest.TestCase):
         )
         first = flow.profile_hash(profile)
         second = flow.profile_hash(profile)
+        # Profiles are exact v1 now; sensitivity is demonstrated via hosts
+        # (version 2 is rejected by the parser, not hashed).
         changed = flow.profile_hash(
             SimpleNamespace(
                 provider_id="qwen",
-                version=2,
-                hosts=profile.hosts,
+                version=1,
+                hosts=("chat.qwen.ai", "extra.example.test"),
                 selectors_by_action=profile.selectors_by_action,
             )
         )

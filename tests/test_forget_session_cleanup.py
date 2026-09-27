@@ -5,7 +5,18 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+from codey.agents.shell_approval import shell_command_payload
 from tests.app_state import make_app_state
+
+
+def _complete_pending(base: dict) -> dict:
+    fields = shell_command_payload(str(base.get("command") or ""))
+    pending = dict(base)
+    pending["command_preview"] = fields["command"]
+    pending["command_sha256"] = fields["command_sha256"]
+    pending["command_chars"] = fields["command_chars"]
+    pending["command_truncated"] = fields["command_truncated"]
+    return pending
 
 
 class ForgetSessionCleanupTests(unittest.TestCase):
@@ -18,24 +29,24 @@ class ForgetSessionCleanupTests(unittest.TestCase):
             provider_id="deepseek",
         )
         assert run is not None
-        state.add_pending_shell_approval("shell-1", {
+        state.add_pending_shell_approval("shell-1", _complete_pending({
             "id": "shell-1",
             "session_id": "session-1",
             "run_id": run.run_id,
             "command": "pytest -q",
             "cwd": ".",
             "project": None,
-        })
+        }))
         state.record_research_changes(run.run_id, object())
         # Another session's executable state must survive.
-        state.add_pending_shell_approval("shell-2", {
+        state.add_pending_shell_approval("shell-2", _complete_pending({
             "id": "shell-2",
             "session_id": "session-2",
             "run_id": "run-other",
             "command": "ruff",
             "cwd": ".",
             "project": None,
-        })
+        }))
         state.research_changes["run-other"] = object()
         state._research_change_sessions["run-other"] = "session-2"
 
@@ -59,14 +70,14 @@ class ForgetSessionCleanupTests(unittest.TestCase):
             provider_id="deepseek",
         )
         assert run is not None
-        state.add_pending_shell_approval("shell-1", {
+        state.add_pending_shell_approval("shell-1", _complete_pending({
             "id": "shell-1",
             "session_id": "session-1",
             "run_id": run.run_id,
             "command": "pytest -q",
             "cwd": ".",
             "project": None,
-        })
+        }))
         state.record_research_changes(run.run_id, object())
 
         with mock.patch.object(

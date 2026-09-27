@@ -23,7 +23,7 @@ from codey.ghost.sleep import GhostSleepStore
 from codey.ghost.typed_fields import render_typed_field
 from codey.ghost.work_queue import GhostWorkItem, GhostWorkQueueStore
 
-CONTROL_SURFACE_SCHEMA_VERSION = 2
+CONTROL_SURFACE_SCHEMA_VERSION = 1
 MAX_SUMMARY_ITEMS = 20
 MAX_CONTEXT_ITEMS = 8
 MAX_UI_TEXT_CHARS = 140
@@ -548,11 +548,7 @@ def _find_work_item(
     items: Iterable[GhostWorkItem],
     item_id: str,
 ) -> GhostWorkItem | None:
-    target = clip_signal_text(item_id, 120)
-    for item in items:
-        if item.id == target:
-            return item
-    return None
+    return _common.find_work_item_by_id(items, item_id)
 
 
 def _work_item_visible_for_scope(
