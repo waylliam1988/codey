@@ -89,81 +89,6 @@ def render_run_event(event: RunEvent) -> str:
     return event.message
 
 
-def run_event_payload(
-    event: RunEvent,
-    *,
-    run_id: str = "",
-    session_id: str = "",
-) -> dict | None:
-    """Render one run event as a bounded machine-readable payload."""
-
-    common = _event_common(run_id, session_id)
-    if event.kind == "turn":
-        payload = {
-            "type": "turn",
-            **common,
-            "turn": event.turn,
-        }
-        if event.note:
-            payload["note"] = clip_event_text(event.note)
-        return payload
-    if event.kind in {"info", "status"}:
-        text = event.message
-        if event.kind == "info":
-            names = str(event.metadata.get("names") or "")
-            if names:
-                text = f"{text}: {names}"
-        return {"type": "info", **common, "text": clip_event_text(text)}
-    if event.kind == "tool_start" and event.call is not None:
-        path = str(event.call.args.get("path") or "")
-        tool_index = int(event.metadata.get("tool_index") or 0)
-        payload = {
-            "type": "tool_started",
-            **common,
-            "turn": event.turn,
-            "tool_id": f"{event.turn}:{tool_index}",
-            "kind": event.call.name,
-            "path": "" if path == "." else clip_event_text(path),
-            "activity": clip_event_text(event.message),
-        }
-        command = clip_event_text(event.call.args.get("command") or "")
-        if command:
-            payload["command"] = command
-        return payload
-    if event.kind != "tool" or event.call is None or event.outcome is None:
-        return None
-    path = str(event.call.args.get("path") or "")
-    tool_index = int(event.metadata.get("tool_index") or 0)
-    payload = {
-        "type": "tool",
-        **common,
-        "turn": event.turn,
-        "tool_id": f"{event.turn}:{tool_index}",
-        "kind": event.call.name,
-        "path": "" if path == "." else clip_event_text(path),
-        "ok": event.outcome.ok,
-        "status": clip_event_text(event.outcome.presentation_status(), 32),
-        "changed": event.outcome.changed,
-        "truncated": event.outcome.truncated,
-        "result": clip_event_text(
-            event.outcome.presentation_result(MAX_EVENT_RESULT_CHARS),
-            MAX_EVENT_RESULT_CHARS,
-        ),
-    }
-    command = clip_event_text(event.call.args.get("command") or "")
-    if command:
-        payload["command"] = command
-    if event.outcome.exit_code is not None:
-        payload["exit_code"] = event.outcome.exit_code
-    managed = event.outcome.managed_output()
-    if managed:
-        payload["output_handle"] = clip_event_text(managed.get("handle"), 120)
-        payload["output_bytes"] = int(managed.get("original_bytes") or 0)
-        payload["output_stored_bytes"] = int(managed.get("stored_bytes") or 0)
-        payload["output_sha256"] = clip_event_text(managed.get("sha256"), 80)
-    return payload
-
-
 def display_tool(name: str, args: dict, path: str = "") -> tuple[str, str]:
     research_names = {
         "web_search": ("search", str(args.get("query") or "")),
@@ -266,15 +191,6 @@ def clip_event_text(
     if len(text) <= limit:
         return text
     return text[: limit - len(TRUNCATED_TEXT_SUFFIX)].rstrip() + TRUNCATED_TEXT_SUFFIX
-
-
-def _event_common(run_id: str, session_id: str) -> dict[str, str]:
-    payload: dict[str, str] = {}
-    if run_id:
-        payload["run_id"] = run_id
-    if session_id:
-        payload["session_id"] = session_id
-    return payload
 
 
 def print_run_event(event: RunEvent) -> None:

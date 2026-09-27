@@ -38,7 +38,7 @@ from codey.research.runner import ResearchRunResult
 from codey.runs.ledger import read_ledger
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall
-from codey.runtime.observe.events import RunEvent, run_event_payload, run_event_ui_payload
+from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
 from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker
@@ -1088,18 +1088,14 @@ class RunEventUiProjectionTests(unittest.TestCase):
         )
         event = RunEvent.tool_finished(2, call, outcome, index=3)
 
-        event_payload = run_event_payload(event)
-        ui_payload = run_event_ui_payload("run-1", "session-1", event)
+        payload = run_event_ui_payload("run-1", "session-1", event)
 
-        self.assertIsNotNone(event_payload)
-        self.assertIsNotNone(ui_payload)
-        assert event_payload is not None
-        assert ui_payload is not None
-        for payload in (event_payload, ui_payload):
-            self.assertEqual(payload["output_handle"], "out_0001_bad")
-            self.assertEqual(payload["output_bytes"], 0)
-            self.assertEqual(payload["output_stored_bytes"], 0)
-            self.assertEqual(payload["output_sha256"], "")
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload["output_handle"], "out_0001_bad")
+        self.assertEqual(payload["output_bytes"], 0)
+        self.assertEqual(payload["output_stored_bytes"], 0)
+        self.assertEqual(payload["output_sha256"], "")
 
     def test_tool_event_empties_invalid_managed_output_sha256(self) -> None:
         call = ToolCall("run", {"path": ".", "command": "python test.py"})
@@ -1118,18 +1114,14 @@ class RunEventUiProjectionTests(unittest.TestCase):
         )
         event = RunEvent.tool_finished(2, call, outcome, index=3)
 
-        event_payload = run_event_payload(event)
-        ui_payload = run_event_ui_payload("run-1", "session-1", event)
+        payload = run_event_ui_payload("run-1", "session-1", event)
 
-        self.assertIsNotNone(event_payload)
-        self.assertIsNotNone(ui_payload)
-        assert event_payload is not None
-        assert ui_payload is not None
-        for payload in (event_payload, ui_payload):
-            serialized = json.dumps(payload, ensure_ascii=False)
-            self.assertEqual(payload["output_handle"], "out_0001_valid")
-            self.assertEqual(payload["output_sha256"], "")
-            self.assertNotIn("INJECTED", serialized)
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertEqual(payload["output_handle"], "out_0001_valid")
+        self.assertEqual(payload["output_sha256"], "")
+        self.assertNotIn("INJECTED", serialized)
 
     def test_tool_event_ignores_invalid_managed_output_handle(self) -> None:
         call = ToolCall("run", {"path": ".", "command": "python test.py"})
@@ -1148,18 +1140,14 @@ class RunEventUiProjectionTests(unittest.TestCase):
         )
         event = RunEvent.tool_finished(2, call, outcome, index=3)
 
-        event_payload = run_event_payload(event)
-        ui_payload = run_event_ui_payload("run-1", "session-1", event)
+        payload = run_event_ui_payload("run-1", "session-1", event)
 
-        self.assertIsNotNone(event_payload)
-        self.assertIsNotNone(ui_payload)
-        assert event_payload is not None
-        assert ui_payload is not None
-        for payload in (event_payload, ui_payload):
-            self.assertNotIn("output_handle", payload)
-            self.assertNotIn("output_bytes", payload)
-            self.assertNotIn("output_stored_bytes", payload)
-            self.assertNotIn("output_sha256", payload)
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertNotIn("output_handle", payload)
+        self.assertNotIn("output_bytes", payload)
+        self.assertNotIn("output_stored_bytes", payload)
+        self.assertNotIn("output_sha256", payload)
 
 
 class ResearchGraphApiTests(unittest.TestCase):

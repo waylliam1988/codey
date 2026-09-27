@@ -42,7 +42,7 @@ from codey.research.tool_contract import research_tool_contract_hash
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.runtime.observe.events import RunEvent, run_event_payload
+from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 
 
 class FakeProvider:
@@ -638,7 +638,9 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             runner = ResearchRunner(FakeProvider(), FakeSearch(), store, max_turns=2)
             outcome = runner._dispatch(ToolCall("open_url", {"url": url}))
-            payload = run_event_payload(RunEvent.tool_finished(1, ToolCall("open_url", {"url": url}), outcome))
+            payload = run_event_ui_payload(
+                "run-1", "session-1", RunEvent.tool_finished(1, ToolCall("open_url", {"url": url}), outcome)
+            )
             store.close()
 
         self.assertTrue(outcome.model_text.startswith("Opened source material follows."))
@@ -2362,7 +2364,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             )
 
             outcome = runner._dispatch(call)
-            payload = run_event_payload(RunEvent.tool_finished(1, call, outcome))
+            payload = run_event_ui_payload("run-1", "session-1", RunEvent.tool_finished(1, call, outcome))
             count = store.index.count()
             store.close()
 
@@ -2392,7 +2394,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             )
 
             outcome = runner._dispatch(call)
-            payload = run_event_payload(RunEvent.tool_finished(1, call, outcome))
+            payload = run_event_ui_payload("run-1", "session-1", RunEvent.tool_finished(1, call, outcome))
             count = store.index.count()
             store.close()
 
@@ -2449,7 +2451,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             call = ToolCall("open_url", {"url": "https://example.com/report.pdf"})
 
             outcome = runner._dispatch(call)
-            payload = run_event_payload(RunEvent.tool_finished(1, call, outcome))
+            payload = run_event_ui_payload("run-1", "session-1", RunEvent.tool_finished(1, call, outcome))
             store.close()
 
         self.assertTrue(outcome.model_text.startswith("SKIPPED: unsupported content type: application/pdf"))

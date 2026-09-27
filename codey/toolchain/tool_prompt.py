@@ -8,16 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class RenderedToolContract:
-    text: str
-    digest: str
-    tool_names: tuple[str, ...]
-    runtime_names: tuple[str, ...]
-    source_refs: tuple[str, ...]
 
 
 def model_visible_contract_hash(kind: str, text: object) -> str:
@@ -42,30 +32,6 @@ def render_coding_tool_contract_text(
         examples = "\n".join(f"  {example}" for example in definition.examples)  # type: ignore[attr-defined]
         chunks.append(f"{examples}\n    {definition.description}")  # type: ignore[attr-defined]
     return "\n\n".join(chunks)
-
-
-def render_coding_tool_contract(
-    definitions: tuple[object, ...] | None = None,
-) -> RenderedToolContract:
-    from codey.toolchain import definition as tool_defs
-
-    definitions_to_render = tool_defs.TOOL_DEFINITIONS if definitions is None else definitions
-    text = render_coding_tool_contract_text(definitions_to_render)  # type: ignore[arg-type]
-    digest = model_visible_contract_hash("coding_tool_contract", text)
-    tool_names = tuple(str(definition.name) for definition in definitions_to_render)  # type: ignore[attr-defined]
-    runtime_names = tuple(
-        str(definition.runtime_name)
-        for definition in definitions_to_render  # type: ignore[attr-defined]
-        if getattr(definition, "runtime_name", None) is not None
-    )
-    source_refs = tuple(f"tool_contract:{name}" for name in tool_names)
-    return RenderedToolContract(
-        text=text,
-        digest=digest,
-        tool_names=tool_names,
-        runtime_names=runtime_names,
-        source_refs=source_refs,
-    )
 
 
 def coding_model_tool_contract_hash(

@@ -82,11 +82,6 @@ def render_context_source(source: ContextSource) -> RenderedContextSource | None
     )
 
 
-def render_context_sources(sources: Iterable[ContextSource]) -> str:
-    """Render sources in order, separated by a single blank line."""
-    return render_context_sources_with_metadata(sources).text
-
-
 def render_context_sources_with_metadata(
     sources: Iterable[ContextSource],
 ) -> RenderedContextSources:

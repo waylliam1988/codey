@@ -150,7 +150,7 @@ def run_review(
         except Exception as exc:
             last_error = exc
     cancellation.check()
-    if not allow_self_review(review_policy, writer_id=writer_id):
+    if not allow_self_review(review_policy):
         emit_review(ctx, session_id, "Review unavailable: no web reviewer is open.")
         return None
     try:

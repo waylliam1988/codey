@@ -240,15 +240,15 @@ def test_search_pagination_next_offset(tmp_path: Path) -> None:
     assert "end of matches" in last.model_text
 
 
-def test_search_first_page_keeps_legacy_truncation_text(tmp_path: Path) -> None:
+def test_search_first_page_uses_unified_page_footer(tmp_path: Path) -> None:
     from codey.toolchain import runtime as tool_runtime
 
     root = tmp_path
     (root / "a.py").write_text("target\ntarget\ntarget\n", encoding="utf-8")
     outcome = tool_runtime.search_files(root, ".", "target", max_results=2)
     assert outcome.truncated
-    assert "truncated after 2 matches" in outcome.model_text
-    assert "narrow the query" in outcome.model_text
+    assert "[grep page: results 1-2; next offset=3" in outcome.model_text
+    assert "next call:" in outcome.model_text
 
 
 def test_search_rejects_bad_pagination() -> None:

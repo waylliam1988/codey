@@ -1,8 +1,8 @@
 """Match-list pagination for grep results.
 
 Keeps ``toolchain/runtime.py`` under its size ceiling: page slicing and the
-next-offset footer live here. First-page truncation text stays byte-identical
-to the historical message so existing tests and prompts do not drift.
+next-offset footer live here. All truncated/continued pages share one
+machine-readable ``[grep page: ...]`` footer.
 """
 
 from __future__ import annotations
@@ -33,16 +33,10 @@ def finalize_page(
     offset: int,
     limit: int,
 ) -> list[str]:
-    """Slice the streamed page and append the footer (legacy text on page one)."""
+    """Slice the streamed page and append the unified page footer."""
     shown = matches[:limit]
     if not (result_limited or offset > 1):
         return shown
-    legacy = (
-        f"... truncated after {limit} matches; narrow the query or pass a "
-        "subdirectory in path to see the rest"
-        if result_limited and offset == 1
-        else ""
-    )
     return [*shown, page_footer(
         query=query,
         path=path,
@@ -50,7 +44,6 @@ def finalize_page(
         limit=limit,
         shown=len(shown),
         has_more=result_limited,
-        legacy_truncated_line=legacy,
     )]
 
 
@@ -71,20 +64,9 @@ def page_footer(
     limit: int,
     shown: int,
     has_more: bool,
-    legacy_truncated_line: str = "",
 ) -> str:
     start = max(1, int(offset or 1))
     end = start + shown - 1 if shown else start - 1
-    if start == 1 and legacy_truncated_line:
-        # Historical first-page text first (existing tests pin it verbatim),
-        # then the machine-readable page hint.
-        if not has_more:
-            return legacy_truncated_line
-        return (
-            f"{legacy_truncated_line}\n"
-            f"[grep page: results 1-{end}; next offset={end + 1}; "
-            f"{next_call_hint(query=query, path=path, offset=end + 1, limit=limit)}]"
-        )
     if has_more:
         return (
             f"[grep page: results {start}-{end}; next offset={end + 1}; "

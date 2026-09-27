@@ -33,7 +33,7 @@ from codey.runtime.core.models import (
 )
 from codey.storage.atomic_io import write_text_atomic
 from codey.toolchain.constants import MAX_REPLACEMENTS
-from codey.toolchain.line_prefix import strip_line_number_prefixes as strip_line_number_prefixes
+from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.utils.references import find_reference_hints
 from codey.utils.scan_report import render_scan_coverage
 from codey.utils.text_budget import clip_middle, prune_dependency_stack_frames
@@ -90,9 +90,8 @@ LONG_LINE_MARKER = "\n[... middle of overlong line omitted; not a complete old_s
 
 
 def retry_replacement_without_line_numbers(content: str, block: EditBlock) -> EditBlock | None:
-    # strip_line_number_prefixes is re-exported at module top for compatibility.
-    stripped_search, changed_search = strip_line_number_prefixes(block.search)
-    stripped_replace, changed_replace = strip_line_number_prefixes(block.replace)
+    stripped_search, changed_search = _strip_line_number_prefixes(block.search)
+    stripped_replace, changed_replace = _strip_line_number_prefixes(block.replace)
     if not changed_search and not changed_replace:
         return None
     candidate = EditBlock(search=stripped_search, replace=stripped_replace if changed_replace else block.replace)

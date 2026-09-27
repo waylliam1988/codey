@@ -2,6 +2,57 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 冷启动收敛：严格 Review 策略、校验函数归一、死路径删除（未发布）
+
+- Review 策略收紧（fail-closed）：`codey/reviews/review_policy.py` 仅保留
+  `web_if_available`（默认）与 `require_web`。空值/未设置走默认；非空无效值
+  直接抛 `ValueError`。删除 `requireweb`/`web_only`/`webonly` 与
+  `self`/`self_review`/`allow_self`/`self_review_allowed` 别名，删除
+  `SELF_REVIEW_ALLOWED` 第三种取值，并删除 `allow_self_review()` 未使用的
+  `writer_id` 参数；唯一调用方 `codey/app/review_service.py` 同步改为
+  `allow_self_review(review_policy)`。`tests/test_local_bootstrap.py` 新增
+  “拼错策略必须报错”用例。
+- 确定性 bug 经 TDD 修复（先红后绿）：旧实现把拼错/未知值静默映射为默认，
+  `allow_self_review()` 对未知值返回 `True`，`REVIEW_POLICY=require_weeb`
+  会静默放宽审查。临时锁定测试先复现 fail-open（9 个失败），修复后转绿；
+  永久锁定为 `test_review_policy_misspelled_must_raise`。其余触达路径复查后
+  无其他确定性正确性 bug。
+- 概念图去重：删除 `codey/knowledge/concepts.py` 第二处 `_bounded_int`
+  定义（保留第一处，行为一致）。概念图相关套件全绿。
+- Ghost 校验归一：`ghost/affinity.py` 与 `ghost/work_queue.py` 中逐字相同的
+  `_strict_payload_equal`、`_mapping_keys_within`、`_filter_values` 移入
+  `ghost/_common.py`（`strict_payload_equal`、`mapping_keys_within`、
+  `filter_values`），两边经 `_common.*` 调用，保持
+  `codey.ghost._common` 为唯一 patch 接缝。行为不变；affinity/work_queue/
+  continuity/router/hebbian 套件全绿。
+- 删除死事件路径：`codey/runtime/observe/events.py` 删除
+  `run_event_payload()` 及仅供其使用的 `_event_common()`（仓库内无生产调用；
+  UI 走 `run_event_ui_payload()`，命令行 JSON 走 `headless_runner` 投影）。
+  保留 `clip_event_text()`。`test_server.py`/`test_research.py` 改为断言真实
+  UI 输出路径。
+- 删除无生产调用的提示/上下文辅助（测试转向真实生产入口）：删除
+  `RenderedToolContract` + `render_coding_tool_contract()`（保留
+  `render_coding_tool_contract_text()`、`coding_model_tool_contract_hash()`、
+  `render_coding_system_prompt()`）；删除 `snapshot_from_rendered_sources()`
+  + `MAX_SNAPSHOT_SOURCES`（保留 `admission_from_rendered_source()`，trace
+  直接使用它）；删除 `render_context_sources()` 薄包装（保留
+  `render_context_sources_with_metadata()`）；删除 `concept_tags()`（保留
+  `normalize_concept()`，图聚合已用集合去重）。
+- 删除兼容垫片：`ManagedOutputStore.write_run_output()` 内联为
+  `write_tool_output(tool_name="run", ...)` 后删除包装；删除
+  `codey/toolchain/runtime.py` 的 `strip_line_number_prefixes` 重导出（内部
+  改为 `_strip_...`，测试改从 `codey.toolchain.line_prefix` 导入）；删除
+  `codey/toolchain/search_page.py` 历史首 belle 页截断文案
+  `legacy_truncated_line` 分支，统一为 `[grep page: ...]` 分页提示（会改变模
+  型可见文本，已同步更新 grep 测试）。
+- 刻意保留、未删除：网页正文失败回退 HTTP、非 Git 快照、provider 故障切换、
+  `0.5.9` 本地状态结构与 Ghost 旧存储读取。静态引用搜索不能证明仓库外无人
+  使用，本次删除仅限仓库内零生产调用 + 仅测试包装。
+- 验证：`ruff check` 全过，`git diff --check` 全过，未改前端 JS（本环境无
+  node，JS 检查不适用）。先过针对性套件，再跑全量
+  `python -m pytest -q -p no:cacheprovider`：`4564 passed、7 skipped、1391
+  subtests passed，355.60s`。跳过为已知 Windows/手动启用项。未发布。
+
 ## Unreleased - 修学习开关 fail-open、Auto 新会话归属、P5 诚实报告缺口（未发布）
 
 - 学习开关 fail-closed：`GhostInboxStore._read_settings_unlocked()`仅在

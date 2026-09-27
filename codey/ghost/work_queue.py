@@ -540,8 +540,8 @@ class GhostWorkQueueStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[GhostWorkItem, ...]:
-        statuses = _filter_values(status, WORK_ITEM_STATUSES)
-        kinds = _filter_values(kind, WORK_ITEM_KINDS)
+        statuses = _common.filter_values(status, WORK_ITEM_STATUSES)
+        kinds = _common.filter_values(kind, WORK_ITEM_KINDS)
         project_ref = _project_ref(project)
         session_ref = _session_ref(session_id)
         rows = []
@@ -1928,7 +1928,7 @@ def _valid_work_event(event: Mapping[str, object]) -> bool:
     if not clip_signal_text(event.get("ts"), 80):
         return False
     event_type = str(event.get("type") or "")
-    if not _mapping_keys_within(event, _WORK_EVENT_KEYS.get(event_type, ())):
+    if not _common.mapping_keys_within(event, _WORK_EVENT_KEYS.get(event_type, ())):
         return False
     if event_type == "ghost_work_snapshot":
         return _valid_work_snapshot(event)
@@ -2110,7 +2110,7 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
         return False
     if not _valid_work_precondition(precondition) or not isinstance(patch, Mapping):
         return False
-    if not _mapping_keys_within(patch, _WORK_TRANSITION_PATCH_KEYS.get(action, ())):
+    if not _common.mapping_keys_within(patch, _WORK_TRANSITION_PATCH_KEYS.get(action, ())):
         return False
     target_status = _clean_status(patch.get("status"))
     if not target_status:
@@ -2555,11 +2555,6 @@ def _clean_metadata(value: object) -> dict[str, object]:
     return out
 
 
-def _filter_values(value: object, allowed: frozenset[str]) -> set[str]:
-    values = {str(item).strip().lower() for item in str(value or "").split(",") if str(item).strip()}
-    return {item for item in values if item in allowed}
-
-
 def _project_ref(value: object) -> str:
     text = str(value or "").strip()
     if not text:
@@ -2656,7 +2651,7 @@ def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
 
 def _valid_work_item_payload(payload: object) -> bool:
     item = GhostWorkItem.from_payload(payload)
-    return item is not None and _strict_payload_equal(payload, item.to_payload())
+    return item is not None and _common.strict_payload_equal(payload, item.to_payload())
 
 
 def _valid_work_delete_payload(payload: object) -> bool:
@@ -2709,25 +2704,6 @@ def _valid_canonical_text(value: object, limit: int, *, required: bool = False) 
 
 def _valid_nonnegative_int_payload(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
-
-
-def _strict_payload_equal(value: object, expected: object) -> bool:
-    if isinstance(expected, Mapping):
-        if not isinstance(value, Mapping) or set(value.keys()) != set(expected.keys()):
-            return False
-        return all(_strict_payload_equal(value[key], expected[key]) for key in expected)
-    if isinstance(expected, list):
-        if not isinstance(value, list) or len(value) != len(expected):
-            return False
-        return all(
-            _strict_payload_equal(item, expected_item) for item, expected_item in zip(value, expected, strict=True)
-        )
-    return type(value) is type(expected) and value == expected
-
-
-def _mapping_keys_within(value: Mapping[str, object], allowed: Iterable[str]) -> bool:
-    allowed_keys = set(allowed)
-    return all(isinstance(key, str) and key in allowed_keys for key in value)
 
 
 def _meaningful_item_payload(item: GhostWorkItem) -> tuple[object, ...]:

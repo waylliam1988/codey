@@ -16,7 +16,6 @@ from codey.knowledge import (
 from codey.knowledge.concept_schema import (
     CONCEPT_EDGE_KINDS,
     clean_relations,
-    concept_tags,
     normalize_concept,
 )
 from codey.knowledge.concepts import ConceptGraphBuilder, build_unified_research_graph
@@ -576,10 +575,19 @@ class ConceptSchemaTests(unittest.TestCase):
         self.assertEqual(len(relations), 8)
         self.assertIn("kept first 8 of 12 relations", warnings)
 
-    def test_concept_tags_filters_machine_tags(self) -> None:
+    def test_normalize_concept_filters_machine_tags(self) -> None:
+        # Production entry is normalize_concept (ConceptGraph aggregates via
+        # sets); machine tags/years must fail closed to "".
         tags = ["research", "session:s1", "Helium", "helium", "copper", "2023"]
+        seen: set[str] = set()
+        out: list[str] = []
+        for tag in tags:
+            concept = normalize_concept(tag)
+            if concept and concept not in seen:
+                seen.add(concept)
+                out.append(concept)
 
-        self.assertEqual(concept_tags(tags), ["helium", "copper"])
+        self.assertEqual(out, ["helium", "copper"])
 
     def test_note_relations_roundtrip_frontmatter_and_rebuild(self) -> None:
         with tempfile.TemporaryDirectory() as td:

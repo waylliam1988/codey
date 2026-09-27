@@ -7,11 +7,9 @@ from codey.research.controller import controller_action_contract_hash, controlle
 from codey.research.protocols import JsonToolCodec as ResearchCodec
 from codey.toolchain.definition import TOOL_DEFINITIONS
 from codey.toolchain.tool_prompt import (
-    RenderedToolContract,
     coding_model_tool_contract_hash,
     model_visible_contract_hash,
     render_coding_system_prompt,
-    render_coding_tool_contract,
     render_coding_tool_contract_text,
 )
 
@@ -42,16 +40,21 @@ class ToolPromptTests(unittest.TestCase):
             model_visible_contract_hash("coding_tool_contract", text),
         )
 
-    def test_rendered_tool_contract_exposes_runtime_names_without_hashing_them(self) -> None:
-        rendered = render_coding_tool_contract()
-        self.assertIsInstance(rendered, RenderedToolContract)
-        self.assertEqual(rendered.text, render_coding_tool_contract_text())
-        self.assertEqual(rendered.digest, coding_model_tool_contract_hash())
-        self.assertIn("read_file", rendered.tool_names)
-        self.assertIn("read", rendered.runtime_names)
-        # digest must not change if we only shuffle runtime_names ordering conceptually
-        # but text stays same -> digest stays same
-        self.assertEqual(rendered.digest, model_visible_contract_hash("coding_tool_contract", rendered.text))
+    def test_production_contract_hash_covers_model_visible_text_only(self) -> None:
+        # Production entry is render_coding_system_prompt + coding_model_tool_contract_hash;
+        # digest must equal the hash of the exact model-visible contract text.
+        text = render_coding_tool_contract_text()
+        self.assertEqual(
+            coding_model_tool_contract_hash(),
+            model_visible_contract_hash("coding_tool_contract", text),
+        )
+        prompt = render_coding_system_prompt(
+            TOOL_DEFINITIONS,
+            profile_name="coding_writer",
+            allowed_tool_names={d.name for d in TOOL_DEFINITIONS},
+        )
+        self.assertIn(text.splitlines()[0], prompt)
+        self.assertIn('{"tool":"read_file"', prompt)
 
     def test_coding_writer_system_prompt_byte_parity(self) -> None:
         codec = JsonToolCodec()

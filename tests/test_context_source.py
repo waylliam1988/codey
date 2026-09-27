@@ -7,13 +7,18 @@ from codey.workspace.context_source import (
     FAILURE_POLICY_RAISE,
     ContextSource,
     render_context_source,
-    render_context_sources,
+    render_context_sources_with_metadata,
 )
+
+
+def _render_text(sources) -> str:
+    """Production entry: metadata render, text is the model-visible surface."""
+    return render_context_sources_with_metadata(sources).text
 
 
 class ContextSourceTests(unittest.TestCase):
     def test_empty_source_omits_heading_and_keeps_order(self) -> None:
-        rendered = render_context_sources((
+        rendered = _render_text((
             ContextSource(
                 key="empty",
                 loader=lambda: "  ",
@@ -69,7 +74,7 @@ class ContextSourceTests(unittest.TestCase):
         def broken() -> str:
             raise OSError("cannot list")
 
-        rendered = render_context_sources((
+        rendered = _render_text((
             ContextSource(
                 key="initial_listing",
                 loader=broken,

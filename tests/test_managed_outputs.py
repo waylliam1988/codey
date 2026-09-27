@@ -20,18 +20,20 @@ from codey.storage.managed_outputs import (
 
 
 class ManagedOutputStoreTests(unittest.TestCase):
-    def test_write_run_output_creates_text_and_metadata(self) -> None:
+    def test_write_tool_output_creates_text_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = ManagedOutputStore(td)
 
-            ref = store.write_run_output(
+            ref = store.write_tool_output(
                 session_id="session-1",
                 run_id="run-1",
                 tool_id="2:0",
                 permission_profile="coding_writer",
+                tool_name="run",
+                display_ref="python -m pytest -q",
+                text="full output\n",
                 command="python -m pytest -q",
                 cwd=".",
-                text="full output\n",
             )
 
             self.assertIsNotNone(ref)
@@ -68,14 +70,16 @@ class ManagedOutputStoreTests(unittest.TestCase):
         ):
             store = ManagedOutputStore(td)
 
-            ref = store.write_run_output(
+            ref = store.write_tool_output(
                 session_id="session",
                 run_id="run",
                 tool_id="",
                 permission_profile="coding_writer",
+                tool_name="run",
+                display_ref="python large.py",
+                text="HEAD" + ("x" * 100) + "TAIL",
                 command="python large.py",
                 cwd=".",
-                text="HEAD" + ("x" * 100) + "TAIL",
             )
 
             self.assertIsNotNone(ref)
@@ -95,14 +99,16 @@ class ManagedOutputStoreTests(unittest.TestCase):
             40,
         ):
             store = ManagedOutputStore(td)
-            ref = store.write_run_output(
+            ref = store.write_tool_output(
                 session_id="session",
                 run_id="run",
                 tool_id="",
                 permission_profile="coding_writer",
+                tool_name="run",
+                display_ref="python large.py",
+                text=full,
                 command="python large.py",
                 cwd=".",
-                text=full,
             )
 
             assert ref is not None
@@ -137,26 +143,30 @@ class ManagedOutputStoreTests(unittest.TestCase):
             store = ManagedOutputStore(td)
             for index in range(MAX_MANAGED_OUTPUTS_PER_RUN):
                 self.assertIsNotNone(
-                    store.write_run_output(
+                    store.write_tool_output(
                         session_id="session",
                         run_id="run",
                         tool_id=str(index),
                         permission_profile="coding_writer",
+                        tool_name="run",
+                        display_ref="python test.py",
+                        text=f"output {index}",
                         command="python test.py",
                         cwd=".",
-                        text=f"output {index}",
                     )
                 )
 
             self.assertIsNone(
-                store.write_run_output(
+                store.write_tool_output(
                     session_id="session",
                     run_id="run",
                     tool_id="overflow",
                     permission_profile="coding_writer",
+                    tool_name="run",
+                    display_ref="python test.py",
+                    text="overflow",
                     command="python test.py",
                     cwd=".",
-                    text="overflow",
                 )
             )
 
@@ -164,14 +174,16 @@ class ManagedOutputStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = ManagedOutputStore(td)
 
-            ref = store.write_run_output(
+            ref = store.write_tool_output(
                 session_id="session",
                 run_id="run",
                 tool_id="oversized",
                 permission_profile="coding_writer",
+                tool_name="run",
+                display_ref="python huge.py",
+                text="x" * (MAX_MANAGED_OUTPUT_BYTES + 1),
                 command="python huge.py",
                 cwd=".",
-                text="x" * (MAX_MANAGED_OUTPUT_BYTES + 1),
             )
 
             self.assertIsNone(ref)
@@ -180,14 +192,16 @@ class ManagedOutputStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = ManagedOutputStore(td)
 
-            ref = store.write_run_output(
+            ref = store.write_tool_output(
                 session_id="session",
                 run_id="run",
                 tool_id="missing-profile",
                 permission_profile="",
+                tool_name="run",
+                display_ref="python test.py",
+                text="output",
                 command="python test.py",
                 cwd=".",
-                text="output",
             )
 
             self.assertIsNone(ref)
@@ -199,14 +213,16 @@ class ManagedOutputStoreTests(unittest.TestCase):
             store = ManagedOutputStore(state_home)
 
             self.assertIsNone(
-                store.write_run_output(
+                store.write_tool_output(
                     session_id="session",
                     run_id="run",
                     tool_id="",
                     permission_profile="coding_writer",
+                    tool_name="run",
+                    display_ref="python test.py",
+                    text="output",
                     command="python test.py",
                     cwd=".",
-                    text="output",
                 )
             )
 

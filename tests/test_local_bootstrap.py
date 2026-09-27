@@ -508,11 +508,39 @@ def test_review_policy_gating(monkeypatch) -> None:
     monkeypatch.delenv("REVIEW_POLICY", raising=False)
     assert load_review_policy() == "web_if_available"
     assert allow_self_review("web_if_available") is True
+    assert allow_self_review("") is True
     monkeypatch.setenv("REVIEW_POLICY", "require_web")
     assert load_review_policy() == "require_web"
-    assert allow_self_review("require_web", writer_id="local") is False
-    monkeypatch.setenv("REVIEW_POLICY", "self_review_allowed")
-    assert allow_self_review("self_review_allowed") is True
+    assert allow_self_review("require_web") is False
+    monkeypatch.setenv("REVIEW_POLICY", "  REQUIRE_WEB  ")
+    assert load_review_policy() == "require_web"
+    monkeypatch.delenv("REVIEW_POLICY", raising=False)
+
+
+def test_review_policy_misspelled_must_raise(monkeypatch) -> None:
+    import pytest
+
+    from codey.reviews.review_policy import (
+        allow_self_review,
+        load_review_policy,
+    )
+
+    for bad in (
+        "require_weeb",
+        "requireweb",
+        "web_only",
+        "webonly",
+        "self",
+        "self_review",
+        "allow_self",
+        "self_review_allowed",
+        "sometimes",
+    ):
+        monkeypatch.setenv("REVIEW_POLICY", bad)
+        with pytest.raises(ValueError):
+            load_review_policy()
+        with pytest.raises(ValueError):
+            allow_self_review(bad)
     monkeypatch.delenv("REVIEW_POLICY", raising=False)
 
 

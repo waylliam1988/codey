@@ -99,14 +99,16 @@ class CancellationPropagationTests(unittest.TestCase):
             with mock.patch.object(
                 store, "_run_dir", side_effect=cancellation.TaskCancelled("stop")
             ), self.assertRaises(cancellation.TaskCancelled):
-                store.write_run_output(
+                store.write_tool_output(
                     session_id="s",
                     run_id="r",
                     tool_id="t",
                     permission_profile="p",
+                    tool_name="run",
+                    display_ref="c",
+                    text="x",
                     command="c",
                     cwd=".",
-                    text="x",
                 )
 
 
@@ -292,7 +294,7 @@ class ManagedOutputFailureTests(unittest.TestCase):
             stderr_bytes=0,
             capture_truncated=False,
         )
-        store = SimpleNamespace(write_run_output=mock.Mock(return_value=None))
+        store = SimpleNamespace(write_tool_output=mock.Mock(return_value=None))
         with (
             mock.patch(
                 "codey.storage.managed_outputs.tool_runtime.run_command_raw",

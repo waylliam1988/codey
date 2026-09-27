@@ -2,6 +2,69 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start convergence: strict review policy, deduped validators, dead-path removal (no release)
+
+- Review policy strict (fail-closed): `codey/reviews/review_policy.py` now
+  keeps only `web_if_available` (default) and `require_web`. Empty/unset uses
+  the default; any non-empty invalid value raises an explicit `ValueError`.
+  Removed the `requireweb`/`web_only`/`webonly` and
+  `self`/`self_review`/`allow_self`/`self_review_allowed` aliases, removed
+  `SELF_REVIEW_ALLOWED`/`REVIEW_POLICIES` third value, and removed the unused
+  `writer_id` parameter from `allow_self_review()`. Updated the single caller
+  `codey/app/review_service.py` (`allow_self_review(review_policy)`).
+  `tests/test_local_bootstrap.py` now pins "misspelled policy must raise".
+- Deterministic bug fixed via TDD (red-first): the old loader silently mapped
+  typos/unknown values to the default and `allow_self_review()` returned
+  `True` for unknown values, so `REVIEW_POLICY=require_weeb` silently widened
+  review. A temporary lock test reproduced the fail-open (9 failures), then the
+  fix turned it green; the permanent pin lives in
+  `test_review_policy_misspelled_must_raise`. Other touched paths were
+  re-checked and have no other deterministic correctness bug.
+- Concept Graph dedup: removed the second `_bounded_int` definition in
+  `codey/knowledge/concepts.py` (kept the first; behavior identical).
+  Concept Graph suites green.
+- Ghost validators unified: the byte-identical `_strict_payload_equal`,
+  `_mapping_keys_within`, `_filter_values` from `ghost/affinity.py` and
+  `ghost/work_queue.py` now live once in `ghost/_common.py`
+  (`strict_payload_equal`, `mapping_keys_within`, `filter_values`); both stores
+  call them via `_common.*` so `codey.ghost._common` stays the single patch
+  seam. No behavior change. `test_ghost_affinity` + `test_ghost_work_queue` +
+  continuity/router/hebbian suites green.
+- Dead event path removed: deleted `run_event_payload()` and the
+  events-local `_event_common()` from `codey/runtime/observe/events.py`
+  (no production callers; UI uses `run_event_ui_payload()`, CLI JSON uses
+  `headless_runner` projection). Kept `clip_event_text()`. Tests in
+  `test_server.py`/`test_research.py` now assert the real UI payload path.
+- Dead prompt/context helpers removed (no production callers; tests moved to
+  the real production entry): deleted `RenderedToolContract` +
+  `render_coding_tool_contract()` (kept `render_coding_tool_contract_text()`,
+  `coding_model_tool_contract_hash()`, `render_coding_system_prompt()`),
+  deleted `snapshot_from_rendered_sources()` + `MAX_SNAPSHOT_SOURCES`
+  (kept `admission_from_rendered_source()`; trace uses it directly), deleted
+  `render_context_sources()` wrapper (kept
+  `render_context_sources_with_metadata()`), deleted `concept_tags()` (kept
+  `normalize_concept()`; graph aggregation already dedups via sets).
+- Compatibility shims removed: inlined `ManagedOutputStore.write_run_output()`
+  into `write_tool_output(tool_name="run", ...)` and deleted the wrapper;
+  removed the `strip_line_number_prefixes` re-export from
+  `codey/toolchain/runtime.py` (internal use is now `_strip_...`; tests import
+  from `codey.toolchain.line_prefix`); removed the historical first-page
+  `legacy_truncated_line` branch from `codey/toolchain/search_page.py` so all
+  pages share the single `[grep page: ...]` footer (model-visible text change,
+  pinned by updated grep tests).
+- Not removed (kept on purpose): web-text HTTP fallback, non-git snapshots,
+  provider failover, `0.5.9` local-state shape, and Ghost old-storage reads.
+  Static reference search cannot prove no out-of-repo Python callers, so the
+  removed APIs above are limited to paths with zero in-repo production callers
+  plus test-only wrappers.
+- Verification: `ruff check` clean, `git diff --check` clean, no frontend JS
+  changed (node unavailable, JS check not applicable). Targeted suites green
+  (review/bootstrap, concept/knowledge, ghost family, events/UI payloads,
+  tool-prompt/context, managed-outputs, search pagination), then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4564 passed, 7 skipped, 1391 subtests passed in 355.60s`. Skips are the
+  known Windows/opt-in family. No release was made.
+
 ## Unreleased - Fix learning-switch fail-open, Auto fresh-window ownership, P5 honest-report gap (no release)
 
 - Learning switch fail-closed: `GhostInboxStore._read_settings_unlocked()`

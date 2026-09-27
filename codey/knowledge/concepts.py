@@ -676,14 +676,6 @@ def _append_visible_note_tags(
         )
 
 
-def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int:
-    try:
-        parsed = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        parsed = default
-    return max(minimum, min(parsed, maximum))
-
-
 def _trim_nodes(
     nodes: list[GraphNode],
     limit: int,

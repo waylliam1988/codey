@@ -768,8 +768,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = tool_runtime.search_files(root, ".", "target", max_results=2)
 
         self.assertTrue(outcome.truncated)
-        self.assertIn("truncated after 2 matches", outcome.model_text)
-        self.assertIn("narrow the query", outcome.model_text)
+        self.assertIn("[grep page: results 1-2; next offset=3", outcome.model_text)
+        self.assertIn("next call:", outcome.model_text)
 
     def test_search_reports_non_utf8_files_as_incomplete(self) -> None:
         marker = "RARE_NON_UTF8_SEARCH_MARKER"

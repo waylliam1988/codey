@@ -5,7 +5,6 @@ from types import SimpleNamespace
 
 from codey.workspace.context_epoch import (
     EPOCH_REF_PREFIX,
-    MAX_SNAPSHOT_SOURCES,
     PROVIDER_TURN_ADMISSION,
     PROVIDER_TURN_BOUNDARY,
     SOURCE_REF_PREFIX,
@@ -15,7 +14,6 @@ from codey.workspace.context_epoch import (
     admission_from_rendered_source,
     context_epoch_id,
     context_source_ref,
-    snapshot_from_rendered_sources,
     valid_context_epoch_ref,
 )
 
@@ -148,6 +146,8 @@ class SnapshotProjectionTests(unittest.TestCase):
         self.assertIsNone(admission_from_rendered_source(None))
 
     def test_admission_projection_is_the_single_shared_vocabulary(self) -> None:
+        # Production trace (runs/trace.py) consumes admission_from_rendered_source
+        # directly; the snapshot is just a thin ContextSnapshot assembly over it.
         source = _admission_input(
             "research_brief",
             "brief body",
@@ -156,14 +156,16 @@ class SnapshotProjectionTests(unittest.TestCase):
         )
 
         direct = admission_from_rendered_source(source)
-        via_snapshot = snapshot_from_rendered_sources(
-            (source,),
+        self.assertIsNotNone(direct)
+        assert direct is not None
+        snapshot = ContextSnapshot(
             epoch_id="ctx_epoch:" + "2" * 16,
-        ).admissions[0]
+            admissions=(direct,),
+        )
 
-        self.assertEqual(direct, via_snapshot)
+        self.assertEqual(snapshot.admissions[0], direct)
 
-    def test_snapshot_from_rendered_sources_projects_admissions(self) -> None:
+    def test_admission_projection_projects_expected_fields(self) -> None:
         sources = (
             _admission_input(
                 "project_map",
@@ -174,10 +176,19 @@ class SnapshotProjectionTests(unittest.TestCase):
             _admission_input("empty", ""),
         )
 
-        snapshot = snapshot_from_rendered_sources(
-            sources,
+        admissions = tuple(
+            item
+            for item in (
+                admission_from_rendered_source(
+                    source, admission_reason=PROVIDER_TURN_ADMISSION
+                )
+                for source in sources
+            )
+            if item is not None
+        )
+        snapshot = ContextSnapshot(
             epoch_id=context_epoch_id("outbound prompt"),
-            admission_reason=PROVIDER_TURN_ADMISSION,
+            admissions=admissions,
         )
 
         self.assertIsInstance(snapshot, ContextSnapshot)
@@ -192,35 +203,38 @@ class SnapshotProjectionTests(unittest.TestCase):
         self.assertTrue(admission.digest.startswith("sha256:"))
         self.assertNotIn("alpha body", repr(snapshot.to_payload()))
 
-    def test_snapshot_skips_empty_sources_and_caps_size(self) -> None:
+    def test_admission_projection_skips_empty_sources(self) -> None:
         sources = [
             _admission_input(
                 "" if index == 5 else f"source_{index}",
                 "" if index == 3 else f"body {index}",
             )
-            for index in range(MAX_SNAPSHOT_SOURCES + 8)
+            for index in range(12)
         ]
 
-        snapshot = snapshot_from_rendered_sources(
-            sources,
-            epoch_id="ctx_epoch:" + "0" * 16,
+        admissions = tuple(
+            item
+            for item in (admission_from_rendered_source(source) for source in sources)
+            if item is not None
         )
 
-        self.assertLessEqual(len(snapshot.admissions), MAX_SNAPSHOT_SOURCES)
-        self.assertTrue(all(item.source_key != "source_3" for item in snapshot.admissions))
+        self.assertTrue(all(item.source_key != "source_3" for item in admissions))
         self.assertTrue(
-            all(item.source_ref != SOURCE_REF_PREFIX for item in snapshot.admissions)
+            all(item.source_ref != SOURCE_REF_PREFIX for item in admissions)
         )
+        # index 3 has empty body, index 5 has empty key: both fail closed.
+        self.assertEqual(len(admissions), 10)
 
-    def test_snapshot_falls_back_to_default_admission_reason(self) -> None:
-        snapshot = snapshot_from_rendered_sources(
-            (_admission_input("work_checkpoint", "checkpoint body", admission_reason=""),),
-            epoch_id="ctx_epoch:" + "1" * 16,
+    def test_admission_falls_back_to_default_admission_reason(self) -> None:
+        admission = admission_from_rendered_source(
+            _admission_input("work_checkpoint", "checkpoint body", admission_reason=""),
             admission_reason=PROVIDER_TURN_ADMISSION,
         )
 
+        self.assertIsNotNone(admission)
+        assert admission is not None
         self.assertEqual(
-            snapshot.admissions[0].admission_reason,
+            admission.admission_reason,
             PROVIDER_TURN_ADMISSION,
         )
 

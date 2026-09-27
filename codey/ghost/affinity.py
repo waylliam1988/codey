@@ -553,8 +553,8 @@ class GhostAffinityStore:
             raise
         except Exception:
             return ()
-        kinds = _filter_values(kind, AFFINITY_NODE_KINDS)
-        statuses = _filter_values(status, AFFINITY_NODE_STATUSES)
+        kinds = _common.filter_values(kind, AFFINITY_NODE_KINDS)
+        statuses = _common.filter_values(status, AFFINITY_NODE_STATUSES)
         normalized_scope = _clean_scope(scope)
         rows = []
         for node in nodes:
@@ -608,8 +608,8 @@ class GhostAffinityStore:
             raise
         except Exception:
             return ()
-        relations = _filter_values(relation, AFFINITY_EDGE_RELATIONS)
-        statuses = _filter_values(status, AFFINITY_EDGE_STATUSES)
+        relations = _common.filter_values(relation, AFFINITY_EDGE_RELATIONS)
+        statuses = _common.filter_values(status, AFFINITY_EDGE_STATUSES)
         normalized_scope = _clean_scope(scope)
         rows = []
         for edge in edges:
@@ -2060,7 +2060,7 @@ def _valid_affinity_event(event: Mapping[str, object]) -> bool:
     if not clip_signal_text(event.get("ts"), 80):
         return False
     event_type = str(event.get("type") or "")
-    if not _mapping_keys_within(event, _AFFINITY_EVENT_KEYS.get(event_type, ())):
+    if not _common.mapping_keys_within(event, _AFFINITY_EVENT_KEYS.get(event_type, ())):
         return False
     if event_type == "ghost_affinity_snapshot":
         return _valid_affinity_snapshot(event)
@@ -2535,12 +2535,12 @@ def _bounded_warnings(values: Iterable[object]) -> tuple[str, ...]:
 
 def _valid_affinity_node_payload(payload: object) -> bool:
     node = AffinityNode.from_payload(payload)
-    return node is not None and _strict_payload_equal(payload, node.to_payload())
+    return node is not None and _common.strict_payload_equal(payload, node.to_payload())
 
 
 def _valid_affinity_edge_payload(payload: object) -> bool:
     edge = AffinityEdge.from_payload(payload)
-    return edge is not None and _strict_payload_equal(payload, edge.to_payload())
+    return edge is not None and _common.strict_payload_equal(payload, edge.to_payload())
 
 
 def _valid_node_spec_payload(payload: object) -> bool:
@@ -2548,8 +2548,8 @@ def _valid_node_spec_payload(payload: object) -> bool:
     return (
         spec is not None
         and isinstance(payload, Mapping)
-        and _mapping_keys_within(payload, _NODE_SPEC_KEYS)
-        and _strict_payload_equal(payload, _node_spec_payload(spec))
+        and _common.mapping_keys_within(payload, _NODE_SPEC_KEYS)
+        and _common.strict_payload_equal(payload, _node_spec_payload(spec))
     )
 
 
@@ -2558,8 +2558,8 @@ def _valid_edge_spec_payload(payload: object) -> bool:
     return (
         spec is not None
         and isinstance(payload, Mapping)
-        and _mapping_keys_within(payload, _EDGE_SPEC_KEYS)
-        and _strict_payload_equal(payload, _edge_spec_payload(spec))
+        and _common.mapping_keys_within(payload, _EDGE_SPEC_KEYS)
+        and _common.strict_payload_equal(payload, _edge_spec_payload(spec))
     )
 
 
@@ -2584,7 +2584,7 @@ def _valid_scope_deleted_payload(payload: object) -> bool:
 
 
 def _valid_decay_payload(payload: object) -> bool:
-    if not isinstance(payload, Mapping) or not _mapping_keys_within(payload, _DECAY_PAYLOAD_KEYS):
+    if not isinstance(payload, Mapping) or not _common.mapping_keys_within(payload, _DECAY_PAYLOAD_KEYS):
         return False
     if set(payload.keys()) != _DECAY_PAYLOAD_KEYS:
         return False
@@ -2593,30 +2593,6 @@ def _valid_decay_payload(payload: object) -> bool:
 
 def _valid_nonnegative_int_payload(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
-
-
-def _strict_payload_equal(value: object, expected: object) -> bool:
-    if isinstance(expected, Mapping):
-        if not isinstance(value, Mapping) or set(value.keys()) != set(expected.keys()):
-            return False
-        return all(_strict_payload_equal(value[key], expected[key]) for key in expected)
-    if isinstance(expected, list):
-        if not isinstance(value, list) or len(value) != len(expected):
-            return False
-        return all(
-            _strict_payload_equal(item, expected_item) for item, expected_item in zip(value, expected, strict=True)
-        )
-    return type(value) is type(expected) and value == expected
-
-
-def _mapping_keys_within(value: Mapping[str, object], allowed: Iterable[str]) -> bool:
-    allowed_keys = set(allowed)
-    return all(isinstance(key, str) and key in allowed_keys for key in value)
-
-
-def _filter_values(value: object, allowed: frozenset[str]) -> set[str]:
-    values = {str(item).strip().lower() for item in str(value or "").split(",") if str(item).strip()}
-    return {item for item in values if item in allowed}
 
 
 def _field(value: Any, name: str) -> object:

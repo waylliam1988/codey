@@ -7,11 +7,11 @@ from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.providers import error_classification as errors
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.file_mutation_queue import group_tool_calls_for_execution
+from codey.toolchain.line_prefix import strip_line_number_prefixes
 from codey.toolchain.runtime import (
     EditBlock,
     edit_file,
     retry_replacement_without_line_numbers,
-    strip_line_number_prefixes,
 )
 
 

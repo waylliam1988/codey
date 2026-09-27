@@ -18,14 +18,12 @@ closed: they project to nothing instead of inventing refs.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 EPOCH_REF_PREFIX = "ctx_epoch:"
 SOURCE_REF_PREFIX = "context_source:"
 PROVIDER_TURN_BOUNDARY = "provider_send"
 PROVIDER_TURN_ADMISSION = "provider_turn_boundary"
-MAX_SNAPSHOT_SOURCES = 64
 MAX_ADMISSION_CHARS = 1_000_000
 
 
@@ -169,30 +167,6 @@ def admission_from_rendered_source(
         chars=chars,
         truncated=truncated,
         digest="sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest(),
-    )
-
-
-def snapshot_from_rendered_sources(
-    rendered_sources: Iterable[object],
-    *,
-    epoch_id: str,
-    admission_reason: str = "",
-) -> ContextSnapshot:
-    """Project rendered context sources into a bounded admission snapshot."""
-    admissions: list[ContextAdmission] = []
-    for source in rendered_sources:
-        admission = admission_from_rendered_source(
-            source,
-            admission_reason=admission_reason,
-        )
-        if admission is None:
-            continue
-        admissions.append(admission)
-        if len(admissions) >= MAX_SNAPSHOT_SOURCES:
-            break
-    return ContextSnapshot(
-        epoch_id=str(epoch_id or ""),
-        admissions=tuple(admissions),
     )
 
 

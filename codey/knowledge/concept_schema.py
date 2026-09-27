@@ -81,15 +81,3 @@ def clean_relations(
         warnings.append(f"kept first {limit} of {len(relations)} relations")
         relations = relations[:limit]
     return relations, warnings
-
-
-def concept_tags(tags: object) -> list[str]:
-    """Normalized concept candidates from note tags (machine tags removed)."""
-    out: list[str] = []
-    seen: set[str] = set()
-    for tag in tags if isinstance(tags, (list, tuple)) else []:
-        concept = normalize_concept(tag)
-        if concept and concept not in seen:
-            seen.add(concept)
-            out.append(concept)
-    return out

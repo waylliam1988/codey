@@ -17,7 +17,6 @@ from codey.toolchain.definition import definitions_for_tool_names
 from codey.toolchain.tool_prompt import coding_model_tool_contract_hash as model_tool_contract_hash
 from codey.workspace.context_source import (
     ContextSource,
-    render_context_sources,
     render_context_sources_with_metadata,
 )
 
@@ -1164,10 +1163,8 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
             ),
         )
 
-        baseline = render_context_sources(sources)
         rendered = render_context_sources_with_metadata(sources)
 
-        self.assertEqual(rendered.text, baseline)
         self.assertEqual(rendered.text, "First:\nalpha\n\nbeta")
         self.assertEqual([item.key for item in rendered.sources], ["first", "second"])
         self.assertEqual(rendered.sources[0].budget, 100)

@@ -1,5 +1,82 @@
 # Codey Test Report
 
+## Cold-start convergence batch: strict review policy + dedup + dead-path removal (2026-09-27)
+
+Scope (production, no release):
+
+```text
+codey/reviews/review_policy.py        (strict two-value policy; empty->default; non-empty invalid raises; aliases + SELF_REVIEW_ALLOWED + writer_id removed)
+codey/app/review_service.py           (allow_self_review(review_policy) call updated)
+codey/knowledge/concepts.py           (removed second _bounded_int; kept first)
+codey/ghost/_common.py                (new single source: strict_payload_equal/mapping_keys_within/filter_values)
+codey/ghost/affinity.py               (deleted 3 local validators; calls via _common.*)
+codey/ghost/work_queue.py             (deleted 3 local validators; calls via _common.*)
+codey/runtime/observe/events.py       (deleted run_event_payload + _event_common; kept clip_event_text + run_event_ui_payload)
+codey/toolchain/tool_prompt.py        (deleted RenderedToolContract + render_coding_tool_contract; kept text/hash/system_prompt)
+codey/workspace/context_epoch.py      (deleted snapshot_from_rendered_sources + MAX_SNAPSHOT_SOURCES; kept admission_from_rendered_source)
+codey/workspace/context_source.py     (deleted render_context_sources wrapper; kept render_context_sources_with_metadata)
+codey/knowledge/concept_schema.py     (deleted concept_tags; kept normalize_concept)
+codey/storage/managed_outputs.py      (deleted write_run_output; inlined write_tool_output(tool_name="run", ...))
+codey/toolchain/runtime.py            (removed strip_line_number_prefixes re-export; internal _strip_...)
+codey/toolchain/search_page.py        (removed legacy_truncated_line branch; unified [grep page: ...] footer)
+tests/test_local_bootstrap.py         (updated gating + new test_review_policy_misspelled_must_raise)
+tests/test_server.py + test_research.py (run_event_payload -> run_event_ui_payload, the real UI path)
+tests/test_tool_prompt.py             (deleted contract test -> production hash/system_prompt test)
+tests/test_context_epoch.py           (snapshot helper -> admission + ContextSnapshot assembly)
+tests/test_context_source.py + test_run_trace.py (wrapper -> with_metadata().text)
+tests/test_knowledge.py               (concept_tags -> normalize_concept aggregation)
+tests/test_managed_outputs.py + test_hardening_batch2.py (write_run_output -> write_tool_output)
+tests/test_noab_hardening.py          (runtime re-export -> line_prefix import)
+tests/test_tool_runtime.py + test_abab_cycle.py (legacy grep text -> unified [grep page ...] footer)
+```
+
+Repro (all deterministic, temp dirs / synthetic rows, no live model):
+
+- Review fail-open (TDD red-first): `REVIEW_POLICY=require_weeb` loaded as
+  `web_if_available` and `allow_self_review("require_weeb")` returned `True`;
+  legacy aliases (`requireweb`/`web_only`/`webonly`/`self`/`self_review`/
+  `allow_self`/`self_review_allowed`) all silently accepted. A temporary lock
+  test (`tests/test_review_policy_strict_lock.py`, 4 tests) failed 9 times on
+  old code, then passed after the fix; it was removed after the permanent pin
+  `test_review_policy_misspelled_must_raise` landed in
+  `tests/test_local_bootstrap.py`. Empty/unset still defaults to
+  `web_if_available`; valid values still work.
+- Dedup parity: second `_bounded_int` was byte-identical to the first (kept
+  first, deleted second); Ghost trio was byte-identical in both stores (moved
+  verbatim to `_common`, call sites switched to `_common.*`).
+- Dead-path proof: in-repo grep shows zero production callers for
+  `run_event_payload`, `render_coding_tool_contract`/`RenderedToolContract`,
+  `snapshot_from_rendered_sources`, `render_context_sources` (thin wrapper),
+  `concept_tags`, `write_run_output` (except its own in-file prod call site,
+  now inlined), `runtime.strip_line_number_prefixes` re-export, and
+  `legacy_truncated_line`. Static search cannot prove no out-of-repo Python
+  callers, so removal is scoped to zero-in-repo-prod-caller paths; web HTTP
+  fallback, non-git snapshots, provider failover, `0.5.9` state, and Ghost old
+  reads were intentionally kept.
+- Search footer change: first-page grep truncation no longer emits the
+  historical `... truncated after N matches; narrow the query...` line; all
+  pages now emit only `[grep page: results a-b; next offset=c; next call: ...]`
+  (or `end of matches` / `no matches at this offset`). Audit-search and
+  `find_references` truncation texts are separate paths and unchanged.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check` clean on the repo,
+  `git diff --check` clean, no frontend JS changed (node unavailable, JS
+  check not applicable); targeted suites green
+  (`test_local_bootstrap -k review` 7 + concept/knowledge 60 +
+  ghost affinity/work_queue 113 then family 189 +
+  events/UI payload subsets + `test_tool_prompt`/`test_context_epoch`/
+  `test_context_source`/`test_run_trace`/`test_knowledge`/
+  `test_managed_outputs`/`test_noab_hardening`/`test_tool_runtime`/
+  `test_abab_cycle`/`test_hardening_batch2` combined 294).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4564 passed, 7 skipped, 1391 subtests passed in 355.60s (0:05:55)`.
+  Skips are the known Windows/opt-in family (no real-browser runs, so green
+  pytest still does not prove interactive or local-model latency). No live
+  kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Review fix batch: learning-switch / auto-window / P5-honesty (2026-09-27)
 
 Scope (production, no release):
