@@ -41,8 +41,8 @@ def run_chat_mode(
         if frame.handoff
         else request.task
     )
-    directive = ghost_directive(session_id=request.session_id)
-    continuity = ghost_continuity(session_id=request.session_id)
+    directive = ghost_directive(session_id=request.session_id, project=request.project or "")
+    continuity = ghost_continuity(session_id=request.session_id, project=request.project or "")
     record_local_context_trace(frame.trace, directive, continuity)
     ghost_context = join_local_contexts(directive.text, continuity.text)
     prompt = prepend_ghost_directive(prompt, ghost_context)
@@ -147,4 +147,3 @@ def run_chat_mode(
 
 
 __all__ = ["run_chat_mode"]
-

@@ -1,4 +1,4 @@
-"""Ghost work-claim, auto-route, and task-policy helpers.
+"""Ghost work-claim and task-policy helpers.
 """
 
 from __future__ import annotations

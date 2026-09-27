@@ -2,6 +2,24 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Ghost 底座审查与 UI 修复（未发布）
+
+- 核对当前 Ghost 接线与 0.5.9 发布提交。保留已提交经历检索、手动候选审核、
+  Hebbian/Directive、affinity、continuity、work queue、sleep。0.5.9 在符合条件的
+  `auto` 任务前确实调用旧路由器，已完成的 chat 回合后也调用学习环；现行行为有意
+  不同，避免这两次额外模型调用。
+- 确定性问题均先写失败测试：被拒绝的偏好可以重新提交；Hebbian 激活失败会如实
+  报错并在 Needs attention 提供重试；节点读取失败不会误报待修复行；操作失败后
+  面板会刷新；项目作用域的已确认偏好会进入普通 chat 提示词。行菜单现可用键盘访问。
+- 删除只服务于旧抽取器的信号解析器和结果封装，inbox 直接接收显式
+  `GhostSignal`；同步调整现行测试与手工脚本、清理过时 router/extractor 文案，
+  未删除 Ghost 存储。
+- 唯一一次全量前：Ghost 邻域测试 **626 passed、1 skipped、474 subtests passed**；
+  `ruff check .`、`git diff --check`、JS 语法、Python 编译及 **4589 项收集**通过。
+  全量 `python -m pytest -q -p no:cacheprovider`：**4558 passed、31 skipped、
+  1441 subtests passed，337.66s（0:05:37）**。使用临时 `USERPROFILE` 写入测试
+  状态。未发布。
+
 ## Unreleased - Ghost 显式偏好入口与本地上下文修复（未发布）
 
 - 保留 Ghost 的经历检索、inbox、Hebbian、Directive、affinity、continuity、sleep

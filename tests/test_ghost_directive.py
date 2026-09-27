@@ -13,7 +13,7 @@ from codey.ghost.directive import (
 )
 from codey.ghost.hebbian import GhostNode
 from codey.ghost.inbox import GhostInboxStore
-from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+from codey.ghost.schema import GhostSignal
 from codey.ghost.typed_fields import is_renderable_typed_field, render_typed_field
 
 FRESH_TS = "2999-01-01T00:00:00Z"
@@ -644,7 +644,7 @@ class GhostDirectiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             created = inbox.ingest_signals(
-                GhostSignalParseResult(signals=(_signal(),), ok=True, provider_id="test"),
+                (_signal(),),
                 session_id="s1",
                 run_id="r1",
                 project=td,
@@ -667,7 +667,7 @@ class GhostDirectiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             created = inbox.ingest_signals(
-                GhostSignalParseResult(signals=(_signal(),), ok=True, provider_id="test"),
+                (_signal(),),
                 session_id="s1",
                 run_id="r1",
                 user_text="以后先给结论",

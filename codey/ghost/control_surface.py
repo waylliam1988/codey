@@ -9,13 +9,12 @@ from pathlib import Path
 from codey.ghost import _common
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityItem, GhostContinuityStore
-from codey.ghost.hebbian import GhostHebbianStore, GhostNode
+from codey.ghost.hebbian import GhostHebbianStore, GhostNode, node_id_for_candidate
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.observations import MAX_OBSERVATIONS, GhostObservationStore
 from codey.ghost.schema import (
     MAX_SIGNAL_QUOTE_CHARS,
     GhostSignal,
-    GhostSignalParseResult,
     clip_signal_text,
     contains_sensitive_signal_text,
     quote_is_grounded,
@@ -87,14 +86,22 @@ class GhostControlSurface:
             warnings,
             "candidate_read_failed",
         )
-        active_nodes = _safe_rows(
-            lambda: _applicable_nodes(
-                self.hebbian,
-                session_id=session_ref,
-                project=project_ref,
-            ),
+        all_nodes = _safe_rows(
+            lambda: self.hebbian.list_nodes() if self.hebbian is not None else (),
             warnings,
             "active_context_read_failed",
+        )
+        active_nodes = _applicable_nodes(all_nodes, session_id=session_ref, project=project_ref)
+        accepted = _safe_rows(
+            lambda: self.inbox.applicable_candidates(
+                status="accepted", session_id=session_ref, project=project_ref,
+            ) if self.hebbian is not None else (),
+            warnings,
+            "candidate_read_failed",
+        )
+        repair = (
+            tuple(candidate for candidate in accepted if _candidate_needs_repair(candidate, all_nodes))
+            if "active_context_read_failed" not in warnings else ()
         )
         continuity_items = _safe_rows(
             lambda: self.continuity.list_items(session_id=session_ref, project=project_ref)
@@ -148,6 +155,7 @@ class GhostControlSurface:
             },
             "counts": {
                 "review": len(pending),
+                "repair": len(repair),
                 "active": len(active_nodes),
                 "continuity": len(continuity_items),
                 "tasks": len(work_items),
@@ -156,6 +164,7 @@ class GhostControlSurface:
             },
             "context": [_continuity_payload(item) for item in continuity_items[:MAX_CONTEXT_ITEMS]],
             "review": [_candidate_payload(row) for row in pending[:MAX_SUMMARY_ITEMS]],
+            "repair": [_candidate_payload(row) for row in repair[:MAX_SUMMARY_ITEMS]],
             "active": [_node_payload(node, project=project_ref, session_id=session_ref) for node in active_nodes[:MAX_SUMMARY_ITEMS]],
             "tasks": [_work_item_payload(item) for item in work_items[:MAX_SUMMARY_ITEMS]],
             "observations": [_observation_payload(row) for row in observation_rows[:MAX_SUMMARY_ITEMS]],
@@ -267,6 +276,10 @@ class GhostControlSurface:
                 "applied": result.applied,
                 "reason": _safe_text(result.reason, 80),
             }
+            if not result.applied and result.reason != "duplicate_evidence":
+                payload["ok"] = False
+                payload["error"] = "preference could not be activated; retry from Needs attention"
+                return 500, payload
         else:
             payload["state_removed"] = self.hebbian.remove_candidate(candidate)
         return 200, payload
@@ -311,7 +324,7 @@ class GhostControlSurface:
         scope_ref = session_id if scope == "session" else project if scope == "project" else ""
         if any(row.scope == scope and row.scope_ref == scope_ref
                and row.conflict_key == f"style_preference:{conflict_key}" and row.value_key == value_key
-               and row.status != "candidate" for row in self.inbox.list_candidates()):
+               and row.status == "accepted" for row in self.inbox.list_candidates()):
             return 409, _error_payload("preference has already been reviewed")
 
         signal = GhostSignal(
@@ -320,7 +333,7 @@ class GhostControlSurface:
             metadata={"conflict_key": conflict_key, "value_key": value_key},
         )
         created = self.inbox.ingest_signals(
-            GhostSignalParseResult(signals=(signal,), provider_id="manual"),
+            (signal,),
             session_id=session_id, run_id=run_id, project=project, user_text=user_text,
         )
         if not created:
@@ -443,21 +456,24 @@ class GhostControlSurface:
 
 
 def _applicable_nodes(
-    store: GhostHebbianStore | None,
+    rows: Iterable[GhostNode],
     *,
     session_id: str,
     project: str,
 ) -> tuple[GhostNode, ...]:
-    if store is None:
-        return ()
-    rows = store.list_nodes(status="active")
     out = [
         node for node in rows
-        if node.scope == "user"
+        if node.status == "active" and (node.scope == "user"
         or (node.scope == "project" and bool(project) and node.scope_ref == project)
-        or (node.scope == "session" and bool(session_id) and node.scope_ref == session_id)
+        or (node.scope == "session" and bool(session_id) and node.scope_ref == session_id))
     ]
     return tuple(out)
+
+
+def _candidate_needs_repair(candidate: GhostMemoryCandidate, nodes: Iterable[GhostNode]) -> bool:
+    node_id = node_id_for_candidate(candidate)
+    node = next((item for item in nodes if item.id == node_id), None)
+    return node is None or candidate.id not in node.candidate_ids
 
 
 def _safe_affinity_health(

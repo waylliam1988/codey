@@ -109,8 +109,9 @@ Evidence / Verification / CompletionProof
 
 ```text
 codey/ghost/schema.py
-  显式学习信号 schema：style_preference / correction / research_interest / long_term_goal / action_tendency
-  （inbox 候选仍用该 schema；抽取侧已退役，见下）
+  显式信号的数据模型与校验：style_preference / correction / research_interest /
+  long_term_goal / action_tendency。当前产品仅通过 Local context 手动产生
+  style_preference；其余类型保留为 inbox/Hebbian/0.6 的数据底座。
 
 codey/ghost/inbox.py
   候选记忆 inbox；区分 pending / accepted / rejected
@@ -143,6 +144,13 @@ codey/ghost/sleep.py
 > 导出/清理不再含 `router`/`signals`（schema version 2）。历史 ROADMAP 中
 > “Learning Loop v1 / Router v1 已完成”是阶段记录，不代表现行能力。
 
+与 0.5.9 发布提交 `d71683d` 对照：当时符合条件的 `auto` 任务实际接入了
+`GhostRouter`，已完成的 chat 回合实际接入了 `GhostLearningLoop`；两者都会
+产生额外模型调用。当前保留了本地经历、检索、人工确认偏好及其 Directive 消费，
+但不自动把每个聊天回合提取为结构化偏好，也不使用旧路由器的模型判断。
+因此能力并非与 0.5.9 完全相同；0.6 若需要自动结构化学习，应设计在正常
+模型调用内取得明确、可审计的信号，不要无意恢复额外调用。
+
 当前冷启动产品保留两条相互衔接的路径：
 
 ```text
@@ -155,6 +163,9 @@ codey/ghost/sleep.py
 项目、run 和原话引用，更新开关关闭时拒绝新候选；重复提交已审偏好也不会假报
 待审。inbox/Hebbian/Directive 与 affinity、continuity、sleep、work queue
 继续作为 0.6 的重要底座，不能因旧抽取器和预路由退役而一并删除。
+当前面板还显示经历、待审、已激活偏好、需重试的偏好、后续任务和健康状态；
+Hebbian 激活失败会显示 Needs attention，节点读取失败只报告健康告警。
+项目作用域的确认偏好也会进入普通 chat 的下一次提示词。
 
 这些模块已经说明一个方向：Ghost 是事件和投影系统，不是新的 Agent runtime。
 

@@ -96,15 +96,16 @@ function renderLocalContext(data) {
   }
   const counts = data.counts || {};
   const state = data.enabled ? 'On' : 'Off';
-  $('local-context-subtitle').textContent = `${counts.active || 0} active · ${counts.review || 0} pending · Updates ${state}`;
+  $('local-context-subtitle').textContent = `${counts.active || 0} active · ${counts.review || 0} pending · ${counts.repair || 0} needs attention · Updates ${state}`;
 
   const contextRows = Array.isArray(data.context) ? data.context : [];
   const reviewRows = Array.isArray(data.review) ? data.review : [];
+  const repairRows = Array.isArray(data.repair) ? data.repair : [];
   const activeRows = Array.isArray(data.active) ? data.active : [];
   const taskRows = Array.isArray(data.tasks) ? data.tasks : [];
   const observationRows = Array.isArray(data.observations) ? data.observations : [];
   const warnings = Array.isArray(data.health && data.health.warnings) ? data.health.warnings : [];
-  const hasContent = !!(contextRows.length || reviewRows.length || activeRows.length || taskRows.length || observationRows.length);
+  const hasContent = !!(contextRows.length || reviewRows.length || repairRows.length || activeRows.length || taskRows.length || observationRows.length);
   const hasWarning = !!warnings.length;
 
   if (!hasContent && !hasWarning) {
@@ -115,6 +116,7 @@ function renderLocalContext(data) {
   }
   appendGroup(body, 'Recent focus', contextRows, rowNode);
   appendGroup(body, 'Pending review', reviewRows, reviewRowNode);
+  appendGroup(body, 'Needs attention', repairRows, repairRowNode);
   appendGroup(body, 'Active preferences', activeRows, rowNode);
   appendGroup(body, 'Recent experiences', observationRows, (row) => observationRowNode(row, data.enabled));
   appendGroup(body, 'Follow-ups', taskRows, taskRowNode);
@@ -152,6 +154,13 @@ function reviewRowNode(row) {
   return baseRowNode(row, [
     ['accept_candidate', 'Accept'],
     ['reject_candidate', 'Reject'],
+  ]);
+}
+
+function repairRowNode(row) {
+  return baseRowNode(row, [
+    ['accept_candidate', 'Retry'],
+    ['reject_candidate', 'Discard'],
   ]);
 }
 
@@ -409,6 +418,7 @@ async function postAction(action, payload) {
     });
     const data = await response.json();
     if (!response.ok || !data.ok) {
+      await loadLocalContextDrawer();
       $('local-context-subtitle').textContent = data.error || 'Update failed';
       return;
     }

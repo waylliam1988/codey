@@ -1,6 +1,6 @@
 """Shared plumbing for Ghost stores (no domain logic).
 
-Ghost stays domain-split (affinity/continuity/router/work_queue keep their own
+Ghost stays domain-split (affinity/continuity/work_queue keep their own
 semantics). This module only owns the byte-identical helpers every store
 hand-rolled: UTC timestamps, project scope normalization, and strict
 payload/validation helpers. Stores call these directly; tests patch

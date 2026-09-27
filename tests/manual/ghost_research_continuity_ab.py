@@ -517,25 +517,21 @@ def _seed_case(
     if case.seed_prior_claim:
         _seed_prior_claim(state, session_id=session_id, project=project)
     if case.seed_preference:
-        from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+        from codey.ghost.schema import GhostSignal
 
         assert state.ghost_inbox is not None
         assert state.ghost_hebbian is not None
         created = state.ghost_inbox.ingest_signals(
-            GhostSignalParseResult(
-                signals=(
-                    GhostSignal(
-                        kind="style_preference",
-                        scope="session",
-                        summary="Prefer concise summaries with numbered sources.",
-                        evidence_quote="shorter please",
-                        confidence=0.9,
-                        metadata={"conflict_key": "reply_length", "value_key": "concise"},
-                        source="continuity-ab-seed",
-                    ),
+            (
+                GhostSignal(
+                    kind="style_preference",
+                    scope="session",
+                    summary="Prefer concise summaries with numbered sources.",
+                    evidence_quote="shorter please",
+                    confidence=0.9,
+                    metadata={"conflict_key": "reply_length", "value_key": "concise"},
+                    source="continuity-ab-seed",
                 ),
-                ok=True,
-                provider_id="continuity-ab-seed",
             ),
             session_id=session_id,
             run_id=f"seed-{case.name}",

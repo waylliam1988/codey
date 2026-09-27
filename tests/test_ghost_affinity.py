@@ -14,7 +14,7 @@ import codey.ghost.work_queue as work_queue_module
 from codey.ghost.affinity import AffinityEdge, AffinityNode, GhostAffinityStore
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.inbox import GhostInboxStore
-from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+from codey.ghost.schema import GhostSignal
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.research_interest import ResearchInterestCandidate
 
@@ -51,7 +51,7 @@ def _accepted_candidate(
     project: str = "",
 ):
     created = inbox.ingest_signals(
-        GhostSignalParseResult(signals=(signal or _signal(),), ok=True, provider_id="test"),
+        (signal or _signal(),),
         session_id=session_id,
         run_id=run_id,
         project=project,

@@ -1058,10 +1058,8 @@
     color: var(--muted);
     border-radius: 5px;
     cursor: pointer;
-    visibility: hidden;
     flex-shrink: 0;
   }
-  .local-context-row:hover .local-context-more { visibility: visible; }
   .local-context-row.editing { flex-wrap: wrap; }
   .local-context-preference-form {
     display: flex;

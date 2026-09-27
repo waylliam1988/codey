@@ -37,7 +37,6 @@ from codey.ghost.schema import (
     SIGNAL_KINDS,
     SIGNAL_SCOPES,
     GhostSignal,
-    GhostSignalParseResult,
     clip_signal_text,
 )
 from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
@@ -239,7 +238,7 @@ class GhostInboxStore:
 
     def ingest_signals(
         self,
-        result: GhostSignalParseResult,
+        signals: Iterable[GhostSignal],
         *,
         session_id: str = "",
         run_id: str = "",
@@ -251,7 +250,7 @@ class GhostInboxStore:
                 return ()
         except GhostSettingsError:
             return ()
-        signals = tuple(getattr(result, "signals", ()) or ())
+        signals = tuple(signals)
         if not signals:
             return ()
         try:
@@ -280,7 +279,9 @@ class GhostInboxStore:
                         run_id=run_id,
                         project=project,
                     )
-                    existing_index = self._find_conflict_index(candidates, candidate)
+                    existing_index = self._find_conflict_index(
+                        candidates, candidate, manual_proposal=signal.source == "manual",
+                    )
                     action = "created"
                     if existing_index is None:
                         candidates.append(candidate)
@@ -733,9 +734,13 @@ class GhostInboxStore:
         self,
         candidates: list[GhostMemoryCandidate],
         incoming: GhostMemoryCandidate,
+        *,
+        manual_proposal: bool = False,
     ) -> int | None:
         incoming_ref = _scope_ref(incoming)
         for index, candidate in enumerate(candidates):
+            if manual_proposal and candidate.status in {"rejected", "superseded"}:
+                continue
             if candidate.scope != incoming.scope:
                 continue
             if candidate.conflict_key != incoming.conflict_key:

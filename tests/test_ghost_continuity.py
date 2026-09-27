@@ -14,7 +14,7 @@ from codey.ghost.continuity import (
 )
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
-from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+from codey.ghost.schema import GhostSignal
 from codey.runs.ledger_projection import RunLedgerProjection
 from codey.storage.local_store import delete_file, read_json, write_json_atomic
 
@@ -102,11 +102,7 @@ class GhostContinuityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             created = inbox.ingest_signals(
-                GhostSignalParseResult(
-                    signals=(_accepted_signal(),),
-                    ok=True,
-                    provider_id="test",
-                ),
+                (_accepted_signal(),),
                 session_id="s1",
                 run_id="r1",
                 user_text="以后短一点",

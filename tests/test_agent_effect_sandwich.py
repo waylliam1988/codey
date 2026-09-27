@@ -598,7 +598,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         mock_work_queue.block_item.assert_not_called()
         mock_work_queue.release_item.assert_not_called()
 
-    def test_recovery_fails_before_ghost_router_provider_send(self) -> None:
+    def test_recovery_fails_before_provider_send(self) -> None:
         state = server.AppContext(state_home=self.temp_dir.name)
 
         deps = TaskRunDeps(
@@ -638,7 +638,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
                     False,
                     "mock_provider",
                     intent="auto",
-                    run_id="run-auto-router-gate-1",
+                    run_id="run-auto-recovery-gate-1",
                 ),
             )
 
@@ -650,9 +650,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(len(done_events), 1)
         self.assertEqual(done_events[0].get("stop_reason"), "error")
 
-    def test_recovered_tool_outcomes_skip_work_claim_and_auto_router(self) -> None:
+    def test_recovered_tool_outcomes_skip_work_claim(self) -> None:
         state = server.AppContext()
-        run_id = "run-recovered-skip-router-1"
+        run_id = "run-recovered-skip-claim-1"
         target = self.project_dir / "target.txt"
         target.write_text("recovered file text", encoding="utf-8")
 

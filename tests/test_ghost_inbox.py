@@ -19,7 +19,7 @@ from codey.ghost.inbox import (
     conflict_key_for_signal,
     value_key_for_signal,
 )
-from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+from codey.ghost.schema import GhostSignal
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,8 +47,8 @@ def _signal(
     )
 
 
-def _result(*signals: GhostSignal) -> GhostSignalParseResult:
-    return GhostSignalParseResult(signals=tuple(signals), ok=True, provider_id="test")
+def _result(*signals: GhostSignal) -> tuple[GhostSignal, ...]:
+    return tuple(signals)
 
 
 class GhostInboxStoreTests(unittest.TestCase):

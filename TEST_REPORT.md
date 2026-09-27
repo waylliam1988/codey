@@ -1,5 +1,49 @@
 # Codey Test Report
 
+## Ghost foundation audit, manual-memory repair, project chat scope (2026-09-27)
+
+Scope: audit current Ghost backend/frontend against release 0.5.9, preserve the
+0.6 storage foundation, fix reproducible defects, and remove dead extractor-era
+parsing code. No tag or release.
+
+Red-first regressions (each failed before the corresponding production change):
+
+- `test_ghost_manual_memory`: a rejected preference could not be proposed
+  again; Hebbian write failure was reported as success; failed node reads
+  misclassified accepted preferences as needing repair.
+- `test_local_context_render`: a repair row was absent; after activation failed,
+  the drawer kept stale pending-review content rather than showing Retry.
+- `test_ui`: the row menu was hidden unless hovered, blocking keyboard users.
+- `test_server`: an accepted project preference did not reach a regular chat
+  prompt because chat omitted the project when reading Directive/continuity.
+
+Changes: add retryable Needs attention state; report activation failure to the
+API; allow manual re-proposal after rejection; pass project scope into chat;
+show row menus without hover. Remove unused `GhostSignalParseResult` and parser
+functions/constants from `schema.py`; `inbox.ingest_signals` accepts explicit
+signals directly. Current Ghost stores, manual review, bounded experience
+retrieval, affinity, continuity, work queue, and sleep remain. Adjust current
+tests/manual seeding and stale router/extractor names. The release 0.5.9 commit
+`d71683d` had live pre-turn GhostRouter and post-chat GhostLearningLoop wiring;
+the current product does not perform those automatic model calls and does not
+automatically extract structured preferences from every chat.
+
+Preflight, before the only full run: Ghost neighborhood
+`626 passed, 1 skipped, 474 subtests passed in 63.50s`; `ruff check .`,
+`git diff --check`, `node --check codey/web/assets/local_context_drawer.js`,
+Python compilation, and `pytest --collect-only` (4589 tests) passed.
+
+Single full run after all code/test changes:
+
+```text
+python -m pytest -q -p no:cacheprovider
+4558 passed, 31 skipped, 1441 subtests passed in 337.66s (0:05:37)
+```
+
+The test process used a temporary `USERPROFILE` because the sandbox blocks
+the default user state directory. Documentation was updated after this run;
+no full rerun was performed for documentation changes.
+
 ## Ghost manual preference path and local context fixes (2026-09-27)
 
 Scope: preserve the Ghost 0.6 foundation, add an explicit memory input without

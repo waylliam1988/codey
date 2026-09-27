@@ -235,7 +235,7 @@ def test_task_entry_uses_affinity_to_order_strict_continue_work_items() -> None:
 
 
 def test_ghost_post_turn_syncs_affinity_after_turn_from_local_sources() -> None:
-    from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+    from codey.ghost.schema import GhostSignal
 
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
@@ -243,20 +243,16 @@ def test_ghost_post_turn_syncs_affinity_after_turn_from_local_sources() -> None:
         assert state.ghost_hebbian is not None
         assert state.ghost_affinity is not None
         created = state.ghost_inbox.ingest_signals(
-            GhostSignalParseResult(
-                signals=(
-                    GhostSignal(
-                        kind="style_preference",
-                        scope="user",
-                        summary="Prefer concise replies.",
-                        evidence_quote="short please",
-                        confidence=0.9,
-                        metadata={"conflict_key": "reply_length", "value_key": "concise"},
-                        source="test",
-                    ),
+            (
+                GhostSignal(
+                    kind="style_preference",
+                    scope="user",
+                    summary="Prefer concise replies.",
+                    evidence_quote="short please",
+                    confidence=0.9,
+                    metadata={"conflict_key": "reply_length", "value_key": "concise"},
+                    source="test",
                 ),
-                ok=True,
-                provider_id="test",
             ),
             session_id="s1",
             run_id="r1",

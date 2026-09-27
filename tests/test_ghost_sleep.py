@@ -12,7 +12,7 @@ from codey.ghost.continuity import GhostContinuityResult, GhostContinuityStore
 from codey.ghost.event_log import event_file_stats as ghost_event_file_stats
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
-from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+from codey.ghost.schema import GhostSignal
 from codey.ghost.sleep import GhostSleepBudget, GhostSleepStore
 from codey.ghost.work_queue import GhostWorkQueueStore
 
@@ -119,7 +119,7 @@ class GhostSleepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             created = inbox.ingest_signals(
-                GhostSignalParseResult(signals=(_accepted_signal(),), ok=True, provider_id="test"),
+                (_accepted_signal(),),
                 session_id="s1",
                 run_id="r1",
                 user_text="以后回答短一点",
@@ -149,7 +149,7 @@ class GhostSleepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             created = inbox.ingest_signals(
-                GhostSignalParseResult(signals=(_accepted_signal(),), ok=True, provider_id="test"),
+                (_accepted_signal(),),
                 session_id="s1",
                 run_id="r1",
                 user_text="以后回答短一点",
@@ -174,7 +174,7 @@ class GhostSleepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             created = inbox.ingest_signals(
-                GhostSignalParseResult(signals=(_accepted_signal(),), ok=True, provider_id="test"),
+                (_accepted_signal(),),
                 session_id="s1",
                 run_id="r1",
                 user_text="以后回答短一点",

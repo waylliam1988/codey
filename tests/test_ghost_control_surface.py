@@ -10,7 +10,7 @@ from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.observations import GhostObservationStore
-from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+from codey.ghost.schema import GhostSignal
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
 
@@ -44,7 +44,7 @@ def _ingest_candidate(
 ):
     inbox = GhostInboxStore(state_home)
     created = inbox.ingest_signals(
-        GhostSignalParseResult(signals=(signal or _signal(),), ok=True, provider_id="test"),
+        (signal or _signal(),),
         session_id=session_id,
         run_id=run_id,
         project=project,

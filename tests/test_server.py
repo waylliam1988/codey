@@ -201,28 +201,24 @@ def seed_ghost_style_memory(
     run_id: str = "run-ghost",
     project: str = "",
 ) -> None:
-    from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+    from codey.ghost.schema import GhostSignal
 
     assert state.ghost_inbox is not None
     assert state.ghost_hebbian is not None
     created = state.ghost_inbox.ingest_signals(
-        GhostSignalParseResult(
-            signals=(
-                GhostSignal(
-                    kind="style_preference",
-                    scope="user",
-                    summary="Prefer concise answer-first replies.",
-                    evidence_quote="以后先给结论",
-                    confidence=0.9,
-                    metadata={
-                        "conflict_key": "reply_structure",
-                        "value_key": "answer_first",
-                    },
-                    source="test",
-                ),
+        (
+            GhostSignal(
+                kind="style_preference",
+                scope="user",
+                summary="Prefer concise answer-first replies.",
+                evidence_quote="以后先给结论",
+                confidence=0.9,
+                metadata={
+                    "conflict_key": "reply_structure",
+                    "value_key": "answer_first",
+                },
+                source="test",
             ),
-            ok=True,
-            provider_id="test",
         ),
         session_id=session_id,
         run_id=run_id,
@@ -3665,6 +3661,41 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Continue bounded local projection work", prompt)
         self.assertNotIn("Prefer concise answer-first replies.", prompt)
         self.assertEqual(done["mode"], "chat")
+
+    def test_chat_mode_uses_project_scoped_reviewed_preference(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td, "project")
+            project.mkdir()
+            state = server.AppContext(td)
+            self.assertTrue(state.ghost_observations.append_completed(
+                run_id="prior", session_id="s1", project=str(project), mode="chat",
+                user_text="Please keep answers concise.", assistant_text="Sure.", stop_reason="done",
+            ))
+            status, proposed = app_api.ghost_action_response(state, {
+                "action": "propose_preference", "id": "prior", "session_id": "s1",
+                "project": str(project), "scope": "project", "conflict_key": "reply_length",
+                "value_key": "concise", "evidence_quote": "keep answers concise",
+            })
+            self.assertEqual(status, 200, proposed)
+            self.assertEqual(app_api.ghost_action_response(state, {
+                "action": "accept_candidate", "id": proposed["candidate"]["id"],
+                "session_id": "s1", "project": str(project),
+            })[0], 200)
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.return_value = "direct reply"
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+            ):
+                _run_task_with_ghost_wait(
+                    "s1", str(project), "Answer this directly", 8, False, "deepseek", "chat",
+                )
+
+            prompt = provider.send.call_args.args[0]
+            self.assertIn("reply length = concise", prompt)
 
     def test_chat_mode_commits_observation_without_model_call(self) -> None:
         """Experience-memory final state: one normal call, no Ghost model

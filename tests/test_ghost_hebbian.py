@@ -16,7 +16,7 @@ from codey.ghost.hebbian import (
     GhostNode,
 )
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
-from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+from codey.ghost.schema import GhostSignal
 
 
 def _signal(
@@ -40,8 +40,8 @@ def _signal(
     )
 
 
-def _result(*signals: GhostSignal) -> GhostSignalParseResult:
-    return GhostSignalParseResult(signals=tuple(signals), ok=True, provider_id="test")
+def _result(*signals: GhostSignal) -> tuple[GhostSignal, ...]:
+    return tuple(signals)
 
 
 def _ingest_one(
@@ -606,7 +606,7 @@ class GhostHebbianStoreTests(unittest.TestCase):
             self.assertEqual(len(exported["state"]["nodes"]), 1)
             self.assertTrue(exported["warnings"])
 
-    def test_future_node_kinds_are_not_loaded_before_extractor_support_exists(self) -> None:
+    def test_unknown_node_kinds_are_not_loaded(self) -> None:
         self.assertNotIn("boundary_preference", NODE_KINDS)
         payload = {
             "id": "future-node",

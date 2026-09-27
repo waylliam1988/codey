@@ -198,21 +198,21 @@ class GhostEventLogTests(unittest.TestCase):
         )
         control = control_event(
             schema_version=7,
-            event_name="ghost_router_events_compacted",
+            event_name="ghost_events_compacted",
             payload={"records": 3},
             now="2026-09-06T00:00:00Z",
             event_field="kind",
             timestamp_field="created_at",
-            event_id_prefix="grc_",
+            event_id_prefix="gec_",
         )
 
         self.assertEqual(payload["events_before"], 3)
         self.assertEqual(payload["bytes_after"], 20)
         self.assertEqual(payload["warnings"], ["a", "b"])
         self.assertEqual(control["schema_version"], 7)
-        self.assertEqual(control["kind"], "ghost_router_events_compacted")
+        self.assertEqual(control["kind"], "ghost_events_compacted")
         self.assertEqual(control["created_at"], "2026-09-06T00:00:00Z")
-        self.assertTrue(str(control["event_id"]).startswith("grc_"))
+        self.assertTrue(str(control["event_id"]).startswith("gec_"))
 
     def test_append_rejects_nan_non_object_and_overflow(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -291,28 +291,24 @@ class ProviderCliTests(unittest.TestCase):
     def test_cmd_ghost_directive_exports_bounded_preview(self) -> None:
         from codey.ghost.hebbian import GhostHebbianStore
         from codey.ghost.inbox import GhostInboxStore
-        from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+        from codey.ghost.schema import GhostSignal
 
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             created = inbox.ingest_signals(
-                GhostSignalParseResult(
-                    signals=(
-                        GhostSignal(
-                            kind="style_preference",
-                            scope="user",
-                            summary="Prefer concise answer-first replies.",
-                            evidence_quote="以后先给结论",
-                            confidence=0.9,
-                            metadata={
-                                "conflict_key": "reply_structure",
-                                "value_key": "answer_first",
-                            },
-                            source="test",
-                        ),
+                (
+                    GhostSignal(
+                        kind="style_preference",
+                        scope="user",
+                        summary="Prefer concise answer-first replies.",
+                        evidence_quote="以后先给结论",
+                        confidence=0.9,
+                        metadata={
+                            "conflict_key": "reply_structure",
+                            "value_key": "answer_first",
+                        },
+                        source="test",
                     ),
-                    ok=True,
-                    provider_id="test",
                 ),
                 session_id="s1",
                 run_id="r1",

@@ -3,14 +3,11 @@
 These helpers are read-side context builders. They do not learn from the turn,
 claim queued work, or mutate Ghost stores. No helper here calls a model.
 
-Legacy data note: ``ghost_directive()`` still reads the existing hebbian store
-(plus affinity) and ``ghost_continuity()`` still reads the continuity store.
-Automatic structured writes into inbox/hebbian stopped with the
-experience-memory final state, but previously confirmed rows keep
-participating in prompts through these two builders, rendered under their own
-established labels. New experience observations are retrieved separately via
-``ghost_experiences()`` and rendered under an explicit history label, never
-presented as confirmed long-term traits.
+``ghost_directive()`` reads reviewed preferences from Hebbian memory (plus
+affinity), including preferences confirmed through the local context panel.
+``ghost_continuity()`` reads the continuity store. Experience observations are
+retrieved separately by ``ghost_experiences()`` and rendered as history, never
+presented as confirmed long-term traits. These builders make no model calls.
 """
 
 from __future__ import annotations

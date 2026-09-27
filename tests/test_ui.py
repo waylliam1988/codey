@@ -136,9 +136,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("Durable Snapshot", HTML)
         self.assertNotIn("Recovered", HTML)
         self.assertNotIn("ghost_sleep", UI_SOURCE)
-        self.assertNotIn("ghost_router", UI_SOURCE)
         self.assertNotIn("Cognitive Sleep", UI_SOURCE)
-        self.assertNotIn("Ghost Router", UI_SOURCE)
 
     def test_local_context_entry_is_quiet_top_menu_item(self) -> None:
         rename = HTML.index('<button data-act="rename">Rename chat</button>')
@@ -230,6 +228,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         end = APP_CSS.index(".drawer-btn.arming", start)
         block = APP_CSS[start:end]
         self.assertIn("border-top: 1px solid var(--border-2)", block)
+
+    def test_local_context_row_menu_is_keyboard_reachable_without_hover(self) -> None:
+        start = APP_CSS.index(".local-context-more {")
+        end = APP_CSS.index(".local-context-settings", start)
+        self.assertNotIn("visibility: hidden", APP_CSS[start:end])
 
     def test_drawer_opening_is_mutually_exclusive(self) -> None:
         self.assertIn("function closeOtherDrawers(active)", HTML)

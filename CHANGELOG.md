@@ -2,6 +2,29 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Ghost foundation audit and UI repair (no release)
+
+- Audited current Ghost wiring and the 0.5.9 release commit. Preserved committed
+  experience retrieval, manual candidate review, Hebbian/Directive, affinity,
+  continuity, work queue, and sleep. The 0.5.9 release did call the old router
+  on eligible `auto` tasks and the learning loop after completed chat turns;
+  current behavior is intentionally different and avoids those extra calls.
+- Fixed deterministic bugs with failing tests first: rejected preferences can
+  be proposed again; failed Hebbian activation now reports failure and appears
+  as a retryable Needs attention row; node read failure no longer creates false
+  repair rows; the drawer refreshes after a failed action; project-scoped
+  reviewed preferences reach ordinary chat prompts. Made row menus keyboard
+  reachable.
+- Removed the unused extractor-era signal parser/result wrapper. Inbox now
+  accepts explicit `GhostSignal` rows directly. Updated current test/manual
+  callers and stale router/extractor wording without removing Ghost stores.
+- Before the single full run: Ghost-neighborhood tests **626 passed, 1 skipped,
+  474 subtests passed**; `ruff check .`, `git diff --check`, JavaScript syntax,
+  Python compilation, and collection of **4589 tests** passed. Full
+  `python -m pytest -q -p no:cacheprovider`: **4558 passed, 31 skipped,
+  1441 subtests passed in 337.66s (0:05:37)**. A temporary `USERPROFILE` kept
+  test state inside a writable directory. No release was made.
+
 ## Unreleased - Ghost manual preference path and local context fixes (no release)
 
 - Kept Ghost's observation retrieval, inbox, Hebbian, Directive, affinity,
