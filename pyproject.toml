@@ -59,8 +59,7 @@ target-version = "py311"
 # merged by hand). Keep them on: new violations fail the gate.
 # PLR0912 (too many branches, <= 20) + PLR0915 (too many statements, <= 80)
 # are the readability gate since 2026-09-26: they punish "hard to follow"
-# and "bloated" functions instead of raw McCabe branches (C901). C901 is
-# intentionally off — use `ruff check --select C901` locally for reference.
+# and "bloated" functions. C901 (McCabe <= 20) is also in the gate (see below).
 # Thresholds were tuned 2026-09-26: defaults (12/50) flagged 145 functions
 # including clean state machines (e.g. find_safe_cut with 13 branches);
 # 20/80 leaves 27 true monsters, all with >= 21 branches.

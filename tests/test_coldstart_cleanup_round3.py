@@ -102,13 +102,14 @@ class TopicContinuitySchemaStrictTests(unittest.TestCase):
             # Retry with the valid payload carrying the SAME digest: the
             # rejected call must not have occupied the dedupe key.
             good = _topic_payload()
-            # Force same digest as the mutated row so dedupe-key pollution
-            # would be observable. Valid payloads from the same projection
-            # helper are deterministic; if digests differ, align them by
-            # reusing the mutated digest on a fully-valid payload copy.
-            if good.get("digest") != mutated.get("digest"):
-                good = dict(good)
-                good["digest"] = mutated.get("digest", good.get("digest"))
+            # Both payloads come from the same deterministic projection;
+            # they must already share a digest. Fail instead of rewriting
+            # so an unexpected sample change cannot be masked.
+            self.assertEqual(
+                good.get("digest"),
+                mutated.get("digest"),
+                "topic continuity sample digest changed unexpectedly",
+            )
             recorder.record_research_topic_continuity(good, epoch_id=epoch)
             recorder.flush()
             manifest = _manifest(store, "s-r3", "run-tc-strict")
@@ -205,9 +206,11 @@ class CompletionRepairSchemaStrictTests(unittest.TestCase):
                 "completion_repair_context"
             ]
             good = _repair_payload()
-            if good.get("digest") != mutated.get("digest"):
-                good = dict(good)
-                good["digest"] = mutated.get("digest", good.get("digest"))
+            self.assertEqual(
+                good.get("digest"),
+                mutated.get("digest"),
+                "repair context sample digest changed unexpectedly",
+            )
             recorder.record_completion_repair_context(good, epoch_id=epoch)
             recorder.flush()
             manifest = _manifest(store, "s-r3", "run-repair-strict")

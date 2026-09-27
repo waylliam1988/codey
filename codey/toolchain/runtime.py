@@ -808,6 +808,16 @@ def read_file(
         return ToolOutcome.error(str(exc))
     except OSError:
         return ToolOutcome.error(f"cannot read file: {rel}")
+    return _format_read_file_page(rel, start_line, line_limit, total, lines)
+
+
+def _format_read_file_page(
+    rel: str,
+    start_line: int,
+    line_limit: int,
+    total: int,
+    lines: list[str],
+) -> ToolOutcome:
     if total == 0:
         if start_line != 1:
             return ToolOutcome.error(f"offset {start_line} exceeds {rel} total lines 0")

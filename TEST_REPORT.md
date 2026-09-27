@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Readability: read_file read/format split, gate stays at 20, round3 digest asserts, stale C901 comment removed (2026-09-28)
+
+Scope (no release; only `read_file` split, others intentionally untouched):
+
+```text
+codey/toolchain/runtime.py (extract _format_read_file_page(rel, start_line, line_limit, total, lines); read loop keeps cancellation checks)
+tests/test_read_file_page_split.py (new, 6 tests red-first: structure + behavior + gate-at-20)
+tests/test_coldstart_cleanup_round3.py (two _rejected helpers assert digests equal instead of rewriting)
+pyproject.toml (comment only: drop stale "C901 is intentionally off"; values unchanged at 20/20/80)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first:
+
+- New split tests: `test_format_helper_exists_with_page_boundary_signature`
+  and `test_read_file_delegates_and_keeps_read_loop_checks` failed before
+  (`no attribute '_format_read_file_page'`), pass after; the 4 behavior/gate
+  tests passed before and after (byte-identical paging/preview/budget/bounds
+  plus gate-at-20).
+- Round3 digest hardening is test-only: regenerated valid digests already
+  equal the mutated ones, so the new `assertEqual` passes; a future sample
+  drift would now fail instead of being masked.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the final full suite: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted suites green (`read_file_split+round3+
+  tool_runtime` 125 passed, 27 subtests; `split+round3+tool_runtime+
+  architecture+cli` 229 passed, 373 subtests; `run_trace+verification+engine+
+  boundary+agent` 235 passed, 18 subtests). `pyproject.toml` values confirmed
+  unchanged (`mccabe.max-complexity=20`, `pylint.max-branches=20`,
+  `max-statements=80`).
+- Final full suite: `python -m pytest -q`:
+  `4654 passed, 10 skipped, 1473 subtests passed in 353.87s (0:05:53)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Cold-start cleanup round3: strict trace schema, direct agent/evidence reads, projection dedup (2026-09-27)
 
 Scope (deterministic cold-start residue, no release):

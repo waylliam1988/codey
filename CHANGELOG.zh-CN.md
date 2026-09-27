@@ -2,6 +2,36 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 可读性：read_file 读取/格式化拆分、门禁保持 20、round3 digest 断言、删除过时 C901 注释（未发布）
+
+- 仅按自然职责边界拆分 `read_file`（确定性，红测先行）：811–870 行提成
+  `_format_read_file_page(rel, start_line, line_limit, total, lines)`；
+  `read_file` 保留流式读取循环的 `cancellation.check()`（每 500 行一次加结尾
+  一次），字符预算循环的逐行检查随格式化块搬入 helper。输出字节一致
+  （分页、超长行预览、字符预算、空文件/越界均有测试锁定）。
+- 其余六个 19–20 函数（`build_hooks`、`check_url`、
+  `task_receipt_from_payload`、`_protocol_phase_payload`、
+  `effects_from_entries`、`_symbols_from_diff`）有意不动：分支多来自顺序校验、
+  字段投影或状态机，为降到 18 而拆只会增加跳转成本。门禁保持
+  `max-complexity = 20` / `max-branches = 20` / `max-statements = 80`。
+- 测试硬化（低优先级，不阻塞）：`test_coldstart_cleanup_round3.py` 两处
+  `_rejected` 不再把有效样本 digest 改写成受测样本 digest，改为断言两者
+  相等，样本意外变化会直接失败。
+- 删除 `pyproject.toml` 过时注释“C901 未启用”：C901（`max-complexity = 20`）
+  已于 2026-09-26 加入门禁。配置值未动。
+- 新增 `tests/test_read_file_page_split.py` 红测锁定（6 测试；拆分前 2 个结构
+  断言失败，其余通过；拆分后全过）。
+- 拆分中未发现其他确定性生产 bug：`available[0]` / `selected` / `end_line`
+  有前置 `total == 0` / `start_line > total` / 首行守卫保护，`line_limit`
+  的 next-call 提示原样传入 helper。
+- 验证：`python -m ruff check codey tests tools`、`git diff --check` 通过。
+  全量前目标套件全绿（`split+round3+tool_runtime` 125 通过、27 子项；
+  `split+round3+tool_runtime+architecture+cli` 229 通过、373 子项；
+  `run_trace+verification+engine+boundary+agent` 235 通过、18 子项）。
+  最终 `python -m pytest -q`：
+  **4654 passed、10 skipped、1473 subtests passed，353.87s（0:05:53）**。
+  跳过为已知 Windows/opt-in 项。未发布。
+
 ## Unreleased - 冷启动清理第三轮：trace 严格版本、agent/evidence 直读、投影去重（未发布）
 
 - Run Trace 对缺失/非法 schema 版本直接 fail-closed（P1，确定性，红测先行）：

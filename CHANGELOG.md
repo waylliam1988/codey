@@ -2,6 +2,44 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Readability: read_file read/format split, gate stays at 20, round3 digest asserts, stale C901 comment removed (no release)
+
+- Split only `read_file` on its natural read/format boundary (deterministic,
+  red-first): lines 811-870 become `_format_read_file_page(rel, start_line,
+  line_limit, total, lines)`; the streaming read loop in `read_file` keeps
+  its periodic `cancellation.check()` (every 500 lines plus final), and the
+  per-line check in the char-budget loop moves with the formatting block.
+  Outputs are byte-identical (paging, overlong-line preview, char budget,
+  empty/bounds cases all locked by tests).
+- The other six 19-20 functions (`build_hooks`, `check_url`,
+  `task_receipt_from_payload`, `_protocol_phase_payload`,
+  `effects_from_entries`, `_symbols_from_diff`) are intentionally untouched:
+  their branches come from sequential validation, field projection, or state
+  machines, and splitting just to hit 18 would cost readability. Gate stays
+  at `max-complexity = 20` / `max-branches = 20` / `max-statements = 80`.
+- Test hardening (low priority, non-blocking): the two `_rejected` helpers
+  in `tests/test_coldstart_cleanup_round3.py` no longer rewrite a
+  regenerated valid digest onto the mutated digest; they assert the two
+  digests are equal so an unexpected sample change fails loudly.
+- Removed the stale `pyproject.toml` comment claiming "C901 is intentionally
+  off": C901 (`max-complexity = 20`) joined the gate 2026-09-26. Config
+  values untouched.
+- Red-first locks in new `tests/test_read_file_page_split.py` (6 tests;
+  2 structure asserts failed before the split, all pass after; behavior and
+  gate asserts passed before and after).
+- No additional deterministic production bug was found during the split:
+  `available[0]`/`selected`/`end_line` are safe by the preceding
+  `total == 0` / `start_line > total` / first-line guards, and the
+  `line_limit` next-call hints flow into the helper unchanged.
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted suites green before the final run
+  (`read_file_split+round3+tool_runtime` 125 passed, 27 subtests;
+  `split+round3+tool_runtime+architecture+cli` 229 passed, 373 subtests;
+  `run_trace+verification+engine+boundary+agent` 235 passed, 18 subtests).
+  Then final `python -m pytest -q`:
+  `4654 passed, 10 skipped, 1473 subtests passed in 353.87s (0:05:53)`.
+  Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Cold-start cleanup round3: strict trace schema, direct agent/evidence reads, projection dedup (no release)
 
 - Run Trace now rejects missing/invalid schema versions fail-closed
