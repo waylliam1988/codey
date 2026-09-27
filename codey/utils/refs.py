@@ -101,6 +101,26 @@ def stable_ref(prefix: str, *parts: object) -> str:
     return f"{identifier(prefix, 40)}:{digest[:16]}"
 
 
+_RESEARCH_PROOF_PREFIX = "research_proof:"
+_HEX16 = frozenset("0123456789abcdef")
+
+
+def research_proof_ref(value: object) -> str:
+    """Validate a ``research_proof:<16 lowercase hex>`` ref, else ``""``.
+
+    Shared by Ghost completion gating and Research proof review so the two
+    judgments cannot drift. Fail-closed: uppercase hex, wrong length, wrong
+    prefix, and non-string inputs are all rejected.
+    """
+    text = str(value or "").strip()
+    if not text.startswith(_RESEARCH_PROOF_PREFIX):
+        return ""
+    suffix = text.removeprefix(_RESEARCH_PROOF_PREFIX)
+    if len(suffix) == 16 and all(ch in _HEX16 for ch in suffix):
+        return text
+    return ""
+
+
 def _is_hex_64(value: str) -> bool:
     return len(value) == 64 and all(char in "0123456789abcdefABCDEF" for char in value)
 
@@ -116,5 +136,6 @@ __all__ = [
     "is_valid_hostname",
     "nonnegative_int",
     "normalize_text",
+    "research_proof_ref",
     "stable_ref",
 ]

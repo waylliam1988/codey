@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from codey.utils.text_budget import clip_tail
 from codey.workspace.change_set import ChangeAnchor, ChangeSet
 
 MAX_REVIEW_DIFF_CHARS = 60_000
@@ -52,11 +53,7 @@ class ReviewResult:
 
 
 def _clip(text: object, limit: int = MAX_FIELD_CHARS) -> str:
-    value = "" if text is None else str(text)
-    value = value.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if len(value) <= limit:
-        return value
-    return value[:limit].rstrip() + "\n[truncated]"
+    return clip_tail(text, limit)
 
 
 def _change_brief_section(change_brief: str) -> str:

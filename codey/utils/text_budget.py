@@ -6,6 +6,26 @@ import re
 from pathlib import Path
 
 OUTPUT_OMISSION_MARKER = "\n\n... middle of output omitted ...\n\n"
+TRUNCATION_MARKER = "\n[truncated]"
+
+
+def clip_tail(value: object, limit: int, marker: str = TRUNCATION_MARKER) -> str:
+    """Truncate to a total character budget, reserving room for the marker.
+
+    Normalizes ``\\r\\n``/``\\r`` to ``\\n`` and strips surrounding whitespace
+    (matching the legacy ``_clip`` helpers). Guarantees
+    ``len(result) <= max(0, limit)`` in all cases: when ``limit`` is smaller
+    than the marker, only the marker prefix fits.
+    """
+    text = "" if value is None else str(value)
+    text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if limit <= 0:
+        return ""
+    if len(text) <= limit:
+        return text
+    if len(marker) >= limit:
+        return marker[:limit]
+    return text[: limit - len(marker)].rstrip() + marker
 _PYTHON_FRAME_RE = re.compile(r'^\s*File "([^"]+)", line \d+(?:, in .*)?$')
 _NODE_FRAME_RE = re.compile(r"^\s*at\s+")
 _PYTHON_DEPENDENCY_SEGMENTS = {

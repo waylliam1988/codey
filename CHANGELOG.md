@@ -2,6 +2,54 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Shared truncation budget, single-source tool examples, shared proof ref (no release)
+
+- Truncation budget fix (deterministic, TDD red-first): added
+  `codey.utils.text_budget.clip_tail()` + `TRUNCATION_MARKER` (`"\n[truncated]"`)
+  that normalizes `\r\n`/`\r`, strips, reserves the marker, and guarantees
+  `len(result) <= max(0, limit)` (marker prefix when `limit < len(marker)`,
+  `""` when `limit <= 0`). Migrated all five `text[:limit] + marker`
+  overflows to thin wrappers: `agents/consensus._clip`,
+  `research/advisors._clip`, `workspace/change_brief._clip`,
+  `agents/handoff.compact_text` (now also normalizes `\r`), and
+  `reviews/core._clip`. Red locks: `ChangeBrief.render()` was `8012 > 8000`,
+  `EvidencePack.render()` `12012 > 12000`, `compact_text(5000, 0)` `12 > 0`,
+  review summary `2012 > 2000`, and `render_aggregator_prompt` with 3x5000
+  advices totalled `12012 > 12000` (now exactly `12000`). Permanent pins in
+  `tests/test_clip_tail_budget.py` (limit 0 / sub-marker / exact-length /
+  normalization plus all five call sites and the combined budget).
+- Single-source Research examples (visible behavior change, TDD red-first):
+  `tool_example()` now returns `TOOL_CONTRACTS[name].example`, unknown tools
+  fall back to the `web_search` shape. Controller state-dependent shapes stay
+  dynamic (`open_result`/`reopen_source`/`open_hit`, `source_search` with
+  `source_urls`, `knowledge_write` with `source_urls`). Fixed drift:
+  `open_url` pages `""` -> `"1-5"`, `knowledge_write` teaches the full
+  tags/sources/relations/evidence/confidence shape, `knowledge_link.dst` now
+  teaches `"<note id or exact title>"`, `done` teaches the full report +
+  bounded follow-up question. Updated the 0.5.5-legacy lock in
+  `tests/test_tool_contract_drift.py`, the synthesis-repair expectation in
+  `tests/test_research.py`, the `research_repair_synthesis.txt` golden, and
+  added `tests/test_tool_example_single_source.py` (contract equality for all
+  tools, unknown fallback, dynamic-ID preservation).
+- Shared proof ref (no behavior change): added fail-closed
+  `codey.utils.refs.research_proof_ref()` (`research_proof:<16 lowercase hex>`)
+  and delegated both `ghost/work_queue._research_proof_ref` and
+  `research/proof_quality._proof_ref_or_empty` to it. Added
+  `tests/test_proof_ref_parity.py` driving valid/invalid/whitespace boundaries
+  through both call paths plus the shared helper.
+- Dead branch: removed the unreachable `if truncated: break` in
+  `codey/utils/references.py` (the only `True` assignment already breaks);
+  truncation accounting (`budget.limited`) is unchanged and covered by the
+  existing reference tests.
+- Verification: `ruff check codey` clean, `git diff --check` clean, no
+  frontend JS changed. Targeted suites green (text_budget, consensus,
+  change_brief, handoff, review, research_controller, drift, golden, the three
+  new lock files, ghost_work_queue, proof_quality, search_scan_split,
+  research_contract/protocol_contract, prompt_surface), then full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4586 passed, 7 skipped, 1441 subtests passed in 346.01s`. Skips are the
+  known Windows/opt-in family. No release was made.
+
 ## Unreleased - Lock-test accuracy: ImportError-only pin, scoped guarantee (no release)
 
 - Strict lock test: `test_worker_releases_slot_when_accessor_breaks_after_submit`

@@ -44,6 +44,7 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
+from codey.utils.refs import research_proof_ref
 
 WORK_QUEUE_SCHEMA_VERSION = 1
 MAX_WORK_ITEMS = 200
@@ -2525,14 +2526,7 @@ def _primary_proof_matches_item_kind(item: GhostWorkItem, refs: Iterable[str]) -
 
 
 def _research_proof_ref(value: object) -> str:
-    text = str(value or "").strip()
-    prefix = "research_proof:"
-    if not text.startswith(prefix):
-        return ""
-    suffix = text.removeprefix(prefix)
-    if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
-        return text
-    return ""
+    return research_proof_ref(value)
 
 
 def _clean_metadata(value: object) -> dict[str, object]:

@@ -2,6 +2,49 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 共享截断预算、工具示例单源、共享 proof 校验（未发布）
+
+- 截断预算修复（确定性 bug，TDD 先红后绿）：新增
+  `codey.utils.text_budget.clip_tail()` + `TRUNCATION_MARKER`
+  （`"\n[truncated]"`），统一 `\r\n`/`\r` 归一、strip，为标记预留长度，保证
+  任何情况下 `len(result) <= max(0, limit)`（`limit` 小于标记时只返回标记前缀，
+  `limit <= 0` 返回空）。五个 `text[:limit] + 标记` 越界点全部改为薄封装：
+  `agents/consensus._clip`、`research/advisors._clip`、
+  `workspace/change_brief._clip`、`agents/handoff.compact_text`（顺带补上
+  `\r` 归一）、`reviews/core._clip`。红锁：`ChangeBrief.render()` 曾为
+  `8012 > 8000`，`EvidencePack.render()` 为 `12012 > 12000`，
+  `compact_text(5000, 0)` 为 `12 > 0`，review summary 为 `2012 > 2000`，
+  `render_aggregator_prompt` 带 3 条 5000 字 advisor 时合计 `12012 > 12000`
+ （现恰为 `12000`）。永久锁定在 `tests/test_clip_tail_budget.py`（limit=0 /
+  小于标记 / 恰好等长 / 换行归一，加五个调用点与 combined 预算）。
+- Research 示例单源（可见行为变更，TDD 先红后绿）：`tool_example()` 改为查
+  `TOOL_CONTRACTS[name].example`，未知工具明确回退到 `web_search` 形状；
+  依赖 controller 状态的形状仍动态生成（`open_result`/`reopen_source`/
+  `open_hit`、有 `source_urls` 的 `source_search`/`knowledge_write`）。修复的
+  确定性漂移：`open_url` pages `""` -> `"1-5"`，`knowledge_write` 补全
+  tags/sources/relations/evidence/confidence，`knowledge_link.dst` 改为
+  `"<note id or exact title>"`，`done` 改为完整报告 + 有界追问。同步更新锁定
+  0.5.5 旧文案的 `tests/test_tool_contract_drift.py`、synthesis repair 期望
+  （`tests/test_research.py`）、`research_repair_synthesis.txt` 基线，新增
+  `tests/test_tool_example_single_source.py`（全工具与契约相等、未知回退、
+  动态 ID 保留）。
+- 共享 proof 校验（无行为变更）：新增 fail-closed 的
+  `codey.utils.refs.research_proof_ref()`（`research_proof:<16 位小写十六进制>`），
+  `ghost/work_queue._research_proof_ref` 与
+  `research/proof_quality._proof_ref_or_empty` 均委托给它。新增
+  `tests/test_proof_ref_parity.py`，以有效/无效/空白边界同时走两条调用路径加
+  共享函数。
+- 死分支：删除 `codey/utils/references.py` 中不可达的 `if truncated: break`
+  （唯一置 `True` 处下一句已 `break`）；`budget.limited` 的截断记账不变，既有
+  reference 测试覆盖。
+- 验证：`ruff check codey` 全过，`git diff --check` 全过，未改前端 JS。先过针
+  对性套件（text_budget、consensus、change_brief、handoff、review、
+  research_controller、drift、golden、三个新增锁定文件、ghost_work_queue、
+  proof_quality、search_scan_split、research_contract/protocol_contract、
+  prompt_surface），再跑全量 `python -m pytest -q -p no:cacheprovider`：
+  `4586 passed、7 skipped、1441 subtests passed，346.01s`。跳过为已知
+  Windows/手动启用项。未发布。
+
 ## Unreleased - 锁定测试精度：只认 ImportError，保证限定作用域（未发布）
 
 - 收紧锁定测试：`test_worker_releases_slot_when_accessor_breaks_after_submit`

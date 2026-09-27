@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from codey.utils.text_budget import clip_tail
+
 MAX_BRIEF_CHARS = 8_000
 MAX_FIELD_CHARS = 2_000
 MAX_NOTE_CHARS = 3_000
@@ -17,11 +19,7 @@ MAX_LIST_ITEMS = 8
 
 
 def _clip(value: object, limit: int = MAX_FIELD_CHARS) -> str:
-    text = "" if value is None else str(value)
-    text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "\n[truncated]"
+    return clip_tail(value, limit)
 
 
 def _items(values: Sequence[object], *, limit: int = MAX_LIST_ITEMS) -> tuple[str, ...]:

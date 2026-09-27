@@ -3044,7 +3044,8 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("done required for final synthesis", provider.sent[3])
         self.assertIn(
-            '{"tool":"done","args":{"answer":"<the full report>","open_questions":["..."]}}',
+            '{"tool":"done","args":{"answer":"<the full human-readable report>",'
+            '"open_questions":["<bounded follow-up research question>"]}}',
             provider.sent[3],
         )
 

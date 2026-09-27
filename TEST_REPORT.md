@@ -1,5 +1,75 @@
 # Codey Test Report
 
+## Shared truncation budget, single-source examples, shared proof ref (2026-09-27)
+
+Scope (production cleanup, TDD red-first, no release):
+
+```text
+codey/utils/text_budget.py          (new clip_tail + TRUNCATION_MARKER, marker-reserving total budget)
+codey/agents/consensus.py           (_clip delegates to clip_tail)
+codey/research/advisors.py          (_clip delegates to clip_tail)
+codey/workspace/change_brief.py     (_clip delegates to clip_tail)
+codey/agents/handoff.py             (compact_text delegates to clip_tail, gains CR normalization)
+codey/reviews/core.py               (_clip delegates to clip_tail)
+codey/research/tool_contract.py     (tool_example single-sourced from TOOL_CONTRACTS)
+codey/utils/refs.py                 (new research_proof_ref shared helper)
+codey/ghost/work_queue.py           (_research_proof_ref delegates to shared helper)
+codey/research/proof_quality.py     (_proof_ref_or_empty delegates to shared helper)
+codey/utils/references.py           (removed unreachable `if truncated: break`)
+tests/test_clip_tail_budget.py      (new permanent budget locks)
+tests/test_tool_example_single_source.py (new single-source locks + dynamic-ID guards)
+tests/test_proof_ref_parity.py      (new parity battery through both paths)
+tests/test_tool_contract_drift.py   (0.5.5 legacy lock updated to single source)
+tests/test_research.py              (synthesis-repair done shape updated)
+tests/fixtures/golden/research_repair_synthesis.txt (done example updated)
+CHANGELOG.md / CHANGELOG.zh-CN.md   (new Unreleased entry)
+TEST_REPORT.md                      (this entry, written after the full suite)
+```
+
+Repro (deterministic, red-first, no live model):
+
+- Item 1 (overflow): pre-fix `ChangeBrief.render()` was `8012 > 8000`,
+  `EvidencePack.render()` `12012 > 12000`, `compact_text("x"*5000, 0)` was
+  `12 > 0` (also `17 > 5`, `112 > 100`, `2012 > 2000`), review summary
+  `2012 > 2000`, and `render_aggregator_prompt` with 3x5000 advices totalled
+  `12012 > 12000`. Post-fix all `len <= limit` and the combined total is
+  exactly `12000`. Also covers `limit=0`, sub-marker limits (marker prefix),
+  exact-length passthrough, and CR/LF normalization. Two extra production
+  sites with the same overflow (`handoff.compact_text`, `reviews/core._clip`)
+  were found by scanning `\[truncated\]` and fixed in the same pass.
+- Item 2 (drift): pre-fix `tool_example()` differed from the contract for
+  `open_url` (`pages ""` vs `"1-5"`), `knowledge_write` (minimal vs full
+  tags/evidence/confidence shape), `knowledge_link` (`<note id>` vs
+  `<note id or exact title>`), and `done` (short vs full placeholders).
+  Post-fix `tool_example(name) == TOOL_CONTRACTS[name].example` for every
+  tool, unknown tools fall back to `web_search`, and controller state-ID
+  shapes (`open_result`/`reopen_source`/`open_hit`, sourced
+  `source_search`/`knowledge_write`) still embed live IDs.
+- Item 3 (parity): no pre-existing divergence (both copies were identical);
+  the new battery drives valid/invalid/whitespace cases through
+  `ghost.work_queue._research_proof_ref`, `proof_quality._proof_ref_or_empty`,
+  and the shared `utils.refs.research_proof_ref` so a future one-sided edit
+  fails.
+- Item 4 (dead code): `references.py` loop had `if truncated: break` after a
+  branch that already breaks; deletion is behavior-preserving, covered by the
+  existing max-results/budget truncation tests.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check codey` clean, `ruff check` clean on the
+  touched test files, `git diff --check` clean, no frontend JS changed;
+  targeted suites green (`test_text_budget`, `test_consensus`,
+  `test_change_brief`, `test_handoff`, `test_review`,
+  `test_research_controller`, `test_tool_contract_drift`,
+  `test_golden_parity`, the three new lock files, `test_ghost_work_queue`,
+  `test_research_proof_quality`, `test_search_scan_split`,
+  `test_research_contract`, `test_research_protocol_contract`,
+  `test_prompt_surface`: `267 passed, 70 subtests passed`).
+- Full suite: `python -m pytest -q -p no:cacheprovider`:
+  `4586 passed, 7 skipped, 1441 subtests passed in 346.01s (0:05:46)`.
+  Skips are the known Windows/opt-in family. No live kobold gate was re-run.
+- This entry was written after the full suite. No release was made.
+
 ## Lock-test accuracy: ImportError-only pin, scoped guarantee (2026-09-27)
 
 Scope (no production code change this round; tests + docs only):

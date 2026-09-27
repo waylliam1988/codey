@@ -227,8 +227,6 @@ def find_reference_hints(
         ):
             truncated = True
             break
-        if truncated:
-            break
     if budget.limited:
         truncated = True
 

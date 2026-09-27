@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 from codey.runtime.core import cancellation
+from codey.utils.text_budget import clip_tail
 
 DEFAULT_HARD_CONTEXT_TOKENS = 200_000
 SOFT_CONTEXT_NUMERATOR = 3
@@ -27,10 +28,7 @@ SUMMARY_KEYS = (
 
 
 def compact_text(value: str, limit: int = MAX_HANDOFF_TEXT_CHARS) -> str:
-    text = str(value or "").strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "\n[truncated]"
+    return clip_tail(value, limit)
 
 
 def estimate_tokens(text: str) -> int:

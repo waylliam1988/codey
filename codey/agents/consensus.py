@@ -30,6 +30,7 @@ from codey.toolchain.runtime import (
     safe_join,
 )
 from codey.utils.references import find_reference_hints
+from codey.utils.text_budget import clip_tail
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 
 MAX_CONSENSUS_ADVISORS = 2
@@ -192,11 +193,7 @@ class ConsensusResult:
 
 
 def _clip(value: object, limit: int) -> str:
-    text = "" if value is None else str(value)
-    text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "\n[truncated]"
+    return clip_tail(value, limit)
 
 
 def _trace_model_prompt(

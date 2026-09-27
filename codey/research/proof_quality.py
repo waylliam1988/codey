@@ -22,6 +22,7 @@ from codey.utils.refs import (
     digest_json,
     identifier,
     nonnegative_int,
+    research_proof_ref,
     stable_ref,
 )
 
@@ -991,14 +992,7 @@ def _record_id_or_empty(value: object) -> str:
 
 
 def _proof_ref_or_empty(value: object) -> str:
-    text = str(value or "").strip()
-    prefix = "research_proof:"
-    if not text.startswith(prefix):
-        return ""
-    suffix = text.removeprefix(prefix)
-    if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
-        return text
-    return ""
+    return research_proof_ref(value)
 
 
 def _question_digest(value: object) -> str:

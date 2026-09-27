@@ -61,14 +61,13 @@ class ToolContractDriftTests(unittest.TestCase):
         contract = render_research_tool_contract_text(include_source_search=False)
         self.assertIn('"dst":"<note id or exact title>"', contract)
 
-        # Dynamic repair/controller examples stay byte-identical to 0.5.5.
+        # Dynamic repair/controller examples share the single contract source,
+        # so they teach the same exact-title capability (no 0.5.5 legacy drift).
         example = tool_example("knowledge_link")
-        self.assertIn('"dst":"<note id>"', example)
-        self.assertNotIn("exact title", example)
+        self.assertIn('"dst":"<note id or exact title>"', example)
         state = ResearchControlState(allowed_tools=("knowledge_link",))
         block = render_control_block(state)
-        self.assertIn('"dst":"<note id>"', block)
-        self.assertNotIn("exact title", block)
+        self.assertIn('"dst":"<note id or exact title>"', block)
 
     def test_runtime_only_fields_do_not_enter_model_contract(self) -> None:
         # model-visible contract text must not contain runtime-only vocabulary

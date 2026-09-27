@@ -242,32 +242,13 @@ def validate_tool_args(tool: str, args: dict[str, Any]) -> ContractResult:
 
 
 def tool_example(tool: str) -> str:
-    # Legacy dynamic examples used by repair / controller allowed-actions.
-    # Kept byte-identical to 0.5.5 so dynamic repair prompts do not become a
-    # model-visible change. Static Tools: block is rendered from ToolContract
-    # examples instead.
-    if tool == "web_search":
-        return '{"tool":"web_search","args":{"query":"..."}}'
-    if tool == "open_url":
-        return '{"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":""}}'
-    if tool == "source_search":
-        return '{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}'
-    if tool == "knowledge_search":
-        return '{"tool":"knowledge_search","args":{"query":"..."}}'
-    if tool == "knowledge_read":
-        return '{"tool":"knowledge_read","args":{"id":"<note id>"}}'
-    if tool == "knowledge_write":
-        return (
-            '{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...",'
-            '"sources":["https://..."],'
-            '"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],'
-            '"open_questions":["..."]}}'
-        )
-    if tool == "knowledge_link":
-        return '{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id>","kind":"supports"}}'
-    if tool == "done":
-        return '{"tool":"done","args":{"answer":"<the full report>","open_questions":["..."]}}'
-    return '{"tool":"web_search","args":{"query":"..."}}'
+    # Single source: the static Tools: block and all dynamic repair /
+    # controller allowed-action examples render from ToolContract examples.
+    # Unknown tools fall back to the web_search shape (explicit repair policy).
+    contract = TOOL_CONTRACTS.get(tool)
+    if contract is not None:
+        return contract.example
+    return TOOL_CONTRACTS["web_search"].example
 
 
 def _coerce(

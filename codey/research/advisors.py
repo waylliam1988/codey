@@ -10,6 +10,7 @@ from codey.agents.consensus import MAX_CONSENSUS_ADVISORS, ConsensusAdvice, advi
 from codey.providers import controls as provider_controls
 from codey.research.source_document import compact_pages
 from codey.runtime.core import cancellation
+from codey.utils.text_budget import clip_tail
 
 RESEARCH_ADVISOR_TIMEOUT = 60.0
 MAX_EVIDENCE_PACK_CHARS = 12_000
@@ -189,8 +190,4 @@ def run_research_advisors(
 
 
 def _clip(value: object, limit: int) -> str:
-    text = "" if value is None else str(value)
-    text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "\n[truncated]"
+    return clip_tail(value, limit)
