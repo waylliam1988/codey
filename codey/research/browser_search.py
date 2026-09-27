@@ -828,11 +828,15 @@ def _looks_like_public_result_url(href: str) -> bool:
         return False
     if _is_search_redirect(parsed):
         return False
-    if any(part in host for part in ("bing.com", "duckduckgo.com")):
+    if _host_is_search_engine(host):
         path = parsed.path.lower()
         if path in ("", "/", "/search", "/html/"):
             return False
     return True
+
+
+def _host_is_search_engine(host: str) -> bool:
+    return any(host == domain or host.endswith("." + domain) for domain in ("bing.com", "duckduckgo.com"))
 
 
 def _is_pdf_response(content_type: str, url: str) -> bool:

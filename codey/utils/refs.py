@@ -35,8 +35,8 @@ def normalize_text(value: object) -> str:
 
 def nonnegative_int(value: object) -> int:
     try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
+        return max(0, int(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
@@ -58,11 +58,13 @@ def strict_nonnegative_int(value: object) -> int:
         return max(value, 0)
     if isinstance(value, float) and math.isfinite(value):
         return max(int(value), 0)
-    if isinstance(value, str) and value.strip().isdigit():
-        try:
-            return int(value.strip())
-        except ValueError:
-            return 0
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isascii() and text.isdigit():
+            try:
+                return int(text)
+            except ValueError:
+                return 0
     return 0
 
 

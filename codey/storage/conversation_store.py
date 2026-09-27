@@ -82,15 +82,15 @@ def _nonnegative_int(value: object, default: int = 0) -> int:
     if value is None:
         return default
     try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
+        return max(0, int(value or 0))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
 def _positive_int(value: object, default: int) -> int:
     try:
-        parsed = int(value or 0)
-    except (TypeError, ValueError):
+        parsed = int(value or 0)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return default
     return parsed if parsed > 0 else default
 

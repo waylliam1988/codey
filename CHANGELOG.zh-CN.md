@@ -2,6 +2,52 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 全量红测第三轮：OverflowError硬化 + 域名严格 + 坏行跳过 + ASCII数字门禁（未发布）
+
+- 修复 22 个确定性 bug，全部红测先行（修复前 22 失败，修复后全过）：
+  `runs/ledger._tool_id` 改用 `_safe_tool_index`（`"abc"/"²"/True/inf/1.5`
+  不再崩溃，回落 `"3:0"`）；
+  `runtime/observe/events._safe_byte_count` 补 `OverflowError`（`inf` -> `0`，
+  第二轮遗留）；
+  `toolchain/search_page.page_footer` + `normalize_page_args` 在
+  `"abc"/inf` 时回落 `1`/`default` 而不是崩溃；
+  `workspace/changes._merge_numstat` 要求 `isascii()+isdigit()`（`"²"`
+  不再崩溃，阿拉伯数字 `"١٢٣"` 不再被当 `123` 走私）；
+  `research/guards.bounded_int`、`ghost/work_queue._int`、
+  `ghost/inbox._int_or_default`、`runs/trace` 两个、`research/controller`
+  两个、`utils/refs.nonnegative_int`、`utils/positive_int`、
+  `workspace/revision`、`workspace/change_set`（含 `changed_count`）、
+  `storage/conversation_store` 两个全部补 `OverflowError`（`inf` 回落
+  `0`/`lower`/`default`/`None`，不再 `500`）；
+  `app/api` 三处（`max_turns`、`base_revision`、`query_int`）在 `inf`
+  时返回 `400` 而不是 `500`；
+  `app/event_bus` 坏 `last_event_id/max_event_id/maxsize` 回落
+  `0`/sequence 而不是崩溃；
+  `providers/local_config.context_budget_for_window` 对
+  `"8192x"/"12.0"/inf/True/None` 抛 `ValueError`，不再 `OverflowError`
+  或产出非法 `(1,8192,12000)`；
+  `research/browser_search` 按 hostname 后缀判搜索引擎
+  （`bing.com.evil.example/search` 为公开 `True`，`www.bing.com/search`
+  仍非公开 `False`）；
+  `providers/controls._page_host` 用 `hostname` 去 `:8443`，
+  `_host_matches` 改单向（`evil.com` 不再匹配 `sub.evil.com`）；
+  `ghost/observation_index` 跳过非 dict 坏行（`None/123/"oops"`）而不是
+  整个检索崩溃；
+  ASCII 门禁 7 处（`protocol`、`shell_approval`、`local_config`、
+  `runtime`、`tool_args_repair`、`refs.strict`、`workspace/config`）全部要求
+  `isascii()`，与 `_safe_tool_index` 标准一致。
+- 全量红测覆盖：新增 22 测试（`test_fullred_round3_overflow_host.py`）；
+  22 失败为上述真 bug。非 bug 按“无复现则非 bug”原地保留：
+  provider-id `lower()` vs `normalize()`（三处皆 fail-closed，无放行分叉）、
+  `decision project or "."`（纯投影，`None` 合法，无 FS 逃逸）、
+  redaction/object_model/action 的 `isdigit()` 计数（保守过滤，非 int 解析）。
+- 验证：`ruff`、`git diff --check` 通过；目标套件全绿（`round3+unicode+
+  schema+fullred` 72 通过；`ledger+events+runtime+changeset+revision+
+  conversation+server` 407 通过 23 子项；`browser+providers+research+ghost+
+  trace+arch` 541 通过 437 子项）。最终 `python -m pytest -q`：
+  **4726 passed、10 skipped、1473 subtests passed，351.77s（0:05:51）**。
+  增量正好 22 个新锁。未发布。
+
 ## Unreleased - 全量红测第二轮：events/registry/writer/shell过期/browser域名/safe-cwd/inbox严格化（未发布）
 
 - 修复 7 个确定性 bug，全部红测先行（修复前 7 失败，修复后全过）：

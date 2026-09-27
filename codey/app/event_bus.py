@@ -103,9 +103,18 @@ class EventBus:
         *,
         max_event_id: int | None = None,
     ) -> list[tuple[int, dict]]:
-        start = max(0, int(last_event_id or 0))
+        try:
+            start = max(0, int(last_event_id or 0))  # type: ignore[arg-type]
+        except (TypeError, ValueError, OverflowError):
+            start = 0
         with self._lock:
-            cutoff = self._sequence if max_event_id is None else max(0, int(max_event_id))
+            if max_event_id is None:
+                cutoff = self._sequence
+            else:
+                try:
+                    cutoff = max(0, int(max_event_id))  # type: ignore[arg-type]
+                except (TypeError, ValueError, OverflowError):
+                    cutoff = self._sequence
             rows = [
                 (event_id, dict(payload))
                 for event_id, payload in self._replay
@@ -143,7 +152,10 @@ class EventBus:
             logger.exception("event bus subscriber put failed")
             return
 
-        limit = max(0, int(sub.maxsize or 0))
+        try:
+            limit = max(0, int(sub.maxsize or 0))  # type: ignore[arg-type]
+        except (TypeError, ValueError, OverflowError):
+            limit = 0
         while limit >= 2 and sub.qsize() > limit - 2:
             try:
                 sub.get_nowait()

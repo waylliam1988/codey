@@ -337,12 +337,14 @@ def _positive_int(value: object) -> int | None:
         return None
     if isinstance(value, int):
         return value if value > 0 else None
-    if isinstance(value, str) and value.strip().isdigit():
-        try:
-            number = int(value.strip())
-        except ValueError:
-            return None
-        return number if number > 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isascii() and text.isdigit():
+            try:
+                number = int(text)
+            except ValueError:
+                return None
+            return number if number > 0 else None
     return None
 
 

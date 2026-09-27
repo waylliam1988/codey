@@ -877,9 +877,9 @@ def _merge_numstat(stats: dict[str, dict[str, int]], text: str) -> None:
             continue
         added, deleted, path = parts[0], parts[1], parts[2]
         item = stats.setdefault(path, {"additions": 0, "deletions": 0})
-        if added.isdigit():
+        if added.isascii() and added.isdigit():
             item["additions"] += int(added)
-        if deleted.isdigit():
+        if deleted.isascii() and deleted.isdigit():
             item["deletions"] += int(deleted)
 
 

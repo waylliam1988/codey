@@ -2596,8 +2596,8 @@ def _unit_float(value: object) -> float:
 
 def _int(value: object) -> int:
     try:
-        return int(value or 0)
-    except (TypeError, ValueError):
+        return int(value or 0)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 

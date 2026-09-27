@@ -2,6 +2,65 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Full-red round3: OverflowError hardening + hostname strict + bad-row skip + ascii-digit gate (no release)
+
+- Fixed 22 deterministic bugs, all red-first (22 failed before, pass after):
+  `runs/ledger._tool_id` now uses `_safe_tool_index` (no `ValueError`/
+  `OverflowError` on `"abc"/"²"/True/inf/1.5`, `"3:0"` fallback);
+  `runtime/observe/events._safe_byte_count` catches `OverflowError`
+  (`inf` -> `0`, leftover from round2);
+  `toolchain/search_page.page_footer` + `normalize_page_args` fail-closed to
+  `1`/`default` on `"abc"/inf` instead of crashing;
+  `workspace/changes._merge_numstat` requires `isascii()+isdigit()`
+  (`"²"` no longer crashes, arabic `"١٢٣"` no longer smuggled as `123`);
+  `research/guards.bounded_int`, `ghost/work_queue._int`,
+  `ghost/inbox._int_or_default`, `runs/trace._nonnegative_int/_bounded_int`,
+  `research/controller._as_int/_as_optional_int`,
+  `utils/refs.nonnegative_int`, `utils/positive_int.positive_int`,
+  `workspace/revision.valid_workspace_revision`,
+  `workspace/change_set._nonnegative_int` + `changed_count`,
+  `storage/conversation_store._nonnegative_int/_positive_int` all catch
+  `OverflowError` (`inf` -> `0`/`lower`/`default`/`None`, no `500`);
+  `app/api.run_submit_response.max_turns` + `save_ui_state_response.
+  base_revision` + `query_int` return `400` on `inf` instead of `500`;
+  `app/event_bus.replay_events_after` + `_put_for_subscriber` coerce bad
+  `last_event_id/max_event_id/maxsize` to `0`/sequence instead of crashing;
+  `providers/local_config.context_budget_for_window` rejects
+  `"8192x"/"12.0"/inf/True/None` with `ValueError` instead of
+  `OverflowError` or illegal `(1,8192,12000)` budget;
+  `research/browser_search._looks_like_public_result_url` matches search
+  hosts by hostname suffix (`_host_is_search_engine`) so
+  `bing.com.evil.example/search` is public (`True`) while
+  `www.bing.com/search` stays non-public (`False`);
+  `providers/controls._page_host` uses `hostname` (strips `:8443`) and
+  `_host_matches` is single-direction (`evil.com` no longer matches
+  `sub.evil.com`);
+  `ghost/observation_index.retrieve/_fit_blocks/_render/score` skips
+  non-dict rows (`None/123/"oops"`) instead of crashing the whole retrieve;
+  ascii-digit gate: `agents/protocol.positive_int_value`,
+  `agents/shell_approval._nonnegative_int`, `providers/local_config.
+  _parse_positive_int`, `toolchain/runtime.bounded_positive_int`,
+  `toolchain/tool_args_repair._bounded_positive_int`,
+  `utils/refs.strict_nonnegative_int`, `workspace/config._positive_int`
+  all require `isascii()` so arabic `"١٢٣"`/`"²"` are rejected
+  (`None`/`0`), matching `events._safe_tool_index` canonical.
+- Full-red coverage: 22 new tests in `tests/
+  test_fullred_round3_overflow_host.py`; 22 failed before as above, all pass
+  after. Investigated non-bugs left untouched per reproduce-or-it-is-not-a-bug:
+  provider-id `lower()` vs `normalize()` (`consensus/api/registry/
+  self_repair_worker` both fail-closed, no divergent allow/deny),
+  `completion/decision project or "."` (pure projection, `None` allowed by
+  signature, no FS escape), redaction/object_model/action `isdigit()` counts
+  (conservative secret/term filtering, not int parsing).
+- Verification: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean. Targeted green before final
+  (`round3+unicode+schema+fullred` 72 passed; `ledger+events+runtime+
+  changeset+revision+conversation+server` 407 passed, 23 subtests;
+  `browser+providers+research+ghost+trace+arch` 541 passed, 437 subtests).
+  Then final `python -m pytest -q`:
+  `4726 passed, 10 skipped, 1473 subtests passed in 351.77s (0:05:51)`.
+  Delta vs 4704 is exactly the 22 new locks. No release was made.
+
 ## Unreleased - Full-red round2: events/registry/writer/shell-expire/browser-host/safe-cwd/inbox strict (no release)
 
 - Fixed 7 deterministic bugs, all red-first (7 failed before, pass after):

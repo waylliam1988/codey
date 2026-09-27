@@ -14,12 +14,12 @@ def normalize_page_args(offset: object, limit: object, max_results: object, defa
     """Coerce grep pagination to a safe ``(start, page)`` pair (cold-start pure)."""
     try:
         start = max(1, int(offset or 1))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         start = 1
     page = max_results if max_results is not None else limit
     try:
         page = max(1, min(int(page or default), 100))  # == SEARCH_PAGE_MAX_RESULTS; repair.py pins it
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         page = default
     return start, page
 
@@ -65,7 +65,10 @@ def page_footer(
     shown: int,
     has_more: bool,
 ) -> str:
-    start = max(1, int(offset or 1))
+    try:
+        start = max(1, int(offset or 1))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        start = 1
     end = start + shown - 1 if shown else start - 1
     if has_more:
         return (

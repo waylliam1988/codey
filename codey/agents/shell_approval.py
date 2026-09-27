@@ -262,11 +262,13 @@ def _nonnegative_int(value: object) -> int:
         return 0
     if isinstance(value, int):
         return max(value, 0)
-    if isinstance(value, str) and value.strip().isdigit():
-        try:
-            return int(value.strip())
-        except ValueError:
-            return 0
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isascii() and text.isdigit():
+            try:
+                return int(text)
+            except ValueError:
+                return 0
     return 0
 
 

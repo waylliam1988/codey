@@ -85,8 +85,8 @@ class ChangeSet:
             for file in files
         )
         try:
-            changed_count = int(changes.get("changed_count") or len(files))
-        except (TypeError, ValueError):
+            changed_count = int(changes.get("changed_count") or len(files))  # type: ignore[arg-type]
+        except (TypeError, ValueError, OverflowError):
             changed_count = len(files)
         return cls(
             ok=bool(changes.get("ok")),
@@ -299,8 +299,8 @@ def _nonnegative_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
+        return max(0, int(value or 0))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 

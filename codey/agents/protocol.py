@@ -498,7 +498,7 @@ def positive_int_value(value: object) -> int | None:
         return None
     if isinstance(value, int) and value > 0:
         return value
-    if isinstance(value, str) and value.isdigit():
+    if isinstance(value, str) and value.isascii() and value.isdigit():
         try:
             number = int(value)
         except ValueError:

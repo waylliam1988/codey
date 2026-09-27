@@ -12,7 +12,7 @@ def positive_int(value: object) -> int | None:
         return None
     try:
         number = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return number if number > 0 else None
 

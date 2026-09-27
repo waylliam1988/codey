@@ -76,8 +76,8 @@ def valid_workspace_revision(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        revision = int(value)
-    except (TypeError, ValueError):
+        revision = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return 0
     return revision if revision >= INITIAL_WORKSPACE_REVISION else 0
 

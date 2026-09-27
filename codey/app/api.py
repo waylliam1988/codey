@@ -48,8 +48,8 @@ def query_int(
     maximum: int,
 ) -> int:
     try:
-        value = int((query.get(key) or [default])[0])
-    except (TypeError, ValueError):
+        value = int((query.get(key) or [default])[0])  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         value = default
     return max(minimum, min(maximum, value))
 
@@ -67,8 +67,8 @@ def save_ui_state_response(ctx: Any, body: dict) -> tuple[int, dict]:
     base_revision = body.get("base_revision") if isinstance(body, dict) else None
     if isinstance(base_revision, bool) or not isinstance(base_revision, int):
         try:
-            base_revision = int(base_revision or 0)
-        except (TypeError, ValueError):
+            base_revision = int(base_revision or 0)  # type: ignore[arg-type]
+        except (TypeError, ValueError, OverflowError):
             return 400, {"ok": False, "error": "base_revision required"}
     try:
         saved = ctx.save_ui_state(state, base_revision=int(base_revision))
@@ -392,8 +392,8 @@ def run_submit_response(
     }:
         return 400, {"error": "invalid intent"}
     try:
-        max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)
-    except (TypeError, ValueError):
+        max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return 400, {"error": "invalid max_turns"}
     max_turns = max(1, min(max_turns, 500))
     if not task:

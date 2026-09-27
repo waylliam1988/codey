@@ -31,7 +31,7 @@ def _safe_byte_count(value: object) -> int:
         return 0
     try:
         number = int(value or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
     return max(0, number)
 

@@ -52,7 +52,9 @@ def _safe_file_stem(value: str) -> str:
 
 
 def _tool_id(event: RunEvent) -> str:
-    index = int(event.metadata.get("tool_index") or 0)
+    from codey.runtime.observe.events import _safe_tool_index
+
+    index = _safe_tool_index(event.metadata.get("tool_index"))
     return f"{event.turn}:{index}"
 
 

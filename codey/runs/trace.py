@@ -2344,8 +2344,8 @@ def _nonnegative_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
+        return max(0, int(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
@@ -2353,8 +2353,8 @@ def _bounded_int(value: object, lower: int, upper: int) -> int:
     if isinstance(value, bool):
         return lower
     try:
-        parsed = int(value)
-    except (TypeError, ValueError):
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         parsed = lower
     return max(lower, min(upper, parsed))
 

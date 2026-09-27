@@ -1189,7 +1189,7 @@ def _usable(control: Any | None, require_enabled: bool) -> bool:
 
 def _page_host(page: Any) -> str:
     try:
-        return urlparse(str(page.url or "")).netloc.lower()
+        return (urlparse(str(page.url or "")).hostname or "").lower()
     except Exception:
         return ""
 
@@ -1197,7 +1197,9 @@ def _page_host(page: Any) -> str:
 def _host_matches(current: str, saved: str) -> bool:
     if not saved:
         return True
-    return current == saved or current.endswith("." + saved) or saved.endswith("." + current)
+    current = (current or "").lower()
+    saved = (saved or "").lower()
+    return current == saved or current.endswith("." + saved)
 
 
 def _provider_host_allowed(page: Any, provider_id: str) -> bool:

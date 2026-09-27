@@ -54,8 +54,8 @@ def bounded_int(
 ) -> int:
     fallback = lower if default is None else default
     try:
-        parsed = int(value)
-    except (TypeError, ValueError):
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         parsed = int(fallback)
     return max(lower, min(upper, parsed))
 

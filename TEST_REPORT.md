@@ -1,5 +1,95 @@
 # Codey Test Report
 
+## Full-red round3: OverflowError + hostname + bad-row + ascii-digit (2026-09-28)
+
+Scope (22 deterministic bugs, red-first, no release):
+
+```text
+codey/runs/ledger.py (_tool_id via _safe_tool_index; abc/²/True/inf -> 3:0)
+codey/runtime/observe/events.py (_safe_byte_count +OverflowError; inf -> 0)
+codey/toolchain/search_page.py (page_footer/normalize +OverflowError; bad -> 1/default)
+codey/workspace/changes.py (_merge_numstat isascii+isdigit; ² no crash, arabic ignored)
+codey/research/guards.py (bounded_int +OverflowError; inf -> lower)
+codey/ghost/work_queue.py (_int +OverflowError; inf -> 0)
+codey/ghost/inbox.py (_int_or_default +OverflowError; inf -> default)
+codey/runs/trace.py (_nonnegative_int/_bounded_int +OverflowError)
+codey/research/controller.py (_as_int/_as_optional_int +OverflowError)
+codey/utils/refs.py (nonnegative_int +OverflowError; strict +isascii)
+codey/utils/positive_int.py (+OverflowError; inf -> None)
+codey/workspace/revision.py (+OverflowError; inf -> 0)
+codey/workspace/change_set.py (_nonnegative_int +OverflowError; changed_count +OverflowError)
+codey/storage/conversation_store.py (_nonnegative_int/_positive_int +OverflowError)
+codey/app/api.py (max_turns/base_revision/query_int +OverflowError -> 400)
+codey/app/event_bus.py (replay/max_event/maxsize safe-coerce, no crash)
+codey/providers/local_config.py (context_budget_for_window ValueError; _parse_positive_int +isascii)
+codey/research/browser_search.py (_host_is_search_engine suffix; evil public True)
+codey/providers/controls.py (_page_host hostname strips port; _host_matches single-dir)
+codey/ghost/observation_index.py (skip non-dict rows; score/render/fit fail-closed)
+codey/agents/protocol.py (positive_int_value +isascii)
+codey/toolchain/runtime.py (bounded_positive_int +isascii)
+codey/toolchain/tool_args_repair.py (_bounded_positive_int +isascii)
+codey/agents/shell_approval.py (_nonnegative_int +isascii)
+codey/workspace/config.py (_positive_int +isascii)
+tests/test_fullred_round3_overflow_host.py (new, 22)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (22 failed before, all pass after):
+
+- `test_ledger_tool_id_malformed_does_not_crash` failed (`ValueError: 'abc'`);
+  after `_safe_tool_index` passes for `"abc"/"²"/True/inf/1.5/None` as `"3:0"`.
+- `test_events_safe_byte_count_overflow_does_not_crash` failed (`OverflowError`);
+  after `+OverflowError` passes (`inf -> 0`).
+- `test_search_page_footer_malformed_does_not_crash` failed (`ValueError: 'abc'`);
+  after fail-closed passes (`results 1-1`).
+- `test_changes_numstat_unicode_does_not_crash` failed (`ValueError: '²'`);
+  after `isascii` passes (ascii `2/5` kept, `²`/arabic ignored).
+- `test_guards_bounded_int_overflow_does_not_crash` failed (`OverflowError`);
+  after `+OverflowError` passes (`inf -> 1`).
+- `test_work_queue_int_overflow_does_not_crash` / `test_inbox_int_or_default_...` /
+  `test_trace_int_...` / `test_controller_as_int_...` / `test_refs_...` /
+  `test_positive_int_...` / `test_revision_...` / `test_change_set_...` /
+  `test_conversation_store_...` all failed (`OverflowError`); after
+  `+OverflowError` all pass (fail-closed to `0/lower/default/None`).
+- `test_api_max_turns_overflow_is_400_not_500` failed (`OverflowError` 500);
+  after `+OverflowError` passes (`400`). Same for `base_revision`.
+- `test_event_bus_replay_malformed_does_not_crash` failed (`ValueError: 'abc'`);
+  after safe-coerce passes (`[]`).
+- `test_local_config_window_malformed_rejects_cleanly` failed (`OverflowError`
+  for `inf`, illegal `(1,8192,12000)` for `True`); after `ValueError` passes.
+- `test_browser_search_evil_subdomain_is_public` failed (`False is True`);
+  after suffix match passes (evil `True`, real bing `False`).
+- `test_controls_host_port_and_direction` failed (`:8443` kept, reverse `True`);
+  after `hostname` + single-dir passes.
+- `test_observation_index_skips_bad_rows` failed (`AttributeError: None.get`);
+  after skip-bad-row passes (tuple, good row kept).
+- `test_ascii_digit_gate_rejects_non_ascii` failed (`123 is None` for arabic);
+  after `+isascii` passes (arabic/`²` rejected, `"12"` kept).
+
+Non-bugs (investigated, no failing repro, left untouched per
+reproduce-or-it-is-not-a-bug):
+
+- provider-id `lower()` vs `normalize()` in `consensus/api/registry/
+  self_repair_worker`: both fail-closed (400/skip/raise), no divergent
+  allow/deny with deterministic repro.
+- `completion/decision project or "."`: pure projection, `project=None`
+  allowed by signature, no FS access, no escape repro.
+- `policies/redaction` digit counts, `research/object_model` digit terms,
+  `policies/action` leading-digit: conservative filtering, not int parsing,
+  no crash/wrong-accept repro.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before final: `python -m ruff check codey tests tools` clean,
+  `git diff --check` clean; targeted green (`round3+unicode+schema+fullred`
+  72 passed; `ledger+events+runtime+changeset+revision+conversation+server`
+  407 passed, 23 subtests; `browser+providers+research+ghost+trace+arch`
+  541 passed, 437 subtests).
+- Final full suite: `python -m pytest -q`:
+  `4726 passed, 10 skipped, 1473 subtests passed in 351.77s (0:05:51)`.
+  Delta vs 4704 is exactly the 22 new locks. No release was made.
+
 ## Full-red round2: events/registry/writer/shell-expire/browser-host/safe-cwd/inbox strict (2026-09-27)
 
 Scope (7 deterministic bugs, red-first, no release):

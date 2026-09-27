@@ -1165,8 +1165,8 @@ def _coerce_confidence(value: object) -> float | None:
 
 def _int_or_default(value: object, default: int) -> int:
     try:
-        return int(value)
-    except (TypeError, ValueError):
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return default
 
 

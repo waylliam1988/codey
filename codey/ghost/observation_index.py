@@ -86,7 +86,12 @@ def _row_time_score(row: dict[str, object], now: float) -> float:
 def score_observation(query_tokens: frozenset[str], row: dict[str, object], now: float) -> float:
     if not query_tokens:
         return 0.0
-    doc_tokens = tokenize(row.get("user_text")) | tokenize(row.get("assistant_text"))
+    if not isinstance(row, dict):
+        return 0.0
+    try:
+        doc_tokens = tokenize(row.get("user_text")) | tokenize(row.get("assistant_text"))
+    except (AttributeError, TypeError):
+        return 0.0
     if not doc_tokens:
         return 0.0
     overlap = len(query_tokens & doc_tokens) / max(1, len(query_tokens))
@@ -132,9 +137,14 @@ def retrieve_relevant_observations(
     now = time.time()
     scored: list[tuple[float, dict[str, object]]] = []
     for row in list(rows)[-RECENT_SCAN_LIMIT:]:
-        if exclude_run_id and str(row.get("run_id") or "") == exclude_run_id:
+        if not isinstance(row, dict):
             continue
-        score = score_observation(query_tokens, row, now)
+        try:
+            if exclude_run_id and str(row.get("run_id") or "") == exclude_run_id:
+                continue
+            score = score_observation(query_tokens, row, now)
+        except (AttributeError, TypeError):
+            continue
         if score > 0.0:
             scored.append((score, row))
     scored.sort(key=lambda item: item[0], reverse=True)
@@ -146,12 +156,20 @@ def retrieve_relevant_observations(
 
 def _render_single_block(row: dict[str, object], remaining: int) -> str | None:
     """Render one row within the remaining budget; None when nothing fits."""
-    user_text = str(row.get("user_text") or "").strip()
-    assistant_text = str(row.get("assistant_text") or "").strip()
+    if not isinstance(row, dict):
+        return None
+    try:
+        user_text = str(row.get("user_text") or "").strip()
+        assistant_text = str(row.get("assistant_text") or "").strip()
+    except (AttributeError, TypeError):
+        return None
     if not user_text and not assistant_text:
         return None
-    mode = str(row.get("mode") or "chat")
-    ts = str(row.get("ts") or "")
+    try:
+        mode = str(row.get("mode") or "chat")
+        ts = str(row.get("ts") or "")
+    except (AttributeError, TypeError):
+        return None
     head = f"- [{mode} {ts}] user said: "
     if remaining < len(head) + 1:
         return None
@@ -188,10 +206,15 @@ def _fit_blocks(
     content = _content_budget(budget_chars)
     if content <= 0:
         return []
-    limit = max(1, int(max_items or 1))
+    try:
+        limit = max(1, int(max_items or 1))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        limit = 1
     fitted: list[tuple[dict[str, object], str]] = []
     used = 0
     for row in rows:
+        if not isinstance(row, dict):
+            continue
         if len(fitted) >= limit:
             break
         # +1 for the "\n" joining this block to the output.

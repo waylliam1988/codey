@@ -735,7 +735,7 @@ def bounded_positive_int(
 ) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         parsed = value
-    elif isinstance(value, str) and value.strip().isdigit():
+    elif isinstance(value, str) and value.strip().isascii() and value.strip().isdigit():
         try:
             parsed = int(value.strip())
         except ValueError:

@@ -138,7 +138,14 @@ def select_local_target(
 
 def context_budget_for_window(window_tokens: int) -> LocalContextBudget:
     """Derive reserve/keep from one window size (UI passes a single number)."""
-    window = int(window_tokens)
+    if isinstance(window_tokens, bool):
+        raise ValueError("context_window_tokens must be a positive integer")
+    try:
+        window = int(window_tokens)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("context_window_tokens must be a positive integer") from exc
+    if window <= 0:
+        raise ValueError("context_window_tokens must be a positive integer")
     reserve = min(max(window // 8, 8_192), 32_768)
     keep = min(max(window // 8, 12_000), 32_000)
     return LocalContextBudget(window, reserve, keep, source="preset")
@@ -185,7 +192,7 @@ def _parse_positive_int(value: object) -> int | None:
         return int(value)
     if isinstance(value, str):
         text = value.strip().replace("_", "").replace(",", "")
-        if text.isdigit():
+        if text.isascii() and text.isdigit():
             try:
                 number = int(text)
             except ValueError:

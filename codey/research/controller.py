@@ -820,8 +820,8 @@ def _looks_like_source_id(value: str) -> bool:
 
 def _as_int(value: object, default: int = 0) -> int:
     try:
-        return int(value)
-    except (TypeError, ValueError):
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -829,8 +829,8 @@ def _as_optional_int(value: object) -> int | None:
     if value is None or value == "":
         return None
     try:
-        return int(value)
-    except (TypeError, ValueError):
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
