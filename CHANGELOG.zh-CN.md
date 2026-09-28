@@ -2,6 +2,32 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 统一任务内核步骤 1：可持久 TaskPolicy + fail-closed 快照/完成契约 + hybrid handoff（未发布）
+
+- 新增可持久、可解释的 `TaskPolicy`（`codey/policies/task_policy.py`）：
+  授权在入口处由用户意图一次建成（`requested_capabilities`、任务类型、
+  Research 按钮），`model_hint` 永不授權，未知能力一律拒绝。有项目 Research
+  默认可读可验证、无明确 `project.write` 请求不开放写入；只读规划永不授写/
+  shell；无关联项目不开放项目工具。`to_payload`/`from_payload` 支持中断恢复。
+- 修 `ToolRegistry.snapshot()` 出错回退全部工具：未知 profile 与空交集现快照
+  为零工具。新增 `snapshot_for_policy()`（授权管编程工具，Research controller
+  状态只收窄 research 工具，hybrid 中不禁项目工具）及 `visible_research_tools()`。
+- 修 `build_completion_contract()` 超 `MAX_COMPLETION_CHECKS` 静默截断：溢出
+  现明确失败返回 `None`。新增 `register_completion_domain()` /
+  `completion_domains()`，第三类任务注册即可，无需改内核。
+- 新增统一 `done` 文本读取（`codey/protocols/done_compat.py`），兼容 `summary`
+  与 `answer`，旧运行记录不改写。
+- 修 `run_hybrid_mode()` 强制 `fresh_chat=True` 并清空 `handoff`：hybrid 现为
+  同一任务延续，保留 research 摘要作为 writer handoff，不再强制开新会话。
+- 测试全部红测先行：新 `tests/test_task_kernel_unification.py`（14 个，修前
+  全部按预期失败，修后全绿）；更新 `tests/test_completion_contract.py` 锁定
+  限内去重与溢出失败。`TaskSubmission` 新增 `requested_capabilities` 与
+  `strict_research`（带默认值，向后兼容）。
+- 验证：`python -m ruff check .` 干净，`git diff --check` 干净。终测前靶向全绿。
+  最终 `python -m pytest -q`：`4869 passed, 10 skipped, 1484 subtests passed
+  in 356.22s (0:05:56)`。相对 4854 的增量恰为 15 个新锁（14 统一 + 1 溢出）。
+  未发布。
+
 ## Unreleased - Full-red round5：fail-closed 横扫 + null 字节确定性 + call_arg 收窄（未发布）
 
 - 修 ~60 个确定性 bug，全部红测先行（新 `tests/test_fullred_round5_sweep.py`

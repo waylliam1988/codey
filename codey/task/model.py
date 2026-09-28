@@ -28,6 +28,12 @@ class TaskSubmission:
     # (ledger excerpts, observations user_text, snapshots latest_user) always
     # reads task so model output can never wear the user's voice.
     model_hint: str = ""
+    # User-authorized capabilities for this submission (e.g. ("web.read",)).
+    # Recorded at the entry boundary from explicit user intent (task text,
+    # Research button, UI toggles). Never derived from model_hint.
+    requested_capabilities: tuple[str, ...] = ()
+    # Strict Research was explicitly enabled for this submission.
+    strict_research: bool = False
 
 
 def execution_task(request: TaskSubmission) -> str:

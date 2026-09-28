@@ -35,6 +35,26 @@ DOMAIN_RESEARCH = "research"
 DOMAIN_EXPERIMENT = "experiment"
 COMPLETION_DOMAINS = frozenset({DOMAIN_CODING, DOMAIN_RESEARCH, DOMAIN_EXPERIMENT})
 
+# Extra domains registered at runtime for new task kinds. The kernel file is
+# never edited to admit a third task type; callers register once at startup.
+_EXTRA_COMPLETION_DOMAINS: set[str] = set()
+
+
+def register_completion_domain(domain: object) -> bool:
+    """Register an extra completion domain without editing the kernel."""
+
+    text = identifier(domain, 20)
+    if not text or not text.replace("_", "").isalnum() or not text.islower():
+        return False
+    if text in COMPLETION_DOMAINS or text in _EXTRA_COMPLETION_DOMAINS:
+        return True
+    _EXTRA_COMPLETION_DOMAINS.add(text)
+    return True
+
+
+def completion_domains() -> frozenset[str]:
+    return frozenset({*COMPLETION_DOMAINS, *_EXTRA_COMPLETION_DOMAINS})
+
 COMPLETION_PENDING = "pending"
 COMPLETION_RUNNING = "running"
 COMPLETION_BLOCKED = "blocked"
@@ -187,15 +207,22 @@ def build_completion_contract(
     subject = identifier(subject_ref, 160)
     rows: list[CompletionCheck] = []
     seen: set[tuple[str, str]] = set()
+    overflow = False
     for row in checks:
         item = row if isinstance(row, CompletionCheck) else None
         if item is None or (item.check_id, item.status) in seen:
             continue
         seen.add((item.check_id, item.status))
-        rows.append(item)
         if len(rows) >= MAX_COMPLETION_CHECKS:
+            overflow = True
             break
-    if not dom or dom not in COMPLETION_DOMAINS or not subject or not rows:
+        rows.append(item)
+    if overflow:
+        # Fail closed: never silently drop a required check. Callers must
+        # split the contract or register fewer checks; a truncated proof
+        # would otherwise claim completeness it did not verify.
+        return None
+    if not dom or dom not in completion_domains() or not subject or not rows:
         return None
     evidence = bounded_refs(evidence_refs, limit=MAX_COMPLETION_REFS)
     limitations = bounded_refs(limitation_refs, limit=MAX_COMPLETION_REFS)
@@ -405,8 +432,10 @@ __all__ = [
     "CompletionProof",
     "build_completion_contract",
     "completion_check",
+    "completion_domains",
     "completion_proof_payload",
     "completion_proof_trace_payload",
     "project_completion_proof",
+    "register_completion_domain",
     "safe_run_ref",
 ]

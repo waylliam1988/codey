@@ -46,12 +46,12 @@ class ToolRegistry:
             profile = profile_for_name(profile_name)
             allowed = set(allowed_coding_tool_names(profile))
         except Exception:
-            allowed = {d.name for d in self._definitions} | {
-                alias for d in self._definitions for alias in d.aliases
-            }
+            # Fail closed: unknown profiles expose no tools, never all tools.
+            return ToolRegistrySnapshot(profile_name=profile_name, mode=mode, definitions=())
         definitions = tool_defs.definitions_for_tool_names(tuple(allowed))
         if not definitions:
-            definitions = self._definitions
+            # Fail closed: an empty intersection stays empty.
+            return ToolRegistrySnapshot(profile_name=profile_name, mode=mode, definitions=())
         return ToolRegistrySnapshot(profile_name=profile_name, mode=mode, definitions=definitions)
 
     def definitions_for_names(self, names: Sequence[str]) -> tuple[tool_defs.ToolDefinition, ...]:
@@ -61,4 +61,43 @@ class ToolRegistry:
 DEFAULT_REGISTRY = ToolRegistry()
 
 
-__all__ = ["DEFAULT_REGISTRY", "ToolRegistry", "ToolRegistrySnapshot"]
+def snapshot_for_policy(
+    policy: object | None,
+    *,
+    research_allowed: Sequence[str] | None = None,
+    mode: str = "coding",
+    registry: ToolRegistry | None = None,
+) -> ToolRegistrySnapshot:
+    """Coding snapshot filtered by an immutable TaskPolicy.
+
+    The Research controller state (``research_allowed``) only narrows research
+    tools; it never removes project tools from a hybrid run. Coding visibility
+    is ``tool grant in policy.grants``. Unknown or missing policies expose
+    nothing. ``research_allowed`` is accepted for call-site uniformity and
+    otherwise ignored here.
+    """
+
+    _ = research_allowed
+    try:
+        from codey.policies.task_policy import CODING_TOOL_GRANTS
+    except Exception:
+        return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=())
+    if policy is None:
+        return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=())
+    try:
+        allows = getattr(policy, "allows", None)
+        if not callable(allows):
+            return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=())
+        names = [name for name, grant in CODING_TOOL_GRANTS.items() if bool(allows(grant))]
+        if registry is not None:
+            definitions = registry.definitions_for_names(tuple(names))
+        else:
+            definitions = tool_defs.definitions_for_tool_names(tuple(names))
+    except Exception:
+        return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=())
+    if not definitions:
+        return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=())
+    return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=definitions)
+
+
+__all__ = ["DEFAULT_REGISTRY", "ToolRegistry", "ToolRegistrySnapshot", "snapshot_for_policy"]

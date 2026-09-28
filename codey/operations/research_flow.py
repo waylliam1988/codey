@@ -190,8 +190,12 @@ def run_hybrid_mode(
             "receipt": {"display": {"summary": research_result.receipt}},
             "research": research_payload(research_result, pipeline_result=pipeline_result),
         }, research_result=research_result, research_pipeline_result=pipeline_result)
-    frame.fresh_chat = True
-    frame.handoff = ""
+    # Hybrid continues as one task: keep the current chat session and hand the
+    # writer the research summary. Do not force a fresh chat or drop handoff.
+    research_summary = str(getattr(research_result, "summary", "") or "").strip()
+    if research_summary:
+        prior_handoff = str(getattr(frame, "handoff", "") or "").strip()
+        frame.handoff = f"{prior_handoff}\n{research_summary}".strip() if prior_handoff else research_summary
     frame.conversation.update_snapshot(replace(
         frame.conversation.snapshot,
         mode="research",

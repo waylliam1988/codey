@@ -2,6 +2,43 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Unified task kernel step 1: persistent TaskPolicy + fail-closed snapshots/completion + hybrid handoff (no release)
+
+- Added persistent, explainable `TaskPolicy` (`codey/policies/task_policy.py`):
+  grants are built once at the entry boundary from user intent
+  (`TaskSubmission.requested_capabilities`, task kind, Research button);
+  `model_hint` can never grant capabilities. Unknown capabilities are denied.
+  Research with a project defaults to read/verify (no write without an explicit
+  `project.write` request); read-only planning never grants write/shell; no
+  project grants without an associated project. Policies round-trip via
+  `to_payload`/`from_payload` for interruption recovery.
+- Fixed `ToolRegistry.snapshot()` failing open: unknown profiles and empty
+  intersections now snapshot to zero tools instead of the full writer set.
+  Added `snapshot_for_policy()` (policy grants govern coding tools; Research
+  controller state only narrows research tools, never bans project tools in a
+  hybrid run) plus `visible_research_tools()` for the shared JSON/native path.
+- Fixed `build_completion_contract()` silently truncating beyond
+  `MAX_COMPLETION_CHECKS`: overflow now fails closed to `None` instead of
+  dropping required checks. Added `register_completion_domain()` /
+  `completion_domains()` so a third task kind registers without editing the
+  kernel.
+- Added single `done` text reader (`codey/protocols/done_compat.py`) covering
+  both `summary` (coding) and `answer` (research); stored payloads unchanged.
+- Fixed `run_hybrid_mode()` forcing `fresh_chat=True` and clearing `handoff`:
+  hybrid now continues in one task, preserving the research summary as handoff
+  for the writer instead of opening a fresh session.
+- Tests, all red-first: new `tests/test_task_kernel_unification.py` (14 tests,
+  all failed before with the exact missing/failing behavior, pass after);
+  updated `tests/test_completion_contract.py` to lock dedup-within-limit plus
+  explicit overflow failure. `TaskSubmission` gains `requested_capabilities`
+  and `strict_research` (defaults, backward compatible).
+- Verification: `python -m ruff check .` clean, `git diff --check` clean.
+  Targeted green before final (unification 14; completion+registry+profiles+
+  architecture 174 passed). Then final `python -m pytest -q`:
+  `4869 passed, 10 skipped, 1484 subtests passed in 356.22s (0:05:56)`.
+  Delta vs 4854 is exactly the 15 new locks (14 unification + 1 overflow).
+  No release was made.
+
 ## Unreleased - Full-red round5: fail-closed sweep + null-byte determinism + call_arg narrowing (no release)
 
 - Fixed ~60 deterministic bugs, all red-first (60 tests in new

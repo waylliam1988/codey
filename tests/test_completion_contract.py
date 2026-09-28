@@ -190,14 +190,24 @@ def test_safe_run_ref_is_domain_neutral_and_redacts_secrets() -> None:
 def test_duplicate_check_rows_are_deduplicated_and_capped() -> None:
     rows = [
         completion_check(f"check_{index}", CHECK_PASS)
-        for index in range(20)
+        for index in range(5)
     ]
     contract = _contract([*rows, *rows[:2]])
 
     assert contract is not None
-    assert len(contract.checks) == 12
+    assert len(contract.checks) == 5
     check_ids = [row.check_id for row in contract.checks]
     assert len(set(check_ids)) == len(check_ids)
+
+
+def test_overflow_checks_fail_closed_instead_of_silent_truncate() -> None:
+    from codey.completion.contract import MAX_COMPLETION_CHECKS
+
+    rows = [
+        completion_check(f"check_{index}", CHECK_PASS)
+        for index in range(MAX_COMPLETION_CHECKS + 1)
+    ]
+    assert _contract(rows) is None
 
 
 def test_proof_trace_payload_is_refs_only_and_json_serializable() -> None:

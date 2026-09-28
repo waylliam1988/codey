@@ -1,5 +1,40 @@
 # Codey Test Report
 
+## Unified task kernel step 1: TaskPolicy + fail-closed snapshots/completion + hybrid handoff (2026-09-28)
+
+Scope (deterministic, red-first, no release):
+
+```text
+tests/test_task_kernel_unification.py (new, 14: all failed before, pass after)
+tests/test_completion_contract.py (updated: dedup-within-limit + overflow fail-closed)
+codey/policies/task_policy.py (new: TaskPolicy, build_task_policy, visible_research_tools)
+codey/task/model.py (requested_capabilities, strict_research)
+codey/toolchain/registry.py (snapshot fail-closed + snapshot_for_policy)
+codey/completion/contract.py (overflow fail-closed + register_completion_domain)
+codey/protocols/done_compat.py (new: read_done_text summary/answer compat)
+codey/operations/research_flow.py (hybrid preserves handoff, no forced fresh_chat)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md (this entry, written after the full suite)
+```
+
+Red-first (all failed before with the exact target behavior missing, pass after):
+
+- `RegistryFailClosedTests` 2 (unknown profile -> empty; research profile coding snapshot -> empty).
+- `CompletionOverflowTests` 2 (13 checks -> None; register planning domain then build).
+- `TaskPolicyTests` 7 (model_hint cannot grant web; explicit web.read grants; unknown denied;
+  research+project read/verify no write; explicit project.write grants; no project grants none;
+  payload round-trip).
+- `HybridScopeTests` 1 (priority open_result does not ban read_file/edit).
+- `DoneCompatTests` 1 (summary + answer both read).
+- `HybridHandoffTests` 1 (no forced fresh_chat; research summary preserved in handoff).
+
+Verification: `python -m ruff check .` clean, `git diff --check` clean.
+Targeted green before final (unification 14 passed; completion/registry/profiles/architecture
+174 passed, 378 subtests; task/protocols 97 passed).
+Then final `python -m pytest -q`:
+`4869 passed, 10 skipped, 1484 subtests passed in 356.22s (0:05:56)`.
+Delta vs 4854 is exactly the 15 new locks (14 unification + 1 overflow). No release was made.
+
 ## Full-red round5: fail-closed sweep + null-byte determinism + call_arg narrowing (2026-09-29)
 
 Scope (~60 deterministic bugs, red-first, no release):
