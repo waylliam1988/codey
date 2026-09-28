@@ -4,15 +4,15 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.providers import controls as provider_controls
 from codey.research.pipeline import ResearchIterationRun
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.reviews.core import ReviewFinding, ReviewResult
 from codey.runtime.core import cancellation
+from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes as collect_project_changes
 

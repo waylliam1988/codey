@@ -354,7 +354,116 @@ def _settle_interrupted(
     return True
 
 
+def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any]:
+    """Rebuild durable delivery map from recovered frame rows (recovery module).
+
+    Moved here from the old task entry so recovery rebuilding lives with
+    recovery. Identity is run+turn+index, never tool name+args.
+    """
+    delivered: dict[str, Any] = {}
+    try:
+        from codey.operations.task_loop import turn_effect_id
+        from codey.runtime.core.models import ToolCall, ToolResult
+    except Exception:
+        return delivered
+    for item in getattr(frame, "recovered_tool_outcomes", ()) or ():
+        try:
+            call = getattr(item, "call", None)
+            outcome = getattr(item, "outcome", None)
+            turn = int(getattr(item, "turn", 0) or 0)
+            index = int(getattr(item, "tool_index", 0) or 0)
+            identity_ref = f"{frame.run_id}:{effect_scope}" if effect_scope else frame.run_id
+            identity = turn_effect_id(identity_ref, turn, index)
+            delivered[identity] = ToolResult(
+                call=ToolCall(str(getattr(call, "name", "") or ""),
+                              dict(getattr(call, "args", {}) or {}),
+                              str(getattr(call, "call_id", "") or "")),
+                model_text=str(getattr(outcome, "model_text", "") or ""),
+            )
+        except Exception:
+            continue
+    return delivered
+
+
+def record_entry_policy(
+    mutations: Any,
+    *,
+    session_id: str,
+    run_id: str,
+    policy: Any,
+) -> None:
+    """Record the entry authorization snapshot in the existing session log.
+
+    The session log stays the single durable fact source; no competing
+    persistent log is created. Fail-open: logging never blocks the task.
+    """
+    if mutations is None or policy is None:
+        return
+    try:
+        payload = policy.to_payload() if hasattr(policy, "to_payload") else {}
+    except Exception:
+        return
+    setter = getattr(mutations, "set_task_policy", None)
+    if callable(setter):
+        setter(session_id, run_id, policy=payload)
+
+
+def rebuilt_policy_from_log(
+    session_log: Any,
+    incoming: Any,
+    *,
+    session_id: str = "",
+    run_id: str = "",
+) -> Any:
+    """Rebuild the same entry policy from the existing session log.
+
+    When the log carries a stored policy payload, revive it via
+    TaskPolicy.from_payload so recovery reuses the entry snapshot; new
+    requests never replace it. Otherwise return the incoming policy.
+    """
+    try:
+        if session_log is None:
+            return incoming
+        # The durable operation projection is the existing log view; when it
+        # exposes a stored policy payload, prefer it. Otherwise fall back to
+        # the incoming policy (fail-closed elsewhere: callers still enforce
+        # grants at execution time).
+        stored_payload = None
+        from codey.runtime.core.operation_state import operation_state_from_entries
+
+        state = operation_state_from_entries(
+            session_log.entries(session_id), session_id=session_id, run_id=run_id,
+        )
+        stored_payload = getattr(state, "task_policy", None) if state is not None else None
+        if stored_payload is not None:
+            try:
+                from codey.policies.task_policy import TaskPolicy
+
+                revived = TaskPolicy.from_payload(stored_payload)
+                if callable(getattr(revived, "allows", None)):
+                    return revived
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # A recovered run without a persisted policy is not allowed to inherit
+    # newly submitted capabilities. Keep control only and require the caller
+    # to surface any missing authorization as a blocked recovery.
+    try:
+        from codey.policies.task_policy import TaskPolicy
+
+        return TaskPolicy(
+            grants=frozenset({"control"}),
+            source="recovered:missing_policy",
+        ) if session_log is not None else incoming
+    except Exception:
+        return incoming if session_log is None else None
+
+
 __all__ = [
     "ResumeRecoveryResult",
+    "delivered_from_frame",
+    "rebuilt_policy_from_log",
+    "record_entry_policy",
     "recover_effects_for_resume",
 ]

@@ -34,12 +34,12 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
-from codey.agents.runner import run as default_agent_run
 from codey.app import server
 from codey.app import task_submit as task_submit
+from codey.operations.project_adapter import run as default_agent_run
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome

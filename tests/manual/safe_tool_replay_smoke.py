@@ -27,7 +27,6 @@ if __package__ in (None, ""):
 
 import contextlib
 
-from codey.agents.loop import run as run_agent_loop
 from codey.agents.request import AgentRequest
 from codey.agents.tool_execution import (
     build_tool_call_intent,
@@ -35,6 +34,7 @@ from codey.agents.tool_execution import (
 )
 from codey.agents.tools import DEFAULT_TOOL_FNS, AgentToolFns
 from codey.operations.recovery import recover_effects_for_resume
+from codey.operations.task_loop import run as run_agent_loop
 from codey.runs.details import load_run_details
 from codey.runs.ledger import RunLedgerStore
 from codey.runtime.core.models import ToolCall

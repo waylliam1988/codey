@@ -16,7 +16,6 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.completion.verification_policy import (
     VerificationCandidate,
@@ -28,12 +27,13 @@ from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
 from tests.manual.project_task_context import render_production_project_map
+from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 ARMS = ("baseline", "current")
 
 
 def run_agent(provider, project, task, **kwargs):
-    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
+    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 @dataclass(frozen=True)
 class Case:
     name: str

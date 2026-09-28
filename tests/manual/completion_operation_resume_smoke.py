@@ -69,7 +69,7 @@ def _scripted_writer(request):
 
 
 def _resuming_writer(_request):
-    from codey.agents.runner import RunResult
+    from codey.runtime.core.run_result import RunResult
 
     return RunResult("resumed to terminal", "done", 1)
 
@@ -81,8 +81,8 @@ def _writer_event():
 
 
 def _run_child(state_home: Path, project: Path, stream: Path) -> None:
-    from codey.agents.runner import RunResult  # noqa: F401  (used by readers)
     from codey.app.headless_runner import HeadlessRequest, run_headless
+    from codey.runtime.core.run_result import RunResult  # noqa: F401  (used by readers)
 
     rows: list[dict[str, object]] = []
     run_headless(

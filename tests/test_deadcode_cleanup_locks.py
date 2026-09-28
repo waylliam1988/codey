@@ -268,7 +268,7 @@ def test_run_hybrid_mode_has_no_deps() -> None:
     from codey.operations import research_flow as rf
 
     assert not hasattr(rf, "run_hybrid_mode"), "old run_hybrid_mode must be deleted"
-    from codey.operations.unified_mode import run_task_mode
+    from codey.operations.task_entry import run_task_mode
 
     assert callable(run_task_mode)
 

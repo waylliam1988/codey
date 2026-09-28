@@ -4,6 +4,7 @@ import json
 import unittest
 from types import SimpleNamespace
 
+from codey.operations.research_iteration import render_research_repair_prompt
 from codey.research.controller import (
     CONTROLLER_DISPLAY_LIMIT,
     OpenTarget,
@@ -15,7 +16,6 @@ from codey.research.controller import (
 )
 from codey.research.ledger import ResearchLedger
 from codey.research.protocols import JsonToolCodec
-from codey.research.runner import render_research_repair_prompt
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tool_contract import PROTOCOL_NO_JSON
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -629,8 +629,9 @@ class ResearchControllerTests(unittest.TestCase):
         prompt = render_research_repair_prompt(JsonToolCodec(), plan, state)
 
         self.assertEqual(plan.protocol_error_kind, PROTOCOL_NO_JSON)
-        self.assertIn('{"tool":"done"', prompt)
-        self.assertNotIn('{"tool":"knowledge_search"', prompt)
+        # New single entry repair is generic fail-closed (teaching via contract,
+        # not via repair examples); behavior (no_json rejected) preserved.
+        self.assertIn("json object", prompt.lower())
 
     def test_finish_state_accepts_plain_final_report_as_done(self) -> None:
         controller = ResearchController()

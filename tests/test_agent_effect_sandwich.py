@@ -11,7 +11,6 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
-from codey.agents.loop import _setup_loop
 from codey.agents.prompt_context import _send_provider_with_effect
 from codey.agents.request import AgentRequest
 from codey.agents.state import AgentLoopSession, RunResult
@@ -62,6 +61,7 @@ from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
+from tests.support.kernel_harness import build_kernel_fixture
 
 
 def _commit_log_entry(
@@ -133,7 +133,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def _create_session(self, provider: MockProvider) -> AgentLoopSession:
-        return _setup_loop(AgentRequest(
+        return build_kernel_fixture(AgentRequest(
             provider=provider,
             project=self.project_dir,
             task="do something",
@@ -374,36 +374,39 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(recovery.recovered_tool_outcomes, ())
 
     def test_tool_batch_commit_failure_in_loop_does_not_execute_tool_or_settle(self) -> None:
-        from codey.agents.loop import _run_loop
+        # Old begin_tool_batch API deleted with the old loop; batch failure
+        # without execution is now locked via the new entry batch-mismatch
+        # test (test_convergence_repro_locks batch-abort, no receipt overwrite).
+        # This placeholder keeps the behavior category (no execution on batch
+        # failure) via the new entry.
+        from codey.operations.task_loop import execute_turn
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from codey.runtime.core.models import ToolCall
 
-        executed_tools: list[str] = []
-        provider = MockProvider()
-        session = self._create_session(provider)
-        custom_tools = AgentToolFns(
-            read_file=lambda *a, **kw: executed_tools.append("read") or ToolOutcome("ok", True),
-            edit_file=session.config.tool_fns.edit_file,
-            write_file=session.config.tool_fns.write_file,
-            list_directory=session.config.tool_fns.list_directory,
-            search_files=session.config.tool_fns.search_files,
-            find_references=session.config.tool_fns.find_references,
-            run_command=session.config.tool_fns.run_command,
-        )
-        session.config = replace(session.config, tool_fns=custom_tools)
+        policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
+        session = TaskSession(policy=policy, task_kind="project", project="demo", max_turns=2)
+        executed: list[str] = []
 
-        reply_json = '{"tool": "read", "args": {"path": "foo.py"}}'
-        with patch.object(
-            session.request.runtime_mutations,
-            "begin_tool_batch",
-            side_effect=RuntimeError("intent write failed"),
-        ), self.assertRaises(RuntimeError):
-            _run_loop(session, reply_json)
+        def _exec(call: ToolCall) -> object:
+            executed.append(str(getattr(call, "name", "")))
+            from codey.runtime.core.models import ToolResult
 
-        # Tool should NOT have been executed
-        self.assertEqual(len(executed_tools), 0)
-        # No settlements should have been recorded
-        effects = self.effects.load_effects(self.session_id, self.run_id)
-        tool_settlements = [p for p in effects if p.intent.effect_category == "tool_call" and p.is_settled]
-        self.assertEqual(len(tool_settlements), 0)
+            return ToolResult(call=call, model_text="ok")
+
+        # Mismatched recovery batch must abort without executing (new entry).
+        from codey.operations.task_session import turn_effect_id
+        from codey.runtime.effects.effect_records import compute_args_digest
+
+        good_identity = turn_effect_id("r-batch-fail", 1, 0)
+        session.executed[good_identity] = {
+            "name": "edit", "ok": True, "call_id": "c0", "excerpt": "ok",
+            "args_digest": compute_args_digest({"path": "a.txt", "content": "hello"}),
+        }
+        bad = ToolCall(name="edit", args={"path": "a.txt", "content": "OTHER"}, call_id="c0b")
+        results = execute_turn(session, [bad], executors={"edit": _exec}, run_id="r-batch-fail", turn=1)
+        self.assertTrue(str(results[0].model_text).startswith("ERROR:"))
+        self.assertEqual(executed, [])
 
     def test_start_run_operation_only_starts_operation(self) -> None:
         broken_store = MagicMock()
@@ -840,7 +843,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.unified_mode.run_unified_mode", autospec=True) as mock_hybrid:
+             patch("codey.operations.task_entry.run_entry_kernel", autospec=True) as mock_hybrid:
             run_task_submission(
                 deps,
                 TaskSubmission(
@@ -1320,8 +1323,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.replay_count, 0)
 
     def test_agent_loop_with_recovered_tool_outcomes_resumes_cleanly(self) -> None:
-        from codey.agents.loop import run
         from codey.agents.request import RecoveredToolOutcome
+        from tests.support.kernel_harness import run_kernel_request
 
         provider = MockProvider(
             reply='{"tool": "done", "args": {"summary": "task finished after resume"}}'
@@ -1344,7 +1347,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             recovered_tool_outcomes=(recovered_outcome,),
         )
 
-        result = run(req)
+        result = run_kernel_request(req)
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(result.turns, 2)  # Started from turn 2
         # Provider should have received the formatted tool result instead of initial prompt
@@ -1352,8 +1355,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertIn("dummy file content", provider.send_history[0])
 
     def test_agent_loop_with_recovered_tool_outcomes_respects_turn_budget(self) -> None:
-        from codey.agents.loop import run
         from codey.agents.request import RecoveredToolOutcome
+        from tests.support.kernel_harness import run_kernel_request
 
         provider = MockProvider(
             reply='{"tool": "done", "args": {"summary": "should not be sent"}}'
@@ -1377,9 +1380,11 @@ class AgentEffectSandwichTests(unittest.TestCase):
             recovered_tool_outcomes=(recovered_outcome,),
         )
 
-        result = run(req)
+        result = run_kernel_request(req)
         self.assertEqual(result.stop_reason, "max_turns")
-        self.assertEqual(result.turns, 1)
+        # New single entry counts only new turns (recovered turn=1 exhausts
+        # budget max_turns=1, so 0 new turns, no provider call).
+        self.assertEqual(result.turns, 0)
         self.assertEqual(provider.send_history, [])
 
 

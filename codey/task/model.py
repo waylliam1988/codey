@@ -40,6 +40,46 @@ class TaskSubmission:
     project_changes_required: bool = False
 
 
+def derive_project_changes_required(
+    body: dict | None,
+    *,
+    intent: str = "",
+    project: str | None = None,
+) -> bool:
+    """Explicit entry decision: does this task require project modification?
+
+    Write permission (can) never implies must. Only project/hybrid kinds
+    with an attached project default to must-change; every other intent
+    (chat/research/planning/readonly/review/auto) defaults to False.
+    An explicit boolean ``project_changes_required`` in the submission body
+    always wins, so a read-only project task can stay completable without
+    edits. Never keyword-guesses from task text.
+    """
+    try:
+        data = body if isinstance(body, dict) else {}
+        if isinstance(data, dict) and "project_changes_required" in data:
+            raw = data.get("project_changes_required")
+            if raw is True:
+                return True
+            if raw is False:
+                return False
+    except Exception:
+        pass
+    try:
+        kind = str(intent or "").strip().lower()
+    except Exception:
+        kind = ""
+    try:
+        has_project = bool(str(project or "").strip())
+    except Exception:
+        has_project = False
+    if not has_project:
+        return False
+    # Only project and hybrid kinds contract to change files. Read-only
+    # intents stay False even with a project attached.
+    return kind in {"project", "hybrid"}
+
+
 def execution_task(request: TaskSubmission) -> str:
     """Executor-visible prompt: user task plus the model hint, if any."""
     hint = str(getattr(request, "model_hint", "") or "").strip()

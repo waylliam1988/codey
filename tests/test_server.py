@@ -17,7 +17,6 @@ from codey import __version__
 from codey.agents.consensus import ConsensusAdvice, ConsensusResult
 from codey.agents.handoff import ConversationSnapshot
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
 from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS, shell_command_payload
 from codey.app import api as app_api
 from codey.app import consensus_service, event_bus, http_plumbing, review_service, server, shell_service, sibling_probe
@@ -36,10 +35,11 @@ from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.discovery import Discovery
 from codey.providers.local_discovery import LocalEndpoint
 from codey.research.pipeline import ResearchIterationRun
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.runs.ledger import read_ledger
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
 from codey.workspace import changes
@@ -1527,7 +1527,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         # §1 entry auth: research intent carries strict_research through submit.
         submit.assert_called_once_with(
             "default", None, "hello", 500, True, "deepseek", "research",
-            requested_capabilities=(), strict_research=True,
+            requested_capabilities=(), strict_research=True, project_changes_required=False,
         )
 
         self.assertEqual(
@@ -1551,7 +1551,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(review_payload, {"ok": True, "run_id": "run-2"})
         submit.assert_called_once_with(
             "default", td, "review diff", app_api.DEFAULT_MAX_TURNS, False, "deepseek", "review",
-            requested_capabilities=(), strict_research=False,
+            requested_capabilities=(), strict_research=False, project_changes_required=False,
         )
 
         busy_status, busy_payload = app_api.run_submit_response({"task": "hello"}, mock.Mock(return_value=None))

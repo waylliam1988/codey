@@ -13,9 +13,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from codey.agents.loop import run as run_agent_loop
 from codey.agents.request import AgentRequest
 from codey.operations.recovery import recover_effects_for_resume
+from codey.operations.task_loop import run as run_agent_loop
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     SETTLEMENT_STATUS_OK,

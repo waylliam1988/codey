@@ -7,11 +7,11 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents.request import AgentRequest, ShellApprovalRequest
-from codey.agents.runner import RunResult
 from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS
 from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, headless_event_payload, run_headless
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import RuntimeOperationStore
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.observe.events import MAX_EVENT_TEXT_CHARS, RunEvent
 from codey.toolchain.runtime import ToolOutcome
@@ -373,7 +373,7 @@ class HeadlessRunnerTests(unittest.TestCase):
                 mock_close.assert_called_once()
 
     def test_headless_double_close_failure_fails_successful_run(self) -> None:
-        from codey.agents.runner import RunResult as _RunResult
+        from codey.runtime.core.run_result import RunResult as _RunResult
 
         rows: list[dict[str, object]] = []
         with (
@@ -489,7 +489,7 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertEqual(closing["run_id"], "run-explicit")
 
     def test_headless_close_failure_keeps_failed_task_result(self) -> None:
-        from codey.agents.runner import RunResult as _RunResult
+        from codey.runtime.core.run_result import RunResult as _RunResult
 
         rows: list[dict[str, object]] = []
         with (

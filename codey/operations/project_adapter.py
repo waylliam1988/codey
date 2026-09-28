@@ -90,12 +90,8 @@ def _project_context(request: AgentRequest) -> str:
 
 
 def run(request: AgentRequest) -> RunResult:
-    from codey.operations.task_loop import (
-        TaskSession,
-        _record_facts_for_result,
-        run_task_kernel,
-        turn_effect_id,
-    )
+    from codey.operations.kernel_execution import record_facts_for_result
+    from codey.operations.task_loop import TaskSession, run_task_kernel, turn_effect_id
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolResult
 
@@ -132,6 +128,20 @@ def run(request: AgentRequest) -> RunResult:
         ),
         task_kind=task_kind,
     )
+    try:
+        _requires = bool(getattr(request, "project_changes_required", False) is True)
+    except Exception:
+        _requires = False
+    if _requires and task_kind in {"project", "hybrid"}:
+        try:
+            _allows = bool(policy.allows("project.write"))
+        except Exception:
+            _allows = False
+        if not _allows:
+            raise RuntimeError(
+                "project_changes_required without project.write: task declares must-change "
+                "but entry grants no write permission"
+            )
     session = TaskSession(
         policy=policy,
         task_kind=task_kind,
@@ -140,6 +150,7 @@ def run(request: AgentRequest) -> RunResult:
         task_text=request.task,
         handoff=request.handoff,
         project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
+        coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
     )
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
     delivered: dict[str, ToolResult] = {}
@@ -149,7 +160,7 @@ def run(request: AgentRequest) -> RunResult:
                             audit={"changed": bool(row.outcome.changed)} if row.call.name == "edit" else {})
         delivered[turn_effect_id(f"{request.run_id or 'adhoc'}:{effect_scope}",
                                  row.turn, row.tool_index)] = result
-        _record_facts_for_result(session, row.call, result, ok=row.outcome.ok,
+        record_facts_for_result(session, row.call, result, ok=row.outcome.ok,
                                  exit_code=row.outcome.exit_code)
     # Recovery-first: deliver the original batch before any new model call,
     # and resume after the max recovered turn so identities never collide.

@@ -25,7 +25,6 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.knowledge.note import KnowledgeNote
@@ -37,8 +36,9 @@ from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.reviews.core import ReviewResult
+from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"

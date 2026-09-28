@@ -23,8 +23,8 @@ if str(ROOT) not in sys.path:
 
 import contextlib
 
-from codey.agents.runner import run
 from codey.agents.tools import AgentToolFns
+from codey.operations.project_adapter import run
 from codey.protocols.json_codec import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider

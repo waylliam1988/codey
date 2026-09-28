@@ -324,24 +324,292 @@ def native_tools_for_snapshot(policy: Any, controller_allowed: Any = None) -> li
     return tools
 
 
+def _spec_type_error(spec_name: str, key: str, want: str, got: object) -> str:
+    try:
+        got_name = type(got).__name__
+    except Exception:
+        got_name = "unknown"
+    return f"{spec_name} arg '{key}' must be {want} (got {got_name})"
+
+
+def _spec_want_and_minimum(schema: object) -> tuple[str, int | None]:
+    want, minimum = "", None
+    try:
+        if isinstance(schema, dict):
+            want = str(schema.get("type", "") or "").strip().lower()
+            if "minimum" in schema:
+                try:
+                    minimum = int(schema.get("minimum"))  # type: ignore[arg-type]
+                except Exception:
+                    minimum = None
+    except Exception:
+        want, minimum = "", None
+    return want, minimum
+
+
+def _check_string_value(spec_name: str, key: str, value: Any) -> str:
+    if not isinstance(value, str):
+        return _spec_type_error(spec_name, key, "string", value)
+    return ""
+
+
+def _check_integer_value(spec_name: str, key: str, value: Any, minimum: int | None) -> str:
+    if isinstance(value, bool):
+        return _spec_type_error(spec_name, key, "integer", value)
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, float):
+        try:
+            import math as _math
+
+            if not _math.isfinite(value) or not float(value).is_integer():
+                return _spec_type_error(spec_name, key, "integer", value)
+            parsed = int(value)
+        except Exception:
+            return _spec_type_error(spec_name, key, "integer", value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text or not text.isascii():
+            return _spec_type_error(spec_name, key, "integer", value)
+        try:
+            parsed = int(text)
+        except ValueError:
+            return _spec_type_error(spec_name, key, "integer", value)
+    else:
+        return _spec_type_error(spec_name, key, "integer", value)
+    if minimum is not None:
+        try:
+            if int(parsed) < int(minimum):
+                return f"{spec_name} arg '{key}' must be >= {minimum}"
+        except Exception:
+            pass
+    return ""
+
+
+def _check_number_value(spec_name: str, key: str, value: Any) -> str:
+    if isinstance(value, bool):
+        return _spec_type_error(spec_name, key, "number", value)
+    if isinstance(value, (int, float)):
+        try:
+            import math as _math
+
+            if isinstance(value, float) and not _math.isfinite(value):
+                return _spec_type_error(spec_name, key, "number", value)
+        except Exception:
+            return _spec_type_error(spec_name, key, "number", value)
+        return ""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return _spec_type_error(spec_name, key, "number", value)
+        try:
+            number = float(text)
+        except ValueError:
+            return _spec_type_error(spec_name, key, "number", value)
+        try:
+            import math as _math
+
+            if not _math.isfinite(number):
+                return _spec_type_error(spec_name, key, "number", value)
+        except Exception:
+            return _spec_type_error(spec_name, key, "number", value)
+        return ""
+    return _spec_type_error(spec_name, key, "number", value)
+
+
+def _check_boolean_value(spec_name: str, key: str, value: Any) -> str:
+    if not isinstance(value, bool):
+        return _spec_type_error(spec_name, key, "boolean", value)
+    return ""
+
+
+def _check_array_value(spec_name: str, key: str, value: Any) -> str:
+    # Legacy repair coerces dict/singleton and string to list; allow through.
+    if isinstance(value, (list, tuple, dict, str)):
+        return ""
+    return _spec_type_error(spec_name, key, "array", value)
+
+
+def _check_object_value(spec_name: str, key: str, value: Any) -> str:
+    if not isinstance(value, dict):
+        return _spec_type_error(spec_name, key, "object", value)
+    return ""
+
+
+def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, value: Any) -> str:
+    """Full JSON-schema type check for one declared arg."""
+    want, minimum = _spec_want_and_minimum(schema)
+    if not want:
+        return ""
+    if want == "string":
+        return _check_string_value(spec_name, key, value)
+    if want == "integer":
+        return _check_integer_value(spec_name, key, value, minimum)
+    if want == "number":
+        return _check_number_value(spec_name, key, value)
+    if want == "boolean":
+        return _check_boolean_value(spec_name, key, value)
+    if want == "array":
+        return _check_array_value(spec_name, key, value)
+    if want == "object":
+        return _check_object_value(spec_name, key, value)
+    return ""
+
+
+def _builtin_alias_allowed_keys(tool: str) -> set[str] | None:
+    """Legacy alias sets for project tools; None means strict spec only."""
+    name = str(tool or "").strip().lower()
+    if name in {"list_dir", "ls"}:
+        return {"path", "cwd"}
+    if name in {"read_file", "read"}:
+        return {"path", "cwd", "offset", "limit"}
+    if name in {"grep", "search"}:
+        return {"query", "pattern", "path", "cwd", "offset", "limit"}
+    if name in {"find_references", "references"}:
+        return {"symbol", "name", "path", "cwd"}
+    if name in {"edit"}:
+        # Edit has content/replacements forms; legacy handles the rest.
+        # Generic only checks no-extra beyond the known edit surface.
+        return {"path", "cwd", "content", "old_string", "new_string", "search",
+                "old", "new", "before", "after", "replace", "replacement", "replacements"}
+    if name in {"run", "shell"}:
+        return {"command", "cmd", "path", "cwd"}
+    if name == "source_search":
+        # Controller alias form: source_id + query without url.
+        return {"url", "query", "limit", "source_id"}
+    return None
+
+
+def _builtin_required_satisfied(tool: str, required: tuple[str, ...], args: dict[str, Any]) -> str:
+    """Alias-aware required check for built-ins; "" when satisfied else missing key."""
+    name = str(tool or "").strip().lower()
+    # Groups where any member satisfies the canonical requirement.
+    groups: dict[str, tuple[str, ...]] = {
+        "path": ("path", "cwd"),
+        "query": ("query", "pattern"),
+        "symbol": ("symbol", "name"),
+        "command": ("command", "cmd"),
+    }
+    # source_search special: source_id + query satisfies without url.
+    if name == "source_search" and "source_id" in args:
+        if "query" not in args:
+            return "query"
+        return ""
+    for key in required:
+        candidates = groups.get(str(key), (str(key),))
+        found = False
+        for cand in candidates:
+            if cand in args:
+                value = args.get(cand)
+                if value is None:
+                    continue
+                # String required must be non-blank (after strip when str).
+                if isinstance(value, str) and not value.strip():
+                    continue
+                found = True
+                break
+        if not found:
+            return str(key)
+    return ""
+
+
+def _declared_map(spec: Any) -> tuple[dict[str, object], str, bool]:
+    declared: dict[str, object] = {}
+    try:
+        for param_name, schema in (spec.parameters or ()):
+            declared[str(param_name)] = schema
+    except Exception:
+        declared = {}
+    try:
+        executor = str(getattr(spec, "executor", "") or "")
+    except Exception:
+        executor = ""
+    return declared, executor, executor in {"project", "source", "knowledge"}
+
+
+def _validate_required_presence(spec: Any, declared: dict[str, object], is_builtin: bool, args: dict[str, Any]) -> str:
+    if is_builtin:
+        missing_key = _builtin_required_satisfied(spec.name, tuple(spec.required or ()), args)
+        if missing_key:
+            return f"{spec.name} missing required arg '{missing_key}'"
+        return ""
+    for key in (spec.required or ()):
+        if key not in args:
+            return f"{spec.name} missing required arg '{key}'"
+        value = args.get(key)
+        if value is None:
+            return f"{spec.name} missing required arg '{key}'"
+        if isinstance(declared.get(key), dict):
+            try:
+                want = str(declared.get(key, {}).get("type", "") or "").lower()  # type: ignore[union-attr]
+            except Exception:
+                want = ""
+            if want == "string" and not str(value or "").strip():
+                return f"{spec.name} missing required arg '{key}'"
+    return ""
+
+
 def validate_args_against_spec(name: object, args: dict[str, Any]) -> str:
     """Single authoritative parameter check from the ToolSpec.
 
-    Returns "" when the required ToolSpec params are present; otherwise a
-    short error naming the missing arg. Detailed type repair stays in the
-    legacy validators, but missing-required is decided here so JSON and
-    native prompts, schemas, and validation cannot drift.
+    Returns "" when args satisfy the ToolSpec (required presence, no extra
+    args, JSON types); otherwise a short error. Project path/command/URL
+    safety stays in the legacy validators, but shape is decided here so JSON
+    and native prompts, schemas, and validation cannot drift.
     """
     spec = spec_for_tool(name)
     if spec is None:
         return f"unknown tool: {name or '?'}"
     if not isinstance(args, dict):
         return f"{spec.name} args must be an object"
-    missing = [key for key in (spec.required or ()) if not str(args.get(key, "") or "").strip()]
-    # Allowlist: research validators fill optional defaults, but the kernel
-    # only keeps model-supplied args; here only require presence.
-    if missing:
-        return f"{spec.name} missing required arg '{missing[0]}'"
+    declared, _, is_builtin = _declared_map(spec)
+    error = _validate_required_presence(spec, declared, is_builtin, args)
+    if error:
+        return error
+    error = _validate_no_extra(spec, declared, is_builtin, args)
+    if error:
+        return error
+    return _validate_types(spec, declared, is_builtin, args)
+
+
+def _validate_no_extra(spec: Any, declared: dict[str, object], is_builtin: bool, args: dict[str, Any]) -> str:
+    if is_builtin:
+        allowed = _builtin_alias_allowed_keys(spec.name)
+        if allowed is None:
+            allowed = set(declared.keys())
+        for key in args:
+            if str(key) not in allowed:
+                return f"{spec.name} unexpected arg '{key}'"
+        return ""
+    for key in args:
+        if str(key) not in declared:
+            return f"{spec.name} unexpected arg '{key}'"
+    return ""
+
+
+def _validate_types(spec: Any, declared: dict[str, object], is_builtin: bool, args: dict[str, Any]) -> str:
+    _alias_to_canonical = {
+        "cwd": "path", "pattern": "query", "name": "symbol", "cmd": "command",
+        "source_id": "url",
+    }
+    for key, value in args.items():
+        skey = str(key)
+        schema = declared.get(skey)
+        if schema is None and is_builtin:
+            canonical = _alias_to_canonical.get(skey)
+            if canonical is not None:
+                schema = declared.get(canonical)
+            if schema is None:
+                continue
+        if schema is None:
+            continue
+        if skey == "source_id":
+            if not isinstance(value, str) or not value.strip():
+                return f"{spec.name} missing required arg 'source_id'"
+            continue
+        error = _check_spec_value_against_schema(spec.name, skey, schema, value)
+        if error:
+            return error
     return ""
 
 

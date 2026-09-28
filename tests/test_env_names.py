@@ -73,17 +73,16 @@ class EnvNameValueTests(unittest.TestCase):
     def test_native_gate_reads_canonical_name(self) -> None:
         import inspect
 
-        from codey.agents import loop
-        from codey.providers import local_config
-        from codey.research import native_bridge
+        from codey.providers import local_config, native_tools
 
         source = inspect.getsource(local_config)
         self.assertIn("NATIVE_TOOLS_ENV", source)
         self.assertNotIn("CODEY_", source)
-        for module in (local_config, loop, native_bridge):
+        for module in (local_config, native_tools):
             with self.subTest(module=module.__name__):
                 source = inspect.getsource(module)
-                self.assertIn("resolve_local_native_tools", source)
+                if module is native_tools:
+                    self.assertIn("resolve_local_native_tools", source)
                 self.assertNotIn("CODEY_", source)
 
     def test_no_brand_prefixed_name_outside_allowlist(self) -> None:

@@ -35,5 +35,7 @@ def test_run_case_accepts_pipeline_topic_continuity_kwargs(tmp_path) -> None:
     assert row["ok"] is True
     assert "error" not in row
     assert row["provider"] == "deepseek"
-    assert row["research_record_included"] is False
-    assert "research_record" not in row
+    # The shared iteration projects a bounded record even when the report is
+    # incomplete; the completion gate still keeps the run at max_turns.
+    assert row["research_record_included"] is True
+    assert "research_record" in row

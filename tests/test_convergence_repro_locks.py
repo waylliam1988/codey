@@ -101,7 +101,7 @@ class ControllerFailureTests(unittest.TestCase):
             kernel.controller_allowed_for_session = orig  # type: ignore[assignment]
 
     def test_guarded_slot_exception_does_not_allow(self) -> None:
-        from codey.operations import task_loop as kernel
+        from codey.operations import kernel_execution as kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall
@@ -187,10 +187,10 @@ class CustomToolTests(unittest.TestCase):
 
 class SecondRoundWebPromptTests(unittest.TestCase):
     def test_second_round_web_message_carries_new_contract(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
+        from tests.support.kernel_harness import run_task_kernel
 
         submission = TaskSubmission(session_id="s", project="demo", task="research web", max_turns=3, continue_task=False, provider_id="local", strict_research=True)
         policy = build_task_policy(submission, task_kind="research", strict_research=True)
@@ -238,9 +238,9 @@ class DoneReceiptFailureTests(unittest.TestCase):
     def test_native_done_receipt_failure_is_not_complete(self) -> None:
         from types import SimpleNamespace
 
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
+        from tests.support.kernel_harness import run_task_kernel
 
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2, task_text="hi")

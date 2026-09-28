@@ -74,7 +74,8 @@ def event_matrix_capability_ids() -> set[str]:
 
 class ArchitectureBoundaryTests(unittest.TestCase):
     def test_agent_runtime_has_no_browser_or_deepseek_dependency(self) -> None:
-        imports = imported_modules(ROOT / "codey" / "agents" / "loop.py")
+        path = ROOT / "codey" / "operations" / "task_loop.py"
+        imports = imported_modules(path)
 
         self.assertNotIn("playwright.sync_api", imports)
         self.assertNotIn("codey.automation.browser", imports)
@@ -83,26 +84,19 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("codey.providers.web_drivers.stepfun", imports)
         self.assertNotIn("codey.providers.web_drivers.glm", imports)
         self.assertNotIn("codey.providers", imports)
-        self.assertIn("codey.protocols", imports)
+        self.assertIn("codey.operations.kernel_protocol", imports)
 
-    def test_agent_loop_keeps_prompt_verification_and_tool_owners_at_the_boundary(self) -> None:
-        imports = imported_modules(ROOT / "codey" / "agents" / "loop.py")
+    def test_task_kernel_keeps_protocol_and_execution_owners_at_the_boundary(self) -> None:
+        path = ROOT / "codey" / "operations" / "task_loop.py"
+        imports = imported_modules(path)
         forbidden = {
-            "codey.completion",
-            "codey.operations",
-            "codey.toolchain",
-            "codey.workspace.coding_context",
-            "codey.workspace.context_epoch",
-            "codey.workspace.context_source",
+            "codey.automation.browser",
+            "codey.providers.web_drivers.deepseek",
         }
 
-        self.assertEqual(
-            imports_with_forbidden_prefixes(ROOT / "codey" / "agents" / "loop.py", forbidden),
-            [],
-        )
-        self.assertIn("codey.agents.prompt_context", imports)
-        self.assertIn("codey.agents.tool_execution", imports)
-        self.assertIn("codey.agents.verification_driver", imports)
+        self.assertEqual(imports_with_forbidden_prefixes(path, forbidden), [])
+        self.assertIn("codey.operations.kernel_protocol", imports)
+        self.assertIn("codey.operations.kernel_execution", imports)
 
     def test_runtime_package_does_not_import_business_layers(self) -> None:
         forbidden = {"codey.agents", "codey.ghost", "codey.operations"}
@@ -558,7 +552,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_research_pipeline_owns_iteration_boundary_without_legacy_seams(self) -> None:
         pipeline = ROOT / "codey" / "research" / "pipeline.py"
         research_flow = ROOT / "codey" / "operations" / "research_flow.py"
-        research_runner = ROOT / "codey" / "research" / "runner.py"
+        research_runner = ROOT / "codey" / "operations" / "research_iteration.py"
         pipeline_source = pipeline.read_text(encoding="utf-8")
         research_flow_source = research_flow.read_text(encoding="utf-8")
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
@@ -606,7 +600,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             sorted(forbidden_affinity & affinity_imports),
         )
 
-        research_imports = imported_modules(ROOT / "codey" / "research" / "runner.py")
+        research_imports = imported_modules(ROOT / "codey" / "operations" / "research_iteration.py")
         permission_imports = imported_modules(ROOT / "codey" / "policies" / "permissions.py")
         repair_source = (ROOT / "codey" / "repairs" / "adapter_repair.py").read_text(encoding="utf-8")
         tool_runtime_imports = imported_modules(ROOT / "codey" / "toolchain" / "runtime.py")
@@ -1398,9 +1392,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_research_stack_never_imports_ghost_runtime(self) -> None:
         # The Research pipeline consumes only the bounded continuity
         # projection handed to it; it must never reach into Ghost stores.
-        for name in ("context.py", "pipeline.py", "runner.py", "topic_continuity.py"):
-            imports = imported_modules(ROOT / "codey" / "research" / name)
-            with self.subTest(module=name):
+        for path in (
+            ROOT / "codey" / "research" / "context.py",
+            ROOT / "codey" / "research" / "pipeline.py",
+            ROOT / "codey" / "operations" / "research_iteration.py",
+            ROOT / "codey" / "research" / "topic_continuity.py",
+        ):
+            imports = imported_modules(path)
+            with self.subTest(module=path.name):
                 ghost_imports = [item for item in imports if item == "codey.ghost" or item.startswith("codey.ghost.")]
                 self.assertEqual(sorted(ghost_imports), [])
 
@@ -1427,8 +1426,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertEqual(offenders, {})
 
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
-        agent_source = (ROOT / "codey" / "agents" / "runner.py").read_text(encoding="utf-8")
-        research_source = (ROOT / "codey" / "research" / "runner.py").read_text(encoding="utf-8")
+        agent_source = (ROOT / "codey" / "operations" / "task_entry.py").read_text(encoding="utf-8")
+        research_source = (ROOT / "codey" / "operations" / "research_iteration.py").read_text(encoding="utf-8")
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
         tool_source = (ROOT / "codey" / "toolchain" / "runtime.py").read_text(encoding="utf-8")
 
@@ -1439,41 +1438,32 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("compatibility ``tool_*``", tool_source)
 
     def test_agent_runner_is_only_the_public_entry_surface(self) -> None:
-        import ast as _ast
-
-        source = (ROOT / "codey" / "agents" / "runner.py").read_text(encoding="utf-8")
-        tree = _ast.parse(source)
-        function_names = {
-            node.name for node in tree.body if isinstance(node, _ast.FunctionDef)
-        }
-        class_names = {
-            node.name for node in tree.body if isinstance(node, _ast.ClassDef)
-        }
-
-        self.assertEqual(function_names, set())
-        self.assertEqual(class_names, set())
-        self.assertIn("from codey.agents.loop import", source)
-        self.assertNotIn("def _read_before_edit_outcome", source)
+        # Cold-start closure: old loops deleted, no compat shims.
+        self.assertFalse((ROOT / "codey" / "agents" / "runner.py").exists())
+        self.assertFalse((ROOT / "codey" / "agents" / "loop.py").exists())
+        self.assertFalse((ROOT / "codey" / "research" / "runner.py").exists())
+        self.assertFalse((ROOT / "codey" / "operations" / "unified_mode.py").exists())
+        self.assertFalse((ROOT / "codey" / "operations" / "unified_evidence_followup.py").exists())
 
     def test_production_task_path_does_not_use_old_agent_loop(self) -> None:
-        # New production turns run via task_loop/project_adapter (single entry
-        # run_task_mode); old agents.loop must not be on the operations path.
+        # Cold-start closure: old loops deleted and no production references remain.
+        for dead in (
+            "codey/agents/loop.py",
+            "codey/agents/runner.py",
+            "codey/research/runner.py",
+            "codey/operations/unified_mode.py",
+            "codey/operations/unified_evidence_followup.py",
+        ):
+            self.assertFalse((ROOT / dead).exists(), f"{dead} must be deleted")
         offenders: dict[str, list[str]] = {}
         for path in (ROOT / "codey").rglob("*.py"):
-            if path.name in {"runner.py"} and "agents" in str(path):
-                continue
-            if path.relative_to(ROOT).as_posix() in {
-                "codey/operations/task_kernel.py",
-                "codey/operations/kernel_session.py",
-                "codey/operations/kernel_execution.py",
-                "codey/operations/kernel_effects.py",
-                "codey/operations/unified_agent_adapter.py",
-                "codey/operations/unified_research_iteration.py",
-            }:
-                continue
             text = path.read_text(encoding="utf-8", errors="ignore")
             if "from codey.agents.loop import" in text or "from codey.agents.loop." in text:
                 offenders[str(path.relative_to(ROOT))] = ["agents.loop"]
+            if "from codey.research.runner import" in text or "from codey.agents.runner import" in text:
+                offenders[str(path.relative_to(ROOT))] = ["old-runner"]
+            if "from codey.operations.unified_mode import" in text:
+                offenders[str(path.relative_to(ROOT))] = ["unified_mode"]
         self.assertEqual(offenders, {})
 
     def test_run_operation_fact_source_is_runtime_only(self) -> None:
@@ -2103,7 +2093,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "research/object_model.py",
             # PLR split 2026-09-26: relation-review helpers stay in-module.
             "research/proof_quality.py",
-            "research/runner.py",
             "research/source_connectors.py",
             "runs/trace.py",
             "runtime/core/operation_state.py",
@@ -2146,7 +2135,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # Boundary hardening: named done-review result + multiline build
             # (advisor_count preserved), loop.py -25 lines in the same round.
             # PLR split 2026-09-26: 1510 lines after run() preamble/loop split.
-            "research/runner.py": 1570,
             "research/source_connectors.py": 1420,
             "runs/trace.py": 2450,
             # PLR split 2026-09-26: 1188 lines after from_payload field split.

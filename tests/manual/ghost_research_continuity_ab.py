@@ -43,7 +43,6 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.knowledge.note import KnowledgeNote
@@ -57,8 +56,9 @@ from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.reviews.core import ReviewResult
+from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
 from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,

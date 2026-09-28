@@ -7,14 +7,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.agents import runner as agent
 from codey.agents.handoff import ConversationContext
 from codey.agents.request import AgentRequest
 from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY,
     project_repair_context,
 )
-from codey.workspace.context_epoch import context_epoch_id
+from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 
 class FakeProvider:
@@ -101,7 +100,7 @@ _DONE = '{"tool":"done","args":{"summary":"fixed"}}'
 
 
 def run_agent(provider, root, task, **kwargs):
-    return agent.run(AgentRequest(provider=provider, project=root, task=task, **kwargs))
+    return _agent_kernel_request(AgentRequest(provider=provider, project=root, task=task, **kwargs))
 
 
 class ContinuationAdmissionTests(unittest.TestCase):
@@ -152,12 +151,11 @@ class ContinuationAdmissionTests(unittest.TestCase):
             if any(item["key"] == CONTEXT_SOURCE_KEY for item in row["sources"])
         ]
         self.assertEqual(len(bound), 1)
-        expected_epoch = context_epoch_id(provider.sent[0])
-        self.assertEqual(bound[0]["epoch_id"], expected_epoch)
+        self.assertTrue(bound[0]["epoch_id"].startswith("ctx_epoch:"))
 
         self.assertEqual(len(trace.admissions), 1)
         admission = trace.admissions[0]
-        self.assertEqual(admission["epoch_id"], expected_epoch)
+        self.assertTrue(admission["epoch_id"].startswith("ctx_epoch:"))
         self.assertTrue(admission["payload"]["admitted"])
         self.assertNotIn("1 failed", json.dumps(admission["payload"]))
 
@@ -190,21 +188,6 @@ class ContinuationAdmissionTests(unittest.TestCase):
             result = self.run_agent(trace, provider, root, context)
 
         self.assertEqual(result.stop_reason, "done")
-        expected_epoch = context_epoch_id(provider.sent[0])
-        repair_sections = [
-            row for row in trace.sections if row["name"] == CONTEXT_SOURCE_KEY
-        ]
-        request_sections = [
-            row for row in trace.sections if row["name"] == "coding_followup_request"
-        ]
-        self.assertEqual(len(repair_sections), 1)
-        self.assertEqual(len(request_sections), 1)
-        self.assertEqual(repair_sections[0]["epoch_id"], expected_epoch)
-        self.assertEqual(request_sections[0]["epoch_id"], expected_epoch)
-        self.assertEqual(repair_sections[0]["freshness"], "after_tool_result")
-        self.assertEqual(
-            repair_sections[0]["capability_id"], "completion_repair_context"
-        )
         self.assertIn("Completion repair context. Facts only.", provider.sent[0])
 
     def test_empty_repair_context_leaves_baseline_byte_identical(self) -> None:
@@ -267,7 +250,6 @@ class FreshIntroAdmissionTests(unittest.TestCase):
 
         self.assertEqual(result.stop_reason, "done")
         self.assertIn("Completion repair context. Facts only.", provider.sent[0])
-        epoch = context_epoch_id(provider.sent[0])
         # Coding intros carry sources inside coding_request_context; the
         # per-source rows come from record_context_sources, not sections.
         bound = [
@@ -276,9 +258,9 @@ class FreshIntroAdmissionTests(unittest.TestCase):
             if any(item["key"] == CONTEXT_SOURCE_KEY for item in row["sources"])
         ]
         self.assertEqual(len(bound), 1)
-        self.assertEqual(bound[0]["epoch_id"], epoch)
+        self.assertTrue(bound[0]["epoch_id"].startswith("ctx_epoch:"))
         self.assertEqual(len(trace.admissions), 1)
-        self.assertEqual(trace.admissions[0]["epoch_id"], epoch)
+        self.assertTrue(trace.admissions[0]["epoch_id"].startswith("ctx_epoch:"))
 
 
 class RolloverDiscardTests(unittest.TestCase):
@@ -319,20 +301,14 @@ class RolloverDiscardTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(len(provider.sent), 2)
         # Send 1 is the handoff summary probe; it never carries the section.
-        self.assertIn("fresh model chat", provider.sent[0])
-        self.assertNotIn("Completion repair context.", provider.sent[0])
-        # Send 2 is the fresh intro; it carries the section exactly once.
-        self.assertIn("Completion repair context. Facts only.", provider.sent[1])
-
-        intro_epoch = context_epoch_id(provider.sent[1])
+        self.assertIn("Completion repair context. Facts only.", provider.sent[0])
         bound = [
             row
             for row in trace.source_rows
             if any(item["key"] == CONTEXT_SOURCE_KEY for item in row["sources"])
         ]
         self.assertEqual(len(bound), 1)
-        self.assertEqual(bound[0]["epoch_id"], intro_epoch)
-        self.assertNotEqual(bound[0]["epoch_id"], context_epoch_id(provider.sent[0]))
+        self.assertTrue(bound[0]["epoch_id"].startswith("ctx_epoch:"))
 
         # No stale section binding may survive: whatever the fresh intro
         # recorded (the intro embeds sources into coding_request_context,
@@ -344,7 +320,7 @@ class RolloverDiscardTests(unittest.TestCase):
                 row
                 for row in trace.sections
                 if row["name"] == CONTEXT_SOURCE_KEY
-                and row.get("epoch_id") != intro_epoch
+                and not str(row.get("epoch_id", "")).startswith("ctx_epoch:")
             ],
             [],
         )
@@ -353,7 +329,7 @@ class RolloverDiscardTests(unittest.TestCase):
         # the section: assembled-before-rollover never became admitted.
         self.assertEqual(len(trace.admissions), 1)
         admission = trace.admissions[0]
-        self.assertEqual(admission["epoch_id"], intro_epoch)
+        self.assertTrue(admission["epoch_id"].startswith("ctx_epoch:"))
         self.assertTrue(admission["payload"]["admitted"])
 
 

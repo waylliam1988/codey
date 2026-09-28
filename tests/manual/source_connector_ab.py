@@ -1,6 +1,6 @@
 """Live A/B probe for PubMed/arXiv connector-aware Research search.
 
-The probe runs the production ResearchRunner against live web providers. The
+The probe runs the production ResearchIteration against live web providers. The
 baseline arm uses the browser search provider directly; the connector arm wraps
 it with ConnectorAwareSearchProvider. Progress is written atomically after each
 case/arm row so missing samples can be resumed without rerunning completed
@@ -28,13 +28,13 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.research_iteration import ResearchIteration
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.proof_quality import review_research_proof
 from codey.research.protocols import extract_json_objects
-from codey.research.runner import ResearchRunner
 from tests.manual.ab_harness_common import (
     attach_research_record_payload,
     row_has_terminal_failure,
@@ -229,7 +229,7 @@ def run_case(
                     case=case.name,
                     arm=arm,
                 )
-            runner = ResearchRunner(
+            runner = ResearchIteration(
                 run_provider,
                 search,
                 store,

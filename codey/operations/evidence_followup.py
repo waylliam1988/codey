@@ -16,7 +16,7 @@ from codey.runtime.core.models import ToolCall
 from codey.utils.refs import clip
 
 
-def run_unified_evidence_followup(
+def run_evidence_followup(
     *,
     provider: Any,
     tools: Any,
@@ -114,4 +114,4 @@ def run_unified_evidence_followup(
     )
 
 
-__all__ = ["run_unified_evidence_followup"]
+__all__ = ["run_evidence_followup"]

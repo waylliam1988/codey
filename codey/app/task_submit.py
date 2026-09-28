@@ -38,6 +38,7 @@ def run_task(
     run_id: str = "",
     requested_capabilities: tuple[str, ...] = (),
     strict_research: bool = False,
+    project_changes_required: bool = False,
     *,
     get_state: Callable[[], TaskState],
     review_policy: str | None = None,
@@ -105,6 +106,7 @@ def run_task(
                 run_id=run_id,
                 requested_capabilities=tuple(requested_capabilities or ()),
                 strict_research=bool(strict_research),
+                project_changes_required=bool(project_changes_required),
             )
         )
     finally:
@@ -124,6 +126,7 @@ def submit_task(
     intent: str = "auto",
     requested_capabilities: tuple[str, ...] = (),
     strict_research: bool = False,
+    project_changes_required: bool = False,
     *,
     get_state: Callable[[], TaskState],
     abort_if_stopped: bool = False,
@@ -156,6 +159,7 @@ def submit_task(
             reserved.run_id,
             requested_capabilities=tuple(requested_capabilities or ()),
             strict_research=bool(strict_research),
+            project_changes_required=bool(project_changes_required),
             get_state=lambda: state,
             review_policy=review_policy,
         )

@@ -9,25 +9,31 @@ from unittest.mock import patch
 import pytest
 
 
-@pytest.mark.parametrize("project, expected", [("E:/codey", "unified"), (None, "unified")])
+@pytest.mark.parametrize("project, expected", [("E:/codey", "project"), (None, "chat")])
 def test_opt_in_task_kind_reaches_shared_kernel(project: str | None, expected: str) -> None:
     from codey.operations.result import ModeOutcome
     from codey.operations.task_phases.dispatch import dispatch_run_mode
     from codey.task.kind import resolve_task_kind
     from codey.task.model import TaskSubmission
 
-    request = TaskSubmission("s", project, "task", 2, False, "local", intent="unified")
+    request = TaskSubmission("s", project, "task", 2, False, "local", intent="project")
     kind = resolve_task_kind(request)
-    outcome = ModeOutcome({"type": "task_done", "mode": expected})
-    with patch("codey.operations.task_phases.dispatch.run_task_mode", return_value=outcome) as unified:
+    assert kind == expected
+    # Hybrid still hits the single session without legacy two-phase.
+    hybrid_outcome = ModeOutcome({"type": "task_done", "mode": "hybrid"})
+    with patch("codey.operations.task_phases.dispatch.run_task_mode", return_value=hybrid_outcome) as single:
         actual = dispatch_run_mode(
-            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(),
-            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(), kind,
+            SimpleNamespace(state=SimpleNamespace(), knowledge_store=None, evidence_ledgers=None,
+                            search_factory=None, run_research_advisors=None, managed_outputs=None,
+                            runtime_mutations=None),
+            SimpleNamespace(), SimpleNamespace(),
+            SimpleNamespace(claimed_work_item=None), SimpleNamespace(request=request, recovered_tool_outcomes=()),
+            SimpleNamespace(), "hybrid",
             SimpleNamespace(),
         )
-    assert actual is outcome
-    assert unified.call_count == 1
-    assert unified.call_args.kwargs["task_kind"] == "project"
+    assert actual is hybrid_outcome
+    assert single.call_count == 1
+    assert single.call_args.kwargs["task_kind"] == "hybrid"
 
 
 def test_auto_intent_reaches_auto_router_before_single_entry() -> None:
@@ -85,7 +91,7 @@ def test_default_kinds_all_use_shared_kernel(kind: str) -> None:
     assert unified.call_args.kwargs["task_kind"] == kind
 
 
-def test_unified_project_uses_project_runtime_modes() -> None:
+def test_unified_alias_removed_project_uses_project_runtime_modes() -> None:
     from codey.task.kind import (
         conversation_mode,
         startup_failover_mode,
@@ -94,16 +100,19 @@ def test_unified_project_uses_project_runtime_modes() -> None:
         writer_failover_mode,
     )
 
-    assert startup_failover_mode("unified") == "project"
-    assert writer_failover_mode("unified") == "project"
-    assert conversation_mode("unified", "E:/codey") == "project"
-    assert conversation_mode("unified", None) == "chat"
-    assert ui_mode("unified", "E:/codey") == "agent"
-    assert trace_mode("unified", "E:/codey") == "project"
+    # Cold-start alias deleted: no unified projection remains.
+    assert startup_failover_mode("unified") == "unified"
+    # Project modes still project correctly.
+    assert startup_failover_mode("project") == "project"
+    assert writer_failover_mode("project") == "project"
+    assert conversation_mode("project", "E:/codey") == "project"
+    assert conversation_mode("project", None) == "chat"
+    assert ui_mode("project", "E:/codey") == "agent"
+    assert trace_mode("project", "E:/codey") == "project"
 
 
-def test_unified_research_builds_default_search_provider(tmp_path) -> None:
-    from codey.operations.unified_mode import _build_research_tools
+def test_task_entry_research_builds_default_search_provider(tmp_path) -> None:
+    from codey.operations.task_execution import build_research_tools
 
     deps = SimpleNamespace(
         knowledge_store=SimpleNamespace(root=tmp_path),
@@ -111,21 +120,21 @@ def test_unified_research_builds_default_search_provider(tmp_path) -> None:
     )
     search = object()
     with patch("codey.operations.research_flow.default_research_search_provider", return_value=search):
-        tools = _build_research_tools(deps, session_id="s", project="")
+        tools = build_research_tools(deps, session_id="s", project="")
     assert tools is not None
     assert tools.search is search
 
 
-def test_opt_in_unified_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
+def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
+    from codey.operations.task_entry import run_entry_kernel
     from codey.operations.task_loop import KernelResult
-    from codey.operations.unified_mode import run_unified_mode
     from codey.task.model import TaskSubmission
 
     request = TaskSubmission("s", str(tmp_path), "inspect", 1, False, "deepseek",
-                             intent="unified", run_id="r")
+                             intent="project", run_id="r")
     provider = SimpleNamespace(send=lambda *_args, **_kwargs: "")
     frame = SimpleNamespace(
-        request=request, task_kind="unified", run_id="r", provider=provider,
+        request=request, task_kind="project", run_id="r", provider=provider,
         provider_id="deepseek", project_text=str(tmp_path), handoff="",
         recovered_tool_outcomes=(), recovered_tool_result_batch_id="",
     )
@@ -141,7 +150,7 @@ def test_opt_in_unified_entry_uses_same_runtime_receipts_and_events(tmp_path) ->
                 return_value=KernelResult(True, "done", 1, "done")) as kernel,
           patch("codey.operations.task_effects.KernelEffectSink") as sink_type,
           patch("codey.operations.task_effects.KernelRecordedProvider") as recorded):
-        result = run_unified_mode(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
+        result = run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
                                   hooks, deps)
     assert result.event["stop_reason"] == "done"
     sink_type.assert_called_once()
@@ -152,16 +161,16 @@ def test_opt_in_unified_entry_uses_same_runtime_receipts_and_events(tmp_path) ->
     assert kernel.call_args.kwargs["managed_outputs"] is managed
 
 
-def test_unified_entry_creates_new_authorized_project(tmp_path) -> None:
+def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
+    from codey.operations.task_entry import run_entry_kernel
     from codey.operations.task_loop import KernelResult
-    from codey.operations.unified_mode import run_unified_mode
     from codey.task.model import TaskSubmission
 
     project = tmp_path / "new-project"
     request = TaskSubmission("s", str(project), "create app", 1, False, "local",
-                             intent="unified", run_id="r")
+                             intent="project", run_id="r")
     frame = SimpleNamespace(
-        request=request, task_kind="unified", run_id="r",
+        request=request, task_kind="project", run_id="r",
         provider=SimpleNamespace(send=lambda *_args, **_kwargs: ""),
         provider_id="local", project_text=str(project), handoff="",
         recovered_tool_outcomes=(), recovered_tool_result_batch_id="",
@@ -170,7 +179,7 @@ def test_unified_entry_creates_new_authorized_project(tmp_path) -> None:
     deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=None)
     with patch("codey.operations.task_loop.run_task_kernel",
                return_value=KernelResult(True, "done", 1, "done")) as kernel:
-        run_unified_mode(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
+        run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
                          hooks, deps)
     assert project.is_dir()
     assert kernel.call_args.kwargs["project_path"] == project.resolve()
@@ -573,7 +582,7 @@ def test_noop_edit_does_not_create_false_freshness(tmp_path) -> None:
 
 
 def test_default_research_iteration_uses_shared_turn_kernel() -> None:
-    from codey.operations.research_flow import run_unified_research_iteration
+    from codey.operations.research_iteration import run_research_iteration
     from codey.operations.task_loop import KernelResult
     from codey.research.ledger import ResearchLedger
 
@@ -586,7 +595,7 @@ def test_default_research_iteration_uses_shared_turn_kernel() -> None:
     with patch("codey.operations.task_loop.run_task_kernel", return_value=KernelResult(
         False, "unfinished", 1, "max_turns",
     )) as kernel:
-        iteration = run_unified_research_iteration(
+        iteration = run_research_iteration(
             deps, provider=provider, session_id="s", project="", task="research question",
             max_turns=1, on_event=lambda _event: None, stop_flag=None,
             provider_id="deepseek", run_id="r", chat_handoff="",
@@ -615,7 +624,7 @@ def test_research_done_builds_proof_record_from_current_ledger() -> None:
 
 def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> None:
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.research_iteration import run_unified_research_iteration
+    from codey.operations.research_iteration import run_research_iteration
 
     url = "https://example.com/pipeline"
     answer = (
@@ -658,7 +667,7 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> 
             return next(replies)
 
     store = KnowledgeStore(tmp_path / "knowledge")
-    iteration = run_unified_research_iteration(
+    iteration = run_research_iteration(
         SimpleNamespace(knowledge_store=store), provider=Provider(), session_id="s",
         project="", task="pipeline question", max_turns=5,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
@@ -730,8 +739,8 @@ def test_research_write_requires_project_writer_lease() -> None:
                               requested_capabilities=("project.write",))
     assert not requires_project_writer_lease(read_only, "research")
     assert requires_project_writer_lease(writable, "research")
-    unified = TaskSubmission("s", "E:/codey", "edit", 3, False, "local", intent="unified")
-    assert requires_project_writer_lease(unified, "unified")
+    project_task = TaskSubmission("s", "E:/codey", "edit", 3, False, "local", intent="project")
+    assert requires_project_writer_lease(project_task, "project")
 
 
 def test_kernel_records_intent_before_project_tool_execution(tmp_path) -> None:
@@ -957,7 +966,7 @@ def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_pat
 
 def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) -> None:
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.research_iteration import run_unified_research_iteration
+    from codey.operations.research_iteration import run_research_iteration
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -981,7 +990,7 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
             return '{"tool":"web_search","args":{"query":"q"}}'
 
     store = KnowledgeStore(tmp_path / "knowledge")
-    iteration = run_unified_research_iteration(
+    iteration = run_research_iteration(
         SimpleNamespace(knowledge_store=store, runtime_mutations=line),
         provider=Provider(), session_id="s", project="", task="q", max_turns=1,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
@@ -995,7 +1004,7 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
 
 
 def test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard() -> None:
-    from codey.operations.unified_evidence_followup import run_unified_evidence_followup
+    from codey.operations.evidence_followup import run_evidence_followup
     from codey.research.plan_executor import PlanExecutionResult
 
     url = "https://example.com/fresh"
@@ -1024,7 +1033,7 @@ def test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard() ->
         def send(self, _prompt, timeout=None):
             return next(replies)
 
-    result = run_unified_evidence_followup(
+    result = run_evidence_followup(
         provider=Provider(), tools=tools,
         plan=SimpleNamespace(plan_ref="p1"),
         material=PlanExecutionResult(fresh_source_urls=(url,), previews=("fact",)),

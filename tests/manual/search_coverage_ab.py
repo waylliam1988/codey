@@ -21,7 +21,6 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.providers import controls as provider_controls
@@ -44,6 +43,7 @@ from codey.toolchain.runtime import (
 )
 from codey.utils.scan_report import ScanReport, byte_limit_label
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
+from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 ARMS = ("baseline", "coverage")
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-search-coverage-ab.json"
@@ -54,7 +54,7 @@ BUDGET_MARKER = "RARE_BUDGET_SEARCH_MARKER"
 
 
 def run_agent(provider, project, task, **kwargs):
-    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
+    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
@@ -17,6 +16,7 @@ from codey.providers.diagnostics import (
     ProviderActionError,
     ProviderFailure,
 )
+from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
 from codey.workspace.config import preferred_provider_for
 

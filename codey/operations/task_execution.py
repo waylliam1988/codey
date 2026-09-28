@@ -15,6 +15,47 @@ from typing import Any
 from codey.runtime.core.models import ToolCall, ToolResult
 
 
+def build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | None:
+    """Research execution adapter: real search + store + ledger tools.
+
+    Moved here from the old task entry so the entry stays orchestration-only;
+    executors live with execution. Returns None when Research is unconfigured.
+    """
+    knowledge_store = getattr(deps, "knowledge_store", None)
+    if knowledge_store is None:
+        return None
+    search_factory = getattr(deps, "search_factory", None)
+    if not callable(search_factory):
+        try:
+            from codey.operations.research_flow import default_research_search_provider
+        except Exception:
+            return None
+        search_factory = default_research_search_provider
+    try:
+        search = search_factory()
+    except Exception:
+        return None
+    try:
+        from codey.knowledge.changes import KnowledgeChanges
+
+        changes = KnowledgeChanges(root=getattr(knowledge_store, "root", "."))
+    except Exception:
+        return None
+    try:
+        from codey.research.tools import ResearchTools
+
+        return ResearchTools(
+            search=search,
+            store=knowledge_store,
+            changes=changes,
+            diagnostics=None,
+            session_id=session_id,
+            project=project,
+        )
+    except Exception:
+        return None
+
+
 def _tool_result(call: ToolCall, outcome: Any) -> ToolResult:
     audit = dict(getattr(outcome, "audit", {}) or {})
     if call.name == "edit":
@@ -125,7 +166,7 @@ class ExecutionDelegate:
                     result = ToolResult(call=call, model_text=produced)
                 else:
                     result = ToolResult(call=call, model_text=str(produced))
-                from codey.operations.task_loop import _result_ok as _ok
+                from codey.operations.kernel_execution import _result_ok as _ok
                 try:
                     ok = bool(_ok(name, result))
                 except Exception:
@@ -447,4 +488,4 @@ class ExecutionDelegate:
         return evidence
 
 
-__all__ = ["ExecutionDelegate"]
+__all__ = ["ExecutionDelegate", "build_research_tools"]

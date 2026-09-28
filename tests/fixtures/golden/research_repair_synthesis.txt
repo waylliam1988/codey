@@ -1,12 +1,7 @@
 Your last reply did not satisfy the Research tool contract.
 Error: knowledge_write is not allowed by the current Research controller state; allowed tools: knowledge_search, knowledge_read, web_search, open_result, done
 
-The tool was valid JSON, but it is not allowed by the current Research controller state.
-Do not call knowledge_write again until it appears in the allowed tools list.
-Use exactly one JSON shape from the current allowed-actions block.
-If you need evidence first, search/open sources before writing notes or calling done.
-
-Reply with exactly one JSON object and no prose.
+Reply with exactly one JSON object using {"tool":"...","args":{...}} and no other text.
 
 Research controller current allowed actions:
 - Allowed tools this turn: knowledge_search, knowledge_read, web_search, open_result, done

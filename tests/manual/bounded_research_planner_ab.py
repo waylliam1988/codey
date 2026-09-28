@@ -2,7 +2,7 @@
 
 The baseline arm runs the production ResearchPipeline with follow-up disabled.
 The planner arm enables one bounded follow-up round. Both arms use the same
-production ResearchRunner and deterministic fixture search provider, while the
+production ResearchIteration and deterministic fixture search provider, while the
 web-model provider is live. Progress is written atomically after each row, and
 an optional durable observation journal (`<stem>.trace/`) records every
 provider send/reply pair as hash-chained JSONL events with digest-only
@@ -28,6 +28,7 @@ import contextlib
 import codey.research.followup_selection as followup_selection
 import codey.research.pipeline as pipeline_module
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.research_iteration import ResearchIteration
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
@@ -38,7 +39,6 @@ from codey.research.plan_executor import PlanExecutionResult
 from codey.research.proof_quality import review_research_proof
 from codey.research.protocols import extract_json_objects
 from codey.research.query_planner import QueryCandidate, ResearchPlan
-from codey.research.runner import ResearchRunner
 from codey.research.tools import ResearchTools, clone_research_tools
 from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,
@@ -322,7 +322,7 @@ def run_case(
             topic_continuity_context: str = "",
             topic_continuity_payload: dict[str, object] | None = None,
         ) -> ResearchIterationRun:
-            runner = ResearchRunner(
+            runner = ResearchIteration(
                 run_provider,
                 search,
                 store,
@@ -336,22 +336,9 @@ def run_case(
                 topic_continuity_context=topic_continuity_context,
                 topic_continuity_payload=topic_continuity_payload,
             )
-            for event in runner.run(task):
-                if event.kind == "turn":
-                    model_actions.extend(_safe_model_actions(event.turn, event.reply)[:3])
-                if event.kind == "info":
-                    infos.append(str(event.message or "")[:240])
-                if event.kind == "tool" and event.call is not None:
-                    args = event.call.args if isinstance(event.call.args, dict) else {}
-                    tool_calls.append(
-                        {
-                            "turn": event.turn,
-                            "name": event.call.name,
-                            "args": _safe_args(args),
-                            "ok": bool(event.outcome.ok) if event.outcome is not None else False,
-                            "status": event.outcome.presentation_status() if event.outcome is not None else "",
-                        }
-                    )
+            # ResearchIteration now yields its final result directly; tool
+            # events are emitted through the shared kernel callback path.
+            list(runner.run(task))
             if runner.result is None:
                 raise RuntimeError("research finished without result")
             iteration = ResearchIterationRun(result=runner.result, tools=runner.tools)

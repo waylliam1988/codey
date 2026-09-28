@@ -12,7 +12,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.agents.runner import RunResult
 from codey.app import consensus_service, server
 from codey.app import task_submit as task_submit
 from codey.providers import worker_child as provider_worker_child
@@ -43,6 +42,7 @@ from codey.repairs.policy import (
 from codey.repairs.sandbox import create_repair_sandbox
 from codey.repairs.self_repair import SelfRepairJob, SelfRepairSupervisor
 from codey.repairs.self_repair_worker import _run_worker_job, run_self_repair_worker
+from codey.runtime.core.run_result import RunResult
 
 
 def _source_tree(root: Path) -> None:

@@ -26,12 +26,12 @@ if str(ROOT) not in sys.path:
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.research_iteration import ResearchIteration, ResearchToolOutcome, first_text_arg
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
 from codey.research.protocols import MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
 from codey.research.protocols import JsonToolCodec
 from codey.research.report_quality import review_report_quality
-from codey.research.runner import ResearchRunner, _Outcome, first_text_arg
 from codey.research.source_document import SourceDocument, SourcePage, compact_pages
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, PDF_SOURCE_SEARCH_MAX_PAGES
 from codey.research.source_search import bounded_limit, render_results, search_pages, search_text
@@ -472,7 +472,7 @@ def _fixture_document_header(document: SourceDocument) -> str:
     return "\n".join(str(line or "").strip() for line in lines if str(line or "").strip())
 
 
-class ProbeResearchRunner(ResearchRunner):
+class ProbeResearchIteration(ResearchIteration):
     def __init__(
         self,
         provider,
@@ -559,7 +559,7 @@ class ProbeResearchRunner(ResearchRunner):
 
     def _dispatch(self, call, turn: int = 0, tool_index: int = 0):
         if call.name == "source_search":
-            return _Outcome(self.tools.source_search(
+            return ResearchToolOutcome(self.tools.source_search(
                 str(call.args.get("url") or ""),
                 first_text_arg(call.args, "query"),
                 _as_int(call.args.get("limit"), 6),
@@ -1068,7 +1068,7 @@ def run_case(
         store = KnowledgeStore(Path(td))
         _seed_store(store, case)
         search = FixtureSearchProvider(case)
-        runner = ProbeResearchRunner(
+        runner = ProbeResearchIteration(
             provider,
             search,
             store,
@@ -1554,7 +1554,7 @@ def _provider_failure_payload(exc: BaseException, provider: object | None = None
     return failure.to_dict()
 
 
-def _last_done_quality_review(runner: ProbeResearchRunner) -> dict[str, Any]:
+def _last_done_quality_review(runner: ProbeResearchIteration) -> dict[str, Any]:
     answer = _last_done_answer(runner.received_replies)
     if not answer:
         return {}

@@ -79,7 +79,7 @@ def test_receipt_externalize_keeps_window_only_for_model() -> None:
 def test_runner_open_url_fail_closed_on_string() -> None:
     import pytest
 
-    from codey.research.runner import ResearchRunner
+    from codey.operations.research_iteration import ResearchIteration
     from codey.runtime.core.models import ToolCall
 
     class _Search:
@@ -93,7 +93,7 @@ def test_runner_open_url_fail_closed_on_string() -> None:
 
     with tempfile.TemporaryDirectory() as td:
         store = KnowledgeStore(Path(td))
-        runner = ResearchRunner(_Provider(), _Search(), store, session_id="s", run_id="r")
+        runner = ResearchIteration(_Provider(), _Search(), store, session_id="s", run_id="r")
         runner.tools.open_url = lambda *a, **k: "legacy string"  # type: ignore[method-assign]
         with pytest.raises(TypeError, match="must return ResearchToolOutput"):
             runner._dispatch(ToolCall("open_url", {"url": "https://example.com"}), 1, 0)

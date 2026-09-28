@@ -5,16 +5,16 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
 from codey.app import consensus_service, review_service, server
 from codey.app import task_submit as task_submit
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import CheckEvidence
 from codey.toolchain.runtime import ToolOutcome
 from codey.workspace.facts import MAX_VERIFIED_COMMANDS, ProjectFactsStore
+from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 
 class FakeProvider:
@@ -38,7 +38,7 @@ class FakeProvider:
 
 
 def run_agent(provider, project, task, **kwargs):
-    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
+    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 class ProjectFactsTests(unittest.TestCase):
@@ -238,7 +238,7 @@ class ProjectFactsTests(unittest.TestCase):
             )
 
         self.assertEqual(result.stop_reason, "done")
-        self.assertIn("Verified project facts", provider.sent[0])
+        # New single entry includes project facts via Project context (no old header).
         self.assertIn("python -m unittest", provider.sent[0])
         self.assertNotIn("facts.json", provider.sent[0])
 

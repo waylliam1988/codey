@@ -74,7 +74,7 @@ class PrepareSubmissionTests(unittest.TestCase):
 class HeadlessRunIdReuseTests(unittest.TestCase):
     def test_reused_run_id_is_rejected_without_running_agent(self) -> None:
         from codey.agents.request import AgentRequest
-        from codey.agents.runner import RunResult
+        from codey.runtime.core.run_result import RunResult
 
         calls: list[str] = []
 

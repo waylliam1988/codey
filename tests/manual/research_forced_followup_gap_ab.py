@@ -26,6 +26,7 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.research_iteration import ResearchIteration
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
@@ -33,7 +34,6 @@ from codey.research.evidence_followup import run_evidence_followup
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.proof_quality import review_research_proof
-from codey.research.runner import ResearchRunner
 from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,
     AB_FAILURE_NONE,
@@ -303,7 +303,7 @@ def run_case(
             topic_continuity_context: str = "",
             topic_continuity_payload: Mapping[str, object] | None = None,
         ) -> ResearchIterationRun:
-            runner = ResearchRunner(
+            runner = ResearchIteration(
                 run_provider,
                 search,
                 store,

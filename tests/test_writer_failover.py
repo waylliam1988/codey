@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import unittest
 
-from codey.agents.runner import RunResult
 from codey.agents.writer_failover import (
     CheckpointView,
     WriterAttempt,
@@ -17,6 +16,7 @@ from codey.agents.writer_failover import (
 )
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.runtime.core.cancellation import TaskCancelled
+from codey.runtime.core.run_result import RunResult
 
 
 def _failure(model: str = "m", action: str = "task") -> ProviderFailure:

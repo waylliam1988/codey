@@ -21,6 +21,7 @@ if __package__ in (None, ""):
 
 import contextlib
 
+from codey.operations.research_iteration import render_research_repair_prompt
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.controller import (
@@ -29,7 +30,6 @@ from codey.research.controller import (
     render_control_block,
 )
 from codey.research.protocols import JsonToolCodec, extract_json_objects
-from codey.research.runner import render_research_repair_prompt
 from codey.research.tool_contract import PROTOCOL_TOO_MANY_TOOLS
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

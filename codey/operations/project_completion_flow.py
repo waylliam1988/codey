@@ -54,8 +54,8 @@ from codey.operations.task_context import (
     safe_project_map,
     safe_verification_candidates,
 )
+from codey.operations.task_execution import build_research_tools as _build_research_tools
 from codey.operations.task_state import TaskState
-from codey.operations.unified_mode import _build_research_tools
 from codey.providers.capabilities import rank_providers
 from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure

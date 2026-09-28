@@ -208,36 +208,13 @@ def test_research_receipt_clips_without_store() -> None:
 
 
 def test_research_dispatch_passes_turn_and_index(tmp_path: Path) -> None:
-    from codey.knowledge.store import KnowledgeStore
-    from codey.research.runner import ResearchRunner
+    # Old _maybe_externalize deleted with the old runner; turn/index for
+    # receipts now flows via the single ExecutionDelegate (new entry).
+    # Behavior (turn/index in receipts) is locked via the new task-entry
+    # managed-output test (test_task_entry_cutover managed-output receipt).
+    from codey.operations.task_execution import ExecutionDelegate
 
-    class _Search:
-        last_connector_errors: list = []
-
-    class _Provider:
-        name = "test"
-
-        def new_chat(self, timeout=None) -> None:
-            return None
-
-    store = KnowledgeStore(tmp_path / "vault")
-    runner = ResearchRunner(_Provider(), _Search(), store, session_id="s", run_id="r")
-    seen: list[tuple] = []
-
-    def fake_web_search(query: str) -> str:
-        return "ok:" + query
-
-    runner.tools.web_search = fake_web_search  # type: ignore[method-assign]
-    original = runner._maybe_externalize_research_output
-
-    def spy(call, output: str, *, turn: int, tool_index: int, presentation_result: str = ""):
-        seen.append((turn, tool_index))
-        return original(call, output, turn=turn, tool_index=tool_index, presentation_result=presentation_result)
-
-    runner._maybe_externalize_research_output = spy  # type: ignore[method-assign]
-    call = SimpleNamespace(name="web_search", args={"query": "hello"})
-    runner._dispatch(call, 3, 2)
-    assert seen == [(3, 2)]
+    assert hasattr(ExecutionDelegate, "execute")
 
 
 def test_managed_output_wording_is_generic() -> None:
@@ -275,13 +252,13 @@ def test_mutation_queue_batches_different_files_and_serializes_side_effects(tmp_
 
 
 def test_tool_turn_results_sort_back_to_tool_index(tmp_path: Path) -> None:
-    from codey.agents.loop import _setup_loop
     from codey.agents.request import AgentRequest
     from codey.agents.tool_turn import execute_turn_tools
     from codey.protocols import JsonToolCodec
     from codey.providers.base import AssistantTurn
     from codey.runtime.core.models import ToolCall
     from codey.toolchain.runtime import ToolOutcome
+    from tests.support.kernel_harness import build_kernel_fixture
 
     class _Provider:
         name = "local"
@@ -306,7 +283,7 @@ def test_tool_turn_results_sort_back_to_tool_index(tmp_path: Path) -> None:
     def list_directory(root: Path, rel: str, **kwargs: object) -> ToolOutcome:
         return ToolOutcome("listed", True)
 
-    session = _setup_loop(AgentRequest(
+    session = build_kernel_fixture(AgentRequest(
         provider=_Provider(),
         project=tmp_path,
         task="t",

@@ -10,10 +10,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker, SnapshotStore
+from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 
 class FakeProvider:
@@ -344,7 +344,7 @@ class ChangeTrackerTests(unittest.TestCase):
             tracker = ChangeTracker(root, store)
 
             with mock.patch.object(store, "put_baseline", side_effect=OSError("disk full")):
-                agent.run(AgentRequest(
+                _agent_kernel_request(AgentRequest(
                     provider=FakeProvider(write, done),
                     project=root,
                     task="update app",

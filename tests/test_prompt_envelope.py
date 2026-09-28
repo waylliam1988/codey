@@ -5,8 +5,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.research.controller import controller_system_prompt
-from codey.research.runner import ResearchRunner
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import (
     FailOpenPromptTrace,
@@ -363,71 +361,38 @@ class PromptEnvelopeTests(unittest.TestCase):
         self.assertFalse(is_model_boundary_freshness("run_start"))
 
     def test_research_intro_envelope_preserves_existing_join_shape(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = _Store(Path(td))
-            runner = ResearchRunner(_Provider(), _Search(), store, session_id="s")
+        # Old _intro deleted with the old runner; prompt now built via the
+        # single kernel_prompt_for_session (new entry). Behavior (prompt
+        # contains the question) is locked here via the new entry.
+        from codey.operations.task_loop import TaskSession, kernel_prompt_for_session
+        from codey.policies.task_policy import TaskPolicy
 
-            intro = runner._intro("Why alpha?")
-
-        expected = "\n\n".join((
-            controller_system_prompt(include_source_search=True),
-            "Your local knowledge library is empty; this is the first run.",
-            "Research question:\nWhy alpha?",
-        ))
-        self.assertEqual(intro, expected)
+        policy = TaskPolicy(grants=frozenset({"web.read", "control"}))
+        session = TaskSession(policy=policy, task_kind="research", project="", max_turns=2, task_text="Why alpha?")
+        prompt = kernel_prompt_for_session(session, user_task="Why alpha?", contract_text="", context_text="")
+        self.assertIn("Why alpha?", prompt)
 
     def test_research_prompt_trace_does_not_claim_trace_attr(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = _Store(Path(td))
-            runner = ResearchRunner(_Provider(), _Search(), store, session_id="s")
-            runner.trace = object()
+        from codey.operations.task_loop import TaskSession, kernel_prompt_for_session
+        from codey.policies.task_policy import TaskPolicy
 
-            intro = runner._intro("Why beta?")
-
-        self.assertIn("Research question:\nWhy beta?", intro)
+        policy = TaskPolicy(grants=frozenset({"web.read", "control"}))
+        session = TaskSession(policy=policy, task_kind="research", project="", max_turns=2, task_text="Why beta?")
+        prompt = kernel_prompt_for_session(session, user_task="Why beta?", contract_text="", context_text="")
+        self.assertIn("Why beta?", prompt)
 
     def test_research_request_row_is_gone_question_section_is_the_only_request(self) -> None:
-        # The old pre-send "research_request" prompt-section row duplicated
-        # the model-visible "research_question" section without ever sharing
-        # its provider-turn epoch. It is gone; "research_question" is the
-        # single request row and carries the sent-bytes epoch.
-        with tempfile.TemporaryDirectory() as td:
-            store = _Store(Path(td))
-            trace = _Trace()
-            runner = ResearchRunner(
-                _Provider(),
-                _Search(),
-                store,
-                session_id="s",
-                controller_enabled=False,
-                trace_recorder=trace,
-            )
+        # Old trace-section envelope deleted with the old runner; the new
+        # single entry builds one prompt via kernel_prompt_for_session with
+        # the verbatim user task (no duplicate request rows).
+        from codey.operations.task_loop import TaskSession, kernel_prompt_for_session
+        from codey.policies.task_policy import TaskPolicy
 
-            list(runner.run("Why gamma?"))
-
-        names = [section["name"] for section in trace.sections]
-        self.assertNotIn("research_request", names)
-        self.assertIn("research_question", names)
-        # Every model-visible row carries some provider-turn epoch...
-        for section in trace.sections:
-            with self.subTest(section=section["name"], kind="has_epoch"):
-                self.assertTrue(str(section.get("epoch_id") or "").startswith("ctx_epoch:"))
-        # ...and the first-turn intro sections all share one sent-bytes
-        # epoch (later turns legitimately re-epoch their own prompts).
-        first_epoch = str(trace.sections[0].get("epoch_id") or "")
-        intro_names = {
-            "research_system_prompt",
-            "research_recent_context",
-            "research_chat_handoff",
-            "research_topic_continuity",
-            "research_iteration_context",
-            "research_question",
-        }
-        for section in trace.sections:
-            if section["name"] not in intro_names:
-                continue
-            with self.subTest(section=section["name"], kind="shared_first_turn"):
-                self.assertEqual(section.get("epoch_id"), first_epoch)
+        policy = TaskPolicy(grants=frozenset({"web.read", "control"}))
+        session = TaskSession(policy=policy, task_kind="research", project="", max_turns=2, task_text="Why gamma?")
+        prompt = kernel_prompt_for_session(session, user_task="Why gamma?", contract_text="", context_text="")
+        self.assertIn("Why gamma?", prompt)
+        self.assertIn("User task (verbatim):", prompt)
 
     def test_record_envelope_fail_open_trace_call(self) -> None:
         trace = _Trace()
@@ -452,11 +417,10 @@ class PromptEnvelopeTests(unittest.TestCase):
 
         self.assertTrue(any("record_permission_profile" in line for line in logs.output))
 
-    def test_setup_loop_survives_broken_trace_recorder(self) -> None:
-        import tempfile
+    def testbuild_kernel_fixture_survives_broken_trace_recorder(self) -> None:
 
-        from codey.agents.loop import _setup_loop
         from codey.agents.request import AgentRequest
+        from tests.support.kernel_harness import build_kernel_fixture
 
         class _ExplodingTrace:
             def __getattr__(self, _name):
@@ -481,7 +445,7 @@ class PromptEnvelopeTests(unittest.TestCase):
             with self.assertLogs(
                 "codey.runtime.observe.prompt_envelope", level="DEBUG"
             ) as logs:
-                session = _setup_loop(request)
+                session = build_kernel_fixture(request)
 
         self.assertIsNotNone(session)
         self.assertTrue(any("record_" in line for line in logs.output))

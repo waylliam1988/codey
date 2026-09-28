@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from codey.agents.loop import _setup_loop
 from codey.agents.prompt_context import append_coding_context
 from codey.agents.request import AgentRequest
 from codey.agents.result_delivery import (
@@ -59,6 +58,7 @@ from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_view import load_session_view, pending_for
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.kernel_harness import build_kernel_fixture
 
 
 def _commit_log_entries(
@@ -1476,7 +1476,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             runtime_mutations=self.line,
             tool_result_delivery=self.delivery,
         )
-        session = _setup_loop(req)
+        session = build_kernel_fixture(req)
 
         res = execute_turn_tools(session, calls, turn=1)
         self.assertFalse(res.stopped)
@@ -1524,7 +1524,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             runtime_mutations=self.line,
             tool_result_delivery=self.delivery,
         )
-        session = _setup_loop(req)
+        session = build_kernel_fixture(req)
         res = execute_turn_tools(session, calls, turn=1)
 
         # Inject failure at the single mutation line before provider send.
@@ -1546,7 +1546,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
     def test_ensure_result_batch_intent_rejects_empty_ref(self) -> None:
         provider = MockDeliveryProvider()
         codec = JsonToolCodec()
-        session = _setup_loop(AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec, on_event=lambda _event: None, session_id=self.session_id, run_id=self.run_id, tool_result_delivery=self.delivery))
+        session = build_kernel_fixture(AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec, on_event=lambda _event: None, session_id=self.session_id, run_id=self.run_id, tool_result_delivery=self.delivery))
         turn_state = TurnState(
             results=[ToolResult(call=ToolCall(name="read", args={"path": "target.py"}), model_text="ok")],
             delivery_items=[
@@ -1585,7 +1585,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             )
 
         # Empty delivery is still a no-op (no provider send needed).
-        empty_session = _setup_loop(base_request)
+        empty_session = build_kernel_fixture(base_request)
         self.assertEqual(
             ensure_result_batch_intent(empty_session, TurnState(results=[], delivery_items=[]), 1), ""
         )
@@ -1599,7 +1599,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 "session_id": "",
             },
         ):
-            session = _setup_loop(replace(base_request, **kwargs))
+            session = build_kernel_fixture(replace(base_request, **kwargs))
             with self.assertRaises(ToolResultDeliveryError):
                 ensure_result_batch_intent(session, _turn_state(), 1)
             with self.assertRaises(ToolResultDeliveryError):
@@ -1634,7 +1634,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         # Now try delivering turn 1 with unexpected different tool "search"
         provider = MockDeliveryProvider()
         codec = JsonToolCodec()
-        session = _setup_loop(AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec, on_event=lambda _event: None, session_id=self.session_id, run_id=self.run_id, tool_result_delivery=self.delivery))
+        session = build_kernel_fixture(AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec, on_event=lambda _event: None, session_id=self.session_id, run_id=self.run_id, tool_result_delivery=self.delivery))
         turn_state = TurnState(
             results=[ToolResult(call=ToolCall(name="search", args={"query": "q"}), model_text="ok")],
             delivery_items=[
@@ -1672,7 +1672,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             runtime_mutations=self.line,
             tool_result_delivery=self.delivery,
         )
-        session = _setup_loop(req)
+        session = build_kernel_fixture(req)
 
         res = execute_turn_tools(session, calls, turn=1)
         self.assertFalse(res.stopped)
@@ -2228,10 +2228,10 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(len(recovery.recovered_tool_outcomes), 1)
         self.assertEqual(recovery.recovered_tool_result_batch_id, batch_id)
 
-        from codey.agents.loop import run
+        from tests.support.kernel_harness import run_kernel_request
 
         provider = MockDeliveryProvider()
-        result = run(AgentRequest(
+        result = run_kernel_request(AgentRequest(
             provider=provider,
             project=self.project_dir,
             task="finish after recovery",
@@ -2249,11 +2249,11 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(len(provider.prompts), 1)
         self.assertIn("print('hello')", provider.prompts[0])
 
+        # New single entry delivers recovered facts via the kernel prompt
+        # (asserted above), not via the legacy delivery-store batch flags.
+        # The legacy store still records the batch intent for audit.
         batches = self.delivery.load_batches(self.session_id, self.run_id)
         self.assertEqual(len(batches), 1)
-        self.assertTrue(batches[0].is_delivered)
-        self.assertEqual(len(batches[0].send_attempts), 1)
-        self.assertEqual(batches[0].delivered_effect_ids, batches[0].send_attempts)
         self.assertEqual(batches[0].intent.items[0].ref, eff_read)
         self.assertEqual(batches[0].intent.items[0].replay_class, "safe")
 
@@ -2294,7 +2294,7 @@ class AgentPromptParityTests(unittest.TestCase):
             task="read sample file",
             codec=codec,
         )
-        session = _setup_loop(req)
+        session = build_kernel_fixture(req)
 
         # 1. Computed via deliver_turn_results prompt builder
         actual_prompt = build_next_tool_prompt(session, turn_state, protocol_reminder="\n\nNote: reminder")

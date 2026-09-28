@@ -2,27 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.models import ToolResult
 from codey.utils.refs import stable_ref
-
-
-def effect_id_for_call(call: ToolCall) -> str:
-    """Deprecated content hash kept for backward compatibility only.
-
-    Production identity is run+turn+index (see ``turn_effect_id``): the same
-    file may be read twice and the same command may re-run after an edit.
-    """
-
-    try:
-        args_json = json.dumps(call.args if isinstance(call.args, dict) else {}, sort_keys=True, ensure_ascii=False)
-    except Exception:
-        args_json = str(getattr(call, "args", {}))
-    return stable_ref("task_effect", str(getattr(call, "name", "") or ""), args_json)
 
 
 def turn_effect_id(run_id: object, turn: object, tool_index: object) -> str:
@@ -50,6 +35,7 @@ class TaskSession:
     # from keywords or write permission. Read-only tasks keep False even
     # when the policy still grants project.write for other reasons.
     project_changes_required: bool = False
+    coding_context_enabled: bool = True
     # Current workspace identity observed by real edit/run execution.
     # Verifications carry the identity they observed; only a verification
     # whose fingerprint matches the current workspace can complete.
@@ -186,6 +172,7 @@ class TaskSession:
             "task_text": str(self.task_text or "")[:2000],
             "handoff": str(self.handoff or "")[:2000],
             "project_changes_required": bool(self.project_changes_required),
+            "coding_context_enabled": bool(self.coding_context_enabled),
             "workspace_revision": int(self.workspace_revision or 0),
             "workspace_fingerprint": str(self.workspace_fingerprint or "")[:120],
             "searches": [str(item or "")[:240] for item in (self.searches or [])][-20:],
@@ -242,6 +229,7 @@ class TaskSession:
             session.task_text = str(data.get("task_text", "") or "")[:2000]
             session.handoff = str(data.get("handoff", "") or "")[:2000]
             session.project_changes_required = bool(data.get("project_changes_required") is True)
+            session.coding_context_enabled = bool(data.get("coding_context_enabled", True) is True)
             try:
                 session.workspace_revision = int(data.get("workspace_revision", 0) or 0)
             except (TypeError, ValueError):
@@ -275,4 +263,4 @@ class TaskSession:
         return session
 
 
-__all__ = ["TaskSession", "effect_id_for_call", "turn_effect_id"]
+__all__ = ["TaskSession", "turn_effect_id"]

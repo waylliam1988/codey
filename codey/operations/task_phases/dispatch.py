@@ -48,8 +48,8 @@ from codey.operations.research_flow import (
 )
 from codey.operations.result import ModeOutcome
 from codey.operations.review_flow import ReviewFlowDeps, run_review_mode
+from codey.operations.task_entry import run_task_mode
 from codey.operations.task_state import TaskState
-from codey.operations.unified_mode import run_task_mode
 from codey.providers.capabilities import rank_providers
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.task.kind import startup_failover_mode, trace_mode
@@ -217,14 +217,13 @@ def dispatch_run_mode(
     # Single task entry: project/research/hybrid/readonly share one
     # run_task_mode (same TaskSession/tool loop); ResearchPipeline and project
     # review stay as strategy phases scheduled there. Chat/review/auto keep
-    # their flows. "unified" stays as a backward-compatible alias for project.
-    # Hybrid/unified hit the single session before any deps access, so empty
-    # namespaces suffice in cutover locks (no legacy two-phase).
+    # their flows. Hybrid hits the single session before any deps access, so
+    # empty namespaces suffice in cutover locks (no legacy two-phase).
     _early = str(task_kind or "").strip().lower()
-    if _early in {"hybrid", "unified"}:
+    if _early == "hybrid":
         return run_task_mode(
             frame, work, hooks, deps,
-            task_kind="hybrid" if _early == "hybrid" else "project",
+            task_kind="hybrid",
             config_result=config_result,
         )
 
@@ -310,11 +309,11 @@ def dispatch_run_mode(
             research_available=True,
         )
         return run_auto_mode(frame, work, hooks, auto_deps)
-    # Single entry for unified kinds (no old two-phase hybrid). This stays
+    # Single entry for task kinds (no old two-phase hybrid). This stays
     # after the auto check: auto intent must reach the first-call router
     # before any mode entry, otherwise the writer runs directly.
     _normalized = str(task_kind or "").strip().lower()
-    if _normalized in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly", "unified"}:
+    if _normalized in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly"}:
         return run_task_mode(
             frame, work, hooks, deps,
             task_kind=task_kind,

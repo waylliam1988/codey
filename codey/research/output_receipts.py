@@ -1,7 +1,7 @@
 """Durable receipts for oversized research web/source outputs.
 
-Extracted from ``research/runner.py`` to keep the runner under its size
-ceiling. Duck-typed store only: this module never imports
+Extracted from the former research execution loop to keep receipt handling
+separate from task execution. Duck-typed store only: this module never imports
 ``codey.storage.managed_outputs`` (or ``codey.toolchain.runtime``), so the
 research/runtime import boundary stays intact. ``None`` store means
 clip-only. Never changes execution semantics.

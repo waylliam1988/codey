@@ -402,7 +402,7 @@ class AgentsOpsSweepTests(unittest.TestCase):
     def test_loop_max_turns_guarded(self):
         import inspect
 
-        from codey.agents import loop as loop_mod
+        from codey.operations import task_loop as loop_mod
         src = inspect.getsource(loop_mod)
         self.assertNotIn("max(1, int(request.max_turns))", src, "loop still uses bare int(max_turns)")
 

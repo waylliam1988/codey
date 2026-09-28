@@ -34,9 +34,9 @@ from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.concepts import SupportRef, _missing_suggestions
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.research_iteration import ResearchIteration
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.protocols import JsonToolCodec
-from codey.research.runner import ResearchRunner
 from codey.research.source_document import SourceDocument
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT
 from codey.research.tools import ResearchToolOutput, ResearchTools
@@ -406,7 +406,7 @@ class ProbeJsonToolCodec(JsonToolCodec):
         return super().format_results(results) + "\n\n" + _FIXTURE_REMINDER
 
 
-class ProbeResearchRunner(ResearchRunner):
+class ProbeResearchIteration(ResearchIteration):
     def __init__(
         self,
         provider,
@@ -573,7 +573,7 @@ def run_case(
         try:
             _seed_store(store, case, arm)
             search = FixtureSearchProvider(case)
-            runner = ProbeResearchRunner(
+            runner = ProbeResearchIteration(
                 provider,
                 search,
                 store,
@@ -1055,10 +1055,10 @@ def self_test() -> int:
         _seed_store(store, bridge_case, "baseline")
         _seed_store(store, bridge_case, "concept")
         search = FixtureSearchProvider(bridge_case)
-        baseline_runner = ProbeResearchRunner(
+        baseline_runner = ProbeResearchIteration(
             ScriptedProvider(), search, store, arm="baseline", max_turns=4
         )
-        concept_runner = ProbeResearchRunner(
+        concept_runner = ProbeResearchIteration(
             ScriptedProvider(), search, store, arm="concept", max_turns=4
         )
         baseline_intro = baseline_runner._intro(QUESTION)

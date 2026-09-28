@@ -6,11 +6,11 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
 from codey.app import consensus_service, review_service, server
 from codey.app import task_submit as task_submit
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 from codey.toolchain.runtime import ToolOutcome
 

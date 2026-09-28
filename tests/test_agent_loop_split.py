@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import threading
 import unittest
-from unittest import mock
 
 from codey.automation.browser_worker import (
     BrowserWorker,
@@ -233,69 +232,30 @@ class ProviderWorkerSplitTests(unittest.TestCase):
 
 
 class AgentLoopSplitTests(unittest.TestCase):
-    def test_track_continue_progress_resets_on_progress(self) -> None:
-        from codey.agents.loop import _track_continue_progress
+    def test_new_entry_stagnant_invalid_turns_stop(self) -> None:
+        # Old _track_continue_progress/_check_runaway_guard deleted with the old
+        # loop; stagnant handling now lives in the single run_task_kernel
+        # (invalid_turns >= stagnant_turns stops as protocol).
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from tests.support.kernel_harness import run_task_kernel
 
-        class _Cfg:
-            stagnant_turns = 3
+        policy = TaskPolicy(grants=frozenset({"control"}))
+        session = TaskSession(policy=policy, task_kind="project", project="", max_turns=5, task_text="hi")
 
-        class _Stag:
-            count = 2
+        class _BadProvider:
+            def send(self, prompt: str, timeout: object = None) -> str:
+                return "not json at all"
 
-        class _Sess:
-            config = _Cfg()
-            stagnation = _Stag()
+        from unittest.mock import patch
 
-        class _State:
-            made_progress = True
-
-        class _Control:
-            body = "x"
-
-        sess = _Sess()
-        self.assertIsNone(_track_continue_progress(sess, _State(), _Control(), 1))  # type: ignore[arg-type]
-        self.assertEqual(sess.stagnation.count, 0)
-
-    def test_track_continue_progress_counts_and_stops(self) -> None:
-        from codey.agents.loop import _track_continue_progress
-
-        class _Cfg:
-            stagnant_turns = 2
-
-        class _Sess:
-            def __init__(self) -> None:
-                from codey.agents.loop import _finish  # noqa: F401
-                self.config = _Cfg()
-                self.stagnation = type("S", (), {"count": 0})()
-                self.request = type("R", (), {"conversation": None})()
-                self.verification = type("V", (), {"checks_passed": False})()
-                self.progress = type("P", (), {"wrote_files": False})()
-
-        class _State:
-            made_progress = False
-
-        class _Control:
-            body = "msg"
-
-        sess = _Sess()
-        # First no-progress turn: counts but does not stop.
-        import codey.agents.loop as loop_mod
-
-        with mock.patch.object(loop_mod, "emit"):
-            out = _track_continue_progress(sess, _State(), _Control(), 1)  # type: ignore[arg-type]
-        self.assertIsNone(out)
-        self.assertEqual(sess.stagnation.count, 1)
-
-    def test_check_runaway_guard_no_block(self) -> None:
-        from codey.agents.loop import _check_runaway_guard
-
-        class _Sess:
-            stagnation = type("S", (), {"attempts": []})()
-
-        with mock.patch("codey.agents.runaway_guard.should_block_or_remind",
-                        return_value=None):
-            reason, stop = _check_runaway_guard(_Sess())  # type: ignore[arg-type]
-        self.assertEqual((reason, stop), ("", ""))
+        with patch("codey.operations.task_loop.provider_uses_native", return_value=False):
+            result = run_task_kernel(
+                session, provider=_BadProvider(), executors={}, run_id="r-stagnant",
+                stagnant_turns=2,
+            )
+        self.assertEqual(result.stop_reason, "protocol")
+        self.assertIn("invalid", result.summary.lower())
 
 
 if __name__ == "__main__":

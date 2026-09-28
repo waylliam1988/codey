@@ -2,6 +2,15 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 共享任务内核冷启动收口（未发布）
+
+- 恢复含已执行工具结果的任务时必须使用原始持久授权；策略日志缺失会阻塞，不能继承新请求追加的权限。
+- 删除废弃的 `research/native_bridge.py`，把原生能力探测移到
+  `codey/providers/native_tools.py`，并删除未使用的旧 effect ID 与 synthesis
+  兼容别名。
+- 空的 operation-state 授权保持不写入 payload；非空入口授权快照正常持久化；手工 Research 探针已迁移到共享迭代结果形状。
+- 验证：`4816 passed, 32 skipped, 1467 subtests passed`；Ruff、compileall 和 diff 检查通过。未发布。
+
 ## Unreleased - 空字节 fail-closed（3.13）+ auto 路由优先（未发布）
 
 - 修 `WorkCheckpointStore.start()` 在 Python 3.13 接受含空字节 project（红字先行）：原实现依赖 `Path.resolve()` 对内嵌 null 抛 `ValueError`，但 3.13 改为相对 CWD 解析并保留 null，导致带 `"\0"` 的检查点被落盘（`project='D:\\tmp\x00evil'`，本地以 3.13 行为桩复现）。`resolve()` 之前加显式 `if "\0" in str(project): return None` 守卫（resolve 后再查一次作纵深），沿用 `changes/restore` 接口 `400` 守卫的既定模式。`tests/test_work_checkpoint.py` 新增 `WorkCheckpointNullByteTests` 2 例（任意版本下不依赖 resolve 行为拒绝 + `Path` 对象形态；首例修前失败、修后全过）。`_file_hash` 遇 null rel 已返回 `None` 且不崩（有覆盖，未动）。`load()` 的 null 载荷路径按“无复现即非 bug”原则未动（无失败复现）。

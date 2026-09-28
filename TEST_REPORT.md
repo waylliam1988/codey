@@ -1,5 +1,21 @@
 # Codey Test Report
 
+## Shared task kernel cold-start cleanup (2026-09-28)
+
+- Recovery requires the original persisted task policy whenever a run has
+  recovered tool outcomes. Missing policy data blocks instead of inheriting
+  capabilities from a newer request.
+- Removed `codey/research/native_bridge.py`, moved native capability detection
+  to `codey/providers/native_tools.py`, and deleted unused effect-hash and
+  synthesis compatibility aliases.
+- Kept empty operation-state policies absent from serialized payloads so the
+  closed schema remains stable; non-empty entry policies remain durable.
+- Migrated manual Research probes to the shared iteration result shape.
+
+Final isolated run: `4816 passed, 32 skipped, 1467 subtests passed in 338.70s`.
+`ruff check codey tests`, `python -m compileall -q codey tests`, and
+`git diff --check` passed. No release was made.
+
 ## Null-byte fail-closed + auto-router precedence (2026-09-28)
 
 CI (Python 3.13) reported `test_work_checkpoint_null_byte_fail_closed` failing while local 3.12 passed. Root cause: `WorkCheckpointStore.start()` relied on `Path.resolve()` raising on embedded nulls; 3.13 resolves against CWD instead, saving a checkpoint with `project='D:\\tmp\x00evil'`. Reproduced on 3.12 by stubbing `resolve` to 3.13 behavior (script), locked red-first with `WorkCheckpointNullByteTests` (resolve-independent), fixed with an explicit `"\0"` guard mirroring the changes/restore API pattern. Separately, the prior run's 12 failures were root-caused to a dispatch-ordering regression (single-entry return shadowed the auto check; worktree baseline green, spy repro, new `test_auto_intent_reaches_auto_router_before_single_entry` lock) plus a stash-clobbered `task_effects.py` (restored from `df7d115:kernel_effects.py`).

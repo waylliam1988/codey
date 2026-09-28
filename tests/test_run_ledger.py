@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
 from codey.app import consensus_service, review_service, server
 from codey.app import context as app_context
 from codey.app import task_submit as task_submit
@@ -21,6 +20,7 @@ from codey.runs.ledger_projection import (
     load_run_projection,
 )
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.toolchain.runtime import ToolOutcome

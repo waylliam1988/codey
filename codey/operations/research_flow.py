@@ -10,10 +10,10 @@ from codey.knowledge.research_interest import (
     candidate_to_topic_hint,
 )
 from codey.operations.context import RunFrame, RunHooks
-from codey.operations.research_iteration import run_unified_research_iteration
+from codey.operations.evidence_followup import run_evidence_followup
+from codey.operations.research_iteration import run_research_iteration as _run_iteration_impl
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState
-from codey.operations.unified_evidence_followup import run_unified_evidence_followup
 from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS
@@ -179,7 +179,7 @@ def run_research_iteration(
     topic_continuity_payload: dict[str, object] | None = None,
     requested_capabilities: tuple[str, ...] = (),
 ) -> ResearchIterationRun:
-    return run_unified_research_iteration(
+    return _run_iteration_impl(
         deps,
         provider=provider, session_id=session_id, project=project,
         task=task, max_turns=max_turns, on_event=on_event,
@@ -380,7 +380,7 @@ def run_research_pipeline(
     ):
         nonlocal followup_index
         followup_index += 1
-        return run_unified_evidence_followup(
+        return run_evidence_followup(
             provider=frame.provider,
             tools=tools,
             plan=plan,

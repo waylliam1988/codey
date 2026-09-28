@@ -2,6 +2,20 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Shared kernel cold-start cleanup (no release)
+
+- Recovery now requires the original persisted task policy whenever a run has
+  recovered tool outcomes. Missing recovery policy data blocks instead of
+  inheriting newly requested capabilities.
+- Deleted the obsolete research native bridge and moved provider capability
+  detection to `codey/providers/native_tools.py`. Removed unused effect-id and
+  synthesis compatibility aliases.
+- Kept empty operation-state policies out of payloads while persisting all
+  non-empty entry policy snapshots; migrated manual Research probes to the
+  shared iteration result shape.
+- Verification: `4816 passed, 32 skipped, 1467 subtests passed`; Ruff,
+  compileall, and diff checks passed. No release was made.
+
 ## Unreleased - Null-byte fail-closed (3.13) + auto-router precedence (no release)
 
 - Fixed `WorkCheckpointStore.start()` accepting null-byte projects on Python 3.13 (red-first): the method relied on `Path.resolve()` raising `ValueError` for embedded nulls, but 3.13 resolves against CWD and keeps the null, so a checkpoint carrying `"\0"` was saved (`project='D:\\tmp\x00evil'`, reproduced locally by stubbing `resolve` to 3.13 behavior). Added the explicit `if "\0" in str(project): return None` guard before `resolve()` (plus a post-resolve `"\0"` check as defense in depth), mirroring the established `changes_response`/`restore_changes_response` `400` guards. New locks in `tests/test_work_checkpoint.py` (`WorkCheckpointNullByteTests`, 2 cases: resolve-independent rejection on any version + `Path`-object form; the first failed before, both pass after). `_file_hash` with a null rel already returns `None` without crashing (covered, untouched). `load()`'s null-payload path was investigated and left unchanged per reproduce-or-it-is-not-a-bug (no failing repro).

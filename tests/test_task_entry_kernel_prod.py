@@ -11,6 +11,25 @@ import unittest
 
 
 class EntryAuthTests(unittest.TestCase):
+    def test_recovery_without_policy_log_blocks_instead_of_using_new_grants(self) -> None:
+        from types import SimpleNamespace
+
+        from codey.operations.task_entry import _entry_policy_with_recovery
+
+        request = SimpleNamespace(
+            session_id="s",
+            project="E:/tmp",
+            task="resume",
+            max_turns=8,
+            requested_capabilities=("web.read", "project.write"),
+            strict_research=False,
+            project_changes_required=True,
+        )
+        frame = SimpleNamespace(request=request, run_id="r", recovered_tool_outcomes=(object(),))
+        deps = SimpleNamespace(runtime_mutations=None)
+        with self.assertRaisesRegex(RuntimeError, "recovery policy log unavailable"):
+            _entry_policy_with_recovery(frame, deps, "project")
+
     def test_http_research_entry_sets_strict_without_default_write(self) -> None:
         import tempfile
 
@@ -19,10 +38,11 @@ class EntryAuthTests(unittest.TestCase):
         seen: dict = {}
 
         def fake_submit(session_id, project, task, max_turns, continue_task, provider_id, intent,
-                        requested_capabilities=(), strict_research=False):
+                        requested_capabilities=(), strict_research=False, **kwargs):
             seen["requested"] = tuple(requested_capabilities)
             seen["strict"] = bool(strict_research)
             seen["intent"] = intent
+            seen.update(kwargs)
             return "run-1"
 
         with tempfile.TemporaryDirectory() as td:
@@ -55,8 +75,9 @@ class EntryAuthTests(unittest.TestCase):
         seen: dict = {}
 
         def fake_submit(session_id, project, task, max_turns, continue_task, provider_id, intent,
-                        requested_capabilities=(), strict_research=False):
+                        requested_capabilities=(), strict_research=False, **kwargs):
             seen["requested"] = tuple(requested_capabilities)
+            seen.update(kwargs)
             return "run-1"
 
         with tempfile.TemporaryDirectory() as td:
@@ -89,7 +110,7 @@ class EntryAuthTests(unittest.TestCase):
         self.assertNotIn("web.read", auth.requested_capabilities)
 
     def test_resume_keeps_stored_policy(self) -> None:
-        from codey.operations.task_loop import resume_policy
+        from codey.operations.recovery import rebuilt_policy_from_log
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -102,7 +123,13 @@ class EntryAuthTests(unittest.TestCase):
             TaskSubmission("s", "E:/tmp", "t", 8, False, "local"),
             task_kind="project",
         )
-        self.assertEqual(resume_policy(stored, incoming), stored)
+        # No session log: falls back to incoming (fail-closed to live grants).
+        self.assertEqual(rebuilt_policy_from_log(None, incoming), incoming)
+        # Stored payload round-trips via from_payload (session log source).
+        from codey.policies.task_policy import TaskPolicy
+
+        revived = TaskPolicy.from_payload(stored.to_payload())
+        self.assertEqual(revived, stored)
 
 
 class ToolContractTests(unittest.TestCase):
@@ -397,6 +424,39 @@ class CompletionGateProdTests(unittest.TestCase):
 
 
 class DispatchSwitchTests(unittest.TestCase):
+    def test_entry_policy_is_persisted_and_reused_for_recovery(self) -> None:
+        import tempfile
+
+        from codey.operations.recovery import rebuilt_policy_from_log, record_entry_policy
+        from codey.policies.task_policy import TaskPolicy
+        from codey.runtime.log.session_log import RuntimeSessionLog
+        from codey.runtime.write.mutation_line import RuntimeMutationLine
+
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(td)
+            mutations = RuntimeMutationLine(log)
+            mutations.accept_operation(
+                session_id="s-policy", run_id="r-policy", project="",
+                provider_id="local", turn_budget=2, max_repair_rounds=1,
+                task_kind="research",
+            )
+            original = TaskPolicy(
+                grants=frozenset({"control", "web.read"}),
+                strict_research=True,
+                source="explicit_research",
+            )
+            record_entry_policy(
+                mutations, session_id="s-policy", run_id="r-policy", policy=original,
+            )
+            incoming = TaskPolicy(
+                grants=frozenset({"control", "project.write"}),
+                source="new_request",
+            )
+            revived = rebuilt_policy_from_log(
+                log, incoming, session_id="s-policy", run_id="r-policy",
+            )
+            self.assertEqual(revived.to_payload(), original.to_payload())
+
     def test_dispatch_uses_unified_mode(self) -> None:
         import pathlib
 
@@ -423,15 +483,13 @@ class DispatchSwitchTests(unittest.TestCase):
         import pathlib
 
         root = pathlib.Path(__file__).resolve().parents[1]
-        unified = (root / "codey" / "operations" / "unified_mode.py").read_text(encoding="utf-8")
-        # The unified entry itself never pulls the legacy loops; legacy flows
-        # stay referenced by dispatch.py only until parity lands (staged cutover).
-        self.assertNotIn("ResearchRunner", unified)
-        self.assertNotIn("agents.loop", unified)
-        self.assertNotIn("run_project_mode", unified)
-        self.assertNotIn("run_research_mode", unified)
-        self.assertNotIn("run_hybrid_mode", unified)
-        self.assertNotIn("run_auto_mode", unified)
+        self.assertFalse((root / "codey" / "operations" / "unified_mode.py").exists())
+        entry = (root / "codey" / "operations" / "task_entry.py").read_text(encoding="utf-8")
+        # The task entry itself never pulls the legacy loops.
+        self.assertNotIn("ResearchIteration", entry)
+        self.assertNotIn("agents.loop", entry)
+        self.assertNotIn("from codey.operations.unified_mode import", entry)
+        self.assertNotIn("run_hybrid_mode", entry)
 
 
 if __name__ == "__main__":

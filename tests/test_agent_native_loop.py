@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codey.agents.loop import _run_loop, _setup_loop
 from codey.agents.request import AgentRequest
 from codey.agents.state import AgentLoopSession
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
+from tests.support.kernel_harness import build_kernel_fixture, run_seeded_kernel
 
 
 class FakeStructuredProvider:
@@ -65,13 +65,13 @@ def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
         AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_1", name="read", arguments={"path": "app.py"}),)),
         AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_2", name="done", arguments={"summary": "ok"}),)),
     ])
-    session: AgentLoopSession = _setup_loop(_request(provider, tmp_path))
+    session: AgentLoopSession = build_kernel_fixture(_request(provider, tmp_path))
     assert session.config.native_tools is not None
     assert all(t["function"]["name"] != "parallel" for t in session.config.native_tools)
     assert "done" in {str(t["function"]["name"]) for t in session.config.native_tools}
     from codey.agents.prompt_context import initial_structured_reply
 
-    result = _run_loop(session, initial_structured_reply(session), start_turn=1)
+    result = run_seeded_kernel(session, initial_structured_reply(session), start_turn=1)
     assert result.stop_reason == "done"
     assert result.summary == "ok"
 

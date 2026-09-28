@@ -135,9 +135,9 @@ def requires_project_writer_lease(request: TaskSubmission, task_kind: str) -> bo
     kind = str(task_kind or "").strip().lower()
     intent = str(request.intent or "auto").strip().lower()
     requested_write = "project.write" in request.requested_capabilities
-    if kind in {"project", "hybrid", "unified"} and intent != "auto":
+    if kind in {"project", "hybrid"} and intent != "auto":
         return True
-    return requested_write and kind in {"project", "hybrid", "research", "unified"}
+    return requested_write and kind in {"project", "hybrid", "research"}
 
 
 @dataclass

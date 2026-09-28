@@ -16,7 +16,6 @@ from typing import Any
 from unittest import mock
 
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.completion import engine as completion_engine_module
@@ -29,7 +28,7 @@ from codey.operations.project_completion_flow import COMPLETION_REPAIR_FOLLOWUP
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.research.pipeline import ResearchIterationRun
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.runs.details import load_run_details
 from codey.runs.ledger import read_ledger
 from codey.runtime.core.models import ToolCall
@@ -48,6 +47,7 @@ from codey.runtime.core.operation_state import (
     lane_for_run,
     operation_id_for_run,
 )
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_projection import reduce_session
 from codey.runtime.observe.events import RunEvent

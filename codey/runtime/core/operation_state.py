@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
@@ -143,6 +143,7 @@ _KNOWN_PAYLOAD_KEYS = frozenset(
         "started_at",
         "updated_at",
         "task_kind",
+        "task_policy",
         "writer_attempt",
         "turns_used",
         "stop_reason",
@@ -240,6 +241,7 @@ class RuntimeOperationState:
     started_at: str
     updated_at: str
     task_kind: str = "task"
+    task_policy: dict[str, object] = field(default_factory=dict)
     writer_attempt: int = 1
     turns_used: int = 0
     stop_reason: str = ""
@@ -281,6 +283,8 @@ class RuntimeOperationState:
             "turn": self.turn,
             "tool_index": self.tool_index,
         }
+        if self.task_policy:
+            payload["task_policy"] = dict(self.task_policy)
         if self.terminal is not None:
             payload["terminal"] = self.terminal.to_payload()
         return payload
@@ -357,6 +361,7 @@ class RuntimeOperationState:
                 started_at=_text(payload.get("started_at"), "started_at", limit=40),
                 updated_at=_text(payload.get("updated_at"), "updated_at", limit=40),
                 task_kind=_text(payload.get("task_kind"), "task_kind"),
+                task_policy=_parse_task_policy(payload.get("task_policy")),
                 writer_attempt=writer_attempt,
                 turns_used=turns_used,
                 stop_reason=stop_reason,
@@ -383,6 +388,35 @@ def _parse_operation_identity(payload: dict[str, object]) -> tuple[str, str, str
     if leaf not in LEAVES:
         raise RuntimeOperationTransitionError("unknown operation leaf")
     return session_id, run_id, operation_id, lane, leaf
+
+
+def _parse_task_policy(value: object) -> dict[str, object]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise RuntimeOperationTransitionError("task_policy must be an object")
+    grants = value.get("grants", ())
+    checks = value.get("required_checks", ())
+    if not isinstance(grants, (list, tuple)) or not all(isinstance(item, str) for item in grants):
+        raise RuntimeOperationTransitionError("task_policy grants must be text")
+    if not isinstance(checks, (list, tuple)) or not all(isinstance(item, str) for item in checks):
+        raise RuntimeOperationTransitionError("task_policy checks must be text")
+    strict = value.get("strict_research", False)
+    if not isinstance(strict, bool):
+        raise RuntimeOperationTransitionError("task_policy strict_research must be boolean")
+    try:
+        version = int(value.get("version", 1))
+    except (TypeError, ValueError):
+        raise RuntimeOperationTransitionError("task_policy version must be integer") from None
+    if version < 1:
+        raise RuntimeOperationTransitionError("task_policy version must be positive")
+    return {
+        "grants": sorted({str(item) for item in grants if str(item)}),
+        "strict_research": strict,
+        "required_checks": [str(item) for item in checks if str(item)],
+        "source": str(value.get("source", "") or "")[:240],
+        "version": version,
+    }
 
 
 def _parse_operation_counts(payload: dict[str, object]) -> tuple[int, int, int, int, int, int]:
@@ -599,6 +633,7 @@ def new_operation_state(
     turn_budget: int,
     max_repair_rounds: int,
     task_kind: str = "task",
+    task_policy: dict[str, object] | None = None,
 ) -> RuntimeOperationState:
     session = _canonical_id(session_id)
     run = _canonical_id(run_id)
@@ -616,6 +651,7 @@ def new_operation_state(
         started_at=now,
         updated_at=now,
         task_kind=_text(task_kind, "task_kind"),
+        task_policy=_parse_task_policy(task_policy),
     )
 
 

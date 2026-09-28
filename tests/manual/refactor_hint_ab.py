@@ -22,7 +22,6 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.providers import controls as provider_controls
@@ -32,12 +31,13 @@ from codey.toolchain.runtime import SEARCH_EXCLUDED_DIRS, ToolOutcome
 from codey.toolchain.runtime import edit_file as runtime_edit_file
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from tests.manual.project_task_context import render_production_project_map
+from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 ARMS = ("baseline", "hint")
 
 
 def run_agent(provider, project, task, **kwargs):
-    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
+    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 SOURCE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
 MIN_SYMBOL_LEN = 5

@@ -9,7 +9,7 @@ from codey.research.done_finalizer import finalize_done_answer
 from codey.research.object_model import build_research_record
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.record_merge import merge_evidence_patch
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.research.source_document import SourceDocument
 from codey.research.tools import ResearchTools
 

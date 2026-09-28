@@ -34,13 +34,14 @@ if str(ROOT) not in sys.path:
 
 import contextlib
 
-from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.protocols.json_codec import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent
 from codey.toolchain.runtime import ToolOutcome
+from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-readonly-parallel-ab.json"
 PARALLEL_READONLY_TOOL_NAMES = frozenset({"read", "ls", "search"})
@@ -50,7 +51,7 @@ LIVE_MARKERS = ("MARKER_ALPHA", "MARKER_BRAVO", "MARKER_CHARLIE", "MARKER_DELTA"
 
 
 def run_agent(provider, project, task, **kwargs):
-    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
+    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 with contextlib.suppress(AttributeError, OSError):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
@@ -487,7 +488,7 @@ def _live_task(case: str) -> str:
     raise ValueError(f"unknown live case: {case}")
 
 
-def _tool_trace(events: list[agent.RunEvent]) -> list[dict[str, Any]]:
+def _tool_trace(events: list[RunEvent]) -> list[dict[str, Any]]:
     trace = []
     for event in events:
         if event.kind != "tool" or event.call is None or event.outcome is None:

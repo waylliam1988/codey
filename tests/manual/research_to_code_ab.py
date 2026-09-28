@@ -36,7 +36,6 @@ if __package__ in (None, ""):
 
 import contextlib
 
-from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.knowledge.note import KnowledgeNote
@@ -56,6 +55,7 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
+from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 # Shared manual-layer plumbing (journaling provider, schedules, atomic JSON);
 # the alias keeps the historical name for existing tests and callers.
@@ -63,7 +63,7 @@ TracingProvider = common.TracingProvider
 
 
 def run_agent(provider, project, task, **kwargs):
-    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
+    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 ARMS = ("baseline", "projection")

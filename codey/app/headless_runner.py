@@ -51,6 +51,7 @@ class HeadlessRequest:
     port: int = 9222
     requested_capabilities: tuple[str, ...] = ()
     strict_research: bool = False
+    project_changes_required: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -321,6 +322,24 @@ def _run_headless_task(
         entry_strict = bool(getattr(request, "strict_research", False))
         if not entry_strict and _request_intent(request.intent) == "research":
             entry_strict = True
+        try:
+            from codey.task.model import derive_project_changes_required
+
+            explicit = getattr(request, "project_changes_required", None)
+            if explicit is True:
+                entry_requires = True
+            elif explicit is False:
+                entry_requires = False
+            else:
+                entry_requires = bool(
+                    derive_project_changes_required(
+                        {"intent": _request_intent(request.intent)},
+                        intent=_request_intent(request.intent),
+                        project=str(project),
+                    )
+                )
+        except Exception:
+            entry_requires = False
         run_task_submission(
             deps,
             TaskSubmission(
@@ -334,6 +353,7 @@ def _run_headless_task(
                 run_id=pre_reserved_run_id,
                 requested_capabilities=entry_requested,
                 strict_research=entry_strict,
+                project_changes_required=entry_requires,
             ),
         )
         terminal = dict(state.run_registry.last_terminal_event() or {})
@@ -576,7 +596,7 @@ def _request_intent(value: str) -> str:
     text = str(value or "project").strip().lower()
     if text in {"readonly", "planning", "planning_readonly"}:
         return "planning_readonly"
-    if text in {"auto", "chat", "research", "project", "hybrid", "review", "unified"}:
+    if text in {"auto", "chat", "research", "project", "hybrid", "review"}:
         return text
     return "project"
 

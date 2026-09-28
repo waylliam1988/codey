@@ -23,13 +23,13 @@ if __package__ in (None, ""):
 
 import contextlib
 
-from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.env_names import PROVIDER_CDP_PORT_ENV
 from codey.ghost.hebbian import GhostNode
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
+from codey.runtime.core.run_result import RunResult
 from codey.storage.local_store import write_json_atomic
 from codey.task.model import TaskSubmission
 

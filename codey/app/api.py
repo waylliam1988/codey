@@ -394,6 +394,7 @@ class EntryAuth:
 
     requested_capabilities: tuple[str, ...] = ()
     strict_research: bool = False
+    project_changes_required: bool = False
 
 
 _WEB_TASK_MARKERS = (
@@ -433,7 +434,17 @@ def derive_entry_auth(body: dict | None, *, project: str | None = None) -> Entry
         if any(marker in task or marker in lowered for marker in _WEB_TASK_MARKERS):
             requested.add("web.read")
     strict = data.get("strict_research") is True or intent == "research"
-    return EntryAuth(requested_capabilities=tuple(sorted(requested)), strict_research=strict)
+    try:
+        from codey.task.model import derive_project_changes_required
+
+        requires = bool(derive_project_changes_required(data, intent=intent, project=project))
+    except Exception:
+        requires = False
+    return EntryAuth(
+        requested_capabilities=tuple(sorted(requested)),
+        strict_research=strict,
+        project_changes_required=requires,
+    )
 
 
 def run_submit_response(
@@ -450,7 +461,6 @@ def run_submit_response(
     intent = str(body.get("intent") or "auto").strip().lower()
     entry_auth = derive_entry_auth(body, project=project)
     if intent not in {
-        "unified",
         "auto",
         "chat",
         "research",
@@ -487,6 +497,7 @@ def run_submit_response(
             intent,
             requested_capabilities=entry_auth.requested_capabilities,
             strict_research=entry_auth.strict_research,
+            project_changes_required=entry_auth.project_changes_required,
         )
     except BrowserWorkerBusy:
         return 503, {"error": "browser worker busy", "hint": "retry"}

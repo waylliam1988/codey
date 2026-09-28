@@ -190,7 +190,7 @@ class HybridHandoffTests(unittest.TestCase):
         from codey.operations import research_flow as rf
 
         self.assertFalse(hasattr(rf, "run_hybrid_mode"))
-        from codey.operations.unified_mode import run_task_mode
+        from codey.operations.task_entry import run_task_mode
 
         self.assertTrue(callable(run_task_mode))
         # Single-session hybrid keeps prior handoff (no forced fresh chat):

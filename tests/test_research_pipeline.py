@@ -22,7 +22,7 @@ from codey.research.plan_executor import PlanExecutionResult
 from codey.research.proof_quality import CoverageGap, ResearchProofReview
 from codey.research.query_planner import QueryCandidate, ResearchPlan
 from codey.research.report_quality import review_report_quality
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.research.tools import ResearchTools
 
 

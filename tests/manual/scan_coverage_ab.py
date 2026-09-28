@@ -22,7 +22,6 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.providers import controls as provider_controls
@@ -31,6 +30,7 @@ from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.toolchain.runtime import ToolOutcome, safe_join
 from codey.utils.references import find_reference_hints
 from codey.utils.scan_report import render_scan_coverage
+from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 ARMS = ("baseline", "coverage")
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-scan-coverage-ab.json"
@@ -38,7 +38,7 @@ OVERSIZED_SOURCE_MARKER = "LEGACY_PROCESS_PAYMENT_CALL"
 
 
 def run_agent(provider, project, task, **kwargs):
-    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
+    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 @dataclass(frozen=True)

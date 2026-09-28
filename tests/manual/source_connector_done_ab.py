@@ -29,15 +29,15 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.knowledge.store import KnowledgeStore
+from codey.operations import research_iteration as runner_module
+from codey.operations.research_iteration import ResearchIteration
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research import report_quality as report_quality_module
-from codey.research import runner as runner_module
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.ledger import ResearchLedger
 from codey.research.proof_quality import review_research_proof
-from codey.research.runner import ResearchRunner
 from codey.reviews.report_sections import (
     REQUIRED_SECTIONS,
     parse_sections,
@@ -358,7 +358,7 @@ def run_case(
                 arm=arm,
                 sample=sample,
             )
-            runner = ResearchRunner(
+            runner = ResearchIteration(
                 run_provider,
                 search,
                 store,

@@ -4,7 +4,6 @@ import json
 import unittest
 from pathlib import Path
 
-from codey.agents.runner import SUPPORTED_TOOL_NAMES
 from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import (
     PROTOCOL_DIRECT_ANSWER,
@@ -23,6 +22,7 @@ from codey.toolchain.definition import (
     TOOL_DEFINITION_BY_NAME,
     TOOL_DEFINITIONS,
 )
+from codey.toolchain.definition import SUPPORTED_RUNTIME_TOOL_NAMES as SUPPORTED_TOOL_NAMES
 from codey.toolchain.runtime import MAX_REPLACEMENTS, READ_MAX_LINES
 from codey.toolchain.tool_prompt import render_coding_tool_contract_text as render_tool_contract
 

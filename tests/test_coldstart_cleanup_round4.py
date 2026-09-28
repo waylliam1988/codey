@@ -76,7 +76,7 @@ RESEARCH_EXPORTS = {
     "ResearchPipeline",
     "ResearchPipelineResult",
     "ResearchRunResult",
-    "ResearchRunner",
+    "ResearchIteration",
     "ResearchTools",
     "finalize_done_answer",
     "merge_evidence_patch",
@@ -173,6 +173,7 @@ class PackageExportLayerTests(unittest.TestCase):
         from codey.knowledge.graph import KnowledgeGraphBuilder  # noqa: F401
         from codey.knowledge.note import KnowledgeNote  # noqa: F401
         from codey.knowledge.store import KnowledgeStore  # noqa: F401
+        from codey.operations.research_iteration import run_research_iteration  # noqa: F401
         from codey.providers.base import ChatProvider  # noqa: F401
         from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, provider_ids  # noqa: F401
         from codey.providers.registry import connect_provider  # noqa: F401
@@ -184,7 +185,7 @@ class PackageExportLayerTests(unittest.TestCase):
             StepFunWebProvider,
         )
         from codey.research.pipeline import ResearchPipeline  # noqa: F401
-        from codey.research.runner import ResearchRunner  # noqa: F401
+        from codey.research.run_result import ResearchRunResult  # noqa: F401
 
         self.assertTrue(callable(provider_ids))
         self.assertIsInstance(DEFAULT_PROVIDER_ID, str)
@@ -259,12 +260,15 @@ class NativeToolsUnifyTests(unittest.TestCase):
         self.assertIn("session_uses_native_tools", getattr(prompt_context, "__all__", []))
 
     def test_old_wrappers_removed_and_callers_unified(self) -> None:
-        loop_text = (REPO_ROOT / "codey/agents/loop.py").read_text(encoding="utf-8")
-        delivery_text = (REPO_ROOT / "codey/agents/result_delivery.py").read_text(encoding="utf-8")
-        self.assertNotIn("def _use_native", loop_text)
-        self.assertNotIn("def _use_native_delivery", delivery_text)
-        self.assertIn("session_uses_native_tools", loop_text)
-        self.assertIn("session_uses_native_tools", delivery_text)
+        # Cold-start closure: old loop deleted, single native check via new entry.
+        self.assertFalse((REPO_ROOT / "codey/agents/loop.py").exists())
+        self.assertFalse((REPO_ROOT / "codey/agents/runner.py").exists())
+        from codey.operations import task_loop
+
+        self.assertTrue(callable(getattr(task_loop, "provider_uses_native", None)))
+        from codey.agents import prompt_context
+
+        self.assertTrue(callable(getattr(prompt_context, "session_uses_native_tools", None)))
 
     def test_native_check_matches_legacy_condition(self) -> None:
         from types import SimpleNamespace

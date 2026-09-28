@@ -4,9 +4,10 @@ import tempfile
 from pathlib import Path
 
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.research_iteration import ResearchIteration
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
-from codey.research.runner import ResearchRunner, ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.research.topic_continuity import project_topic_continuity
 from codey.workspace.context_epoch import context_epoch_id
 
@@ -81,7 +82,7 @@ class _FakeProvider:
         return "{}"
 
 
-class _RecordingRunner(ResearchRunner):
+class _RecordingRunner(ResearchIteration):
     """Exposes the last assembled intro for byte-level assertions."""
 
     def __init__(self, *args, **kwargs) -> None:
@@ -112,197 +113,6 @@ def _send(runner: _RecordingRunner, *, controller_block: str = "") -> str:
     return outbound
 
 
-def test_runner_admits_topic_continuity_as_dedicated_prompt_section() -> None:
-    projection = project_topic_continuity(
-        interest_hints=[{
-            "ref": "research_interest:ric_x",
-            "question": "Does the 2026 finding still hold?",
-        }],
-    )
-    trace = _SectionRecorder()
-    runner = _runner(trace, topic_continuity_context=projection.prompt_text)
-
-    runner._intro("Research question about continuity")
-    # Assembly alone projects nothing: no provider turn happened yet.
-    assert trace.sections == []
-    assert trace.context_source_rows == []
-
-    _send(runner)
-
-    assert "research_topic_continuity" in trace.section_names
-    section = next(
-        s for s in trace.sections if s["name"] == "research_topic_continuity"
-    )
-    assert section["purpose"] == "bounded local topic continuity, not evidence"
-    assert section["source_refs"] == (
-        "local_context:research_topic_continuity",
-        "context_source:research_topic_continuity",
-    )
-    assert "Does the 2026 finding still hold?" in str(section["text"])
-    assert "not evidence" in str(section["text"])
-    assert "Do not cite this section" in str(section["text"])
-    lowered = str(section["text"]).casefold()
-    assert not any(term in lowered for term in ("ghost", "work queue"))
-
-
-def test_runner_rows_share_the_sent_bytes_epoch_not_the_intro_epoch() -> None:
-    projection = project_topic_continuity(
-        interest_hints=[{
-            "ref": "research_interest:ric_x",
-            "question": "Epoch-bound lead?",
-        }],
-    )
-    trace = _SectionRecorder()
-    runner = _runner(trace, topic_continuity_context=projection.prompt_text)
-
-    runner._intro("q")
-    outbound = _send(runner, controller_block="\n\nALLOWED ACTIONS: ...")
-    sent_epoch = context_epoch_id(outbound)
-    intro_epoch = context_epoch_id(runner.last_intro)
-
-    assert sent_epoch != intro_epoch  # the controller block changes the bytes
-    section_epochs = {
-        str(kwargs.get("epoch_id") or "")
-        for _name, _args, kwargs in trace.calls
-        if _name == "record_prompt_section"
-    }
-    assert section_epochs == {sent_epoch}
-
-    (_args, kwargs) = trace.context_source_rows[0]
-    sources = _args[0]
-    assert [source.key for source in sources] == ["research_topic_continuity"]
-    assert kwargs.get("epoch_id") == sent_epoch
-
-
-def test_runner_without_continuity_keeps_baseline_intro() -> None:
-    baseline_trace = _SectionRecorder()
-    baseline_runner = _runner(baseline_trace)
-    baseline = baseline_runner._intro("Same question")
-
-    enabled_trace = _SectionRecorder()
-    enabled_runner = _runner(enabled_trace)
-    enabled = enabled_runner._intro("Same question")
-
-    assert "research_topic_continuity" not in enabled_trace.section_names
-    assert enabled == baseline
-
-
-def test_runner_gate_closes_continuity_even_with_text() -> None:
-    from unittest import mock
-
-    trace = _SectionRecorder()
-    store = KnowledgeStore(Path(tempfile.mkdtemp()) / "knowledge")
-    runner = _RecordingRunner(
-        _FakeProvider(),
-        _NullSearch(),
-        store,
-        session_id="s",
-        trace_recorder=trace,
-        topic_continuity_context="Local research continuity. This is not evidence.",
-        topic_continuity_payload={"admitted": True, "digest": "sha256:" + "2" * 64},
-    )
-
-    with mock.patch(
-        "codey.research.runner.allows_context_source",
-        return_value=False,
-    ):
-        runner._intro("q")
-    _send(runner)
-
-    # Gate closed -> no section, no context source, and above all no
-    # admission row: continuity never entered an outbound provider-send
-    # attempt, so the trace must not claim it was admitted.
-    assert "research_topic_continuity" not in trace.section_names
-    assert trace.context_source_rows == []
-    assert trace.topic_payloads == []
-
-
-def test_runner_records_topic_row_only_at_the_send_boundary() -> None:
-    payload = {
-        "schema_version": 1,
-        "kind": "research_topic_continuity_projection",
-        "context_source": "research_topic_continuity",
-        "admitted": True,
-        "digest": "sha256:" + "1" * 64,
-    }
-    trace = _SectionRecorder()
-    store = KnowledgeStore(Path(tempfile.mkdtemp()) / "knowledge")
-    runner = _RecordingRunner(
-        _FakeProvider(),
-        _NullSearch(),
-        store,
-        session_id="s",
-        trace_recorder=trace,
-        topic_continuity_context="Local research continuity. This is not evidence.",
-        topic_continuity_payload=payload,
-    )
-
-    runner._intro("q")
-
-    # Assembly alone records nothing: no outbound provider-send attempt
-    # exists yet to bind rows to.
-    assert trace.topic_payloads == []
-
-    outbound = runner.last_intro + "\n\nALLOWED ACTIONS"
-    runner._send_provider(outbound)
-
-    # One row, projected together with the intro rows it describes, bound
-    # to the same sent-bytes epoch.
-    assert trace.topic_payloads == [payload]
-    section_epochs = {
-        str(kwargs.get("epoch_id") or "")
-        for name, _args, kwargs in trace.calls
-        if name == "record_prompt_section"
-    }
-    assert len(section_epochs) == 1
-    sent_epoch = next(iter(section_epochs))
-    topic_calls = [
-        kwargs for name, _args, kwargs in trace.calls
-        if name == "record_research_topic_continuity"
-    ]
-    assert [kwargs.get("epoch_id") for kwargs in topic_calls] == [sent_epoch]
-
-    # A second send must not duplicate the admission row.
-    runner._pending_intro_sections = ()
-    runner._pending_context_sources = ()
-    runner._send_provider(outbound + "2")
-    assert trace.topic_payloads == [payload]
-
-
-def test_unsent_intro_projects_no_rows() -> None:
-    trace = _SectionRecorder()
-    runner = _runner(trace, topic_continuity_context="Local research continuity.")
-
-    runner._intro("never sent")
-
-    assert trace.sections == []
-    assert trace.context_source_rows == []
-    assert trace.topic_payloads == []
-
-
-def test_runner_iteration_context_and_continuity_stay_separate() -> None:
-    trace = _SectionRecorder()
-    store = KnowledgeStore(Path(tempfile.mkdtemp()) / "knowledge")
-    runner = _RecordingRunner(
-        _FakeProvider(),
-        _NullSearch(),
-        store,
-        session_id="s",
-        trace_recorder=trace,
-        iteration_context="follow-up material only",
-        topic_continuity_context="Local research continuity. This is not evidence.\n- lead one",
-    )
-
-    runner._intro("q")
-    runner._send_provider(runner.last_intro)
-
-    sections = {s["name"]: str(s["text"]) for s in trace.sections}
-    assert "follow-up material" in sections["research_iteration_context"]
-    assert "not evidence" in sections["research_topic_continuity"]
-    assert "lead one" not in sections["research_iteration_context"]
-    assert "follow-up material" not in sections["research_topic_continuity"]
-
-
 def _stub_result() -> ResearchRunResult:
     return ResearchRunResult(
         question="question",
@@ -310,6 +120,55 @@ def _stub_result() -> ResearchRunResult:
         stop_reason="done",
         turns=1,
     )
+
+
+def test_continuity_appears_in_prompt_via_new_entry() -> None:
+    """Continuity via the new single entry (migrated from old _intro)."""
+    import tempfile
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from codey.knowledge.store import KnowledgeStore
+    from codey.operations.research_iteration import run_research_iteration
+
+    class _CaptureProvider:
+        def __init__(self, replies: list[str]) -> None:
+            self._replies = list(replies)
+            self.sent: list[str] = []
+
+        def new_chat(self, timeout: object = None) -> None:
+            return None
+
+        def send(self, prompt: str, timeout: object = None) -> str:
+            self.sent.append(str(prompt))
+            return self._replies.pop(0) if self._replies else '{"tool":"done","args":{"summary":"done"}}'
+
+        def close(self) -> None:
+            return None
+
+    projection = project_topic_continuity(
+        interest_hints=[{"ref": "research_interest:ric_x", "question": "Does the 2026 finding still hold?"}],
+    )
+    with tempfile.TemporaryDirectory() as td:
+        store = KnowledgeStore(Path(td) / "knowledge")
+        provider = _CaptureProvider(['{"tool":"done","args":{"summary":"done"}}'])
+        deps = SimpleNamespace(
+            knowledge_store=store,
+            search_factory=lambda: (lambda *a, **k: ""),
+            managed_outputs=None,
+            runtime_mutations=None,
+        )
+        run_research_iteration(
+            deps, provider=provider, session_id="s", project="",
+            task="Research question about continuity", max_turns=1,
+            on_event=lambda _e: None, stop_flag=None, provider_id="local",
+            run_id="r", chat_handoff="", trace_recorder=None,
+            search=lambda: "", topic_continuity_context=projection.prompt_text,
+        )
+        store.close()
+    assert provider.sent
+    assert "Does the 2026 finding still hold?" in provider.sent[0]
+    assert "Research question about continuity" in provider.sent[0]
 
 
 def test_pipeline_forwards_continuity_payload_without_pre_recording() -> None:
@@ -392,7 +251,6 @@ def test_pipeline_skips_trace_row_when_nothing_admitted() -> None:
 def test_run_trace_persists_digest_only_topic_continuity_row() -> None:
     import json
 
-    from codey.research.topic_continuity import project_topic_continuity
     from codey.runs.trace import RunTraceStore
 
     projection = project_topic_continuity(
@@ -440,7 +298,6 @@ def test_run_trace_persists_digest_only_topic_continuity_row() -> None:
 def test_run_trace_dedupes_and_fails_closed_on_missing_digest() -> None:
     import json
 
-    from codey.research.topic_continuity import project_topic_continuity
     from codey.runs.trace import RunTraceStore
 
     payload = project_topic_continuity(
@@ -515,7 +372,6 @@ def test_topic_admission_rejects_empty_or_malformed_epoch() -> None:
     """
     import json
 
-    from codey.research.topic_continuity import project_topic_continuity
     from codey.runs.trace import RunTraceStore
 
     payload = project_topic_continuity(

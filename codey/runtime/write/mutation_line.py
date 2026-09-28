@@ -246,6 +246,23 @@ class RuntimeMutationLine:
             ),
         )
 
+    def set_task_policy(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        policy: dict[str, object],
+    ) -> RuntimeOperationState | None:
+        """Persist the entry authorization snapshot on the operation state."""
+        from codey.runtime.core.operation_state import _parse_task_policy
+
+        normalized = _parse_task_policy(policy)
+        return self._commit_state(
+            session_id,
+            run_id,
+            lambda state: _replace_task_policy(state, normalized),
+        )
+
     def mark_writer_settled(
         self,
         session_id: str,
@@ -539,6 +556,14 @@ def _operation_settled_entry(state: RuntimeOperationState) -> dict[str, object]:
         "kind": "operation_settled",
         "payload": outcome_for_terminal(state).to_payload(),
     }
+
+
+def _replace_task_policy(state: RuntimeOperationState, policy: dict[str, object]) -> RuntimeOperationState:
+    if state.task_policy == policy:
+        return state
+    from dataclasses import replace
+
+    return replace(state, task_policy=dict(policy))
 
 
 def _require_state(

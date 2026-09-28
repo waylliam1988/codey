@@ -9,7 +9,7 @@ from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.report_quality import review_report_quality
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 
 
 def _record(project: Path | None = None):
