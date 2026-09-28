@@ -4,6 +4,7 @@ import contextlib
 import logging
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -387,6 +388,54 @@ def restore_changes_response(ctx: Any, body: dict) -> tuple[int, dict]:
                 ctx.release_project_writer(key)
 
 
+@dataclass(frozen=True)
+class EntryAuth:
+    """User-authorized capabilities derived once at the submission boundary."""
+
+    requested_capabilities: tuple[str, ...] = ()
+    strict_research: bool = False
+
+
+_WEB_TASK_MARKERS = (
+    "http://", "https://", "web_search", "open_url",
+    "查网页", "查资料", "官方文档", "查一下",
+)
+
+_KNOWN_ENTRY_GRANTS = frozenset({
+    "project.read", "project.write", "project.verify", "shell.approval",
+    "web.read", "knowledge.read", "knowledge.write", "knowledge.link", "control",
+})
+
+
+def derive_entry_auth(body: dict | None, *, project: str | None = None) -> EntryAuth:
+    """Derive entry auth from user submission only; never from model_hint."""
+    data = body if isinstance(body, dict) else {}
+    intent = str(data.get("intent") or "auto").strip().lower()
+    task = str(data.get("task") or "")
+    raw_requested = data.get("requested_capabilities", ())
+    if isinstance(raw_requested, str):
+        raw_requested = (raw_requested,)
+    try:
+        items = tuple(raw_requested or ())
+    except TypeError:
+        items = ()
+    requested: set[str] = set()
+    for item in items:
+        text = str(item or "").strip().lower()
+        if text in _KNOWN_ENTRY_GRANTS:
+            requested.add(text)
+    if data.get("allow_web") is True:
+        requested.add("web.read")
+    if data.get("allow_write") is True:
+        requested.add("project.write")
+    if intent in {"project", "hybrid"}:
+        lowered = task.lower()
+        if any(marker in task or marker in lowered for marker in _WEB_TASK_MARKERS):
+            requested.add("web.read")
+    strict = data.get("strict_research") is True or intent == "research"
+    return EntryAuth(requested_capabilities=tuple(sorted(requested)), strict_research=strict)
+
+
 def run_submit_response(
     body: dict,
     submit_task: Callable[..., str | None],
@@ -399,6 +448,7 @@ def run_submit_response(
     continue_task = body.get("continue_task") is True
     provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
     intent = str(body.get("intent") or "auto").strip().lower()
+    entry_auth = derive_entry_auth(body, project=project)
     if intent not in {
         "auto",
         "chat",
@@ -434,6 +484,8 @@ def run_submit_response(
             continue_task,
             provider_id,
             intent,
+            requested_capabilities=entry_auth.requested_capabilities,
+            strict_research=entry_auth.strict_research,
         )
     except BrowserWorkerBusy:
         return 503, {"error": "browser worker busy", "hint": "retry"}

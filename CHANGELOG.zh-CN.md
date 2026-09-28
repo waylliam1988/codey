@@ -2,6 +2,43 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 统一内核 1-7 生产加固：入口授权、ToolSpec、真实委托、持久意图、账本完成门、分阶段切换（未发布）
+
+- 入口授权贯通（§1）：`codey/app/api.py` 新增 `derive_entry_auth()`，只从用户
+  提交推导 `requested_capabilities`/`strict_research`（research 意图强制严格；
+  编程任务网页标记授予 `web.read`；`model_hint` 永不参与），经 `submit_task()`/
+  `run_task()` 传入 `TaskSubmission`；headless `HeadlessRequest` 同步携带。
+  修 `build_task_policy()` 对 `project`+严格默认授写的 bug（改为明确请求才授写）。
+  恢复经 `resume_policy()` 沿用持久化策略。
+- 统一工具契约（§2）：新 `codey/toolchain/tool_spec.py`，原生 `ls/read/search/
+  references` 归一为规范调用，原生 schema 带真实必填字段，未知工具拒绝（永不
+  走 `control`），`parallel`/`read_files` 实现前不展示，控制器别名经会话结果
+  映射解析。`normalize_turn()` 改走该注册表。
+- 循环修复（§3）：首轮提示含任务原文、handoff 与完整契约；原生判断复用
+  `use_native_provider()` 配置；被拒的原生 `done` 先回 call id 再继续；严格
+  场景有搜索结果即可 `open_result`。`task_kernel.py` 拆为 `kernel_protocol.py`/
+  `kernel_session.py`（另有 `kernel_execution.py`、`unified_mode.py`），守住
+  1000 行护栏。
+- 真实执行（§4）：新 `kernel_execution.py` 复用编码守卫与信息读取、真实编辑/
+  运行入口（含退出码）及 `ResearchTools` + 账本最终 URL/证据；完成事实只来自
+  `ok` 结果，`1 failed` 阻塞，失败的打开/写入不留痕，路径与命令策略与旧入口一致。
+- 持久恢复（§5）：调用身份改为 `run_id:turn:tool_index`；同槽重试不重做危险
+  写入，新轮次相同参数是新调用；`to_payload()` 只存收据与引用。
+- 真实完成门（§6）：`evaluate()` 可选接入 `CompletionEngine`、工作区版本、
+  `finalize_done_answer()`、proof review 与账本可引用 URL；检查提供者按
+  profile 注册隔离（新增注销接口）；任何导入/检查/溢出失败一律阻塞；修掉旧
+  `run_task_kernel` 门导入失败直接完成的问题。
+- 分阶段切换（§7）：新 `run_unified_mode()`（策略、执行原文会话、真实执行器、
+  恢复播种、auto PLAN 收窄）经 `unified` 意图接入分派；旧编程/研究/混合/规划/
+  auto 流程保持生产，待 review/修复/共识/切换/shell/ghost 对齐后再切，不删旧循环。
+- 测试全部红测先行：新 `tests/test_unified_kernel_prod.py`（24 个，22 个修前
+  按预期失败，修后全绿），并更新锁住已确认 bug 的旧断言。`done` 双参数名已
+  接入三处 codec。
+- 验证：`ruff` 与 `diff --check` 干净。靶向全绿后终测 `python -m pytest -q`：
+  `4906 passed, 10 skipped, 1485 subtests passed, 1 failed in 365.15s`，唯一失败
+  为 Playwright UI 用例的资源时序 flake（未动 Web 资产，隔离重跑 `6 passed`）。
+  相对 4883 增量为 24 个新锁。未发布。
+
 ## Unreleased - 统一任务内核完成：normalize + 适配器 + 完成门 + 单循环（未发布）
 
 - 新增单一任务循环（`codey/operations/task_kernel.py`）：`normalize_turn()` 把

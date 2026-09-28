@@ -49,6 +49,8 @@ class HeadlessRequest:
     intent: str = "project"
     state_home: Path | None = DEFAULT_STATE_HOME
     port: int = 9222
+    requested_capabilities: tuple[str, ...] = ()
+    strict_research: bool = False
 
 
 @dataclass(frozen=True)
@@ -315,6 +317,10 @@ def _run_headless_task(
             runtime_mutations=state.runtime_mutations,
             runtime_effects=state.runtime_effects,
         )
+        entry_requested = tuple(getattr(request, "requested_capabilities", ()) or ())
+        entry_strict = bool(getattr(request, "strict_research", False))
+        if not entry_strict and _request_intent(request.intent) == "research":
+            entry_strict = True
         run_task_submission(
             deps,
             TaskSubmission(
@@ -326,6 +332,8 @@ def _run_headless_task(
                 provider_id=request.provider_id,
                 intent=_request_intent(request.intent),
                 run_id=pre_reserved_run_id,
+                requested_capabilities=entry_requested,
+                strict_research=entry_strict,
             ),
         )
         terminal = dict(state.run_registry.last_terminal_event() or {})

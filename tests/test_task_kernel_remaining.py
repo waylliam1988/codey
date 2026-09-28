@@ -268,6 +268,7 @@ class WebOnlyLoopTests(unittest.TestCase):
                 "web_search": lambda call: ToolResult(call=call, model_text="found"),
                 "open_url": lambda call: ToolResult(call=call, model_text="page"),
             },
+            provider_id="local",
         )
         self.assertTrue(outcome.completed)
 
@@ -394,7 +395,13 @@ class ThirdTaskTests(unittest.TestCase):
         from codey.operations import completion_gate as gate
         from codey.operations import task_kernel as kernel
         from codey.runtime.core.models import ToolResult
+        from codey.toolchain.tool_spec import register_custom_tool
 
+        # Third-task adapters only: a ToolSpec row plus a profile-scoped check.
+        # Neither edits the kernel loop nor leaks into other task kinds.
+        register_custom_tool("summarize", grant="control",
+                             parameters=(("text", {"type": "string"}),),
+                             required=("text",), description="summarize text")
         gate.register_completion_check_provider(
             "summarize_present",
             lambda session: [
@@ -404,35 +411,40 @@ class ThirdTaskTests(unittest.TestCase):
                     "" if "summary:" in session.notes_text() else "summary_missing",
                 )
             ],
+            profile="project",
         )
+        try:
+            policy = _policy(task_kind="project")
+            replies = [
+                '{"tool":"summarize","args":{"text":"hello world"}}',
+                '{"tool":"done","args":{"summary":"summary: hello"}}',
+            ]
 
-        policy = _policy(task_kind="project")
-        replies = [
-            '{"tool":"summarize","args":{"text":"hello world"}}',
-            '{"tool":"done","args":{"summary":"summary: hello"}}',
-        ]
+            class FakeWeb:
+                def new_chat(self, timeout=None):
+                    return None
 
-        class FakeWeb:
-            def new_chat(self, timeout=None):
-                return None
+                def send(self, text, timeout=None):
+                    return replies.pop(0)
 
-            def send(self, text, timeout=None):
-                return replies.pop(0)
+                def close(self):
+                    return None
 
-            def close(self):
-                return None
-
-        session = kernel.TaskSession(policy=policy, task_kind="project", project="demo", max_turns=8)
-        outcome = kernel.run_task_kernel(
-            session,
-            provider=FakeWeb(),
-            executors={"summarize": lambda call: ToolResult(call=call, model_text="summary: hello")},
-        )
-        self.assertTrue(outcome.completed)
+            session = kernel.TaskSession(policy=policy, task_kind="project", project="demo", max_turns=8)
+            outcome = kernel.run_task_kernel(
+                session,
+                provider=FakeWeb(),
+                executors={"summarize": lambda call: ToolResult(call=call, model_text="summary: hello")},
+            )
+            self.assertTrue(outcome.completed)
+        finally:
+            gate.unregister_completion_check_provider("summarize_present")
 
 
 class RecoveryTests(unittest.TestCase):
     def test_resume_does_not_repeat_dangerous_actions(self) -> None:
+        # Call identity is run+turn+index (durable intent slots), never
+        # tool+args: same-slot retries reuse, new turns re-execute.
         from codey.operations.task_kernel import TaskSession, execute_turn
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -462,46 +474,32 @@ class RecoveryTests(unittest.TestCase):
             ToolCall("knowledge_write", {"type": "fact", "title": "t", "body": "b"}),
             ToolCall("open_url", {"url": "https://example.com/a"}),
         ]
-        first = execute_turn(session, calls, executors=executors)
+        first = execute_turn(session, calls, executors=executors, run_id="run-1", turn=1)
         self.assertEqual(len(first), 4)
         self.assertEqual(calls_made, ["edit", "run", "knowledge_write", "open_url"])
 
-        # Simulate interruption + resume with the persisted session payload.
-        payload = session.to_payload()
-        from codey.operations.task_kernel import TaskSession as RevivedSession
-
-        revived = RevivedSession.from_payload(payload, policy=policy)
+        # Same turn slot retried (crash before delivery): no re-execution.
         calls_made.clear()
-        second = execute_turn(revived, calls, executors=executors)
+        second = execute_turn(session, calls, executors=executors, run_id="run-1", turn=1)
         self.assertEqual(len(second), 4)
-        # Dangerous + web reads reuse stored results instead of re-executing.
         self.assertEqual(calls_made, [])
         self.assertEqual([r.model_text for r in second], [r.model_text for r in first])
 
+        # New turn with identical args is a new call: reads and post-edit
+        # verifications legitimately run again.
+        calls_made.clear()
+        third = execute_turn(session, calls, executors=executors, run_id="run-1", turn=2)
+        self.assertEqual(calls_made, ["edit", "run", "knowledge_write", "open_url"])
+        self.assertEqual(len(third), 4)
+
     def test_provider_switch_keeps_results(self) -> None:
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_kernel import TaskSession, execute_turn, normalize_turn, turn_effect_id
         from codey.runtime.core.models import ToolResult
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
             task_kind="hybrid",
         )
-        web_replies = [
-            '{"tool":"web_search","args":{"query":"q"}}',
-        ]
-
-        class FirstProvider:
-            def new_chat(self, timeout=None):
-                return None
-
-            def send(self, text, timeout=None):
-                if web_replies:
-                    return web_replies.pop(0)
-                raise RuntimeError("provider switched")
-
-            def close(self):
-                return None
-
         session = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=8)
         executed: list[str] = []
 
@@ -509,27 +507,19 @@ class RecoveryTests(unittest.TestCase):
             executed.append("web_search")
             return ToolResult(call=call, model_text="found https://example.com/a")
 
-        # First run is interrupted after one tool; resume with a new provider
-        # must not lose the stored tool result.
-        from codey.operations.task_kernel import execute_turn, normalize_turn
-
+        # First run executes once; the persisted delivery (not the bounded
+        # session payload) carries the full result across the switch.
         plan = normalize_turn('{"tool":"web_search","args":{"query":"q"}}', policy=policy)
-        results = execute_turn(
-            session,
-            plan.calls,
-            executors={"web_search": fake_search},
-        )
+        results = execute_turn(session, plan.calls, executors={"web_search": fake_search},
+                               run_id="run-1", turn=1)
         self.assertEqual(len(results), 1)
+        delivered = {turn_effect_id("run-1", 1, 0): results[0]}
         payload = session.to_payload()
         from codey.operations.task_kernel import TaskSession as RevivedSession
 
         revived = RevivedSession.from_payload(payload, policy=policy)
-        # Re-executing the same call after the switch reuses the stored result.
-        again = execute_turn(
-            revived,
-            plan.calls,
-            executors={"web_search": fake_search},
-        )
+        again = execute_turn(revived, plan.calls, executors={"web_search": fake_search},
+                             run_id="run-1", turn=1, delivered=delivered)
         self.assertEqual(executed, ["web_search"])
         self.assertEqual(again[0].model_text, results[0].model_text)
 

@@ -1,5 +1,55 @@
 # Codey Test Report
 
+## Unified kernel 1-7 production hardening (2026-09-28)
+
+Scope (deterministic, red-first, no release):
+
+```text
+tests/test_unified_kernel_prod.py (new, 24: 22 failed before, pass after;
+  fabricated-evidence gate + unified-arch already held, then strengthened)
+codey/app/api.py (derive_entry_auth + submit forwarding)
+codey/app/task_submit.py + headless_runner.py (auth fields end to end)
+codey/policies/task_policy.py (strict project no-default-write)
+codey/toolchain/tool_spec.py (new: canonical/visible/native/contract/custom)
+codey/operations/kernel_protocol.py + kernel_session.py (split from task_kernel)
+codey/operations/kernel_execution.py (new: real guards/tools/ledger facts)
+codey/operations/task_kernel.py (turn identity, bounded payload, native done chain)
+codey/operations/completion_gate.py (real engine/ledger, per-profile providers)
+codey/operations/unified_mode.py (new: staged unified entry, auto narrowing)
+codey/operations/task_phases/dispatch.py (unified opt-in, legacy flows kept)
+codey/protocols/json_codec.py + native_openai.py + research/protocols.py (done compat)
+tests/test_server.py + test_task_kernel_remaining.py (locks for confirmed bugs updated)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md (this entry, written after the full suite)
+```
+
+Red-first (all failed before with the exact missing/denied behavior, pass after):
+
+- `EntryAuthTests` 5 (HTTP research strict without default write; programming web
+  markers grant web.read; strict project never defaults write; entry ignores
+  model_hint; resume keeps stored policy).
+- `ToolContractTests` 5 (native ls/read alias maps to canonical; native schema
+  requires path; unknown tool denied; parallel/read_files hidden; search then
+  open_result allowed).
+- `LoopPromptTests` 3 (prompt carries task text/handoff/contract; native uses
+  config not hasattr; rejected native done answers call id first).
+- `ExecutionEvidenceTests` 3 (failed run output blocks; failed open/write leave
+  no facts; project guards match old entry).
+- `PersistenceTests` 2 (repeat reads re-execute across turns; payload bounded).
+- `CompletionGateProdTests` 3 (fabricated evidence blocked; providers isolated
+  per profile; provider failure blocks).
+- `DispatchSwitchTests` 3 (unified opt-in routed; auto plan narrows; unified
+  entry free of legacy loops).
+
+Verification: `python -m ruff check .` clean, `git diff --check` clean.
+Targeted green before final (prod 24; remaining+unification+contract+arch 157;
+server/headless/submit/research/completion/codecs 521 passed).
+Then final `python -m pytest -q`:
+`4906 passed, 10 skipped, 1485 subtests passed, 1 failed in 365.15s (0:06:05)`.
+The single failure is `test_ui_inplace_render` (Playwright asset-timing flake in
+provider_ui.js; no web assets touched in this change); isolated rerun:
+`6 passed in 4.71s`. Delta vs 4883 is the 24 new locks. No release was made.
+
 ## Unified task kernel complete: normalize + adapters + gate + single loop (2026-09-28)
 
 Scope (deterministic, red-first, no release):

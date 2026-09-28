@@ -2,6 +2,66 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Unified kernel 1-7 production hardening: entry auth, ToolSpec, real delegates, durable intents, ledger gate, staged cutover (no release)
+
+- Entry auth贯通 (§1): `derive_entry_auth()` in `codey/app/api.py` derives
+  `requested_capabilities`/`strict_research` from user submission only
+  (research intent forces strict; programming web markers grant `web.read`;
+  `model_hint` never consulted); `run_submit_response()` forwards them through
+  `submit_task()`/`run_task()` into `TaskSubmission`; headless
+  `HeadlessRequest` carries both fields. Fixed `build_task_policy()` granting
+  default `project.write` for `project`+strict (now explicit-request only).
+  Recovery reuses the stored policy via `resume_policy()`.
+- One tool contract (§2): new `codey/toolchain/tool_spec.py` (`ToolSpec`,
+  `canonical_tool_name`, `visible_tool_names`, `native_tools_for_policy()`,
+  `json_contract_text()`, `register_custom_tool()`). Native `ls/read/search/
+  references` map to one canonical call; native schemas carry real required
+  fields; unknown tools denied (never `control`); `parallel`/`read_files`
+  hidden until implemented; controller aliases resolve via session result maps.
+  `normalize_turn()` now routes through it.
+- Loop fixes (§3): prompts carry verbatim task text, handoff, and the full
+  contract; native detection reuses `use_native_provider()` config (no bare
+  `hasattr`); rejected native `done` answers its call id before continuing;
+  strict controller allows `open_result` after search results exist. Split
+  `task_kernel.py` into `kernel_protocol.py`/`kernel_session.py` (+
+  `kernel_execution.py`, `completion_gate.py`, `unified_mode.py`) to hold the
+  1000-line guardrail.
+- Real execution (§4): new `codey/operations/kernel_execution.py`
+  (`ExecutionDelegate`) reuses `evaluate_tool_call_policy_for()` guards and
+  information readers, real edit/run entry points with exit codes, and
+  `ResearchTools` + ledger final URLs + ledger evidence. Facts come only from
+  `ok` results; `1 failed, 0 passed` blocks; failed opens/writes leave no
+  facts; path escape and command policy match the old entry.
+- Durable recovery (§5): call identity is `run_id:turn:tool_index`
+  (`turn_effect_id()`), never tool+args; intents settle per slot with
+  process-local full results plus bounded payload refs; `to_payload()` keeps
+  receipts/refs only. Unsettled dangerous intents are not re-executed.
+- Real completion gate (§6): `completion_gate.evaluate()` takes an optional
+  context wiring `CompletionEngine`, workspace revision, `finalize_done_answer()`,
+  `review_research_proof()`, and the research contract over ledger-citable
+  URLs; check providers register per profile (`unregister_...` added) so third
+  tasks cannot leak into coding runs; every import/check/overflow failure
+  blocks, including the old `run_task_kernel` gate-import fail-open.
+- Staged cutover (§7): new `run_unified_mode()` (policy, session with
+  `execution_task()` text, real executors, recovery seeding, auto PLAN
+  narrowing via `apply_auto_plan()`) serves explicit `unified` intent from
+  `dispatch_run_mode()`; legacy project/research/hybrid/planning/auto flows
+  stay production pending review/repair/consensus/failover/shell/ghost parity,
+  so no existing behavior was broken. Old loops are retained, not deleted.
+- Tests, red-first: new `tests/test_unified_kernel_prod.py` (24 tests; 22
+  failed before with the exact missing/denied behavior, pass after) plus
+  updates where old tests locked confirmed bugs (server submit mapping,
+  remaining recovery identity + third-task registration, prod arch). `done`
+  summary/answer compat wired into all three codecs.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean.
+  Targeted green before final (prod 24; remaining+unification+contract+arch
+  157 passed). Then final `python -m pytest -q`:
+  `4906 passed, 10 skipped, 1485 subtests passed, 1 failed in 365.15s`.
+  The single failure is `test_ui_inplace_render` (Playwright asset-timing
+  flake, no web assets touched); it passes in isolation (`6 passed in 4.71s`).
+  Delta vs 4883 is the 24 new locks (one flaked in the full run, green alone).
+  No release was made.
+
 ## Unreleased - Unified task kernel complete: normalize + adapters + gate + single loop (no release)
 
 - Added the single production-capable loop (`codey/operations/task_kernel.py`):

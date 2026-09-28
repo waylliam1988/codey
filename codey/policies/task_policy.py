@@ -170,7 +170,12 @@ def build_task_policy(
 
     if kind in {"project", "hybrid"}:
         if has_project:
-            grants.update({"project.read", "project.write", "project.verify", "shell.approval"})
+            grants.update({"project.read", "project.verify", "shell.approval"})
+            # Strict Research with a project defaults to read/verify; write
+            # needs an explicit user request. Plain project/hybrid keep the
+            # historical default write grant (the task is to change files).
+            if kind == "hybrid" or not strict:
+                grants.add("project.write")
         if "web.read" in requested:
             grants.add("web.read")
         if kind == "hybrid":
@@ -183,6 +188,8 @@ def build_task_policy(
                 grants.update({"project.read", "project.verify"})
             if "project.write" in requested and has_project:
                 grants.add("project.write")
+            elif kind == "project":
+                grants.discard("project.write")
     elif kind == "research":
         grants.update({"web.read", "knowledge.read", "knowledge.write", "knowledge.link"})
         if has_project:

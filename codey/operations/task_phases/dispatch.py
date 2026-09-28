@@ -50,6 +50,7 @@ from codey.operations.research_flow import (
 from codey.operations.result import ModeOutcome
 from codey.operations.review_flow import ReviewFlowDeps, run_review_mode
 from codey.operations.task_state import TaskState
+from codey.operations.unified_mode import run_unified_mode
 from codey.providers.capabilities import rank_providers
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.task.kind import startup_failover_mode, trace_mode
@@ -212,6 +213,14 @@ def dispatch_run_mode(
     task_kind: str,
     config_result: ProjectConfigLoadResult,
 ) -> ModeOutcome:
+    # Staged migration: the unified kernel serves explicit opt-in first
+    # (intent "unified"); legacy model-turn flows stay production until the
+    # review/repair/consensus/failover/shell/ghost parity work lands. The
+    # kernel itself is complete and covered; the cutover follows parity.
+    if str(task_kind or "").strip().lower() == "unified":
+        return run_unified_mode(
+            frame, work, hooks, deps, task_kind="project", config_result=config_result,
+        )
     research_deps = _research_deps(deps)
 
     def run_project_operation(

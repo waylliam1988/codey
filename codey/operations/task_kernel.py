@@ -2,9 +2,10 @@
 
 Production topology: policy -> session -> snapshot -> adapter.send ->
 normalize_turn -> done gate or execute_turn -> record -> deliver. Web text
-JSON and native tool calls converge in ``normalize_turn``; project, web, and
-knowledge tools dispatch through ``execute_turn``; ``done`` converges in the
-single ``completion_gate``. The loop sends exactly one provider message per
+JSON and native tool calls converge in ``kernel_protocol.normalize_turn``;
+facts live in ``kernel_session.TaskSession``; project, web, and knowledge
+tools dispatch through ``execute_turn``; ``done`` converges in the single
+``completion_gate``. The loop sends exactly one provider message per
 iteration (no double-send): a ``done`` rejection becomes the next prompt,
 tool results become the next prompt (web) or the next tool_results call
 (native) returning the following reply.
@@ -12,489 +13,196 @@ tool results become the next prompt (web) or the next tool_results call
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from codey.protocols.done_compat import read_done_text
-from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
-from codey.utils.refs import stable_ref
+from codey.operations.kernel_protocol import _CONTROLLER_ALIASES, _policy_allows, normalize_turn
+from codey.operations.kernel_session import TaskSession, effect_id_for_call, turn_effect_id
+from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 
-MAX_NATIVE_CALLS_PER_TURN = 8
-
-_CODING_TOOLS = frozenset({
-    "list_dir", "read_file", "read_files", "grep", "find_references",
-    "parallel", "edit", "run", "shell", "done",
-})
-_RESEARCH_TOOLS = frozenset({
-    "web_search", "open_url", "source_search", "knowledge_search",
-    "knowledge_read", "knowledge_write", "knowledge_link", "done",
-})
-_CONTROLLER_ALIASES = frozenset({"open_result", "reopen_source", "open_hit"})
-
-
-def _grant_for_tool(tool: str) -> str:
-    try:
-        from codey.policies.task_policy import CODING_TOOL_GRANTS, RESEARCH_TOOL_GRANTS
-    except Exception:
-        return "control"
-    name = str(tool or "").strip().lower()
-    if name in CODING_TOOL_GRANTS:
-        return CODING_TOOL_GRANTS[name]
-    if name in RESEARCH_TOOL_GRANTS:
-        return RESEARCH_TOOL_GRANTS[name]
-    return "control"
+__all__ = [
+    "KernelResult",
+    "TaskSession",
+    "apply_auto_plan",
+    "controller_allowed_for_session",
+    "effect_id_for_call",
+    "execute_turn",
+    "kernel_prompt_for_session",
+    "normalize_turn",
+    "policy_for_dispatch",
+    "provider_uses_native",
+    "resume_policy",
+    "run_task_kernel",
+    "turn_effect_id",
+]
 
 
-def _is_coding_only_tool(tool: str) -> bool:
-    name = str(tool or "").strip().lower()
-    return name in _CODING_TOOLS and name not in _RESEARCH_TOOLS and name != "done"
+"""Turn protocol lives in kernel_protocol; session facts in kernel_session."""
 
 
-def _controller_allows(tool: str, allowed: set[str] | None) -> bool:
-    if allowed is None:
-        return True
-    name = str(tool or "").strip().lower()
-    if _is_coding_only_tool(name):
-        return True
-    if name == "open_url":
-        return bool({"open_url", *_CONTROLLER_ALIASES} & allowed)
-    return name in allowed
+"""Turn protocol lives in kernel_protocol; session facts in kernel_session."""
 
 
-def _policy_allows(policy: Any, tool: str) -> bool:
-    allows = getattr(policy, "allows", None)
-    if not callable(allows):
-        return False
-    try:
-        return bool(allows(_grant_for_tool(tool)))
-    except Exception:
-        return False
+"""Session facts live in kernel_session; turn protocol in kernel_protocol."""
 
 
-def _disallowed_plan(tool: str, *, controller: bool = False) -> ToolPlan:
-    if controller:
-        message = f"{tool} is not allowed by the current controller state"
-        kind = "disallowed_tool"
-    else:
-        message = f"disallowed tool for this task policy: {tool}"
-        kind = "disallowed_tool"
-    return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind,
-                    protocol_tool_name=str(tool or ""))
-
-
-def _invalid_plan(message: str, *, tool: str = "", kind: str = "invalid_args") -> ToolPlan:
-    return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind,
-                    protocol_tool_name=str(tool or ""))
-
-
-def _extract_json_objects(text: str) -> list[dict[str, Any]]:
-    try:
-        from codey.protocols.json_scanner import balanced_json_spans
-    except Exception:
-        balanced_json_spans = None  # type: ignore[assignment]
-    source = str(text or "")
-    if balanced_json_spans is None:
+def _result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) -> bool:
+    if exit_code is not None:
         try:
-            value = json.loads(source)
-        except Exception:
-            return []
-        return [value] if isinstance(value, dict) else []
-    objects: list[dict[str, Any]] = []
-    try:
-        spans = balanced_json_spans(source)
-    except Exception:
-        return []
-    for start, end in spans:
+            return int(exit_code) == 0
+        except (TypeError, ValueError):
+            return False
+    text = str(result.model_text or "")
+    return not (text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"))
+
+
+def _fake_run_ok(text: str) -> bool:
+    import re as _re
+
+    lowered = str(text or "").lower()
+    for match in _re.finditer(r"(\d+)\s+failed", lowered):
         try:
-            value = json.loads(source[start:end])
-        except Exception:
+            if int(match.group(1)) > 0:
+                return False
+        except (TypeError, ValueError):
+            return False
+    for match in _re.finditer(r"(\d+)\s+passed", lowered):
+        try:
+            if int(match.group(1)) > 0:
+                return True
+        except (TypeError, ValueError):
             continue
-        if isinstance(value, dict):
-            objects.append(value)
-    return objects
-
-
-def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
-    tool = str(obj.get("tool", "") or obj.get("name", "") or "").strip().lower()
-    raw_args = obj.get("args", None)
-    if isinstance(raw_args, dict):
-        args = dict(raw_args)
-    elif raw_args is None:
-        args = {k: v for k, v in obj.items() if k not in {"tool", "name"}}
-    else:
-        args = {}
-    return tool, args
-
-
-def _validate_coding_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    if tool in {"parallel", "read_files"}:
-        return {}, f"{tool} batch calls are not supported in the unified kernel; call tools singly"
-    try:
-        from codey.toolchain import definition as tool_defs
-        from codey.toolchain.runtime import MAX_REPLACEMENTS, READ_MAX_LINES
-        from codey.toolchain.tool_args_repair import (
-            ToolArgLimits,
-            ToolArgsRepairError,
-            normalize_tool_args,
-        )
-    except Exception as exc:
-        return {}, f"coding validator unavailable: {exc}"
-    spec = tool_defs.TOOL_DEFINITION_BY_NAME.get(tool)
-    if spec is None or spec.runtime_name is None:
-        return {}, f"unknown tool: {tool}"
-    try:
-        repair = normalize_tool_args(
-            spec.runtime_name, dict(args),
-            limits=ToolArgLimits(max_replacements=MAX_REPLACEMENTS, read_max_lines=READ_MAX_LINES),
-        )
-    except ToolArgsRepairError as exc:
-        return {}, str(exc)
-    except Exception as exc:
-        return {}, f"{tool} args invalid: {exc}"
-    return dict(repair.args), ""
-
-
-def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    if tool in _CONTROLLER_ALIASES:
-        id_key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}[tool]
-        value = str(args.get(id_key, "") or "").strip()
-        if not value:
-            return {}, f"{tool} missing required arg '{id_key}'"
-        return {id_key: value}, ""
-    if tool == "source_search" and "source_id" in args:
-        # Controller alias form: source_id resolves via controller state at
-        # execution time; here only require a non-empty id and query.
-        sid = str(args.get("source_id", "") or "").strip()
-        query = str(args.get("query", "") or "").strip()
-        if not sid:
-            return {}, "source_search missing required arg 'source_id'"
-        if not query:
-            return {}, "source_search missing required arg 'query'"
-        return {"source_id": sid, "query": query}, ""
-    try:
-        from codey.research.tool_contract import validate_tool_args
-    except Exception as exc:
-        return {}, f"research validator unavailable: {exc}"
-    try:
-        result = validate_tool_args(tool, dict(args))
-    except Exception as exc:
-        return {}, f"{tool} args invalid: {exc}"
-    if not result.ok:
-        return {}, result.error or f"{tool} args invalid"
-    return dict(result.args), ""
-
-
-def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    name = str(tool or "").strip().lower()
-    if name in _CONTROLLER_ALIASES or (name == "source_search" and "source_id" in args):
-        return _validate_research_args(name, args)
-    if name in _RESEARCH_TOOLS and name not in _CODING_TOOLS:
-        return _validate_research_args(name, args)
-    if name in _CODING_TOOLS:
-        return _validate_coding_args(name, args)
-    if not isinstance(args, dict):
-        return {}, f"{tool} args must be an object"
-    return dict(args), ""
-
-
-def _plan_from_tool_objects(
-    items: list[tuple[str, dict[str, Any], str]],
-    *,
-    policy: Any,
-    controller_allowed: set[str] | None,
-) -> ToolPlan:
-    calls: list[ToolCall] = []
-    for tool, args, call_id in items:
-        if not tool:
-            return _invalid_plan("no known tool in reply", kind="unknown_tool")
-        if tool == "done":
-            if len(items) != 1:
-                return _invalid_plan("done must be the only call in a turn", tool=tool, kind="too_many_tools")
-            if not _policy_allows(policy, "done"):
-                return _disallowed_plan(tool)
-            if not _controller_allows("done", controller_allowed):
-                return _disallowed_plan(tool, controller=True)
-            text = read_done_text(args)
-            return ToolPlan(calls=[], control=Control(kind="done", body=text or "done"))
-        if not _policy_allows(policy, tool):
-            return _disallowed_plan(tool)
-        if not _controller_allows(tool, controller_allowed):
-            return _disallowed_plan(tool, controller=True)
-        validated, error = _validate_tool_args(tool, args)
-        if error:
-            return _invalid_plan(error, tool=tool)
-        calls.append(ToolCall(name=tool, args=validated, call_id=str(call_id or "")))
-    if not calls:
-        return _invalid_plan("no JSON tool call found", kind="no_json")
-    body = "Need tool result" if len(calls) == 1 else "Need tool results"
-    return ToolPlan(calls=calls, control=Control(kind="continue", body=body))
-
-
-def normalize_turn(
-    reply: str | object,
-    *,
-    policy: Any,
-    controller_allowed: tuple[str, ...] | list[str] | set[str] | None = None,
-) -> ToolPlan:
-    allowed = None if controller_allowed is None else {str(n or "").strip().lower() for n in controller_allowed}
-    tool_calls = getattr(reply, "tool_calls", None) if not isinstance(reply, str) else None
-    if isinstance(reply, str) or tool_calls is None:
-        text = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or "")
-        objects = _extract_json_objects(text)
-        if not objects:
-            folded = str(text or "").strip().lower()
-            if not folded:
-                return _invalid_plan("no JSON tool call found", kind="no_json")
-            return _invalid_plan("no JSON tool call found", kind="no_json")
-        items: list[tuple[str, dict[str, Any], str]] = []
-        for obj in objects[:MAX_NATIVE_CALLS_PER_TURN]:
-            if not isinstance(obj, dict):
-                continue
-            tool, args = _tool_and_args(obj)
-            items.append((tool, args, ""))
-            if len(items) >= MAX_NATIVE_CALLS_PER_TURN:
-                break
-        if len(objects) > MAX_NATIVE_CALLS_PER_TURN:
-            return _invalid_plan(
-                f"too many native tool calls in one turn ({len(objects)}); "
-                f"send at most {MAX_NATIVE_CALLS_PER_TURN}",
-                kind="too_many_tools",
-            )
-        return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed)
-    calls = list(tool_calls or ())
-    if len(calls) > MAX_NATIVE_CALLS_PER_TURN:
-        return _invalid_plan(
-            f"too many native tool calls in one turn ({len(calls)}); send at most {MAX_NATIVE_CALLS_PER_TURN}",
-            kind="too_many_tools",
-        )
-    missing = [str(getattr(c, "name", "") or "?") for c in calls if not str(getattr(c, "id", "") or "")]
-    if missing:
-        return _invalid_plan(
-            "native tool call without an id cannot be answered: " + ", ".join(missing),
-            kind="invalid_args",
-        )
-    names = [str(getattr(c, "name", "") or "").strip().lower() for c in calls]
-    if "done" in names and len(calls) != 1:
-        return _invalid_plan("done must be the only call in a turn", tool="done", kind="too_many_tools")
-    if not calls:
-        text = str(getattr(reply, "text", "") or "")
-        return normalize_turn(text, policy=policy, controller_allowed=controller_allowed)
-    items = []
-    for item in calls:
-        name = str(getattr(item, "name", "") or "").strip().lower()
-        args = getattr(item, "arguments", {})
-        call_id = str(getattr(item, "id", "") or "")
-        if not isinstance(args, dict):
-            return _invalid_plan(f"{name} args must be an object", tool=name)
-        items.append((name, dict(args), call_id))
-    return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed)
-
-
-def effect_id_for_call(call: ToolCall) -> str:
-    try:
-        args_json = json.dumps(call.args if isinstance(call.args, dict) else {}, sort_keys=True, ensure_ascii=False)
-    except Exception:
-        args_json = str(getattr(call, "args", {}))
-    return stable_ref("task_effect", str(getattr(call, "name", "") or ""), args_json)
-
-
-@dataclass
-class TaskSession:
-    policy: Any
-    task_kind: str = "project"
-    project: str = ""
-    max_turns: int = 8
-    searches: list[str] = field(default_factory=list)
-    opened_sources: set[str] = field(default_factory=set)
-    evidence: list[dict[str, str]] = field(default_factory=list)
-    edited_files: dict[str, int] = field(default_factory=dict)
-    verifications: list[dict[str, Any]] = field(default_factory=list)
-    notes_saved: int = 0
-    transcript_notes: list[str] = field(default_factory=list)
-    last_done_text: str = ""
-    turn: int = 0
-    executed: dict[str, dict[str, Any]] = field(default_factory=dict)
-
-    def record_search(self, query: str) -> None:
-        text = str(query or "").strip()
-        if text:
-            self.searches.append(text[:240])
-
-    def record_open(self, url: str) -> None:
-        text = str(url or "").strip()
-        if text:
-            self.opened_sources.add(text[:500])
-
-    def record_evidence(self, source_url: str, excerpt: str) -> None:
-        url = str(source_url or "").strip()
-        clip = str(excerpt or "").strip()
-        if url and clip:
-            self.evidence.append({"source_url": url[:500], "excerpt": clip[:600]})
-
-    def record_edit(self, path: str, revision: int | None = None) -> int:
-        key = str(path or "").strip() or "file"
-        try:
-            rev = int(revision) if revision is not None else -1
-        except (TypeError, ValueError):
-            rev = -1
-        if rev < 0:
-            current = max([0, *list(self.edited_files.values())])
-            rev = current + 1
-        self.edited_files[key] = rev
-        return rev
-
-    def record_verification(self, command: str, revision: int, passed: bool) -> None:
-        try:
-            rev = int(revision)
-        except (TypeError, ValueError):
-            return
-        self.verifications.append({"command": str(command or "")[:240], "revision": rev, "passed": bool(passed)})
-
-    def notes_text(self) -> str:
-        parts = [*self.transcript_notes]
-        if self.last_done_text:
-            parts.append(self.last_done_text)
-        return "\n".join(parts)
-
-    def to_payload(self) -> dict[str, Any]:
-        try:
-            policy_payload = self.policy.to_payload() if hasattr(self.policy, "to_payload") else {}
-        except Exception:
-            policy_payload = {}
-        return {
-            "task_kind": str(self.task_kind or ""),
-            "project": str(self.project or ""),
-            "max_turns": int(self.max_turns or 0),
-            "searches": list(self.searches or []),
-            "opened_sources": sorted(self.opened_sources or set()),
-            "evidence": [dict(item) for item in (self.evidence or [])],
-            "edited_files": dict(self.edited_files or {}),
-            "verifications": [dict(item) for item in (self.verifications or [])],
-            "notes_saved": int(self.notes_saved or 0),
-            "transcript_notes": list(self.transcript_notes or [])[-50:],
-            "last_done_text": str(self.last_done_text or ""),
-            "turn": int(self.turn or 0),
-            "executed": {str(k): dict(v) for k, v in (self.executed or {}).items()},
-            "policy": policy_payload,
-        }
-
-    @staticmethod
-    def from_payload(payload: Mapping[str, Any] | None, *, policy: Any = None) -> TaskSession:
-        data = dict(payload) if isinstance(payload, Mapping) else {}
-        active_policy = policy if policy is not None else data.get("policy")
-        if not hasattr(active_policy, "allows"):
-            try:
-                from codey.policies.task_policy import TaskPolicy
-
-                active_policy = TaskPolicy.from_payload(data.get("policy"))
-            except Exception:
-                active_policy = policy
-        session = TaskSession(
-            policy=active_policy,
-            task_kind=str(data.get("task_kind", "") or "project"),
-            project=str(data.get("project", "") or ""),
-            max_turns=int(data.get("max_turns", 8) or 8),
-        )
-        try:
-            session.searches = [str(i) for i in (data.get("searches", []) or []) if str(i)]
-            session.opened_sources = {str(i) for i in (data.get("opened_sources", []) or []) if str(i)}
-            session.evidence = [dict(i) for i in (data.get("evidence", []) or []) if isinstance(i, dict)]
-            session.edited_files = {str(k): int(v) for k, v in (data.get("edited_files", {}) or {}).items()}
-            session.verifications = [dict(i) for i in (data.get("verifications", []) or []) if isinstance(i, dict)]
-            session.notes_saved = int(data.get("notes_saved", 0) or 0)
-            session.transcript_notes = [str(i) for i in (data.get("transcript_notes", []) or [])]
-            session.last_done_text = str(data.get("last_done_text", "") or "")
-            session.turn = int(data.get("turn", 0) or 0)
-            raw_executed = data.get("executed", {}) or {}
-            session.executed = {str(k): dict(v) for k, v in raw_executed.items() if isinstance(v, dict)}
-        except Exception:
-            pass
-        return session
-
-
-def _stored_result(effect_id: str, session: TaskSession) -> ToolResult | None:
-    record = (session.executed or {}).get(effect_id)
-    if not isinstance(record, dict):
-        return None
-    try:
-        call = ToolCall(
-            name=str(record.get("name", "") or ""),
-            args=dict(record.get("args", {}) or {}),
-            call_id=str(record.get("call_id", "") or ""),
-        )
-        return ToolResult(call=call, model_text=str(record.get("model_text", "") or ""))
-    except Exception:
-        return None
-
-
-def _store_result(session: TaskSession, effect_id: str, result: ToolResult) -> None:
-    import contextlib as _contextlib
-
-    with _contextlib.suppress(Exception):
-        session.executed[effect_id] = {
-            "name": str(result.call.name or ""),
-            "args": dict(result.call.args or {}),
-            "call_id": str(result.call.call_id or ""),
-            "model_text": str(result.model_text or ""),
-        }
+    return "pass" in lowered or lowered.strip().endswith("ok")
 
 
 def _error_result(call: ToolCall, message: str) -> ToolResult:
     return ToolResult(call=call, model_text=f"ERROR: {message}")
 
 
-def _record_facts_for_result(session: TaskSession, call: ToolCall, result: ToolResult) -> None:
+def _build_delegate(session: TaskSession, project_path: Any, tool_fns: Any, research_tools: Any) -> Any:
+    if project_path is None and research_tools is None:
+        return None
+    try:
+        from codey.operations.kernel_execution import ExecutionDelegate
+    except Exception:
+        return None
+    try:
+        return ExecutionDelegate(
+            session=session, project_path=project_path, tool_fns=tool_fns,
+            research_tools=research_tools,
+        )
+    except Exception:
+        return None
+
+
+_READ_ONLY_TOOLS = frozenset({
+    "list_dir", "read_file", "grep", "find_references",
+    "web_search", "knowledge_search", "knowledge_read",
+})
+
+
+def _skip_unsettled(intent_sink: Any, identity: str, name: str) -> bool:
+    if intent_sink is None:
+        return False
+    try:
+        return bool(intent_sink.has_unsettled(identity)) and name not in _READ_ONLY_TOOLS
+    except Exception:
+        return False
+
+
+def _replay_settled_slot(
+    session: TaskSession, identity: str, call: ToolCall, name: str, active_turn: int,
+) -> ToolResult | None:
+    if identity not in (session.executed or {}):
+        return None
+    # Same turn slot already settled (retry after crash before delivery):
+    # answer without re-executing dangerous writes. Full results stay
+    # process-local (never in the bounded payload).
+    full = session._memory_results.get(identity)
+    if full is not None:
+        call_id = str(getattr(call, "call_id", "") or full.call.call_id or "")
+        return ToolResult(
+            call=ToolCall(name=full.call.name, args=dict(full.call.args), call_id=call_id),
+            model_text=full.model_text,
+        )
+    record = session.executed[identity]
+    call_id = str(getattr(call, "call_id", "") or record.get("call_id", ""))
+    return ToolResult(
+        call=ToolCall(name=str(record.get("name", "") or name),
+                      args=dict(call.args if isinstance(call.args, dict) else {}),
+                      call_id=call_id),
+        model_text=f"ERROR: already settled in turn {active_turn}; see prior delivery"
+        if not bool(record.get("ok", False))
+        else str(record.get("excerpt", "") or ""),
+    )
+
+
+def _record_facts_for_result(
+    session: TaskSession,
+    call: ToolCall,
+    result: ToolResult,
+    *,
+    ok: bool,
+    opened_url: str = "",
+    evidence_items: list[dict[str, str]] | None = None,
+    exit_code: int | None = None,
+) -> None:
     name = str(call.name or "").strip().lower()
     args = call.args if isinstance(call.args, dict) else {}
     text = str(result.model_text or "")
+    if not ok:
+        return
     if name == "web_search":
         query = args.get("query", "")
         session.record_search(str(query or ""))
+        for rid, url in _search_result_rows(text):
+            session.record_search_result(rid, url)
     elif name == "open_url":
-        url = str(args.get("url", "") or "").strip()
+        url = (opened_url or str(args.get("url", "") or "")).strip()
         if url:
             session.record_open(url)
     elif name in _CONTROLLER_ALIASES:
-        target = text.strip()[:500] or str(args.get("result_id", "") or args.get("source_id", "") or "")
-        if target and "ERROR" not in text:
-            session.record_open(target)
+        url = (opened_url or "").strip()
+        if not url:
+            key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}[name]
+            rid = str(args.get(key, "") or "").strip().lower()
+            url = (session.search_results.get(rid, "") or session.source_ids.get(rid, "")).strip()
+        if url:
+            session.record_open(url)
     elif name == "knowledge_write":
         session.notes_saved += 1
-        sources = args.get("sources", [])
-        evidence = args.get("evidence", [])
-        if isinstance(sources, str):
-            sources = [sources]
-        if isinstance(evidence, dict):
-            evidence = [evidence]
-        saved = False
-        if isinstance(evidence, list):
-            for item in evidence:
-                if not isinstance(item, dict):
-                    continue
-                url = str(item.get("source_url", "") or item.get("source", "") or "")
-                excerpt = str(item.get("excerpt", "") or item.get("claim", "") or "")
-                if url and excerpt:
-                    session.record_evidence(url, excerpt)
-                    saved = True
-        if not saved and isinstance(sources, list) and sources:
-            session.record_evidence(str(sources[0]), text[:300] or "saved note")
-        elif not saved:
-            session.record_evidence("note:local", text[:300] or "saved note")
-    elif name == "knowledge_link":
-        session.notes_saved += 0
+        for item in evidence_items or ():
+            url = str(item.get("source_url", "") or "").strip()
+            excerpt = str(item.get("excerpt", "") or "").strip()
+            if url and excerpt:
+                session.record_evidence(url, excerpt)
     elif name == "edit":
-        path = str(args.get("path", "") or "file")
-        if "ERROR" not in text:
-            session.record_edit(path)
+        session.record_edit(str(args.get("path", "") or "file"))
     elif name == "run":
         command = str(args.get("command", "") or "")
         latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
-        passed = "pass" in text.lower() or text.strip().endswith("ok")
-        session.record_verification(command, latest, passed)
-    if text and "ERROR" not in text:
+        if exit_code is not None:
+            try:
+                passed = int(exit_code) == 0
+            except (TypeError, ValueError):
+                passed = False
+            session.record_verification(command, latest, passed, exit_code=exit_code)
+        else:
+            session.record_verification(command, latest, _fake_run_ok(text))
+    if text:
         session.transcript_notes.append(f"{name}: {text[:500]}")
+
+
+def _search_result_rows(text: str) -> list[tuple[str, str]]:
+    import re as _re
+
+    rows: list[tuple[str, str]] = []
+    for match in _re.finditer(r"https?://[^\s)>\]]+", str(text or "")):
+        rows.append((f"r{len(rows) + 1}", match.group(0).rstrip(".,;)]")))
+        if len(rows) >= 8:
+            break
+    return rows
 
 
 def execute_turn(
@@ -502,41 +210,85 @@ def execute_turn(
     calls: list[ToolCall],
     *,
     executors: Mapping[str, Callable[[ToolCall], Any]] | None = None,
+    run_id: object = "",
+    turn: object | None = None,
+    tool_index_base: object = 0,
+    project_path: Any = None,
+    tool_fns: Any = None,
+    research_tools: Any = None,
+    delivered: Mapping[str, ToolResult] | None = None,
+    intent_sink: Any = None,
 ) -> list[ToolResult]:
+    """Execute one turn; identity is run+turn+index with durable delivery first."""
+
     runnable = dict(executors or {})
+    try:
+        active_turn = int(turn) if turn is not None else int(session.turn or 0)
+    except (TypeError, ValueError):
+        active_turn = int(session.turn or 0)
+    try:
+        base_index = int(tool_index_base or 0)
+    except (TypeError, ValueError):
+        base_index = 0
+    run_ref = str(run_id or "")
+    delivered_map = dict(delivered or {})
+
+    import contextlib as _contextlib
+
+    def settle(identity: str, call: ToolCall, result: ToolResult, ok: bool) -> None:
+        _settle_slot(session, identity, call, result, ok=ok)
+        with _contextlib.suppress(Exception):
+            session._memory_results[identity] = result
+        if intent_sink is not None:
+            with _contextlib.suppress(Exception):
+                intent_sink.settle(identity, bool(ok))
     results: list[ToolResult] = []
-    for call in calls or []:
+    delegate = _build_delegate(session, project_path, tool_fns, research_tools)
+    with _contextlib.suppress(Exception):
+        if intent_sink is not None:
+            intent_sink.begin_turn(
+                [(turn_effect_id(run_ref or "adhoc", active_turn, base_index + offset), call)
+                 for offset, call in enumerate(calls or [])],
+                turn=active_turn,
+            )
+    for offset, call in enumerate(calls or []):
         name = str(getattr(call, "name", "") or "").strip().lower()
-        effect_id = effect_id_for_call(call)
-        stored = _stored_result(effect_id, session)
-        if stored is not None:
-            # Recovery: reuse the stored observation instead of re-executing.
-            # Keep the current call_id so native chains stay answerable.
-            if str(getattr(call, "call_id", "") or "") and not stored.call.call_id:
-                stored = ToolResult(
-                    call=ToolCall(name=stored.call.name, args=dict(stored.call.args), call_id=str(call.call_id)),
-                    model_text=stored.model_text,
-                )
-            results.append(stored)
+        identity = turn_effect_id(run_ref or "adhoc", active_turn, base_index + offset)
+        if identity in delivered_map:
+            results.append(delivered_map[identity])
+            continue
+        if _skip_unsettled(intent_sink, identity, name):
+            result = _error_result(call, f"interrupted {name} not re-executed; see prior intent")
+            settle(identity, call, result, ok=False)
+            results.append(result)
+            continue
+        replayed = _replay_settled_slot(session, identity, call, name, active_turn)
+        if replayed is not None:
+            results.append(replayed)
             continue
         if not _policy_allows(session.policy, name):
             result = _error_result(call, f"disallowed tool for this task policy: {name or '?'}")
-            _store_result(session, effect_id, result)
+            settle(identity, call, result, ok=False)
+            results.append(result)
+            continue
+        if delegate is not None and delegate.handles(name):
+            result, ok, opened, evidence, exit_code = delegate.execute(call)
+            settle(identity, call, result, ok=ok)
+            _record_facts_for_result(session, call, result, ok=ok, opened_url=opened,
+                                     evidence_items=evidence, exit_code=exit_code)
             results.append(result)
             continue
         fn = runnable.get(name)
         if fn is None:
-            # Unknown executor in this kernel wiring: fail closed, still answer.
             result = _error_result(call, f"unknown tool executor: {name or '?'}")
-            _store_result(session, effect_id, result)
+            settle(identity, call, result, ok=False)
             results.append(result)
             continue
         try:
             produced = fn(call)
         except Exception as exc:
             result = _error_result(call, str(exc) or "tool failed")
-            _store_result(session, effect_id, result)
-            _record_facts_for_result(session, call, result)
+            settle(identity, call, result, ok=False)
             results.append(result)
             continue
         if isinstance(produced, ToolResult):
@@ -545,35 +297,94 @@ def execute_turn(
             result = ToolResult(call=call, model_text=produced)
         else:
             result = ToolResult(call=call, model_text=str(produced))
-        _store_result(session, effect_id, result)
-        _record_facts_for_result(session, call, result)
+        ok = _result_ok(name, result)
+        if name == "run":
+            ok = _fake_run_ok(str(result.model_text or ""))
+        _settle_slot(session, identity, call, result, ok=ok)
+        _record_facts_for_result(session, call, result, ok=ok)
         results.append(result)
     return results
 
 
+def _settle_slot(session: TaskSession, identity: str, call: ToolCall, result: ToolResult, *, ok: bool) -> None:
+    import contextlib as _contextlib
+
+    with _contextlib.suppress(Exception):
+        session.executed[identity] = {
+            "name": str(result.call.name or ""),
+            "ok": bool(ok),
+            "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
+            "excerpt": str(result.model_text or "")[:500],
+        }
+
+
 def _snapshot_names(policy: Any) -> tuple[str, ...]:
     try:
-        from codey.toolchain.registry import snapshot_for_policy
+        from codey.toolchain.tool_spec import visible_tool_names
     except Exception:
         return ()
     try:
-        return tuple(snapshot_for_policy(policy).names)
+        return tuple(visible_tool_names(policy))
     except Exception:
         return ()
 
 
-def _controller_for_session(session: TaskSession) -> tuple[str, ...] | None:
+def controller_allowed_for_session(session: TaskSession) -> tuple[str, ...] | None:
     policy = getattr(session, "policy", None)
     if not bool(getattr(policy, "strict_research", False)):
         return None
+    results = dict(getattr(session, "search_results", {}) or {})
     opened = set(getattr(session, "opened_sources", set()) or set())
     evidence = list(getattr(session, "evidence", []) or [])
-    if not opened:
+    if not results and not opened:
         return ("knowledge_search", "knowledge_read", "web_search", "done")
+    if not opened:
+        return ("knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "done")
     if not evidence:
         return ("knowledge_search", "knowledge_read", "web_search", "open_url", "open_result",
                 "reopen_source", "open_hit", "source_search", "knowledge_write", "done")
     return None
+
+
+def _controller_for_session(session: TaskSession) -> tuple[str, ...] | None:
+    try:
+        return controller_allowed_for_session(session)
+    except Exception:
+        return None
+
+
+def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
+    """Reuse the production native-tool decision; never bare hasattr checks."""
+
+    try:
+        from codey.research.native_bridge import use_native_provider
+    except Exception:
+        return False
+    try:
+        return bool(use_native_provider(provider, str(provider_id or "")))
+    except Exception:
+        return False
+
+
+def kernel_prompt_for_session(
+    session: TaskSession,
+    *,
+    user_task: str = "",
+    contract_text: str = "",
+) -> str:
+    task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
+    handoff = str(getattr(session, "handoff", "") or "").strip()
+    project = str(getattr(session, "project", "") or "").strip() or "-"
+    names = ", ".join(_snapshot_names(getattr(session, "policy", None))) or "none"
+    parts = [f"User task (verbatim):\n{task_text or '(no task text)'}\n",
+             f"Project: {project}\nTask kind: {getattr(session, 'task_kind', '')}"]
+    if handoff:
+        parts.append(f"Handoff from prior work:\n{handoff}")
+    parts.append(f"Visible tools: {names}")
+    if contract_text:
+        parts.append(f"Tool contract (use exactly these shapes):\n{contract_text}")
+    parts.append("Reply with exactly one JSON tool call per turn, or done.")
+    return "\n\n".join(parts)
 
 
 def _repair_prompt(error: str) -> str:
@@ -602,26 +413,19 @@ class KernelResult:
     stop_reason: str
 
 
-def _is_native_provider(provider: Any) -> bool:
-    return bool(callable(getattr(provider, "send_turn", None)) and callable(getattr(provider, "send_tool_results", None)))
+def _is_native_provider(provider: Any, *, provider_id: object = "") -> bool:
+    return provider_uses_native(provider, provider_id=provider_id)
 
 
 def _native_tools_for_policy(policy: Any) -> list[dict[str, Any]]:
-    names = set(_snapshot_names(policy))
     try:
-        from codey.policies.task_policy import visible_research_tools
+        from codey.toolchain.tool_spec import native_tools_for_policy
     except Exception:
-        visible_research_tools = None  # type: ignore[assignment]
-    if visible_research_tools is not None:
-        try:
-            for name in visible_research_tools(policy, None):
-                names.add(name)
-        except Exception:
-            pass
-    tools: list[dict[str, Any]] = []
-    for name in sorted(names):
-        tools.append({"type": "function", "function": {"name": name, "parameters": {"type": "object"}}})
-    return tools
+        return []
+    try:
+        return list(native_tools_for_policy(policy))
+    except Exception:
+        return []
 
 
 def run_task_kernel(
@@ -629,21 +433,40 @@ def run_task_kernel(
     *,
     provider: Any,
     executors: Mapping[str, Callable[[ToolCall], Any]] | None = None,
+    run_id: object = "",
+    provider_id: object = "",
+    project_path: Any = None,
+    tool_fns: Any = None,
+    research_tools: Any = None,
+    user_task: object = "",
+    stop_flag: Any = None,
+    delivered: Mapping[str, ToolResult] | None = None,
 ) -> KernelResult:
     runnable = dict(executors or {})
+    delivered_map = dict(delivered or {})
     max_turns = max(1, int(getattr(session, "max_turns", 8) or 8))
-    names = _snapshot_names(session.policy)
-    prompt = (
-        f"Task kind: {session.task_kind}. Project: {session.project or '-'}. "
-        f"Visible tools: {', '.join(names) or 'none'}. "
-        "Reply with exactly one JSON tool call per turn, or done."
-    )
+    try:
+        from codey.toolchain.tool_spec import json_contract_text
+    except Exception:
+        json_contract_text = None  # type: ignore[assignment]
+    try:
+        contract_text = json_contract_text(session.policy) if json_contract_text is not None else ""
+    except Exception:
+        contract_text = ""
+    prompt = kernel_prompt_for_session(session, user_task=str(user_task or ""), contract_text=contract_text)
     pending_reply: Any = None
     pending_native_messages: list[dict[str, Any]] | None = None
-    native = _is_native_provider(provider)
+    native = _is_native_provider(provider, provider_id=provider_id)
     native_tools = _native_tools_for_policy(session.policy) if native else []
     turns_used = 0
     for turn in range(1, max_turns + 1):
+        if stop_flag is not None:
+            try:
+                if bool(stop_flag.is_set()):
+                    return KernelResult(completed=False, summary="stopped", turns=turns_used,
+                                        stop_reason="stopped")
+            except Exception:
+                pass
         session.turn = turn
         turns_used = turn
         controller = _controller_for_session(session)
@@ -677,33 +500,82 @@ def run_task_kernel(
                         pending_reply = None
             continue
         if plan.control is not None and plan.control.kind == "done":
-            session.last_done_text = str(plan.control.body or "")
-            try:
-                from codey.operations.completion_gate import evaluate as gate_evaluate
-            except Exception:
-                return KernelResult(completed=True, summary=session.last_done_text or "done", turns=turns_used, stop_reason="done")
-            verdict = gate_evaluate(session, session.last_done_text)
-            if verdict.complete:
-                return KernelResult(completed=True, summary=session.last_done_text, turns=turns_used, stop_reason="done")
-            prompt = verdict.followup
-            continue
-        results = execute_turn(session, list(plan.calls or ()), executors=runnable)
+            done_outcome = _handle_done_reply(session, plan, provider, reply, native, native_tools)
+            if done_outcome is not None:
+                if isinstance(done_outcome, KernelResult):
+                    return done_outcome
+                prompt, pending_reply = done_outcome
+                continue
+        results = execute_turn(session, list(plan.calls or ()), executors=runnable, run_id=run_id,
+                               turn=turn, project_path=project_path, tool_fns=tool_fns,
+                               research_tools=research_tools, delivered=delivered_map or None)
         if native:
-            messages: list[dict[str, Any]] = []
-            for result in results:
-                call_id = str(getattr(result.call, "call_id", "") or "")
-                if not call_id:
-                    # JSON-originated calls in a native session have no chain id;
-                    # synthesize a follow-up prompt instead of a tool message.
-                    messages = []
-                    break
-                messages.append({"role": "tool", "tool_call_id": call_id, "content": str(result.model_text or "")})
+            messages = _native_tool_messages(results)
             if messages:
                 pending_native_messages = messages
                 prompt = ""
                 continue
         prompt = _format_results(results)
     return KernelResult(completed=False, summary="max turns reached", turns=turns_used, stop_reason="max_turns")
+
+
+def _handle_done_reply(
+    session: TaskSession, plan: ToolPlan, provider: Any, reply: Any, native: bool, native_tools: Any,
+) -> tuple[str, Any] | KernelResult | None:
+    """Evaluate one done proposal; fail closed with the call id answered."""
+
+    session.last_done_text = str(plan.control.body or "") if plan.control is not None else ""
+    try:
+        from codey.operations.completion_gate import evaluate as gate_evaluate
+    except Exception:
+        # Fail closed: a missing gate never completes.
+        prompt = "Completion gate unavailable; cannot complete yet. Continue the task."
+        pending = _take_answered_reply(provider, reply, native, native_tools, prompt)
+        return prompt, pending
+    try:
+        verdict = gate_evaluate(session, session.last_done_text)
+    except Exception as exc:
+        prompt = f"Completion check failed ({exc}); cannot complete yet. Continue the task."
+        pending = _take_answered_reply(provider, reply, native, native_tools, prompt)
+        return prompt, pending
+    if verdict.complete:
+        return KernelResult(completed=True, summary=session.last_done_text,
+                            turns=int(session.turn or 0), stop_reason="done")
+    pending = _take_answered_reply(provider, reply, native, native_tools, verdict.followup)
+    return verdict.followup, pending
+
+
+def _native_tool_messages(results: list[ToolResult]) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = []
+    for result in results:
+        call_id = str(getattr(result.call, "call_id", "") or "")
+        if not call_id:
+            # JSON-originated calls in a native session have no chain id;
+            # synthesize a follow-up prompt instead of a tool message.
+            return []
+        messages.append({"role": "tool", "tool_call_id": call_id, "content": str(result.model_text or "")})
+    return messages
+
+
+def _take_answered_reply(
+    provider: Any, reply: Any, native: bool, native_tools: Any, followup: str,
+) -> Any:
+    if not native or isinstance(reply, str):
+        return None
+    try:
+        ids = [str(getattr(c, "id", "") or "") for c in (getattr(reply, "tool_calls", ()) or [])]
+    except Exception:
+        return None
+    ids = [i for i in ids if i]
+    if not ids:
+        return None
+    try:
+        return provider.send_tool_results(
+            [{"role": "tool", "tool_call_id": i, "content": f"ERROR: {followup}"} for i in ids],
+            native_tools, timeout=None,
+        )
+    except Exception:
+        return None
 
 
 def policy_for_dispatch(request: Any, kind: object, *, strict_research: object = False) -> Any:
@@ -719,12 +591,44 @@ def policy_for_dispatch(request: Any, kind: object, *, strict_research: object =
         return None
 
 
-__all__ = [
-    "KernelResult",
-    "TaskSession",
-    "effect_id_for_call",
-    "execute_turn",
-    "normalize_turn",
-    "policy_for_dispatch",
-    "run_task_kernel",
-]
+def resume_policy(stored: Any, incoming: Any) -> Any:
+    """Recovery reuses the persisted policy; new requests never replace it."""
+
+    if stored is not None and callable(getattr(stored, "allows", None)):
+        return stored
+    return incoming
+
+
+def apply_auto_plan(policy: Any, plan_text: object) -> Any:
+    """Narrow a policy by an auto PLAN; the plan can never widen grants."""
+
+    if policy is None or not callable(getattr(policy, "allows", None)):
+        return policy
+    text = str(plan_text or "")
+    lowered = text.lower()
+    if "action:" not in lowered and "plan:" not in lowered:
+        return policy
+    try:
+        from codey.policies.task_policy import TaskPolicy
+    except Exception:
+        return policy
+    grants = set(getattr(policy, "grants", frozenset()) or frozenset())
+    if "action: project" not in lowered and "action:project" not in lowered:
+        grants.discard("project.write")
+        grants.discard("shell.approval")
+    if "action: research" not in lowered and "action:research" not in lowered:
+        grants.discard("web.read")
+        grants.discard("knowledge.read")
+        grants.discard("knowledge.write")
+        grants.discard("knowledge.link")
+    grants.add("control")
+    try:
+        return TaskPolicy(
+            grants=frozenset(grants),
+            strict_research=bool(getattr(policy, "strict_research", False)),
+            required_checks=tuple(getattr(policy, "required_checks", ()) or ()),
+            source=str(getattr(policy, "source", "") or "") + ";auto_narrowed",
+            version=int(getattr(policy, "version", 1) or 1),
+        )
+    except Exception:
+        return policy
