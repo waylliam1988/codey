@@ -123,7 +123,15 @@ class JsonToolCodec:
             )
         if runtime == "done":
             self.last_control_args = dict(validated.args)
-            return ToolPlan(calls=[], control=Control("done", str(validated.args.get("answer") or "")))
+            try:
+                from codey.protocols.done_compat import read_done_text
+            except Exception:
+                read_done_text = None  # type: ignore[assignment]
+            try:
+                text = read_done_text(validated.args) if read_done_text is not None else ""
+            except Exception:
+                text = ""
+            return ToolPlan(calls=[], control=Control("done", text or "done"))
         calls = [ToolCall(runtime, validated.args)]
         return ToolPlan(calls=calls, control=None)
 
@@ -211,7 +219,15 @@ class JsonToolCodec:
                             protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
                         )
                     self.last_control_args = dict(validated.args)
-                    return ToolPlan(calls=[], control=Control("done", str(validated.args.get("answer") or "")))
+                    try:
+                        from codey.protocols.done_compat import read_done_text as _read_done
+                    except Exception:
+                        _read_done = None  # type: ignore[assignment]
+                    try:
+                        _text = _read_done(validated.args) if _read_done is not None else ""
+                    except Exception:
+                        _text = ""
+                    return ToolPlan(calls=[], control=Control("done", _text or "done"))
                 calls.append(ToolCall(name, dict(validated.args), call_id))
             if calls:
                 return ToolPlan(calls=calls, control=None)

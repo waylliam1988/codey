@@ -191,7 +191,14 @@ class NativeOpenAIToolCodec:
             if not isinstance(args, dict):
                 return ToolPlan(calls=[], control=None, protocol_error=f"{normalized} args must be an object",
                                 protocol_error_kind="invalid_args", protocol_tool_name=normalized)
-            summary = str(args.get("summary") or "")
+            try:
+                from codey.protocols.done_compat import read_done_text
+            except Exception:
+                read_done_text = None  # type: ignore[assignment]
+            try:
+                summary = read_done_text(args) if read_done_text is not None else ""
+            except Exception:
+                summary = ""
             return ToolPlan(calls=[], control=Control(kind="done", body=summary or "done"))
         if not isinstance(args, dict):
             return ToolPlan(calls=[], control=None, protocol_error=f"{normalized} args must be an object",

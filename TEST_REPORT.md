@@ -1,5 +1,35 @@
 # Codey Test Report
 
+## Unified task kernel complete: normalize + adapters + gate + single loop (2026-09-28)
+
+Scope (deterministic, red-first, no release):
+
+```text
+tests/test_task_kernel_remaining.py (new, 14: all failed before, pass after)
+codey/operations/task_kernel.py (new: normalize_turn, execute_turn, TaskSession, run_task_kernel, policy_for_dispatch)
+codey/operations/completion_gate.py (new: evaluate, register_completion_check_provider, make_check)
+codey/protocols/json_codec.py + native_openai.py + research/protocols.py (done summary/answer compat via read_done_text)
+codey/policies/task_policy.py (hybrid grants knowledge write/link)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md (this entry, written after the full suite)
+```
+
+Red-first (all failed before with missing modules/denials, pass after):
+
+- `NormalizeParityTests` 4 (JSON/native same capability; illegal args both paths; native per-id answers; controller denial both paths).
+- `WebOnlyLoopTests` 2 (web-only mixed web_search->open->read->edit->run->done without native; native parity same completion).
+- `CompletionGateTests` 3 (strict search-only blocked; stale verification blocked then fresh passes with one proof; programming-with-web needs no notes).
+- `HybridAndPlanningTests` 2 (hybrid interleaves web+project in one run; readonly planning denies edit at parse and execution).
+- `ThirdTaskTests` 1 (custom summarize tool + summary_present check, no kernel change).
+- `RecoveryTests` 2 (resume reuses stored results for edit/run/knowledge_write/open_url; provider switch keeps results).
+
+Verification: `python -m ruff check .` clean, `git diff --check` clean.
+Targeted green before final (remaining 14; unification 14; codecs/controllers 101 passed;
+architecture 133 passed).
+Then final `python -m pytest -q`:
+`4883 passed, 10 skipped, 1484 subtests passed in 339.66s (0:05:39)`.
+Delta vs 4869 is exactly the 14 new remaining locks. No release was made.
+
 ## Unified task kernel step 1: TaskPolicy + fail-closed snapshots/completion + hybrid handoff (2026-09-28)
 
 Scope (deterministic, red-first, no release):

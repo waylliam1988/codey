@@ -2,6 +2,50 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Unified task kernel complete: normalize + adapters + gate + single loop (no release)
+
+- Added the single production-capable loop (`codey/operations/task_kernel.py`):
+  `normalize_turn()` converges web JSON text and native `AssistantTurn` into one
+  `ToolPlan` under the same `TaskPolicy` + controller state; `execute_turn()`
+  dispatches project/web/knowledge/custom executors through one entry with
+  policy re-checks and idempotent effect ids; `run_task_kernel()` keeps exactly
+  one provider message per iteration (no double-send on `done` rejection or tool
+  delivery) and works with web-only providers (`new_chat/send/close`, never
+  touching `send_turn`) as well as native providers (`send_turn`/
+  `send_tool_results`) with identical auth, results, and completion.
+- Added the single completion entry (`codey/operations/completion_gate.py`):
+  `evaluate()` composes coding freshness (edit revision vs fresh verification),
+  strict-Research source/evidence/report checks, and pluggable
+  `register_completion_check_provider()` rows into one `CompletionContract` /
+  one `CompletionProof`. Search-only strict runs, stale verifications, and
+  missing reports block; plain programming with web tools needs no Research
+  notes; model text never proves tests or opens except report sections.
+- Unified `done` text across codecs via `read_done_text()` (coding `summary`,
+  Research `answer`): `protocols/json_codec`, `protocols/native_openai`, and
+  `research/protocols` (JSON + native) now accept both names; stored payloads
+  unchanged. Hybrid keeps one-task continuity (research summary preserved as
+  handoff, no forced `fresh_chat`); controller state narrows only research
+  tools, never project tools in hybrid runs.
+- Recovery before old-loop removal: `TaskSession.to_payload()/from_payload()`
+  persists policy + facts + executed effect ids; `execute_turn()` reuses stored
+  observations instead of re-executing `edit`/`run`/`knowledge_write`/`open_url`
+  after interruption or provider switch; every native call id still gets a legal
+  result. Third task kinds run via injected executors + check providers with no
+  kernel change (proven by test).
+- Tests, all red-first: new `tests/test_task_kernel_remaining.py` (14 tests, all
+  failed before with missing modules/denials, pass after) covering JSON/native
+  parity, illegal-arg rejection, per-id native answers, controller enforcement
+  on both paths, web-only mixed turns, native parity, strict search-only block,
+  stale-then-fresh verification, programming-with-web no-notes, hybrid
+  interleaving in one run, readonly denial, third-task generalization, resume
+  idempotency, and provider-switch preservation. Hybrid now grants knowledge
+  write/link (research-note phase before code).
+- Verification: `python -m ruff check .` clean, `git diff --check` clean.
+  Targeted green before final (remaining 14; unification 14; codecs/controllers
+  101 passed). Then final `python -m pytest -q`:
+  `4883 passed, 10 skipped, 1484 subtests passed in 339.66s (0:05:39)`.
+  Delta vs 4869 is exactly the 14 new remaining locks. No release was made.
+
 ## Unreleased - Unified task kernel step 1: persistent TaskPolicy + fail-closed snapshots/completion + hybrid handoff (no release)
 
 - Added persistent, explainable `TaskPolicy` (`codey/policies/task_policy.py`):

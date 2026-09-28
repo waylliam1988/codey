@@ -174,12 +174,9 @@ def build_task_policy(
         if "web.read" in requested:
             grants.add("web.read")
         if kind == "hybrid":
-            # Hybrid intentionally mixes web and project tools in one run.
-            grants.update({"web.read", "knowledge.read"})
-            if strict:
-                grants.update({"knowledge.write", "knowledge.link"})
-            elif "knowledge.read" in requested:
-                grants.add("knowledge.read")
+            # Hybrid intentionally mixes web and project tools in one run,
+            # including saving research notes before writing code.
+            grants.update({"web.read", "knowledge.read", "knowledge.write", "knowledge.link"})
         if strict:
             grants.update({"web.read", "knowledge.read", "knowledge.write", "knowledge.link"})
             if has_project:

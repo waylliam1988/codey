@@ -2,6 +2,38 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 统一任务内核完成：normalize + 适配器 + 完成门 + 单循环（未发布）
+
+- 新增单一任务循环（`codey/operations/task_kernel.py`）：`normalize_turn()` 把
+  网页 JSON 文本与原生 `AssistantTurn` 收敛为同一 `ToolPlan`（同一授权 +
+  controller 状态）；`execute_turn()` 经统一入口按授权复检、以 effect id 幂等
+  分派项目/网页/知识/自定义执行器；`run_task_kernel()` 每轮只发一次 provider
+  消息（`done` 被拒与工具交付均不双发），纯网页模型（仅
+  `new_chat/send/close`）与原生模型（`send_turn/send_tool_results`）得到相同
+  授权、结果与完成判断。
+- 新增单一完成入口（`codey/operations/completion_gate.py`）：`evaluate()` 把
+  代码新鲜度（编辑版本 vs 新验证）、严格 Research 来源/证据/报告检查、可插拔
+  `register_completion_check_provider()` 合成一份 `CompletionContract`/一份
+  `CompletionProof`。纯搜索严格任务、旧验证、缺报告均阻塞；普通联网编程不强
+  求 Research 笔记；模型文本不自证测试与打开（报告节本身除外）。
+- `done` 文本经 `read_done_text()` 统一（`summary`/`answer` 互认）：
+  `protocols/json_codec`、`protocols/native_openai`、`research/protocols`
+  （JSON + 原生）均兼容旧名，旧记录不改写。hybrid 单任务延续（保留 research
+  摘要为 handoff，不强制 `fresh_chat`）；controller 只收窄 research 工具，
+  不禁 hybrid 项目工具。
+- 先验恢复语义：`TaskSession.to_payload()/from_payload()` 持久授权 + 事实 +
+  已执行 effect；中断或切换提供者后 `edit`/`run`/`knowledge_write`/`open_url`
+  不重做，每个原生 call id 仍有合法结果。第三类任务仅注入执行器与检查提供者，
+  无需改循环（测试证明）。hybrid 补授 knowledge write/link。
+- 测试全部红测先行：新 `tests/test_task_kernel_remaining.py`（14 个，修前因
+  缺模块/拒绝而失败，修后全绿），覆盖 JSON/原生同权、非法参数双路径拒绝、
+  原生逐 id 应答、controller 双路径生效、纯网页混合多轮、原生等价、严格纯搜
+  索阻塞、旧验证转新验证通过、联网编程免笔记、hybrid 单 run 交替、只读禁写、
+  第三任务泛化、恢复幂等、切换提供者保结果。
+- 验证：`python -m ruff check .` 干净，`git diff --check` 干净。终测前靶向全绿。
+  最终 `python -m pytest -q`：`4883 passed, 10 skipped, 1484 subtests passed
+  in 339.66s (0:05:39)`。相对 4869 增量恰为 14 个新锁。未发布。
+
 ## Unreleased - 统一任务内核步骤 1：可持久 TaskPolicy + fail-closed 快照/完成契约 + hybrid handoff（未发布）
 
 - 新增可持久、可解释的 `TaskPolicy`（`codey/policies/task_policy.py`）：
