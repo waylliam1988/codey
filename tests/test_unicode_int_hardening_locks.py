@@ -155,7 +155,7 @@ def test_source_id_unicode_fail_closed() -> None:
 
 
 def test_tool_instance_id_unicode_fail_closed() -> None:
-    from codey.runs.trace import _tool_instance_id
+    from codey.runs.trace_values import _tool_instance_id
 
     assert _tool_instance_id("²:³") == ""
     assert _tool_instance_id("1:2") == "1:2"

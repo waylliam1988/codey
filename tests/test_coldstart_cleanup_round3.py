@@ -181,10 +181,10 @@ class TopicContinuitySchemaStrictTests(unittest.TestCase):
         self.assertEqual(rows[0]["digest"], payload["digest"])
 
     def test_no_or1_backfill_in_topic_path(self) -> None:
-        import codey.runs.trace as trace_mod
+        import codey.runs.trace_research as research_mod
 
         source = std_inspect.getsource(
-            trace_mod.RunTraceRecorder.record_research_topic_continuity
+            research_mod.project_research_topic_continuity
         )
         self.assertNotIn("or 1", source)
         # strict check must be exact-int equality against the projection const
@@ -260,10 +260,10 @@ class CompletionRepairSchemaStrictTests(unittest.TestCase):
         self.assertEqual(rows[0]["schema_version"], 1)
 
     def test_no_or1_backfill_in_repair_path(self) -> None:
-        import codey.runs.trace as trace_mod
+        import codey.runs.trace_completion as completion_mod
 
         source = std_inspect.getsource(
-            trace_mod.RunTraceRecorder.record_completion_repair_context
+            completion_mod.project_completion_repair_context
         )
         self.assertNotIn("or 1", source)
         self.assertIn("COMPLETION_REPAIR_SCHEMA_VERSION", source)
@@ -462,17 +462,28 @@ class DuplicateProjectionMergeTests(unittest.TestCase):
     def test_topic_and_repair_share_one_codes_helper(self) -> None:
         import pathlib
 
-        import codey.runs.trace as trace_mod
+        import codey.runs.trace_values as values_mod
 
-        source = pathlib.Path(trace_mod.__file__).read_text(encoding="utf-8")
+        source = pathlib.Path(values_mod.__file__).read_text(encoding="utf-8")
         self.assertIn("def _projection_codes", source)
         self.assertEqual(source.count("def _codes"), 0)
-        self.assertGreaterEqual(source.count("_projection_codes("), 2)
+        import codey.runs.trace_completion as completion_mod
+        import codey.runs.trace_research as research_mod
+
+        research_source = pathlib.Path(research_mod.__file__).read_text(encoding="utf-8")
+        completion_source = pathlib.Path(completion_mod.__file__).read_text(
+            encoding="utf-8"
+        )
+        self.assertGreaterEqual(
+            research_source.count("_projection_codes(")
+            + completion_source.count("_projection_codes("),
+            2,
+        )
 
     def test_codes_helper_bounds_unchanged(self) -> None:
-        import codey.runs.trace as trace_mod
+        import codey.runs.trace_values as values_mod
 
-        source = std_inspect.getsource(trace_mod._projection_codes)
+        source = std_inspect.getsource(values_mod._projection_codes)
         self.assertIn("_safe_trace_code", source)
         self.assertIn("80", source)
         self.assertIn("MAX_WARNINGS", source)

@@ -24,13 +24,9 @@ def safe_connector_id(value: object) -> str:
 
 
 def generated_ref(value: object, prefix: str) -> str:
-    text = str(value or "").strip()
-    safe_prefix = connector_id(prefix)
-    marker = safe_prefix + ":"
-    suffix = text.removeprefix(marker)
-    if text.startswith(marker) and len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
-        return text
-    return ""
+    from codey.utils.refs import generated_ref as _shared_generated_ref
+
+    return _shared_generated_ref(value, connector_id(prefix))
 
 
 def valid_digest_ref(value: object) -> str:

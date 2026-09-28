@@ -21,9 +21,9 @@ from codey.utils.refs import (
     bounded_refs,
     clip,
     digest_json,
+    generated_ref,
     identifier,
     nonnegative_int,
-    research_proof_ref,
     stable_ref,
 )
 
@@ -1000,7 +1000,7 @@ def _record_id_or_empty(value: object) -> str:
 
 
 def _proof_ref_or_empty(value: object) -> str:
-    return research_proof_ref(value)
+    return generated_ref(value, "research_proof")
 
 
 def _question_digest(value: object) -> str:

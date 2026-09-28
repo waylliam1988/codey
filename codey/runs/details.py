@@ -18,7 +18,7 @@ from codey.runs.receipt import (
     VERIFICATION_TRUST_TRUSTED,
 )
 from codey.runs.text_clip import clip_text as _clip
-from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, TRACE_KIND
+from codey.runs.trace_schema import MAX_TRACE_BYTES, SCHEMA_VERSION, TRACE_KIND
 from codey.runtime.core import cancellation
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,

@@ -66,7 +66,7 @@ from codey.research.reproducibility import build_reproducibility_capsule
 from codey.reviews.coordinator import ReviewCoordinator, change_state
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runs.receipt import VERIFICATION_TRUST_TRUSTED, build_task_receipt
-from codey.runs.trace import MAX_ANALYSIS_RUNS, MAX_ARTIFACT_REFS
+from codey.runs.trace_schema import MAX_ANALYSIS_RUNS, MAX_ARTIFACT_REFS
 from codey.runs.work_checkpoint import (
     WorkCheckpoint,
     WorkCheckpointStore,

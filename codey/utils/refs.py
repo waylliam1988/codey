@@ -130,24 +130,25 @@ def stable_ref(prefix: str, *parts: object) -> str:
     return f"{identifier(prefix, 40)}:{digest[:16]}"
 
 
-_RESEARCH_PROOF_PREFIX = "research_proof:"
 _HEX16 = frozenset("0123456789abcdef")
 
 
-def research_proof_ref(value: object) -> str:
-    """Validate a ``research_proof:<16 lowercase hex>`` ref, else ``""``.
+def generated_ref(value: object, prefix: str) -> str:
+    """Validate a ``<prefix>:<16 lowercase hex>`` ref, else ``""``.
 
-    Shared by Ghost completion gating and Research proof review so the two
-    judgments cannot drift. Inputs are coerced with ``str(value or "")``
-    (inherited from both original validators) and stripped before validation,
-    so non-string scalars fail closed; only values coercing to exactly the
-    canonical shape pass. Fail-closed: uppercase hex, wrong length, and wrong
-    prefix are all rejected.
+    Generic single implementation for every generated-ref kind: each
+    domain passes its own prefix (``research_proof``, ``artifact``,
+    ...). Inputs are coerced with ``str(value or "")`` and stripped
+    before validation, so non-string scalars fail closed; only values
+    coercing to exactly the canonical shape pass. Fail-closed: uppercase
+    hex, wrong length, and wrong prefix are all rejected. No domain
+    prefix constant lives here.
     """
     text = str(value or "").strip()
-    if not text.startswith(_RESEARCH_PROOF_PREFIX):
+    marker = f"{prefix}:"
+    if not text.startswith(marker):
         return ""
-    suffix = text.removeprefix(_RESEARCH_PROOF_PREFIX)
+    suffix = text.removeprefix(marker)
     if len(suffix) == 16 and all(ch in _HEX16 for ch in suffix):
         return text
     return ""
@@ -183,8 +184,8 @@ __all__ = [
     "identifier",
     "is_valid_hostname",
     "nonnegative_int",
+    "generated_ref",
     "normalize_text",
-    "research_proof_ref",
     "stable_ref",
     "strict_nonnegative_int",
 ]

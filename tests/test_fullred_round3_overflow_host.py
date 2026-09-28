@@ -73,8 +73,8 @@ def test_inbox_int_or_default_overflow_does_not_crash() -> None:
 
 
 def test_trace_int_overflow_does_not_crash() -> None:
-    from codey.runs.trace import _bounded_int as _tr_bounded
-    from codey.runs.trace import _nonnegative_int as _tr_nn
+    from codey.runs.trace_values import _bounded_int as _tr_bounded
+    from codey.runs.trace_values import _nonnegative_int as _tr_nn
 
     assert _tr_nn(float("inf")) == 0
     assert _tr_bounded(float("inf"), 1, 5) == 1

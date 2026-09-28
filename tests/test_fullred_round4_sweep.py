@@ -54,11 +54,11 @@ class OverflowSweepTests(unittest.TestCase):
         self.assertIsNone(_int_or_none(float("inf")))
 
     def test_trace_int_or_none_inf(self):
-        from codey.runs.trace import _int_or_none
+        from codey.runs.trace_values import _int_or_none
         self.assertIsNone(_int_or_none(float("inf")))
 
     def test_trace_unit_float_huge(self):
-        from codey.runs.trace import _unit_float
+        from codey.runs.trace_values import _unit_float
         self.assertEqual(_unit_float(10 ** 400), 0.0)
 
     def test_repair_context_nonnegative_inf(self):
@@ -195,7 +195,7 @@ class BoolUnicodeFiniteTests(unittest.TestCase):
         from codey.ghost.hebbian import _clamp01 as hb
         from codey.knowledge.research_interest import _unit_float as ri
         from codey.research.proof_quality import _bounded_score as pq
-        from codey.runs.trace import _unit_float as tr
+        from codey.runs.trace_values import _unit_float as tr
         self.assertEqual(pq(float("nan")), 0.0)
         self.assertEqual(pq("inf"), 0.0)
         self.assertEqual(ri(float("nan")), 0.0)

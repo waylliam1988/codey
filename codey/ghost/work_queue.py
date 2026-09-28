@@ -44,7 +44,7 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
-from codey.utils.refs import research_proof_ref
+from codey.utils.refs import generated_ref
 
 WORK_QUEUE_SCHEMA_VERSION = 1
 MAX_WORK_ITEMS = 200
@@ -2518,7 +2518,7 @@ def _primary_proof_matches_item_kind(item: GhostWorkItem, refs: Iterable[str]) -
 
 
 def _research_proof_ref(value: object) -> str:
-    return research_proof_ref(value)
+    return generated_ref(value, "research_proof")
 
 
 def _clean_metadata(value: object) -> dict[str, object]:

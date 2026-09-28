@@ -2,6 +2,61 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Trace split: schema/values/research/completion/protocol + generic generated_ref (no release)
+
+- Split `codey/runs/trace.py` (2421 lines) into five leaf modules with no
+  behavior change (red-first behavior locks, golden JSON byte-identical):
+  `trace_schema.py` (versions, all `MAX_*`, `CHECKPOINT_FLUSH_INTERVAL`,
+  `REVIEW_FINDING_REF_KINDS`, `RESEARCH_ANSWER_STATUSES`; values untouched),
+  `trace_values.py` (10 pure sanitizers: `_safe_trace_code`,
+  `_trace_list_items`, `_projection_codes`, `_nonnegative_int`,
+  `_bounded_int`, `_unit_float`, `_identifier`, `_bounded_refs`,
+  `_int_or_none`, `_tool_instance_id`),
+  `trace_research.py` (16 pure `project_*` builders + 4 research-only
+  privates), `trace_completion.py` (3 pure `project_*` builders),
+  `trace_protocol.py` (5 pure serializers). `trace.py` keeps the manifest,
+  `RunTraceStore`/`RunTraceRecorder` (signatures unchanged), all dedupe
+  sets, caps, warnings, and the single `flush()` write path
+  (`write_json_atomic(..., max_bytes=MAX_TRACE_BYTES)` once;
+  `path_for()`/`schema_version` unchanged). `details.py` and
+  `project_completion_flow.py` import limits from `trace_schema`.
+  Dependency direction `trace -> projections -> values/schema` is locked;
+  no new module imports `trace.py`, writes files, or owns a manifest.
+- Behavior locks in new `tests/test_trace_split_golden.py` (4 tests, green
+  before and after): kitchen-sink payload matches the checked-in golden
+  fixture byte-for-byte (`tests/fixtures/trace_split_golden.json`);
+  no raw prompt/webpage/evidence/provider-error text in payload;
+  `RunTraceStore.open` survives a write failure (disabled, never raises,
+  task/ledger flow unaffected); bad-epoch topic/repair writes no row and
+  consumes no dedupe key (retry with a good epoch admits exactly 1 row).
+- `utils/refs` tightening (red-first parity test rewritten, failed before
+  with `ImportError`, green after): generic
+  `generated_ref(value, prefix)` replaces `research_proof_ref` (old name
+  removed from `__all__`; no domain constant in the generic layer);
+  `research.guards.generated_ref` keeps its signature and prefix
+  normalization and delegates; `ghost/work_queue` and
+  `research/proof_quality` call `generated_ref(value, "research_proof")`
+  (Ghost still depends only on the generic leaf). Parity battery keeps all
+  old samples plus wrong-prefix/uppercase/length locks.
+- Bug hunt during the move: differential fuzz of 30 edge inputs
+  (`inf`/`nan`/unicode/`bool`/`None`/garbage) old-vs-new plus old-vs-new
+  `guards.generated_ref` parity over odd prefixes — 0 divergences, so no
+  deterministic bug was found and none fixed in this round (per
+  reproduce-or-it-is-not-a-bug). 8 intermediate reds were all
+  moved-symbol locks in old tests, updated to the new homes at equal
+  strength (`round3` or-1/codes locks -> `trace_research`/
+  `trace_completion`/`trace_values`; `round3`/`round4`/`unicode` private
+  imports -> `trace_values`); compat re-exports kept in `trace.py`
+  (`_research_connector_error_payload`, `digest_text`).
+- Verification: `python -m ruff check .` clean, `git diff --check` clean.
+  Targeted green before final (tutorial set: `run_trace+run_details+
+  repair_context+parity+work_queue+architecture` 239 passed, 394 subtests;
+  extended trace set 380 passed, 404 subtests). Then final
+  `python -m pytest -q`:
+  `4794 passed, 10 skipped, 1484 subtests passed in 348.62s (0:05:48)`.
+  Delta vs 4788 is exactly the 6 new tests (4 golden + 1 parity + 1 arch).
+  No release was made.
+
 ## Unreleased - Full-red round4: numeric fail-closed sweep + schema/host/API/ledger strict (no release)
 
 - Fixed ~50 deterministic bugs, all red-first (49 failed before, pass after;

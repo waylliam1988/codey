@@ -2,6 +2,49 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Trace 拆分：schema/values/research/completion/protocol + 通用 generated_ref（未发布）
+
+- 拆分 `codey/runs/trace.py`（2421 行）为五个叶模块，行为零变化（红测
+  行为锁，golden JSON 字节级相同）：`trace_schema.py`（版本、全部
+  `MAX_*`、`CHECKPOINT_FLUSH_INTERVAL`、`REVIEW_FINDING_REF_KINDS`、
+  `RESEARCH_ANSWER_STATUSES`；数值一项未改）、`trace_values.py`（10 个
+  纯净化函数）、`trace_research.py`（16 个纯 `project_*` 构造器 + 4 个
+  research 私有函数）、`trace_completion.py`（3 个纯 `project_*` 构造器）、
+  `trace_protocol.py`（5 个纯序列化函数）。`trace.py` 保留 manifest、
+  `RunTraceStore`/`RunTraceRecorder`（签名不变）、全部去重集合、上限、
+  警告与唯一 `flush()` 写口（一次
+  `write_json_atomic(..., max_bytes=MAX_TRACE_BYTES)`；
+  `path_for()`/`schema_version` 不变）。`details.py` 与
+  `project_completion_flow.py` 改从 `trace_schema` 取上限。依赖方向
+  `trace -> projections -> values/schema` 已锁定；新模块不 import
+  `trace.py`、不写文件、不持有 manifest。
+- 新 `tests/test_trace_split_golden.py` 锁定行为（4 测，拆分前后皆绿）：
+  kitchen-sink 负载与检入的 golden（`tests/fixtures/trace_split_golden.json`）
+  字节级相同；负载不含原始 prompt/网页正文/证据原文/provider 错误文本；
+  `RunTraceStore.open` 在写失败时存活（disabled 且不抛异常，任务/ledger
+  流程无感）；坏 epoch 的 topic/repair 不写行也不占去重键（好 epoch 重试
+  恰好 admit 1 行）。
+- `utils/refs` 收紧（parity 测试重写红测先行，修复前 `ImportError`、
+  修复后全绿）：通用 `generated_ref(value, prefix)` 取代
+  `research_proof_ref`（旧名移出 `__all__`；通用层无领域前缀常量）；
+  `research.guards.generated_ref` 保持签名与前缀归一化并委托；
+  `ghost/work_queue` 与 `research/proof_quality` 改调
+  `generated_ref(value, "research_proof")`（Ghost 仍只依赖通用叶）。
+  Parity 保留全部旧样例，另加错前缀/大小写/长度锁。
+- 迁移中找 bug：30 组边界输入（`inf`/`nan`/unicode/`bool`/`None`/垃圾）
+  新旧差分 fuzz，以及新旧 `guards.generated_ref` 在怪异前缀下的等价
+  比对——0 分歧，故本轮按“无法复现就不是 bug”未修任何确定性 bug。
+  中间 8 个红全是旧测试指向搬走符号的锁，已等强度迁到新家（`round3`
+  or-1/codes 锁 -> `trace_research`/`trace_completion`/`trace_values`；
+  `round3`/`round4`/`unicode` 私有导入 -> `trace_values`）；`trace.py`
+  保留兼容重导出（`_research_connector_error_payload`、`digest_text`）。
+- 验证：`python -m ruff check .`、`git diff --check` 通过；目标套件全绿
+  （教程集 `run_trace+run_details+repair_context+parity+work_queue+
+  architecture` 239 通过 394 子项；扩展 trace 集 380 通过 404 子项）。
+  最终 `python -m pytest -q`：
+  **4794 passed、10 skipped、1484 subtests passed，348.62s（0:05:48）**。
+  增量正好 6 个新测试（4 golden + 1 parity + 1 arch）。未发布。
+
 ## Unreleased - 全量红测第四轮：数值fail-closed横扫 + schema/域名/API/ledger收紧（未发布）
 
 - 修复约 50 个确定性 bug，全部红测先行（49 个修复前失败、修复后全过；

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import subprocess
 import sys
 import unittest
@@ -1714,11 +1715,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # Run Trace is audit infra: it may validate/normalize research refs,
         # but only through projection-only leaves. A behavior import
         # (runner/tools/pipeline/contracts) would drag execution into audit.
-        path = ROOT / "codey" / "runs" / "trace.py"
-        imports = imported_modules(path)
-        research_imports = sorted(
-            name for name in imports if name == "codey.research" or name.startswith("codey.research.")
-        )
+        # The split keeps this contract on trace.py and every trace_*.py.
         allowed = {
             "codey.research.artifact_lineage",
             "codey.research.evidence_runtime",
@@ -1727,7 +1724,96 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.research.source_trust",
             "codey.research.topic_continuity",
         }
-        self.assertTrue(set(research_imports) <= allowed, sorted(set(research_imports) - allowed))
+        for name in (
+            "trace.py",
+            "trace_schema.py",
+            "trace_values.py",
+            "trace_research.py",
+            "trace_completion.py",
+            "trace_protocol.py",
+        ):
+            with self.subTest(module=name):
+                path = ROOT / "codey" / "runs" / name
+                self.assertTrue(path.exists(), f"missing {name}")
+                imports = imported_modules(path)
+                research_imports = sorted(
+                    mod
+                    for mod in imports
+                    if mod == "codey.research" or mod.startswith("codey.research.")
+                )
+                self.assertTrue(
+                    set(research_imports) <= allowed,
+                    sorted(set(research_imports) - allowed),
+                )
+
+    def test_trace_split_modules_stay_acyclic_and_writeless(self) -> None:
+        # Split direction: trace.py -> projections -> values/schema.
+        # New modules never import trace.py (no cycle), never write files,
+        # and never own a manifest: flush() in trace.py stays the only
+        # Trace write path, path_for()/schema_version are unchanged.
+        leaf_names = {
+            "trace_schema.py",
+            "trace_values.py",
+            "trace_research.py",
+            "trace_completion.py",
+            "trace_protocol.py",
+        }
+        for name in sorted(leaf_names):
+            with self.subTest(module=name):
+                path = ROOT / "codey" / "runs" / name
+                self.assertTrue(path.exists(), f"missing {name}")
+                source = path.read_text(encoding="utf-8")
+                imports = imported_modules(path)
+                self.assertEqual(
+                    [mod for mod in sorted(imports) if mod == "codey.runs.trace"],
+                    [],
+                    f"{name} must not import trace.py",
+                )
+                self.assertNotIn("write_json_atomic", source)
+                # Class-name uses in prose are fine; code uses are not.
+                for cls in ("RunTraceManifest", "RunTraceRecorder", "RunTraceStore"):
+                    self.assertIsNone(
+                        re.search(rf"\b{cls}\s*[\(\[:,=]", source),
+                        f"{name} must not use {cls}",
+                    )
+        trace_source = (ROOT / "codey" / "runs" / "trace.py").read_text(encoding="utf-8")
+        self.assertIn("def flush(self)", trace_source)
+        self.assertIn("write_json_atomic", trace_source)
+        # Only trace.py may be consumed as Trace state; execution and
+        # recovery modules must not read the split leaves to decide state.
+        readers: dict[str, list[str]] = {}
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            rel = path.relative_to(ROOT).as_posix()
+            if rel in {
+                "codey/runs/trace.py",
+                *[f"codey/runs/{leaf}" for leaf in leaf_names],
+            }:
+                continue
+            if rel.startswith("codey/runs/"):
+                continue
+            imports = imported_modules(path)
+            hits = sorted(
+                mod
+                for mod in imports
+                if mod
+                in {
+                    "codey.runs.trace_schema",
+                    "codey.runs.trace_values",
+                    "codey.runs.trace_research",
+                    "codey.runs.trace_completion",
+                    "codey.runs.trace_protocol",
+                }
+            )
+            if hits:
+                readers[rel] = hits
+        # project_completion_flow only borrows two numeric limits, never
+        # Trace state; everything else must go through trace.py.
+        allowed_readers = {
+            "codey/operations/project_completion_flow.py": [
+                "codey.runs.trace_schema"
+            ],
+        }
+        self.assertEqual(readers, allowed_readers)
 
 
     def test_runtime_package_has_no_import_cycles(self) -> None:

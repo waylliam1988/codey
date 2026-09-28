@@ -1,5 +1,73 @@
 # Codey Test Report
 
+## Trace split: schema/values/research/completion/protocol + generic generated_ref (2026-09-29)
+
+Scope (pure refactor, zero behavior change, red-first locks, no release):
+
+```text
+codey/runs/trace_schema.py   (new: versions + all MAX_* + CHECKPOINT_FLUSH_INTERVAL + REVIEW_FINDING_REF_KINDS + RESEARCH_ANSWER_STATUSES)
+codey/runs/trace_values.py   (new: 10 pure sanitizers, no utils/refs unification)
+codey/runs/trace_research.py (new: 16 pure project_* + 4 research-only privates)
+codey/runs/trace_completion.py (new: 3 pure project_* builders)
+codey/runs/trace_protocol.py (new: 5 pure serializers; record_protocol_* stay on recorder)
+codey/runs/trace.py          (2421 -> ~1440 lines; keeps manifest/Store/Recorder/dedupe/caps/flush-only-write; compat re-exports)
+codey/runs/details.py        (limits <- trace_schema)
+codey/operations/project_completion_flow.py (2 limits <- trace_schema)
+codey/utils/refs.py          (generated_ref(value, prefix) replaces research_proof_ref; __all__ updated)
+codey/research/guards.py     (generated_ref keeps signature, delegates with prefix normalization)
+codey/ghost/work_queue.py + research/proof_quality.py (generated_ref(value, "research_proof"))
+tests/test_trace_split_golden.py (new, 4) + tests/fixtures/trace_split_golden.json (new, 7933 bytes)
+tests/test_proof_ref_parity.py (rewritten to generic API, 6 tests)
+tests/test_architecture.py   (+2: expanded research-leaf gate over all trace_*.py; new acyclic+writeless+readers gate; +re import)
+tests/test_coldstart_cleanup_round3.py (4 locks moved to new homes, equal strength)
+tests/test_fullred_round3_overflow_host.py + test_fullred_round4_sweep.py + test_unicode_int_hardening_locks.py (private imports -> trace_values)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first:
+
+- New `tests/test_trace_split_golden.py` (4 tests): golden fixture
+  generated pre-split; kitchen-sink payload matches it byte-for-byte
+  after every step (green throughout; the lock would fail on any drift).
+- Rewritten `tests/test_proof_ref_parity.py`: failed before with
+  `ImportError: generated_ref` (red), all pass after; adds
+  prefix-parameterization locks (wrong prefix/uppercase/length) and a
+  no-domain-constant guard on the generic function.
+- Extended `tests/test_architecture.py`: failed before with missing
+  `trace_*.py` (red); green after. One self-caught test bug fixed along
+  the way (`"runs.trace" in mod` substring matched `trace_schema`;
+  now exact `== "codey.runs.trace"`).
+- Intermediate full-suite reds (8, all moved-symbol locks, no behavior
+  signal): `round3` or-1/codes (4), `round3-overflow` trace imports (1),
+  `round4-sweep` trace imports (2), `unicode` tool-id import (1) — all
+  updated to the new homes; suite green again before the final run.
+
+Bug hunt (deterministic only; nothing found, nothing fixed):
+
+- 30-case differential fuzz (edge inputs incl. `inf`/`nan`/unicode/
+  `bool`/`None`/garbage through every moved `record_*`, plus bad/good/
+  empty epoch for topic+repair): HEAD vs split payloads 0 divergences.
+- Old-vs-new `research.guards.generated_ref` over odd prefixes
+  (`Research_Proof`/`""`/`None`/`"a b"`): 0 divergences.
+- Per reproduce-or-it-is-not-a-bug, no fix was made for non-repros
+  (trailing-dot FQDN, provenance over-approx, lenient `or` defaults,
+  loopback shape remain untouched).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before final: `python -m ruff check .` clean, `git diff --check` clean;
+  targeted green (tutorial set `run_trace+run_details+repair_context+
+  parity+work_queue+architecture` 239 passed, 394 subtests; extended
+  trace set `+golden+round3+sweep+unicode+events+task_entry` 380 passed,
+  404 subtests). Structural checks: only `run_traces/<session>/<run>.json`
+  written; Store/Recorder signatures unchanged; trace write failure still
+  disables without raising; `utils/refs.py` has no codey imports.
+- Final full suite: `python -m pytest -q`:
+  `4794 passed, 10 skipped, 1484 subtests passed in 348.62s (0:05:48)`.
+  Delta vs 4788 is exactly the 6 new tests (4 golden + 1 parity + 1 arch).
+  No release was made.
+
 ## Full-red round4: numeric fail-closed sweep + schema/host/API/ledger strict (2026-09-28)
 
 Scope (~50 deterministic bugs, red-first, no release):
