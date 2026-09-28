@@ -405,6 +405,19 @@ class TaskEntryOwnershipTests(unittest.TestCase):
                 offenders.append(str(path.relative_to(root)))
         self.assertEqual(offenders, [])
 
+    def test_done_payload_has_one_canonical_field(self) -> None:
+        """Cold start has no old-record compatibility reader for done payloads."""
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        self.assertFalse((root / "codey" / "protocols" / "done_compat.py").exists())
+        offenders = []
+        for path in (root / "codey").rglob("*.py"):
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if "done_compat" in text or "read_done_text" in text:
+                offenders.append(str(path.relative_to(root)))
+        self.assertEqual(offenders, [])
+
     def test_task_loop_delegates_transport_and_recovery_helpers(self) -> None:
         """The loop owns orchestration; provider I/O and resume shaping have leaf owners."""
         import pathlib

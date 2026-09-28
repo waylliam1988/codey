@@ -137,7 +137,7 @@ def _missing_required_sections_review(missing: list[str]) -> ReportQualityReview
         False,
         "Report quality failed: missing required section(s): "
         + ", ".join(section_title(item) for item in missing)
-        + ". Revise done.answer using the required Research report template.",
+        + ". Revise done.summary using the required Research report template.",
     )
 
 

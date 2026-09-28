@@ -94,7 +94,7 @@ def run_evidence_followup(
         if outcome.stop_reason == "done":
             from codey.research.evidence_followup import _done_reports_no_relevant_material
 
-            no_relevant = _done_reports_no_relevant_material({"answer": last_summary})
+            no_relevant = _done_reports_no_relevant_material({"summary": last_summary})
             return EvidenceFollowupResult(
                 ok=False, new_source_urls=fresh_urls,
                 stop_reason="no_relevant_material" if no_relevant else "no_evidence_extracted",

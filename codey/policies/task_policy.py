@@ -250,7 +250,8 @@ def visible_research_tools(
     """Intersection of policy grants and controller state for research tools.
 
     The controller may only narrow research tools; it never widens policy and
-    never governs project tools (see registry.snapshot_for_policy).
+    never governs project tools; project visibility comes from the shared
+    per-turn ToolSpec snapshot.
     """
     if policy is None:
         return ()

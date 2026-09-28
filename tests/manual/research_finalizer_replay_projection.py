@@ -4,7 +4,7 @@ This is a manual-only, no-network projection. It reads existing manual result
 rows plus archived prompt/reply transcript files, reconstructs a minimal ledger
 from the bounded ResearchRecord payload, and runs the current
 ``finalize_done_answer(..., enforce_claim_support=True)`` over the archived
-final ``done.answer``.
+final ``done.summary``.
 
 The output intentionally omits raw prompts, replies, source bodies, report
 text, and evidence excerpts. It is a traffic-saving preflight before live A/B,
@@ -363,8 +363,8 @@ def _text(value: object) -> str:
 
 
 def _self_test() -> None:
-    assert _json_tool('{"tool":"done","args":{"answer":"x"}}')["tool"] == "done"
-    assert _json_tool('```json\n{"tool":"done","args":{"answer":"x"}}\n```')["tool"] == "done"
+    assert _json_tool('{"tool":"done","args":{"summary":"x"}}')["tool"] == "done"
+    assert _json_tool('```json\n{"tool":"done","args":{"summary":"x"}}\n```')["tool"] == "done"
 
 
 if __name__ == "__main__":

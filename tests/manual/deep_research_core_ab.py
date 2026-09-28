@@ -909,7 +909,7 @@ def _thin_gate_block(state: ThinGateState) -> str:
         "- Reply with exactly one JSON object using only the allowed tools below.",
         "- Prefer result_id/source_id over hand-copying URLs when an ID is available.",
         f"- Saved evidence items: {state.evidence_count}; saved/updated notes: {state.note_count}.",
-        "- In done.answer, cite and list only evidence-backed sources. Opened-only sources are not citable yet.",
+        "- In done.summary, cite and list only evidence-backed sources. Opened-only sources are not citable yet.",
         "",
         "Allowed JSON shapes:",
     ]
@@ -967,7 +967,7 @@ def _thin_gate_tool_examples(tool: str, state: ThinGateState) -> tuple[str, ...]
     if tool == "knowledge_link":
         return ('{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id>","kind":"supports"}}',)
     if tool == "done":
-        return ('{"tool":"done","args":{"answer":"<the full report>"}}',)
+        return ('{"tool":"done","args":{"summary":"<the full report>"}}',)
     return ()
 
 
@@ -1820,7 +1820,7 @@ class ScriptedProvider:
     def send(self, text: str, timeout=None) -> str:
         self.sent.append(text)
         if not self.replies:
-            return json.dumps({"tool": "done", "args": {"answer": "done"}})
+            return json.dumps({"tool": "done", "args": {"summary": "done"}})
         return self.replies.pop(0)
 
     def close(self) -> None:
@@ -1857,7 +1857,7 @@ def self_test() -> int:
         '{"tool":"source_search","args":{"source_id":"s1","query":"72-hour"}}'
     )
     assert source_search_by_source_id.calls[0].args["url"] == OFFICIAL_LONG_URL
-    disallowed_done = thin_codec.parse('{"tool":"done","args":{"answer":"premature"}}')
+    disallowed_done = thin_codec.parse('{"tool":"done","args":{"summary":"premature"}}')
     assert disallowed_done.protocol_error_kind == "disallowed_tool"
     assert "Deep Research Core experimental guidance" not in source_codec.system_prompt()
     assert "Deep Research Core experimental guidance" in deep_codec.system_prompt()
@@ -1917,7 +1917,7 @@ def self_test() -> int:
                 }],
             },
         }),
-        json.dumps({"tool": "done", "args": {"answer": report}}),
+        json.dumps({"tool": "done", "args": {"summary": report}}),
     )
     row = run_case(provider, "scripted", case, "source_search", max_turns=8, timeout=30.0)
     assert row["final_done"]

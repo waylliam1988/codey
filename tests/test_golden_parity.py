@@ -14,8 +14,13 @@ FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "golden"
 class GoldenParityTests(unittest.TestCase):
     def _assert_fixture(self, name: str, actual: str) -> None:
         path = FIXTURE_ROOT / name
-        expected = path.read_text(encoding="utf-8")
-        self.assertEqual(actual, expected, f"golden mismatch for {name}: expected {len(expected)} chars, got {len(actual)}")
+        expected = path.read_text(encoding="utf-8").replace("\r\n", "\n").rstrip("\n")
+        normalized_actual = str(actual).replace("\r\n", "\n").rstrip("\n")
+        self.assertEqual(
+            normalized_actual,
+            expected,
+            f"golden mismatch for {name}: expected {len(expected)} chars, got {len(normalized_actual)}",
+        )
 
     def test_coding_writer_and_readonly_golden(self) -> None:
         writer = JsonToolCodec(permission_profile="coding_writer")

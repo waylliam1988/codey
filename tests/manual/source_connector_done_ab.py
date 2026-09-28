@@ -3,7 +3,7 @@
 Production Research now always runs the narrow done citation compiler before
 the report-quality gate. This probe reuses the live source connector Research
 flow and compares optional model-facing prompt overlays:
-- only citable sources may appear in done.answer or 来源
+- only citable sources may appear in done.summary or 来源
 - opened-but-not-citable sources are warning-only
 - quality retry prompts get a short checklist instead of a vague nudge
 
@@ -75,10 +75,10 @@ CASES = {
 
 
 _BOUNDARY_APPENDIX = """Probe done boundary reminder:
-- In done.answer and 来源, use only evidence-backed citable sources.
+- In done.summary and 来源, use only evidence-backed citable sources.
 - The final ## 来源 section must use exact numbered lines: [1] Title - https://final-url
 - Every [n] citation in the report body must have a matching [n] line in 来源.
-- Opened-but-not-citable sources are warning-only; never number them in done.answer or 来源.
+- Opened-but-not-citable sources are warning-only; never number them in done.summary or 来源.
 - If a source is opened but not citable, mention it only as an unnumbered limitation.
 """
 
@@ -680,7 +680,7 @@ def _needs_boundary_overlay(prompt: str) -> bool:
 
 def _needs_quality_checklist(prompt: str) -> bool:
     text = str(prompt or "")
-    return "Your last done.answer did not pass the research quality review" in text or "Report quality failed" in text
+    return "Your last done.summary did not pass the research quality review" in text or "Report quality failed" in text
 
 
 def _done_allowed_in_prompt(prompt: str) -> bool:
@@ -942,7 +942,7 @@ def _self_test() -> None:
 
         def send(self, text: str, timeout=None) -> str:
             self.sent.append(text)
-            return json.dumps({"tool": "done", "args": {"answer": "ok"}})
+            return json.dumps({"tool": "done", "args": {"summary": "ok"}})
 
         def close(self) -> None:
             pass
@@ -959,7 +959,7 @@ def _self_test() -> None:
         sample=1,
     )
     reply = wrapper.send(
-        "Your last done.answer did not pass the research quality review.\n"
+        "Your last done.summary did not pass the research quality review.\n"
         "Report quality failed: citation number(s) appear in the report but not in 来源: [3]."
     )
     assert json.loads(reply)["tool"] == "done"
@@ -982,7 +982,7 @@ def _self_test() -> None:
         sample=1,
     )
     baseline_wrapper.send(
-        "Your last done.answer did not pass the research quality review.\n"
+        "Your last done.summary did not pass the research quality review.\n"
         "Report quality failed: citation number(s) appear in the report but not in 来源: [3]."
     )
     assert baseline_provider.sent

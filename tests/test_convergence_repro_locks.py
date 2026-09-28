@@ -202,7 +202,7 @@ class SecondRoundWebPromptTests(unittest.TestCase):
                 sent_prompts.append(str(prompt))
                 if len(sent_prompts) == 1:
                     return '{"tool":"web_search","args":{"query":"hi"}}'
-                return '{"tool":"done","args":{"answer":"结论\n来源\nx"}}'
+                return '{"tool":"done","args":{"summary":"结论\n来源\nx"}}'
 
         # Minimal research tools stub: web_search returns URLs, open allowed after.
         class FakeTools:

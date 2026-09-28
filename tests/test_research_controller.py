@@ -684,7 +684,7 @@ class ResearchControllerTests(unittest.TestCase):
 
         plan = controller.parse_plan(
             JsonToolCodec(),
-            '{"tool":"done","args":{"answer":"premature"}}',
+            '{"tool":"done","args":{"summary":"premature"}}',
             state,
         )
 

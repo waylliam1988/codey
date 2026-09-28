@@ -61,7 +61,7 @@ class FakeProvider:
     def send(self, text: str, timeout=None) -> str:
         self.sent.append(text)
         if not self.replies:
-            return json.dumps({"tool": "done", "args": {"answer": "done"}})
+            return json.dumps({"tool": "done", "args": {"summary": "done"}})
         return self.replies.pop(0)
 
     def close(self) -> None:
@@ -364,7 +364,7 @@ class SlowProvider(FakeProvider):
                 self.release.wait(timeout=5.0)
             else:
                 time.sleep(self.delay)
-            return json.dumps({"tool": "done", "args": {"answer": "done"}})
+            return json.dumps({"tool": "done", "args": {"summary": "done"}})
         finally:
             if self.finished is not None:
                 self.finished.set()
@@ -2722,8 +2722,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         plan = JsonToolCodec().parse(
             "\n".join(
                 [
-                    json.dumps({"tool": "done", "args": {"answer": "first"}}),
-                    json.dumps({"tool": "done", "args": {"answer": "second"}}),
+                    json.dumps({"tool": "done", "args": {"summary": "first"}}),
+                    json.dumps({"tool": "done", "args": {"summary": "second"}}),
                 ]
             )
         )
@@ -2753,7 +2753,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_iteration_controller_prompt_limits_initial_tools(self) -> None:
         provider = FakeProvider(
-            json.dumps({"tool": "done", "args": {"answer": "premature"}}),
+            json.dumps({"tool": "done", "args": {"summary": "premature"}}),
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
         )
         with tempfile.TemporaryDirectory() as td:
@@ -2767,7 +2767,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertNotIn("Codey", provider.sent[0])
         self.assertIn("Visible tools", provider.sent[0])
         self.assertIn("knowledge_search", provider.sent[0])
-        self.assertNotIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[0])
+        self.assertNotIn('{"tool":"done","args":{"summary":"<the full report>"}}', provider.sent[0])
         self.assertIn("Not done yet", provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
@@ -2978,7 +2978,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertNotIn("https://pubmed.ncbi.nlm.nih.gov/ - PubMed home", provider.sent[1])
 
     def test_research_iteration_can_disable_controller_for_manual_baselines(self) -> None:
-        provider = FakeProvider(json.dumps({"tool": "done", "args": {"answer": "done"}}))
+        provider = FakeProvider(json.dumps({"tool": "done", "args": {"summary": "done"}}))
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
             runner = ResearchIteration(
@@ -3008,7 +3008,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertIn("valid tool call", provider.sent[1])
-        self.assertNotIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[1])
+        self.assertNotIn('{"tool":"done","args":{"summary":"<the full report>"}}', provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
     def _obsolete_test_research_runner_turn_note_names_protocol_error_kind(self) -> None:
@@ -3107,8 +3107,8 @@ class ResearchBoundaryTests(unittest.TestCase):
                     },
                 }
             ),
-            json.dumps({"tool": "done", "args": {"answer": invalid}}),
-            json.dumps({"tool": "done", "args": {"answer": valid_research_report(url)}}),
+            json.dumps({"tool": "done", "args": {"summary": invalid}}),
+            json.dumps({"tool": "done", "args": {"summary": valid_research_report(url)}}),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -3243,7 +3243,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 {
                     "tool": "done",
                     "args": {
-                        "answer": valid_research_report(url),
+                        "summary": valid_research_report(url),
                         "open_questions": ["Should helium routing be tracked next?"],
                     },
                 }
@@ -3405,7 +3405,7 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_web_style_provider_send_stays_on_runner_thread(self) -> None:
         class ThreadRecordingProvider(FakeProvider):
             def __init__(self) -> None:
-                super().__init__(json.dumps({"tool": "done", "args": {"answer": "done"}}))
+                super().__init__(json.dumps({"tool": "done", "args": {"summary": "done"}}))
                 self.thread_ids: list[int] = []
 
             def send(self, text: str, timeout=None) -> str:
@@ -3424,7 +3424,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(provider.thread_ids, [caller_thread_id])
 
     def test_research_intro_includes_bounded_chat_handoff(self) -> None:
-        provider = FakeProvider(json.dumps({"tool": "done", "args": {"answer": "done"}}))
+        provider = FakeProvider(json.dumps({"tool": "done", "args": {"summary": "done"}}))
         handoff = '{"goal":"Compare SQLite and flat files","latest_reply":"Use SQLite."}'
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -3461,13 +3461,13 @@ class ResearchBoundaryTests(unittest.TestCase):
             json.dumps(
                 {
                     "tool": "done",
-                    "args": {"answer": valid_research_report(url, conclusion="Initial helium conclusion.")},
+                    "args": {"summary": valid_research_report(url, conclusion="Initial helium conclusion.")},
                 }
             ),
             json.dumps(
                 {
                     "tool": "done",
-                    "args": {"answer": valid_research_report(url, conclusion="Revised helium conclusion.")},
+                    "args": {"summary": valid_research_report(url, conclusion="Revised helium conclusion.")},
                 }
             ),
         )
@@ -3526,8 +3526,8 @@ class ResearchBoundaryTests(unittest.TestCase):
                     },
                 }
             ),
-            json.dumps({"tool": "done", "args": {"answer": "done"}}),
-            json.dumps({"tool": "done", "args": {"answer": valid_research_report(url)}}),
+            json.dumps({"tool": "done", "args": {"summary": "done"}}),
+            json.dumps({"tool": "done", "args": {"summary": valid_research_report(url)}}),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -4208,7 +4208,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 {
                     "tool": "done",
                     "args": {
-                        "answer": valid_research_report("https://example.com/helium"),
+                        "summary": valid_research_report("https://example.com/helium"),
                     },
                 }
             ),
@@ -4252,7 +4252,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             json.dumps(
                 {
                     "tool": "done",
-                    "args": {"answer": valid_research_report(url)},
+                    "args": {"summary": valid_research_report(url)},
                 }
             ),
         )
@@ -4915,7 +4915,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
         from codey.runs.trace import RunTraceStore
 
         leak = "I searched the web and the search results show helium is rare."
-        done = json.dumps({"tool": "done", "args": {"answer": "ok"}})
+        done = json.dumps({"tool": "done", "args": {"summary": "ok"}})
         provider = FakeProvider(leak, done)
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -5011,7 +5011,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
         from codey.runs.trace import RunTraceStore
 
         unknown = json.dumps({"tool": "buy_bitcoin", "args": {"amount": "all"}})
-        done = json.dumps({"tool": "done", "args": {"answer": "ok"}})
+        done = json.dumps({"tool": "done", "args": {"summary": "ok"}})
         provider = FakeProvider(unknown, done)
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))

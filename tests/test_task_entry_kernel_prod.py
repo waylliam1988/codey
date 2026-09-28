@@ -262,7 +262,7 @@ class LoopPromptTests(unittest.TestCase):
                 calls.append("send_tool_results")
                 ids = [m.get("tool_call_id") for m in messages]
                 self.assertIn("d1", ids)
-                return AssistantTurn(text='{"tool":"done","args":{"answer":"结论 x 来源 y"}}')
+                return AssistantTurn(text='{"tool":"done","args":{"summary":"结论 x 来源 y"}}')
 
         session = TaskSession(policy=policy, task_kind="research", project="", max_turns=4)
         run_task_kernel(session, provider=FakeNative(), executors={}, provider_id="local")

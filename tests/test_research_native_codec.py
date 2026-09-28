@@ -21,7 +21,7 @@ def test_research_native_done() -> None:
     codec = JsonToolCodec()
     turn = AssistantTurn(
         text="",
-        tool_calls=(ProviderToolCall(id="c2", name="done", arguments={"answer": "report"}),),
+        tool_calls=(ProviderToolCall(id="c2", name="done", arguments={"summary": "report"}),),
     )
     plan = codec.parse_turn(turn)
     assert plan.control is not None and plan.control.kind == "done"
@@ -72,7 +72,7 @@ def test_research_native_done_must_stand_alone() -> None:
         text="",
         tool_calls=(
             ProviderToolCall(id="c1", name="web_search", arguments={"query": "x"}),
-            ProviderToolCall(id="c2", name="done", arguments={"answer": "report"}),
+            ProviderToolCall(id="c2", name="done", arguments={"summary": "report"}),
         ),
     )
     plan = codec.parse_turn(turn)

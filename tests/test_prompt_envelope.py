@@ -63,7 +63,7 @@ class _Provider:
     name = "Fake"
 
     def __init__(self, reply: str | None = None) -> None:
-        self.reply = reply or json.dumps({"tool": "done", "args": {"answer": "done"}})
+        self.reply = reply or json.dumps({"tool": "done", "args": {"summary": "done"}})
 
     def new_chat(self) -> None:
         return None

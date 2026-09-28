@@ -105,9 +105,9 @@ TOOL_CONTRACTS = {
     ),
     "done": ToolContract(
         name="done",
-        required={"answer": str},
+        required={"summary": str},
         optional={"open_questions": ToolArg(list, None, singleton_dict=True, list_item_type=str)},
-        example='{"tool":"done","args":{"answer":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}',
+        example='{"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}',
         description="",
     ),
 }

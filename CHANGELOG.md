@@ -21,7 +21,11 @@
   into `kernel_transport.py` and `kernel_recovery.py`; the task loop is now
   orchestration only. Renamed round-based test files to behavior-based names
   and added `tests/README.md` as the test index.
-- Final verification: `4819 passed, 32 skipped, 1461 subtests passed`;
+- Enforced one cold-start `done` payload: JSON, native, Research, GLM, golden,
+  server, and A/B paths use required `done.args.summary`; deleted the retired
+  `done_compat` reader. `done` now passes canonical ToolSpec validation before
+  completion, and control tools cannot fall through to project execution.
+- Final verification: `4820 passed, 32 skipped, 1461 subtests passed`;
   `ruff check codey tests`, compileall, and `git diff --check` passed. No
   release was made.
 - Recovery now requires the original persisted task policy whenever a run has

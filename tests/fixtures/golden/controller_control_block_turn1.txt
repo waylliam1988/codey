@@ -6,7 +6,7 @@ Research controller current allowed actions:
 - Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.
 - Use open_result for search results and reopen_source for already-opened source pages/offsets.
 - Saved evidence items: 0; saved/updated notes: 0.
-- In done.answer, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.
+- In done.summary, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.
 
 Allowed JSON shapes for this turn (choose exactly one):
 - {"tool":"knowledge_search","args":{"query":"..."}}

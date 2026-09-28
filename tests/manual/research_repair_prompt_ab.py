@@ -65,7 +65,7 @@ def _old_prompt() -> str:
 - Reply with exactly one JSON object using only the allowed tools below.
 - Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.
 - Saved evidence items: 0; saved/updated notes: 0.
-- In done.answer, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.
+- In done.summary, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.
 
 Allowed JSON shapes:
 - {"tool":"knowledge_search","args":{"query":"..."}}

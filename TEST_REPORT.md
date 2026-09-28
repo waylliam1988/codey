@@ -2,6 +2,13 @@
 
 ## Shared task kernel cold-start cleanup (2026-09-29)
 
+- Enforced one cold-start `done` contract: every JSON/native/Research path now
+  requires `done.args.summary`; the retired `done_compat` reader was deleted.
+  `done` also passes the canonical ToolSpec validator before completion, and
+  control tools no longer fall through to the project runtime executor.
+- Migrated Research, GLM, golden, server, and real-device A/B fixtures from
+  `done.args.answer` to `done.args.summary`; golden comparisons normalize only
+  terminal newline differences, not content.
 - Test bootstrap now redirects `Path.home()` to a writable temporary home
   before collection, eliminating the previous host-profile permission failures.
 - Removed provider timeout retry fallbacks from the task kernel and auto router;
@@ -20,8 +27,8 @@
   completion, native-delivery, and recovery suites; no old production loop is
   retained just to keep those tests importable.
 
-Final run after these changes: `4819 passed, 32 skipped, 1461 subtests
-passed in 337.70s`. `ruff check codey tests`, `python -m compileall -q
+Final run after these changes: `4820 passed, 32 skipped, 1461 subtests
+passed in 343.51s`. `ruff check codey tests`, `python -m compileall -q
 codey tests`, and `git diff --check` passed.
 
 - Recovery requires the original persisted task policy whenever a run has

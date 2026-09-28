@@ -380,7 +380,7 @@ def test_run_evidence_followup_classifies_no_relevant_done_as_noop() -> None:
                 project="project-ev",
             )
             reply = """```json
-{"tool": "done", "args": {"answer": "The fresh URLs are unrelated to the research question, so there is no relevant evidence to extract."}}
+{"tool": "done", "args": {"summary": "The fresh URLs are unrelated to the research question, so there is no relevant evidence to extract."}}
 ```"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
@@ -419,7 +419,7 @@ def test_run_evidence_followup_classifies_done_without_evidence_as_noop() -> Non
                 project="project-ev",
             )
             reply = """```json
-{"tool": "done", "args": {"answer": "Follow-up complete."}}
+{"tool": "done", "args": {"summary": "Follow-up complete."}}
 ```"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")

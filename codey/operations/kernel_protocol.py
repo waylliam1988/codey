@@ -11,7 +11,6 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from codey.protocols.done_compat import read_done_text
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 
 MAX_NATIVE_CALLS_PER_TURN = 8
@@ -234,6 +233,10 @@ def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any]
                 spec_error = ""
             if spec_error:
                 return {}, spec_error
+        if name == "done":
+            # ``done`` is a control tool with no runtime executor. Its
+            # canonical ToolSpec validation above is the complete contract.
+            return dict(args) if isinstance(args, dict) else {}, ""
         # Custom/third-task tools: generic spec validation is sufficient.
         # They run via injected executors; no legacy coding/research repair.
         if executor not in {"project", "source", "knowledge"}:
@@ -281,8 +284,11 @@ def _plan_from_tool_objects(
                 return _disallowed_plan(tool)
             if not _controller_allows("done", controller_allowed):
                 return _disallowed_plan(tool, controller=True)
-            text = read_done_text(args)
-            return ToolPlan(calls=[], control=Control(kind="done", body=text or "done"))
+            validated, error = _validate_tool_args(tool, args)
+            if error:
+                return _invalid_plan(error, tool=tool)
+            text = str(validated.get("summary") or "").strip()
+            return ToolPlan(calls=[], control=Control(kind="done", body=text))
         if not _policy_allows(policy, tool):
             return _disallowed_plan(tool)
         if not _controller_allows(tool, controller_allowed):

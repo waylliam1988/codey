@@ -196,7 +196,7 @@ def test_unified_kernel_passes_authoritative_research_ledger_to_gate() -> None:
     ledger = object()
     class Provider:
         def send(self, _prompt, timeout=None):
-            return '{"tool":"done","args":{"answer":"结论 x 来源 y"}}'
+            return '{"tool":"done","args":{"summary":"结论 x 来源 y"}}'
 
     with patch("codey.operations.completion_gate.evaluate") as evaluate:
         evaluate.return_value = SimpleNamespace(complete=False, followup="missing")
@@ -240,7 +240,7 @@ def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
     replies = iter([
         '{"tool":"web_search","args":{"query":"claim"}}',
         '{"tool":"open_result","args":{"result_id":"r1"}}',
-        '{"tool":"done","args":{"answer":"unfinished"}}',
+        '{"tool":"done","args":{"summary":"unfinished"}}',
     ])
 
     class Provider:
@@ -646,7 +646,7 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> 
                           "source_url": url, "excerpt": "Pipeline source text says the fact.",
                           "stance": "supports"}],
         }},
-        {"tool": "done", "args": {"answer": answer}},
+        {"tool": "done", "args": {"summary": answer}},
     ))
 
     class Search:

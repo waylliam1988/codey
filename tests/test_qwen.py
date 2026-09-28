@@ -786,7 +786,7 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         textarea = mock.Mock()
         attempt = SendAttempt()
         attempt.submit("click", lambda: None)
-        json_reply = '{"tool":"done","args":{"answer":"ok"}}'
+        json_reply = '{"tool":"done","args":{"summary":"ok"}}'
         with (
             mock.patch.object(qwen, "wait_ready"),
             mock.patch.object(qwen, "_message_box", return_value=textarea),
@@ -1000,7 +1000,7 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         self.assertEqual(calls, ["preference", "copy"])
 
     def test_final_text_prefers_dom_json_when_copy_is_stale_prompt(self) -> None:
-        json_reply = '{"tool":"done","args":{"answer":"ok"}}'
+        json_reply = '{"tool":"done","args":{"summary":"ok"}}'
         with (
             mock.patch.object(qwen, "_resolve_preference", return_value=False),
             mock.patch.object(qwen, "_copy_last_text", return_value="previous prompt"),
@@ -1013,8 +1013,8 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         confirm_control.assert_called_once_with(qwen.PROVIDER_ID, qwen.controls.CONTROL_RESPONSE)
 
     def test_final_text_repairs_missing_trailing_json_tool_brace(self) -> None:
-        incomplete = '{"tool":"done","args":{"answer":"ok"}'
-        complete = '{"tool":"done","args":{"answer":"ok"}}'
+        incomplete = '{"tool":"done","args":{"summary":"ok"}'
+        complete = '{"tool":"done","args":{"summary":"ok"}}'
         with (
             mock.patch.object(qwen, "_resolve_preference", return_value=False),
             mock.patch.object(qwen, "_copy_last_text", return_value=incomplete),

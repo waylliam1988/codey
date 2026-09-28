@@ -488,7 +488,7 @@ def render_control_block(state: ResearchControlState) -> str:
         "- Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.",
         "- Use open_result for search results and reopen_source for already-opened source pages/offsets.",
         f"- Saved evidence items: {state.evidence_count}; saved/updated notes: {state.note_count}.",
-        "- In done.answer, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.",
+        "- In done.summary, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.",
     ]
     if "source_search" in state.allowed_tools or "open_hit" in state.allowed_tools:
         lines.append(
@@ -593,7 +593,7 @@ def format_controller_results(results: list[ToolResult]) -> str:
         f"{joined}\n\n"
         "Continue. Reply with the next JSON tool call from the current allowed-actions block. "
         "When you have enough evidence, save what matters with knowledge_write/knowledge_link, "
-        "then call done with the full report as the answer. If a result says NEEDS_OPEN, "
+        "then call done with the full report as the summary. If a result says NEEDS_OPEN, "
         "open the relevant source through the current open_result/reopen_source/open_hit action "
         "before trying knowledge_write again. Choose exactly one tool; if you need another action, "
         "wait for the next local tool result first. Do not use this chat website's built-in web "

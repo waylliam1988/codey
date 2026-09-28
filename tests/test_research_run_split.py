@@ -32,7 +32,7 @@ class _Provider:
 
     def send(self, text: str, timeout=None) -> str:
         self.sent.append(text)
-        return '{"tool": "done", "args": {"answer": "x"}}'
+        return '{"tool": "done", "args": {"summary": "x"}}'
 
 
 class _Search:

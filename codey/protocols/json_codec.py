@@ -108,22 +108,7 @@ def _object_args(obj: dict[str, Any]) -> dict[str, Any]:
 
 
 def _summary_from_args(args: dict[str, Any]) -> str:
-    try:
-        from codey.protocols.done_compat import read_done_text
-    except Exception:
-        read_done_text = None  # type: ignore[assignment]
-    if read_done_text is not None:
-        try:
-            text = read_done_text(args)
-        except Exception:
-            text = ""
-        if text:
-            return text
-    for key in ("summary", "message", "body", "text", "reason"):
-        value = args.get(key)
-        if value:
-            return str(value)
-    return "done"
+    return str(args.get("summary") or "done").strip() or "done"
 
 
 def _summary_is_tool_call(summary: str) -> bool:

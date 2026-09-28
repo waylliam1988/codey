@@ -323,16 +323,15 @@ def test_knowledge_write_synthesis_is_reserved_for_done() -> None:
     assert "done required for final synthesis" in plan.protocol_error
 
 
-def test_done_rejects_answer_arg_aliases() -> None:
+def test_done_requires_summary_and_rejects_aliases() -> None:
     summary = JsonToolCodec().parse(json.dumps({"tool": "done", "args": {"summary": "report"}}))
     text = JsonToolCodec().parse(json.dumps({"tool": "done", "args": {"text": "report 2"}}))
 
-    assert summary.control is None
-    assert summary.protocol_error_kind == PROTOCOL_INVALID_ARGS
-    assert "done missing required arg 'answer'" in summary.protocol_error
+    assert summary.control is not None
+    assert summary.control.kind == "done"
     assert text.control is None
     assert text.protocol_error_kind == PROTOCOL_INVALID_ARGS
-    assert "done missing required arg 'answer'" in text.protocol_error
+    assert "done missing required arg 'summary'" in text.protocol_error
 
 
 def test_source_search_disabled_is_unknown_tool() -> None:

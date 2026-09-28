@@ -99,7 +99,7 @@ def test_deep_research_ab_probe_rejects_two_duplicate_tool_calls() -> None:
 def test_deep_research_ab_probe_rejects_tool_call_plus_done() -> None:
     reply = (
         '{"tool":"knowledge_write","args":{"type":"source","title":"Alpha"}}\n'
-        '{"tool":"done","args":{"answer":"report"}}'
+        '{"tool":"done","args":{"summary":"report"}}'
     )
 
     plan = ab.ProbeJsonToolCodec("baseline").parse(reply)
@@ -111,8 +111,8 @@ def test_deep_research_ab_probe_rejects_tool_call_plus_done() -> None:
 
 def test_deep_research_ab_probe_rejects_duplicate_done_calls() -> None:
     reply = (
-        '{"tool":"done","args":{"answer":"first"}}\n'
-        '{"tool":"done","args":{"answer":"second"}}'
+        '{"tool":"done","args":{"summary":"first"}}\n'
+        '{"tool":"done","args":{"summary":"second"}}'
     )
 
     plan = ab.ProbeJsonToolCodec("baseline").parse(reply)
@@ -124,7 +124,7 @@ def test_deep_research_ab_probe_rejects_duplicate_done_calls() -> None:
 
 def test_deep_research_ab_probe_extracts_malformed_done_answer() -> None:
     reply = (
-        '{"tool":"done","args":{"answer":"## 结论\\n'
+        '{"tool":"done","args":{"summary":"## 结论\\n'
         '搜索覆盖里写了："Alpha Safety Program query" — 返回结果\\n'
         '## 来源\\n[1] Title - https://example.com"}}'
     )
@@ -279,7 +279,7 @@ def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
                 }],
             },
         }),
-        json.dumps({"tool": "done", "args": {"answer": report}}),
+        json.dumps({"tool": "done", "args": {"summary": report}}),
     )
 
     row = ab.run_case(

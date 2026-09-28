@@ -1030,7 +1030,7 @@ class ProviderStatusTests(unittest.TestCase):
 
 class RunEventUiProjectionTests(unittest.TestCase):
     def test_turn_event_preserves_note(self) -> None:
-        event = RunEvent.turn_started(17, '{"tool":"done","args":{"answer":"report"}}', note="(done)")
+        event = RunEvent.turn_started(17, '{"tool":"done","args":{"summary":"report"}}', note="(done)")
 
         payload = run_event_ui_payload("run-1", "session-1", event)
 
@@ -4895,7 +4895,7 @@ class SessionThreadingTests(unittest.TestCase):
                     {
                         "tool": "done",
                         "args": {
-                            "answer": valid_research_report(
+                            "summary": valid_research_report(
                                 "https://example.com/helium", "Helium data are sufficient for this fixture."
                             )
                         },
@@ -5026,7 +5026,7 @@ class SessionThreadingTests(unittest.TestCase):
                         },
                     }
                 ),
-                json.dumps({"tool": "done", "args": {"answer": report}}),
+                json.dumps({"tool": "done", "args": {"summary": report}}),
             ]
 
             with (
@@ -5133,7 +5133,7 @@ class SessionThreadingTests(unittest.TestCase):
                     {
                         "tool": "done",
                         "args": {
-                            "answer": valid_research_report(
+                            "summary": valid_research_report(
                                 "https://example.com/storage", "First research summary: prefer the SQLite-backed plan."
                             )
                         },
@@ -5156,7 +5156,7 @@ class SessionThreadingTests(unittest.TestCase):
                     {
                         "tool": "done",
                         "args": {
-                            "answer": valid_research_report("https://example.com/storage", "Second research summary.")
+                            "summary": valid_research_report("https://example.com/storage", "Second research summary.")
                         },
                     }
                 ),

@@ -64,8 +64,8 @@ class GlmDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         self.assertEqual(plan.calls[0].name, "web_search")
         self.assertEqual(plan.calls[0].args["query"], "arXiv RAG evaluation")
 
-    def test_normalize_tool_json_reply_repairs_research_done_answer_before_codec(self) -> None:
-        reply = '{“tool”:“done”,“args”:{“answer”:“结论文本”}}'
+    def test_normalize_tool_json_reply_repairs_research_done_summary_before_codec(self) -> None:
+        reply = '{“tool”:“done”,“args”:{“summary”:“结论文本”}}'
 
         plan = JsonToolCodec().parse(glm.normalize_tool_json_reply(reply))
 

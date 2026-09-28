@@ -14,7 +14,7 @@ class _DoneProvider:
         pass
 
     def send(self, text: str, timeout=None) -> str:
-        return json.dumps({"tool": "done", "args": {"answer": "No supported evidence was opened."}})
+        return json.dumps({"tool": "done", "args": {"summary": "No supported evidence was opened."}})
 
     def close(self) -> None:
         pass

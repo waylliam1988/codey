@@ -67,7 +67,7 @@ class JsonToolCodec:
             "JSON object and nothing else, for example:\n"
             '{"tool":"web_search","args":{"query":"..."}}\n'
             f"{source_search_example}"
-            'or {"tool":"done","args":{"answer":"..."}}\n\n'
+            'or {"tool":"done","args":{"summary":"..."}}\n\n'
             "Choose exactly one tool. If you need another action, wait for the "
             "next local tool result first. "
             'Use top-level "tool" and "args" fields only. '
@@ -123,14 +123,7 @@ class JsonToolCodec:
             )
         if runtime == "done":
             self.last_control_args = dict(validated.args)
-            try:
-                from codey.protocols.done_compat import read_done_text
-            except Exception:
-                read_done_text = None  # type: ignore[assignment]
-            try:
-                text = read_done_text(validated.args) if read_done_text is not None else ""
-            except Exception:
-                text = ""
+            text = str(validated.args.get("summary") or "").strip()
             return ToolPlan(calls=[], control=Control("done", text or "done"))
         calls = [ToolCall(runtime, validated.args)]
         return ToolPlan(calls=calls, control=None)
@@ -146,7 +139,7 @@ class JsonToolCodec:
             f"{joined}\n\n"
             "Continue. Reply with the next JSON tool call. When you have enough "
             "evidence, save what matters with knowledge_write/knowledge_link, "
-            "then call done with the full report as the answer. If a result says "
+            "then call done with the full report as the summary. If a result says "
             "NEEDS_OPEN, call open_url for that URL before trying knowledge_write again. "
             "Choose exactly one tool; if you need another action, wait for the "
             "next local tool result first. "
@@ -219,14 +212,7 @@ class JsonToolCodec:
                             protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
                         )
                     self.last_control_args = dict(validated.args)
-                    try:
-                        from codey.protocols.done_compat import read_done_text as _read_done
-                    except Exception:
-                        _read_done = None  # type: ignore[assignment]
-                    try:
-                        _text = _read_done(validated.args) if _read_done is not None else ""
-                    except Exception:
-                        _text = ""
+                    _text = str(validated.args.get("summary") or "").strip()
                     return ToolPlan(calls=[], control=Control("done", _text or "done"))
                 calls.append(ToolCall(name, dict(validated.args), call_id))
             if calls:

@@ -986,7 +986,7 @@ class ScriptedProvider:
     def send(self, text: str, timeout=None) -> str:
         self.sent.append(text)
         if not self.replies:
-            return json.dumps({"tool": "done", "args": {"answer": "done"}})
+            return json.dumps({"tool": "done", "args": {"summary": "done"}})
         return self.replies.pop(0)
 
     def close(self) -> None:
@@ -1124,7 +1124,7 @@ def self_test() -> int:
                 ],
             },
         }),
-        json.dumps({"tool": "done", "args": {"answer": _SELF_TEST_REPORT_BRIDGE}}),
+        json.dumps({"tool": "done", "args": {"summary": _SELF_TEST_REPORT_BRIDGE}}),
     )
     row = run_case(bridge_provider, "scripted", bridge_case, "concept", max_turns=8)
     assert row["final_done"], row["stop_reason"]
@@ -1161,7 +1161,7 @@ def self_test() -> int:
                 },
             },
         }),
-        json.dumps({"tool": "done", "args": {"answer": _SELF_TEST_REPORT_CONTROL}}),
+        json.dumps({"tool": "done", "args": {"summary": _SELF_TEST_REPORT_CONTROL}}),
     )
     row = run_case(control_provider, "scripted", control_case, "concept", max_turns=8)
     assert row["final_done"], row["stop_reason"]

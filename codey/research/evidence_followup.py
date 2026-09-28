@@ -101,7 +101,7 @@ def build_evidence_followup_prompt(
         *[f"=== MATERIAL {i+1} ===\n{clip(preview, 2000)}" for i, preview in enumerate(material.previews)],
         "",
         'If relevant evidence exists, output exactly: {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","sources":["..."],"evidence":[{"source_url":"...","excerpt":"...","claim":"...","stance":"supports"}]}}',
-        'If no relevant evidence exists, output exactly: {"tool":"done","args":{"answer":"No relevant evidence is present in the fresh material."}}',
+        'If no relevant evidence exists, output exactly: {"tool":"done","args":{"summary":"No relevant evidence is present in the fresh material."}}',
     ]
     return clip("\n".join(lines), _context_char_limit(max_context_chars))
 
@@ -142,7 +142,7 @@ def build_evidence_followup_repair_prompt(
         *[f"=== MATERIAL {i+1} ===\n{clip(preview, 2000)}" for i, preview in enumerate(material.previews)],
         "",
         'Valid `knowledge_write` shape: {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","sources":["..."],"evidence":[{"source_url":"...","excerpt":"...","claim":"...","stance":"supports"}]}}',
-        'Valid no-evidence shape: {"tool":"done","args":{"answer":"No relevant evidence is present in the fresh material."}}',
+        'Valid no-evidence shape: {"tool":"done","args":{"summary":"No relevant evidence is present in the fresh material."}}',
     ]
     return clip("\n".join(lines), _context_char_limit(max_context_chars))
 
@@ -466,7 +466,7 @@ def _done_reports_no_relevant_material(args: object) -> bool:
         return False
     text = " ".join(
         str(args.get(key) or "")
-        for key in ("answer", "message", "reason", "body")
+        for key in ("summary",)
         if args.get(key) is not None
     )
     return bool(text and _DONE_NO_RELEVANT_MATERIAL_RE.search(text))

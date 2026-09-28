@@ -1133,7 +1133,7 @@ def _self_test() -> None:
             arm="baseline",
             turn=1,
             prompt="prompt text",
-            reply='{"tool":"done","args":{"answer":"ok"}}',
+            reply='{"tool":"done","args":{"summary":"ok"}}',
         )
         trace.close()
         reader = ABJournalReader(trace_dir)

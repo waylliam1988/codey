@@ -174,13 +174,28 @@ class HybridScopeTests(unittest.TestCase):
         self.assertIn("edit", names)
 
 
-class DoneCompatTests(unittest.TestCase):
-    def test_done_text_reads_both_summary_and_answer(self) -> None:
-        from codey.protocols.done_compat import read_done_text
+class DonePayloadTests(unittest.TestCase):
+    def test_done_text_uses_only_summary(self) -> None:
+        from codey.operations.kernel_protocol import normalize_turn
+        from codey.policies.task_policy import build_task_policy
+        from codey.task.model import TaskSubmission
 
-        self.assertEqual(read_done_text({"summary": "hello"}), "hello")
-        self.assertEqual(read_done_text({"answer": "hello"}), "hello")
-        self.assertEqual(read_done_text({}), "")
+        policy = build_task_policy(
+            TaskSubmission(
+                session_id="done-test",
+                project="demo",
+                task="finish the task",
+                max_turns=2,
+                continue_task=False,
+                provider_id="local",
+            ),
+            task_kind="project",
+            strict_research=False,
+        )
+        plan = normalize_turn('{"tool":"done","args":{"summary":"hello"}}', policy=policy)
+        self.assertEqual(plan.control.body, "hello")
+        answer = normalize_turn('{"tool":"done","args":{"answer":"old"}}', policy=policy)
+        self.assertTrue(answer.protocol_error)
 
 
 class HybridHandoffTests(unittest.TestCase):

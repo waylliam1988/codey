@@ -251,7 +251,7 @@ def _initial_replies(case: Case) -> tuple[str, ...]:
                 },
             }
         ),
-        json.dumps({"tool": "done", "args": {"answer": answer}}, ensure_ascii=False),
+        json.dumps({"tool": "done", "args": {"summary": answer}}, ensure_ascii=False),
     )
 
 
