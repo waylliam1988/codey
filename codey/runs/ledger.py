@@ -229,7 +229,8 @@ class RunLedgerWriter:
             self._append_payload(payload)
         if event.kind != "tool" or event.call is None or event.outcome is None:
             return
-        path = str(event.call.args.get("path") or "")
+        args = event.call.args if isinstance(event.call.args, dict) else {}
+        path = str(args.get("path") or "")
         if event.call.name == "edit" and event.outcome.ok and event.outcome.changed:
             self.append(
                 "file_changed",
@@ -242,7 +243,7 @@ class RunLedgerWriter:
                 "command_verified",
                 turn=event.turn,
                 tool_id=_tool_id(event),
-                command=_clip(event.call.args.get("command"), MAX_COMMAND_CHARS),
+                command=_clip(args.get("command"), MAX_COMMAND_CHARS),
                 cwd="." if path == "." else _clip(path, MAX_PATH_CHARS),
             )
 
@@ -328,7 +329,8 @@ class RunLedgerWriter:
             payload["text"] = _clip(event.message, MAX_TEXT_CHARS)
             return payload
         if event.kind == "tool_start" and event.call is not None:
-            path = str(event.call.args.get("path") or "")
+            start_args = event.call.args if isinstance(event.call.args, dict) else {}
+            path = str(start_args.get("path") or "")
             payload = _event_common(self.run_id, self.session_id, self.seq + 1, "tool_started")
             payload.update({
                 "turn": event.turn,
@@ -337,13 +339,14 @@ class RunLedgerWriter:
                 "path": "" if path == "." else _clip(path, MAX_PATH_CHARS),
                 "activity": _clip(event.message, MAX_TEXT_CHARS),
             })
-            command = _clip(event.call.args.get("command"), MAX_COMMAND_CHARS)
+            command = _clip(start_args.get("command"), MAX_COMMAND_CHARS)
             if command:
                 payload["command"] = command
             return payload
         if event.kind != "tool" or event.call is None or event.outcome is None:
             return None
-        path = str(event.call.args.get("path") or "")
+        tool_args = event.call.args if isinstance(event.call.args, dict) else {}
+        path = str(tool_args.get("path") or "")
         payload = _event_common(self.run_id, self.session_id, self.seq + 1, "tool_finished")
         payload.update({
             "turn": event.turn,
@@ -359,7 +362,7 @@ class RunLedgerWriter:
                 MAX_RESULT_CHARS,
             ),
         })
-        command = _clip(event.call.args.get("command"), MAX_COMMAND_CHARS)
+        command = _clip(tool_args.get("command"), MAX_COMMAND_CHARS)
         if command:
             payload["command"] = command
         if event.outcome.exit_code is not None:
@@ -473,9 +476,11 @@ class RunLedgerWriter:
 def _int_or_none(value: object) -> int | None:
     if isinstance(value, bool):
         return None
+    if isinstance(value, str) and not value.strip().isascii():
+        return None
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

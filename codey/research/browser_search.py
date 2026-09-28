@@ -614,7 +614,7 @@ def _content_retryable(exc: Exception) -> bool:
 
 def _search_host(profile: dict) -> str:
     try:
-        return urlparse(str(profile.get("search_url") or "")).netloc
+        return (urlparse(str(profile.get("search_url") or "")).hostname or "").lower()
     except Exception:
         return ""
 
@@ -1132,22 +1132,24 @@ def _is_search_redirect(parsed) -> bool:
     host = (parsed.hostname or "").lower()
     path = (parsed.path or "").lower()
     params = parse_qs(parsed.query or "")
-    if host.endswith("bing.com") and path.startswith("/ck/"):
+    if (host == "bing.com" or host.endswith(".bing.com")) and path.startswith("/ck/"):
         return True
-    return bool(host.endswith("duckduckgo.com") and any(key in params for key in ("uddg", "u")))
+    return bool(
+        (host == "duckduckgo.com" or host.endswith(".duckduckgo.com"))
+        and any(key in params for key in ("uddg", "u")))
 
 
 def _search_redirect_target(parsed) -> str:
     host = (parsed.hostname or "").lower()
     path = (parsed.path or "").lower()
     params = parse_qs(parsed.query or "")
-    if host.endswith("bing.com") and path.startswith("/ck/"):
+    if (host == "bing.com" or host.endswith(".bing.com")) and path.startswith("/ck/"):
         for key in ("u", "r", "url"):
             for value in params.get(key, []):
                 target = _decode_redirect_value(value)
                 if target:
                     return target
-    if host.endswith("duckduckgo.com"):
+    if host == "duckduckgo.com" or host.endswith(".duckduckgo.com"):
         for key in ("uddg", "u"):
             for value in params.get(key, []):
                 target = _decode_redirect_value(value)

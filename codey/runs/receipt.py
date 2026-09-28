@@ -461,9 +461,11 @@ def _nonnegative_int(value: object) -> int:
     strict = _strict_nonnegative_int(value)
     if strict is not None:
         return strict
+    if isinstance(value, str) and not value.strip().isascii():
+        return 0
     try:
         return max(0, int(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 

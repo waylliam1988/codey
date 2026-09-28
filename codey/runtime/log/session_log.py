@@ -182,6 +182,9 @@ class RuntimeSessionLog:
             incoming = tuple(mutation(base_projection, base_entries))
             if not incoming:
                 return ()
+            for entry in incoming:
+                if not isinstance(entry, dict):
+                    raise _log_entries.RuntimeLogWriteError("runtime log mutation must return mappings")
             batch_count = len(incoming)
             rows = tuple(
                 _log_entries.RuntimeLogEntry(

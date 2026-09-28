@@ -6,6 +6,7 @@ does not call models, fetch sources, inspect raw webpages, or read Ghost state.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -958,9 +959,13 @@ def _positive_ints(value: object) -> tuple[int, ...]:
         return ()
     out: list[int] = []
     for item in value:
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, str) and not item.strip().isascii():
+            continue
         try:
             number = int(item)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         if number > 0 and number not in out:
             out.append(number)
@@ -968,9 +973,13 @@ def _positive_ints(value: object) -> tuple[int, ...]:
 
 
 def _bounded_score(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
     try:
         score = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    if not math.isfinite(score):
         return 0.0
     if score < 0:
         return 0.0

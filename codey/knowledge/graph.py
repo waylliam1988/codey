@@ -455,9 +455,11 @@ def _clean_ids(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
 
 
 def _as_int(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 

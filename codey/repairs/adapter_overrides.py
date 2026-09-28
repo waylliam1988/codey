@@ -330,7 +330,7 @@ def _load_index(provider_id: str, state_home: str | Path | None) -> dict[str, An
     except StoreCorruption:
         backup_corrupt_file(index_path)
         data = {}
-    if data.get("schema_version") != 1 or not isinstance(data.get("generations"), dict):
+    if type(data.get("schema_version")) is not int or data.get("schema_version") != 1 or not isinstance(data.get("generations"), dict):
         return {
             "schema_version": 1,
             "provider_id": normalize_provider_id(provider_id),

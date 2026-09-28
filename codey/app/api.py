@@ -65,11 +65,8 @@ def ui_state_response(ctx: Any) -> tuple[int, dict]:
 def save_ui_state_response(ctx: Any, body: dict) -> tuple[int, dict]:
     state = body.get("state") if isinstance(body, dict) else None
     base_revision = body.get("base_revision") if isinstance(body, dict) else None
-    if isinstance(base_revision, bool) or not isinstance(base_revision, int):
-        try:
-            base_revision = int(base_revision or 0)  # type: ignore[arg-type]
-        except (TypeError, ValueError, OverflowError):
-            return 400, {"ok": False, "error": "base_revision required"}
+    if type(base_revision) is not int:
+        return 400, {"ok": False, "error": "base_revision required"}
     try:
         saved = ctx.save_ui_state(state, base_revision=int(base_revision))
     except Exception as exc:
@@ -318,7 +315,10 @@ def ghost_action_response(ctx: Any, body: dict) -> tuple[int, dict]:
 
 def changes_response(ctx: Any, project: object) -> tuple[int, dict]:
     project_text = str(project or "").strip()
-    key = str(Path(project_text).expanduser().resolve()) if project_text else ""
+    try:
+        key = str(Path(project_text).expanduser().resolve()) if project_text else ""
+    except (ValueError, OSError):
+        return 400, {"ok": False, "error": "project invalid", "files": [], "diff": ""}
     try:
         tracker = (
             ctx.change_tracker_for(key, persistent=not is_git_repository(key))
@@ -344,7 +344,10 @@ def restore_changes_response(ctx: Any, body: dict) -> tuple[int, dict]:
     if paths is not None and not isinstance(paths, list):
         return 400, {"ok": False, "error": "paths must be a list"}
     clean_paths = [str(path) for path in paths] if paths is not None else None
-    key = str(Path(project).expanduser().resolve())
+    try:
+        key = str(Path(project).expanduser().resolve())
+    except (ValueError, OSError):
+        return 400, {"ok": False, "error": "project invalid"}
     if ctx.has_active_run_for_project(key):
         return 409, {"ok": False, "error": "run in progress"}
     # Single-writer promise covers tasks and user restore: hold the same
@@ -451,8 +454,10 @@ def shell_approval_response(
     continuation_retry_after: int = 15,
 ) -> tuple[int, dict]:
     approval_id = str(body.get("id") or "").strip()
-    approved = body.get("approved") is True
-    if not approved:
+    approved_raw = body.get("approved")
+    if approved_raw is not True and approved_raw is not False:
+        return 400, {"error": "approved must be a boolean"}
+    if approved_raw is False:
         pending = ctx.pop_pending_shell_approval(approval_id)
         if not pending:
             return 404, {"error": "approval not found"}

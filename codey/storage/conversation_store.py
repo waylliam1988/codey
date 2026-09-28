@@ -79,7 +79,7 @@ def _snapshot_from_payload(payload: object) -> ConversationSnapshot:
 
 
 def _nonnegative_int(value: object, default: int = 0) -> int:
-    if value is None:
+    if value is None or isinstance(value, bool):
         return default
     try:
         return max(0, int(value or 0))  # type: ignore[arg-type]
@@ -88,6 +88,8 @@ def _nonnegative_int(value: object, default: int = 0) -> int:
 
 
 def _positive_int(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
     try:
         parsed = int(value or 0)  # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):

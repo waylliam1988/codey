@@ -7,6 +7,7 @@ all become small Markdown artifacts with explicit provenance.
 
 from __future__ import annotations
 
+import math
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -232,10 +233,15 @@ def _is_safe_open_question(text: str) -> bool:
 
 
 def _as_float(value) -> float | None:
-    try:
-        return float(value) if value is not None else None
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         return None
+    try:
+        number = float(value) if value is not None else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if number is None or not math.isfinite(number):
+        return None
+    return number
 
 
 def _as_str(value) -> str | None:

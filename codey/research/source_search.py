@@ -24,9 +24,11 @@ class SourceSearchHit:
 
 
 def bounded_limit(value: object, default: int = SOURCE_SEARCH_DEFAULT_LIMIT) -> int:
+    if isinstance(value, bool):
+        return default
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         parsed = default
     return max(1, min(SOURCE_SEARCH_MAX_LIMIT, parsed))
 

@@ -8,6 +8,7 @@ belong here.
 
 from __future__ import annotations
 
+import math
 import os
 import shutil
 from collections.abc import Iterable, Mapping
@@ -2125,9 +2126,11 @@ def _host(url: str) -> str:
 def _int_or_none(value: object) -> int | None:
     if isinstance(value, bool):
         return None
+    if isinstance(value, str) and not value.strip().isascii():
+        return None
     try:
         return max(0, int(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -2364,7 +2367,9 @@ def _unit_float(value: object) -> float:
         return 0.0
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    if not math.isfinite(number):
         return 0.0
     if number < 0:
         return 0.0

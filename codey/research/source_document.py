@@ -53,9 +53,13 @@ def compact_pages(values: object) -> str:
         return ""
     pages: list[int] = []
     for value in values:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, str) and not value.strip().isascii():
+            continue
         try:
             page = int(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         if page > 0 and page not in pages:
             pages.append(page)

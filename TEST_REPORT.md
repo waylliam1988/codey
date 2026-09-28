@@ -1,5 +1,93 @@
 # Codey Test Report
 
+## Full-red round4: numeric fail-closed sweep + schema/host/API/ledger strict (2026-09-28)
+
+Scope (~50 deterministic bugs, red-first, no release):
+
+```text
+codey/knowledge/concepts.py (_bounded_int +OverflowError)
+codey/knowledge/research_interest.py (_unit_float +OverflowError+isfinite; _bounded_int +OverflowError; _hint_weight +OverflowError)
+codey/ghost/numbers.py (coerce/clamp +OverflowError)
+codey/runs/receipt.py (_nonnegative_int +OverflowError+ascii)
+codey/runs/ledger_projection.py (_int/_optional_int +OverflowError+ascii)
+codey/runs/ledger.py (_int_or_none +OverflowError+ascii; 3 args-guard sites)
+codey/runs/trace.py (_int_or_none +OverflowError+ascii; _unit_float +OverflowError+isfinite; +import math)
+codey/completion/repair_context.py (_nonnegative_int bool+OverflowError)
+codey/research/analysis_run.py (_bounded_duration/_optional_int +OverflowError)
+codey/research/artifact_lineage.py (_bounded_size +OverflowError)
+codey/research/source_search.py (bounded_limit bool+OverflowError)
+codey/research/tool_contract.py (_coerce_int ascii+finite; _coerce_float OverflowError+finite; +import math)
+codey/research/tools.py (_as_int bool+ascii+OverflowError; _as_float bool+finite; +import math)
+codey/research/query_planner.py + followup_selection.py (_unit_float/bounded_score +OverflowError)
+codey/research/source_document.py (compact_pages bool+ascii+OverflowError)
+codey/research/connector_search.py (_bounded_timeout +OverflowError+isfinite; +import math)
+codey/ghost/sleep.py (_int bool+OverflowError)
+codey/ghost/work_queue.py (_future_ts +OverflowError)
+codey/research/proof_quality.py (_positive_ints bool+ascii+OverflowError; _bounded_score bool+finite; +import math)
+codey/research/source_gateway.py + knowledge/graph.py + app/headless_runner.py (_as_int/_int_or_zero bool+OverflowError)
+codey/knowledge/note.py (_as_float bool+OverflowError+finite; +import math)
+codey/storage/ui_state_store.py (_int +OverflowError)
+codey/ghost/directive.py (_hint_weight +OverflowError)
+codey/ghost/hebbian.py (_coerce_reward +OverflowError; _clamp01 try+finite)
+codey/ghost/control_surface.py (_confidence_label bool+OverflowError+finite; +import math)
+codey/storage/conversation_store.py (_nonnegative_int/_positive_int bool guards)
+codey/providers/local_config.py (_parse_positive_int no _/, stripping)
+codey/providers/discovery.py (new _ratio fail-closed; 4 bare float sites; +import math)
+codey/repairs/adapter_overrides.py (_load_index type-is-int v1)
+codey/research/evidence_ledger.py (_valid_ledger_payload type-is-int v1)
+codey/app/headless_runner.py (_bounded_receipt echo exact int v1 only)
+codey/providers/controls.py (_host_matches fail-closed on empty)
+codey/research/browser_search.py (redirect dot-boundary x2; _search_host hostname)
+codey/app/api.py (changes/restore null-byte 400; base_revision type-is-int; approved explicit bool)
+codey/runtime/observe/events.py (new _call_args; 5 sites)
+codey/runtime/observe/execution_evidence.py (args guard 3 sites)
+codey/runtime/log/session_log.py (mutate non-mapping -> RuntimeLogWriteError)
+tests/test_fullred_round4_sweep.py (new, 50)
+tests/test_architecture.py (allow sweep file in .mutate() gate)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md                     (this entry, written after the full suite)
+```
+
+Red-first (49 failed before, all pass after; 1 guard passed before and after):
+
+- `OverflowSweepTests` 28 failed before (`OverflowError`/`ValueError` on
+  `inf`/`10**400`/`"abc"`); after fail-closed (`default`/`None`/`0`/`0.0`)
+  all pass.
+- `BoolUnicodeFiniteTests` 6 failed before (`True->1`, arabic `->123`,
+  `inf`/`nan` accepted, `"1_0"->10`); after strict guards all pass.
+- `SchemaStrictTests` 3 failed before (`True`/`1.0` accepted as v1,
+  `True`/`0`/`2` echoed); after `type(x) is int` + exact-v1 all pass.
+- `HostUrlStrictTests` 3 failed before (empty-host `True`,
+  `evilbing.com` redirect unwrap, `:443` leak); after fail-closed all pass.
+- `ApiContractTests` 4 bug locks failed before (`ValueError` 500 on
+  `"\0"`, `200` on `True`/`[]` base, `200`-as-deny on `1`); after
+  `400` all pass. Plus 1 non-bug guard
+  (`test_restore_unknown_path_is_409_conflict`) passed before and after:
+  unknown rels are `409` conflicts, never `500`.
+- `LedgerEventGuardTests` 3 failed before (`AttributeError` on
+  `args=None`/`[None]`); after dict-coercion/`RuntimeLogWriteError` all pass.
+
+Non-bugs / intentionally untouched (per reproduce-or-it-is-not-a-bug):
+
+- `receipt._nonnegative_int(True)` already `0`; `event_bus` bad-cursor
+  `->0` full-window replay; `trace count or 1`; `approval expire` skip-bad-row;
+  `run_submit` lenient `or`-defaults; loopback auth shape; internal pending
+  shapes; trailing-dot FQDN; provenance over-approx — no crash/security
+  repro, all left alone (restore-escape locked as `409` guard).
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before final: `python -m ruff check .` clean (15 import-sort autofixes in
+  the new test file), `git diff --check` clean; targeted green (`sweep`
+  50 passed; `architecture+sweep` 138 passed, 346 subtests;
+  `server+ledger+trace+events` 293 passed, 6 subtests;
+  `providers+browser+changes+stores+bootstrap+shell` 232 passed, 5 subtests;
+  `knowledge+review+tool_runtime+completion+headless+ui` 295 passed,
+  1 skipped, 34 subtests).
+- Final full suite: `python -m pytest -q`:
+  `4788 passed, 10 skipped, 1473 subtests passed in 338.89s (0:05:38)`.
+  Delta vs 4738 is exactly the 50 new tests. No release was made.
+
 ## Cold-start cleanup round4: exports + Ghost _common + native unify (2026-09-28)
 
 Scope (refactor, red-first, no release):

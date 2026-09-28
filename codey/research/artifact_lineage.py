@@ -74,7 +74,7 @@ def _bounded_size(value: object) -> int:
         return 0
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
     return max(0, min(parsed, MAX_SIZE_BYTES))
 

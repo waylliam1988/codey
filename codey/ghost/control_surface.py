@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -745,9 +746,13 @@ def _work_status_label(status: object) -> str:
 
 
 def _confidence_label(value: object) -> str:
+    if isinstance(value, bool):
+        return "Unknown confidence"
     try:
         confidence = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        return "Unknown confidence"
+    if not math.isfinite(confidence):
         return "Unknown confidence"
     if confidence >= 0.85:
         return "High confidence"

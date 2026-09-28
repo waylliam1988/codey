@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -310,10 +311,12 @@ def _coerce_int(value: Any) -> int | None:
     if isinstance(value, int):
         return value
     if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
         return int(value) if value.is_integer() else None
     if isinstance(value, str):
         text = value.strip()
-        if not text:
+        if not text or not text.isascii():
             return None
         try:
             return int(text)
@@ -326,15 +329,20 @@ def _coerce_float(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        try:
+            number = float(value)
+        except OverflowError:
+            return None
+        return number if math.isfinite(number) else None
     if isinstance(value, str):
         text = value.strip()
         if not text:
             return None
         try:
-            return float(text)
+            number = float(text)
         except ValueError:
             return None
+        return number if math.isfinite(number) else None
     return None
 
 

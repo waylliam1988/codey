@@ -872,6 +872,7 @@ def _locator_entry(item: Mapping[str, object]) -> dict[str, object]:
 def _valid_ledger_payload(payload: object) -> bool:
     return (
         isinstance(payload, dict)
+        and type(payload.get("schema_version")) is int
         and payload.get("schema_version") == EVIDENCE_LEDGER_SCHEMA_VERSION
         and payload.get("kind") == EVIDENCE_LEDGER_KIND
         and isinstance(payload.get("records"), list)

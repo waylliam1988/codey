@@ -170,34 +170,35 @@ class ExecutionEvidence:
         call = event.call
         outcome = event.outcome
         name = call.name
+        args = call.args if isinstance(call.args, dict) else {}
         if name == "edit" and outcome.ok and outcome.changed:
             self.edit_epoch += 1
             self.checks_after_edit.clear()
             self.failed_checks_after_edit.clear()
             self.environment_failures_after_edit.clear()
             self._seen_info.clear()
-            path = _text(call.args.get("path"), 240)
+            path = _text(args.get("path"), 240)
             if path and path not in self.changed_files:
                 self.changed_files.append(path)
                 del self.changed_files[:-MAX_CHANGED_FILES]
             return
         if name == "run":
-            self._record_run(call.args, outcome)
-            self._record_truncation(name, _text(call.args.get("command")), outcome.truncated)
+            self._record_run(args, outcome)
+            self._record_truncation(name, _text(args.get("command")), outcome.truncated)
             return
         if name == "read":
-            path = _text(call.args.get("path"), 240)
-            offset = self._integer(call.args.get("offset"), 1)
-            limit = self._integer(call.args.get("limit"), 0)
+            path = _text(args.get("path"), 240)
+            offset = self._integer(args.get("offset"), 1)
+            limit = self._integer(args.get("limit"), 0)
             item = ReadEvidence(path, offset, limit, self.edit_epoch, outcome.ok, outcome.truncated)
             key = (name, path, offset, limit, self.edit_epoch)
             self._record_information(key, self.reads, item, MAX_READS)
             self._record_truncation(name, f"{path}:{offset}", outcome.truncated)
             return
         if name in {"search", "references"}:
-            path = _text(call.args.get("path"), 240) or "."
+            path = _text(args.get("path"), 240) or "."
             arg = "query" if name == "search" else "symbol"
-            value = _text(call.args.get(arg), 240)
+            value = _text(args.get(arg), 240)
             item = SearchEvidence(
                 name,
                 path,

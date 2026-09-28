@@ -156,7 +156,7 @@ def answer_status_rank(status: object) -> int:
 def bounded_score(value: object) -> float:
     try:
         parsed = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0.0
     if not math.isfinite(parsed):
         return 0.0

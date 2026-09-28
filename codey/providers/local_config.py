@@ -191,7 +191,7 @@ def _parse_positive_int(value: object) -> int | None:
     if isinstance(value, float) and value.is_integer() and value > 0:
         return int(value)
     if isinstance(value, str):
-        text = value.strip().replace("_", "").replace(",", "")
+        text = value.strip()
         if text.isascii() and text.isdigit():
             try:
                 number = int(text)

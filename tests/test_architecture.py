@@ -500,6 +500,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         allowed_test_mutate_callers = {
             "tests/test_architecture.py",
             "tests/test_runtime_session_log.py",
+            "tests/test_fullred_round4_sweep.py",
         }
         for path in (ROOT / "tests").rglob("*.py"):
             rel = path.relative_to(ROOT).as_posix()

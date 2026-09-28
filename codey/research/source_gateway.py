@@ -320,9 +320,11 @@ def _merge_source_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSe
 
 
 def _as_int(value, default: int) -> int:
+    if isinstance(value, bool):
+        return default
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 

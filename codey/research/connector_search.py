@@ -9,6 +9,7 @@ connector boundary before falling back to the browser provider.
 from __future__ import annotations
 
 import json
+import math
 import time
 import urllib.error
 import urllib.request
@@ -566,7 +567,9 @@ def _bounded_timeout(value: object) -> float:
         return float(CONNECTOR_TIMEOUT_SECONDS)
     try:
         parsed = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        parsed = float(CONNECTOR_TIMEOUT_SECONDS)
+    if not math.isfinite(parsed):
         parsed = float(CONNECTOR_TIMEOUT_SECONDS)
     return max(CONNECTOR_MIN_TIMEOUT_SECONDS, min(parsed, float(CONNECTOR_TIMEOUT_SECONDS)))
 

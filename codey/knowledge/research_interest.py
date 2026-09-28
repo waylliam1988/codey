@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -370,7 +371,9 @@ def _get(row: dict[str, object], key: str) -> object:
 def _unit_float(value: object) -> float:
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    if not math.isfinite(number):
         return 0.0
     return round(max(0.0, min(1.0, number)), 4)
 
@@ -378,7 +381,7 @@ def _unit_float(value: object) -> float:
 def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int:
     try:
         number = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         number = default
     return max(minimum, min(maximum, number))
 
@@ -393,7 +396,7 @@ def _hint_weight_by_target(hints: Iterable[Any], *, kind: str) -> dict[str, floa
             continue
         try:
             weight = float(_field(hint, "weight") or 0.0) * float(_field(hint, "confidence") or 0.0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             weight = 0.0
         out[target] = max(out.get(target, 0.0), max(0.0, min(1.0, weight)))
     return out

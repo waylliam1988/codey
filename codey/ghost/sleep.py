@@ -782,9 +782,11 @@ def _list(value: object) -> list[object]:
 
 
 def _int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
     try:
         return int(value or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 

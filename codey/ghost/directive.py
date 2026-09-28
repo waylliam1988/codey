@@ -340,7 +340,7 @@ def _hint_weight_by_target(hints: Iterable[Any], *, kind: str) -> dict[str, floa
             continue
         try:
             weight = float(_field(hint, "weight") or 0.0) * float(_field(hint, "confidence") or 0.0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             weight = 0.0
         out[target] = max(out.get(target, 0.0), max(0.0, min(1.0, weight)))
     return out

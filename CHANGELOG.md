@@ -2,6 +2,76 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Full-red round4: numeric fail-closed sweep + schema/host/API/ledger strict (no release)
+
+- Fixed ~50 deterministic bugs, all red-first (49 failed before, pass after;
+  50 tests in `tests/test_fullred_round4_sweep.py` include 1 non-bug guard
+  that passed before and after):
+  overflow: 27 numeric helpers caught only `(TypeError, ValueError)` so
+  `float("inf")`/`10**400` raised `OverflowError` (`knowledge/concepts`,
+  `knowledge/research_interest` x3, `ghost/numbers` x2, `runs/receipt`,
+  `runs/ledger_projection` x2, `runs/ledger`, `runs/trace` x2,
+  `completion/repair_context`, `research/analysis_run` x2,
+  `research/artifact_lineage`, `research/source_search`,
+  `research/tool_contract`, `research/tools` x2, `research/query_planner`,
+  `research/followup_selection`, `research/source_document`,
+  `research/connector_search`, `ghost/sleep`, `ghost/work_queue`,
+  `research/proof_quality` x2, `research/source_gateway`,
+  `knowledge/graph`, `app/headless_runner`, `knowledge/note`,
+  `storage/ui_state_store`, `ghost/directive`); all now catch
+  `OverflowError` fail-closed to `default`/`None`/`0`/`0.0`;
+  `providers/discovery` 4 bare `float()` sites (page-JS-controlled
+  `bottom_ratio`/`area`) now go through fail-closed `_ratio`;
+  bool-is-not-int: `repair_context`/`conversation_store` x2/`sleep`/
+  `source_search` no longer map `True` to `1` (return `0`/`default`);
+  ascii-digit gate: `ledger_projection`/`receipt`/`tool_contract`/`tools`/
+  `source_document`/`proof_quality` reject non-ascii digits (`"١٢٣"`);
+  finite gate: `_coerce_float`/`_as_float`/`_as_float(note)`/
+  `_bounded_score`/`_unit_float(research_interest+trace)`/`_clamp01`/
+  `_confidence_label` map `inf`/`nan` to `None`/`0.0`/`Unknown`;
+  `local_config._parse_positive_int` no longer strips `"_"`/`,` so
+  `"1_0"`/`"1,000"` are rejected;
+  schema strict: `repairs/adapter_overrides._load_index` and
+  `research/evidence_ledger._valid_ledger_payload` require
+  `type(x) is int` (`True`/`1.0` no longer pass as v1);
+  `app/headless_runner._bounded_receipt` echoes only exact int v1
+  (`True`/`0`/`2` no longer pollute the JSONL stream);
+  host/URL: `providers/controls._host_matches` is fail-closed on empty
+  `saved`/`current` (was `True`, allowed cross-site control reuse);
+  `research/browser_search._is_search_redirect`/
+  `_search_redirect_target` require dot-boundary
+  (`evilbing.com/ck/` no longer unwraps to the attacker URL);
+  `_search_host` returns `hostname` (was `netloc`, kept `:443`);
+  API: `changes`/`restore` null-byte projects return `400` (were `500`
+  `ValueError`); `save_ui_state` requires `type(base_revision) is int`
+  (`True`/`[]`/`{}`/`""`/`None`/`0.0` no longer bypass the conflict check
+  with `200`); `shell_approval` requires an explicit bool
+  (`1`/`"true"`/`0` no longer recorded as a user denial, now `400`);
+  ledger: `runs/ledger` (3 sites), `runtime/observe/events` (5 sites) and
+  `runtime/observe/execution_evidence` (3 sites) coerce non-dict
+  `ToolCall.args` to `{}` instead of `AttributeError` on the whole batch;
+  `runtime/log/session_log.mutate` raises `RuntimeLogWriteError` (not
+  `AttributeError`) for non-mapping rows.
+- Full-red coverage: 50 new tests in
+  `tests/test_fullred_round4_sweep.py`; 49 failed before as above, all pass
+  after. `tests/test_architecture.py` allows the new file in the
+  `.mutate(` caller gate (same pattern as `test_runtime_session_log`).
+  Investigated non-bugs left untouched per reproduce-or-it-is-not-a-bug:
+  restore unknown rels (`["../escape"]`) correctly map to `409` conflicts
+  (locked by the passing guard, never `500`); trailing-dot FQDN, provenance
+  substring over-approx, lenient `or`-defaults (`max_turns=0`->default,
+  `intent=""`->`auto`), loopback auth shape, and internal pending shapes
+  have no crash/security repro and were left alone.
+- Verification: `python -m ruff check .` clean (auto-sorted the new test
+  imports), `git diff --check` clean. Targeted green before final
+  (`sweep` 50 passed; `architecture+sweep` 138 passed, 346 subtests;
+  `server+ledger+trace+events` 293 passed, 6 subtests;
+  `providers+browser+changes+stores+bootstrap+shell` 232 passed, 5 subtests;
+  `knowledge+review+tool_runtime+completion+headless+ui` 295 passed,
+  1 skipped, 34 subtests). Then final `python -m pytest -q`:
+  `4788 passed, 10 skipped, 1473 subtests passed in 338.89s (0:05:38)`.
+  Delta vs 4738 is exactly the 50 new tests. No release was made.
+
 ## Unreleased - Cold-start cleanup round4: package export layers + Ghost shared helpers + native-tools unify (no release)
 
 - Removed internal package-convenience export layers (no prod-module deletions):

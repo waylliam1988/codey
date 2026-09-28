@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -18,6 +19,17 @@ class Discovery:
     fingerprint: dict[str, Any]
     score: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def _ratio(candidate: dict[str, Any], key: str) -> float:
+    """Fail-closed float for page-controlled geometry (never raises)."""
+    try:
+        number = float(candidate.get(key) or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    if not math.isfinite(number):
+        return 0.0
+    return number
 
 
 def control_candidates(
@@ -87,9 +99,9 @@ def _score_message_box_candidate(
         score += 22
     if any(word in text for word in ("search", "find", "password", "搜索", "查找", "密码")):
         score -= 80
-    if float(candidate.get("bottom_ratio") or 0) >= 0.55:
+    if _ratio(candidate, "bottom_ratio") >= 0.55:
         score += 14
-    if float(candidate.get("area") or 0) >= 1200:
+    if _ratio(candidate, "area") >= 1200:
         score += 8
     return score
 
@@ -137,7 +149,7 @@ def _score_send_button_candidate(
         score -= 30
     if candidate.get("enabled", True):
         score += 6
-    if float(candidate.get("bottom_ratio") or 0) >= 0.55:
+    if _ratio(candidate, "bottom_ratio") >= 0.55:
         score += 8
     return score
 
@@ -232,7 +244,7 @@ def score_response_candidate(candidate: dict[str, Any]) -> int:
         score += 14
     if any(word in hints for word in ("user", "prompt", "sidebar", "navigation", "composer")):
         score -= 55
-    if float(candidate.get("bottom_ratio") or 0) >= 0.25:
+    if _ratio(candidate, "bottom_ratio") >= 0.25:
         score += 8
     return score
 

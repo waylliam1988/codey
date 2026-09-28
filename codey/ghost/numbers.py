@@ -18,7 +18,7 @@ def coerce_unit_float(value: object, *, digits: int = 4) -> float | None:
         return None
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     if not math.isfinite(number) or number < 0.0 or number > 1.0:
         return None
@@ -31,7 +31,7 @@ def clamp_unit_float(value: object, *, digits: int = 4) -> float:
         return 0.0
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0.0
     if not math.isfinite(number):
         return 0.0

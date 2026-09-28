@@ -92,16 +92,21 @@ class RunEvent:
         return cls("status", message=message)
 
 
+def _call_args(call: ToolCall | None) -> dict:
+    args = call.args if call is not None else {}
+    return args if isinstance(args, dict) else {}
+
+
 def render_run_event(event: RunEvent) -> str:
     if event.kind == "turn":
         suffix = f" {event.note}" if event.note else ""
         return f"\n--- turn {event.turn} reply{suffix} ---\n{event.reply}\n"
     if event.kind == "tool_start" and event.call is not None:
-        path = str(event.call.args.get("path") or "")
+        path = str(_call_args(event.call).get("path") or "")
         label = path if path != "." else ""
         return f"  - {event.call.name} {label} -> {event.message}"
     if event.kind == "tool" and event.call is not None and event.outcome is not None:
-        path = str(event.call.args.get("path") or "")
+        path = str(_call_args(event.call).get("path") or "")
         label = path if path != "." else ""
         first_line = event.outcome.presentation_result(80)
         return f"  - {event.call.name} {label} -> {first_line}"
@@ -151,8 +156,9 @@ def run_event_ui_payload(
             text = f"{text}: {names}"
         return {"type": "info", "run_id": run_id, "session_id": session_id, "text": text}
     if event.kind == "tool_start" and event.call is not None:
-        path = str(event.call.args.get("path") or "")
-        display_kind, display_path = display_tool(event.call.name, event.call.args, path)
+        start_args = _call_args(event.call)
+        path = str(start_args.get("path") or "")
+        display_kind, display_path = display_tool(event.call.name, start_args, path)
         tool_index = _safe_tool_index(event.metadata.get("tool_index"))
         payload = {
             "type": "tool_started",
@@ -164,14 +170,15 @@ def run_event_ui_payload(
             "path": display_path,
             "activity": event.message,
         }
-        command = str(event.call.args.get("command") or "")
+        command = str(start_args.get("command") or "")
         if command:
             payload["command"] = command
         return payload
     if event.kind != "tool" or event.call is None or event.outcome is None:
         return None
-    path = str(event.call.args.get("path") or "")
-    display_kind, display_path = display_tool(event.call.name, event.call.args, path)
+    tool_args = _call_args(event.call)
+    path = str(tool_args.get("path") or "")
+    display_kind, display_path = display_tool(event.call.name, tool_args, path)
     result = event.outcome.presentation_result(MAX_EVENT_RESULT_CHARS)
     tool_index = _safe_tool_index(event.metadata.get("tool_index"))
     status = event.outcome.presentation_status()
@@ -190,7 +197,7 @@ def run_event_ui_payload(
         "changed": event.outcome.changed,
         "truncated": event.outcome.truncated,
     }
-    command = str(event.call.args.get("command") or "")
+    command = str(tool_args.get("command") or "")
     if command:
         payload["command"] = command
     if event.outcome.exit_code is not None:

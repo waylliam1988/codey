@@ -2613,7 +2613,7 @@ def _future_ts(now: str, seconds: int) -> str:
     base = parse_ts(now)
     try:
         delta_seconds = int(seconds)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         delta_seconds = DEFAULT_WORK_CLAIM_LEASE_SECONDS
     return (
         datetime.fromtimestamp(

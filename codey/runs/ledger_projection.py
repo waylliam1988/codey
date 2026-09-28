@@ -375,18 +375,22 @@ def _str(value: object) -> str:
 def _int(value: object, default: int = 0) -> int:
     if isinstance(value, bool):
         return default
+    if isinstance(value, str) and not value.strip().isascii():
+        return default
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
 def _optional_int(value: object) -> int | None:
     if isinstance(value, bool):
         return None
+    if isinstance(value, str) and not value.strip().isascii():
+        return None
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

@@ -2,6 +2,74 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 全量红测第四轮：数值fail-closed横扫 + schema/域名/API/ledger收紧（未发布）
+
+- 修复约 50 个确定性 bug，全部红测先行（49 个修复前失败、修复后全过；
+  `tests/test_fullred_round4_sweep.py` 共 50 个测试，其中 1 个为前后皆绿的
+  非 bug 守卫）：
+  溢出：27 个数值函数只捕获 `(TypeError, ValueError)`，`float("inf")`/
+  `10**400` 会抛 `OverflowError`（`knowledge/concepts`、
+  `knowledge/research_interest` x3、`ghost/numbers` x2、`runs/receipt`、
+  `runs/ledger_projection` x2、`runs/ledger`、`runs/trace` x2、
+  `completion/repair_context`、`research/analysis_run` x2、
+  `research/artifact_lineage`、`research/source_search`、
+  `research/tool_contract`、`research/tools` x2、`research/query_planner`、
+  `research/followup_selection`、`research/source_document`、
+  `research/connector_search`、`ghost/sleep`、`ghost/work_queue`、
+  `research/proof_quality` x2、`research/source_gateway`、
+  `knowledge/graph`、`app/headless_runner`、`knowledge/note`、
+  `storage/ui_state_store`、`ghost/directive`），现全部补 `OverflowError`
+  并 fail-closed 到 `default`/`None`/`0`/`0.0`；
+  `providers/discovery` 4 处裸 `float()`（页面 JS 可控的
+  `bottom_ratio`/`area`）改为 fail-closed `_ratio`；
+  bool 非 int：`repair_context`/`conversation_store` x2/`sleep`/
+  `source_search` 不再把 `True` 当 `1`（回 `0`/`default`）；
+  ASCII 数字门：`ledger_projection`/`receipt`/`tool_contract`/`tools`/
+  `source_document`/`proof_quality` 拒绝非 ASCII 数字（`"١٢٣"`）；
+  有限性门：`_coerce_float`/`_as_float`/`note._as_float`/`_bounded_score`/
+  `_unit_float`（research_interest+trace）/`_clamp01`/`_confidence_label`
+  把 `inf`/`nan` 映射到 `None`/`0.0`/`Unknown`；
+  `local_config._parse_positive_int` 不再剥 `"_"`/`,`，
+  `"1_0"`/`"1,000"` 被拒绝；
+  schema 严格：`repairs/adapter_overrides._load_index` 与
+  `research/evidence_ledger._valid_ledger_payload` 要求
+  `type(x) is int`（`True`/`1.0` 不再冒充 v1）；
+  `app/headless_runner._bounded_receipt` 只回显精确 int v1
+  （`True`/`0`/`2` 不再污染 JSONL）；
+  域名/URL：`providers/controls._host_matches` 对空 `saved`/`current`
+  fail-closed（原返回 `True`，允许跨站复用控件）；
+  `research/browser_search._is_search_redirect`/
+  `_search_redirect_target` 要求点边界
+  （`evilbing.com/ck/` 不再解包到攻击 URL）；
+  `_search_host` 返回 `hostname`（原 `netloc` 残留 `:443`）；
+  API：`changes`/`restore` 遇到含 `\0` 的 project 返回 `400`（原 `500`
+  `ValueError`）；`save_ui_state` 要求 `type(base_revision) is int`
+  （`True`/`[]`/`{}`/`""`/`None`/`0.0` 不再以 `200` 绕过冲突检查）；
+  `shell_approval` 要求显式 bool（`1`/`"true"`/`0` 不再记为用户拒绝，
+  改为 `400`）；
+  ledger：`runs/ledger`（3 处）、`runtime/observe/events`（5 处）、
+  `runtime/observe/execution_evidence`（3 处）把非 dict 的
+  `ToolCall.args` 按 `{}` 处理，不再 `AttributeError` 中断整批；
+  `runtime/log/session_log.mutate` 对非映射行抛 `RuntimeLogWriteError`
+  （不再是 `AttributeError`）。
+- 全红覆盖：`tests/test_fullred_round4_sweep.py` 新增 50 测，49 个修复前
+  失败、修复后全过。`tests/test_architecture.py` 把新文件加入 `.mutate(`
+  调用门白名单（与 `test_runtime_session_log` 同例）。
+  按复现否则非 bug 原则保留未动的非 bug：restore 未知路径
+  （`["../escape"]`）正确映射为 `409` 冲突（由常绿守卫锁定，永不 `500`）；
+  尾点 FQDN、溯源子串过拦截、宽松 `or` 默认（`max_turns=0`->默认、
+  `intent=""`->`auto`）、loopback 形态、内部 pending 形态均无崩溃/安全
+  复现，未改动。
+- 验证：`python -m ruff check .` 通过（新测试 import 已自动排序）、
+  `git diff --check` 通过；目标套件全绿（`sweep` 50 通过；
+  `architecture+sweep` 138 通过 346 子项；
+  `server+ledger+trace+events` 293 通过 6 子项；
+  `providers+browser+changes+stores+bootstrap+shell` 232 通过 5 子项；
+  `knowledge+review+tool_runtime+completion+headless+ui` 295 通过
+  1 跳过 34 子项）。最终 `python -m pytest -q`：
+  **4788 passed、10 skipped、1473 subtests passed，338.89s（0:05:38）**。
+  增量正好 50 个新测试。未发布。
+
 ## Unreleased - 冷启动清理第四轮：包导出层 + Ghost公共函数 + native-tools统一（未发布）
 
 - 删除内部包便捷导出层（未删除任何生产模块）：

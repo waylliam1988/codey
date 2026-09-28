@@ -574,9 +574,11 @@ def _request_intent(value: str) -> str:
 
 
 def _int_or_zero(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
@@ -684,7 +686,7 @@ def _bounded_receipt(receipt: dict) -> dict[str, object]:
 
     payload: dict[str, object] = {}
     schema = receipt.get("schema_version")
-    if isinstance(schema, int):
+    if type(schema) is int and schema == SCHEMA_VERSION:
         payload["schema_version"] = schema
     display_section = _receipt_display(receipt)
     if display_section:

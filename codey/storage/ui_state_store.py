@@ -74,7 +74,7 @@ def _int(value: object) -> int:
         return 0
     try:
         number = float(value or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
     if not math.isfinite(number):
         return 0

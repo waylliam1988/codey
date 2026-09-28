@@ -486,9 +486,11 @@ def _bounded_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
 
 
 def _nonnegative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
     try:
         return max(0, int(value))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 

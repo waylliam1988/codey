@@ -1181,7 +1181,7 @@ def _coerce_confidence(value: object) -> float | None:
 def _coerce_reward(value: object) -> float:
     try:
         reward = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 1.0
     if not math.isfinite(reward):
         return 1.0
@@ -1189,7 +1189,13 @@ def _coerce_reward(value: object) -> float:
 
 
 def _clamp01(value: float) -> float:
-    return round(max(0.0, min(1.0, float(value or 0.0))), 6)
+    try:
+        number = float(value or 0.0)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    if not math.isfinite(number):
+        return 0.0
+    return round(max(0.0, min(1.0, number)), 6)
 
 
 def _compact_timestamp() -> str:

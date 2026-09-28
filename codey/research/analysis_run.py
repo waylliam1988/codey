@@ -93,7 +93,7 @@ def _bounded_duration(value: object) -> int | None:
         return None
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     if parsed < 0:
         return None
@@ -105,7 +105,7 @@ def _optional_int(value: object) -> int | None:
         return None
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

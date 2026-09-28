@@ -57,7 +57,7 @@ def concept_node_id(concept: str) -> str:
 def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int:
     try:
         parsed = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         parsed = default
     return max(minimum, min(parsed, maximum))
 

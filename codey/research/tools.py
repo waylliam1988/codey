@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -474,17 +475,26 @@ def _finalize_write_note(
 
 
 def _as_int(value, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, str) and not value.strip().isascii():
+        return default
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
 def _as_float(value) -> float | None:
-    try:
-        return float(value) if value is not None else None
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         return None
+    try:
+        number = float(value) if value is not None else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if number is None or not math.isfinite(number):
+        return None
+    return number
 
 
 def _as_opt_str(value) -> str | None:

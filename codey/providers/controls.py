@@ -1195,8 +1195,8 @@ def _page_host(page: Any) -> str:
 
 
 def _host_matches(current: str, saved: str) -> bool:
-    if not saved:
-        return True
+    if not saved or not current:
+        return False
     current = (current or "").lower()
     saved = (saved or "").lower()
     return current == saved or current.endswith("." + saved)
