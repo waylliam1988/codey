@@ -1,4 +1,4 @@
-"""Unit tests for the live-probe semantic analyzers (tools/live_probe_split.py).
+"""Unit tests for the local-model diagnostic probe analyzers.
 
 No model needed: analyzers are pure functions over JSONL rows. Saved live
 artifacts under .e2e-artifacts/ are replayed when present (skipped on CI
@@ -18,7 +18,7 @@ _ARTIFACT_DIR = Path(__file__).resolve().parents[1] / ".e2e-artifacts"
 
 def _load_probe():
     spec = importlib.util.spec_from_file_location(
-        "live_probe_split", _TOOLS_DIR / "live_probe_split.py"
+        "local_model_diagnostic_probe", _TOOLS_DIR / "local_model_diagnostic_probe.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

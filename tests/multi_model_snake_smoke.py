@@ -1,3 +1,10 @@
+"""Manual multi-provider snake smoke through the current task entry.
+
+The script exercises discussion, project creation, independent verification,
+explicit review, read-only audit, and a follow-up repair in one recorded flow.
+It is a browser-provider scenario, not the local-model release gate.
+"""
+
 from __future__ import annotations
 
 import argparse

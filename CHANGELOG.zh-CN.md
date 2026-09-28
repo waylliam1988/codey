@@ -19,7 +19,10 @@
 - 收口冷启动唯一 `done` 契约：JSON、native、Research、GLM、golden、server
   和 A/B 路径统一要求 `done.args.summary`；删除废弃的 `done_compat` 读取器。
   `done` 完成前必须经过统一 ToolSpec 参数校验，控制工具不会再落入项目执行器。
-- 最终验证：`4820 passed, 32 skipped, 1461 subtests passed`；
+- 将供应商相关的实机脚本改为行为命名：`local_model_release_gate.py`、
+  `local_model_diagnostic_probe.py`、`multi_model_snake_smoke.py`；发布门槛新增
+  不依赖外网的 `hybrid` case，覆盖共享单会话任务入口的读取、修改和验证。
+- 最终验证：`4822 passed, 32 skipped, 1461 subtests passed`；
   `ruff check codey tests`、compileall、`git diff --check` 均通过。未发布。
 - 恢复含已执行工具结果的任务时必须使用原始持久授权；策略日志缺失会阻塞，不能继承新请求追加的权限。
 - 删除废弃的 `research/native_bridge.py`，把原生能力探测移到

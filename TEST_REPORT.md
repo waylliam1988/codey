@@ -2,6 +2,12 @@
 
 ## Shared task kernel cold-start cleanup (2026-09-29)
 
+- Renamed vendor-specific live tooling to behavior-based names:
+  `tools/local_model_release_gate.py`,
+  `tools/local_model_diagnostic_probe.py`, and
+  `tests/multi_model_snake_smoke.py`. The release gate now includes a
+  network-independent `hybrid` case that exercises the shared single-session
+  task entry with read, edit, and verification.
 - Enforced one cold-start `done` contract: every JSON/native/Research path now
   requires `done.args.summary`; the retired `done_compat` reader was deleted.
   `done` also passes the canonical ToolSpec validator before completion, and
@@ -27,8 +33,8 @@
   completion, native-delivery, and recovery suites; no old production loop is
   retained just to keep those tests importable.
 
-Final run after these changes: `4820 passed, 32 skipped, 1461 subtests
-passed in 343.51s`. `ruff check codey tests`, `python -m compileall -q
+Final run after these changes: `4822 passed, 32 skipped, 1461 subtests
+passed in 335.85s`. `ruff check codey tests`, `python -m compileall -q
 codey tests`, and `git diff --check` passed.
 
 - Recovery requires the original persisted task policy whenever a run has

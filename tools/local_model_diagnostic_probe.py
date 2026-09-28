@@ -1,6 +1,6 @@
-"""Live probe for the PLR/C901 split work (NOT the release gate).
+"""Local-model diagnostic probe (NOT the release gate).
 
-Probes koboldcpp directly (no human watch needed) with scenarios the gate
+Probes a local OpenAI-compatible endpoint directly (no human watch needed) with scenarios the gate
 does NOT cover:
 
 - P0 direct model reply (proves this harness reads kobold replies itself)
@@ -19,11 +19,11 @@ does NOT cover:
 Verdicts are semantic, not string-contains: crash signals only count on
 codey-originated rows, search usage means a tool row with tool == "search",
 and recipe-as-target means a `make <t>` outside the Makefile target set
-(see the analyzer helpers; unit-tested in tests/test_live_probe_split.py).
+(see the analyzer helpers; unit-tested in tests/test_local_model_diagnostic_probe.py).
 
 Usage:
-    python tools/live_probe_split.py --json
-    python tools/live_probe_split.py --only p0,p1 --json
+    python tools/local_model_diagnostic_probe.py --json
+    python tools/local_model_diagnostic_probe.py --only p0,p1 --json
 
 Artifacts: .e2e-artifacts/live-probe-<case>.jsonl (gitignored).
 """
@@ -61,14 +61,14 @@ def probe_endpoint() -> tuple[str, tuple[str, ...]]:
         endpoint, reason = probe_local_endpoint_detail(base, timeout=5)
         if reason == "ok" and endpoint is not None:
             return endpoint.base_url, endpoint.models
-    raise RuntimeError(f"koboldcpp unreachable on {BASE_URLS!r} (is Serve on?)")
+    raise RuntimeError(f"local model endpoint unreachable on {BASE_URLS!r} (is the server on?)")
 
 
 def run_p0() -> dict:
     from codey.providers.local_openai import LocalOpenAIProvider
 
     base_url, models = probe_endpoint()
-    model = models[0] if models else "koboldcpp"
+    model = models[0] if models else "local-model"
     provider = LocalOpenAIProvider(base_url, model, timeout=TIMEOUT)
     t0 = time.time()
     try:

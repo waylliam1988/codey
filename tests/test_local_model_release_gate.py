@@ -4,12 +4,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools import kobold_live_gate as gate
+from tools import local_model_release_gate as gate
 
 
-class KoboldLiveGateFixtureTests(unittest.TestCase):
+class LocalModelReleaseGateFixtureTests(unittest.TestCase):
+    def test_cases_include_shared_hybrid_entry(self) -> None:
+        self.assertIn("hybrid", gate.CASES)
+        _task, intent, _turns = gate._task_for("hybrid")
+        self.assertEqual(intent, "hybrid")
+
     def test_all_agent_cases_have_fixtures(self) -> None:
-        for case in ("create", "edit", "references", "discussion", "planning", "auto"):
+        for case in ("create", "edit", "references", "hybrid", "discussion", "planning", "auto"):
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 gate._make_fixture(root, case)  # must not raise
@@ -30,6 +35,15 @@ class KoboldLiveGateFixtureTests(unittest.TestCase):
             candidates = discover_verification_candidates(str(root))
             commands = [item.command for item in candidates]
             self.assertIn("python -m unittest discover", commands)
+
+    def test_hybrid_fixture_is_discoverable(self) -> None:
+        from codey.completion.verification_policy import discover_verification_candidates
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            gate._make_fixture(root, "hybrid")
+            candidates = discover_verification_candidates(str(root))
+            self.assertIn("python -m unittest discover", [item.command for item in candidates])
 
     def test_discussion_and_planning_verify_rejects_files(self) -> None:
         for case in ("discussion", "planning"):

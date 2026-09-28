@@ -25,7 +25,10 @@
   server, and A/B paths use required `done.args.summary`; deleted the retired
   `done_compat` reader. `done` now passes canonical ToolSpec validation before
   completion, and control tools cannot fall through to project execution.
-- Final verification: `4820 passed, 32 skipped, 1461 subtests passed`;
+- Renamed vendor-specific live scripts to `local_model_release_gate.py`,
+  `local_model_diagnostic_probe.py`, and `multi_model_snake_smoke.py`. Added a
+  network-independent `hybrid` release-gate case for the shared task entry.
+- Final verification: `4822 passed, 32 skipped, 1461 subtests passed`;
   `ruff check codey tests`, compileall, and `git diff --check` passed. No
   release was made.
 - Recovery now requires the original persisted task policy whenever a run has

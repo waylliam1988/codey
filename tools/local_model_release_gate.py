@@ -1,14 +1,14 @@
-"""KoboldCpp live release gate for codey (auto-captured, no human watch needed).
+"""Local-model release gate for Codey (auto-captured, no human watch needed).
 
-Runs chat + agent (create/edit/references/discussion/planning/auto) + ghost
-against the local OpenAI-compatible endpoint (koboldcpp default
+Runs chat + agent (create/edit/references/hybrid/discussion/planning/auto) + ghost
+against a local OpenAI-compatible endpoint (KoboldCpp is the default
 http://127.0.0.1:5001/v1), captures headless JSONL per case into
-.e2e-artifacts/kobold-live-<case>.jsonl, and verifies independently of the
+.e2e-artifacts/local-model-release-<case>.jsonl, and verifies independently of the
 model's own claims (like tools/live_smoke.py does for web providers).
 
 Usage:
-    python tools/kobold_live_gate.py --json
-    python tools/kobold_live_gate.py --case edit --json
+    python tools/local_model_release_gate.py --json
+    python tools/local_model_release_gate.py --case hybrid --json
 
 Exit 0 only when every selected case passes.
 """
@@ -36,7 +36,9 @@ BASE_URLS = ("http://127.0.0.1:5001/v1", "http://localhost:5001/v1")
 PROVIDER_ID = "local"
 TIMEOUT = 600.0
 
-CASES = ("chat", "create", "edit", "references", "discussion", "planning", "auto", "ghost")
+CASES = (
+    "chat", "create", "edit", "references", "hybrid", "discussion", "planning", "auto", "ghost",
+)
 
 
 def _log(text: str) -> None:
@@ -48,13 +50,13 @@ def probe_endpoint() -> tuple[str, tuple[str, ...]]:
         endpoint, reason = probe_local_endpoint_detail(base, timeout=5)
         if reason == "ok" and endpoint is not None:
             return endpoint.base_url, endpoint.models
-    raise RuntimeError(f"koboldcpp unreachable: probe /models failed on {BASE_URLS!r} (is Serve on?)")
+    raise RuntimeError(f"local model endpoint unreachable: probe /models failed on {BASE_URLS!r} (is the server on?)")
 
 
 def _make_fixture(root: Path, case: str) -> None:
     if case in {"create", "discussion", "planning", "auto"}:
         return
-    if case == "edit":
+    if case in {"edit", "hybrid"}:
         # Discoverable shape: tests/ dir so verification discovery finds
         # `python -m unittest discover`. A bare test_*.py at root yields NO
         # candidate and blocks by design (fail-closed); the gate must not
@@ -139,6 +141,13 @@ def _task_for(case: str) -> tuple[str, str, int]:
             "project",
             12,
         )
+    if case == "hybrid":
+        return (
+            "Use the shared hybrid task path to inspect pricing.py, fix LIVE_SMOKE_BUG "
+            "with read and edit, run python -m unittest discover, and finish with done.",
+            "hybrid",
+            10,
+        )
     if case == "discussion":
         return (
             "Discuss a good first version of a breathing practice app. "
@@ -179,7 +188,7 @@ def _verify_fixture(root: Path, case: str) -> dict:
         }
     if case == "create":
         assertion = "from math_utils import add; assert add(2, 3) == 5"
-    elif case == "edit":
+    elif case in {"edit", "hybrid"}:
         assertion = "from pricing import discounted_price; assert discounted_price(100, 20) == 80"
     elif case == "references":
         assertion = (
@@ -228,7 +237,7 @@ def run_chat_case() -> dict:
     from codey.providers.local_openai import LocalOpenAIProvider
 
     base_url, models = probe_endpoint()
-    model = models[0] if models else "koboldcpp"
+    model = models[0] if models else "local-model"
     provider = LocalOpenAIProvider(base_url, model, timeout=TIMEOUT)
     t0 = time.time()
     try:
@@ -284,7 +293,7 @@ def run_agent_case(case: str) -> dict:
     finally:
         ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
         try:
-            with open(ARTIFACT_DIR / f"kobold-live-{case}.jsonl", "w", encoding="utf-8") as fh:
+            with open(ARTIFACT_DIR / f"local-model-release-{case}.jsonl", "w", encoding="utf-8") as fh:
                 for row in rows:
                     fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         except OSError as exc:
@@ -367,7 +376,7 @@ def main(argv: list[str] | None = None) -> int:
 
     selected = list(CASES) if args.case == "all" else [args.case]
     base_url, models = probe_endpoint()
-    _log(f"[gate] koboldcpp {base_url} models={list(models)[:3]}")
+    _log(f"[gate] local model {base_url} models={list(models)[:3]}")
     results: list[dict] = []
     for case in selected:
         _log(f"[gate] case={case} ...")
@@ -383,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
 
     payload = {"ok": all(r.get("ok") for r in results), "base_url": base_url, "results": results}
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(ARTIFACT_DIR / "kobold-live-summary.json", "w", encoding="utf-8") as fh:
+    with open(ARTIFACT_DIR / "local-model-release-summary.json", "w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False))

@@ -6,10 +6,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests import moa_snake_flow
+from tests import multi_model_snake_smoke
 
 
-class MoaSnakeFlowScriptTests(unittest.TestCase):
+class MultiModelSnakeSmokeTests(unittest.TestCase):
     def test_reset_project_backs_up_and_clears_existing_files(self) -> None:
         with tempfile.TemporaryDirectory() as project_td, tempfile.TemporaryDirectory() as artifacts_td:
             project = Path(project_td)
@@ -19,7 +19,7 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
             nested.mkdir()
             (nested / "note.txt").write_text("keep", encoding="utf-8")
 
-            backup = moa_snake_flow.reset_project(project, artifacts)
+            backup = multi_model_snake_smoke.reset_project(project, artifacts)
 
             self.assertIsNotNone(backup)
             assert backup is not None
@@ -35,7 +35,7 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
             (artifacts / "flow.log").write_text("checkpoint", encoding="utf-8")
             (project / "game.js").write_text("old", encoding="utf-8")
 
-            backup = moa_snake_flow.reset_project(project, artifacts)
+            backup = multi_model_snake_smoke.reset_project(project, artifacts)
 
             self.assertIsNotNone(backup)
             self.assertTrue((artifacts / "flow.log").is_file())
@@ -65,7 +65,7 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = moa_snake_flow.verify_snake_project(project)
+            result = multi_model_snake_smoke.verify_snake_project(project)
 
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["missing"], [])
@@ -74,7 +74,7 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
 
     def test_verify_snake_project_reports_missing_files_without_running_unittest(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            result = moa_snake_flow.verify_snake_project(Path(td))
+            result = multi_model_snake_smoke.verify_snake_project(Path(td))
 
         self.assertFalse(result["ok"])
         self.assertIn("index.html", result["missing"])
@@ -82,12 +82,12 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
 
     def test_flow_recorder_writes_checkpoints_and_failure_breakpoints(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            recorder = moa_snake_flow.FlowRecorder(td)
+            recorder = multi_model_snake_smoke.FlowRecorder(td)
             with mock.patch("builtins.print"), self.assertRaisesRegex(RuntimeError, "boom"), recorder.stage("probe"):
                 raise RuntimeError("boom")
 
             checkpoint = json.loads(recorder.state_path.read_text(encoding="utf-8"))
-            events = moa_snake_flow.read_jsonl(recorder.events_path)
+            events = multi_model_snake_smoke.read_jsonl(recorder.events_path)
 
         self.assertEqual(checkpoint["status"], "failed")
         self.assertEqual(checkpoint["stage"], "probe")
@@ -95,13 +95,13 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
 
     def test_summarize_bottlenecks_reports_slow_sends_and_errors(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            recorder = moa_snake_flow.FlowRecorder(td)
+            recorder = multi_model_snake_smoke.FlowRecorder(td)
             recorder.current_stage = "advisor"
             recorder.event(
                 "provider_send_done",
                 provider="qwen",
                 role="advisor",
-                elapsed=moa_snake_flow.SLOW_SEND_SECONDS,
+                elapsed=multi_model_snake_smoke.SLOW_SEND_SECONDS,
             )
             recorder.event(
                 "provider_send_error",
@@ -111,7 +111,7 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
                 error="stopped",
             )
 
-            bottlenecks = moa_snake_flow.summarize_bottlenecks(recorder)
+            bottlenecks = multi_model_snake_smoke.summarize_bottlenecks(recorder)
 
         self.assertEqual(len(bottlenecks), 2)
         self.assertEqual({item["provider"] for item in bottlenecks}, {"qwen", "stepfun"})

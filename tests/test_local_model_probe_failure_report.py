@@ -16,7 +16,7 @@ _TOOLS_DIR = Path(__file__).resolve().parents[1] / "tools"
 
 def _load_probe():
     spec = importlib.util.spec_from_file_location(
-        "live_probe_split_p5_red", _TOOLS_DIR / "live_probe_split.py"
+        "local_model_diagnostic_probe_p5_red", _TOOLS_DIR / "local_model_diagnostic_probe.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

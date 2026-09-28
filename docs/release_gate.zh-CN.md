@@ -6,7 +6,7 @@
 ## 0. 结论（给语音输入的你）
 
 - opencode 的门槛 = `unit（linux+windows）` + `e2e（playwright app）` + `typecheck` + `lint` + `generated client 检查` + `HttpApi exerciser（coverage/auth/effect，fail-on-missing/skip）`。
-- codey 对应门槛 = `静态` + `单元全量` + `机器契约` + `koboldcpp 实机` + `记录`。缺一不可。
+- codey 对应门槛 = `静态` + `单元全量` + `机器契约` + `本地模型实机` + `记录`。缺一不可。
 - 实机一律走 `python -m codey agent --provider local --json`（headless JSONL），自动落盘到 `.e2e-artifacts/`，**不需要人盯屏**。
 
 ## 1. Gate 0：静态（必须全过）
@@ -43,12 +43,12 @@ python -m codey ghost export
 - 要求：`chat` 回复可用；`agent --json` 每行都是合法 JSONL 且含 `schema_version/type/run_id/session_id`；`task_done` 必达；`ghost list/export` 的 `ok=true`。
 - JSONL 必须存档（见 Gate 3），人只看结论，不盯屏。
 
-## 4. Gate 3：koboldcpp 实机（发布前必须全过）
+## 4. Gate 3：本地模型实机（发布前必须全过）
 
-工具：`tools/kobold_live_gate.py`（自动抓 JSONL + 独立校验，不依赖模型自评）。
+工具：`tools/local_model_release_gate.py`（自动抓 JSONL + 独立校验，不依赖模型自评）。
 
 ```powershell
-python tools/kobold_live_gate.py --json
+python tools/local_model_release_gate.py --json
 ```
 
 覆盖（全覆盖版）：
@@ -59,6 +59,7 @@ python tools/kobold_live_gate.py --json
 | `create` | `project`：新建 `math_utils.py` + 单测 | `python -m unittest` exit 0 |
 | `edit` | `project`：修 `pricing.py`（**必须带 `tests/` 目录**，否则无验证候选会按 fail-closed 判 `blocked`，这是设计不是 bug） | `python -m unittest discover` exit 0 且 `stop_reason=done` + `checks_passed=true` |
 | `references` | `project`：改 `calculate_total` 并更新调用方 | 三个断言全过 |
+| `hybrid` | `hybrid`：单会话走共享任务内核，读文件、修改、验证 | 三个断言全过 |
 | `discussion` | `project`：只讨论不建文件 | 无文件变更且 `done` |
 | `planning` | `planning_readonly`：只给方案不写文件 | 无文件变更 |
 | `auto` | `auto`：小任务自动选路 | 文件内容精确等于 `hello auto`（仅容忍末尾换行）+ `done` + exit 0 |
@@ -66,13 +67,13 @@ python tools/kobold_live_gate.py --json
 
 实机要求：
 
-- koboldcpp 地址固定走发现（`127.0.0.1:5001/v1` 优先），先探 `/models`，`reason=ok` 才开跑。
-- 每个 case 的 JSONL 存 `.e2e-artifacts/kobold-live-<case>.jsonl`，`summary.json` 存结论。
+- 默认地址通过本地模型发现（`127.0.0.1:5001/v1` 优先），先探 `/models`，`reason=ok` 才开跑。
+- 每个 case 的 JSONL 存 `.e2e-artifacts/local-model-release-<case>.jsonl`，summary 存结论。
 - `chat` 允许 `temperature` 默认；`agent` 统一 `max_turns=8~12`，`timeout=600`（`stream=False` 下 timeout 即整代预算，参考 242s 长生成实测）。
 - `python3 -m unittest` 在 Windows 策略里会被拒，门槛任务一律写 `python -m unittest [discover]`。
 - agent case 必须同时满足：`stop_reason=done`、`exit_code=0`、`task_done` 事件存在、独立文件验证通过；`unittest discover` 输出 `Ran 0 tests` 也算 FAIL。
 - agent 实机一律使用隔离的临时 `state_home`，不得污染默认 Ghost 状态；JSONL 存档失败即 FAIL。
-- research 的完整联网实机不在阻塞门内（需要搜索连接器+长生成， harness 也不再保留占位参数，等真正准备好再加）。
+- research 的完整联网实机不在阻塞门内（需要搜索连接器+长生成，等连接器准备好后单独加入）。
 - 600s 非流式超时仍是有限预算：实机的 1 POST、零客户端异常只证明**被观测的请求**正常送达，不能代替 Kobold 服务端日志，也不能证明今后绝无 `10053`。
 
 ## 5. Gate 4：记录（必须写）
@@ -84,7 +85,7 @@ python tools/kobold_live_gate.py --json
 
 1. 实机 FAIL → 先存 JSONL + ledger（`run_ledgers/<session>/<run>.jsonl`）。
 2. 用最小复现脚本锁定（`tests/` 或 `tools/` 下可重复跑，不依赖模型）。
-3. 修完先跑定向单测，再跑 `kobold_live_gate` 对应 case，再跑全量 `pytest`（或至少受影响面）。
+3. 修完先跑定向单测，再跑 `local_model_release_gate` 对应 case，再跑全量 `pytest`（或至少受影响面）。
 4. 回写 `TEST_REPORT.md`。
 
 ## 7. 已知严格性（不是 bug，但 gate 必须知道）
