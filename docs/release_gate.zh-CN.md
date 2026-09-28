@@ -67,7 +67,8 @@ python tools/local_model_release_gate.py --json
 
 实机要求：
 
-- 默认地址通过本地模型发现（`127.0.0.1:5001/v1` 优先），先探 `/models`，`reason=ok` 才开跑。
+- 默认地址通过本地模型发现（LM Studio、Ollama、KoboldCpp 和通用兼容端点）；
+  设置 `LOCAL_OPENAI_BASE_URL` 时只探测该地址。先探 `/models`，`reason=ok` 才开跑。
 - 每个 case 的 JSONL 存 `.e2e-artifacts/local-model-release-<case>.jsonl`，summary 存结论。
 - `chat` 允许 `temperature` 默认；`agent` 统一 `max_turns=8~12`，`timeout=600`（`stream=False` 下 timeout 即整代预算，参考 242s 长生成实测）。
 - `python3 -m unittest` 在 Windows 策略里会被拒，门槛任务一律写 `python -m unittest [discover]`。

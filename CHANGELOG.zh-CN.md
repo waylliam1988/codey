@@ -22,7 +22,9 @@
 - 将供应商相关的实机脚本改为行为命名：`local_model_release_gate.py`、
   `local_model_diagnostic_probe.py`、`multi_model_snake_smoke.py`；发布门槛新增
   不依赖外网的 `hybrid` case，覆盖共享单会话任务入口的读取、修改和验证。
-- 最终验证：`4822 passed, 32 skipped, 1461 subtests passed`；
+- 本地模型脚本优先遵守 `LOCAL_OPENAI_BASE_URL`，再扫描 LM Studio、Ollama、
+  KoboldCpp 和通用兼容端点，门槛不再绑定某个供应商。
+- 最终验证：`4824 passed, 32 skipped, 1461 subtests passed`；
   `ruff check codey tests`、compileall、`git diff --check` 均通过。未发布。
 - 恢复含已执行工具结果的任务时必须使用原始持久授权；策略日志缺失会阻塞，不能继承新请求追加的权限。
 - 删除废弃的 `research/native_bridge.py`，把原生能力探测移到

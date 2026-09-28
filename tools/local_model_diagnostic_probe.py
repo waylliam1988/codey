@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -44,10 +45,11 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
-from codey.providers.local_discovery import probe_local_endpoint_detail
+from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
+from codey.providers.local_discovery import LOCAL_BASE_URL_CANDIDATES, probe_local_endpoint_detail
 
 ARTIFACT_DIR = Path(__file__).resolve().parents[1] / ".e2e-artifacts"
-BASE_URLS = ("http://127.0.0.1:5001/v1", "http://localhost:5001/v1")
+DEFAULT_BASE_URLS = LOCAL_BASE_URL_CANDIDATES
 PROVIDER_ID = "local"
 TIMEOUT = 600.0
 
@@ -56,12 +58,20 @@ def _log(text: str) -> None:
     print(text, flush=True)
 
 
+def candidate_base_urls() -> tuple[str, ...]:
+    configured = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
+    if configured:
+        return (configured,)
+    return tuple(DEFAULT_BASE_URLS)
+
+
 def probe_endpoint() -> tuple[str, tuple[str, ...]]:
-    for base in BASE_URLS:
+    bases = candidate_base_urls()
+    for base in bases:
         endpoint, reason = probe_local_endpoint_detail(base, timeout=5)
         if reason == "ok" and endpoint is not None:
             return endpoint.base_url, endpoint.models
-    raise RuntimeError(f"local model endpoint unreachable on {BASE_URLS!r} (is the server on?)")
+    raise RuntimeError(f"local model endpoint unreachable on {bases!r} (is the server on?)")
 
 
 def run_p0() -> dict:

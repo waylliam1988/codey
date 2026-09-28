@@ -28,7 +28,10 @@
 - Renamed vendor-specific live scripts to `local_model_release_gate.py`,
   `local_model_diagnostic_probe.py`, and `multi_model_snake_smoke.py`. Added a
   network-independent `hybrid` release-gate case for the shared task entry.
-- Final verification: `4822 passed, 32 skipped, 1461 subtests passed`;
+- Local-model tooling honors `LOCAL_OPENAI_BASE_URL` before default endpoint
+  discovery, so the gate is usable with LM Studio, Ollama, KoboldCpp, or any
+  compatible local endpoint.
+- Final verification: `4824 passed, 32 skipped, 1461 subtests passed`;
   `ruff check codey tests`, compileall, and `git diff --check` passed. No
   release was made.
 - Recovery now requires the original persisted task policy whenever a run has

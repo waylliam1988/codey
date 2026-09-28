@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _TOOLS_DIR = Path(__file__).resolve().parents[1] / "tools"
 _ARTIFACT_DIR = Path(__file__).resolve().parents[1] / ".e2e-artifacts"
@@ -29,6 +31,12 @@ def _load_probe():
 probe = _load_probe()
 
 MAKEFILE = "lint:\n\truff check .\n\ntest:\n\tpython -m pytest\n"
+
+
+class EndpointSelectionTests(unittest.TestCase):
+    def test_configured_endpoint_overrides_default_candidates(self) -> None:
+        with mock.patch.dict(os.environ, {"LOCAL_OPENAI_BASE_URL": "http://model.test/v1"}, clear=False):
+            self.assertEqual(probe.candidate_base_urls(), ("http://model.test/v1",))
 
 
 def _rows(path: Path) -> list[dict]:

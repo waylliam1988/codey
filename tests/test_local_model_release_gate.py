@@ -3,11 +3,16 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools import local_model_release_gate as gate
 
 
 class LocalModelReleaseGateFixtureTests(unittest.TestCase):
+    def test_configured_endpoint_overrides_default_candidates(self) -> None:
+        with mock.patch.dict("os.environ", {"LOCAL_OPENAI_BASE_URL": "http://model.test/v1"}, clear=False):
+            self.assertEqual(gate.candidate_base_urls(), ("http://model.test/v1",))
+
     def test_cases_include_shared_hybrid_entry(self) -> None:
         self.assertIn("hybrid", gate.CASES)
         _task, intent, _turns = gate._task_for("hybrid")
