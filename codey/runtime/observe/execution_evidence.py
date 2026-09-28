@@ -137,6 +137,8 @@ class ExecutionEvidence:
         self._seen_info: set[tuple[object, ...]] = set()
 
     def seed_checks(self, checks: object) -> None:
+        if not isinstance(checks, (list, tuple)):
+            return
         for item in checks or ():
             command = _text(getattr(item, "command", ""))
             cwd = _text(getattr(item, "cwd", "."), 240) or "."

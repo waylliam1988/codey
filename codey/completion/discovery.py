@@ -48,10 +48,16 @@ def read_manifest_text(path: Path, *, max_bytes: int) -> str:
     try:
         if not is_manifest_file(path):
             return ""
-        if path.stat().st_size > max(0, int(max_bytes or 0)):
+        if isinstance(max_bytes, bool):
+            return ""
+        try:
+            limit = int(max_bytes)  # type: ignore[arg-type]
+        except (TypeError, ValueError, OverflowError):
+            return ""
+        if path.stat().st_size > max(0, limit):
             return ""
         return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError, ValueError):
         return ""
 
 

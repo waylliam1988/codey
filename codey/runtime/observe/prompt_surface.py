@@ -103,11 +103,18 @@ def build_prompt_surface_record(
     norm_send_ref = canonical_surface_send_ref(send_ref)
     norm_prompt_digest = canonical_surface_prompt_digest(prompt_digest)
     surface = prompt_surface_id(phase=norm_phase, send_ref=norm_send_ref, prompt_digest=norm_prompt_digest)
+    if isinstance(prompt_chars, bool):
+        chars = 0
+    else:
+        try:
+            chars = max(0, int(prompt_chars or 0))  # type: ignore[arg-type]
+        except (TypeError, ValueError, OverflowError):
+            chars = 0
     return PromptSurfaceRecord(
         surface_id=surface,
         phase=norm_phase,
         prompt_digest=norm_prompt_digest,
-        prompt_chars=max(0, int(prompt_chars or 0)),
+        prompt_chars=chars,
         epoch_id=str(epoch_id or "").strip()[:80],
         send_ref=norm_send_ref,
         source_refs=tuple(str(r).strip()[:120] for r in source_refs or () if str(r).strip())[:16],

@@ -160,7 +160,9 @@ class KnowledgeNote:
         if self.open_questions:
             data["open_questions"] = list(self.open_questions)
         if self.confidence is not None:
-            data["confidence"] = round(float(self.confidence), 2)
+            confidence = _safe_confidence(self.confidence)
+            if confidence is not None:
+                data["confidence"] = confidence
         if self.session_id:
             data["session_id"] = self.session_id
         if self.project:
@@ -242,6 +244,13 @@ def _as_float(value) -> float | None:
     if number is None or not math.isfinite(number):
         return None
     return number
+
+
+def _safe_confidence(value: object) -> float | None:
+    number = _as_float(value)
+    if number is None:
+        return None
+    return round(max(0.0, min(1.0, number)), 2)
 
 
 def _as_str(value) -> str | None:

@@ -229,6 +229,11 @@ class ProjectTaskContextBuilder:
                 corrupt_backup_path=corrupt_backup,
                 prompt=notice,
             )
+        if item is None:
+            return CheckpointContext(
+                corrupt_backup_path=corrupt_backup,
+                prompt=notice,
+            )
         return CheckpointContext(
             item=item,
             corrupt_backup_path=corrupt_backup,

@@ -83,12 +83,18 @@ def _canonical_rel_path(root: Path, value: object) -> str | None:
 
 
 def _file_hash(root: Path, rel: str) -> str | None:
-    path = (root / rel).resolve()
+    try:
+        path = (root / rel).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
     if root != path and root not in path.parents:
         return None
-    if not path.exists():
-        return "missing"
-    if not path.is_file() or path.is_symlink():
+    try:
+        if not path.exists():
+            return "missing"
+        if not path.is_file() or path.is_symlink():
+            return None
+    except (OSError, RuntimeError, ValueError):
         return None
     digest = hashlib.sha256()
     try:
@@ -264,12 +270,16 @@ class WorkCheckpointStore:
                 max_bytes=MAX_CHECKPOINT_BYTES,
             )
 
-    def start(self, *, run_id: str, session_id: str, project: str | Path, task: str) -> WorkCheckpoint:
+    def start(self, *, run_id: str, session_id: str, project: str | Path, task: str) -> WorkCheckpoint | None:
         now = _now()
+        try:
+            project_text = str(Path(project).expanduser().resolve())
+        except (OSError, RuntimeError, ValueError):
+            return None
         checkpoint = WorkCheckpoint(
             run_id=_text(run_id, 120),
             session_id=session_id,
-            project=str(Path(project).expanduser().resolve()),
+            project=project_text,
             original_task=_text(task, MAX_TASK_CHARS),
             started_at=now,
             updated_at=now,

@@ -383,8 +383,11 @@ def read_before_edit_outcome(
     rel: str,
     known_file_paths: set[str],
 ) -> ToolOutcome | None:
-    canonical = canonical_project_path(root, rel)
-    target = safe_join(root, canonical)
+    try:
+        canonical = canonical_project_path(root, rel)
+        target = safe_join(root, canonical)
+    except ValueError:
+        return ToolOutcome.error("workspace_escape: path escapes project root")
     if target.is_file() and canonical not in known_file_paths:
         return ToolOutcome.error(
             f"read_file required before editing existing file: {canonical}"

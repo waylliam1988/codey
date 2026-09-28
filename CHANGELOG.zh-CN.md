@@ -2,6 +2,40 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Full-red round5：fail-closed 横扫 + null 字节确定性 + call_arg 收窄（未发布）
+
+- 修 ~60 个确定性 bug，全部红测先行（新 `tests/test_fullred_round5_sweep.py`
+  60 个测试，58 个修前红、修后绿；2 个 search-page/clamp 断言记录既有
+  意图行为，前后皆绿）：
+  数值 fail-closed：裸 `int()`/`float()` 全部补 `OverflowError` 捕获、拒
+  `bool`、`inf`/`nan` 钳到默认值（research `_score`、redirect 状态、
+  `snippet_at`、planner `max_depth`、ledger 页码/搜索行、object_model、
+  evidence 计数、work_checkpoint null 字节、runtime 日志 inf/nan 抛
+  `RuntimeLogWriteError`、cancellation/output_capture/prompt/trace
+  预算、details、ghost 全系、knowledge 全系、agents 循环/审批/决策、
+  completion 修复/发现/验证优先级、adapter 世代计数、refs clip/bounded）；
+  坏行跳过：非 dict 行不再崩整批（relation tags、controller 行、store 行、
+  continuity 事件、events 元数据、seed_checks、facts 列表 payload）；
+  API 收紧：`query_int` 拒 `"1_000"`/`True`/浮点、`query_value(None)` 为
+  `""`、`continue_task` 仅 `is True`、Content-Length 仅 ascii 数字、
+  local_config 拒非字符串、`send` 要求字符串+有限超时、provider 状态用
+  `is True`、shell 票据要求 `type(...) is int` 与字符串命令、ui_state 要求
+  `type(base_revision) is int`、`call_arg` 拒容器/bool/`None`（数字保持
+  `"123"` 老契约）、escape 映射为 `ToolOutcome.error`。
+- 修 2 个 CI 确定性回归（沿用 round4 现有锁红测）：null 字节 project 的
+  changes/restore 改显式 `"\0"` 守卫返回 `400`，不再依赖 `Path.resolve()`
+  是否抛错（3.12 抛、3.13 不抛，后者 null 会漏到 `Popen` 变 500）。
+- 收窄一处修过头：`call_arg(command=123)` 保持 `"123"`（老契约锁定），仅
+  容器/bool/`None` 回默认值。
+- 架构门：`research/object_model.py`（1013 行）加入 >1000 基线+上限（1070）。
+- 非 bug 按“无复现不是 bug”原样保留：浮点 `1.5`->`1` 截断、search_page
+  0->1 钳制、borrow `None` 与 connect 抛错差异、空 findings 判 approved、
+  task-kind、native done 嵌套文本、无 Node 的 JS 展示细节。
+- 验证：`ruff` 干净，`git diff --check` 干净；全量前 targeted 全绿
+ （round5 60 过；round5+架构 149 过；server/ledger/trace/providers 319 过）；
+  终版 `python -m pytest -q`：`4854 passed, 10 skipped, 1484 subtests passed
+  in 341.48s (0:05:41)`，相对 4794 增量正好是 60 个新锁。未发布。
+
 ## Unreleased - Trace 拆分：schema/values/research/completion/protocol + 通用 generated_ref（未发布）
 
 - 拆分 `codey/runs/trace.py`（2421 行）为五个叶模块，行为零变化（红测

@@ -80,6 +80,14 @@ class WebChatProvider:
         )
 
     def send(self, text: str, timeout: float | None = None) -> str:
+        if not isinstance(text, str):
+            raise ValueError("message must be a string")
+        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))):
+            raise ValueError("timeout must be a finite number")
+        if isinstance(timeout, float):
+            import math as _math
+            if not _math.isfinite(timeout) or timeout <= 0:
+                raise ValueError("timeout must be a finite number")
         if self.spec.blank_message and not text.strip():
             raise ValueError(self.spec.blank_message)
         kwargs = {}

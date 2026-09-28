@@ -381,7 +381,7 @@ class UiStateStore:
         clean = _clean_payload(state)
         current = self._current()
         current_revision = _int(current.get("revision"))
-        if int(base_revision or 0) != current_revision:
+        if type(base_revision) is not int or base_revision != current_revision:
             if _content_equal(clean, current):
                 return current
             raise UiStateConflict(current_revision)

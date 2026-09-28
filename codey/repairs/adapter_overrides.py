@@ -154,9 +154,9 @@ def mark_provisional(
         return None
     current = _current_generation(index)
     record["status"] = STATUS_PROVISIONAL
-    record["success_count"] = max(1, int(record.get("success_count") or 0))
+    record["success_count"] = max(1, _current_generation({"current_generation": record.get("success_count")}))
     record["failure_count"] = 0
-    index["previous_generation"] = current if current != generation else int(index.get("previous_generation") or 0)
+    index["previous_generation"] = current if current != generation else _previous_generation(index)
     index["current_generation"] = generation
     _save_index(provider_id, state_home, index)
     return _override_from_record(normalize_provider_id(provider_id), generation, record)
@@ -192,7 +192,7 @@ def record_success(
     record = _record(index, generation)
     if record is None or record.get("status") not in ENABLED_STATUSES:
         return None
-    success_count = int(record.get("success_count") or 0) + 1
+    success_count = _current_generation({"current_generation": record.get("success_count")}) + 1
     record["success_count"] = success_count
     record["failure_count"] = 0
     if record.get("status") == STATUS_PROVISIONAL and success_count >= SUCCESS_PROMOTION_COUNT:
@@ -216,12 +216,12 @@ def record_failure(
     record = _record(index, generation)
     if record is None or record.get("status") not in ENABLED_STATUSES:
         return None
-    failures = int(record.get("failure_count") or 0) + 1
+    failures = _current_generation({"current_generation": record.get("failure_count")}) + 1
     record["failure_count"] = failures
     if failures >= FAILURE_ROLLBACK_COUNT:
         record["status"] = STATUS_ROLLED_BACK
         record["rolled_back_at"] = _now()
-        previous = int(index.get("previous_generation") or 0)
+        previous = _previous_generation(index)
         previous_record = _record(index, previous)
         if previous and previous_record is not None and Path(str(previous_record.get("path") or "")).is_dir():
             previous_record["status"] = STATUS_ACTIVE
@@ -351,9 +351,22 @@ def _generations(index: dict[str, Any]) -> dict[str, Any]:
 
 
 def _current_generation(index: dict[str, Any]) -> int:
+    raw = index.get("current_generation")
+    if isinstance(raw, bool):
+        return 0
     try:
-        return max(0, int(index.get("current_generation") or 0))
-    except (TypeError, ValueError):
+        return max(0, int(raw or 0))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _previous_generation(index: dict[str, Any]) -> int:
+    raw = index.get("previous_generation")
+    if isinstance(raw, bool):
+        return 0
+    try:
+        return max(0, int(raw or 0))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
@@ -372,7 +385,9 @@ def _next_generation(index: dict[str, Any]) -> int:
 
 
 def _record(index: dict[str, Any], generation: int) -> dict[str, Any] | None:
-    record = _generations(index).get(str(int(generation or 0)))
+    if type(generation) is not int:
+        return None
+    record = _generations(index).get(str(generation))
     return record if isinstance(record, dict) else None
 
 
@@ -409,8 +424,8 @@ def _override_from_record(
         generation=generation,
         status=str(record.get("status") or ""),
         root=Path(str(record.get("path") or "")),
-        success_count=max(0, int(record.get("success_count") or 0)),
-        failure_count=max(0, int(record.get("failure_count") or 0)),
+        success_count=_current_generation({"current_generation": record.get("success_count")}),
+        failure_count=_current_generation({"current_generation": record.get("failure_count")}),
     )
 
 
@@ -420,8 +435,8 @@ def _trim_generations(
 ) -> None:
     generations = _generations(index)
     keep = {
-        str(index.get("current_generation") or ""),
-        str(index.get("previous_generation") or ""),
+        str(_current_generation(index)),
+        str(_previous_generation(index)),
     }
     provider_id = normalize_provider_id(str(index.get("provider_id") or ""))
     provider_dir = (

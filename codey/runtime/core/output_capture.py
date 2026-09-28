@@ -17,6 +17,16 @@ DRAIN_TIMEOUT_SECONDS = 2.0
 READER_JOIN_TIMEOUT_SECONDS = 2.0
 
 
+def _safe_limit(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return max(0, parsed)
+
+
 @dataclass(frozen=True)
 class CapturedText:
     text: str
@@ -90,8 +100,8 @@ class BoundedByteCapture:
         head_limit: int = HEAD_LIMIT_BYTES,
         tail_limit: int = TAIL_LIMIT_BYTES,
     ) -> None:
-        self._head_limit = max(0, int(head_limit))
-        self._tail_limit = max(0, int(tail_limit))
+        self._head_limit = _safe_limit(head_limit, HEAD_LIMIT_BYTES)
+        self._tail_limit = _safe_limit(tail_limit, TAIL_LIMIT_BYTES)
         self._head = bytearray()
         self._tail: deque[bytes] = deque()
         self._tail_len = 0

@@ -347,7 +347,12 @@ class ResearchController:
     def _result_rows(self, ledger: object) -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []
         for search in getattr(ledger, "searches", ()):
-            for result in search.results:
+            results = getattr(search, "results", ())
+            if not isinstance(results, (list, tuple)):
+                continue
+            for result in results:
+                if not hasattr(result, "url"):
+                    continue
                 url = str(result.url or "").strip()
                 if not url:
                     continue
@@ -376,6 +381,8 @@ class ResearchController:
     def _source_rows(self, ledger: object) -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []
         for source in getattr(ledger, "opened_sources", ()):
+            if not hasattr(source, "final_url"):
+                continue
             final_url = str(source.final_url or source.requested_url or "").strip()
             if not final_url:
                 continue
@@ -397,12 +404,16 @@ class ResearchController:
     def _hit_rows(self, ledger: object) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for search in getattr(ledger, "source_searches", ()):
+            if not isinstance(search, dict):
+                continue
             source_url = str(search.get("source_url") or "").strip()
             if not source_url:
                 continue
             sid = self._source_ids_by_url.get(source_url) or _stable_id(self._source_ids_by_url, source_url, "s")
             self._source_urls_by_id.setdefault(sid, source_url)
             for hit in search.get("hits") or ():
+                if not isinstance(hit, dict):
+                    continue
                 page = _as_optional_int(hit.get("page"))
                 offset = max(0, _as_int(hit.get("offset"), 0))
                 snippet = str(hit.get("snippet") or "")

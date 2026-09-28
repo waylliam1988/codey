@@ -2074,6 +2074,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "providers/worker.py",
             "research/browser_search.py",
             "research/evidence_ledger.py",
+            # Round5 fail-closed: _safe_nonnegative/_safe_positive_page stay
+            # in-module for cohesion (projection-local bool/overflow guard).
+            "research/object_model.py",
             # PLR split 2026-09-26: relation-review helpers stay in-module.
             "research/proof_quality.py",
             "research/runner.py",
@@ -2104,6 +2107,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # PLR split 2026-09-26: 1009 lines after _wait_for_response split.
             "providers/worker.py": 1060,
             "research/browser_search.py": 1230,
+            # Round5 fail-closed: 1013 lines after safe-int helpers.
+            "research/object_model.py": 1070,
             # PLR split 2026-09-26: 1558 lines after payload-check split.
             "research/evidence_ledger.py": 1620,
             # PLR split 2026-09-26: 1060 lines after relation-review split.

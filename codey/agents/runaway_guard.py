@@ -42,6 +42,15 @@ def result_fingerprint(result: ToolResult) -> str:
     return f"{status}:{digest}"
 
 
+def _safe_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def attempt_record(
     call: ToolCall,
     result: ToolResult,
@@ -58,8 +67,8 @@ def attempt_record(
         result_fp=result_fingerprint(result),
         ok="ERROR:" not in text[:7],
         changed=changed,
-        turn=int(turn),
-        edit_epoch=int(edit_epoch or 0),
+        turn=_safe_int(turn),
+        edit_epoch=_safe_int(edit_epoch),
     )
 
 

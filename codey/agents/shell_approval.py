@@ -23,7 +23,7 @@ class DeferredToolCall:
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
-            "tool_index": max(0, int(self.tool_index)),
+            "tool_index": _nonnegative_int(self.tool_index),
             "tool_name": _bounded_text(self.tool_name, 80),
         }
         path = _bounded_text(self.path, MAX_DEFERRED_TEXT_CHARS)
@@ -99,9 +99,10 @@ def shell_command_payload(
 
     full = shell_command_text(command)
     digest = _sha256_text(full)
-    truncated = len(full) > max(0, int(limit))
+    safe_limit = _nonnegative_int(limit)
+    truncated = len(full) > safe_limit
     return {
-        "command": _bounded_command_text(full, limit, digest=digest),
+        "command": _bounded_command_text(full, safe_limit, digest=digest),
         "command_sha256": digest,
         "command_chars": len(full),
         "command_truncated": truncated,
@@ -132,7 +133,7 @@ def shell_command_event_fields(
 
     if not isinstance(record, Mapping):
         raise TypeError("approval record must be a mapping")
-    effective_limit = max(0, int(limit))
+    effective_limit = _nonnegative_int(limit)
     if "command_preview" in record:
         return _pending_event_fields(record, limit=effective_limit)
     if (

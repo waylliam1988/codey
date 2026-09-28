@@ -257,6 +257,15 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
     mode = parse_native_tools_mode(raw.get("native_tools_mode")) or NATIVE_TOOLS_AUTO
     context_raw = raw.get("context")
     context: LocalContextBudget | None = None
+    base_url_raw = raw.get("base_url")
+    model_raw = raw.get("model")
+    api_key_raw = raw.get("api_key")
+    for field_value in (base_url_raw, model_raw, api_key_raw):
+        if field_value is not None and not isinstance(field_value, str):
+            raise TypeError("local config base_url/model/api_key must be strings")
+    base_url_text = str(base_url_raw or "").strip()
+    model_text = str(model_raw or "").strip()
+    api_key_text = str(api_key_raw or "") if isinstance(api_key_raw, str) else ""
     if isinstance(context_raw, dict):
         window = _parse_positive_int(context_raw.get("context_window_tokens"))
         reserve = _parse_positive_int(context_raw.get("context_reserve_tokens"))
@@ -266,9 +275,9 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
             if not validate_context_budget(candidate):
                 context = candidate
     return LocalProviderConfig(
-        base_url=str(raw.get("base_url") or "").strip(),
-        model=str(raw.get("model") or "").strip(),
-        api_key=str(raw.get("api_key") or ""),
+        base_url=base_url_text,
+        model=model_text,
+        api_key=api_key_text,
         native_tools_mode=mode,
         context=context,
     )

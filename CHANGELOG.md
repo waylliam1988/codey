@@ -2,6 +2,65 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Full-red round5: fail-closed sweep + null-byte determinism + call_arg narrowing (no release)
+
+- Fixed ~60 deterministic bugs, all red-first (60 tests in new
+  `tests/test_fullred_round5_sweep.py`, 58 failed before and pass after;
+  2 search-page/clamp asserts document intentional behavior and passed
+  throughout):
+  numeric fail-closed: bare `int()`/`float()` sites now catch
+  `OverflowError`, reject `bool`, and clamp `inf`/`nan` to defaults
+  (`research/source_connectors._score`, `http_redirects.is_redirect_status`,
+  `source_search.snippet_at`, `query_planner max_depth` via `_bounded_int`,
+  `ledger _as_page/record_open_document/record_source_search`,
+  `object_model` pages/citations, `evidence_ledger` counts,
+  `runs/work_checkpoint` start + `_file_hash` null-byte,
+  `runtime/log` inf/nan payload -> `RuntimeLogWriteError`,
+  `cancellation.wait/wait_process`, `output_capture` limits,
+  `prompt_envelope/prompt_surface/trace` budgets/chars via shared helpers,
+  `details._actions_summary`, `ghost` work_queue/inbox/observation/
+  event_log/continuity/hebbian, `knowledge` concepts/research_interest/note,
+  `agents` loop/SeenLRU/shell_approval/runaway/decision,
+  `completion` repair_context/discovery/verification_policy,
+  `repairs/adapter_overrides` generation counters, `utils/refs`
+  clip/bounded_refs);
+  bad-row skip: non-dict `ToolCall.args`-style rows no longer crash batches
+  (`research/tools._merge_relation_tags`, `controller._hit_rows/_result_rows/
+  _source_rows`, `knowledge/store` rows, `continuity._items_from_events`,
+  `events` metadata `None`, `execution_evidence.seed_checks`,
+  `workspace/facts` list payload);
+  API strict: `query_int` rejects `"1_000"`/`True`/float (default),
+  `query_value(None)` -> `""`, `continue_task` is `is True` only,
+  `Content-Length` requires ascii digits, `local_config` rejects non-string
+  base_url/model/api_key, `web_provider.send` requires `str` + finite timeout,
+  `provider_services` uses `is True`, `shell_service` mint requires
+  `type(...) is int` generation/timeout and `str` command, `ui_state.save`
+  requires `type(base_revision) is int`, `definition.call_arg` rejects
+  containers/bool/`None` (numbers keep the locked `"123"` stringify contract),
+  `tool_execution.read_before_edit_outcome` maps escape to
+  `ToolOutcome.error(workspace_escape)`.
+- Fixed 2 deterministic CI regressions (red-first via existing round4 locks):
+  `changes_response`/`restore_changes_response` with a null-byte project now
+  return `400` via an explicit `"\0"` guard instead of relying on
+  `Path.resolve()` raising (Python 3.12 raises, 3.13 resolves against CWD and
+  the null reaches `Popen` as `ValueError`/500).
+- Narrowed one over-broad fix: `call_arg(command=123)` stays `"123"` per the
+  long-standing `test_shared_helpers` contract; only containers/bool/`None`
+  fail closed to default.
+- Architecture gate: `research/object_model.py` (1013 lines) joins the
+  >1000 baseline + ceiling (1070) for its cohesive fail-closed helpers.
+- Non-bugs left untouched per reproduce-or-it-is-not-a-bug: float `1.5`->`1`
+  truncation (strict helpers intentionally accept finite floats),
+  `search_page` 0->1 clamp, `borrow_open_provider` `None` vs `connect`
+  `ValueError`, empty-findings `approved`, task-kind project presence,
+  native `done` nested-tool text, JS display polish without a Node runtime.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean.
+  Targeted green before final (`round5` 60 passed; `round5+architecture` 149
+  passed, 357 subtests; `server+ledger+trace+providers` 319 passed).
+  Then final `python -m pytest -q`:
+  `4854 passed, 10 skipped, 1484 subtests passed in 341.48s (0:05:41)`.
+  Delta vs 4794 is exactly the 60 new round5 locks. No release was made.
+
 ## Unreleased - Trace split: schema/values/research/completion/protocol + generic generated_ref (no release)
 
 - Split `codey/runs/trace.py` (2421 lines) into five leaf modules with no

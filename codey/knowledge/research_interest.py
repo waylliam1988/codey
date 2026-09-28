@@ -369,6 +369,8 @@ def _get(row: dict[str, object], key: str) -> object:
 
 
 def _unit_float(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
     try:
         number = float(value)
     except (TypeError, ValueError, OverflowError):
@@ -379,6 +381,10 @@ def _unit_float(value: object) -> float:
 
 
 def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, str) and not value.strip().isascii():
+        return default
     try:
         number = int(value)
     except (TypeError, ValueError, OverflowError):

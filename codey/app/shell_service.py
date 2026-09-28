@@ -111,16 +111,16 @@ def mint_shell_ticket(
         pending = approvals.pop_shell(approval_id)
         if pending is None:
             return None, None
-        try:
-            claimed_generation = int(pending.pop("_approval_generation", 0) or 0)
-        except (TypeError, ValueError):
-            claimed_generation = 0
+        raw_generation = pending.pop("_approval_generation", 0)
+        if type(raw_generation) is not int:
+            return pending, None
+        claimed_generation = raw_generation
         current_generation = approvals.current_generation()
         try:
             stop_set = bool(run_registry.stop_flag.is_set())
         except Exception:
             return pending, None
-        if stop_set or int(claimed_generation or 0) != int(current_generation or 0):
+        if stop_set or claimed_generation != int(current_generation or 0):
             return pending, None
         try:
             cwd = safe_project_cwd(
@@ -129,12 +129,14 @@ def mint_shell_ticket(
             )
         except Exception:
             return pending, None
+        if type(timeout) is not int or type(output_limit) is not int:
+            return pending, None
         ticket = ShellExecutionTicket(
             command=str(pending.get("command") or ""),
             cwd=cwd,
-            generation=int(claimed_generation or 0),
-            timeout=int(timeout),
-            output_limit=int(output_limit),
+            generation=claimed_generation,
+            timeout=timeout,
+            output_limit=output_limit,
         )
         return pending, ticket
 
@@ -166,7 +168,15 @@ def claim_shell_ticket(
 def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
     """Execute an already-claimed ticket. Final Stop check and Popen happen
     under the spawn gate; waiting happens outside the gate."""
-    command = (ticket.command or "").strip()
+    if not isinstance(ticket.command, str):
+        return {
+            "ok": False,
+            "status": "spawn_error",
+            "error": "command required",
+            "exit_code": None,
+            "output": "",
+        }
+    command = ticket.command.strip()
     if not command:
         return {
             "ok": False,
@@ -283,7 +293,15 @@ def execute_approved_shell(
 ) -> dict:
     """Direct-execution entry (tests, headless). Approval-card flow must use
     ``shell_service.claim_shell_ticket`` + ``execute_shell_ticket`` instead."""
-    command = (command or "").strip()
+    if not isinstance(command, str):
+        return {
+            "ok": False,
+            "status": "spawn_error",
+            "error": "command required",
+            "exit_code": None,
+            "output": "",
+        }
+    command = command.strip()
     if not command:
         return {
             "ok": False,

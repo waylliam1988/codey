@@ -57,6 +57,15 @@ from codey.storage.local_store import (
 )
 
 HEBBIAN_SCHEMA_VERSION = 1
+
+
+def _safe_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value or 0))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
 MAX_GHOST_NODES = 500
 MAX_GHOST_EDGES = 2_000
 MAX_HEBBIAN_EVENTS = 5_000
@@ -374,7 +383,8 @@ class GhostHebbianStore:
             except (OSError, TypeError, ValueError):
                 results.append(GhostReinforceResult(False, "remove_failed"))
                 continue
-            removed_count = int(removed.get("nodes", 0)) + int(removed.get("edges", 0))
+            removed_map = removed if isinstance(removed, dict) else {}
+            removed_count = _safe_count(removed_map.get("nodes", 0)) + _safe_count(removed_map.get("edges", 0))
             results.append(
                 GhostReinforceResult(
                     removed_count > 0,

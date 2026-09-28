@@ -153,7 +153,7 @@ class ResearchPlan:
             "proof_ref": _generated_ref(self.proof_ref, "research_proof"),
             "query_candidates": [item.to_payload() for item in self.query_candidates[:MAX_PLAN_QUERIES]],
             "source_preferences": [item.to_payload() for item in self.source_preferences[:MAX_PLAN_SOURCES]],
-            "max_depth": max(1, min(PLAN_MAX_DEPTH, int(self.max_depth or PLAN_MAX_DEPTH))),
+            "max_depth": _bounded_int(self.max_depth, 1, PLAN_MAX_DEPTH),
             "max_queries": _bounded_int(self.max_queries, 1, MAX_PLAN_QUERIES),
             "max_sources": _bounded_int(self.max_sources, 1, MAX_PLAN_SOURCES),
             "reason_codes": list(bounded_refs(self.reason_codes, limit=MAX_PLAN_REASON_CODES)),

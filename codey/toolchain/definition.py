@@ -361,9 +361,15 @@ def render_tool_activity(call: ToolCall) -> str:
 
 def call_arg(call: ToolCall, name: str, default: str = "") -> str:
     value = call.args.get(name, default)
-    if value is None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool) or value is None:
         return default
-    return str(value)
+    if isinstance(value, (dict, list, tuple, set)):
+        return default
+    if isinstance(value, (int, float)):
+        return str(value)
+    return default
 
 
 def _clip_activity(value: object, limit: int = 80) -> str:

@@ -47,15 +47,28 @@ def query_int(
     minimum: int,
     maximum: int,
 ) -> int:
-    try:
-        value = int((query.get(key) or [default])[0])  # type: ignore[arg-type]
-    except (TypeError, ValueError, OverflowError):
+    raw = (query.get(key) or [default])[0]
+    if isinstance(raw, bool):
+        value = default
+    elif isinstance(raw, int):
+        value = raw
+    elif isinstance(raw, str) and raw.isascii() and raw.strip().isdigit():
+        try:
+            value = int(raw.strip())
+        except (TypeError, ValueError, OverflowError):
+            value = default
+    else:
         value = default
     return max(minimum, min(maximum, value))
 
 
 def query_value(query: dict[str, list[str]], key: str) -> str:
-    return str((query.get(key) or [""])[0]).strip()
+    raw = (query.get(key) or [""])[0]
+    if raw is None or isinstance(raw, bool):
+        return ""
+    if not isinstance(raw, str):
+        return ""
+    return raw.strip()
 
 
 def ui_state_response(ctx: Any) -> tuple[int, dict]:
@@ -315,6 +328,8 @@ def ghost_action_response(ctx: Any, body: dict) -> tuple[int, dict]:
 
 def changes_response(ctx: Any, project: object) -> tuple[int, dict]:
     project_text = str(project or "").strip()
+    if "\0" in project_text:
+        return 400, {"ok": False, "error": "project invalid", "files": [], "diff": ""}
     try:
         key = str(Path(project_text).expanduser().resolve()) if project_text else ""
     except (ValueError, OSError):
@@ -340,6 +355,8 @@ def restore_changes_response(ctx: Any, body: dict) -> tuple[int, dict]:
     project = str((body.get("project") if isinstance(body, dict) else "") or "").strip()
     if not project:
         return 400, {"ok": False, "error": "project required"}
+    if "\0" in project:
+        return 400, {"ok": False, "error": "project invalid"}
     paths = body.get("paths")
     if paths is not None and not isinstance(paths, list):
         return 400, {"ok": False, "error": "paths must be a list"}
@@ -379,7 +396,7 @@ def run_submit_response(
     session_id = str(body.get("session_id") or "").strip() or "default"
     project = str(body.get("project") or "").strip() or None
     task = str(body.get("task") or "").strip()
-    continue_task = bool(body.get("continue_task"))
+    continue_task = body.get("continue_task") is True
     provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
     intent = str(body.get("intent") or "auto").strip().lower()
     if intent not in {

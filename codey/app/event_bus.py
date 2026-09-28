@@ -103,10 +103,13 @@ class EventBus:
         *,
         max_event_id: int | None = None,
     ) -> list[tuple[int, dict]]:
-        try:
-            start = max(0, int(last_event_id or 0))  # type: ignore[arg-type]
-        except (TypeError, ValueError, OverflowError):
+        if isinstance(last_event_id, bool):
             start = 0
+        else:
+            try:
+                start = max(0, int(last_event_id or 0))  # type: ignore[arg-type]
+            except (TypeError, ValueError, OverflowError):
+                start = 0
         with self._lock:
             if max_event_id is None:
                 cutoff = self._sequence

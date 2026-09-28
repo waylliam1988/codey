@@ -354,9 +354,17 @@ class Handler(BaseHTTPRequestHandler):
             self._deny_foreign_origin()
             return
         url = urlparse(self.path)
+        raw_length = self.headers.get("Content-Length", "0")
+        if isinstance(raw_length, bool) or not isinstance(raw_length, str):
+            self._send_json(400, {"error": "invalid content length"})
+            return
+        raw_length = raw_length.strip()
+        if not raw_length.isascii() or not raw_length.isdigit():
+            self._send_json(400, {"error": "invalid content length"})
+            return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
+            length = int(raw_length)
+        except (ValueError, OverflowError):
             self._send_json(400, {"error": "invalid content length"})
             return
         if length < 0:

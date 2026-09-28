@@ -24,6 +24,30 @@ from codey.runtime.core.output_capture import (
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 0.2
+
+
+def _safe_capture_limit(value: object) -> int:
+    from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES as _default
+    if isinstance(value, bool):
+        return _default
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return _default
+    return max(1, parsed)
+
+
+def _safe_timeout(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    import math as _math
+    if not _math.isfinite(number) or number < 0:
+        return 0.0
+    return number
 _context = threading.local()
 
 
@@ -214,7 +238,7 @@ def check() -> None:
 def wait(seconds: float) -> None:
     check()
     event = current_event()
-    timeout = max(0.0, float(seconds))
+    timeout = _safe_timeout(seconds)
     deadline = current_deadline()
     if deadline is not None:
         timeout = min(timeout, max(0.0, deadline - time.monotonic()))
@@ -356,7 +380,7 @@ def wait_process(
     owned: list[tuple[object, threading.Thread]] = []
     completed = False
     try:
-        limit = max(1, int(capture_limit_bytes))
+        limit = _safe_capture_limit(capture_limit_bytes)
         head = limit // 4
         tail = limit - head
         stdout_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
@@ -374,7 +398,7 @@ def wait_process(
             thread.start()
             readers.append(thread)
             owned.append((stream, thread))
-        deadline = time.monotonic() + max(0.0, float(timeout))
+        deadline = time.monotonic() + _safe_timeout(timeout)
         while True:
             for state in (stdout_state, stderr_state):
                 if state.error is not None:

@@ -22,7 +22,7 @@ DEFAULT_REF_LIMIT = 12
 
 def clip(value: object, limit: int = 240) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    if limit <= 0:
+    if type(limit) is not int or limit <= 0:
         return ""
     if len(text) <= limit:
         return text
@@ -74,9 +74,19 @@ def identifier(value: object, limit: int = 120) -> str:
 
 
 def bounded_refs(values: Iterable[object], *, limit: int = DEFAULT_REF_LIMIT) -> tuple[str, ...]:
+    if type(limit) is not int or limit <= 0:
+        return ()
+    if isinstance(values, str):
+        values = (values,)
+    if not isinstance(values, Iterable):
+        return ()
     refs: list[str] = []
     seen: set[str] = set()
-    for value in values or ():
+    try:
+        iterator = iter(values)  # type: ignore[arg-type]
+    except TypeError:
+        return ()
+    for value in iterator:
         text = identifier(value, 80)
         if not text or text in seen:
             continue

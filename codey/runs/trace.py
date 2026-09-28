@@ -155,14 +155,14 @@ class PromptSectionTrace:
         payload: dict[str, object] = {
             "name": _identifier(self.name, 80),
             "digest": self.digest,
-            "chars": max(0, int(self.chars or 0)),
+            "chars": _nonnegative_int(self.chars),
             "model_visible": bool(self.model_visible),
             "truncated": bool(self.truncated),
         }
         if self.purpose:
             payload["purpose"] = _clip(self.purpose, 160)
         if self.budget:
-            payload["budget"] = max(0, int(self.budget or 0))
+            payload["budget"] = _nonnegative_int(self.budget)
         if self.freshness:
             payload["freshness"] = _identifier(self.freshness, 80)
         refs = _bounded_refs(self.source_refs)
@@ -198,7 +198,7 @@ class PromptSurfaceTrace:
             "surface_id": _clip(self.surface_id, 120),
             "phase": _identifier(self.phase, 40),
             "prompt_digest": _clip(self.prompt_digest, 80),
-            "prompt_chars": max(0, int(self.prompt_chars or 0)),
+            "prompt_chars": _nonnegative_int(self.prompt_chars),
             "epoch_id": _identifier(self.epoch_id, 80),
         }
         if self.send_ref:
@@ -551,7 +551,7 @@ class RunTraceRecorder:
             chars=len(rendered),
             purpose=str(purpose or ""),
             model_visible=bool(model_visible),
-            budget=max(0, int(budget or 0)),
+            budget=_nonnegative_int(budget),
             truncated=bool(truncated),
             freshness=freshness,
             source_refs=refs,
@@ -679,7 +679,7 @@ class RunTraceRecorder:
                 text=section_args.get("text"),
                 purpose=str(section_args.get("purpose") or ""),
                 model_visible=bool(section_args.get("model_visible", True)),
-                budget=int(section_args.get("budget") or 0),
+                budget=_nonnegative_int(section_args.get("budget")),
                 truncated=bool(section_args.get("truncated", False)),
                 freshness=str(section_args.get("freshness") or ""),
                 source_refs=section_args.get("source_refs") or (),

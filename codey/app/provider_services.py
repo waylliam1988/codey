@@ -96,7 +96,7 @@ def recommended_default_provider(statuses: dict[str, bool] | None = None) -> str
     provider. Frontends apply this only when the user has no explicit
     selection (e.g. a brand-new session); it never overrides history.
     """
-    available = {pid for pid, ok in (statuses or {}).items() if ok}
+    available = {pid for pid, ok in (statuses or {}).items() if ok is True}
     if DEFAULT_PROVIDER_ID in available:
         return DEFAULT_PROVIDER_ID
     if "local" in available:
@@ -133,7 +133,7 @@ def provider_availability_from_statuses(
 def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict]:
     statuses = statuses or {}
     return [
-        {"id": provider_id, "label": label, "available": bool(statuses.get(provider_id))}
+        {"id": provider_id, "label": label, "available": statuses.get(provider_id) is True}
         for provider_id, label in PROVIDER_LABELS.items()
     ]
 

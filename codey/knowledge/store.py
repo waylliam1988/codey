@@ -126,6 +126,8 @@ class KnowledgeStore:
         rows = self.index.notes_by_ids(seen)
         out: dict[str, tuple[KnowledgeNote, dict]] = {}
         for row in rows:
+            if not isinstance(row, dict):
+                continue
             path_text = str(row.get("path") or "")
             if not path_text:
                 continue

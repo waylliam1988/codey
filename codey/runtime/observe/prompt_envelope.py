@@ -21,6 +21,15 @@ from codey.workspace.context_epoch import (
 
 DEFAULT_PROMPT_SEPARATOR = "\n\n"
 MODEL_BOUNDARY_FRESHNESS = frozenset((PROVIDER_TURN_BOUNDARY,))
+
+
+def _safe_budget(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
 MAX_PROMPT_SOURCE_REFS = 64
 MAX_PROMPT_REF_CHARS = 160
 
@@ -90,7 +99,7 @@ class PromptEnvelope:
                 purpose=str(section.purpose or ""),
                 model_visible=bool(section.model_visible),
                 source_refs=_source_refs(section.source_refs, section.name),
-                budget=max(0, int(section.budget or 0)),
+                budget=_safe_budget(section.budget),
                 freshness=str(section.freshness or ""),
                 truncated=bool(section.truncated),
                 epoch_id=str(section.epoch_id or ""),

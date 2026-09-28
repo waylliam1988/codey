@@ -11,7 +11,7 @@ from codey.agents.prompt_context import (
     session_uses_native_tools,
 )
 from codey.agents.protocol import protocol_repair_prompt
-from codey.agents.request import AgentRequest
+from codey.agents.request import DEFAULT_MAX_TURNS, DEFAULT_STAGNANT_TURNS, AgentRequest
 from codey.agents.result_delivery import (
     deliver_recovered_results,
     deliver_turn_results,
@@ -106,6 +106,16 @@ def _reply_display_text(reply: str | object) -> str:
     return text
 
 
+def _safe_positive(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if parsed >= 1 else default
+
+
 def _setup_loop(request: AgentRequest) -> AgentLoopSession:
     from codey.providers.capabilities import capability_for
 
@@ -140,8 +150,8 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
             native_tools = None
     system_prompt_text = codec.system_prompt()
     tool_fns = request.tool_fns or DEFAULT_TOOL_FNS
-    max_turns = max(1, int(request.max_turns))
-    stagnant_turns = max(1, int(request.stagnant_turns))
+    max_turns = _safe_positive(request.max_turns, DEFAULT_MAX_TURNS)
+    stagnant_turns = _safe_positive(request.stagnant_turns, DEFAULT_STAGNANT_TURNS)
     changed_files = set(
         request.conversation.snapshot.changed_files
         if request.conversation

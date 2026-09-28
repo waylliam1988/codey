@@ -68,6 +68,20 @@ class RuntimeLogWriteError(RuntimeLogError):
     """The log cannot accept a new entry without violating a guard."""
 
 
+def _payload_has_nonfinite(value: object, depth: int = 0) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, float):
+        return not math.isfinite(value)
+    if depth > 4:
+        return False
+    if isinstance(value, dict):
+        return any(_payload_has_nonfinite(item, depth + 1) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_payload_has_nonfinite(item, depth + 1) for item in value)
+    return False
+
+
 @dataclass(frozen=True)
 class RuntimeLogEntry:
     session_id: str
@@ -96,6 +110,8 @@ class RuntimeLogEntry:
         offender = _forbidden_payload_key(self.payload)
         if offender:
             raise RuntimeLogWriteError(f"runtime log payload contains raw field: {offender}")
+        if _payload_has_nonfinite(self.payload):
+            raise RuntimeLogWriteError("runtime log payload must use finite numbers")
         if isinstance(self.created_at, bool) or not isinstance(self.created_at, (int, float)):
             raise RuntimeLogCorruption("created_at must be a finite number")
         created_at = float(self.created_at)

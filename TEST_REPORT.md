@@ -1,5 +1,78 @@
 # Codey Test Report
 
+## Full-red round5: fail-closed sweep + null-byte determinism + call_arg narrowing (2026-09-29)
+
+Scope (~60 deterministic bugs, red-first, no release):
+
+```text
+tests/test_fullred_round5_sweep.py (new, 60: 58 failed before, pass after)
+codey/research/source_connectors.py (_score bool/inf/nan/overflow -> 0.0)
+codey/research/http_redirects.py (is_redirect_status +OverflowError)
+codey/research/source_search.py (snippet_at bool/overflow -> 0)
+codey/research/query_planner.py (max_depth via _bounded_int)
+codey/research/ledger.py (_as_page try; record_open_document/record_source_search safe helpers + skip non-dict)
+codey/research/object_model.py (_safe_nonnegative/_safe_positive_page; citations)
+codey/research/evidence_ledger.py (_safe_count for counts)
+codey/research/tools.py (_merge_relation_tags skip non-dict/missing)
+codey/research/controller.py (_hit_rows/_result_rows/_source_rows isinstance guards)
+codey/runs/work_checkpoint.py (start -> None + _file_hash try on null byte)
+codey/runtime/log/entries.py (inf/nan payload -> RuntimeLogWriteError)
+codey/runtime/core/cancellation.py (_safe_timeout/_safe_capture_limit)
+codey/runtime/core/output_capture.py (_safe_limit defaults)
+codey/runtime/observe/prompt_envelope.py + prompt_surface.py + runs/trace.py (budgets/chars via safe helpers)
+codey/runtime/observe/events.py + runs/ledger.py (metadata None -> {}; reply non-str -> "")
+codey/runtime/observe/execution_evidence.py (seed_checks requires list/tuple)
+codey/app/event_bus.py (replay bool -> 0)
+codey/runs/details.py (_safe_count)
+codey/app/api.py (query_int strict; query_value None -> ""; continue_task is True; changes/restore explicit \0 -> 400)
+codey/app/server.py (Content-Length ascii-digits only)
+codey/app/shell_service.py (generation/timeout type-is-int; command isinstance str)
+codey/providers/controls.py (visible_locator +OverflowError)
+codey/providers/local_config.py (base_url/model/api_key non-string -> TypeError)
+codey/providers/web_provider.py (send requires str + finite timeout)
+codey/app/provider_services.py (is True)
+codey/storage/ui_state_store.py (save requires type-is-int base_revision)
+codey/toolchain/definition.py (call_arg rejects containers/bool/None; numbers keep "123")
+codey/agents/tool_execution.py (escape -> ToolOutcome.error)
+codey/ghost/work_queue.py (_int bool/ascii; transition +OverflowError)
+codey/ghost/inbox.py (_int_or_default bool/ascii)
+codey/ghost/observation_index.py (_content_budget try)
+codey/ghost/event_log.py (_safe_count; read_tail)
+codey/ghost/continuity.py (_expires_at try; _items_from_events skip)
+codey/ghost/hebbian.py (_safe_count)
+codey/knowledge/concepts.py + research_interest.py (bool/ascii)
+codey/knowledge/store.py (skip non-dict rows)
+codey/knowledge/note.py (_safe_confidence finite/clamp)
+codey/workspace/facts.py (list payload -> empty)
+codey/utils/refs.py (clip type-is-int; bounded_refs non-iterable -> ())
+codey/agents/loop.py (_safe_positive) + state.py + shell_approval.py + runaway_guard.py + decision.py
+codey/completion/repair_context.py + discovery.py + verification_policy.py
+codey/repairs/adapter_overrides.py (generation counters type-is-int + OverflowError)
+codey/operations/task_context.py (handle start -> None)
+tests/test_architecture.py (object_model baseline + ceiling 1070)
+CHANGELOG.md / CHANGELOG.zh-CN.md (new Unreleased entry)
+TEST_REPORT.md (this entry, written after the full suite)
+```
+
+Red-first (58 failed before, all pass after; 2 documented-intent guards passed throughout):
+
+- `OverflowSweepTests` 10 (score/inf/redirect/snippet/max_depth/_as_page/pages/counts/tags/ledger-patterns).
+- `RunsRuntimeSweepTests` 13 (null-byte start/hash, log inf, wait/output/prompt/trace budgets, metadata None, seed_checks, replay bool, details, reply).
+- `ProvidersAppSweepTests` 10 (query_int/value, continue_task, content-length, mint generation, locator overflow, local_config types, send str, provider bool, shell command type).
+- `GhostKnowledgeSweepTests` 14 (work_queue int/overflow, inbox bool, observation budget, compact, expires, continuity rows, hebbian, concepts ascii, interest bool, store rows, facts list, clip/bounded).
+- `AgentsOpsSweepTests` 11 red + 2 intent-green (search-page 0->1 clamp kept; loop/setup/lru/limits/decision/budget/call_arg/manifest/escape/over-budget/priority/record).
+- 2 CI regressions fixed under existing round4 locks (no new tests): null-byte changes/restore projects return 400 via explicit guard (3.12 resolve-raises vs 3.13 resolve-passes divergence).
+- 1 over-broad fix narrowed before final: call_arg keeps number stringify ("123") per test_shared_helpers; only containers/bool/None fail closed.
+
+Non-bugs / intentionally untouched (per reproduce-or-it-is-not-a-bug):
+
+- float 1.5->1 truncation, search_page 0->1 clamp, borrow None vs connect ValueError, empty-findings approved, task-kind presence rule, native done nested text, JS polish without Node.
+
+Verification (local, Windows):
+
+- Before final: `python -m ruff check .` clean, `git diff --check` clean; targeted green (round5 60 passed; round5+architecture 149 passed, 357 subtests; server+ledger+trace+providers 319 passed; shared+round5+round4 113 passed).
+- Full suite needed two runs: first `4854 passed, 10 skipped, 1484 subtests, 1 failed` (shared_helpers number-stringify contract caught the over-broad call_arg); after narrowing, final `python -m pytest -q`: `4854 passed, 10 skipped, 1484 subtests passed in 341.48s (0:05:41)`. Delta vs 4794 is exactly the 60 new locks. No release was made.
+
 ## Trace split: schema/values/research/completion/protocol + generic generated_ref (2026-09-29)
 
 Scope (pure refactor, zero behavior change, red-first locks, no release):

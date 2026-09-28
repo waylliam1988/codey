@@ -69,6 +69,25 @@ MAX_EXCERPT_CHARS = 360
 MAX_REF_VALUES = 12
 RESEARCH_RECORD_SCHEMA_VERSION = 1
 RESEARCH_RECORD_KIND = "research_record"
+
+
+def _safe_nonnegative(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _safe_positive_page(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if number > 0 else None
 ANSWER_STATUSES = frozenset({
     "answered",
     "partial",
@@ -235,8 +254,11 @@ class ResearchSource:
             "content_hash": _clip(self.content_hash, 80),
             "retrieved_at": _clip(self.retrieved_at, 80),
             "content_kind": _identifier(self.content_kind, 40) or "html",
-            "page_count": max(0, int(self.page_count or 0)),
-            "pages_read": [int(page) for page in self.pages_read if int(page) > 0][:MAX_REF_VALUES],
+            "page_count": _safe_nonnegative(self.page_count),
+            "pages_read": [
+                page for page in (_safe_positive_page(page) for page in self.pages_read)
+                if page is not None
+            ][:MAX_REF_VALUES],
             "truncated": bool(self.truncated),
             "quality": dict(self.quality),
         }
@@ -255,11 +277,12 @@ class EvidenceLocator:
         payload: dict[str, object] = {
             "kind": _identifier(self.kind, 40) or "unknown",
             "source_id": _identifier(self.source_id, 80),
-            "char_start": max(0, int(self.char_start or 0)),
-            "char_end": max(0, int(self.char_end or 0)),
+            "char_start": _safe_nonnegative(self.char_start),
+            "char_end": _safe_nonnegative(self.char_end),
         }
-        if self.page is not None and int(self.page) > 0:
-            payload["page"] = int(self.page)
+        page = _safe_positive_page(self.page)
+        if page is not None:
+            payload["page"] = page
         if self.locator:
             payload["locator"] = _clip(self.locator, 80)
         return payload
@@ -321,7 +344,10 @@ class ResearchClaim:
             "claim_id": self.claim_id,
             "claim_text": _clip(self.claim_text, MAX_CLAIM_TEXT_CHARS),
             "claim_section": _identifier(self.claim_section, 80),
-            "citation_numbers": [int(value) for value in self.citation_numbers][:MAX_REF_VALUES],
+            "citation_numbers": [
+                number for number in (_safe_positive_page(value) for value in self.citation_numbers)
+                if number is not None
+            ][:MAX_REF_VALUES],
             "evidence_refs": list(_bounded_refs(self.evidence_refs)),
             "assumption_refs": list(_bounded_refs(self.assumption_refs)),
             "status": _status_token(self.status, CLAIM_STATUSES, default="unsupported"),
@@ -342,7 +368,10 @@ class ResearchClaimRelation:
             "relation_kind": _relation_kind(self.relation_kind),
             "from_ref": _identifier(self.from_ref, 80),
             "to_ref": _identifier(self.to_ref, 80),
-            "citation_numbers": [int(value) for value in self.citation_numbers][:MAX_REF_VALUES],
+            "citation_numbers": [
+                number for number in (_safe_positive_page(value) for value in self.citation_numbers)
+                if number is not None
+            ][:MAX_REF_VALUES],
         }
 
 

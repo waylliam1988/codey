@@ -44,7 +44,7 @@ class GhostEventLog:
             raise ValueError(f"schema_version must be int, got {schema_version!r}")
         self.schema_version = schema_version
         self.max_bytes = max_bytes
-        self.max_warnings = max(0, int(max_warnings))
+        self.max_warnings = _safe_count(max_warnings)
         self.source_name = source_name or self.path.name
         self.allowed_event_kinds = frozenset(
             str(item or "").strip()
@@ -62,7 +62,7 @@ class GhostEventLog:
 
     def read_tail(self, max_rows: int) -> GhostEventRead:
         """Read and validate the last JSONL rows without parsing the full log."""
-        count = max(0, int(max_rows or 0))
+        count = _safe_count(max_rows)
         if count == 0:
             return GhostEventRead(())
         with with_file_lock(self.path):
@@ -302,6 +302,15 @@ def event_file_stats(
     return {"events": len(text.splitlines()), "bytes": event_bytes, "readable": True, "warning": ""}
 
 
+def _safe_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value or 0))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def compact_result_payload(
     ok: bool,
     compacted: bool,
@@ -312,13 +321,15 @@ def compact_result_payload(
     warning_cleaner: Callable[[Iterable[object]], Iterable[object]] | None = None,
 ) -> dict[str, object]:
     clean_warnings = warning_cleaner(warnings) if warning_cleaner is not None else warnings
+    before_map = before if isinstance(before, dict) else {}
+    after_map = after if isinstance(after, dict) else {}
     return {
         "ok": bool(ok),
         "compacted": bool(compacted),
-        "events_before": int(before.get("events") or 0),
-        "events_after": int(after.get("events") or 0),
-        "bytes_before": int(before.get("bytes") or 0),
-        "bytes_after": int(after.get("bytes") or 0),
+        "events_before": _safe_count(before_map.get("events")),
+        "events_after": _safe_count(after_map.get("events")),
+        "bytes_before": _safe_count(before_map.get("bytes")),
+        "bytes_after": _safe_count(after_map.get("bytes")),
         "warnings": list(clean_warnings),
     }
 

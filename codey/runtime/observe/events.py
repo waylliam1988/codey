@@ -36,6 +36,11 @@ def _safe_byte_count(value: object) -> int:
     return max(0, number)
 
 
+def _event_metadata(event: RunEvent) -> dict:
+    metadata = getattr(event, "metadata", {})
+    return metadata if isinstance(metadata, dict) else {}
+
+
 @dataclass(frozen=True)
 class RunEvent:
     kind: str
@@ -111,7 +116,7 @@ def render_run_event(event: RunEvent) -> str:
         first_line = event.outcome.presentation_result(80)
         return f"  - {event.call.name} {label} -> {first_line}"
     if event.kind == "info":
-        names = str(event.metadata.get("names") or "")
+        names = str(_event_metadata(event).get("names") or "")
         suffix = f": {names}" if names else ""
         return f"[agent] {event.message}{suffix}"
     return event.message
@@ -151,7 +156,7 @@ def run_event_ui_payload(
         return payload
     if event.kind == "info":
         text = event.message
-        names = str(event.metadata.get("names") or "")
+        names = str(_event_metadata(event).get("names") or "")
         if names:
             text = f"{text}: {names}"
         return {"type": "info", "run_id": run_id, "session_id": session_id, "text": text}
@@ -159,7 +164,7 @@ def run_event_ui_payload(
         start_args = _call_args(event.call)
         path = str(start_args.get("path") or "")
         display_kind, display_path = display_tool(event.call.name, start_args, path)
-        tool_index = _safe_tool_index(event.metadata.get("tool_index"))
+        tool_index = _safe_tool_index(_event_metadata(event).get("tool_index"))
         payload = {
             "type": "tool_started",
             "run_id": run_id,
@@ -180,7 +185,7 @@ def run_event_ui_payload(
     path = str(tool_args.get("path") or "")
     display_kind, display_path = display_tool(event.call.name, tool_args, path)
     result = event.outcome.presentation_result(MAX_EVENT_RESULT_CHARS)
-    tool_index = _safe_tool_index(event.metadata.get("tool_index"))
+    tool_index = _safe_tool_index(_event_metadata(event).get("tool_index"))
     status = event.outcome.presentation_status()
     payload = {
         "type": "tool",

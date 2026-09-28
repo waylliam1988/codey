@@ -1165,6 +1165,8 @@ def _scope_filter_matches(
 def _items_from_events(events: Iterable[dict[str, object]]) -> list[GhostContinuityItem]:
     by_id: dict[str, GhostContinuityItem] = {}
     for event in events:
+        if not isinstance(event, dict):
+            continue
         event_type = str(event.get("type") or "")
         if event_type != "ghost_continuity_item_upsert":
             continue
@@ -1244,7 +1246,11 @@ def _clean_metadata(value: object) -> dict[str, object]:
 
 def _expires_at(now: str, days: int) -> str:
     parsed = parse_ts(now)
-    return (parsed + timedelta(days=max(1, int(days or 1)))).isoformat(timespec="seconds").replace("+00:00", "Z")
+    try:
+        parsed_days = int(days or 1)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        parsed_days = 1
+    return (parsed + timedelta(days=max(1, parsed_days))).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _is_expired(item: GhostContinuityItem, now: str) -> bool:

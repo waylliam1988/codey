@@ -55,6 +55,10 @@ def concept_node_id(concept: str) -> str:
 
 
 def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, str) and not value.strip().isascii():
+        return default
     try:
         parsed = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):

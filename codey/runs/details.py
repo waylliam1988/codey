@@ -367,11 +367,20 @@ def _context_summary(
     return _join_parts(parts) or "No extra context recorded"
 
 
+def _safe_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def _actions_summary(projection: RunLedgerProjection | None) -> str:
     if projection is None:
         return ""
     counts = dict(projection.tool_counts or {})
-    read_like = sum(max(0, int(counts.get(name, 0))) for name in (
+    read_like = sum(_safe_count(counts.get(name, 0)) for name in (
         "grep",
         "ls",
         "read",
@@ -382,8 +391,8 @@ def _actions_summary(projection: RunLedgerProjection | None) -> str:
         projection.final_changes.changed_count if projection.final_changes is not None else 0,
         len(projection.changed_files_observed),
     )
-    checks = max(len(projection.verified_commands), int(counts.get("run", 0) or 0))
-    other = max(0, projection.tool_calls - read_like - int(counts.get("edit", 0) or 0) - int(counts.get("write", 0) or 0) - int(counts.get("run", 0) or 0))
+    checks = max(len(projection.verified_commands), _safe_count(counts.get("run", 0)))
+    other = max(0, projection.tool_calls - read_like - _safe_count(counts.get("edit", 0)) - _safe_count(counts.get("write", 0)) - _safe_count(counts.get("run", 0)))
 
     parts: list[str] = []
     if read_like:

@@ -33,6 +33,15 @@ from codey.completion.verification import (
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
 
+def _safe_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 @dataclass(frozen=True)
 class CompletionDecision:
     """One completion decision point's projected verification facts.
@@ -167,9 +176,9 @@ def completion_blocked_reason(
         return BLOCKED_ENVIRONMENT_FAILURE
     if str(proof_status or "") == "blocked":
         return BLOCKED_UNOBSERVED
-    if int(remaining_turns) <= 0:
+    if _safe_int(remaining_turns) <= 0:
         return BLOCKED_TURN_BUDGET_EXHAUSTED
-    if int(repair_rounds) > 0:
+    if _safe_int(repair_rounds) > 0:
         return BLOCKED_MAX_REPAIR_ROUNDS
     return BLOCKED_REPAIR_NOT_ADMITTED
 

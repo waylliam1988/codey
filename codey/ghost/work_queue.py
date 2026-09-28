@@ -2321,7 +2321,7 @@ def _apply_queue_transition(
     try:
         if int(patch["retry_count"]) != 0:
             return None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return replace(
         current,
@@ -2591,7 +2591,20 @@ def _unit_float(value: object) -> float:
 
 
 def _int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, str) and not value.strip().isascii():
+        return 0
     try:
+        text = value.strip() if isinstance(value, str) else value
+        if isinstance(text, str) and not text.isdigit():
+            # allow leading +/- and whitespace like int(), but reject
+            # fullwidth/unicode digits that int() cannot parse
+            stripped = text.strip()
+            if stripped[:1] in ("+", "-"):
+                stripped = stripped[1:]
+            if stripped and not (stripped.isascii() and stripped.isdigit()):
+                return 0
         return int(value or 0)  # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):
         return 0

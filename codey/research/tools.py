@@ -515,7 +515,13 @@ def _merge_relation_tags(tags: list[str], relations: list[dict]) -> list[str]:
     known = {normalize_concept(tag) for tag in tags}
     merged = list(tags)
     for relation in relations:
-        for concept in (relation["src"], relation["dst"]):
+        if not isinstance(relation, dict):
+            continue
+        src = relation.get("src")
+        dst = relation.get("dst")
+        if not isinstance(src, str) or not isinstance(dst, str):
+            continue
+        for concept in (src, dst):
             if concept not in known:
                 known.add(concept)
                 merged.append(concept)

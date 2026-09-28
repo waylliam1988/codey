@@ -54,7 +54,10 @@ def _safe_file_stem(value: str) -> str:
 def _tool_id(event: RunEvent) -> str:
     from codey.runtime.observe.events import _safe_tool_index
 
-    index = _safe_tool_index(event.metadata.get("tool_index"))
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    index = _safe_tool_index(metadata.get("tool_index"))
     return f"{event.turn}:{index}"
 
 
@@ -320,7 +323,8 @@ class RunLedgerWriter:
         if event.kind == "turn":
             payload = _event_common(self.run_id, self.session_id, self.seq + 1, "model_reply")
             payload["turn"] = event.turn
-            payload["reply_chars"] = len(event.reply or "")
+            reply = event.reply if isinstance(event.reply, str) else ""
+            payload["reply_chars"] = len(reply)
             if event.note:
                 payload["note"] = _clip(event.note, MAX_TEXT_CHARS)
             return payload

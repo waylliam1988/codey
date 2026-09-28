@@ -734,7 +734,15 @@ def select_verification_candidate(
 
 
 def _effective_source_priority(candidate: VerificationCandidate) -> int:
-    return max(int(candidate.source_priority or 0), 100 if candidate.previously_passed else 0)
+    priority = candidate.source_priority
+    if isinstance(priority, bool):
+        priority_int = 0
+    else:
+        try:
+            priority_int = int(priority or 0)  # type: ignore[arg-type]
+        except (TypeError, ValueError, OverflowError):
+            priority_int = 0
+    return max(priority_int, 100 if candidate.previously_passed else 0)
 
 
 def check_covers_changes(

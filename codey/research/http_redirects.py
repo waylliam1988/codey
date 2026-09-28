@@ -21,7 +21,7 @@ def build_no_redirect_opener():
 def is_redirect_status(status: object) -> bool:
     try:
         return int(status or 0) in REDIRECT_STATUSES
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return False
 
 

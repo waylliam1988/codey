@@ -39,6 +39,12 @@ from codey.utils.refs import (
 
 EVIDENCE_LEDGER_SCHEMA_VERSION = 1
 EVIDENCE_LEDGER_KIND = "research_evidence_ledger"
+
+
+def _safe_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    return nonnegative_int(value)
 MAX_EVIDENCE_LEDGER_BYTES = 1024 * 1024
 MAX_LEDGER_RECORDS = 100
 MAX_LEDGER_SOURCES = 300
@@ -189,7 +195,7 @@ class EvidenceLedgerWriteResult:
             "ledger_ref": identifier(self.ledger_ref, 80),
             "record_id": _record_id(self.record_id),
             "counts": {
-                key: max(0, int(value))
+                key: _safe_count(value)
                 for key, value in dict(self.counts).items()
                 if isinstance(key, str)
             },

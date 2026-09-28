@@ -58,7 +58,14 @@ class SeenInfoLRU:
     """
 
     def __init__(self, max_items: int = 256) -> None:
-        self.max_items = max(1, int(max_items))
+        if isinstance(max_items, bool):
+            max_items = 256
+        else:
+            try:
+                max_items = int(max_items)  # type: ignore[arg-type]
+            except (TypeError, ValueError, OverflowError):
+                max_items = 256
+        self.max_items = max(1, max_items)
         self._order: dict[tuple[str, str, str], None] = {}
 
     def __contains__(self, key: object) -> bool:

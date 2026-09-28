@@ -172,7 +172,7 @@ def visible_locator(page: Any, selector: str) -> Any | None:
         return None
     try:
         count = int(count)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     for index in range(count - 1, -1, -1):
         candidate = locator.nth(index)

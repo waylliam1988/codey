@@ -112,7 +112,13 @@ def _content_budget(budget_chars: int) -> int:
     The product promise is the whole rendered block <= budget, so the header
     and its newline are charged first. Zero/negative means nothing fits.
     """
-    return max(0, int(budget_chars or 0) - len(RETRIEVED_BLOCK_HEADER))
+    if isinstance(budget_chars, bool):
+        return 0
+    try:
+        parsed = int(budget_chars or 0)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(0, parsed - len(RETRIEVED_BLOCK_HEADER))
 
 
 def retrieve_relevant_observations(

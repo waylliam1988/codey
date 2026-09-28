@@ -164,7 +164,8 @@ class ResearchLedger:
         if not final_url:
             return
         text = str(document.text or "")
-        pages_read = tuple(int(page) for page in document.pages_read if int(page) > 0)
+        pages_read = tuple(_safe_page_number(page) for page in document.pages_read)
+        pages_read = tuple(page for page in pages_read if page is not None and page > 0)
         requested_url = str(requested_url or "").strip()
         page_map = {page.number: page.text for page in document.page_texts if page.number > 0}
         existing = next(
@@ -178,7 +179,10 @@ class ResearchLedger:
             None,
         )
         if existing is not None and (existing.content_kind == "pdf" or document.content_kind == "pdf"):
-            existing_pages = tuple(int(page) for page in existing.pages_read if int(page) > 0)
+            existing_pages = tuple(
+                page for page in (_safe_page_number(page) for page in existing.pages_read)
+                if page is not None and page > 0
+            )
             pages_read = tuple(sorted({*existing_pages, *pages_read}))
             existing_text = self._source_texts.get(existing.final_url) or ""
             text = _merge_text(existing_text, text)
@@ -195,8 +199,8 @@ class ResearchLedger:
             content_kind=str(document.content_kind or "html"),
             mime_type=str(document.mime_type or (existing.mime_type if existing is not None else "")),
             page_count=max(
-                max(0, int(document.page_count or 0)),
-                max(0, int(existing.page_count or 0)) if existing is not None else 0,
+                _safe_count(document.page_count),
+                _safe_count(existing.page_count) if existing is not None else 0,
             ),
             pages_read=pages_read,
             truncated=bool(document.truncated or (existing.truncated if existing is not None else False)),
@@ -310,9 +314,11 @@ class ResearchLedger:
             return
         bounded_hits = []
         for hit in hits[:MAX_PAYLOAD_SOURCE_SEARCHES]:
+            if not isinstance(hit, dict):
+                continue
             bounded_hits.append({
                 "page": hit.get("page"),
-                "offset": int(hit.get("offset") or 0),
+                "offset": _safe_count(hit.get("offset")),
                 "snippet": _clip(str(hit.get("snippet") or ""), MAX_SNIPPET_CHARS),
             })
         self.source_searches.append({
@@ -576,13 +582,37 @@ def normalize_evidence_stance(value: object) -> str:
     return "unknown"
 
 
+def _safe_page_number(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if number > 0 else None
+
+
+def _safe_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def _as_page(value: object) -> int | None:
     if value in (None, ""):
+        return None
+    if isinstance(value, bool):
         return None
     match = re.search(r"\d+", str(value))
     if not match:
         return None
-    number = int(match.group(0))
+    try:
+        number = int(match.group(0))
+    except (TypeError, ValueError, OverflowError):
+        return None
     return number if number > 0 else None
 
 

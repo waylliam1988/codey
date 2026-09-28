@@ -1164,6 +1164,10 @@ def _coerce_confidence(value: object) -> float | None:
 
 
 def _int_or_default(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, str) and not value.strip().isascii():
+        return default
     try:
         return int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):

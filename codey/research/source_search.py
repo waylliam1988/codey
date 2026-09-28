@@ -108,7 +108,14 @@ def query_tokens(query: str) -> tuple[str, ...]:
 
 def snippet_at(text: str, offset: int) -> str:
     text = str(text or "")
-    offset = max(0, min(len(text), int(offset or 0)))
+    if isinstance(offset, bool):
+        offset_int = 0
+    else:
+        try:
+            offset_int = int(offset or 0)
+        except (TypeError, ValueError, OverflowError):
+            offset_int = 0
+    offset = max(0, min(len(text), offset_int))
     start = max(0, offset - 130)
     return _clip(" ".join(text[start : start + SOURCE_SEARCH_SNIPPET_CHARS].split()), SOURCE_SEARCH_SNIPPET_CHARS)
 

@@ -105,11 +105,11 @@ class RepairContextProjection:
                 "failure_class": self.failure_class,
                 "proof_id": self.proof_id,
                 "contract_id": self.contract_id,
-                "check_count": max(0, int(self.check_count)),
-                "changed_file_count": max(0, int(self.changed_file_count)),
-                "analysis_run_ref_count": max(0, int(self.analysis_run_ref_count)),
-                "finding_ref_count": max(0, int(self.finding_ref_count)),
-                "summary_chars": max(0, int(self.summary_chars)),
+                "check_count": _nonnegative_int(self.check_count),
+                "changed_file_count": _nonnegative_int(self.changed_file_count),
+                "analysis_run_ref_count": _nonnegative_int(self.analysis_run_ref_count),
+                "finding_ref_count": _nonnegative_int(self.finding_ref_count),
+                "summary_chars": _nonnegative_int(self.summary_chars),
                 "truncated": bool(self.truncated),
                 "reason_codes": list(self.reason_codes),
                 "warnings": list(self.warnings),
@@ -126,11 +126,11 @@ class RepairContextProjection:
             "context_source": CONTEXT_SOURCE_KEY,
             "admitted": self.admitted,
             "failure_class": self.failure_class,
-            "check_count": max(0, int(self.check_count)),
-            "changed_file_count": max(0, int(self.changed_file_count)),
-            "analysis_run_ref_count": max(0, int(self.analysis_run_ref_count)),
-            "finding_ref_count": max(0, int(self.finding_ref_count)),
-            "summary_chars": max(0, int(self.summary_chars)),
+            "check_count": _nonnegative_int(self.check_count),
+            "changed_file_count": _nonnegative_int(self.changed_file_count),
+            "analysis_run_ref_count": _nonnegative_int(self.analysis_run_ref_count),
+            "finding_ref_count": _nonnegative_int(self.finding_ref_count),
+            "summary_chars": _nonnegative_int(self.summary_chars),
             "truncated": bool(self.truncated),
             "reason_codes": list(self.reason_codes),
             "warnings": list(self.warnings),
@@ -266,7 +266,7 @@ def _render(
     budget_chars: int,
     warnings: list[str],
 ) -> str:
-    budget = max(0, int(budget_chars or 0))
+    budget = _nonnegative_int(budget_chars)
     parts: list[str] = [_HEADER]
     used = len(_HEADER)
 
@@ -319,7 +319,8 @@ def _render(
 
 
 def _over_budget(text: str, budget_chars: int) -> bool:
-    return bool(budget_chars) and len(text) > int(budget_chars)
+    budget = _nonnegative_int(budget_chars)
+    return budget > 0 and len(text) > budget
 
 
 def _proof_fields(proof: Any) -> dict[str, Any]:
