@@ -127,6 +127,19 @@ def release_unstarted_submission(state: TaskState, request: TaskSubmission) -> N
         return
 
 
+def requires_project_writer_lease(request: TaskSubmission, task_kind: str) -> bool:
+    """Reserve a writer when this task can modify its attached project."""
+
+    if not request.project:
+        return False
+    kind = str(task_kind or "").strip().lower()
+    intent = str(request.intent or "auto").strip().lower()
+    requested_write = "project.write" in request.requested_capabilities
+    if kind in {"project", "hybrid", "unified"} and intent != "auto":
+        return True
+    return requested_write and kind in {"project", "hybrid", "research", "unified"}
+
+
 @dataclass
 class _RunSetup:
     """RunSetup phase: reservation, trace, config, and task wiring.
@@ -315,12 +328,7 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
         # Unified auto defers the lock: an auto greeting with a project must not
         # claim the writer before the first model output chooses an edit action;
         # auto_loop.py acquires it only when the chosen action needs it.
-        intent = str(request.intent or "auto").strip().lower()
-        needs_writer = (
-            bool(project)
-            and baseline_task_kind in {"project", "hybrid"}
-            and intent != "auto"
-        )
+        needs_writer = requires_project_writer_lease(request, baseline_task_kind)
         if needs_writer:
             try:
                 is_git = deps.is_git_repository

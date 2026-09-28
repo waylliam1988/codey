@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 from codey.agents.request import DEFAULT_MAX_TURNS
-from codey.agents.runner import run as default_agent_run
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.app.context import (
     REVIEW_FIX_TURNS,
@@ -25,6 +24,7 @@ from codey.app.context import (
     AppContext,
 )
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.operations.unified_agent_adapter import run as default_agent_run
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers.diagnostics import capture_provider_failure as default_capture_provider_failure
 from codey.providers.registry import connect_provider as default_connect_provider
@@ -576,7 +576,7 @@ def _request_intent(value: str) -> str:
     text = str(value or "project").strip().lower()
     if text in {"readonly", "planning", "planning_readonly"}:
         return "planning_readonly"
-    if text in {"auto", "chat", "research", "project", "hybrid", "review"}:
+    if text in {"auto", "chat", "research", "project", "hybrid", "review", "unified"}:
         return text
     return "project"
 

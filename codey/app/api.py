@@ -450,6 +450,7 @@ def run_submit_response(
     intent = str(body.get("intent") or "auto").strip().lower()
     entry_auth = derive_entry_auth(body, project=project)
     if intent not in {
+        "unified",
         "auto",
         "chat",
         "research",

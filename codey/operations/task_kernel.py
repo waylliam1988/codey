@@ -38,15 +38,6 @@ __all__ = [
 ]
 
 
-"""Turn protocol lives in kernel_protocol; session facts in kernel_session."""
-
-
-"""Turn protocol lives in kernel_protocol; session facts in kernel_session."""
-
-
-"""Session facts live in kernel_session; turn protocol in kernel_protocol."""
-
-
 def _result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) -> bool:
     if exit_code is not None:
         try:
@@ -80,7 +71,10 @@ def _error_result(call: ToolCall, message: str) -> ToolResult:
     return ToolResult(call=call, model_text=f"ERROR: {message}")
 
 
-def _build_delegate(session: TaskSession, project_path: Any, tool_fns: Any, research_tools: Any) -> Any:
+def _build_delegate(session: TaskSession, project_path: Any, tool_fns: Any,
+                    research_tools: Any, change_tracker: Any = None,
+                    managed_outputs: Any = None, session_id: str = "", run_id: str = "",
+                    permission_profile: str = "coding_writer") -> Any:
     if project_path is None and research_tools is None:
         return None
     try:
@@ -90,25 +84,23 @@ def _build_delegate(session: TaskSession, project_path: Any, tool_fns: Any, rese
     try:
         return ExecutionDelegate(
             session=session, project_path=project_path, tool_fns=tool_fns,
-            research_tools=research_tools,
+            research_tools=research_tools, change_tracker=change_tracker,
+            managed_outputs=managed_outputs, session_id=session_id, run_id=run_id,
+            permission_profile=permission_profile,
         )
     except Exception:
         return None
 
 
-_READ_ONLY_TOOLS = frozenset({
-    "list_dir", "read_file", "grep", "find_references",
-    "web_search", "knowledge_search", "knowledge_read",
-})
-
-
 def _skip_unsettled(intent_sink: Any, identity: str, name: str) -> bool:
     if intent_sink is None:
         return False
-    try:
-        return bool(intent_sink.has_unsettled(identity)) and name not in _READ_ONLY_TOOLS
-    except Exception:
-        return False
+    from codey.toolchain.tool_spec import spec_for_tool
+
+    spec = spec_for_tool(name)
+    return bool(intent_sink.has_unsettled(identity)) and (
+        spec is None or spec.replay_class != "safe"
+    )
 
 
 def _replay_settled_slot(
@@ -151,13 +143,21 @@ def _record_facts_for_result(
     name = str(call.name or "").strip().lower()
     args = call.args if isinstance(call.args, dict) else {}
     text = str(result.model_text or "")
+    if name == "run" and exit_code is not None:
+        latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
+        try:
+            passed = int(exit_code) == 0
+        except (TypeError, ValueError):
+            passed = False
+        session.record_verification(str(args.get("command", "") or ""), latest,
+                                    passed, exit_code=exit_code)
+        if text:
+            session.transcript_notes.append(f"run: {text[:500]}")
+        return
     if not ok:
         return
     if name == "web_search":
-        query = args.get("query", "")
-        session.record_search(str(query or ""))
-        for rid, url in _search_result_rows(text):
-            session.record_search_result(rid, url)
+        _record_search_results(session, args, text)
     elif name == "open_url":
         url = (opened_url or str(args.get("url", "") or "")).strip()
         if url:
@@ -178,18 +178,21 @@ def _record_facts_for_result(
             if url and excerpt:
                 session.record_evidence(url, excerpt)
     elif name == "edit":
-        session.record_edit(str(args.get("path", "") or "file"))
+        if not isinstance(result.audit, dict) or result.audit.get("changed", True):
+            session.record_edit(str(args.get("path", "") or "file"))
+    elif name == "read_file":
+        try:
+            from pathlib import Path
+
+            from codey.agents.protocol import canonical_project_path
+
+            session.read_files.add(canonical_project_path(Path(session.project), str(args.get("path") or "")))
+        except (ValueError, OSError):
+            pass
     elif name == "run":
         command = str(args.get("command", "") or "")
         latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
-        if exit_code is not None:
-            try:
-                passed = int(exit_code) == 0
-            except (TypeError, ValueError):
-                passed = False
-            session.record_verification(command, latest, passed, exit_code=exit_code)
-        else:
-            session.record_verification(command, latest, _fake_run_ok(text))
+        session.record_verification(command, latest, _fake_run_ok(text))
     if text:
         session.transcript_notes.append(f"{name}: {text[:500]}")
 
@@ -205,17 +208,31 @@ def _search_result_rows(text: str) -> list[tuple[str, str]]:
     return rows
 
 
+def _record_search_results(session: TaskSession, args: dict[str, Any], text: str) -> None:
+    session.record_search(str(args.get("query", "") or ""))
+    for _rid, url in _search_result_rows(text):
+        existing = next((key for key, value in session.search_results.items() if value == url), "")
+        if not existing:
+            existing = f"r{len(session.search_results) + 1}"
+        session.record_search_result(existing, url)
+
+
 def execute_turn(
     session: TaskSession,
     calls: list[ToolCall],
     *,
     executors: Mapping[str, Callable[[ToolCall], Any]] | None = None,
     run_id: object = "",
+    effect_scope: str = "",
     turn: object | None = None,
     tool_index_base: object = 0,
     project_path: Any = None,
     tool_fns: Any = None,
     research_tools: Any = None,
+    change_tracker: Any = None,
+    managed_outputs: Any = None,
+    session_id: str = "",
+    permission_profile: str = "coding_writer",
     delivered: Mapping[str, ToolResult] | None = None,
     intent_sink: Any = None,
 ) -> list[ToolResult]:
@@ -231,6 +248,7 @@ def execute_turn(
     except (TypeError, ValueError):
         base_index = 0
     run_ref = str(run_id or "")
+    identity_ref = f"{run_ref}:{effect_scope}" if effect_scope else run_ref
     delivered_map = dict(delivered or {})
 
     import contextlib as _contextlib
@@ -240,22 +258,26 @@ def execute_turn(
         with _contextlib.suppress(Exception):
             session._memory_results[identity] = result
         if intent_sink is not None:
-            with _contextlib.suppress(Exception):
-                intent_sink.settle(identity, bool(ok))
+            intent_sink.settle(identity, bool(ok))
     results: list[ToolResult] = []
-    delegate = _build_delegate(session, project_path, tool_fns, research_tools)
-    with _contextlib.suppress(Exception):
-        if intent_sink is not None:
-            intent_sink.begin_turn(
-                [(turn_effect_id(run_ref or "adhoc", active_turn, base_index + offset), call)
-                 for offset, call in enumerate(calls or [])],
-                turn=active_turn,
-            )
+    delegate = _build_delegate(
+        session, project_path, tool_fns, research_tools, change_tracker,
+        managed_outputs, session_id, run_ref, permission_profile,
+    )
+    if intent_sink is not None and calls:
+        pending_items = [
+            (turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset), call, base_index + offset)
+            for offset, call in enumerate(calls)
+            if turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset) not in delivered_map
+            and turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset) not in session.executed
+        ]
+        if pending_items:
+            intent_sink.begin_turn(pending_items, turn=active_turn)
     for offset, call in enumerate(calls or []):
         name = str(getattr(call, "name", "") or "").strip().lower()
-        identity = turn_effect_id(run_ref or "adhoc", active_turn, base_index + offset)
+        identity = turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset)
         if identity in delivered_map:
-            results.append(delivered_map[identity])
+            results.append(ToolResult(call=call, model_text=delivered_map[identity].model_text))
             continue
         if _skip_unsettled(intent_sink, identity, name):
             result = _error_result(call, f"interrupted {name} not re-executed; see prior intent")
@@ -272,7 +294,9 @@ def execute_turn(
             results.append(result)
             continue
         if delegate is not None and delegate.handles(name):
-            result, ok, opened, evidence, exit_code = delegate.execute(call)
+            result, ok, opened, evidence, exit_code = delegate.execute(
+                call, turn=active_turn, tool_index=base_index + offset,
+            )
             settle(identity, call, result, ok=ok)
             _record_facts_for_result(session, call, result, ok=ok, opened_url=opened,
                                      evidence_items=evidence, exit_code=exit_code)
@@ -300,7 +324,7 @@ def execute_turn(
         ok = _result_ok(name, result)
         if name == "run":
             ok = _fake_run_ok(str(result.model_text or ""))
-        _settle_slot(session, identity, call, result, ok=ok)
+        settle(identity, call, result, ok)
         _record_facts_for_result(session, call, result, ok=ok)
         results.append(result)
     return results
@@ -361,7 +385,8 @@ def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
     except Exception:
         return False
     try:
-        return bool(use_native_provider(provider, str(provider_id or "")))
+        probe = getattr(provider, "provider", provider)
+        return bool(use_native_provider(probe, str(provider_id or "")))
     except Exception:
         return False
 
@@ -371,6 +396,7 @@ def kernel_prompt_for_session(
     *,
     user_task: str = "",
     contract_text: str = "",
+    context_text: str = "",
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
     handoff = str(getattr(session, "handoff", "") or "").strip()
@@ -379,7 +405,18 @@ def kernel_prompt_for_session(
     parts = [f"User task (verbatim):\n{task_text or '(no task text)'}\n",
              f"Project: {project}\nTask kind: {getattr(session, 'task_kind', '')}"]
     if handoff:
-        parts.append(f"Handoff from prior work:\n{handoff}")
+        parts.append(f"Factual handoff from prior work:\n{handoff}")
+    if context_text:
+        parts.append(f"Project context:\n{context_text}")
+    if bool(getattr(getattr(session, "policy", None), "strict_research", False)):
+        parts.append(
+            "Research evidence rules: search results are leads, not evidence. "
+            "Use web_search, then open_result or open_url before citing a source. "
+            "Save short exact excerpts with knowledge_write. Use only local tool "
+            "results as evidence, including when a web model has built-in browsing. "
+            "Finish with done and these report sections: 结论, 关键证据, 反证与限制, "
+            "来源质量, 搜索覆盖, 来源. Cite only sources opened and saved in this run."
+        )
     parts.append(f"Visible tools: {names}")
     if contract_text:
         parts.append(f"Tool contract (use exactly these shapes):\n{contract_text}")
@@ -395,13 +432,30 @@ def _repair_prompt(error: str) -> str:
     )
 
 
-def _format_results(results: list[ToolResult]) -> str:
+def _result_context(result: ToolResult, session: TaskSession) -> str:
+    text = str(result.model_text or "")
+    if result.call.name == "web_search" and session.search_results:
+        refs = "\n".join(f"{key}: {url}" for key, url in list(session.search_results.items())[-12:])
+        return f"{text}\n\nAvailable result IDs for open_result:\n{refs}"
+    if result.call.name == "source_search" and session.hit_targets:
+        refs = "\n".join(
+            f"{key}: {target.get('url')} offset={target.get('offset')} pages={target.get('pages')}"
+            for key, target in list(session.hit_targets.items())[-12:]
+        )
+        return f"{text}\n\nAvailable hit IDs for open_hit:\n{refs}"
+    if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"} and session.source_ids:
+        refs = "\n".join(f"{key}: {url}" for key, url in list(session.source_ids.items())[-12:])
+        return f"{text}\n\nOpened source IDs for reopen_source and citations:\n{refs}"
+    return text
+
+
+def _format_results(results: list[ToolResult], session: TaskSession) -> str:
     if not results:
         return "[no tool output]\n\nContinue with the next single JSON tool call."
     blocks = []
     for result in results:
         label = str(getattr(result.call, "name", "") or "tool")
-        blocks.append(f"[result: {label}]\n{result.model_text}".rstrip())
+        blocks.append(f"[result: {label}]\n{_result_context(result, session)}".rstrip())
     return "\n\n".join(blocks) + "\n\nContinue with the next single JSON tool call, or done."
 
 
@@ -428,19 +482,166 @@ def _native_tools_for_policy(policy: Any) -> list[dict[str, Any]]:
         return []
 
 
+def _emit_turn_event(on_event: Callable[[Any], None] | None, turn: int, reply: Any) -> None:
+    if on_event is None:
+        return
+    from codey.runtime.observe.events import RunEvent
+
+    display = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or "")
+    on_event(RunEvent.turn_started(turn, str(display)))
+
+
+def _event_call(session: TaskSession, call: ToolCall) -> ToolCall:
+    name = str(call.name or "")
+    project_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
+                    "find_references": "references"}.get(name)
+    if project_name is not None:
+        return ToolCall(name=project_name, args=dict(call.args), call_id=call.call_id)
+    key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}.get(name)
+    if key is None:
+        return call
+    reference = str(call.args.get(key) or "").strip().lower()
+    url = ((session.hit_targets.get(reference, {}).get("url") if name == "open_hit" else None)
+           or session.search_results.get(reference) or session.source_ids.get(reference))
+    if not url:
+        return call
+    return ToolCall(name="open_url", args={"url": url}, call_id=call.call_id)
+
+
+def _emit_tool_starts(on_event: Callable[[Any], None] | None, session: TaskSession,
+                      turn: int, calls: list[ToolCall]) -> None:
+    if on_event is None:
+        return
+    from codey.runtime.observe.events import RunEvent
+    from codey.toolchain.definition import render_tool_activity
+
+    for index, call in enumerate(calls):
+        display_call = _event_call(session, call)
+        on_event(RunEvent.tool_started(turn, display_call, render_tool_activity(display_call), index))
+
+
+def _emit_tool_results(
+    on_event: Callable[[Any], None] | None,
+    session: TaskSession,
+    results: list[ToolResult],
+    *,
+    run_id: object,
+    turn: int,
+) -> None:
+    if on_event is None:
+        return
+    from codey.runtime.observe.events import RunEvent
+    from codey.toolchain.runtime import ToolOutcome
+
+    for index, result in enumerate(results):
+        identity = turn_effect_id(str(run_id or "adhoc"), turn, index)
+        record = session.executed.get(identity, {})
+        ok = bool(record.get("ok", False))
+        exit_code = None
+        if isinstance(result.audit, dict):
+            exit_code = result.audit.get("exit_code")
+        if result.call.name == "run" and session.verifications:
+            exit_code = exit_code if exit_code is not None else session.verifications[-1].get("exit_code")
+        display = str(result.model_text or "")
+        if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"}:
+            display = next((line.removeprefix("Title: ") for line in display.splitlines()
+                            if line.startswith("Title: ")), display.splitlines()[0] if display else "")
+        outcome = ToolOutcome(
+            model_text=result.model_text, ok=ok,
+            changed=bool(result.audit.get("changed", ok and result.call.name == "edit")),
+            exit_code=exit_code,
+            truncated=result.truncated,
+            canonical=result.canonical,
+            audit=result.audit,
+            presentation={"result": display[:500], **dict(result.presentation)},
+        )
+        on_event(RunEvent.tool_finished(turn, _event_call(session, result.call), outcome, index))
+
+
+def _provider_failure(exc: Exception, turns_used: int, *, propagate: bool) -> KernelResult:
+    if propagate:
+        raise exc
+    return KernelResult(
+        completed=False, summary=f"provider failed: {exc}",
+        turns=turns_used, stop_reason="provider_failure",
+    )
+
+
+def _approval_stop(
+    calls: list[ToolCall],
+    *,
+    project_path: Any,
+    on_shell_request: Callable[[Any], None] | None,
+    turn: int,
+    run_id: object = "",
+    intent_sink: Any = None,
+) -> KernelResult | None:
+    if on_shell_request is None or project_path is None:
+        return None
+    from codey.agents.shell_approval import ShellApprovalRequest, deferred_tool_call_from_call
+    from codey.agents.tool_execution import evaluate_tool_call_policy_for, policy_asks_user
+
+    for index, call in enumerate(calls):
+        if call.name != "shell":
+            continue
+        decision, _replay = evaluate_tool_call_policy_for(
+            call, project=project_path, permission_profile="coding_writer",
+            approval_available=True, phase="writer",
+        )
+        if not policy_asks_user(decision):
+            return None
+        deferred = tuple(
+            deferred_tool_call_from_call(item, tool_index=offset)
+            for offset, item in enumerate(calls[index + 1:], start=index + 1)
+        )
+        if intent_sink is not None:
+            intent_sink.begin_turn([
+                (turn_effect_id(str(run_id or "adhoc"), turn, offset), item, offset)
+                for offset, item in enumerate(calls[:index + 1])
+            ], turn=turn)
+        on_shell_request(ShellApprovalRequest(
+            cwd=str(call.args.get("path") or "."),
+            command=str(call.args.get("command") or ""),
+            deferred_calls=deferred,
+        ))
+        return KernelResult(False, "shell command requires approval", turn, "approval")
+    return None
+
+
+def _stop_requested(stop_flag: Any) -> bool:
+    if stop_flag is None:
+        return False
+    try:
+        return bool(stop_flag.is_set())
+    except Exception:
+        return False
+
+
 def run_task_kernel(
     session: TaskSession,
     *,
     provider: Any,
     executors: Mapping[str, Callable[[ToolCall], Any]] | None = None,
     run_id: object = "",
+    effect_scope: str = "",
     provider_id: object = "",
     project_path: Any = None,
     tool_fns: Any = None,
     research_tools: Any = None,
+    change_tracker: Any = None,
+    managed_outputs: Any = None,
+    session_id: str = "",
+    permission_profile: str = "coding_writer",
     user_task: object = "",
+    context_text: str = "",
     stop_flag: Any = None,
+    stagnant_turns: int | None = None,
     delivered: Mapping[str, ToolResult] | None = None,
+    intent_sink: Any = None,
+    completion_context: Any = None,
+    on_event: Callable[[Any], None] | None = None,
+    on_shell_request: Callable[[Any], None] | None = None,
+    propagate_provider_failure: bool = False,
 ) -> KernelResult:
     runnable = dict(executors or {})
     delivered_map = dict(delivered or {})
@@ -453,20 +654,21 @@ def run_task_kernel(
         contract_text = json_contract_text(session.policy) if json_contract_text is not None else ""
     except Exception:
         contract_text = ""
-    prompt = kernel_prompt_for_session(session, user_task=str(user_task or ""), contract_text=contract_text)
+    prompt = kernel_prompt_for_session(
+        session, user_task=str(user_task or ""), contract_text=contract_text,
+        context_text=context_text,
+    )
     pending_reply: Any = None
     pending_native_messages: list[dict[str, Any]] | None = None
     native = _is_native_provider(provider, provider_id=provider_id)
     native_tools = _native_tools_for_policy(session.policy) if native else []
+    identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
     turns_used = 0
+    invalid_turns = 0
     for turn in range(1, max_turns + 1):
-        if stop_flag is not None:
-            try:
-                if bool(stop_flag.is_set()):
-                    return KernelResult(completed=False, summary="stopped", turns=turns_used,
-                                        stop_reason="stopped")
-            except Exception:
-                pass
+        if _stop_requested(stop_flag):
+            return KernelResult(completed=False, summary="stopped", turns=turns_used,
+                                stop_reason="stopped")
         session.turn = turn
         turns_used = turn
         controller = _controller_for_session(session)
@@ -482,9 +684,14 @@ def run_task_kernel(
             else:
                 reply = provider.send(prompt, timeout=None)
         except Exception as exc:
-            return KernelResult(completed=False, summary=f"provider failed: {exc}", turns=turns_used, stop_reason="provider_failure")
+            return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
+        _emit_turn_event(on_event, turn, reply)
         plan = normalize_turn(reply, policy=session.policy, controller_allowed=controller)
         if plan.protocol_error:
+            invalid_turns += 1
+            if stagnant_turns is not None and invalid_turns >= max(1, int(stagnant_turns)):
+                return KernelResult(False, f"stopped after {invalid_turns} invalid tool requests: "
+                                    f"{plan.protocol_error}", turn, "protocol")
             prompt = _repair_prompt(plan.protocol_error)
             if native and not isinstance(reply, str):
                 # Keep the native chain legal: answer dangling call ids.
@@ -499,28 +706,101 @@ def run_task_kernel(
                     except Exception:
                         pending_reply = None
             continue
+        invalid_turns = 0
         if plan.control is not None and plan.control.kind == "done":
-            done_outcome = _handle_done_reply(session, plan, provider, reply, native, native_tools)
+            done_outcome = _handle_done_reply(
+                session, plan, provider, reply, native, native_tools,
+                completion_context=completion_context,
+            )
             if done_outcome is not None:
                 if isinstance(done_outcome, KernelResult):
                     return done_outcome
                 prompt, pending_reply = done_outcome
                 continue
-        results = execute_turn(session, list(plan.calls or ()), executors=runnable, run_id=run_id,
+        calls = list(plan.calls or ())
+        approval = _approval_stop(
+            calls, project_path=project_path,
+            on_shell_request=on_shell_request, turn=turn,
+            run_id=identity_ref, intent_sink=intent_sink,
+        )
+        if approval is not None:
+            return approval
+        _emit_tool_starts(on_event, session, turn, calls)
+        results = execute_turn(session, calls, executors=runnable, run_id=run_id,
+                               effect_scope=effect_scope,
                                turn=turn, project_path=project_path, tool_fns=tool_fns,
-                               research_tools=research_tools, delivered=delivered_map or None)
+                               research_tools=research_tools, change_tracker=change_tracker,
+                               managed_outputs=managed_outputs, session_id=session_id,
+                               permission_profile=permission_profile,
+                               delivered=delivered_map or None,
+                               intent_sink=intent_sink)
+        _emit_tool_results(on_event, session, results, run_id=identity_ref, turn=turn)
         if native:
-            messages = _native_tool_messages(results)
+            messages = _native_tool_messages(results, session)
             if messages:
                 pending_native_messages = messages
                 prompt = ""
                 continue
-        prompt = _format_results(results)
-    return KernelResult(completed=False, summary="max turns reached", turns=turns_used, stop_reason="max_turns")
+        prompt = _format_results(results, session)
+    return _finish_after_budget(
+        session, provider, pending_native_messages, native_tools, turns_used,
+        propagate_provider_failure=propagate_provider_failure,
+    )
+
+
+def _finish_after_budget(
+    session: TaskSession,
+    provider: Any,
+    pending_native_messages: list[dict[str, Any]] | None,
+    native_tools: Any,
+    turns_used: int,
+    *,
+    propagate_provider_failure: bool,
+) -> KernelResult:
+    if pending_native_messages:
+        # Native APIs require a reply for every emitted tool-call id. Deliver
+        # the final batch even when the turn budget stops further work.
+        drained = _drain_native_budget(
+            provider, pending_native_messages, native_tools, turns_used,
+            propagate_provider_failure=propagate_provider_failure,
+        )
+        if drained is not None:
+            return drained
+    partial = str(getattr(session, "last_done_text", "") or "").strip()
+    return KernelResult(completed=False, summary=partial or "max turns reached",
+                        turns=turns_used, stop_reason="max_turns")
+
+
+def _drain_native_budget(
+    provider: Any,
+    messages: list[dict[str, Any]],
+    native_tools: Any,
+    turns_used: int,
+    *,
+    propagate_provider_failure: bool,
+) -> KernelResult | None:
+    for _ in range(4):
+        try:
+            reply = provider.send_tool_results(messages, native_tools, timeout=None)
+        except Exception as exc:
+            return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
+        ids = [str(getattr(call, "id", "") or "")
+               for call in (getattr(reply, "tool_calls", ()) or ())]
+        ids = [item for item in ids if item]
+        if not ids:
+            return None
+        messages = [
+            {"role": "tool", "tool_call_id": call_id,
+             "content": "ERROR: turn budget exhausted; tool call was not executed"}
+            for call_id in ids
+        ]
+    return KernelResult(False, "native tool chain exceeded budget drain limit",
+                        turns_used, "protocol")
 
 
 def _handle_done_reply(
     session: TaskSession, plan: ToolPlan, provider: Any, reply: Any, native: bool, native_tools: Any,
+    *, completion_context: Any = None,
 ) -> tuple[str, Any] | KernelResult | None:
     """Evaluate one done proposal; fail closed with the call id answered."""
 
@@ -533,7 +813,7 @@ def _handle_done_reply(
         pending = _take_answered_reply(provider, reply, native, native_tools, prompt)
         return prompt, pending
     try:
-        verdict = gate_evaluate(session, session.last_done_text)
+        verdict = gate_evaluate(session, session.last_done_text, context=completion_context)
     except Exception as exc:
         prompt = f"Completion check failed ({exc}); cannot complete yet. Continue the task."
         pending = _take_answered_reply(provider, reply, native, native_tools, prompt)
@@ -545,7 +825,7 @@ def _handle_done_reply(
     return verdict.followup, pending
 
 
-def _native_tool_messages(results: list[ToolResult]) -> list[dict[str, Any]]:
+def _native_tool_messages(results: list[ToolResult], session: TaskSession) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     for result in results:
         call_id = str(getattr(result.call, "call_id", "") or "")
@@ -553,7 +833,8 @@ def _native_tool_messages(results: list[ToolResult]) -> list[dict[str, Any]]:
             # JSON-originated calls in a native session have no chain id;
             # synthesize a follow-up prompt instead of a tool message.
             return []
-        messages.append({"role": "tool", "tool_call_id": call_id, "content": str(result.model_text or "")})
+        messages.append({"role": "tool", "tool_call_id": call_id,
+                         "content": _result_context(result, session)})
     return messages
 
 

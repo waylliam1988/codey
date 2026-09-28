@@ -24,7 +24,7 @@ def _unified_kind(task_kind: object) -> str:
     kind = str(task_kind or "").strip().lower()
     if kind in _UNIFIED_KINDS:
         return "planning" if kind in {"planning_readonly", "readonly"} else kind
-    return "project" if kind == "auto" else kind
+    return "project" if kind in {"auto", "unified"} else kind
 
 
 def build_unified_policy(request: Any, task_kind: object) -> Any:
@@ -35,26 +35,15 @@ def build_unified_policy(request: Any, task_kind: object) -> Any:
     return policy_for_dispatch(request, kind, strict_research=strict)
 
 
-def _narrow_for_auto(policy: Any, request: Any) -> tuple[Any, str]:
-    try:
-        from codey.operations.auto_loop import is_auto_request
-    except Exception:
-        return policy, ""
-    try:
-        if not bool(is_auto_request(request)):
-            return policy, ""
-    except Exception:
-        return policy, ""
-    return policy, ""
-
-
 def _build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | None:
     knowledge_store = getattr(deps, "knowledge_store", None)
     if knowledge_store is None:
         return None
     search_factory = getattr(deps, "search_factory", None)
     if not callable(search_factory):
-        return None
+        from codey.operations.research_flow import default_research_search_provider
+
+        search_factory = default_research_search_provider
     try:
         search = search_factory()
     except Exception:
@@ -89,7 +78,13 @@ def run_unified_mode(
     task_kind: str = "",
     config_result: Any = None,
 ) -> ModeOutcome:
-    from codey.operations.task_kernel import TaskSession, apply_auto_plan, run_task_kernel
+    from codey.operations.task_kernel import (
+        TaskSession,
+        _record_facts_for_result,
+        apply_auto_plan,
+        run_task_kernel,
+    )
+    from codey.runtime.core.models import ToolResult
 
     request = frame.request
     kind = _unified_kind(task_kind or frame.task_kind)
@@ -116,6 +111,8 @@ def run_unified_mode(
     project_path: Path | None = None
     if frame.project_text:
         candidate = Path(frame.project_text).expanduser()
+        if policy.allows("project.write"):
+            candidate.mkdir(parents=True, exist_ok=True)
         if candidate.is_dir():
             project_path = candidate.resolve()
     tool_fns = None
@@ -127,21 +124,59 @@ def run_unified_mode(
         tool_fns = DEFAULT_TOOL_FNS
     research_tools = _build_research_tools(
         deps, session_id=request.session_id, project=frame.project_text)
-    delivered = _delivered_from_recovery(frame)
+    delivered = _delivered_from_recovery(frame, effect_scope="unified")
+    for row in getattr(frame, "recovered_tool_outcomes", ()) or ():
+        prior = ToolResult(
+            call=row.call, model_text=row.outcome.model_text,
+            audit={"changed": bool(row.outcome.changed)} if row.call.name == "edit" else {},
+        )
+        _record_facts_for_result(session, row.call, prior, ok=bool(row.outcome.ok),
+                                 exit_code=row.outcome.exit_code)
+    intent_sink = None
+    active_provider = frame.provider
+    mutations = getattr(deps, "runtime_mutations", None)
+    if mutations is not None and request.session_id and frame.run_id:
+        from codey.operations.kernel_effects import KernelEffectSink, KernelRecordedProvider
+
+        mutations.mark_writer_running(request.session_id, frame.run_id,
+                                      provider_id=frame.provider_id)
+        intent_sink = KernelEffectSink(
+            mutations, session_id=request.session_id, run_id=frame.run_id,
+            provider_id=frame.provider_id,
+            phase="research" if kind == "research" else "writer",
+            recovered_batch_id=str(getattr(frame, "recovered_tool_result_batch_id", "") or ""),
+        )
+        active_provider = KernelRecordedProvider(active_provider, intent_sink)
     stop_flag = getattr(getattr(deps, "state", None), "run_registry", None)
     stop_flag = getattr(stop_flag, "stop_flag", None)
     result = run_task_kernel(
         session,
-        provider=frame.provider,
+        provider=active_provider,
         executors={},
         run_id=frame.run_id,
+        effect_scope="unified",
         provider_id=frame.provider_id,
         project_path=project_path,
         tool_fns=tool_fns,
         research_tools=research_tools,
+        managed_outputs=getattr(deps, "managed_outputs", None),
+        session_id=request.session_id,
+        permission_profile="research" if kind == "research" else "coding_writer",
         user_task=execution_task(request),
         stop_flag=stop_flag,
         delivered=delivered or None,
+        intent_sink=intent_sink,
+        on_event=hooks.on_event,
+        on_shell_request=hooks.on_shell_request,
+        completion_context={
+            "run_id": frame.run_id,
+            "task": request.task,
+            "question": request.task,
+            "project": frame.project_text,
+            "execution_evidence": work.evidence,
+            "analysis_run_payloads": work.analysis_run_payloads,
+            "research_ledger": getattr(research_tools, "ledger", None),
+        },
     )
     summary = str(result.summary or "")
     receipt = {"display": {"summary": summary[:2000]}}
@@ -204,7 +239,7 @@ def _direct_answer_outcome(frame: RunFrame, kind: str) -> ModeOutcome:
     })
 
 
-def _delivered_from_recovery(frame: RunFrame) -> dict[str, Any]:
+def _delivered_from_recovery(frame: RunFrame, *, effect_scope: str = "") -> dict[str, Any]:
     delivered: dict[str, Any] = {}
     try:
         from codey.operations.task_kernel import turn_effect_id
@@ -217,7 +252,8 @@ def _delivered_from_recovery(frame: RunFrame) -> dict[str, Any]:
             outcome = getattr(item, "outcome", None)
             turn = int(getattr(item, "turn", 0) or 0)
             index = int(getattr(item, "tool_index", 0) or 0)
-            identity = turn_effect_id(frame.run_id, turn, index)
+            identity_ref = f"{frame.run_id}:{effect_scope}" if effect_scope else frame.run_id
+            identity = turn_effect_id(identity_ref, turn, index)
             delivered[identity] = ToolResult(
                 call=ToolCall(str(getattr(call, "name", "") or ""),
                               dict(getattr(call, "args", {}) or {}),

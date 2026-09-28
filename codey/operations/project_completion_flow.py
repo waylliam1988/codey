@@ -56,6 +56,7 @@ from codey.operations.task_context import (
     safe_verification_candidates,
 )
 from codey.operations.task_state import TaskState
+from codey.operations.unified_mode import _build_research_tools
 from codey.providers.capabilities import rank_providers
 from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
@@ -114,6 +115,7 @@ class PersistenceAccess:
     work_checkpoints: WorkCheckpointStore | None = None
     managed_outputs: ManagedOutputStore | None = None
     knowledge_store: KnowledgeStore | None = None
+    search_factory: Callable[[], object] | None = None
 
 
 @dataclass(frozen=True)
@@ -404,6 +406,7 @@ class _ProjectRun:
     proof: Any = None
     blocked_reason: str = ""
     repaired_once: bool = False
+    writer_attempt_index: int = 0
     receipt: Any = None
 
 
@@ -576,6 +579,7 @@ def _run_one_writer_attempt(
     spec: WriterAttempt,
     note_turn: Callable[[int], None],
 ) -> RunResult:
+    ctx.writer_attempt_index += 1
     recovered_outcomes = ctx.frame.recovered_tool_outcomes
     ctx.frame.recovered_tool_outcomes = ()
     recovered_batch_id = ctx.frame.recovered_tool_result_batch_id
@@ -636,11 +640,16 @@ def _run_one_writer_attempt(
         trace_recorder=ctx.frame.trace,
         session_id=ctx.request.session_id,
         run_id=ctx.frame.run_id,
+        effect_scope=f"writer:{ctx.writer_attempt_index}",
         tool_result_delivery=ctx.deps.runtime.tool_result_delivery,
         runtime_mutations=ctx.deps.runtime.mutations,
         managed_outputs=ctx.deps.persistence.managed_outputs,
         recovered_tool_outcomes=recovered_outcomes,
         recovered_tool_result_batch_id=recovered_batch_id,
+        requested_capabilities=ctx.request.requested_capabilities,
+        research_tools=_build_research_tools(ctx.deps.persistence, session_id=ctx.request.session_id,
+                                             project=ctx.frame.project_text)
+        if "web.read" in ctx.request.requested_capabilities else None,
     ))
 
 

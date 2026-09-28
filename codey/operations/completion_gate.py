@@ -253,14 +253,37 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
         rows.append(row)
     try:
         from codey.research.contract import research_completion_checks
+        from codey.research.object_model import build_research_record
         from codey.research.proof_quality import review_research_proof
+        from codey.research.report_quality import review_report_quality
 
         record = get("research_record")
-        review = review_research_proof(record, question=str(get("question") or ""),
-                                       evidence_ledger=get("evidence_ledger_payload"))
-        for item in research_completion_checks(review) or ():
-            if isinstance(item, CompletionCheck):
-                rows.append(item)
+        if record is None:
+            report_review = review_report_quality(
+                str(done_text or ""),
+                ledger=ledger,
+                opened_sources=finals,
+                search_result_urls=set(getattr(session, "search_results", {}).values()),
+            )
+            quality_row = completion_check(
+                "research_report_quality",
+                CHECK_PASS if report_review.ok else CHECK_FAIL,
+                "" if report_review.ok else "research_report_quality_failed",
+            )
+            if quality_row is not None:
+                rows.append(quality_row)
+            record = build_research_record(
+                question=str(get("question") or ""), summary=str(done_text or ""),
+                ledger=ledger, review=report_review,
+                run_id=str(get("run_id") or ""), project=get("project"),
+                stop_reason="done",
+            )
+        if get("require_proof_review"):
+            review = review_research_proof(record, question=str(get("question") or ""),
+                                           evidence_ledger=get("evidence_ledger_payload"))
+            for item in research_completion_checks(review) or ():
+                if isinstance(item, CompletionCheck):
+                    rows.append(item)
     except Exception as exc:
         row = completion_check("research_proof", CHECK_FAIL, f"proof_error:{type(exc).__name__}")
         if row is not None:

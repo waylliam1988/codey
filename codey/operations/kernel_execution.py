@@ -2,33 +2,30 @@
 
 Project tools reuse the coding guards and readers (path safety, command
 policy, shell approval surface); Research tools reuse ResearchTools, the
-source gateway, and the evidence ledger. Every call yields a structured
-``ExecutionResult``; completion facts come only from ``ok`` results and ledger
+source gateway, and the evidence ledger. Completion facts come only from
+successful tool results and ledger
 state, never from substring matching or model-supplied parameters.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from codey.runtime.core.models import ToolCall, ToolResult
 
 
-@dataclass(frozen=True)
-class ExecutionResult:
-    ok: bool
-    model_text: str
-    changed: bool = False
-    exit_code: int | None = None
-    opened_url: str = ""
-    evidence: tuple[dict[str, str], ...] = ()
-    error_code: str = ""
-    approval_required: bool = False
-
-    def to_tool_result(self, call: ToolCall) -> ToolResult:
-        return ToolResult(call=call, model_text=self.model_text)
+def _tool_result(call: ToolCall, outcome: Any) -> ToolResult:
+    audit = dict(getattr(outcome, "audit", {}) or {})
+    if call.name == "edit":
+        audit["changed"] = bool(getattr(outcome, "changed", False))
+    return ToolResult(
+        call=call, model_text=str(outcome.model_text or ""),
+        truncated=bool(getattr(outcome, "truncated", False)),
+        presentation=dict(getattr(outcome, "presentation", {}) or {}),
+        audit=audit,
+        canonical=dict(getattr(outcome, "canonical", {}) or {}),
+    )
 
 
 def _is_ok_text(text: str) -> bool:
@@ -49,6 +46,10 @@ class ExecutionDelegate:
         research_tools: Any = None,
         permission_profile: str = "coding_writer",
         approval_available: bool = False,
+        change_tracker: Any = None,
+        managed_outputs: Any = None,
+        session_id: str = "",
+        run_id: str = "",
     ) -> None:
         self.session = session
         self.project_path = Path(str(project_path)).expanduser() if project_path else None
@@ -58,6 +59,10 @@ class ExecutionDelegate:
         self.research_tools = research_tools
         self.permission_profile = str(permission_profile or "coding_writer")
         self.approval_available = bool(approval_available)
+        self.change_tracker = change_tracker
+        self.managed_outputs = managed_outputs
+        self.session_id = session_id
+        self.run_id = run_id
         if self.tool_fns is None and self.project_path is not None:
             try:
                 from codey.agents.tools import DEFAULT_TOOL_FNS
@@ -83,7 +88,8 @@ class ExecutionDelegate:
             return self.research_tools is not None
         return False
 
-    def execute(self, call: ToolCall) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
+    def execute(self, call: ToolCall, *, turn: int = 0,
+                tool_index: int = 0) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
         name = str(call.name or "").strip().lower()
         try:
             from codey.toolchain.tool_spec import spec_for_tool
@@ -94,7 +100,7 @@ class ExecutionDelegate:
         if executor == "project":
             return self._execute_project(call)
         if executor in {"source", "knowledge"}:
-            return self._execute_research(call)
+            return self._execute_research(call, turn=turn, tool_index=tool_index)
         result = ToolResult(call=call, model_text=f"ERROR: no production executor for {name or '?'}")
         return result, False, "", [], None
 
@@ -112,10 +118,12 @@ class ExecutionDelegate:
         except Exception as exc:
             return True, f"policy unavailable: {exc}", False
         try:
+            runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
+                            "find_references": "references"}.get(call.name, call.name)
             decision, _replay = evaluate_tool_call_policy_for(
-                call,
+                ToolCall(runtime_name, dict(call.args or {}), call_id=call.call_id),
                 project=self.project_path,
-                permission_profile=self.permission_profile,
+                permission_profile=self._project_permission_profile(),
                 approval_available=self.approval_available,
                 phase="writer",
             )
@@ -130,6 +138,12 @@ class ExecutionDelegate:
         except Exception:
             pass
         return False, "", False
+
+    def _project_permission_profile(self) -> str:
+        # The Research profile controls research context and source tools. A
+        # project tool still needs the coding path/command guard; TaskPolicy
+        # has already authorized the individual project capability.
+        return "coding_writer" if self.permission_profile == "research" else self.permission_profile
 
     def _execute_project(self, call: ToolCall) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
         denied, message, _approval = self._policy_check(call)
@@ -147,20 +161,20 @@ class ExecutionDelegate:
                     self.project_path, self.tool_fns,
                     ToolCall(runtime_name, dict(call.args or {})),
                 )
-                result = ToolResult(call=call, model_text=outcome.model_text)
+                result = _tool_result(call, outcome)
                 return result, bool(outcome.ok), "", [], None
             if name == "edit":
                 outcome = self._execute_edit(call)
-                result = ToolResult(call=call, model_text=outcome.model_text)
+                result = _tool_result(call, outcome)
                 return result, bool(outcome.ok), "", [], None
             if name == "run":
                 outcome = self.tool_fns.execute_run_command(
                     self.project_path, str((call.args or {}).get("path", ".") or "."),
                     str((call.args or {}).get("command", "") or ""),
-                    permission_profile=self.permission_profile, phase="writer",
+                    permission_profile=self._project_permission_profile(), phase="writer",
                     tool_id=str(getattr(call, "call_id", "") or ""),
                 )
-                result = ToolResult(call=call, model_text=outcome.model_text)
+                result = _tool_result(call, outcome)
                 return result, bool(outcome.ok), "", [], getattr(outcome, "exit_code", None)
         except Exception as exc:
             result = ToolResult(call=call, model_text=f"ERROR: {exc}")
@@ -169,19 +183,42 @@ class ExecutionDelegate:
         return result, False, "", [], None
 
     def _execute_edit(self, call: ToolCall) -> Any:
-        from codey.toolchain.runtime import ToolOutcome
+        from codey.agents.protocol import canonical_project_path
+        from codey.agents.tool_execution import read_before_edit_outcome
+        from codey.toolchain.runtime import ToolOutcome, safe_join
 
         args = dict(call.args or {})
-        if str(args.get("content", "") or ""):
-            return self.tool_fns.write_file(self.project_path, str(args.get("path", "") or ""),
-                                            str(args.get("content", "") or ""))
+        path = str(args.get("path", "") or "")
+        try:
+            canonical = canonical_project_path(self.project_path, path)
+            target = safe_join(self.project_path, canonical)
+        except ValueError:
+            return ToolOutcome.error("workspace_escape: path escapes project root")
+        if "content" in args:
+            if target.is_file():
+                return ToolOutcome.error(
+                    f"content is only allowed when creating a new file; use replacements for existing file: {canonical}"
+                )
+            if self.change_tracker is not None:
+                self.change_tracker.capture_before(path)
+            outcome = self.tool_fns.write_file(self.project_path, path, str(args.get("content") or ""))
+            if outcome.ok and outcome.changed and self.change_tracker is not None:
+                self.change_tracker.capture_after(path)
+            return outcome
+        guard = read_before_edit_outcome(
+            self.project_path, path, set(getattr(self.session, "read_files", set()) or set()),
+        )
+        if guard is not None:
+            return guard
         replacements = args.get("replacements")
         blocks: list[dict[str, str]] = []
         if isinstance(replacements, list):
             for item in replacements:
-                if isinstance(item, dict) and item.get("old_string") is not None:
-                    blocks.append({"old_string": str(item.get("old_string") or ""),
-                                   "new_string": str(item.get("new_string") or "")})
+                if isinstance(item, dict) and ("search" in item or "old_string" in item):
+                    blocks.append({
+                        "old_string": str(item.get("search", item.get("old_string")) or ""),
+                        "new_string": str(item.get("replace", item.get("new_string")) or ""),
+                    })
         elif args.get("old_string") is not None:
             blocks.append({"old_string": str(args.get("old_string") or ""),
                            "new_string": str(args.get("new_string") or "")})
@@ -190,12 +227,36 @@ class ExecutionDelegate:
         try:
             from codey.toolchain.runtime import EditBlock
 
-            edit_blocks = [EditBlock(old_string=b["old_string"], new_string=b["new_string"]) for b in blocks]
+            edit_blocks = [EditBlock(search=b["old_string"], replace=b["new_string"]) for b in blocks]
         except Exception:
             edit_blocks = blocks  # type: ignore[assignment]
-        return self.tool_fns.edit_file(self.project_path, str(args.get("path", "") or ""), edit_blocks)
+        if self.change_tracker is not None:
+            self.change_tracker.capture_before(path)
+        outcome = self.tool_fns.edit_file(self.project_path, path, edit_blocks)
+        if outcome.ok and outcome.changed and self.change_tracker is not None:
+            self.change_tracker.capture_after(path)
+        return outcome
 
-    def _execute_research(self, call: ToolCall) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
+    def _opened_result(self, call: ToolCall, opened: Any, url: str, *, turn: int,
+                       tool_index: int) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
+        model_text = str(getattr(opened, "model_text", opened) or "")
+        if not _is_ok_text(model_text):
+            return ToolResult(call=call, model_text=model_text), False, "", [], None
+        from codey.research.output_receipts import maybe_externalize_output
+
+        title = next((line.removeprefix("Title: ") for line in model_text.splitlines()
+                      if line.startswith("Title: ")), "")
+        outcome = maybe_externalize_output(
+            store=self.managed_outputs, session_id=self.session_id, run_id=self.run_id,
+            permission_profile=self.permission_profile, call=call,
+            output=str(getattr(opened, "receipt_text", "") or model_text),
+            turn=turn, tool_index=tool_index, presentation_result=title,
+            model_text_override=model_text,
+        )
+        return _tool_result(call, outcome), True, self._ledger_final_url({"url": url}), [], None
+
+    def _execute_research(self, call: ToolCall, *, turn: int = 0,
+                          tool_index: int = 0) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
         tools = self.research_tools
         name = str(call.name or "").strip().lower()
         args = dict(call.args or {})
@@ -208,25 +269,27 @@ class ExecutionDelegate:
             if name == "open_url":
                 opened = tools.open_url(str(args.get("url") or ""), offset=args.get("offset", 0),
                                         limit=args.get("limit", 6000), pages=str(args.get("pages") or ""))
-                model_text = getattr(opened, "model_text", str(opened))
-                if not _is_ok_text(model_text):
-                    return ToolResult(call=call, model_text=model_text), False, "", [], None
-                return ToolResult(call=call, model_text=model_text), True, self._ledger_final_url(args), [], None
+                return self._opened_result(call, opened, str(args.get("url") or ""),
+                                           turn=turn, tool_index=tool_index)
             if name in {"open_result", "reopen_source", "open_hit"}:
                 url = self._resolve_alias_url(name, args)
                 if not url:
                     return ToolResult(call=call, model_text=f"ERROR: unknown {name} id"), False, "", [], None
-                opened = tools.open_url(url)
-                model_text = getattr(opened, "model_text", str(opened))
-                if not _is_ok_text(model_text):
-                    return ToolResult(call=call, model_text=model_text), False, "", [], None
-                return ToolResult(call=call, model_text=model_text), True, self._ledger_final_url({"url": url}), [], None
+                target = (getattr(self.session, "hit_targets", {}) or {}).get(
+                    str(args.get("hit_id") or "").lower(), {}
+                ) if name == "open_hit" else {}
+                opened = (tools.open_url(url, offset=target.get("offset", 0),
+                                         pages=target.get("pages", ""))
+                          if target else tools.open_url(url))
+                return self._opened_result(call, opened, url, turn=turn, tool_index=tool_index)
             if name == "source_search":
                 query = str(args.get("query") or "")
                 url = str(args.get("url") or "")
                 if not url and str(args.get("source_id") or ""):
                     url = self._resolve_alias_url("reopen_source", {"source_id": args.get("source_id")}) or ""
                 text = tools.source_search(url, query, args.get("limit", 6))
+                if _is_ok_text(text) and url and self.session is not None:
+                    text = self._attach_hit_ids(text, url)
                 return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
             if name == "knowledge_search":
                 from codey.research.runner import first_text_arg
@@ -238,7 +301,10 @@ class ExecutionDelegate:
                 return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
             if name == "knowledge_write":
                 before = len(getattr(getattr(tools, "ledger", None), "evidence_items", ()) or ())
-                text = tools.knowledge_write(args)
+                lowered, problem = self._lower_knowledge_sources(args)
+                if problem:
+                    return ToolResult(call=call, model_text=f"ERROR: {problem}"), False, "", [], None
+                text = tools.knowledge_write(lowered)
                 if not _is_ok_text(text):
                     return ToolResult(call=call, model_text=text), False, "", [], None
                 return ToolResult(call=call, model_text=text), True, "", self._ledger_evidence(before), None
@@ -250,6 +316,46 @@ class ExecutionDelegate:
             return ToolResult(call=call, model_text=f"ERROR: {exc}"), False, "", [], None
         return ToolResult(call=call, model_text=f"ERROR: unknown research tool {name}"), False, "", [], None
 
+    def _lower_knowledge_sources(self, args: dict) -> tuple[dict, str]:
+        import re
+
+        sources = dict(getattr(self.session, "source_ids", {}) or {})
+
+        def lower(value: object) -> tuple[str, str]:
+            text = str(value or "").strip()
+            key = text.lower()
+            if key in sources:
+                return str(sources[key]), ""
+            if re.fullmatch(r"s[1-9][0-9]*", key):
+                return "", f"unknown source_id: {text}"
+            return text, ""
+
+        lowered = dict(args)
+        if isinstance(args.get("sources"), list):
+            rows: list[str] = []
+            for value in args["sources"]:
+                resolved, error = lower(value)
+                if error:
+                    return {}, error
+                rows.append(resolved)
+            lowered["sources"] = rows
+        if isinstance(args.get("evidence"), list):
+            evidence: list[dict] = []
+            for value in args["evidence"]:
+                if not isinstance(value, dict):
+                    evidence.append(value)
+                    continue
+                row = dict(value)
+                for key in ("source_url", "source"):
+                    if key in row:
+                        resolved, error = lower(row[key])
+                        if error:
+                            return {}, error
+                        row[key] = resolved
+                evidence.append(row)
+            lowered["evidence"] = evidence
+        return lowered, ""
+
     def _resolve_alias_url(self, alias: str, args: dict) -> str:
         session = self.session
         key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}.get(alias, "")
@@ -258,7 +364,23 @@ class ExecutionDelegate:
             return ""
         results = dict(getattr(session, "search_results", {}) or {})
         sources = dict(getattr(session, "source_ids", {}) or {})
+        if alias == "open_hit":
+            return str((getattr(session, "hit_targets", {}) or {}).get(rid, {}).get("url", "") or "")
         return str(results.get(rid, "") or sources.get(rid, "") or "")
+
+    def _attach_hit_ids(self, text: str, url: str) -> str:
+        import re
+
+        lines: list[str] = []
+        for line in str(text or "").splitlines():
+            match = re.match(r"^\s*\d+\.\s+(?:offset\s+(\d+)|p\.(\d+)):", line)
+            if match:
+                hit_id = self.session.record_hit(
+                    url, offset=int(match.group(1) or 0), pages=match.group(2) or "",
+                )
+                line = f"{hit_id}: {line}"
+            lines.append(line)
+        return "\n".join(lines)
 
     def _ledger_final_url(self, args: dict) -> str:
         tools = self.research_tools
@@ -295,4 +417,4 @@ class ExecutionDelegate:
         return evidence
 
 
-__all__ = ["ExecutionDelegate", "ExecutionResult"]
+__all__ = ["ExecutionDelegate"]

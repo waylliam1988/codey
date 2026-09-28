@@ -35,6 +35,7 @@ class _ModeProjection:
 
 
 _INTENT_RULES: dict[str, _IntentRule] = {
+    "unified": _IntentRule(with_project="unified", without_project="unified"),
     "chat": _IntentRule(with_project="chat", without_project="chat"),
     "hybrid": _IntentRule(with_project="hybrid", without_project="research"),
     "planning": _IntentRule(with_project="planning_readonly", without_project="chat"),
@@ -46,6 +47,16 @@ _INTENT_RULES: dict[str, _IntentRule] = {
 }
 
 _MODE_PROJECTIONS: dict[str, _ModeProjection] = {
+    "unified": _ModeProjection(
+        startup="project",
+        writer="project",
+        conversation_with_project="project",
+        conversation_without_project="chat",
+        ui_with_project="agent",
+        ui_without_project="chat",
+        trace_with_project="project",
+        trace_without_project="chat",
+    ),
     "chat": _ModeProjection(
         startup="chat",
         writer="chat",

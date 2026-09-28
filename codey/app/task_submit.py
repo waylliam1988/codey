@@ -15,10 +15,10 @@ import contextlib
 import time
 from collections.abc import Callable
 
-from codey.agents.runner import run as agent_run
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.operations.task_state import TaskState
+from codey.operations.unified_agent_adapter import run as agent_run
 from codey.providers.diagnostics import capture_provider_failure
 from codey.reviews.review_policy import load_review_policy
 from codey.task.model import TaskSubmission

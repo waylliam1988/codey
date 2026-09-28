@@ -12,12 +12,13 @@ from codey.knowledge.research_interest import (
 from codey.operations.context import RunFrame, RunHooks
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState
+from codey.operations.unified_evidence_followup import run_unified_evidence_followup
+from codey.operations.unified_research_iteration import run_unified_research_iteration
 from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.context import ResearchContext, RunTraceResearchSink
-from codey.research.evidence_followup import run_evidence_followup
 from codey.research.evidence_ledger import EvidenceLedgerWriteResult
 from codey.research.pipeline import (
     ResearchIterationRun,
@@ -26,7 +27,6 @@ from codey.research.pipeline import (
 )
 from codey.research.proof_quality import proof_review_trace_payload
 from codey.research.query_planner import build_research_plan, research_plan_trace_payload
-from codey.research.runner import ResearchRunner
 from codey.research.topic_continuity import (
     CONTEXT_SOURCE_KEY as TOPIC_CONTINUITY_CONTEXT_SOURCE_KEY,
 )
@@ -48,6 +48,7 @@ class ResearchFlowDeps:
     run_research_advisors: Callable | None
     ghost_continuity: Callable[..., object]
     managed_outputs: Any = None
+    runtime_mutations: Any = None
 
 
 def record_research_proof_review_trace(trace: Any | None, review: Any) -> None:
@@ -236,41 +237,19 @@ def run_research_iteration(
     iteration_context: str = "",
     topic_continuity_context: str = "",
     topic_continuity_payload: dict[str, object] | None = None,
+    requested_capabilities: tuple[str, ...] = (),
 ) -> ResearchIterationRun:
-    if deps.knowledge_store is None:
-        raise RuntimeError("Research is not configured")
-    runner = ResearchRunner(
-        provider,
-        search,
-        deps.knowledge_store,
-        max_turns=max_turns,
-        should_stop=stop_flag.is_set if stop_flag is not None else None,
-        session_id=session_id,
-        project=project,
-        chat_handoff=chat_handoff,
-        permission_profile="research",
-        trace_recorder=trace_recorder,
-        run_id=run_id,
-        review_advisors=(
-            (lambda pack: deps.run_research_advisors(
-                selected_provider=provider,
-                selected_provider_id=provider_id,
-                pack=pack,
-            ))
-            if deps.run_research_advisors is not None
-            else None
-        ),
-        tools=tools,
-        iteration_context=iteration_context,
+    return run_unified_research_iteration(
+        deps,
+        provider=provider, session_id=session_id, project=project,
+        task=task, max_turns=max_turns, on_event=on_event,
+        stop_flag=stop_flag, provider_id=provider_id, run_id=run_id,
+        chat_handoff=chat_handoff, trace_recorder=trace_recorder,
+        search=search, tools=tools, iteration_context=iteration_context,
         topic_continuity_context=topic_continuity_context,
         topic_continuity_payload=topic_continuity_payload,
-        managed_outputs=deps.managed_outputs,
+        requested_capabilities=requested_capabilities,
     )
-    for event in runner.run(task):
-        on_event(event)
-    if runner.result is None:
-        raise RuntimeError("research finished without a result")
-    return ResearchIterationRun(result=runner.result, tools=runner.tools)
 
 
 def build_research_topic_continuity(
@@ -444,7 +423,10 @@ def run_research_pipeline(
             iteration_context=iteration_context,
             topic_continuity_context=topic_continuity_context,
             topic_continuity_payload=topic_continuity_payload,
+            requested_capabilities=request.requested_capabilities,
         )
+
+    followup_index = 0
 
     def followup(
         *,
@@ -456,7 +438,9 @@ def run_research_pipeline(
         max_context_chars: int = 8000,
         should_stop=None,
     ):
-        return run_evidence_followup(
+        nonlocal followup_index
+        followup_index += 1
+        return run_unified_evidence_followup(
             provider=frame.provider,
             tools=tools,
             plan=plan,
@@ -465,6 +449,12 @@ def run_research_pipeline(
             initial_summary=initial_summary,
             max_context_chars=max_context_chars,
             should_stop=should_stop,
+            session_id=request.session_id,
+            run_id=frame.run_id,
+            provider_id=frame.provider_id,
+            round_index=followup_index,
+            runtime_mutations=deps.runtime_mutations,
+            on_event=hooks.on_event,
         )
 
     recorder = getattr(deps.state, "record_research_changes", None)

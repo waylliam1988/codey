@@ -50,8 +50,10 @@ class TaskSession:
     search_results: dict[str, str] = field(default_factory=dict)
     opened_sources: set[str] = field(default_factory=set)
     source_ids: dict[str, str] = field(default_factory=dict)
+    hit_targets: dict[str, dict[str, Any]] = field(default_factory=dict)
     evidence: list[dict[str, str]] = field(default_factory=list)
     edited_files: dict[str, int] = field(default_factory=dict)
+    read_files: set[str] = field(default_factory=set)
     verifications: list[dict[str, Any]] = field(default_factory=list)
     notes_saved: int = 0
     transcript_notes: list[str] = field(default_factory=list)
@@ -76,14 +78,25 @@ class TaskSession:
         if text:
             self.opened_sources.add(text[:500])
             sid = str(source_id or "").strip().lower()
-            if sid:
-                self.source_ids[sid] = text[:500]
+            if not sid:
+                sid = next((key for key, value in self.source_ids.items() if value == text[:500]), "")
+            if not sid:
+                sid = f"s{len(self.source_ids) + 1}"
+            self.source_ids[sid] = text[:500]
 
     def record_evidence(self, source_url: str, excerpt: str) -> None:
         url = str(source_url or "").strip()
         clip = str(excerpt or "").strip()
         if url and clip:
             self.evidence.append({"source_url": url[:500], "excerpt": clip[:600]})
+
+    def record_hit(self, url: str, *, offset: int = 0, pages: str = "") -> str:
+        target = {"url": str(url or "")[:500], "offset": max(0, int(offset)),
+                  "pages": str(pages or "")[:40]}
+        existing = next((key for key, value in self.hit_targets.items() if value == target), "")
+        hit_id = existing or f"h{len(self.hit_targets) + 1}"
+        self.hit_targets[hit_id] = target
+        return hit_id
 
     def record_edit(self, path: str, revision: int | None = None) -> int:
         key = str(path or "").strip() or "file"
@@ -144,12 +157,18 @@ class TaskSession:
             "search_results": {str(k): str(v)[:500] for k, v in list((self.search_results or {}).items())[-20:]},
             "opened_sources": sorted(str(u)[:500] for u in (self.opened_sources or set()))[-20:],
             "source_ids": {str(k): str(v)[:500] for k, v in list((self.source_ids or {}).items())[-20:]},
+            "hit_targets": {str(k): {"url": str(v.get("url", ""))[:500],
+                                      "offset": int(v.get("offset", 0) or 0),
+                                      "pages": str(v.get("pages", ""))[:40]}
+                            for k, v in list((self.hit_targets or {}).items())[-20:]
+                            if isinstance(v, dict)},
             "evidence": [
                 {"source_url": str(item.get("source_url", ""))[:500],
                  "excerpt": str(item.get("excerpt", ""))[:300]}
                 for item in (self.evidence or []) if isinstance(item, dict)
             ][-20:],
             "edited_files": {str(k)[:240]: int(v) for k, v in (self.edited_files or {}).items()},
+            "read_files": sorted(str(path)[:240] for path in self.read_files)[-40:],
             "verifications": [
                 {"command": str(item.get("command", ""))[:240],
                  "revision": int(item.get("revision", 0) or 0),
@@ -191,8 +210,16 @@ class TaskSession:
             session.opened_sources = {str(i) for i in (data.get("opened_sources", []) or []) if str(i)}
             raw_sids = data.get("source_ids", {}) or {}
             session.source_ids = {str(k): str(v) for k, v in raw_sids.items() if str(k) and str(v)}
+            raw_hits = data.get("hit_targets", {}) or {}
+            session.hit_targets = {
+                str(k): {"url": str(v.get("url", ""))[:500],
+                         "offset": max(0, int(v.get("offset", 0) or 0)),
+                         "pages": str(v.get("pages", ""))[:40]}
+                for k, v in raw_hits.items() if isinstance(v, dict) and v.get("url")
+            }
             session.evidence = [dict(i) for i in (data.get("evidence", []) or []) if isinstance(i, dict)]
             session.edited_files = {str(k): int(v) for k, v in (data.get("edited_files", {}) or {}).items()}
+            session.read_files = {str(path) for path in (data.get("read_files", []) or []) if str(path)}
             session.verifications = [dict(i) for i in (data.get("verifications", []) or []) if isinstance(i, dict)]
             session.notes_saved = int(data.get("notes_saved", 0) or 0)
             session.transcript_notes = [str(i) for i in (data.get("transcript_notes", []) or [])]

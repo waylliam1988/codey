@@ -199,7 +199,10 @@ def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, 
         return {}, f"{tool} args invalid: {exc}"
     if not result.ok:
         return {}, result.error or f"{tool} args invalid"
-    return dict(result.args), ""
+    # The contract validator fills optional defaults for older callers. The
+    # shared kernel retains only arguments the model actually supplied, so
+    # restricted subflows can still reject explicitly forbidden fields.
+    return {key: value for key, value in result.args.items() if key in args}, ""
 
 
 def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:

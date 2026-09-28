@@ -154,6 +154,7 @@ def _research_deps(deps: TaskRunDeps) -> ResearchFlowDeps:
         run_research_advisors=deps.run_research_advisors,
         ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
         managed_outputs=deps.managed_outputs,
+        runtime_mutations=deps.runtime_mutations,
     )
 
 
@@ -185,6 +186,7 @@ def project_completion_deps(deps: TaskRunDeps) -> ProjectCompletionDeps:
             work_checkpoints=deps.work_checkpoints,
             managed_outputs=deps.managed_outputs,
             knowledge_store=deps.knowledge_store,
+            search_factory=deps.search_factory,
         ),
         verification=VerificationAccess(
             collect_changes=deps.collect_changes,
@@ -213,13 +215,13 @@ def dispatch_run_mode(
     task_kind: str,
     config_result: ProjectConfigLoadResult,
 ) -> ModeOutcome:
-    # Staged migration: the unified kernel serves explicit opt-in first
-    # (intent "unified"); legacy model-turn flows stay production until the
-    # review/repair/consensus/failover/shell/ghost parity work lands. The
-    # kernel itself is complete and covered; the cutover follows parity.
+    # The unified entry remains explicit while the outer mode workflows are
+    # migrated; they own recovery, review, failover and post-turn effects.
     if str(task_kind or "").strip().lower() == "unified":
         return run_unified_mode(
-            frame, work, hooks, deps, task_kind="project", config_result=config_result,
+            frame, work, hooks, deps,
+            task_kind="project",
+            config_result=config_result,
         )
     research_deps = _research_deps(deps)
 

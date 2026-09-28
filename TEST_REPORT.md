@@ -1,5 +1,23 @@
 # Codey Test Report
 
+## Shared kernel production cutover (2026-09-28)
+
+Default project writer, Research iteration and Research evidence follow-up
+now run through `run_task_kernel()`. Existing outer workflows still perform
+planning, review, repair, failover and post-turn processing. Legacy direct
+loop APIs remain for compatibility and manual experiments.
+
+Red-first tests in `tests/test_unified_cutover.py` cover browser-only and
+native providers, Coding plus web tools, strict Research ledger and report,
+project read/verify/write boundaries, durable effect receipts, recovery,
+managed outputs, UI events, shell approval, project creation and completion.
+The final red cases reproduced incomplete synthesis persistence and a missing
+writer lease for explicit `unified` tasks before their fixes.
+
+Final verification (test home redirected into the workspace for sandboxed
+execution): `4932 passed, 31 skipped, 1485 subtests passed in 350.19s`.
+`ruff check .` and `git diff --check` clean. No release was made.
+
 ## Unified kernel 1-7 production hardening (2026-09-28)
 
 Scope (deterministic, red-first, no release):

@@ -84,11 +84,14 @@ class AgentRequest:
     trace_recorder: RunTraceRecorder | None = None
     session_id: str = ""
     run_id: str = ""
+    effect_scope: str = ""
     runtime_mutations: RuntimeMutationLine | None = None
     tool_result_delivery: ToolResultDeliveryStore | None = None
     managed_outputs: ManagedOutputStore | None = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     recovered_tool_result_batch_id: str = ""
+    requested_capabilities: tuple[str, ...] = ()
+    research_tools: object | None = None
 
 
 __all__ = [

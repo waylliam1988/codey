@@ -372,6 +372,8 @@ class ResearchPipeline:
         review: ResearchProofReview | None,
         plan: ResearchPlan,
     ) -> str:
+        if result.stop_reason in {"max_turns", "protocol"} and not result.queries and not result.opened_sources:
+            return "initial_no_research_progress"
         if not self.config.enabled:
             return "disabled"
         if self._max_rounds() <= 0:

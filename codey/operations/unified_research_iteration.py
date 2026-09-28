@@ -1,0 +1,184 @@
+"""Research pipeline iteration driven by the shared task turn kernel."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
+
+from codey.research.pipeline import ResearchIterationRun
+from codey.research.runner import ResearchRunResult
+
+
+def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
+                       project: str, on_event: Callable[[object], None]) -> str:
+    if not summary or getattr(tools, "store", None) is None or getattr(tools, "changes", None) is None:
+        return ""
+    from codey.knowledge.note import KnowledgeNote
+    from codey.research.runner import _run_concept_tags, _synthesis_body, _synthesis_title
+    from codey.runtime.observe.events import RunEvent
+
+    note_ids = [*tools.created_ids, *tools.updated_ids]
+    tags = ["research"]
+    if session_id:
+        tags.append(f"session:{session_id}")
+    tags.extend(_run_concept_tags(tools.store, note_ids))
+    note = KnowledgeNote.create(
+        type="synthesis", title=_synthesis_title(task),
+        body=_synthesis_body(summary, tools.ledger), tags=tags,
+        sources=sorted(tools.sources_read), session_id=session_id, project=project,
+    )
+    try:
+        tools.store.write_note(note, changes=tools.changes)
+    except OSError:
+        return ""
+    if note.id not in tools.created_ids:
+        tools.created_ids.append(note.id)
+    for related_id in note_ids:
+        if related_id and related_id != note.id:
+            tools.store.link(note.id, related_id, "derives", changes=tools.changes)
+    on_event(RunEvent.info("saved synthesis", names=note.id))
+    return note.id
+
+
+def run_unified_research_iteration(
+    deps: Any,
+    *,
+    provider: Any,
+    session_id: str,
+    project: str,
+    task: str,
+    max_turns: int,
+    on_event: Callable[[object], None],
+    stop_flag: Any,
+    provider_id: str,
+    run_id: str,
+    chat_handoff: str,
+    trace_recorder: Any,
+    search: Any,
+    tools: Any = None,
+    iteration_context: str = "",
+    topic_continuity_context: str = "",
+    topic_continuity_payload: Any = None,
+    requested_capabilities: tuple[str, ...] = (),
+) -> ResearchIterationRun:
+    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.policies.task_policy import build_task_policy
+
+    if tools is None:
+        from codey.knowledge.changes import KnowledgeChanges
+        from codey.research.tools import ResearchTools
+
+        store = getattr(deps, "knowledge_store", None)
+        if store is None:
+            raise RuntimeError("Research is not configured")
+        tools = ResearchTools(
+            search=search,
+            store=store,
+            changes=KnowledgeChanges(root=store.root),
+            session_id=session_id,
+            project=project,
+        )
+    provider.new_chat()
+    policy = build_task_policy(
+        SimpleNamespace(
+            project=project,
+            requested_capabilities=requested_capabilities,
+            strict_research=True,
+        ),
+        task_kind="research",
+        strict_research=True,
+    )
+    session = TaskSession(
+        policy=policy, task_kind="research", project=project,
+        max_turns=max_turns, task_text=task,
+        handoff="\n".join(x for x in (
+            f"Conversation context from this chat:\n{chat_handoff}" if chat_handoff else "",
+            iteration_context, topic_continuity_context,
+        ) if x),
+    )
+    intent_sink = None
+    active_provider = provider
+    mutations = getattr(deps, "runtime_mutations", None)
+    if mutations is not None and session_id and run_id:
+        from codey.operations.kernel_effects import KernelEffectSink, KernelRecordedProvider
+
+        mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
+        intent_sink = KernelEffectSink(
+            mutations, session_id=session_id, run_id=run_id,
+            provider_id=provider_id, phase="research",
+        )
+        active_provider = KernelRecordedProvider(provider, intent_sink)
+    outcome = run_task_kernel(
+        session,
+        provider=active_provider,
+        run_id=run_id,
+        effect_scope="research:1",
+        provider_id=provider_id,
+        project_path=project or None,
+        research_tools=tools,
+        managed_outputs=getattr(deps, "managed_outputs", None),
+        session_id=session_id,
+        permission_profile="coding_writer" if policy.allows("project.write") else "research",
+        user_task=task,
+        stop_flag=stop_flag,
+        intent_sink=intent_sink,
+        on_event=on_event,
+        completion_context={
+            "run_id": run_id,
+            "question": task,
+            "project": project,
+            "research_ledger": tools.ledger,
+            "source_ids": session.source_ids,
+        },
+    )
+    ledger = tools.ledger
+    synthesis_id = ""
+    if outcome.completed:
+        synthesis_id = _persist_synthesis(
+            tools, task, outcome.summary, session_id=session_id,
+            project=project, on_event=on_event,
+        )
+    quality = None
+    if outcome.summary and outcome.stop_reason == "done":
+        from codey.research.report_quality import review_report_quality
+
+        quality = review_report_quality(
+            outcome.summary, ledger=ledger,
+            opened_sources=set(tools.sources_read),
+            search_result_urls=set(tools.search_result_urls),
+        )
+    record = None
+    if outcome.summary or ledger.opened_sources or ledger.evidence_items:
+        from codey.research.object_model import build_research_record
+
+        record = build_research_record(
+            question=task, summary=outcome.summary, ledger=ledger, review=quality,
+            run_id=run_id, session_id=session_id, project=project,
+            synthesis_id=synthesis_id,
+            stop_reason=outcome.stop_reason,
+        )
+    result = ResearchRunResult(
+        question=task, summary=outcome.summary, stop_reason=outcome.stop_reason,
+        turns=outcome.turns,
+        queries=[item.query for item in ledger.searches],
+        search_results=ledger.search_results_payload(),
+        opened_sources=ledger.opened_sources_payload(),
+        coverage=ledger.coverage_payload(),
+        citation_map=quality.citation_payload() if quality is not None else [],
+        evidence_items=ledger.evidence_payload(),
+        counterpoints=list(quality.counterpoints) if quality is not None else [],
+        quality_warnings=list(quality.warnings) if quality is not None else [],
+        notes_created=list(tools.created_ids),
+        notes_updated=list(tools.updated_ids),
+        links_created=tools.links_created,
+        sources_read=len(tools.sources_read),
+        source_urls=sorted(tools.sources_read),
+        synthesis_id=synthesis_id,
+        research_record=record,
+        max_turns_used=max_turns,
+    )
+    return ResearchIterationRun(result=result, tools=tools)
+
+
+__all__ = ["run_unified_research_iteration"]

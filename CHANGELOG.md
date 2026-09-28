@@ -2,6 +2,30 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Shared kernel production cutover (no release)
+
+- Default project writing and Research model iterations now use the same
+  `run_task_kernel()` through thin adapters. The Research evidence follow-up
+  also uses this kernel; review, repair, planning and failover remain outer
+  workflow orchestration. The old standalone loops remain as compatibility
+  APIs for existing callers and manual experiments, not production turn loops.
+- Browser-only JSON and native tool-call providers share policy checks, tool
+  execution, result delivery and completion. Project tasks can use web tools
+  when the user requested them; explicit Research keeps its evidence and
+  report rules. Research project reads and verification are available by
+  default, while writes require an explicit grant and a project writer lease.
+- Tool and provider intents are recorded in the existing runtime before
+  execution. Phase-scoped effect identities prevent Research, follow-up and
+  writer turns from colliding on recovery. Managed outputs, UI events,
+  conversation context, shell approvals and project completion checks remain
+  connected to the production workflow.
+- Fixed failed verification overriding an earlier pass, new project creation,
+  incomplete Research synthesis persistence, and explicit `unified` mode
+  project lease/mode projection. Removed an unused auto helper.
+- Red-first coverage in `tests/test_unified_cutover.py`; final full suite:
+  `4932 passed, 31 skipped, 1485 subtests passed`. Ruff and diff checks clean.
+  No release was made.
+
 ## Unreleased - Unified kernel 1-7 production hardening: entry auth, ToolSpec, real delegates, durable intents, ledger gate, staged cutover (no release)
 
 - Entry auth贯通 (§1): `derive_entry_auth()` in `codey/app/api.py` derives

@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 共享内核进入生产默认路径（未发布）
+
+- 默认项目写入、Research 模型迭代和证据补全均通过薄适配器进入同一个
+  `run_task_kernel()`。评审、修复、计划和故障切换继续作为外层工作流编排。
+  旧独立循环保留为既有调用方和手动实验脚本的兼容接口，不再承担生产模型轮次。
+- 纯网页 JSON 与原生 tool call 共用授权、执行、结果回传和完成判断。用户明确
+  请求联网时，编程任务可在同一循环里使用网页工具；显式 Research 才启用证据
+  与报告要求。Research 默认可读项目及运行验证，写入需明确授权并取得写入租约。
+- 工具和模型发送意图在执行前写入现有运行时；按阶段区分 effect 身份，避免
+  Research、证据补全和编程轮次在恢复时碰撞。托管输出、UI 事件、会话上下文、
+  shell 审批和项目完成检查均接入生产流程。
+- 修复失败验证被先前成功掩盖、新项目目录创建、未完成 Research 保存综合笔记、
+  显式 `unified` 模式的写入租约及模式投影；清除无引用的 auto 辅助函数。
+- `tests/test_unified_cutover.py` 红测先行；最终全量：`4932 passed,
+  31 skipped, 1485 subtests passed`。Ruff 与 diff 检查干净。未发布。
+
 ## Unreleased - 统一内核 1-7 生产加固：入口授权、ToolSpec、真实委托、持久意图、账本完成门、分阶段切换（未发布）
 
 - 入口授权贯通（§1）：`codey/app/api.py` 新增 `derive_entry_auth()`，只从用户
