@@ -267,18 +267,6 @@ def dispatch_run_mode(
             **kwargs,
         )
 
-    # Unified kinds go through the single entry (no early special, no old hybrid).
-    _normalized = str(task_kind or "").strip().lower()
-    if _normalized in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly", "unified"}:
-        return run_task_mode(
-            frame, work, hooks, deps,
-            task_kind=task_kind,
-            config_result=config_result,
-            run_project=run_project_operation,
-            run_research=_run_research_op,
-            run_planning=_run_planning_op,
-        )
-
     mode_deps = ModeDispatchDeps(
         chat=lambda active_frame: run_chat_mode(
             active_frame,
@@ -322,6 +310,19 @@ def dispatch_run_mode(
             research_available=True,
         )
         return run_auto_mode(frame, work, hooks, auto_deps)
+    # Single entry for unified kinds (no old two-phase hybrid). This stays
+    # after the auto check: auto intent must reach the first-call router
+    # before any mode entry, otherwise the writer runs directly.
+    _normalized = str(task_kind or "").strip().lower()
+    if _normalized in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly", "unified"}:
+        return run_task_mode(
+            frame, work, hooks, deps,
+            task_kind=task_kind,
+            config_result=config_result,
+            run_project=run_project_operation,
+            run_research=_run_research_op,
+            run_planning=_run_planning_op,
+        )
     return dispatch_task_mode(
         task_kind,
         frame,

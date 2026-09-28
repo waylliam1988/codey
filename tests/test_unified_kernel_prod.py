@@ -245,7 +245,7 @@ class LoopPromptTests(unittest.TestCase):
 
 class ExecutionEvidenceTests(unittest.TestCase):
     def test_failed_run_output_blocks_completion(self) -> None:
-        from codey.operations import task_kernel as kernel
+        from codey.operations import task_loop as kernel
         from codey.operations.completion_gate import evaluate
         from codey.operations.task_loop import TaskSession
         from codey.policies.task_policy import build_task_policy

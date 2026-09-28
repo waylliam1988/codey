@@ -393,7 +393,7 @@ class HybridAndPlanningTests(unittest.TestCase):
 class ThirdTaskTests(unittest.TestCase):
     def test_third_task_runs_without_kernel_change(self) -> None:
         from codey.operations import completion_gate as gate
-        from codey.operations import task_kernel as kernel
+        from codey.operations import task_loop as kernel
         from codey.runtime.core.models import ToolResult
         from codey.toolchain.tool_spec import register_custom_tool
 

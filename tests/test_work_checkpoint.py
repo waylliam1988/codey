@@ -372,5 +372,37 @@ class WorkCheckpointStoreTests(unittest.TestCase):
         self.assertIn(checks[-1].command, rendered)
 
 
+class WorkCheckpointNullByteTests(unittest.TestCase):
+    def test_start_rejects_null_byte_project_without_relying_on_resolve(self) -> None:
+        # Python 3.12 Path.resolve() raises on null bytes, but 3.13 resolves
+        # against CWD and keeps the null. start() must fail closed via an
+        # explicit guard, never by accident of resolve() behavior.
+        from unittest import mock
+
+        store = WorkCheckpointStore(Path(tempfile.mkdtemp()))
+        evil = "/tmp\x00evil"
+        real_resolve = Path.resolve
+
+        def succeeding_resolve(self, *args, **kwargs):
+            if "\x00" in str(self):
+                return Path("D:/tmp\x00evil")
+            return real_resolve(self, *args, **kwargs)
+
+        with mock.patch.object(Path, "resolve", succeeding_resolve):
+            try:
+                result = store.start(run_id="r", session_id="s", project=evil, task="t")
+            except ValueError:
+                self.fail("start raised ValueError on null byte, should fail closed")
+        self.assertIsNone(result)
+
+    def test_start_rejects_null_byte_project_path_object(self) -> None:
+        store = WorkCheckpointStore(Path(tempfile.mkdtemp()))
+        try:
+            result = store.start(run_id="r", session_id="s", project=Path("/tmp\x00evil"), task="t")
+        except ValueError:
+            self.fail("start raised ValueError on null byte, should fail closed")
+        self.assertIsNone(result)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -272,9 +272,18 @@ class WorkCheckpointStore:
 
     def start(self, *, run_id: str, session_id: str, project: str | Path, task: str) -> WorkCheckpoint | None:
         now = _now()
+        # Explicit null-byte guard: Python 3.12 Path.resolve() raises on
+        # embedded nulls, but 3.13 resolves against CWD and keeps them, so a
+        # checkpoint carrying "\0" would be saved. Fail closed first, keep the
+        # resolve try/except as defense in depth (same pattern as the
+        # changes/restore API guards).
+        if "\0" in str(project):
+            return None
         try:
             project_text = str(Path(project).expanduser().resolve())
         except (OSError, RuntimeError, ValueError):
+            return None
+        if "\0" in project_text:
             return None
         checkpoint = WorkCheckpoint(
             run_id=_text(run_id, 120),

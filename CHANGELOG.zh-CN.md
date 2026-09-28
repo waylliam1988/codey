@@ -2,6 +2,13 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 空字节 fail-closed（3.13）+ auto 路由优先（未发布）
+
+- 修 `WorkCheckpointStore.start()` 在 Python 3.13 接受含空字节 project（红字先行）：原实现依赖 `Path.resolve()` 对内嵌 null 抛 `ValueError`，但 3.13 改为相对 CWD 解析并保留 null，导致带 `"\0"` 的检查点被落盘（`project='D:\\tmp\x00evil'`，本地以 3.13 行为桩复现）。`resolve()` 之前加显式 `if "\0" in str(project): return None` 守卫（resolve 后再查一次作纵深），沿用 `changes/restore` 接口 `400` 守卫的既定模式。`tests/test_work_checkpoint.py` 新增 `WorkCheckpointNullByteTests` 2 例（任意版本下不依赖 resolve 行为拒绝 + `Path` 对象形态；首例修前失败、修后全过）。`_file_hash` 遇 null rel 已返回 `None` 且不崩（有覆盖，未动）。`load()` 的 null 载荷路径按“无复现即非 bug”原则未动（无失败复现）。
+- 修 auto 路由被跳过：`dispatch_run_mode()` 中 project/research/planning 的单入口返回写在了 `is_auto_request` 检查之前，所有 auto 意图任务跳过首轮路由直跑 project writer（10 ghost + 1 headless 失败；`df7d115` worktree 基线全绿，间谍确认 `run_task_mode` 进入而 `run_auto_mode` 从未进入）。把 auto 块移到单入口返回之前（hybrid/unified 提前返回保持第一，以保留空命名空间切锁行为）。新增锁定 `test_auto_intent_reaches_auto_router_before_single_entry`（修前红、修后绿）；端到端调试确认 auto 进入、直接回答走 chat、writer 未被调用。
+- 恢复 `codey/operations/task_effects.py` 真实实现（stash 冲突曾以自导入垫片覆盖，已从 `df7d115:kernel_effects.py` 取回；修好 7 个 `test_unified_cutover` `ImportError`），并迁移最后两处旧名测试导入（`task_kernel`→`task_loop`）；生产对已删除模块名零导入。
+- 验证：`ruff check codey tests` 与 `git diff --check` 干净。最终全量 `python -m pytest -q`：`4980 passed, 10 skipped, 1494 subtests passed in 371.42s`（相对 4965 基线恰为 15 个新锁定：11 收敛 + 2 空字节 + 1 auto 顺序 + 1 生产无旧循环架构）。未发布。
+
 ## Unreleased - 收敛：行为锁定 + 单一入口 + 单一工具源 + 重命名（未发布）
 
 - 新增 `tests/test_convergence_repro_locks.py` 红色锁定 11 例（先失败、后通过）：批次错配整体终止且不覆盖原收据（原生为所有 call id 返回错误）；删除伪造 `sha256(kernel-session:…)` 指纹（缺身份保持 `not_run`，真实 `edit`/`run` 携带 revision/fingerprint/exit）；Controller 失败永不编码为无限制（ fail-closed 配置错误，解析与执行共享同一不可变快照）；否定式中文只读（`不要修改`）永不要求改动（入口显式 `project_changes_required`，删除关键词猜测）；第三类任务 `注册→JSON/native 解析→执行→完成` 经通用 `ToolSpec` 校验 + `register_custom_executor` 通过；第二轮网页文本重发 `Visible tools` + `Tool contract` + 变化原因（原生每轮 schema）；已接受原生 `done` 回执失败返回 `provider_failure`（不谎称闭环）；跨提供者/新会话恢复只用文字（不用旧 call id）；`required_checks` 超限（>12）显式 `too many`（不再静默截到 16，`from_payload` 全保留）。

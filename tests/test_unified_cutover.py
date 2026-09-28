@@ -30,6 +30,38 @@ def test_opt_in_task_kind_reaches_shared_kernel(project: str | None, expected: s
     assert unified.call_args.kwargs["task_kind"] == "project"
 
 
+def test_auto_intent_reaches_auto_router_before_single_entry() -> None:
+    """Auto intent must hit run_auto_mode before the single task entry.
+
+    Regression lock: the single-entry return for project/research/planning
+    must not precede the auto check, otherwise every auto-intent task skips
+    the first-call router and runs the project writer directly.
+    """
+    from unittest.mock import MagicMock
+
+    from codey.operations.result import ModeOutcome
+    from codey.operations.task_phases.dispatch import dispatch_run_mode
+    from codey.task.model import TaskSubmission
+
+    request = TaskSubmission("s", "E:/codey", "read only", 2, False, "local", intent="auto")
+    frame = SimpleNamespace(
+        request=request, recovered_tool_outcomes=(),
+    )
+    work = SimpleNamespace(claimed_work_item=None)
+    outcome = ModeOutcome({"type": "task_done", "mode": "chat"})
+    with (
+        patch("codey.operations.task_phases.dispatch.run_auto_mode", return_value=outcome) as auto,
+        patch("codey.operations.task_phases.dispatch.run_task_mode") as single,
+    ):
+        actual = dispatch_run_mode(
+            MagicMock(), MagicMock(), MagicMock(), work, frame,
+            SimpleNamespace(), "project", MagicMock(),
+        )
+    assert actual is outcome
+    assert auto.call_count == 1
+    assert single.call_count == 0
+
+
 @pytest.mark.parametrize("kind", ["hybrid"])
 def test_default_kinds_all_use_shared_kernel(kind: str) -> None:
     """Default hybrid uses one session; no opt-in needed.

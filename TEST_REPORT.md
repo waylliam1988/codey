@@ -1,5 +1,11 @@
 # Codey Test Report
 
+## Null-byte fail-closed + auto-router precedence (2026-09-28)
+
+CI (Python 3.13) reported `test_work_checkpoint_null_byte_fail_closed` failing while local 3.12 passed. Root cause: `WorkCheckpointStore.start()` relied on `Path.resolve()` raising on embedded nulls; 3.13 resolves against CWD instead, saving a checkpoint with `project='D:\\tmp\x00evil'`. Reproduced on 3.12 by stubbing `resolve` to 3.13 behavior (script), locked red-first with `WorkCheckpointNullByteTests` (resolve-independent), fixed with an explicit `"\0"` guard mirroring the changes/restore API pattern. Separately, the prior run's 12 failures were root-caused to a dispatch-ordering regression (single-entry return shadowed the auto check; worktree baseline green, spy repro, new `test_auto_intent_reaches_auto_router_before_single_entry` lock) plus a stash-clobbered `task_effects.py` (restored from `df7d115:kernel_effects.py`).
+
+Targeted green before final (work_checkpoint + flow + round5 sweep 90; ghost + headless + cutover 189). Final full `python -m pytest -q`: `4980 passed, 10 skipped, 1494 subtests passed in 371.42s`, 0 failed. `ruff check codey tests` and `git diff --check` clean. No release was made.
+
 ## Convergence: behavior + single entry + single tool source + renames (2026-09-28)
 
 Red-first `tests/test_convergence_repro_locks.py` (11, failed before, pass after) locks batch-abort without receipt overwrite, no fake fingerprint, fail-closed controller, explicit `project_changes_required` (negative Chinese), generic custom-tool `register→parse→execute→complete`, second-round web contract resend, native `done` receipt `provider_failure`, cross-provider text-only recovery, and explicit `too many required_checks` (no silent truncate). `TaskSession`/`TaskSubmission`/`AgentRequest` carry explicit completion + workspace identity; `run_task_mode()` is the single entry (old `run_hybrid_mode` deleted, `ModeDispatchDeps.hybrid` removed); `tool_spec` is the single source (`snapshot_for_policy` deleted, custom executor registry added); renames with shims (`task_loop`/`task_session`/`task_execution`/`task_effects`/`project_adapter`/`research_iteration`, `task_entry` re-exports); neutral `RunResult`/`first_text_arg`/`synthesis`/`ResearchRunResult`; provider `timeout` compat.
