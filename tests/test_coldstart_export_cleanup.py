@@ -125,7 +125,7 @@ class PackageExportLayerTests(unittest.TestCase):
                 continue
             for path in sorted(root.rglob("*.py")):
                 # The lock test itself documents the forbidden names; skip it.
-                if path.name == "test_coldstart_cleanup_round4.py":
+                if path.name == "test_coldstart_export_cleanup.py":
                     continue
                 for module, lineno, names in _from_imports(path):
                     forbidden = {
@@ -148,7 +148,7 @@ class PackageExportLayerTests(unittest.TestCase):
             if not root.exists():
                 continue
             for path in sorted(root.rglob("*.py")):
-                if path.name == "test_coldstart_cleanup_round4.py":
+                if path.name == "test_coldstart_export_cleanup.py":
                     continue
                 try:
                     text = path.read_text(encoding="utf-8")

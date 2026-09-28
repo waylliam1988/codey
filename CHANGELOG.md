@@ -12,7 +12,16 @@
   router. Provider calls follow the `ChatProvider` contract exactly; a failed
   call is never retried after its effect has been recorded, preventing
   duplicate provider effects and delivery batches.
-- Final verification: `4816 passed, 32 skipped, 1467 subtests passed`;
+- Removed the retired production `research/controller.py` and
+  `research/protocols.py`. Their deterministic experiment behavior remains in
+  `tests/support`, while production Research uses the shared protocol and
+  `ResearchIteration` entry. Moved balanced JSON extraction to
+  `protocols/json_scanner.py`.
+- Split provider transport and recovery shaping from `operations/task_loop.py`
+  into `kernel_transport.py` and `kernel_recovery.py`; the task loop is now
+  orchestration only. Renamed round-based test files to behavior-based names
+  and added `tests/README.md` as the test index.
+- Final verification: `4819 passed, 32 skipped, 1461 subtests passed`;
   `ruff check codey tests`, compileall, and `git diff --check` passed. No
   release was made.
 - Recovery now requires the original persisted task policy whenever a run has

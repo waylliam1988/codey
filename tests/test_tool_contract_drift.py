@@ -54,8 +54,8 @@ class ToolContractDriftTests(unittest.TestCase):
                 self.assertIn(expected_kind, EXPECTED_ARG_REPAIR_KINDS)
 
     def test_knowledge_link_contract_exposes_exact_title_without_dynamic_prompt_drift(self) -> None:
-        from codey.research.controller import ResearchControlState, render_control_block
         from codey.research.tool_contract import render_research_tool_contract_text, tool_example
+        from tests.support.research_controller import ResearchControlState, render_control_block
 
         # Static Research Tools: contract reflects the real exact-title capability.
         contract = render_research_tool_contract_text(include_source_search=False)

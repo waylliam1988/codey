@@ -7,9 +7,9 @@ from unittest import mock
 
 from codey.providers.submission import SendAttempt
 from codey.providers.web_drivers import glm
-from codey.research.protocols import JsonToolCodec
 from codey.runtime.core import cancellation
 from tests.provider_control_testkit import IsolatedProviderControlsMixin
+from tests.support.research_protocol import JsonToolCodec
 
 
 class GlmDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):

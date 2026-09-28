@@ -29,12 +29,12 @@ import contextlib
 
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.research_iteration import ResearchIteration
+from codey.protocols.json_scanner import extract_json_objects
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.proof_quality import review_research_proof
-from codey.research.protocols import extract_json_objects
 from tests.manual.ab_harness_common import (
     attach_research_record_payload,
     row_has_terminal_failure,

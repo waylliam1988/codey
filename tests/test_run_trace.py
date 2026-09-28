@@ -9,7 +9,6 @@ from unittest import mock
 
 from codey.agents.request import AgentRequest
 from codey.policies.action import ActionSubject, evaluate_action
-from codey.research.controller import controller_action_contract_hash
 from codey.research.tool_contract import research_tool_contract_hash
 from codey.runs.trace import CHECKPOINT_FLUSH_INTERVAL, RunTraceStore
 from codey.toolchain.definition import definitions_for_tool_names
@@ -19,6 +18,7 @@ from codey.workspace.context_source import (
     render_context_sources_with_metadata,
 )
 from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
+from tests.support.research_controller import controller_action_contract_hash
 
 
 class _PromptProvider:

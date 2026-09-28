@@ -147,7 +147,7 @@ def test_pubmed_url_unicode_fail_closed() -> None:
 
 
 def test_source_id_unicode_fail_closed() -> None:
-    from codey.research.controller import _looks_like_source_id
+    from tests.support.research_controller import _looks_like_source_id
 
     assert _looks_like_source_id("s²") is False
     assert _looks_like_source_id("s12") is True

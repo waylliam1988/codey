@@ -34,7 +34,6 @@ from codey.providers.worker import (
     _PendingRequest,
     _WorkerSession,
 )
-from codey.research.controller import ResearchController
 from codey.runtime.core.operation_state import (
     RuntimeOperationStore,
     RuntimeOperationTransitionError,
@@ -44,6 +43,7 @@ from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.runtime.write.task_runtime import TaskRuntime, _turn_budget
 from codey.storage.conversation_store import ConversationStore
 from codey.task.model import TaskSubmission
+from tests.support.research_controller import ResearchController
 
 
 def _submission(**overrides: object) -> TaskSubmission:

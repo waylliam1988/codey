@@ -21,20 +21,11 @@ from codey.policies.network import check_fetch_url
 from codey.research import browser_search
 from codey.research.advisors import EvidencePack, render_research_advisor_prompt, run_research_advisors
 from codey.research.browser_search import RESEARCH_CDP_PORT, RESEARCH_PROFILE, BrowserSearchProvider
-from codey.research.controller import (
-    OpenTarget,
-    ResearchControlState,
-    controller_action_contract_hash,
-    controller_system_prompt,
-    format_controller_results,
-    render_control_block,
-)
 from codey.research.done_finalizer import finalize_done_answer
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
 from codey.research.proof_quality import review_research_proof
-from codey.research.protocols import JsonToolCodec
 from codey.research.provenance import provenance_problem
 from codey.research.report_quality import review_report_quality
 from codey.research.source_document import SourceDocument, SourcePage
@@ -44,6 +35,15 @@ from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
+from tests.support.research_controller import (
+    OpenTarget,
+    ResearchControlState,
+    controller_action_contract_hash,
+    controller_system_prompt,
+    format_controller_results,
+    render_control_block,
+)
+from tests.support.research_protocol import JsonToolCodec
 
 
 class FakeProvider:
@@ -2732,7 +2732,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIsNone(plan.control)
         self.assertIn("too many JSON tool calls", plan.protocol_error)
 
-    def test_research_runner_repair_for_invalid_args_names_missing_field(self) -> None:
+    def test_research_iteration_repair_for_invalid_args_names_missing_field(self) -> None:
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
@@ -2751,7 +2751,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("source_search missing required arg 'query'", provider.sent[3])
         self.assertNotIn("Codey", provider.sent[3])
 
-    def test_research_runner_controller_prompt_limits_initial_tools(self) -> None:
+    def test_research_iteration_controller_prompt_limits_initial_tools(self) -> None:
         provider = FakeProvider(
             json.dumps({"tool": "done", "args": {"answer": "premature"}}),
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
@@ -2869,7 +2869,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             ],
         )
 
-    def test_research_runner_repair_for_disallowed_write_does_not_teach_write_shape(self) -> None:
+    def test_research_iteration_repair_for_disallowed_write_does_not_teach_write_shape(self) -> None:
         provider = FakeProvider(
             json.dumps(
                 {
@@ -2890,7 +2890,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertNotIn('{"tool":"knowledge_write"', provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
-    def test_research_runner_controller_rewrites_result_id_before_dispatch(self) -> None:
+    def test_research_iteration_controller_rewrites_result_id_before_dispatch(self) -> None:
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
@@ -2908,7 +2908,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Available result IDs", provider.sent[1])
         self.assertIn("r1", provider.sent[1])
 
-    def test_research_runner_demotes_failed_priority_connector_result(self) -> None:
+    def test_research_iteration_demotes_failed_priority_connector_result(self) -> None:
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "hepatotoxicity"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
@@ -2977,7 +2977,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("r1: https://pubmed.ncbi.nlm.nih.gov/41972337/", provider.sent[1])
         self.assertNotIn("https://pubmed.ncbi.nlm.nih.gov/ - PubMed home", provider.sent[1])
 
-    def test_research_runner_can_disable_controller_for_manual_baselines(self) -> None:
+    def test_research_iteration_can_disable_controller_for_manual_baselines(self) -> None:
         provider = FakeProvider(json.dumps({"tool": "done", "args": {"answer": "done"}}))
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -2995,7 +2995,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Visible tools", provider.sent[0])
         self.assertNotIn("Research controller current allowed actions", provider.sent[0])
 
-    def test_research_runner_repair_for_direct_answer_uses_done_shape(self) -> None:
+    def test_research_iteration_repair_for_direct_answer_uses_done_shape(self) -> None:
         provider = FakeProvider(
             "## 结论\nAlpha requires notice.\n\n## 来源\n[1] Alpha - https://example.com",
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
@@ -3026,7 +3026,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         turn = next(event for event in events if event.kind == "turn")
         self.assertEqual(turn.note, "(direct_answer)")
 
-    def test_research_runner_repair_for_synthesis_write_uses_done_shape(self) -> None:
+    def test_research_iteration_repair_for_synthesis_write_uses_done_shape(self) -> None:
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "alpha"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
@@ -3047,7 +3047,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("done required for final synthesis", provider.sent[3])
 
-    def test_research_runner_repair_for_native_search_leak_points_to_local_web_search(self) -> None:
+    def test_research_iteration_repair_for_native_search_leak_points_to_local_web_search(self) -> None:
         provider = FakeProvider(
             "I searched the web and search results show Alpha requires notice.",
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
@@ -3061,7 +3061,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("valid tool call", provider.sent[1])
 
-    def test_research_runner_unknown_tool_repair_respects_disabled_source_search(self) -> None:
+    def test_research_iteration_unknown_tool_repair_respects_disabled_source_search(self) -> None:
         provider = FakeProvider(
             json.dumps(
                 {

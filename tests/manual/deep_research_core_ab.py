@@ -29,8 +29,6 @@ from codey.knowledge.store import KnowledgeStore
 from codey.operations.research_iteration import ResearchIteration, ResearchToolOutcome, first_text_arg
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
-from codey.research.protocols import MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
-from codey.research.protocols import JsonToolCodec
 from codey.research.report_quality import review_report_quality
 from codey.research.source_document import SourceDocument, SourcePage, compact_pages
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, PDF_SOURCE_SEARCH_MAX_PAGES
@@ -38,6 +36,8 @@ from codey.research.source_search import bounded_limit, render_results, search_p
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import Control, ToolPlan
+from tests.support.research_protocol import MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
+from tests.support.research_protocol import JsonToolCodec
 
 ARMS = ("baseline", "source_search", "thin_gate", "deep_core")
 PROFILES = ("cheap", "full")

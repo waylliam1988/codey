@@ -3,8 +3,6 @@ from __future__ import annotations
 import unittest
 
 from codey.protocols.json_codec import JsonToolCodec
-from codey.research.controller import controller_action_contract_hash, controller_system_prompt
-from codey.research.protocols import JsonToolCodec as ResearchCodec
 from codey.toolchain.definition import TOOL_DEFINITIONS
 from codey.toolchain.tool_prompt import (
     coding_model_tool_contract_hash,
@@ -12,6 +10,8 @@ from codey.toolchain.tool_prompt import (
     render_coding_system_prompt,
     render_coding_tool_contract_text,
 )
+from tests.support.research_controller import controller_action_contract_hash, controller_system_prompt
+from tests.support.research_protocol import JsonToolCodec as ResearchCodec
 
 
 class ToolPromptTests(unittest.TestCase):

@@ -628,7 +628,7 @@ def run_provider(
 
 
 def _safe_model_actions(turn: int, reply: str) -> list[dict[str, Any]]:
-    from codey.research.protocols import extract_json_objects
+    from codey.protocols.json_scanner import extract_json_objects
 
     actions: list[dict[str, Any]] = []
     for obj in extract_json_objects(reply or ""):

@@ -495,7 +495,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         allowed_test_mutate_callers = {
             "tests/test_architecture.py",
             "tests/test_runtime_session_log.py",
-            "tests/test_fullred_round4_sweep.py",
+            "tests/test_fail_closed_boundary_sweep.py",
         }
         for path in (ROOT / "tests").rglob("*.py"):
             rel = path.relative_to(ROOT).as_posix()
@@ -1437,7 +1437,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("def _trace_call", task_run_source)
         self.assertNotIn("compatibility ``tool_*``", tool_source)
 
-    def test_agent_runner_is_only_the_public_entry_surface(self) -> None:
+    def test_retired_runner_modules_are_deleted(self) -> None:
         # Cold-start closure: old loops deleted, no compat shims.
         self.assertFalse((ROOT / "codey" / "agents" / "runner.py").exists())
         self.assertFalse((ROOT / "codey" / "agents" / "loop.py").exists())
@@ -1445,7 +1445,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertFalse((ROOT / "codey" / "operations" / "unified_mode.py").exists())
         self.assertFalse((ROOT / "codey" / "operations" / "unified_evidence_followup.py").exists())
 
-    def test_production_task_path_does_not_use_old_agent_loop(self) -> None:
+    def test_production_task_path_uses_shared_kernel_only(self) -> None:
         # Cold-start closure: old loops deleted and no production references remain.
         for dead in (
             "codey/agents/loop.py",
@@ -1669,8 +1669,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # Behavioral side of the same boundary: calling the repair context
         # through either codec is a typed unknown-tool error, not a tool.
         from codey.protocols.json_codec import JsonToolCodec
-        from codey.research.protocols import JsonToolCodec as ResearchCodec
         from codey.research.tool_contract import PROTOCOL_UNKNOWN_TOOL
+        from tests.support.research_protocol import JsonToolCodec as ResearchCodec
 
         payload = json.dumps(
             {
@@ -2081,7 +2081,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/inbox.py",
             "ghost/work_queue.py",
             "operations/project_completion_flow.py",
-            "operations/task_loop.py",
             "providers/controls.py",
             # PLR split 2026-09-26: extracted per-branch helpers stay in-module
             # for cohesion (single caller, domain-specific); file crossed 1000.

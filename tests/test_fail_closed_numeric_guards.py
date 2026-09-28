@@ -82,7 +82,7 @@ def test_trace_int_overflow_does_not_crash() -> None:
 
 
 def test_controller_as_int_overflow_does_not_crash() -> None:
-    from codey.research.controller import _as_int, _as_optional_int
+    from tests.support.research_controller import _as_int, _as_optional_int
 
     assert _as_int(float("inf")) == 0
     assert _as_int(float("inf"), default=7) == 7

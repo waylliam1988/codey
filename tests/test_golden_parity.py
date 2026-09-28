@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 
 from codey.protocols.json_codec import JsonToolCodec
-from codey.research.controller import ResearchController, render_control_block
-from codey.research.protocols import JsonToolCodec as ResearchCodec
+from tests.support.research_controller import ResearchController, render_control_block
+from tests.support.research_protocol import JsonToolCodec as ResearchCodec
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "golden"
 
@@ -30,7 +30,7 @@ class GoldenParityTests(unittest.TestCase):
         self._assert_fixture("research_thin_system_prompt.txt", thin.system_prompt())
 
     def test_controller_system_prompts_golden(self) -> None:
-        from codey.research.controller import controller_system_prompt
+        from tests.support.research_controller import controller_system_prompt
 
         full = controller_system_prompt(include_source_search=True)
         thin = controller_system_prompt(include_source_search=False)
@@ -70,10 +70,10 @@ class GoldenParityTests(unittest.TestCase):
 
     def test_research_repair_prompt_golden(self) -> None:
         from codey.operations.research_iteration import render_research_repair_prompt
-        from codey.research.controller import ResearchController, ResearchControlState
-        from codey.research.protocols import JsonToolCodec as ResearchCodec
         from codey.research.tool_contract import PROTOCOL_DISALLOWED_TOOL
         from codey.runtime.core.models import ToolPlan
+        from tests.support.research_controller import ResearchController, ResearchControlState
+        from tests.support.research_protocol import JsonToolCodec as ResearchCodec
 
         state = ResearchControlState(
             allowed_tools=("knowledge_search", "knowledge_read", "web_search", "open_result", "done"),

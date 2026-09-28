@@ -1,6 +1,6 @@
 # Codey Test Report
 
-## Shared task kernel cold-start cleanup (2026-09-28)
+## Shared task kernel cold-start cleanup (2026-09-29)
 
 - Test bootstrap now redirects `Path.home()` to a writable temporary home
   before collection, eliminating the previous host-profile permission failures.
@@ -9,9 +9,19 @@
   duplicated by a second call.
 - Migrated deleted-runner manual smokes to `operations.project_adapter` and
   corrected their request/effect fixtures.
+- Removed the retired production Research controller/codec and moved their
+  experiment-only implementations to `tests/support`; production evidence
+  follow-up now uses the shared JSON scanner.
+- Split provider transport and recovery shaping into `kernel_transport.py` and
+  `kernel_recovery.py`. Renamed round-based test files and added the behavior
+  index at `tests/README.md`.
+- The baseline `tests/test_agent.py` contained 125 old-loop test methods. Its
+  behavior is covered by the current task-entry, kernel, tool-runtime,
+  completion, native-delivery, and recovery suites; no old production loop is
+  retained just to keep those tests importable.
 
-Final run after these changes: `4816 passed, 32 skipped, 1467 subtests
-passed in 338.98s`. `ruff check codey tests`, `python -m compileall -q
+Final run after these changes: `4819 passed, 32 skipped, 1461 subtests
+passed in 337.70s`. `ruff check codey tests`, `python -m compileall -q
 codey tests`, and `git diff --check` passed.
 
 - Recovery requires the original persisted task policy whenever a run has

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from codey.providers.base import AssistantTurn, ProviderToolCall
-from codey.research.protocols import JsonToolCodec
 from codey.research.tool_contract import render_openai_tools
+from tests.support.research_protocol import JsonToolCodec
 
 
 def test_research_native_web_search() -> None:
@@ -93,8 +93,8 @@ def test_research_missing_id_fails_before_execution() -> None:
 def test_research_tool_messages_missing_id_fails_closed() -> None:
     import pytest
 
-    from codey.research.protocols import NativeToolResultError
     from codey.runtime.core.models import ToolCall, ToolResult
+    from tests.support.research_protocol import NativeToolResultError
 
     codec = JsonToolCodec()
     result = ToolResult(call=ToolCall(name="web_search", args={"query": "x"}), model_text="hits")

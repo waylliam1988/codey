@@ -5,7 +5,11 @@ import unittest
 from types import SimpleNamespace
 
 from codey.operations.research_iteration import render_research_repair_prompt
-from codey.research.controller import (
+from codey.research.ledger import ResearchLedger
+from codey.research.source_document import SourceDocument, SourcePage
+from codey.research.tool_contract import PROTOCOL_NO_JSON
+from codey.runtime.core.models import ToolCall, ToolResult
+from tests.support.research_controller import (
     CONTROLLER_DISPLAY_LIMIT,
     OpenTarget,
     ResearchController,
@@ -14,11 +18,7 @@ from codey.research.controller import (
     format_controller_results,
     render_control_block,
 )
-from codey.research.ledger import ResearchLedger
-from codey.research.protocols import JsonToolCodec
-from codey.research.source_document import SourceDocument, SourcePage
-from codey.research.tool_contract import PROTOCOL_NO_JSON
-from codey.runtime.core.models import ToolCall, ToolResult
+from tests.support.research_protocol import JsonToolCodec
 
 
 def tools_for(ledger: ResearchLedger) -> SimpleNamespace:

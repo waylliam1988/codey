@@ -14,8 +14,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from codey.protocols.json_scanner import extract_json_objects
 from codey.research.plan_executor import PlanExecutionResult
-from codey.research.protocols import extract_json_objects
 from codey.research.query_planner import ResearchPlan
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation

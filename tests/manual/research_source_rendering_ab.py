@@ -22,9 +22,9 @@ if __package__ in (None, ""):
 
 import contextlib
 
+from codey.protocols.json_scanner import extract_json_objects
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
-from codey.research.protocols import JsonToolCodec, extract_json_objects
 from codey.research.source_document import SourceDocument
 from codey.research.source_rendering import render_opened_source
 from codey.utils.refs import digest_json, digest_text
@@ -48,6 +48,7 @@ from tests.manual.ab_journal import (
     ABJournalIdentityMismatch,
     TranscriptReplayCache,
 )
+from tests.support.research_protocol import JsonToolCodec
 
 PROBE = "research_source_rendering_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

@@ -36,11 +36,11 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.research_iteration import ResearchIteration
 from codey.providers.registry import connect_provider, provider_ids
-from codey.research.protocols import JsonToolCodec
 from codey.research.source_document import SourceDocument
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
+from tests.support.research_protocol import JsonToolCodec
 
 ARMS = ("baseline", "concept")
 DEFAULT_MAX_TURNS = 12

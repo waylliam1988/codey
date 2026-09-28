@@ -10,7 +10,13 @@
 - 删除共享内核与 auto 路由的 timeout 签名重试。provider 调用严格遵守
   `ChatProvider` 契约；effect 已记录后不会因参数错误再次发送，避免重复
   provider effect 与交付批次。
-- 最终验证：`4816 passed, 32 skipped, 1467 subtests passed`；
+- 删除生产包中废弃的 `research/controller.py` 与 `research/protocols.py`。
+  确定性的实验行为保留在 `tests/support`，生产 Research 使用共享协议和
+  `ResearchIteration` 入口；平衡 JSON 提取移动到 `protocols/json_scanner.py`。
+- 将 provider transport 和恢复结果整形从 `operations/task_loop.py` 拆到
+  `kernel_transport.py`、`kernel_recovery.py`，任务循环只负责编排。按行为重命名
+  轮次测试，并新增 `tests/README.md` 测试索引。
+- 最终验证：`4819 passed, 32 skipped, 1461 subtests passed`；
   `ruff check codey tests`、compileall、`git diff --check` 均通过。未发布。
 - 恢复含已执行工具结果的任务时必须使用原始持久授权；策略日志缺失会阻塞，不能继承新请求追加的权限。
 - 删除废弃的 `research/native_bridge.py`，把原生能力探测移到

@@ -7,6 +7,9 @@ keep their own protocol semantics.
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 
 def balanced_json_spans(text: str) -> list[tuple[int, int]]:
     """Return (start, end_exclusive) spans of top-level {...} objects."""
@@ -40,4 +43,17 @@ def balanced_json_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-__all__ = ["balanced_json_spans"]
+def extract_json_objects(text: str) -> list[dict[str, Any]]:
+    """Decode balanced top-level JSON objects from a model reply."""
+    objects: list[dict[str, Any]] = []
+    for start, end in balanced_json_spans(str(text or "")):
+        try:
+            value = json.loads(text[start:end], strict=False)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            objects.append(value)
+    return objects
+
+
+__all__ = ["balanced_json_spans", "extract_json_objects"]

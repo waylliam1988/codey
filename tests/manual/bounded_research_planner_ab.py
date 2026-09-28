@@ -29,6 +29,7 @@ import codey.research.followup_selection as followup_selection
 import codey.research.pipeline as pipeline_module
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.research_iteration import ResearchIteration
+from codey.protocols.json_scanner import extract_json_objects
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
@@ -37,7 +38,6 @@ from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.proof_quality import review_research_proof
-from codey.research.protocols import extract_json_objects
 from codey.research.query_planner import QueryCandidate, ResearchPlan
 from codey.research.tools import ResearchTools, clone_research_tools
 from tests.manual.ab_harness_common import (

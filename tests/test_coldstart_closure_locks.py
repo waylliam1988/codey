@@ -385,6 +385,64 @@ class TaskEntryOwnershipTests(unittest.TestCase):
                 offenders.append(str(path.relative_to(root)))
         self.assertEqual(offenders, [], f"production must not import old loops: {offenders}")
 
+    def test_research_controller_and_protocol_codec_are_not_production_surface(self) -> None:
+        """Research execution uses the shared kernel, not the retired codec/controller."""
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        self.assertFalse(
+            (root / "codey" / "research" / "controller.py").exists(),
+            "retired ResearchController must not remain in the production package",
+        )
+        self.assertFalse(
+            (root / "codey" / "research" / "protocols.py").exists(),
+            "retired Research codec must live with experiment support, not production",
+        )
+        offenders = []
+        for path in (root / "codey").rglob("*.py"):
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if "codey.research.controller" in text or "codey.research.protocols" in text:
+                offenders.append(str(path.relative_to(root)))
+        self.assertEqual(offenders, [])
+
+    def test_task_loop_delegates_transport_and_recovery_helpers(self) -> None:
+        """The loop owns orchestration; provider I/O and resume shaping have leaf owners."""
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        loop = (root / "codey" / "operations" / "task_loop.py").read_text(encoding="utf-8")
+        self.assertTrue((root / "codey" / "operations" / "kernel_transport.py").exists())
+        self.assertTrue((root / "codey" / "operations" / "kernel_recovery.py").exists())
+        for name in (
+            "_call_provider_send",
+            "_call_provider_send_turn",
+            "_call_provider_send_results",
+            "_send_kernel_reply",
+            "_repair_native_dangling",
+            "_apply_recovery_first",
+        ):
+            self.assertNotIn(f"def {name}", loop)
+
+    def test_research_ab_scripts_use_experiment_support_and_shared_iteration(self) -> None:
+        """Important A/B probes must remain runnable without retired production modules."""
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        scripts = (
+            "tests/manual/deep_research_core_ab.py",
+            "tests/manual/research_repair_prompt_ab.py",
+            "tests/manual/concept_context_ab.py",
+            "tests/manual/research_source_rendering_ab.py",
+        )
+        for relative in scripts:
+            text = (root / relative).read_text(encoding="utf-8")
+            self.assertNotIn("codey.research.controller", text, relative)
+            self.assertNotIn("codey.research.protocols", text, relative)
+            self.assertTrue(
+                "ResearchIteration" in text or "tests.support.research_protocol" in text,
+                relative,
+            )
+
     def test_resume_policy_wrapper_deleted(self) -> None:
         import pathlib
 

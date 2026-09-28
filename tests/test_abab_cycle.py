@@ -146,7 +146,7 @@ def test_runaway_record_failure_is_visible(tmp_path: Path) -> None:
 def test_runaway_guard_failure_is_visible(tmp_path: Path) -> None:
     # Old loop runaway guard deleted with the old loop; stagnation via the new
     # single entry (invalid_turns >= stagnant_turns) is locked in
-    # test_agent_loop_split (new entry stagnant). This keeps the behavior
+    # test_runtime_helper_boundaries (new entry stagnant). This keeps the behavior
     # category (no infinite loops) via the new entry.
     from unittest.mock import patch
 

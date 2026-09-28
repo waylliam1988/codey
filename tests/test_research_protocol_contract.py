@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from dataclasses import fields
 
-from codey.research.protocols import JsonToolCodec
 from codey.research.tool_contract import (
     PROTOCOL_DIRECT_ANSWER,
     PROTOCOL_INVALID_ARGS,
@@ -14,6 +13,7 @@ from codey.research.tool_contract import (
     ToolContract,
     validate_tool_args,
 )
+from tests.support.research_protocol import JsonToolCodec
 
 
 def parse(payload: dict) -> object:

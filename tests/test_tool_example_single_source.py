@@ -35,7 +35,7 @@ class ToolExampleSingleSourceTests(unittest.TestCase):
         self.assertEqual(tool_example(""), TOOL_CONTRACTS["web_search"].example)
 
     def test_controller_dynamic_ids_still_use_state(self) -> None:
-        from codey.research.controller import ResearchControlState, controller_tool_example
+        from tests.support.research_controller import ResearchControlState, controller_tool_example
 
         state = ResearchControlState(
             allowed_tools=("open_result", "reopen_source", "open_hit", "source_search"),
@@ -51,8 +51,8 @@ class ToolExampleSingleSourceTests(unittest.TestCase):
         self.assertIn("s3", controller_tool_example("source_search", state))
 
     def test_controller_generic_tools_match_contract(self) -> None:
-        from codey.research.controller import ResearchControlState, controller_tool_example
         from codey.research.tool_contract import TOOL_CONTRACTS
+        from tests.support.research_controller import ResearchControlState, controller_tool_example
 
         state = ResearchControlState(allowed_tools=("knowledge_link", "done"))
         self.assertEqual(

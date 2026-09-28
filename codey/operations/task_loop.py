@@ -18,6 +18,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.operations.kernel_protocol import normalize_turn
+from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
+from codey.operations.kernel_transport import (
+    call_provider_send_results as _call_provider_send_results,
+)
+from codey.operations.kernel_transport import (
+    repair_native_dangling as _repair_native_dangling,
+)
+from codey.operations.kernel_transport import (
+    send_kernel_reply as _send_kernel_reply,
+)
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 
@@ -401,107 +411,6 @@ def _snapshot_for_turn_state(
     return controller_now, contract_now, native_now, prompt_now
 
 
-def _apply_recovery_first(
-    session: TaskSession,
-    native: bool,
-    pending_initial: list[ToolResult],
-    prompt: str,
-    pending_native_messages: list[dict[str, Any]] | None,
-    *,
-    provider_session_changed: bool = False,
-) -> tuple[str, list[dict[str, Any]] | None]:
-    """Deliver undelivered prior results before any new model call.
-
-    Same native session may continue delivery with old call ids; a new
-    provider or new session must only re-explain results as text so stale
-    call ids are never handed to a different chain.
-    """
-    if not pending_initial:
-        return prompt, pending_native_messages
-    # Cross-provider / new-session recovery: text only, never old call ids.
-    if provider_session_changed:
-        try:
-            return (
-                "Continue the unfinished task using the latest local tool results below.\n\n"
-                + _format_results(pending_initial, session)
-            ), None
-        except Exception:
-            return prompt, pending_native_messages
-    try:
-        if native:
-            recovered_messages = _native_tool_messages(pending_initial, session)
-            if recovered_messages:
-                return prompt, recovered_messages
-            return (
-                "Continue the unfinished task using the latest local tool results below.\n\n"
-                + _format_results(pending_initial, session)
-            ), pending_native_messages
-        return (
-            "Continue the unfinished task using the latest local tool results below.\n\n"
-            + _format_results(pending_initial, session)
-        ), pending_native_messages
-    except Exception:
-        return prompt, pending_native_messages
-
-
-def _call_provider_send(provider: Any, prompt: str) -> Any:
-    return provider.send(prompt)
-
-
-def _call_provider_send_turn(provider: Any, prompt: str, tools: Any) -> Any:
-    return provider.send_turn(prompt, tools)
-
-
-def _call_provider_send_results(provider: Any, messages: Any, tools: Any) -> Any:
-    return provider.send_tool_results(messages, tools)
-
-
-def _send_kernel_reply(
-    provider: Any,
-    native: bool,
-    prompt: str,
-    native_tools: Any,
-    pending_reply: Any,
-    pending_native_messages: list[dict[str, Any]] | None,
-) -> tuple[Any, Any, list[dict[str, Any]] | None]:
-    """One provider send; clears the consumed pending slot."""
-    if pending_reply is not None:
-        return pending_reply, None, pending_native_messages
-    if native and pending_native_messages is not None:
-        reply = _call_provider_send_results(provider, pending_native_messages, native_tools)
-        return reply, None, None
-    if native:
-        return _call_provider_send_turn(provider, prompt, native_tools), None, pending_native_messages
-    return _call_provider_send(provider, prompt), None, pending_native_messages
-
-
-def _repair_native_dangling(
-    provider: Any,
-    reply: Any,
-    native: bool,
-    native_tools: Any,
-    error: str,
-) -> Any:
-    """Answer dangling native call ids after a protocol error."""
-    if not native or isinstance(reply, str):
-        return None
-    try:
-        ids = [str(getattr(c, "id", "") or "") for c in (getattr(reply, "tool_calls", ()) or [])]
-    except Exception:
-        return None
-    ids = [i for i in ids if i]
-    if not ids:
-        return None
-    try:
-        return _call_provider_send_results(
-            provider,
-            [{"role": "tool", "tool_call_id": i, "content": f"ERROR: {error}"} for i in ids],
-            native_tools,
-        )
-    except Exception:
-        return None
-
-
 def _kernel_handle_protocol(
     plan: Any,
     provider: Any,
@@ -618,6 +527,8 @@ def _kernel_startup(
         prompt,
         pending_native_messages,
         provider_session_changed=bool(provider_session_changed),
+        format_results=_format_results,
+        native_tool_messages=_native_tool_messages,
     )
     return (
         runnable,

@@ -25,6 +25,15 @@ Own the semantics, minimize the syntax.
 canonical ingestion。本文档中 0.5 之后的部分仍是后续 protocol portability 的有效计划；
 0.4.13 小节保留为已完成版本的设计边界记录。
 
+## 2026 共享内核状态
+
+共享任务内核已经替代旧的 coding/research 生产循环：网页 JSON 与本地 native
+tool call 都经 `codey.operations.kernel_protocol`、`task_loop` 和统一完成门处理。
+Research 的旧 `controller.py` 与 `protocols.py` 已移出生产包；需要保留的研究 codec
+和 controller 行为只作为 `tests/support` 下的实验对照夹具，实机 A/B 脚本通过
+`codey.operations.research_iteration.ResearchIteration` 驱动共享内核。生产代码不应
+再引用这两个旧路径。
+
 ## 核心结论
 
 coding 和 research 都要纳入 tool protocol portability，但不能强行统一模型可见工具名，也不需要为了“看起来统一”新增一套 semantic taxonomy。
@@ -132,9 +141,8 @@ Research JsonToolCodec
 
 ```text
 codey/research/tool_contract.py
-codey/research/protocols.py
-codey/research/controller.py
-codey/research/runner.py
+codey/operations/kernel_protocol.py
+codey/operations/research_iteration.py
 codey/runs/trace.py
 ```
 
@@ -398,16 +406,18 @@ trace.call("record_protocol_repair_prompt", PROTOCOL_NO_JSON, phase="writer", tu
 
 这里仍然不改变 parser 行为，只补 trace。
 
-#### Research 接入点
+#### Research 历史接入点（已迁移）
 
-在 `codey/research/protocols.py::JsonToolCodec`：
+以下旧路径仅保留在历史设计记录中，生产实现已迁移到共享内核；实验对照 codec
+位于 `tests/support/research_protocol.py::JsonToolCodec`：
 
 ```python
 class JsonToolCodec:
     name = "research_json"
 ```
 
-在 `codey/research/runner.py`：
+旧 `codey/research/runner.py` 已删除，Research 生产入口为
+`codey/operations/research_iteration.py`：
 
 1. 初始化/开始运行时，在已有 contract hash 记录附近补：
 
