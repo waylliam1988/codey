@@ -146,6 +146,7 @@ class TaskSession:
                 "ok": bool(record.get("ok", False)),
                 "call_id": str(record.get("call_id", "") or "")[:80],
                 "excerpt": str(record.get("excerpt", "") or "")[:500],
+                "args_digest": str(record.get("args_digest", "") or "")[:80],
             }
         return {
             "task_kind": str(self.task_kind or ""),

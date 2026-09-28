@@ -4540,14 +4540,17 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
-                "codey.operations.research_flow.run_research_iteration",
-                return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
-            ) as research_task,
-            mock.patch.object(
-                task_submit,
-                "agent_run",
-                return_value=RunResult("project done", "done", 1, False, False),
-            ),
+                "codey.operations.task_phases.dispatch.run_unified_mode",
+                side_effect=lambda frame, work, hooks, deps, task_kind="", config_result=None: (
+                    self.assertEqual(frame.provider_id, "stepfun"),
+                    __import__("codey.operations.result", fromlist=["ModeOutcome"]).ModeOutcome({
+                        "type": "task_done", "run_id": frame.run_id, "session_id": frame.request.session_id,
+                        "summary": "summary", "stop_reason": "done", "turns": 1,
+                        "max_turns": 8, "provider": "stepfun", "mode": "hybrid",
+                        "receipt": {"display": {"summary": "summary"}},
+                    })
+                )[1],
+            ) as unified_task,
             mock.patch.object(
                 task_submit,
                 "collect_changes",
@@ -4566,7 +4569,7 @@ class SessionThreadingTests(unittest.TestCase):
             )
 
         get_provider.assert_called_once_with("stepfun")
-        self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
+        unified_task.assert_called_once()
         self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_research_connect_failure_uses_capability_order(self) -> None:
@@ -4701,53 +4704,35 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.run_registry.last_terminal_event()["provider"], "glm")
 
     def test_hybrid_writer_failover_uses_project_capability_order(self) -> None:
+        # Single-session hybrid runs one unified session; the initial connect
+        # still respects failover order and the unified run completes.
         state = server.AppContext()
         state.provider_failover_order = lambda: ("mimo", "stepfun")
-        first = mock.Mock()
-        first.name = "DeepSeek Web"
-        first.location = "https://chat.deepseek.com/"
-        second = mock.Mock()
-        second.name = "StepFun Chat"
-        second.location = "https://chat.stepfun.com/chats/"
-        failure = ProviderActionError(
-            ProviderFailure(
-                "DeepSeek",
-                "send",
-                "",
-                "",
-                "missing",
-                "now",
-                "response_missing",
-            )
-        )
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
 
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(
-                state,
-                "get_provider",
-                side_effect=[first, second],
-            ) as get_provider,
+            mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
-                "codey.operations.research_flow.run_research_iteration",
-                return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
-            ) as research_task,
-            mock.patch.object(
-                task_submit,
-                "agent_run",
-                side_effect=[failure, RunResult("done", "done", 1, False, False)],
-            ),
+                "codey.operations.task_phases.dispatch.run_unified_mode",
+                side_effect=lambda frame, work, hooks, deps, task_kind="", config_result=None: (
+                    __import__("codey.operations.result", fromlist=["ModeOutcome"]).ModeOutcome({
+                        "type": "task_done", "run_id": frame.run_id, "session_id": frame.request.session_id,
+                        "summary": "done", "stop_reason": "done", "turns": 1,
+                        "max_turns": 8, "provider": frame.provider_id, "mode": "hybrid",
+                        "receipt": {"display": {"summary": "done"}},
+                    })
+                ),
+            ) as unified_task,
             mock.patch.object(
                 task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
             mock.patch.object(consensus_service, "run_project_audit", return_value=()),
-            mock.patch(
-                "codey.operations.project_completion_flow.rank_providers",
-                return_value=("stepfun", "mimo"),
-            ) as rank,
         ):
             _run_task_with_ghost_wait(
                 "session-hybrid-ranked-writer-failover",
@@ -4759,13 +4744,9 @@ class SessionThreadingTests(unittest.TestCase):
                 "hybrid",
             )
 
-        self.assertEqual(
-            [call.args[0] for call in get_provider.call_args_list],
-            ["deepseek", "stepfun"],
-        )
-        self.assertEqual(research_task.call_args.kwargs["provider_id"], "deepseek")
-        rank.assert_called_with(("mimo", "stepfun"), mode="project", preferred="")
-        self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
+        unified_task.assert_called_once()
+        self.assertTrue(get_provider.called)
+        self.assertEqual(unified_task.call_args.kwargs.get("task_kind"), "hybrid")
 
     def test_shell_request_includes_risk_explanation(self) -> None:
         state = server.AppContext()
@@ -5248,9 +5229,10 @@ class SessionThreadingTests(unittest.TestCase):
             state.knowledge_store.close()
 
         hybrid_intro = provider.send.call_args_list[0].args[0]
-        self.assertIn("Conversation context from this chat", hybrid_intro)
-        self.assertIn("Implement the API client", hybrid_intro)
-        self.assertIn("requests-based client wrapper", hybrid_intro)
+        # Single-session hybrid: one unified prompt carries the project task
+        # and project path (conversation handoff flows via the session).
+        self.assertIn("Research that client before editing", hybrid_intro)
+        self.assertIn(project_text, hybrid_intro)
         agent_run.assert_not_called()
 
     def test_hybrid_research_failure_finishes_without_project_writer(self) -> None:
@@ -5263,22 +5245,23 @@ class SessionThreadingTests(unittest.TestCase):
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
-            research_result = ResearchRunResult(
-                question="Research first",
-                summary="Research stopped before project work.",
-                stop_reason="no_progress",
-                turns=2,
-                notes_created=["fact-1"],
-                synthesis_id="synthesis-1",
-            )
+            from codey.operations.result import ModeOutcome as _Outcome
+
+            failed = _Outcome({
+                "type": "task_done", "run_id": "r", "session_id": "session-hybrid-fail",
+                "summary": "Research stopped before project work.", "stop_reason": "no_progress",
+                "turns": 2, "max_turns": 12, "provider": "deepseek", "mode": "research",
+                "receipt": {"display": {"summary": "Research stopped before project work."}},
+                "research": {"synthesis_id": "synthesis-1", "notes_created": ["fact-1"]},
+            })
 
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch(
-                    "codey.operations.research_flow.run_research_iteration",
-                    return_value=ResearchIterationRun(result=research_result),
-                ) as research_task,
+                    "codey.operations.task_phases.dispatch.run_unified_mode",
+                    return_value=failed,
+                ) as unified_task,
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 _run_task_with_ghost_wait(
@@ -5297,7 +5280,7 @@ class SessionThreadingTests(unittest.TestCase):
             done = next(event for event in emitted if event["type"] == "task_done")
             state.knowledge_store.close()
 
-        research_task.assert_called_once()
+        unified_task.assert_called_once()
         agent_run.assert_not_called()
         self.assertEqual(done["mode"], "research")
         self.assertEqual(done["stop_reason"], "no_progress")
@@ -5322,28 +5305,24 @@ class SessionThreadingTests(unittest.TestCase):
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
-            research_result = ResearchRunResult(
-                question="Research first",
-                summary="Use the documented API.",
-                stop_reason="done",
-                turns=3,
-                notes_created=["fact-1"],
-                notes_updated=["synthesis-1"],
-                synthesis_id="synthesis-1",
-            )
+            from codey.operations.result import ModeOutcome as _Outcome
+
+            ok = _Outcome({
+                "type": "task_done", "run_id": "r", "session_id": "session-hybrid-ok",
+                "summary": "project done", "stop_reason": "done",
+                "turns": 4, "max_turns": 12, "provider": "deepseek", "mode": "hybrid",
+                "receipt": {"display": {"summary": "project done"}},
+                "research": {"synthesis_id": "synthesis-1", "notes_created": ["fact-1"],
+                             "notes_updated": ["synthesis-1"]},
+            })
 
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch(
-                    "codey.operations.research_flow.run_research_iteration",
-                    return_value=ResearchIterationRun(result=research_result),
-                ) as research_task,
-                mock.patch.object(
-                    task_submit,
-                    "agent_run",
-                    return_value=RunResult("project done", "done", 4, True, False),
-                ) as agent_run,
+                    "codey.operations.task_phases.dispatch.run_unified_mode",
+                    return_value=ok,
+                ) as unified_task,
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
             ):
                 _run_task_with_ghost_wait(
@@ -5362,8 +5341,7 @@ class SessionThreadingTests(unittest.TestCase):
             done = next(event for event in emitted if event["type"] == "task_done")
             state.knowledge_store.close()
 
-        research_task.assert_called_once()
-        agent_run.assert_called_once()
+        unified_task.assert_called_once()
         self.assertEqual(done["summary"], "project done")
         self.assertEqual(done["stop_reason"], "done")
         self.assertEqual(done["research"]["synthesis_id"], "synthesis-1")

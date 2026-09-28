@@ -174,7 +174,7 @@ def build_task_policy(
             # Strict Research with a project defaults to read/verify; write
             # needs an explicit user request. Plain project/hybrid keep the
             # historical default write grant (the task is to change files).
-            if kind == "hybrid" or not strict:
+            if not strict:
                 grants.add("project.write")
         if "web.read" in requested:
             grants.add("web.read")
@@ -188,8 +188,12 @@ def build_task_policy(
                 grants.update({"project.read", "project.verify"})
             if "project.write" in requested and has_project:
                 grants.add("project.write")
-            elif kind == "project":
+            else:
+                # Strict Research without an explicit project.write request
+                # never keeps write or the shell request surface, for any
+                # task kind (project/hybrid/research).
                 grants.discard("project.write")
+                grants.discard("shell.approval")
     elif kind == "research":
         grants.update({"web.read", "knowledge.read", "knowledge.write", "knowledge.link"})
         if has_project:
@@ -208,6 +212,12 @@ def build_task_policy(
         if "web.read" in requested:
             grants.add("web.read")
 
+    if strict and not ("project.write" in requested and has_project):
+        # Single strict-research gate for every kind: without an explicit
+        # user project.write grant, neither project.write nor the shell
+        # request surface may survive, no matter which branch added them.
+        grants.discard("project.write")
+        grants.discard("shell.approval")
     if not has_project:
         grants.discard("project.read")
         grants.discard("project.write")

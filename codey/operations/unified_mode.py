@@ -125,13 +125,27 @@ def run_unified_mode(
     research_tools = _build_research_tools(
         deps, session_id=request.session_id, project=frame.project_text)
     delivered = _delivered_from_recovery(frame, effect_scope="unified")
-    for row in getattr(frame, "recovered_tool_outcomes", ()) or ():
+    recovered_rows = sorted(
+        list(getattr(frame, "recovered_tool_outcomes", ()) or ()),
+        key=lambda r: (int(getattr(r, "turn", 0) or 0), int(getattr(r, "tool_index", 0) or 0)),
+    )
+    for row in recovered_rows:
         prior = ToolResult(
             call=row.call, model_text=row.outcome.model_text,
             audit={"changed": bool(row.outcome.changed)} if row.call.name == "edit" else {},
         )
         _record_facts_for_result(session, row.call, prior, ok=bool(row.outcome.ok),
                                  exit_code=row.outcome.exit_code)
+    resume_start = 1
+    initial_results: list[ToolResult] = []
+    if recovered_rows:
+        try:
+            resume_start = max(int(getattr(r, "turn", 0) or 0) for r in recovered_rows) + 1
+            resume_start = max(1, resume_start)
+        except Exception:
+            resume_start = 1
+        for row in recovered_rows:
+            initial_results.append(ToolResult(call=row.call, model_text=row.outcome.model_text))
     intent_sink = None
     active_provider = frame.provider
     mutations = getattr(deps, "runtime_mutations", None)
@@ -177,6 +191,8 @@ def run_unified_mode(
             "analysis_run_payloads": work.analysis_run_payloads,
             "research_ledger": getattr(research_tools, "ledger", None),
         },
+        start_turn=resume_start,
+        initial_results=initial_results or None,
     )
     summary = str(result.summary or "")
     receipt = {"display": {"summary": summary[:2000]}}

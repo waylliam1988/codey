@@ -1,22 +1,21 @@
 # Codey Test Report
 
+## Shared kernel review fixes 1-7 (2026-09-28)
+
+Strict hybrid write leak, hybrid single-session, completion projection,
+digest-guarded recovery with delivery-first resume, per-turn ToolSpec
+snapshot, native done closure, and per-task `required_checks` (plus explicit
+`project_changes_required`) were fixed red-first in
+`tests/test_review_repro_lock.py` (11 cases, failed before, pass after).
+`test_unified_cutover` now locks default `hybrid` to the shared kernel;
+hybrid server/trace/operation tests were migrated from two-phase mocks to the
+single-session entry.
+
+Final verification (isolated `USERPROFILE`/`HOME` for sandboxed execution):
+`4965 passed, 10 skipped, 1485 subtests passed in 341.68s`.
+`ruff check codey tests` and `git diff --check` clean. No release was made.
+
 ## Shared kernel production cutover (2026-09-28)
-
-Default project writer, Research iteration and Research evidence follow-up
-now run through `run_task_kernel()`. Existing outer workflows still perform
-planning, review, repair, failover and post-turn processing. Legacy direct
-loop APIs remain for compatibility and manual experiments.
-
-Red-first tests in `tests/test_unified_cutover.py` cover browser-only and
-native providers, Coding plus web tools, strict Research ledger and report,
-project read/verify/write boundaries, durable effect receipts, recovery,
-managed outputs, UI events, shell approval, project creation and completion.
-The final red cases reproduced incomplete synthesis persistence and a missing
-writer lease for explicit `unified` tasks before their fixes.
-
-Final verification (test home redirected into the workspace for sandboxed
-execution): `4932 passed, 31 skipped, 1485 subtests passed in 350.19s`.
-`ruff check .` and `git diff --check` clean. No release was made.
 
 ## Unified kernel 1-7 production hardening (2026-09-28)
 

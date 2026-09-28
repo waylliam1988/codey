@@ -215,9 +215,20 @@ def dispatch_run_mode(
     task_kind: str,
     config_result: ProjectConfigLoadResult,
 ) -> ModeOutcome:
-    # The unified entry remains explicit while the outer mode workflows are
-    # migrated; they own recovery, review, failover and post-turn effects.
-    if str(task_kind or "").strip().lower() == "unified":
+    # Single task session for hybrid: web/project tools alternate in one
+    # TaskSession (no two-phase research-then-writer). Project/research and
+    # read-only planning keep their dedicated flows, which already drive the
+    # same kernel internally (writer adapter / research iteration) plus their
+    # review/repair/self-repair phases. Chat/review/auto keep their flows.
+    # "unified" stays as a backward-compatible alias for project.
+    _normalized = str(task_kind or "").strip().lower()
+    if _normalized == "hybrid":
+        return run_unified_mode(
+            frame, work, hooks, deps,
+            task_kind="hybrid",
+            config_result=config_result,
+        )
+    if _normalized == "unified":
         return run_unified_mode(
             frame, work, hooks, deps,
             task_kind="project",

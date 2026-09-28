@@ -207,22 +207,40 @@ def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, 
 
 def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
     name = _canonical_name(tool) or str(tool or "").strip().lower()
-    if name in _CONTROLLER_ALIASES or (name == "source_search" and "source_id" in args):
-        return _validate_research_args(name, args)
+    # ToolSpec is the single authoritative definition: required-arg presence
+    # is decided here so JSON/native schemas and validation cannot drift.
+    # Legacy validators still do type repair and defaults underneath.
     try:
-        from codey.toolchain.tool_spec import spec_for_tool
+        from codey.toolchain.tool_spec import spec_for_tool as _spec_for
+        from codey.toolchain.tool_spec import validate_args_against_spec
     except Exception:
-        spec_for_tool = None  # type: ignore[assignment]
+        _spec_for = None  # type: ignore[assignment]
+        validate_args_against_spec = None  # type: ignore[assignment]
     executor = ""
-    if spec_for_tool is not None:
+    if _spec_for is not None:
         try:
-            spec = spec_for_tool(name)
+            spec = _spec_for(name)
             executor = spec.executor if spec is not None else ""
         except Exception:
             executor = ""
+        if spec is None:
+            return {}, f"unknown tool: {tool or '?'}"
+        if validate_args_against_spec is not None:
+            try:
+                spec_error = validate_args_against_spec(name, args if isinstance(args, dict) else {})
+            except Exception:
+                spec_error = ""
+            if spec_error:
+                return {}, spec_error
+    if name in _CONTROLLER_ALIASES or (name == "source_search" and "source_id" in args):
+        return _validate_research_args(name, args)
     if executor == "project":
         return _validate_coding_args(name, args)
     if executor in {"source", "knowledge"}:
+        return _validate_research_args(name, args)
+    # Fallback when the spec helper is unavailable (import failure): keep the
+    # legacy split so validation still fails closed, never open.
+    if name in _CONTROLLER_ALIASES:
         return _validate_research_args(name, args)
     return {}, f"unknown tool: {tool or '?'}"
 

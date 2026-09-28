@@ -2,6 +2,18 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 共享内核审查修复 1-7（未发布）
+
+- 严格 Research 的 hybrid 不再泄漏 `project.write`/`shell.approval`：仅在用户明确请求 `project.write` 时保留写入与 shell；协议解析与执行前均拒绝无授权的 `edit`。
+- Hybrid 单会话：`dispatch_run_mode()` 将 `hybrid`（及 `unified` 别名）送入 `run_unified_mode()`，同一 run 内交替 `web_search → read_file → edit → run → done`；project/research/规划保留原流程（内部已是同一内核，外加评审/修复/自修复）。
+- 完成判断统一：缺失 `changes`/`scope`/`selected_check` 时从会话事实投影补全，再单次调用 `CompletionEngine`；会话验证注入带合法工作区指纹，旧版本验证仍阻塞。
+- 恢复先交付、错配不复用：同格校验工具名+参数摘要，不一致返回明确恢复错误；先交付原批次再接收新调用，断点后从最大恢复轮次继续；摘要持久于有界会话载荷。
+- `ToolSpec` 唯一权威：必填参数由 `validate_args_against_spec` 判定，`visible_tool_names_for_snapshot`/`native_tools_for_snapshot`/`json_contract_text` 共用每轮快照（策略∩事实，项目工具不受 Research 状态误禁）；内核每轮重算提示/原生 schemas/解析/执行前检查；registry 快照改从 spec 推导编程工具。
+- 原生/网页等价：原生提示不再强制 JSON，接受的原生 `done` 仍回传 call id 闭环。
+- `required_checks` 逐项强制：缺失/未运行/冲突均阻塞；任务文本要求修改但无改动时以 `project_changes_required` 明确阻塞。
+- 切流锁定：默认 `hybrid` 走共享内核的断言更新，hybrid 的 server/trace/operation 测试迁至单会话入口；`task_kernel.py` 拆出辅助函数以通过 ruff（上限 1180，旧循环移除后回落）。
+- `tests/test_review_repro_lock.py` 11 个红测先行（先失败后通过）；最终全量（隔离 `USERPROFILE`/`HOME`）：`4965 passed, 10 skipped, 1485 subtests passed`。`ruff check codey tests` 与 `git diff --check` 干净。未发布。
+
 ## Unreleased - 共享内核进入生产默认路径（未发布）
 
 - 默认项目写入、Research 模型迭代和证据补全均通过薄适配器进入同一个

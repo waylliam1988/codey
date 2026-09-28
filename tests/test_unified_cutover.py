@@ -30,6 +30,29 @@ def test_opt_in_task_kind_reaches_shared_kernel(project: str | None, expected: s
     assert unified.call_args.kwargs["task_kind"] == "project"
 
 
+@pytest.mark.parametrize("kind", ["hybrid"])
+def test_default_kinds_all_use_shared_kernel(kind: str) -> None:
+    """Default hybrid uses one session; no opt-in needed.
+
+    Project/research/planning already drive the same kernel internally
+    (writer adapter / research iteration) plus their review/repair phases,
+    so only hybrid needs a dispatch cutover from two-phase to one session.
+    """
+    from codey.operations.result import ModeOutcome
+    from codey.operations.task_phases.dispatch import dispatch_run_mode
+
+    outcome = ModeOutcome({"type": "task_done", "mode": kind})
+    with patch("codey.operations.task_phases.dispatch.run_unified_mode", return_value=outcome) as unified:
+        actual = dispatch_run_mode(
+            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(),
+            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(), kind,
+            SimpleNamespace(),
+        )
+    assert actual is outcome
+    assert unified.call_count == 1
+    assert unified.call_args.kwargs["task_kind"] == kind
+
+
 def test_unified_project_uses_project_runtime_modes() -> None:
     from codey.task.kind import (
         conversation_mode,
@@ -873,15 +896,16 @@ def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_pat
     from codey.runtime.core.models import ToolCall
     from codey.toolchain.runtime import ToolOutcome
 
+    seen: list[str] = []
     replies = iter([
-        '{"tool":"read_file","args":{"path":"missing.txt"}}',
         '{"tool":"done","args":{"summary":"used recovered result"}}',
     ])
 
     class Provider:
         name = "deepseek"
 
-        def send(self, _prompt, timeout=None):
+        def send(self, prompt, timeout=None):
+            seen.append(str(prompt))
             return next(replies)
 
     with patch("codey.operations.kernel_execution.ExecutionDelegate._execute_project") as executed:
@@ -895,6 +919,8 @@ def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_pat
         ))
     assert result.stop_reason == "done"
     executed.assert_not_called()
+    # Recovery-first: the original batch is delivered before any new model call.
+    assert seen and "previous content" in seen[0]
 
 
 def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) -> None:

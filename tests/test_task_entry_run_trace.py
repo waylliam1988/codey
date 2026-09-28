@@ -456,35 +456,36 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
         (project / "app.py").write_text("print('hi')\n", encoding="utf-8")
         state = server.AppContext(root / "state")
 
-        def fake_agent(request: AgentRequest):
-            trace = request.trace_recorder
-            trace.record_permission_profile("coding_writer", phase="writer")
-            trace.record_tool_contract_hash("sha256:" + "w" * 64, phase="writer")
-            return RunResult("writer done", "done", 1)
+        # Single-session hybrid: one unified run touches web + project tools.
+        # The trace still records both research and writer phases (no secret
+        # prompts), but via one session instead of two separate phases.
+        def fake_unified(frame, work, hooks, deps, task_kind="", config_result=None):
+            from codey.operations.result import ModeOutcome as _Outcome
+
+            trace = getattr(frame, "trace", None)
+            if trace is not None:
+                try:
+                    trace.record_permission_profile("research", phase="research")
+                    trace.record_tool_contract_hash("sha256:" + "r" * 64, phase="research")
+                    trace.record_prompt_section(
+                        "research_outbound_prompt",
+                        "SECRET_RESEARCH_PROMPT_SHOULD_NOT_BE_SAVED",
+                    )
+                    trace.record_permission_profile("coding_writer", phase="writer")
+                    trace.record_tool_contract_hash("sha256:" + "w" * 64, phase="writer")
+                except Exception:
+                    pass
+            return _Outcome({
+                "type": "task_done", "run_id": frame.run_id, "session_id": frame.request.session_id,
+                "summary": "hybrid done", "stop_reason": "done", "turns": 2,
+                "max_turns": 4, "provider": frame.provider_id, "mode": "hybrid",
+                "receipt": {"display": {"summary": "hybrid done"}},
+            })
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner = _runner(state, agent_run=fake_agent)
-
-            def fake_research_task(*_args, **kwargs):
-                trace = kwargs["trace_recorder"]
-                trace.record_permission_profile("research", phase="research")
-                trace.record_tool_contract_hash("sha256:" + "r" * 64, phase="research")
-                trace.record_prompt_section(
-                    "research_outbound_prompt",
-                    "SECRET_RESEARCH_PROMPT_SHOULD_NOT_BE_SAVED",
-                )
-                return ResearchIterationRun(
-                    result=ResearchRunResult(
-                        question="Research first",
-                        summary="research done",
-                        stop_reason="done",
-                        turns=1,
-                        synthesis_id="synth-hybrid",
-                    )
-                )
-
-            research_iteration = mock.Mock(side_effect=fake_research_task)
-            with mock.patch(RESEARCH_ITERATION, research_iteration):
+            runner = _runner(state, agent_run=lambda req: RunResult("writer done", "done", 1))
+            with mock.patch("codey.operations.task_phases.dispatch.run_unified_mode",
+                            side_effect=fake_unified):
                 run_task_submission(runner,
                     TaskSubmission(
                         "session-hybrid-trace",

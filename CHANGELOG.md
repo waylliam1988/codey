@@ -2,6 +2,50 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Shared kernel review fixes 1-7 (no release)
+
+- Strict Research hybrid no longer leaks `project.write`/`shell.approval`:
+  `build_task_policy()` only keeps write/shell with an explicit user
+  `project.write` grant; parse (`normalize_turn`) and execution
+  (`execute_turn`) both deny `edit` for strict hybrid without it.
+- Hybrid runs one `TaskSession`: `dispatch_run_mode()` routes `hybrid`
+  (plus the `unified` alias) to `run_unified_mode()`, so a normal hybrid
+  alternates `web_search → read_file → edit → run → done` in the same run.
+  Project/research/planning keep their flows, which already drive the same
+  kernel internally plus review/repair/self-repair.
+- Completion uses one engine call over a full projection:
+  `completion_gate` derives `scope_files`/`task_changed`/`changes`/
+  `selected_check` from the session when the production context carries only
+  `execution_evidence`, and projects session verifications into evidence with
+  a valid workspace identity; stale-revision verification still blocks.
+- Recovery delivers first and never reuses mismatched slots: `execute_turn()`
+  checks tool name + args digest for `delivered` and settled slots, fails
+  closed with `recovery mismatch` instead of reusing stale results;
+  `run_task_kernel()` delivers the undelivered batch before new model calls
+  and resumes after the max recovered turn; digests persist in the bounded
+  session payload.
+- `ToolSpec` is the single source: `validate_args_against_spec()` decides
+  required args, `visible_tool_names_for_snapshot()`/
+  `native_tools_for_snapshot()`/`json_contract_text()` share one per-turn
+  snapshot (`policy ∩ controller`, project tools never narrowed); the kernel
+  recomputes contract/schemas/controller every turn and enforces the snapshot
+  at parse and exec; `registry.snapshot_for_policy()` now derives coding
+  tools from the spec.
+- Native/web parity: `kernel_prompt_for_session(..., native=True)` no longer
+  demands JSON-only; accepted native `done` still answers its call id via
+  `send_tool_results` so the chain stays legal.
+- `required_checks` are enforced per task: missing/unrun/conflicting required
+  checks block completion, and project/hybrid tasks whose text requires
+  modification but have no edits fail with `project_changes_required`.
+- Cutover locks: `test_unified_cutover` now asserts default `hybrid` uses the
+  shared kernel; hybrid server/trace/operation tests were migrated from the
+  two-phase mocks to the single-session entry; `task_kernel.py` split helpers
+  keep `ruff` gates green (ceiling 1180, will shrink after old loops leave).
+- Red-first locks in `tests/test_review_repro_lock.py` (11 cases, failed
+  before, pass after); final full suite (isolated `USERPROFILE`/`HOME`):
+  `4965 passed, 10 skipped, 1485 subtests passed`. `ruff check codey tests`
+  and `git diff --check` clean. No release was made.
+
 ## Unreleased - Shared kernel production cutover (no release)
 
 - Default project writing and Research model iterations now use the same

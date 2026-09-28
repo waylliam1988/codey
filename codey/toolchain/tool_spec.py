@@ -227,6 +227,29 @@ def _policy_allows(policy: Any, grant: str) -> bool:
 
 
 def visible_tool_names(policy: Any) -> tuple[str, ...]:
+    return visible_tool_names_for_snapshot(policy, None)
+
+
+def _is_research_tool(name: str) -> bool:
+    try:
+        spec = tool_specs().get(str(name or "").strip().lower())
+    except Exception:
+        return False
+    return spec is not None and spec.executor in {"source", "knowledge"}
+
+
+def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None) -> tuple[str, ...]:
+    """Per-turn snapshot: policy ∩ current controller facts.
+
+    The controller may only narrow research tools; it never removes project
+    tools from a hybrid run. ``None`` means no controller narrowing.
+    """
+    allowed: set[str] | None = None
+    if controller_allowed is not None:
+        try:
+            allowed = {str(n or "").strip().lower() for n in controller_allowed}
+        except TypeError:
+            allowed = None
     order = ("list_dir", "read_file", "grep", "find_references", "edit", "run", "shell",
              "web_search", "open_url", "source_search", "knowledge_search", "knowledge_read",
              "knowledge_write", "knowledge_link", "done")
@@ -235,15 +258,33 @@ def visible_tool_names(policy: Any) -> tuple[str, ...]:
         spec = tool_specs().get(name)
         if spec is None or not spec.grant:
             continue
-        if _policy_allows(policy, spec.grant):
-            names.append(name)
+        if not _policy_allows(policy, spec.grant):
+            continue
+        if allowed is not None and name != "done" and _is_research_tool(name) and name not in allowed:
+            # Controller aliases lower to open_url; keep open_url visible when
+            # any alias is allowed so the model can still reach the web.
+            if name == "open_url" and bool({"open_url", "open_result", "reopen_source", "open_hit"} & allowed):
+                pass
+            else:
+                continue
+        names.append(name)
+    # Controller aliases are model-visible names; expose them when allowed.
+    if allowed is not None:
+        for alias in ("open_result", "reopen_source", "open_hit"):
+            spec = tool_specs().get(alias)
+            if spec is None or alias in names:
+                continue
+            if _policy_allows(policy, spec.grant) and alias in allowed:
+                names.append(alias)
     # Registered third-task tools advertise alongside built-ins; unregistered
     # names stay denied.
     for name in sorted(tool_specs()):
-        if name in names or name in order:
+        if name in names or name in order or name in {"open_result", "reopen_source", "open_hit"}:
             continue
         spec = tool_specs()[name]
         if spec.grant and _policy_allows(policy, spec.grant):
+            if allowed is not None and _is_research_tool(name) and name not in allowed:
+                continue
             names.append(name)
     return tuple(names)
 
@@ -261,8 +302,13 @@ def _schema_for_spec(spec: ToolSpec) -> dict[str, object]:
 
 
 def native_tools_for_policy(policy: Any) -> list[dict[str, object]]:
+    return native_tools_for_snapshot(policy, None)
+
+
+def native_tools_for_snapshot(policy: Any, controller_allowed: Any = None) -> list[dict[str, object]]:
+    """Native schemas for one turn's snapshot; same source as JSON contract."""
     tools: list[dict[str, object]] = []
-    for name in visible_tool_names(policy):
+    for name in visible_tool_names_for_snapshot(policy, controller_allowed):
         spec = tool_specs().get(name)
         if spec is None:
             continue
@@ -278,17 +324,30 @@ def native_tools_for_policy(policy: Any) -> list[dict[str, object]]:
     return tools
 
 
-def json_contract_text(policy: Any, *, controller_allowed: Any = None) -> str:
-    allowed = None
-    if controller_allowed is not None:
-        allowed = {str(n or "").strip().lower() for n in controller_allowed}
-    lines: list[str] = []
-    for name in visible_tool_names(policy):
-        if allowed is not None and name not in allowed and name != "done":
-            from codey.policies.task_policy import RESEARCH_TOOL_GRANTS
+def validate_args_against_spec(name: object, args: dict[str, Any]) -> str:
+    """Single authoritative parameter check from the ToolSpec.
 
-            if name in RESEARCH_TOOL_GRANTS:
-                continue
+    Returns "" when the required ToolSpec params are present; otherwise a
+    short error naming the missing arg. Detailed type repair stays in the
+    legacy validators, but missing-required is decided here so JSON and
+    native prompts, schemas, and validation cannot drift.
+    """
+    spec = spec_for_tool(name)
+    if spec is None:
+        return f"unknown tool: {name or '?'}"
+    if not isinstance(args, dict):
+        return f"{spec.name} args must be an object"
+    missing = [key for key in (spec.required or ()) if not str(args.get(key, "") or "").strip()]
+    # Allowlist: research validators fill optional defaults, but the kernel
+    # only keeps model-supplied args; here only require presence.
+    if missing:
+        return f"{spec.name} missing required arg '{missing[0]}'"
+    return ""
+
+
+def json_contract_text(policy: Any, *, controller_allowed: Any = None) -> str:
+    lines: list[str] = []
+    for name in visible_tool_names_for_snapshot(policy, controller_allowed):
         spec = tool_specs().get(name)
         if spec is None:
             continue
@@ -304,8 +363,11 @@ __all__ = [
     "canonical_tool_name",
     "json_contract_text",
     "native_tools_for_policy",
+    "native_tools_for_snapshot",
     "register_custom_tool",
     "spec_for_tool",
     "tool_specs",
+    "validate_args_against_spec",
     "visible_tool_names",
+    "visible_tool_names_for_snapshot",
 ]

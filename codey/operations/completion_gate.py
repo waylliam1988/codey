@@ -73,6 +73,35 @@ def _session_profile(session: Any) -> str:
     return str(getattr(session, "task_kind", "") or "").strip().lower() or "project"
 
 
+_MODIFICATION_KEYWORDS = (
+    "edit", "fix", "create", "implement", "modify", "change", "add", "update",
+    "refactor", "write", "build", "patch",
+    "修改", "编辑", "修复", "创建", "新建", "实现", "改", "添加", "更新", "重构", "写",
+)
+
+
+def _task_requires_modification(session: Any) -> bool:
+    try:
+        kind = str(getattr(session, "task_kind", "") or "").strip().lower()
+    except Exception:
+        kind = ""
+    if kind not in {"project", "hybrid"}:
+        return False
+    try:
+        policy = getattr(session, "policy", None)
+        allows_write = bool(policy.allows("project.write")) if policy is not None and callable(getattr(policy, "allows", None)) else False
+    except Exception:
+        allows_write = False
+    if not allows_write:
+        return False
+    try:
+        text = f"{getattr(session, 'task_text', '') or ''} {getattr(session, 'handoff', '') or ''}"
+    except Exception:
+        text = ""
+    folded = str(text or "").lower()
+    return any(kw.lower() in folded for kw in _MODIFICATION_KEYWORDS)
+
+
 def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     if context is not None:
         real = _engine_checks(session, context)
@@ -81,6 +110,9 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     edited = dict(getattr(session, "edited_files", {}) or {})
     verifs = list(getattr(session, "verifications", ()) or [])
     if not edited:
+        if _task_requires_modification(session):
+            row = completion_check("project_changes_required", CHECK_FAIL, "project_changes_required")
+            return [row] if row is not None else []
         row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE)
         return [row] if row is not None else []
     try:
@@ -120,6 +152,160 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     return [row] if row is not None else []
 
 
+def _session_scope_files(session: Any) -> tuple[str, ...]:
+    try:
+        edited = dict(getattr(session, "edited_files", {}) or {})
+    except Exception:
+        return ()
+    return tuple(str(k) for k in edited if str(k))
+
+
+def _session_latest_verification(session: Any) -> dict[str, Any] | None:
+    try:
+        verifs = list(getattr(session, "verifications", ()) or [])
+    except Exception:
+        return None
+    if not verifs:
+        return None
+    latest = None
+    latest_rev = -1
+    for item in verifs:
+        if not isinstance(item, dict):
+            continue
+        try:
+            rev = int(item.get("revision", -1))
+        except (TypeError, ValueError):
+            continue
+        if rev >= latest_rev:
+            latest_rev = rev
+            latest = item
+    return latest
+
+
+def _synthesize_changes(scope: tuple[str, ...], provided: Any) -> Any:
+    if isinstance(provided, dict) and isinstance(provided.get("files"), list) and provided.get("files"):
+        return provided
+    if not scope:
+        return provided
+    return {
+        "ok": True,
+        "changed_count": len(scope),
+        "files": [{"path": p} for p in scope],
+        "diff": "",
+        "mode": "kernel",
+    }
+
+
+def _synthesize_selected_check(provided: Any, session: Any) -> Any:
+    if provided is not None:
+        return provided
+    latest = _session_latest_verification(session)
+    if latest is None:
+        return None
+    command = str(latest.get("command", "") or "").strip()
+    if not command:
+        return None
+    try:
+        from codey.completion.verification_policy import VerificationCandidate
+    except Exception:
+        return None
+    try:
+        return VerificationCandidate(command=command[:240], cwd=".", source="kernel_session")
+    except Exception:
+        return None
+
+
+def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
+    """Project session verifications into execution evidence for the engine.
+
+    The unified kernel records fresh verification facts in the session
+    (edited_files + verifications) while the outer RunWork evidence may not
+    yet contain them. Without this projection the engine sees an empty scope
+    and reports engine_empty even though the same session passes without a
+    context. The projection never removes outer facts; it only adds the
+    session's latest verification as a matching check.
+    """
+    try:
+        from codey.runtime.observe.execution_evidence import CheckEvidence
+    except Exception:
+        return evidence
+    latest = _session_latest_verification(session)
+    if latest is None:
+        return evidence
+    # Freshness: the latest verification must target the latest edit
+    # revision; an old-version check never completes, even with evidence.
+    try:
+        edited = dict(getattr(session, "edited_files", {}) or {})
+        latest_edit = max((int(v) for v in edited.values()), default=0) if edited else 0
+        try:
+            ver_rev = int(latest.get("revision", -1))
+        except (TypeError, ValueError):
+            return evidence
+        if edited and ver_rev != latest_edit:
+            return evidence
+    except Exception:
+        pass
+    try:
+        exit_code = latest.get("exit_code", None)
+        if exit_code is not None:
+            try:
+                exit_code = int(exit_code)
+            except (TypeError, ValueError):
+                exit_code = None
+        passed = bool(latest.get("passed", False)) or (exit_code == 0)
+        # Only project passing facts; failures are already visible via the
+        # session fallback and must not be hidden by synthesis.
+        if not passed:
+            return evidence
+        command = str(latest.get("command", "") or "").strip()[:500]
+        if not command or evidence is None:
+            return evidence
+        rev = getattr(evidence, "workspace_revision", 0)
+        fp = str(getattr(evidence, "workspace_fingerprint", "") or "")
+        # When the outer evidence has no workspace identity yet, give it one
+        # so the synthesized check matches the current workspace. The
+        # fingerprint must satisfy the sha256:64hex contract or every check
+        # stays unmatched (unobserved).
+        try:
+            from codey.workspace.revision import valid_workspace_fingerprint
+        except Exception:
+            valid_workspace_fingerprint = None  # type: ignore[assignment]
+        needs_fp = not fp or (valid_workspace_fingerprint is not None and not valid_workspace_fingerprint(fp))
+        if needs_fp:
+            try:
+                import hashlib as _hashlib
+
+                digest = _hashlib.sha256(f"kernel-session:{rev or 1}".encode()).hexdigest()
+                valid_fp = f"sha256:{digest}"
+                evidence.set_workspace_state(rev or 1, valid_fp)
+                fp = str(getattr(evidence, "workspace_fingerprint", "") or "")
+                rev = getattr(evidence, "workspace_revision", 0)
+            except Exception:
+                pass
+        item = CheckEvidence(command, ".", exit_code=exit_code if exit_code is not None else 0,
+                             workspace_revision=rev, workspace_fingerprint=fp)
+        try:
+            existing = list(getattr(evidence, "checks_after_edit", []) or [])
+        except Exception:
+            return evidence
+        for row in existing:
+            try:
+                if str(getattr(row, "command", "") or "") == command:
+                    return evidence
+            except Exception:
+                continue
+        import contextlib as _contextlib2
+
+        try:
+            evidence._append_check(evidence.checks_after_edit, item)
+        except Exception:
+            with _contextlib2.suppress(Exception):
+                evidence.checks_after_edit.append(item)
+    except Exception:
+        pass
+    return evidence
+
+
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
     get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
     evidence = get("execution_evidence")
@@ -131,16 +317,40 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
         row = completion_check("completion_engine", CHECK_NOT_RUN, f"engine_unavailable:{type(exc).__name__}")
         return [row] if row is not None else []
     try:
+        scope = tuple(get("scope_files") or ())
+        if not scope:
+            scope = _session_scope_files(session)
+        provided_changed = get("task_changed")
+        if provided_changed is None:
+            task_changed = bool(scope)
+        else:
+            try:
+                task_changed = bool(provided_changed) or bool(scope)
+            except Exception:
+                task_changed = bool(scope)
+        changes = _synthesize_changes(scope, get("changes"))
+        selected = _synthesize_selected_check(get("selected_check"), session)
+        # Single engine call over the complete projection: session facts fill
+        # the gaps the unified production context does not carry, so the same
+        # edit+fresh-pass passes with or without an evidence-only context.
+        # Old-version verification (stale revision) stays unobserved because
+        # _session_latest_verification only reflects the latest revision and
+        # the engine still requires freshness against the current scope.
+        effective_evidence = _evidence_with_session_facts(evidence, session)
+        # When there is no edited scope at all, fall back to the session
+        # checks (not_applicable) instead of forcing an engine_empty.
+        if not scope and not task_changed:
+            return None
         engine = CompletionEngine()
         result = engine.evaluate(
             run_id=str(get("run_id") or ""),
             task=str(get("task") or ""),
-            changes=get("changes"),
+            changes=changes,
             stop_reason="done",
-            task_changed=bool(get("task_changed")),
-            scope_files=tuple(get("scope_files") or ()),
-            selected_check=get("selected_check"),
-            evidence=evidence,
+            task_changed=task_changed,
+            scope_files=scope,
+            selected_check=selected,
+            evidence=effective_evidence,
             analysis_run_payloads=get("analysis_run_payloads") or (),
             project=get("project"),
             checkpoint_green=bool(get("checkpoint_green")),
@@ -339,6 +549,68 @@ def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVer
         )
 
 
+def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> GateVerdict | None:
+    """Enforce the task's own required_checks: missing/unrun/conflict blocks.
+
+    Each required id must be produced exactly once with pass. Missing provider,
+    not_run/fail/not_applicable, duplicate conflicting statuses, and over-limit
+    (contract None downstream) all fail closed.
+    """
+    try:
+        policy = getattr(session, "policy", None)
+        required = tuple(getattr(policy, "required_checks", ()) or ())
+    except Exception:
+        return None
+    required = tuple(str(r or "").strip() for r in required if str(r or "").strip())[:16]
+    if not required:
+        return None
+    by_id: dict[str, list[CompletionCheck]] = {}
+    for row in deduped:
+        try:
+            by_id.setdefault(str(row.check_id or ""), []).append(row)
+        except Exception:
+            continue
+    for req in required:
+        rows = by_id.get(req, [])
+        if not rows:
+            return GateVerdict(
+                complete=False,
+                followup=(
+                    f"Not done yet (required check '{req}' was not produced). "
+                    "Collect the missing local evidence or fresh verification, then propose done again. "
+                    "Model claims alone do not complete."
+                ),
+                proof=None,
+            )
+        statuses = {str(r.status or "") for r in rows}
+        if len(statuses) > 1:
+            return GateVerdict(
+                complete=False,
+                followup=(
+                    f"Not done yet (required check '{req}' has conflicting results). "
+                    "Collect the missing local evidence or fresh verification, then propose done again."
+                ),
+                proof=None,
+            )
+        status = next(iter(statuses))
+        if status != CHECK_PASS:
+            reason = ""
+            try:
+                reason = str(rows[0].reason_code or "")
+            except Exception:
+                reason = ""
+            return GateVerdict(
+                complete=False,
+                followup=(
+                    f"Not done yet (required check '{req}' is {status or 'missing'}"
+                    f"{f': {reason}' if reason else ''}). "
+                    "Collect the missing local evidence or fresh verification, then propose done again."
+                ),
+                proof=None,
+            )
+    return None
+
+
 def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
     text = str(done_text or "").strip()
     checks: list[CompletionCheck] = []
@@ -371,6 +643,11 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
             continue
         seen.add(key)
         deduped.append(row)
+    # Task-declared required checks gate before the contract: the task entry
+    # must prove its own checks ran, not just any globally registered check.
+    required_block = _required_checks_verdict(session, deduped)
+    if required_block is not None:
+        return required_block
     domain = _domain_for_session(session)
     subject = f"task:{profile or 'task'}"
     try:

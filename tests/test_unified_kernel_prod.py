@@ -402,10 +402,11 @@ class DispatchSwitchTests(unittest.TestCase):
 
         source = (pathlib.Path(__file__).resolve().parents[1] / "codey" / "operations"
                   / "task_phases" / "dispatch.py").read_text(encoding="utf-8")
-        # Staged migration: explicit unified opt-in routes to the kernel while
-        # legacy flows stay production pending review/repair parity.
+        # Cutover: default hybrid enters one session (no two-phase);
+        # project/research/planning already drive the same kernel internally
+        # plus their review/repair phases. "unified" is only an alias.
         self.assertIn("run_unified_mode", source)
-        self.assertIn('"unified"', source)
+        self.assertIn('"hybrid"', source)
 
     def test_auto_plan_narrows_never_widens(self) -> None:
         from codey.operations.task_kernel import apply_auto_plan

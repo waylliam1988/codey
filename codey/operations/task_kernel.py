@@ -103,6 +103,42 @@ def _skip_unsettled(intent_sink: Any, identity: str, name: str) -> bool:
     )
 
 
+def _call_args_digest(call: ToolCall) -> str:
+    try:
+        from codey.runtime.effects.effect_records import compute_args_digest
+    except Exception:
+        return ""
+    try:
+        args = call.args if isinstance(call.args, dict) else {}
+        return str(compute_args_digest(args) or "")
+    except Exception:
+        return ""
+
+
+def _same_effect_call(stored_name: str, stored_digest: str, call: ToolCall) -> bool:
+    name = str(getattr(call, "name", "") or "").strip().lower()
+    if str(stored_name or "").strip().lower() != name:
+        return False
+    if not stored_digest:
+        # Legacy records without a digest cannot prove sameness; treat as
+        # mismatch for unsafe tools to avoid mis-delivery. Safe reads fall
+        # back to re-execution via the caller.
+        return False
+    return str(stored_digest or "") == _call_args_digest(call)
+
+
+def _recovery_mismatch_result(call: ToolCall, expected: str, actual: str) -> ToolResult:
+    return ToolResult(
+        call=call,
+        model_text=(
+            "ERROR: recovery mismatch for this turn slot: "
+            f"expected {expected or '?'} with args {actual or '?'}; "
+            "the prior settled result was for a different tool/args and must not be reused. "
+            "Stop this batch and re-issue the correct call."
+        ),
+    )
+
+
 def _replay_settled_slot(
     session: TaskSession, identity: str, call: ToolCall, name: str, active_turn: int,
 ) -> ToolResult | None:
@@ -110,15 +146,29 @@ def _replay_settled_slot(
         return None
     # Same turn slot already settled (retry after crash before delivery):
     # answer without re-executing dangerous writes. Full results stay
-    # process-local (never in the bounded payload).
+    # process-local (never in the bounded payload). The slot is identical
+    # only when tool name and args digest both match; otherwise fail closed
+    # and never reuse the old result.
     full = session._memory_results.get(identity)
     if full is not None:
+        stored_name = str(getattr(full.call, "name", "") or "")
+        try:
+            from codey.runtime.effects.effect_records import compute_args_digest as _digest
+            stored_digest = str(_digest(full.call.args if isinstance(full.call.args, dict) else {}) or "")
+        except Exception:
+            stored_digest = ""
+        if not _same_effect_call(stored_name, stored_digest, call):
+            return _recovery_mismatch_result(call, stored_name, stored_digest)
         call_id = str(getattr(call, "call_id", "") or full.call.call_id or "")
         return ToolResult(
             call=ToolCall(name=full.call.name, args=dict(full.call.args), call_id=call_id),
             model_text=full.model_text,
         )
     record = session.executed[identity]
+    stored_name = str(record.get("name", "") or "")
+    stored_digest = str(record.get("args_digest", "") or "")
+    if not _same_effect_call(stored_name, stored_digest, call):
+        return _recovery_mismatch_result(call, stored_name, stored_digest or "unknown-args")
     call_id = str(getattr(call, "call_id", "") or record.get("call_id", ""))
     return ToolResult(
         call=ToolCall(name=str(record.get("name", "") or name),
@@ -217,6 +267,80 @@ def _record_search_results(session: TaskSession, args: dict[str, Any], text: str
         session.record_search_result(existing, url)
 
 
+def _delivered_slot_result(
+    delivered_map: Mapping[str, ToolResult], identity: str, call: ToolCall,
+) -> ToolResult | None:
+    """Return the delivered recovery result or a mismatch error, else None."""
+    if identity not in delivered_map:
+        return None
+    stored = delivered_map[identity]
+    try:
+        stored_call = getattr(stored, "call", None)
+        stored_name = str(getattr(stored_call, "name", "") or "") if stored_call is not None else ""
+        try:
+            from codey.runtime.effects.effect_records import compute_args_digest as _d
+            stored_args = getattr(stored_call, "args", {}) if stored_call is not None else {}
+            stored_digest = str(_d(stored_args if isinstance(stored_args, dict) else {}) or "")
+        except Exception:
+            stored_digest = ""
+    except Exception:
+        stored_call, stored_name, stored_digest = None, "", ""
+    if stored_call is None or not _same_effect_call(stored_name, stored_digest, call):
+        return _recovery_mismatch_result(call, stored_name or "unknown", stored_digest or "unknown-args")
+    return ToolResult(call=call, model_text=stored.model_text)
+
+
+def _guarded_slot_result(
+    session: TaskSession, identity: str, call: ToolCall, name: str, active_turn: int,
+    intent_sink: Any, controller_allowed: Any,
+) -> ToolResult | None:
+    """Policy/controller/replay guards; None means proceed to real execution."""
+    if _skip_unsettled(intent_sink, identity, name):
+        return _error_result(call, f"interrupted {name} not re-executed; see prior intent")
+    replayed = _replay_settled_slot(session, identity, call, name, active_turn)
+    if replayed is not None:
+        return replayed
+    if not _policy_allows(session.policy, name):
+        return _error_result(call, f"disallowed tool for this task policy: {name or '?'}")
+    if controller_allowed is not None:
+        try:
+            from codey.operations.kernel_protocol import _controller_allows as _allows_ctl
+            if not _allows_ctl(name, {str(n or "").strip().lower() for n in controller_allowed}):
+                return _error_result(call, f"{name} is not allowed by the current controller state")
+        except Exception:
+            pass
+    return None
+
+
+def _run_via_delegate_or_fn(
+    delegate: Any, runnable: Mapping[str, Any], session: TaskSession, call: ToolCall, name: str,
+    *, active_turn: int, tool_index: int,
+) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None, bool]:
+    """Execute via delegate or raw executor; returns (result, ok, opened, evidence, exit, handled)."""
+    if delegate is not None and delegate.handles(name):
+        result, ok, opened, evidence, exit_code = delegate.execute(
+            call, turn=active_turn, tool_index=tool_index,
+        )
+        return result, ok, opened, evidence, exit_code, True
+    fn = runnable.get(name)
+    if fn is None:
+        return _error_result(call, f"unknown tool executor: {name or '?'}"), False, "", [], None, True
+    try:
+        produced = fn(call)
+    except Exception as exc:
+        return _error_result(call, str(exc) or "tool failed"), False, "", [], None, True
+    if isinstance(produced, ToolResult):
+        result = produced
+    elif isinstance(produced, str):
+        result = ToolResult(call=call, model_text=produced)
+    else:
+        result = ToolResult(call=call, model_text=str(produced))
+    ok = _result_ok(name, result)
+    if name == "run":
+        ok = _fake_run_ok(str(result.model_text or ""))
+    return result, ok, "", [], None, True
+
+
 def execute_turn(
     session: TaskSession,
     calls: list[ToolCall],
@@ -235,8 +359,13 @@ def execute_turn(
     permission_profile: str = "coding_writer",
     delivered: Mapping[str, ToolResult] | None = None,
     intent_sink: Any = None,
+    controller_allowed: Any = None,
 ) -> list[ToolResult]:
-    """Execute one turn; identity is run+turn+index with durable delivery first."""
+    """Execute one turn; identity is run+turn+index with durable delivery first.
+
+    The per-turn snapshot (policy ∩ controller) is enforced here as well as
+    in parsing: research tools respect the controller, project tools never do.
+    """
 
     runnable = dict(executors or {})
     try:
@@ -276,56 +405,26 @@ def execute_turn(
     for offset, call in enumerate(calls or []):
         name = str(getattr(call, "name", "") or "").strip().lower()
         identity = turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset)
-        if identity in delivered_map:
-            results.append(ToolResult(call=call, model_text=delivered_map[identity].model_text))
+        delivered_hit = _delivered_slot_result(delivered_map, identity, call)
+        if delivered_hit is not None:
+            is_mismatch = str(getattr(delivered_hit, "model_text", "") or "").startswith("ERROR: recovery mismatch")
+            settle(identity, call, delivered_hit, ok=not is_mismatch)
+            results.append(delivered_hit)
             continue
-        if _skip_unsettled(intent_sink, identity, name):
-            result = _error_result(call, f"interrupted {name} not re-executed; see prior intent")
-            settle(identity, call, result, ok=False)
-            results.append(result)
+        guarded = _guarded_slot_result(session, identity, call, name, active_turn, intent_sink, controller_allowed)
+        if guarded is not None:
+            text = str(getattr(guarded, "model_text", "") or "")
+            if text.startswith("ERROR: recovery mismatch") or text.startswith("ERROR:"):
+                settle(identity, call, guarded, ok=False)
+            # Settled replay successes are already stored; do not re-settle.
+            results.append(guarded)
             continue
-        replayed = _replay_settled_slot(session, identity, call, name, active_turn)
-        if replayed is not None:
-            results.append(replayed)
-            continue
-        if not _policy_allows(session.policy, name):
-            result = _error_result(call, f"disallowed tool for this task policy: {name or '?'}")
-            settle(identity, call, result, ok=False)
-            results.append(result)
-            continue
-        if delegate is not None and delegate.handles(name):
-            result, ok, opened, evidence, exit_code = delegate.execute(
-                call, turn=active_turn, tool_index=base_index + offset,
-            )
-            settle(identity, call, result, ok=ok)
-            _record_facts_for_result(session, call, result, ok=ok, opened_url=opened,
-                                     evidence_items=evidence, exit_code=exit_code)
-            results.append(result)
-            continue
-        fn = runnable.get(name)
-        if fn is None:
-            result = _error_result(call, f"unknown tool executor: {name or '?'}")
-            settle(identity, call, result, ok=False)
-            results.append(result)
-            continue
-        try:
-            produced = fn(call)
-        except Exception as exc:
-            result = _error_result(call, str(exc) or "tool failed")
-            settle(identity, call, result, ok=False)
-            results.append(result)
-            continue
-        if isinstance(produced, ToolResult):
-            result = produced
-        elif isinstance(produced, str):
-            result = ToolResult(call=call, model_text=produced)
-        else:
-            result = ToolResult(call=call, model_text=str(produced))
-        ok = _result_ok(name, result)
-        if name == "run":
-            ok = _fake_run_ok(str(result.model_text or ""))
-        settle(identity, call, result, ok)
-        _record_facts_for_result(session, call, result, ok=ok)
+        result, ok, opened, evidence, exit_code, _handled = _run_via_delegate_or_fn(
+            delegate, runnable, session, call, name, active_turn=active_turn, tool_index=base_index + offset,
+        )
+        settle(identity, call, result, ok=ok)
+        _record_facts_for_result(session, call, result, ok=ok, opened_url=opened,
+                                 evidence_items=evidence, exit_code=exit_code)
         results.append(result)
     return results
 
@@ -339,16 +438,21 @@ def _settle_slot(session: TaskSession, identity: str, call: ToolCall, result: To
             "ok": bool(ok),
             "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
             "excerpt": str(result.model_text or "")[:500],
+            "args_digest": _call_args_digest(call),
         }
 
 
-def _snapshot_names(policy: Any) -> tuple[str, ...]:
+def _snapshot_names(policy: Any, controller_allowed: Any = None) -> tuple[str, ...]:
     try:
-        from codey.toolchain.tool_spec import visible_tool_names
+        from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
     except Exception:
-        return ()
+        try:
+            from codey.toolchain.tool_spec import visible_tool_names as _fallback
+            return tuple(_fallback(policy))
+        except Exception:
+            return ()
     try:
-        return tuple(visible_tool_names(policy))
+        return tuple(visible_tool_names_for_snapshot(policy, controller_allowed))
     except Exception:
         return ()
 
@@ -397,11 +501,13 @@ def kernel_prompt_for_session(
     user_task: str = "",
     contract_text: str = "",
     context_text: str = "",
+    controller_allowed: Any = None,
+    native: bool = False,
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
     handoff = str(getattr(session, "handoff", "") or "").strip()
     project = str(getattr(session, "project", "") or "").strip() or "-"
-    names = ", ".join(_snapshot_names(getattr(session, "policy", None))) or "none"
+    names = ", ".join(_snapshot_names(getattr(session, "policy", None), controller_allowed)) or "none"
     parts = [f"User task (verbatim):\n{task_text or '(no task text)'}\n",
              f"Project: {project}\nTask kind: {getattr(session, 'task_kind', '')}"]
     if handoff:
@@ -419,8 +525,14 @@ def kernel_prompt_for_session(
         )
     parts.append(f"Visible tools: {names}")
     if contract_text:
-        parts.append(f"Tool contract (use exactly these shapes):\n{contract_text}")
-    parts.append("Reply with exactly one JSON tool call per turn, or done.")
+        if native:
+            parts.append(f"Tool contract (use exactly these tools):\n{contract_text}")
+        else:
+            parts.append(f"Tool contract (use exactly these shapes):\n{contract_text}")
+    if native:
+        parts.append("Use the provided native tools for this turn; do not reply with raw JSON.")
+    else:
+        parts.append("Reply with exactly one JSON tool call per turn, or done.")
     return "\n\n".join(parts)
 
 
@@ -471,13 +583,17 @@ def _is_native_provider(provider: Any, *, provider_id: object = "") -> bool:
     return provider_uses_native(provider, provider_id=provider_id)
 
 
-def _native_tools_for_policy(policy: Any) -> list[dict[str, Any]]:
+def _native_tools_for_policy(policy: Any, controller_allowed: Any = None) -> list[dict[str, Any]]:
     try:
-        from codey.toolchain.tool_spec import native_tools_for_policy
+        from codey.toolchain.tool_spec import native_tools_for_snapshot
     except Exception:
-        return []
+        try:
+            from codey.toolchain.tool_spec import native_tools_for_policy as _fallback
+            return list(_fallback(policy))
+        except Exception:
+            return []
     try:
-        return list(native_tools_for_policy(policy))
+        return list(native_tools_for_snapshot(policy, controller_allowed))
     except Exception:
         return []
 
@@ -617,6 +733,91 @@ def _stop_requested(stop_flag: Any) -> bool:
         return False
 
 
+def _snapshot_for_turn_state(
+    session: TaskSession, *, native: bool, user_task: object, context_text: str,
+) -> tuple[Any, str, list[dict[str, Any]], str]:
+    """One snapshot per turn: policy ∩ current facts for prompt/schemas/parse."""
+    controller_now = _controller_for_session(session)
+    try:
+        from codey.toolchain.tool_spec import json_contract_text as _contract
+        contract_now = _contract(session.policy, controller_allowed=controller_now) if _contract is not None else ""
+    except Exception:
+        contract_now = ""
+    try:
+        native_now = _native_tools_for_policy(session.policy, controller_now) if native else []
+    except Exception:
+        native_now = []
+    try:
+        prompt_now = kernel_prompt_for_session(
+            session, user_task=str(user_task or ""), contract_text=contract_now,
+            context_text=context_text, controller_allowed=controller_now, native=native,
+        )
+    except Exception:
+        prompt_now = ""
+    return controller_now, contract_now, native_now, prompt_now
+
+
+def _apply_recovery_first(
+    session: TaskSession, native: bool, pending_initial: list[ToolResult],
+    prompt: str, pending_native_messages: list[dict[str, Any]] | None,
+) -> tuple[str, list[dict[str, Any]] | None]:
+    """Deliver undelivered prior results before any new model call."""
+    if not pending_initial:
+        return prompt, pending_native_messages
+    try:
+        if native:
+            recovered_messages = _native_tool_messages(pending_initial, session)
+            if recovered_messages:
+                return prompt, recovered_messages
+            return (
+                "Continue the unfinished task using the latest local tool results below.\n\n"
+                + _format_results(pending_initial, session)
+            ), pending_native_messages
+        return (
+            "Continue the unfinished task using the latest local tool results below.\n\n"
+            + _format_results(pending_initial, session)
+        ), pending_native_messages
+    except Exception:
+        return prompt, pending_native_messages
+
+
+def _send_kernel_reply(
+    provider: Any, native: bool, prompt: str, native_tools: Any,
+    pending_reply: Any, pending_native_messages: list[dict[str, Any]] | None,
+) -> tuple[Any, Any, list[dict[str, Any]] | None]:
+    """One provider send; clears the consumed pending slot."""
+    if pending_reply is not None:
+        return pending_reply, None, pending_native_messages
+    if native and pending_native_messages is not None:
+        reply = provider.send_tool_results(pending_native_messages, native_tools, timeout=None)
+        return reply, None, None
+    if native:
+        return provider.send_turn(prompt, native_tools, timeout=None), None, pending_native_messages
+    return provider.send(prompt, timeout=None), None, pending_native_messages
+
+
+def _repair_native_dangling(
+    provider: Any, reply: Any, native: bool, native_tools: Any, error: str,
+) -> Any:
+    """Answer dangling native call ids after a protocol error."""
+    if not native or isinstance(reply, str):
+        return None
+    try:
+        ids = [str(getattr(c, "id", "") or "") for c in (getattr(reply, "tool_calls", ()) or [])]
+    except Exception:
+        return None
+    ids = [i for i in ids if i]
+    if not ids:
+        return None
+    try:
+        return provider.send_tool_results(
+            [{"role": "tool", "tool_call_id": i, "content": f"ERROR: {error}"} for i in ids],
+            native_tools, timeout=None,
+        )
+    except Exception:
+        return None
+
+
 def run_task_kernel(
     session: TaskSession,
     *,
@@ -642,47 +843,47 @@ def run_task_kernel(
     on_event: Callable[[Any], None] | None = None,
     on_shell_request: Callable[[Any], None] | None = None,
     propagate_provider_failure: bool = False,
+    start_turn: int | None = None,
+    initial_results: list[ToolResult] | None = None,
 ) -> KernelResult:
     runnable = dict(executors or {})
     delivered_map = dict(delivered or {})
     max_turns = max(1, int(getattr(session, "max_turns", 8) or 8))
     try:
-        from codey.toolchain.tool_spec import json_contract_text
-    except Exception:
-        json_contract_text = None  # type: ignore[assignment]
-    try:
-        contract_text = json_contract_text(session.policy) if json_contract_text is not None else ""
-    except Exception:
-        contract_text = ""
-    prompt = kernel_prompt_for_session(
-        session, user_task=str(user_task or ""), contract_text=contract_text,
-        context_text=context_text,
+        resume_start = max(1, int(start_turn)) if start_turn is not None else 1
+    except (TypeError, ValueError):
+        resume_start = 1
+    pending_initial = list(initial_results or [])
+    native = _is_native_provider(provider, provider_id=provider_id)
+    identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
+    _, _, _initial_native, _initial_prompt = _snapshot_for_turn_state(
+        session, native=native, user_task=user_task, context_text=context_text,
     )
+    prompt = _initial_prompt
+    native_tools: list[dict[str, Any]] = _initial_native
     pending_reply: Any = None
     pending_native_messages: list[dict[str, Any]] | None = None
-    native = _is_native_provider(provider, provider_id=provider_id)
-    native_tools = _native_tools_for_policy(session.policy) if native else []
-    identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
+    prompt, pending_native_messages = _apply_recovery_first(
+        session, native, pending_initial, prompt, pending_native_messages,
+    )
     turns_used = 0
     invalid_turns = 0
-    for turn in range(1, max_turns + 1):
+    for turn in range(resume_start, max_turns + 1):
         if _stop_requested(stop_flag):
             return KernelResult(completed=False, summary="stopped", turns=turns_used,
                                 stop_reason="stopped")
         session.turn = turn
         turns_used = turn
-        controller = _controller_for_session(session)
+        controller, _, turn_native_tools, turn_prompt = _snapshot_for_turn_state(
+            session, native=native, user_task=user_task, context_text=context_text,
+        )
+        native_tools = turn_native_tools
+        if turn == resume_start and pending_reply is None and pending_native_messages is None and not pending_initial:
+            prompt = turn_prompt
         try:
-            if pending_reply is not None:
-                reply = pending_reply
-                pending_reply = None
-            elif native and pending_native_messages is not None:
-                reply = provider.send_tool_results(pending_native_messages, native_tools, timeout=None)
-                pending_native_messages = None
-            elif native:
-                reply = provider.send_turn(prompt, native_tools, timeout=None)
-            else:
-                reply = provider.send(prompt, timeout=None)
+            reply, pending_reply, pending_native_messages = _send_kernel_reply(
+                provider, native, prompt, native_tools, pending_reply, pending_native_messages,
+            )
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
         _emit_turn_event(on_event, turn, reply)
@@ -693,18 +894,7 @@ def run_task_kernel(
                 return KernelResult(False, f"stopped after {invalid_turns} invalid tool requests: "
                                     f"{plan.protocol_error}", turn, "protocol")
             prompt = _repair_prompt(plan.protocol_error)
-            if native and not isinstance(reply, str):
-                # Keep the native chain legal: answer dangling call ids.
-                ids = [str(getattr(c, "id", "") or "") for c in (getattr(reply, "tool_calls", ()) or [])]
-                ids = [i for i in ids if i]
-                if ids:
-                    try:
-                        pending_reply = provider.send_tool_results(
-                            [{"role": "tool", "tool_call_id": i, "content": f"ERROR: {plan.protocol_error}"} for i in ids],
-                            native_tools, timeout=None,
-                        )
-                    except Exception:
-                        pending_reply = None
+            pending_reply = _repair_native_dangling(provider, reply, native, native_tools, plan.protocol_error)
             continue
         invalid_turns = 0
         if plan.control is not None and plan.control.kind == "done":
@@ -733,7 +923,8 @@ def run_task_kernel(
                                managed_outputs=managed_outputs, session_id=session_id,
                                permission_profile=permission_profile,
                                delivered=delivered_map or None,
-                               intent_sink=intent_sink)
+                               intent_sink=intent_sink,
+                               controller_allowed=controller)
         _emit_tool_results(on_event, session, results, run_id=identity_ref, turn=turn)
         if native:
             messages = _native_tool_messages(results, session)
@@ -819,6 +1010,24 @@ def _handle_done_reply(
         pending = _take_answered_reply(provider, reply, native, native_tools, prompt)
         return prompt, pending
     if verdict.complete:
+        # Native chains require every call id closed, including an accepted
+        # done. Answer the done id with success before returning so the same
+        # session can continue and the provider chain stays legal.
+        if native and not isinstance(reply, str):
+            import contextlib as _contextlib
+
+            try:
+                ids = [str(getattr(c, "id", "") or "") for c in (getattr(reply, "tool_calls", ()) or [])]
+                ids = [i for i in ids if i]
+                if ids:
+                    with _contextlib.suppress(Exception):
+                        provider.send_tool_results(
+                            [{"role": "tool", "tool_call_id": i,
+                              "content": f"done accepted: {session.last_done_text[:500]}"} for i in ids],
+                            native_tools, timeout=None,
+                        )
+            except Exception:
+                pass
         return KernelResult(completed=True, summary=session.last_done_text,
                             turns=int(session.turn or 0), stop_reason="done")
     pending = _take_answered_reply(provider, reply, native, native_tools, verdict.followup)

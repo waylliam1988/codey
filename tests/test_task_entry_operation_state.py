@@ -582,20 +582,20 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             state = server.AppContext(root / "state")
             runner = _runner(state, writer)
             runner = replace(runner, search_factory=lambda: object())
-            result = ResearchRunResult(
-                "question",
-                "need more evidence",
-                "stopped",
-                1,
-                max_turns_used=1,
-            )
+            # Single-session hybrid: the unified kernel stops (research part
+            # could not finish), not the old two-phase research pipeline.
+            from codey.operations.result import ModeOutcome as _Outcome
 
-            research_iteration = mock.Mock(
-                return_value=ResearchIterationRun(result=result),
-            )
+            stopped = _Outcome({
+                "type": "task_done", "run_id": "r", "session_id": SESSION,
+                "summary": "need more evidence", "stop_reason": "stopped",
+                "turns": 1, "max_turns": 8, "provider": "deepseek", "mode": "hybrid",
+                "receipt": {"display": {"summary": "need more evidence"}},
+            })
             with (
                 mock.patch.object(state, "get_provider", return_value=_Provider()),
-                mock.patch(RESEARCH_ITERATION, research_iteration),
+                mock.patch("codey.operations.task_phases.dispatch.run_unified_mode",
+                           return_value=stopped),
             ):
                 run_task_submission(runner,
                     TaskSubmission(

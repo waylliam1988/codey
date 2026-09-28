@@ -142,13 +142,27 @@ def run(request: AgentRequest) -> RunResult:
     )
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
     delivered: dict[str, ToolResult] = {}
-    for row in sorted(request.recovered_tool_outcomes, key=lambda item: (item.turn, item.tool_index)):
+    recovered_sorted = sorted(request.recovered_tool_outcomes, key=lambda item: (item.turn, item.tool_index))
+    for row in recovered_sorted:
         result = ToolResult(call=row.call, model_text=row.outcome.model_text,
                             audit={"changed": bool(row.outcome.changed)} if row.call.name == "edit" else {})
         delivered[turn_effect_id(f"{request.run_id or 'adhoc'}:{effect_scope}",
                                  row.turn, row.tool_index)] = result
         _record_facts_for_result(session, row.call, result, ok=row.outcome.ok,
                                  exit_code=row.outcome.exit_code)
+    # Recovery-first: deliver the original batch before any new model call,
+    # and resume after the max recovered turn so identities never collide.
+    resume_start = 1
+    initial_results: list[ToolResult] = []
+    if recovered_sorted:
+        try:
+            resume_start = max(int(getattr(r, "turn", 1) or 1) for r in recovered_sorted) + 1
+        except Exception:
+            resume_start = 1
+        for row in recovered_sorted:
+            initial_results.append(ToolResult(call=row.call, model_text=row.outcome.model_text,
+                                              audit={"changed": bool(row.outcome.changed)}
+                                              if row.call.name == "edit" else {}))
     provider = request.provider
     intent_sink = None
     if request.runtime_mutations is not None and request.session_id and request.run_id:
@@ -184,6 +198,8 @@ def run(request: AgentRequest) -> RunResult:
         on_event=request.on_event,
         on_shell_request=request.on_shell_request,
         propagate_provider_failure=True,
+        start_turn=resume_start,
+        initial_results=initial_results or None,
     )
     return RunResult(
         summary=outcome.summary,

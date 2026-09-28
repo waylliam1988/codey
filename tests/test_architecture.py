@@ -2068,6 +2068,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/inbox.py",
             "ghost/work_queue.py",
             "operations/project_completion_flow.py",
+            "operations/task_kernel.py",
             "providers/controls.py",
             # PLR split 2026-09-26: extracted per-branch helpers stay in-module
             # for cohesion (single caller, domain-specific); file crossed 1000.
@@ -2103,6 +2104,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # PLR split 2026-09-26: 2780 lines after per-action split.
             "ghost/work_queue.py": 2840,
             "operations/project_completion_flow.py": 1750,
+            # Unified single-loop cutover 2026-09-28: per-turn snapshot,
+            # recovery-first delivery, digest-mismatch guard, native done
+            # closure (1124 lines); will shrink after old loops are removed.
+            "operations/task_kernel.py": 1180,
             "providers/controls.py": 1400,
             # PLR split 2026-09-26: 1009 lines after _wait_for_response split.
             "providers/worker.py": 1060,
