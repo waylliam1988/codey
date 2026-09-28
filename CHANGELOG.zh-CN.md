@@ -4,6 +4,14 @@
 
 ## Unreleased - 共享任务内核冷启动收口（未发布）
 
+- pytest 在应用模块导入前安装可写的临时 home，测试不会再写入宿主用户的
+  `.codey`；手工恢复/checkpoint smoke 已切到现行 `project_adapter` 入口和
+  当前 provider/effect 契约。
+- 删除共享内核与 auto 路由的 timeout 签名重试。provider 调用严格遵守
+  `ChatProvider` 契约；effect 已记录后不会因参数错误再次发送，避免重复
+  provider effect 与交付批次。
+- 最终验证：`4816 passed, 32 skipped, 1467 subtests passed`；
+  `ruff check codey tests`、compileall、`git diff --check` 均通过。未发布。
 - 恢复含已执行工具结果的任务时必须使用原始持久授权；策略日志缺失会阻塞，不能继承新请求追加的权限。
 - 删除废弃的 `research/native_bridge.py`，把原生能力探测移到
   `codey/providers/native_tools.py`，并删除未使用的旧 effect ID 与 synthesis

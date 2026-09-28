@@ -4,6 +4,17 @@
 
 ## Unreleased - Shared kernel cold-start cleanup (no release)
 
+- Test startup now installs a writable temporary home before application
+  imports, so pytest never writes the host user's `.codey` directory. Manual
+  replay/checkpoint smokes now use the live `project_adapter` entry and the
+  current provider/effect contracts.
+- Removed timeout-signature retry wrappers from the shared kernel and auto
+  router. Provider calls follow the `ChatProvider` contract exactly; a failed
+  call is never retried after its effect has been recorded, preventing
+  duplicate provider effects and delivery batches.
+- Final verification: `4816 passed, 32 skipped, 1467 subtests passed`;
+  `ruff check codey tests`, compileall, and `git diff --check` passed. No
+  release was made.
 - Recovery now requires the original persisted task policy whenever a run has
   recovered tool outcomes. Missing recovery policy data blocks instead of
   inheriting newly requested capabilities.

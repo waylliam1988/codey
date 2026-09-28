@@ -33,8 +33,8 @@ from codey.agents.tool_execution import (
     evaluate_tool_call_policy,
 )
 from codey.agents.tools import DEFAULT_TOOL_FNS, AgentToolFns
+from codey.operations.project_adapter import run as run_agent_loop
 from codey.operations.recovery import recover_effects_for_resume
-from codey.operations.task_loop import run as run_agent_loop
 from codey.runs.details import load_run_details
 from codey.runs.ledger import RunLedgerStore
 from codey.runtime.core.models import ToolCall
@@ -170,14 +170,23 @@ def _prepare_tool_intent(
     turn: int,
     tool_index: int,
 ) -> tuple[Any, Any]:
+    from types import SimpleNamespace
+
     mock_session = Mock()
-    mock_session.runtime_mutations = mutations
-    mock_session.session_id = session_id
-    mock_session.run_id = run_id
-    mock_session.project = project_dir
-    mock_session.profile = Mock()
-    mock_session.profile.name = "coding_writer"
-    mock_session.on_shell_request = None
+    request = SimpleNamespace(
+        runtime_mutations=mutations,
+        session_id=session_id,
+        run_id=run_id,
+        project=project_dir,
+        on_shell_request=None,
+        managed_outputs=None,
+        change_tracker=None,
+    )
+    mock_session.request = request
+    mock_session.config = SimpleNamespace(
+        project=project_dir,
+        profile=SimpleNamespace(name="coding_writer"),
+    )
     mock_session.trace = Mock()
 
     _, replay_decision = evaluate_tool_call_policy(
@@ -389,6 +398,7 @@ def run_self_test() -> bool:
             provider=provider,
             project=project_dir,
             task="finish project task after crash",
+            provider_id=provider.name,
             session_id=session_id,
             run_id=run_id,
             runtime_mutations=mutations,

@@ -14,8 +14,8 @@ import tempfile
 from pathlib import Path
 
 from codey.agents.request import AgentRequest
+from codey.operations.project_adapter import run as run_agent_loop
 from codey.operations.recovery import recover_effects_for_resume
-from codey.operations.task_loop import run as run_agent_loop
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     SETTLEMENT_STATUS_OK,
@@ -42,6 +42,12 @@ class ScriptedProvider:
     def __init__(self, replies: list[str]) -> None:
         self.replies = list(replies)
         self.received_prompts: list[str] = []
+
+    def new_chat(self, timeout: float | None = None) -> None:
+        del timeout
+
+    def close(self) -> None:
+        return None
 
     def send(self, prompt: str) -> str:
         self.received_prompts.append(prompt)
@@ -179,6 +185,7 @@ def run_self_test() -> int:
             provider=provider,
             project=root,
             task="inspect add function",
+            provider_id=provider.name,
             session_id=session_id,
             run_id=run_id,
             permission_profile="coding_writer",
@@ -253,6 +260,7 @@ def run_same_run_self_test() -> int:
             provider=provider,
             project=root,
             task="read files a and b",
+            provider_id=provider.name,
             session_id=session_id,
             run_id=run_id,
             permission_profile="coding_writer",

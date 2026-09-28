@@ -102,7 +102,7 @@ def cases(stockalarm: Path) -> dict[str, Case]:
             "request moves from codey/app/server.py through task entry, task run, "
             "the agent loop, Review, and the final receipt. Cite exact relative files and "
             "function/class names. Do not modify files.",
-            ("app/server.py", "operations/task_entry.py", "operations/task_run.py", "agents/runner.py", "reviews/core.py"),
+            ("app/server.py", "operations/task_entry.py", "operations/task_run.py", "operations/project_adapter.py", "reviews/core.py"),
         ),
         Case(
             "stockalarm_training_flow",

@@ -330,12 +330,7 @@ def _decide_auto(frame: RunFrame) -> str:
         return ""
     try:
         prompt = build_auto_first_prompt(request.task, project=frame.project_text)
-        try:
-            raw = provider.send(prompt, timeout=None)
-        except TypeError as exc:
-            if "timeout" not in str(exc):
-                raise
-            raw = provider.send(prompt)
+        raw = provider.send(prompt)
     except Exception:
         return ""
     try:

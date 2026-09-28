@@ -445,31 +445,15 @@ def _apply_recovery_first(
 
 
 def _call_provider_send(provider: Any, prompt: str) -> Any:
-    """Web send with backward compat for test doubles without timeout."""
-    try:
-        return provider.send(prompt, timeout=None)
-    except TypeError as exc:
-        if "timeout" not in str(exc):
-            raise
-        return provider.send(prompt)
+    return provider.send(prompt)
 
 
 def _call_provider_send_turn(provider: Any, prompt: str, tools: Any) -> Any:
-    try:
-        return provider.send_turn(prompt, tools, timeout=None)
-    except TypeError as exc:
-        if "timeout" not in str(exc):
-            raise
-        return provider.send_turn(prompt, tools)
+    return provider.send_turn(prompt, tools)
 
 
 def _call_provider_send_results(provider: Any, messages: Any, tools: Any) -> Any:
-    try:
-        return provider.send_tool_results(messages, tools, timeout=None)
-    except TypeError as exc:
-        if "timeout" not in str(exc):
-            raise
-        return provider.send_tool_results(messages, tools)
+    return provider.send_tool_results(messages, tools)
 
 
 def _send_kernel_reply(

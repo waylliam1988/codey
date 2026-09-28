@@ -2,6 +2,18 @@
 
 ## Shared task kernel cold-start cleanup (2026-09-28)
 
+- Test bootstrap now redirects `Path.home()` to a writable temporary home
+  before collection, eliminating the previous host-profile permission failures.
+- Removed provider timeout retry fallbacks from the task kernel and auto router;
+  the provider contract is now single-path and effect recording cannot be
+  duplicated by a second call.
+- Migrated deleted-runner manual smokes to `operations.project_adapter` and
+  corrected their request/effect fixtures.
+
+Final run after these changes: `4816 passed, 32 skipped, 1467 subtests
+passed in 338.98s`. `ruff check codey tests`, `python -m compileall -q
+codey tests`, and `git diff --check` passed.
+
 - Recovery requires the original persisted task policy whenever a run has
   recovered tool outcomes. Missing policy data blocks instead of inheriting
   capabilities from a newer request.
