@@ -840,7 +840,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_phases.dispatch.run_hybrid_mode", autospec=True) as mock_hybrid:
+             patch("codey.operations.unified_mode.run_unified_mode", autospec=True) as mock_hybrid:
             run_task_submission(
                 deps,
                 TaskSubmission(

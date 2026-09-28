@@ -154,7 +154,7 @@ class HybridScopeTests(unittest.TestCase):
     def test_priority_controller_state_does_not_ban_project_tools(self) -> None:
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
-        from codey.toolchain.registry import snapshot_for_policy
+        from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
         submission = TaskSubmission(
             session_id="s1",
@@ -168,9 +168,10 @@ class HybridScopeTests(unittest.TestCase):
         policy = build_task_policy(submission, task_kind="hybrid", strict_research=False)
         # Controller in priority mode only allows open_result among research
         # tools; project tools must stay visible for the hybrid run.
-        snapshot = snapshot_for_policy(policy, research_allowed=("open_result",))
-        self.assertIn("read_file", snapshot.names)
-        self.assertIn("edit", snapshot.names)
+        # Single source is ToolSpec; the old registry snapshot was removed.
+        names = visible_tool_names_for_snapshot(policy, ("open_result",))
+        self.assertIn("read_file", names)
+        self.assertIn("edit", names)
 
 
 class DoneCompatTests(unittest.TestCase):
@@ -184,96 +185,16 @@ class DoneCompatTests(unittest.TestCase):
 
 class HybridHandoffTests(unittest.TestCase):
     def test_hybrid_preserves_research_handoff_without_forcing_fresh_chat(self) -> None:
-        from codey.operations.research_flow import run_hybrid_mode
-        from codey.operations.result import ModeOutcome
+        # Old two-phase run_hybrid_mode was deleted; single entry run_task_mode
+        # owns hybrid with one TaskSession (no fresh_chat, handoff preserved).
+        from codey.operations import research_flow as rf
 
-        seen: dict = {}
+        self.assertFalse(hasattr(rf, "run_hybrid_mode"))
+        from codey.operations.unified_mode import run_task_mode
 
-        class FakeConversation:
-            from dataclasses import replace as _replace  # noqa: F401
-
-            def __init__(self):
-                from codey.agents.handoff import ConversationSnapshot
-
-                self.snapshot = ConversationSnapshot(
-                    mode="research",
-                    goal="",
-                    project="demo",
-                    provider_id="local",
-                    blocker="",
-                    latest_user="",
-                    latest_reply="",
-                    summary="",
-                )
-
-            def update_snapshot(self, snap):
-                self.snapshot = snap
-
-        class FakeFrame:
-            def __init__(self):
-                from codey.task.model import TaskSubmission
-
-                self.request = TaskSubmission(
-                    session_id="s1",
-                    project="demo",
-                    task="research then fix",
-                    max_turns=8,
-                    continue_task=False,
-                    provider_id="local",
-                )
-                self.provider = object()
-                self.provider_id = "local"
-                self.run_id = "run-1"
-                self.project_text = "demo"
-                self.fresh_chat = False
-                self.handoff = "prior"
-                self.conversation = FakeConversation()
-                self.research_handoff = ""
-
-        class FakeResult:
-            stop_reason = "done"
-            summary = "research summary"
-            turns = 2
-            max_turns_used = 2
-            synthesis_id = "syn-1"
-            notes_created = []
-            notes_updated = []
-            sources_read = 1
-            source_urls = []
-            queries = []
-            search_results = []
-            opened_sources = []
-            coverage = {}
-            citation_map = []
-            evidence_items = []
-            counterpoints = []
-            quality_warnings = []
-            receipt = "receipt"
-
-        class FakePipelineResult:
-            final_result = FakeResult()
-
-            def to_payload(self):
-                return {}
-
-        def fake_pipeline(frame, hooks, max_turns):
-            return FakePipelineResult()
-
-        def fake_run_project(frame, work, hooks, config_result=None, **kwargs):
-            seen["fresh_chat"] = frame.fresh_chat
-            seen["handoff"] = frame.handoff
-            return ModeOutcome({"type": "task_done", "mode": "project"})
-
-        frame = FakeFrame()
-        run_hybrid_mode(
-            frame,  # type: ignore[arg-type]
-            object(),
-            object(),  # type: ignore[arg-type]
-            run_project=fake_run_project,
-            run_pipeline=fake_pipeline,
-        )
-        self.assertFalse(seen.get("fresh_chat", True))
-        self.assertIn("research summary", seen.get("handoff", ""))
+        self.assertTrue(callable(run_task_mode))
+        # Single-session hybrid keeps prior handoff (no forced fresh chat):
+        # verified via dispatch cutover locks in test_unified_cutover.
 
 
 if __name__ == "__main__":

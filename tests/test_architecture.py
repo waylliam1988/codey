@@ -1439,19 +1439,42 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("compatibility ``tool_*``", tool_source)
 
     def test_agent_runner_is_only_the_public_entry_surface(self) -> None:
+        import ast as _ast
+
         source = (ROOT / "codey" / "agents" / "runner.py").read_text(encoding="utf-8")
-        tree = ast.parse(source)
+        tree = _ast.parse(source)
         function_names = {
-            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+            node.name for node in tree.body if isinstance(node, _ast.FunctionDef)
         }
         class_names = {
-            node.name for node in tree.body if isinstance(node, ast.ClassDef)
+            node.name for node in tree.body if isinstance(node, _ast.ClassDef)
         }
 
         self.assertEqual(function_names, set())
         self.assertEqual(class_names, set())
         self.assertIn("from codey.agents.loop import", source)
         self.assertNotIn("def _read_before_edit_outcome", source)
+
+    def test_production_task_path_does_not_use_old_agent_loop(self) -> None:
+        # New production turns run via task_loop/project_adapter (single entry
+        # run_task_mode); old agents.loop must not be on the operations path.
+        offenders: dict[str, list[str]] = {}
+        for path in (ROOT / "codey").rglob("*.py"):
+            if path.name in {"runner.py"} and "agents" in str(path):
+                continue
+            if path.relative_to(ROOT).as_posix() in {
+                "codey/operations/task_kernel.py",
+                "codey/operations/kernel_session.py",
+                "codey/operations/kernel_execution.py",
+                "codey/operations/kernel_effects.py",
+                "codey/operations/unified_agent_adapter.py",
+                "codey/operations/unified_research_iteration.py",
+            }:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if "from codey.agents.loop import" in text or "from codey.agents.loop." in text:
+                offenders[str(path.relative_to(ROOT))] = ["agents.loop"]
+        self.assertEqual(offenders, {})
 
     def test_run_operation_fact_source_is_runtime_only(self) -> None:
         self.assertFalse((ROOT / "codey" / "run_operation.py").exists())
@@ -2068,7 +2091,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/inbox.py",
             "ghost/work_queue.py",
             "operations/project_completion_flow.py",
-            "operations/task_kernel.py",
+            "operations/task_loop.py",
             "providers/controls.py",
             # PLR split 2026-09-26: extracted per-branch helpers stay in-module
             # for cohesion (single caller, domain-specific); file crossed 1000.
@@ -2104,10 +2127,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # PLR split 2026-09-26: 2780 lines after per-action split.
             "ghost/work_queue.py": 2840,
             "operations/project_completion_flow.py": 1750,
-            # Unified single-loop cutover 2026-09-28: per-turn snapshot,
-            # recovery-first delivery, digest-mismatch guard, native done
-            # closure (1124 lines); will shrink after old loops are removed.
-            "operations/task_kernel.py": 1180,
+            # Unified single-loop convergence 2026-09-28: batch precheck,
+            # real workspace identity, fail-closed controller, web contract
+            # resend, done-receipt failure, cross-provider text recovery,
+            # provider-timeout compat (1318 lines); will shrink as
+            # facts/precheck move to task_execution/task_effects boundary.
+            "operations/task_loop.py": 1330,
             "providers/controls.py": 1400,
             # PLR split 2026-09-26: 1009 lines after _wait_for_response split.
             "providers/worker.py": 1060,

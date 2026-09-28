@@ -10,7 +10,6 @@ from typing import Any
 from codey.agents.consensus import render_project_context
 from codey.agents.protocol import task_forbids_verification
 from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
 from codey.agents.tools import AgentToolFns
 from codey.agents.writer_failover import (
     CheckpointView,
@@ -77,6 +76,7 @@ from codey.runtime.core.operation_state import (
     LEAF_COMPLETION_PROOF_RECORDED,
     RuntimeOperationTransitionError,
 )
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.log.entries import RuntimeLogError
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace

@@ -4540,7 +4540,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
-                "codey.operations.task_phases.dispatch.run_unified_mode",
+                "codey.operations.task_phases.dispatch.run_task_mode",
                 side_effect=lambda frame, work, hooks, deps, task_kind="", config_result=None: (
                     self.assertEqual(frame.provider_id, "stepfun"),
                     __import__("codey.operations.result", fromlist=["ModeOutcome"]).ModeOutcome({
@@ -4717,7 +4717,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
-                "codey.operations.task_phases.dispatch.run_unified_mode",
+                "codey.operations.task_phases.dispatch.run_task_mode",
                 side_effect=lambda frame, work, hooks, deps, task_kind="", config_result=None: (
                     __import__("codey.operations.result", fromlist=["ModeOutcome"]).ModeOutcome({
                         "type": "task_done", "run_id": frame.run_id, "session_id": frame.request.session_id,
@@ -5259,7 +5259,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch(
-                    "codey.operations.task_phases.dispatch.run_unified_mode",
+                    "codey.operations.task_phases.dispatch.run_task_mode",
                     return_value=failed,
                 ) as unified_task,
                 mock.patch.object(task_submit, "agent_run") as agent_run,
@@ -5320,7 +5320,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch(
-                    "codey.operations.task_phases.dispatch.run_unified_mode",
+                    "codey.operations.task_phases.dispatch.run_task_mode",
                     return_value=ok,
                 ) as unified_task,
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),

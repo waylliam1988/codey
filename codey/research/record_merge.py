@@ -28,7 +28,7 @@ from codey.research.report_quality import (
     parse_citation_rows,
     review_report_quality,
 )
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.research.tools import ResearchTools
 from codey.research.urls import opened_url
 from codey.reviews.report_sections import parse_sections

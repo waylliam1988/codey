@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from codey.agents.request import AgentRequest
-from codey.agents.state import RunResult
+from codey.runtime.core.run_result import RunResult
 
 
 class _ConversationProvider:
@@ -90,7 +90,7 @@ def _project_context(request: AgentRequest) -> str:
 
 
 def run(request: AgentRequest) -> RunResult:
-    from codey.operations.task_kernel import (
+    from codey.operations.task_loop import (
         TaskSession,
         _record_facts_for_result,
         run_task_kernel,
@@ -139,6 +139,7 @@ def run(request: AgentRequest) -> RunResult:
         max_turns=request.max_turns,
         task_text=request.task,
         handoff=request.handoff,
+        project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
     )
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
     delivered: dict[str, ToolResult] = {}
@@ -166,7 +167,7 @@ def run(request: AgentRequest) -> RunResult:
     provider = request.provider
     intent_sink = None
     if request.runtime_mutations is not None and request.session_id and request.run_id:
-        from codey.operations.kernel_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 
         intent_sink = KernelEffectSink(
             request.runtime_mutations, session_id=request.session_id,

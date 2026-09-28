@@ -15,7 +15,6 @@ class ModeDispatchDeps:
     chat: Callable[[RunFrame], ModeOutcome]
     project: Callable[..., ModeOutcome]
     research: Callable[[RunFrame, RunHooks], ModeOutcome]
-    hybrid: Callable[[RunFrame, RunWork, RunHooks], ModeOutcome]
     review: Callable[[RunFrame], ModeOutcome]
     planning: Callable[..., ModeOutcome]
 
@@ -33,9 +32,7 @@ def dispatch_task_mode(
         return deps.review(frame)
     if kind == "research":
         return deps.research(frame, hooks)
-    if kind == "hybrid":
-        return deps.hybrid(frame, work, hooks)
-    if kind == "planning_readonly":
+    if kind in {"planning_readonly", "planning", "readonly"}:
         return deps.planning(frame, work, config_result=config_result)
     if kind == "project":
         return deps.project(frame, work, hooks, config_result=config_result)

@@ -34,10 +34,10 @@ from codey.providers.diagnostics import ProviderActionError
 from codey.runtime.core.cancellation import TaskCancelled
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from codey.agents.runner import RunResult
     from codey.completion.verification_policy import VerificationCandidate
     from codey.providers.base import ChatProvider
     from codey.providers.diagnostics import ProviderFailure
+    from codey.runtime.core.run_result import RunResult
 
 
 @dataclass(frozen=True)

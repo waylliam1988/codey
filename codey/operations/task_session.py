@@ -46,6 +46,15 @@ class TaskSession:
     max_turns: int = 8
     task_text: str = ""
     handoff: str = ""
+    # Explicit completion requirement from the task entry; never inferred
+    # from keywords or write permission. Read-only tasks keep False even
+    # when the policy still grants project.write for other reasons.
+    project_changes_required: bool = False
+    # Current workspace identity observed by real edit/run execution.
+    # Verifications carry the identity they observed; only a verification
+    # whose fingerprint matches the current workspace can complete.
+    workspace_revision: int = 0
+    workspace_fingerprint: str = ""
     searches: list[str] = field(default_factory=list)
     search_results: dict[str, str] = field(default_factory=dict)
     opened_sources: set[str] = field(default_factory=set)
@@ -111,7 +120,9 @@ class TaskSession:
         return rev
 
     def record_verification(self, command: str, revision: int, passed: bool, *,
-                            exit_code: int | None = None) -> None:
+                            exit_code: int | None = None,
+                            workspace_revision: int | None = None,
+                            workspace_fingerprint: str | None = None) -> None:
         try:
             rev = int(revision)
         except (TypeError, ValueError):
@@ -122,7 +133,27 @@ class TaskSession:
         if exit_code is not None:
             with _contextlib.suppress(TypeError, ValueError):
                 row["exit_code"] = int(exit_code)
+        if workspace_revision is not None:
+            with _contextlib.suppress(TypeError, ValueError):
+                row["workspace_revision"] = int(workspace_revision)
+        if workspace_fingerprint is not None:
+            row["workspace_fingerprint"] = str(workspace_fingerprint or "")[:120]
         self.verifications.append(row)
+
+    def set_workspace_state(self, revision: object, fingerprint: object) -> None:
+        try:
+            from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
+        except Exception:
+            return
+        try:
+            rev = valid_workspace_revision(revision)
+            if rev:
+                self.workspace_revision = rev
+            fp = valid_workspace_fingerprint(fingerprint)
+            # Empty fingerprint clears to missing (not_run), never faked.
+            self.workspace_fingerprint = fp
+        except Exception:
+            pass
 
     def notes_text(self) -> str:
         parts = [*self.transcript_notes]
@@ -154,6 +185,9 @@ class TaskSession:
             "max_turns": int(self.max_turns or 0),
             "task_text": str(self.task_text or "")[:2000],
             "handoff": str(self.handoff or "")[:2000],
+            "project_changes_required": bool(self.project_changes_required),
+            "workspace_revision": int(self.workspace_revision or 0),
+            "workspace_fingerprint": str(self.workspace_fingerprint or "")[:120],
             "searches": [str(item or "")[:240] for item in (self.searches or [])][-20:],
             "search_results": {str(k): str(v)[:500] for k, v in list((self.search_results or {}).items())[-20:]},
             "opened_sources": sorted(str(u)[:500] for u in (self.opened_sources or set()))[-20:],
@@ -174,7 +208,9 @@ class TaskSession:
                 {"command": str(item.get("command", ""))[:240],
                  "revision": int(item.get("revision", 0) or 0),
                  "passed": bool(item.get("passed", False)),
-                 "exit_code": item.get("exit_code", None)}
+                 "exit_code": item.get("exit_code", None),
+                 "workspace_revision": int(item.get("workspace_revision", 0) or 0) if item.get("workspace_revision") is not None else None,
+                 "workspace_fingerprint": str(item.get("workspace_fingerprint", "") or "")[:120] if item.get("workspace_fingerprint") else ""}
                 for item in (self.verifications or []) if isinstance(item, dict)
             ][-20:],
             "notes_saved": int(self.notes_saved or 0),
@@ -205,6 +241,12 @@ class TaskSession:
         try:
             session.task_text = str(data.get("task_text", "") or "")[:2000]
             session.handoff = str(data.get("handoff", "") or "")[:2000]
+            session.project_changes_required = bool(data.get("project_changes_required") is True)
+            try:
+                session.workspace_revision = int(data.get("workspace_revision", 0) or 0)
+            except (TypeError, ValueError):
+                session.workspace_revision = 0
+            session.workspace_fingerprint = str(data.get("workspace_fingerprint", "") or "")[:120]
             session.searches = [str(i) for i in (data.get("searches", []) or []) if str(i)]
             raw_results = data.get("search_results", {}) or {}
             session.search_results = {str(k): str(v) for k, v in raw_results.items() if str(k) and str(v)}

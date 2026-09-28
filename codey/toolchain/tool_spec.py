@@ -358,15 +358,63 @@ def json_contract_text(policy: Any, *, controller_allowed: Any = None) -> str:
     return "\n".join(lines)
 
 
+_CUSTOM_EXECUTORS: dict[str, Any] = {}
+
+
+def register_custom_executor(name: object, fn: Any) -> bool:
+    """Register a production executor for a third-task tool (generic path)."""
+    canonical = str(name or "").strip().lower()
+    if not canonical or not callable(fn):
+        return False
+    try:
+        spec = spec_for_tool(canonical)
+    except Exception:
+        spec = None
+    if spec is None:
+        return False
+    _CUSTOM_EXECUTORS[canonical] = fn
+    return True
+
+
+def custom_executor_for(name: object) -> Any | None:
+    canonical = str(name or "").strip().lower()
+    if not canonical:
+        return None
+    return _CUSTOM_EXECUTORS.get(canonical)
+
+
+def unregister_custom_tool(name: object) -> bool:
+    canonical = str(name or "").strip().lower()
+    if not canonical:
+        return False
+    removed = False
+    try:
+        if canonical in tool_specs():
+            # Never remove built-ins; only third-task registrations.
+            builtin = _all_specs().get(canonical)
+            if builtin is None:
+                tool_specs().pop(canonical, None)
+                removed = True
+    except Exception:
+        pass
+    if canonical in _CUSTOM_EXECUTORS:
+        _CUSTOM_EXECUTORS.pop(canonical, None)
+        removed = True
+    return removed
+
+
 __all__ = [
     "ToolSpec",
     "canonical_tool_name",
+    "custom_executor_for",
     "json_contract_text",
     "native_tools_for_policy",
     "native_tools_for_snapshot",
+    "register_custom_executor",
     "register_custom_tool",
     "spec_for_tool",
     "tool_specs",
+    "unregister_custom_tool",
     "validate_args_against_spec",
     "visible_tool_names",
     "visible_tool_names_for_snapshot",

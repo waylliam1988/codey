@@ -264,11 +264,13 @@ def test_route_ghost_work_has_no_deps() -> None:
 
 
 def test_run_hybrid_mode_has_no_deps() -> None:
-    import inspect
-
+    # Old two-phase hybrid was deleted; single entry run_task_mode owns hybrid.
     from codey.operations import research_flow as rf
 
-    assert "deps" not in inspect.signature(rf.run_hybrid_mode).parameters
+    assert not hasattr(rf, "run_hybrid_mode"), "old run_hybrid_mode must be deleted"
+    from codey.operations.unified_mode import run_task_mode
+
+    assert callable(run_task_mode)
 
 
 def test_resolve_path_has_no_root() -> None:

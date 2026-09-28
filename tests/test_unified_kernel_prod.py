@@ -89,7 +89,7 @@ class EntryAuthTests(unittest.TestCase):
         self.assertNotIn("web.read", auth.requested_capabilities)
 
     def test_resume_keeps_stored_policy(self) -> None:
-        from codey.operations.task_kernel import resume_policy
+        from codey.operations.task_loop import resume_policy
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -107,7 +107,7 @@ class EntryAuthTests(unittest.TestCase):
 
 class ToolContractTests(unittest.TestCase):
     def test_native_alias_maps_to_canonical(self) -> None:
-        from codey.operations.task_kernel import normalize_turn
+        from codey.operations.task_loop import normalize_turn
         from codey.policies.task_policy import build_task_policy
         from codey.providers.base import AssistantTurn, ProviderToolCall
         from codey.task.model import TaskSubmission
@@ -136,7 +136,7 @@ class ToolContractTests(unittest.TestCase):
         self.assertIn("path", tools["read_file"]["required"])
 
     def test_unknown_tool_denied(self) -> None:
-        from codey.operations.task_kernel import normalize_turn
+        from codey.operations.task_loop import normalize_turn
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -157,7 +157,7 @@ class ToolContractTests(unittest.TestCase):
         self.assertNotIn("read_files", visible_tool_names(policy))
 
     def test_search_then_open_allowed(self) -> None:
-        from codey.operations.task_kernel import TaskSession, controller_allowed_for_session
+        from codey.operations.task_loop import TaskSession, controller_allowed_for_session
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -172,7 +172,7 @@ class ToolContractTests(unittest.TestCase):
 
 class LoopPromptTests(unittest.TestCase):
     def test_prompt_carries_task_text_handoff_and_contract(self) -> None:
-        from codey.operations.task_kernel import TaskSession, run_task_kernel
+        from codey.operations.task_loop import TaskSession, run_task_kernel
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -204,14 +204,14 @@ class LoopPromptTests(unittest.TestCase):
     def test_native_detection_uses_config_not_hasattr(self) -> None:
         from unittest.mock import Mock
 
-        from codey.operations.task_kernel import provider_uses_native
+        from codey.operations.task_loop import provider_uses_native
 
         provider = Mock()
         used = provider_uses_native(provider, provider_id="deepseek")
         self.assertFalse(used)
 
     def test_native_done_rejection_answers_call_id_first(self) -> None:
-        from codey.operations.task_kernel import TaskSession, run_task_kernel
+        from codey.operations.task_loop import TaskSession, run_task_kernel
         from codey.policies.task_policy import build_task_policy
         from codey.providers.base import AssistantTurn, ProviderToolCall
         from codey.task.model import TaskSubmission
@@ -247,7 +247,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
     def test_failed_run_output_blocks_completion(self) -> None:
         from codey.operations import task_kernel as kernel
         from codey.operations.completion_gate import evaluate
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_loop import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.task.model import TaskSubmission
@@ -269,7 +269,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
         self.assertFalse(verdict.complete)
 
     def test_failed_open_and_write_leave_no_facts(self) -> None:
-        from codey.operations.task_kernel import TaskSession, execute_turn
+        from codey.operations.task_loop import TaskSession, execute_turn
         from codey.policies.task_policy import build_task_policy
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.task.model import TaskSubmission
@@ -293,7 +293,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from codey.operations.task_kernel import TaskSession, execute_turn
+        from codey.operations.task_loop import TaskSession, execute_turn
         from codey.policies.task_policy import build_task_policy
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.task.model import TaskSubmission
@@ -311,7 +311,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
 
 class PersistenceTests(unittest.TestCase):
     def test_repeat_read_executes_twice(self) -> None:
-        from codey.operations.task_kernel import TaskSession, execute_turn
+        from codey.operations.task_loop import TaskSession, execute_turn
         from codey.policies.task_policy import build_task_policy
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.task.model import TaskSubmission
@@ -327,7 +327,7 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(made, ["read", "read"])
 
     def test_payload_stays_bounded(self) -> None:
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_loop import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -344,7 +344,7 @@ class PersistenceTests(unittest.TestCase):
 class CompletionGateProdTests(unittest.TestCase):
     def test_fabricated_evidence_blocked(self) -> None:
         from codey.operations.completion_gate import evaluate
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_loop import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -359,7 +359,7 @@ class CompletionGateProdTests(unittest.TestCase):
 
     def test_profile_providers_isolated(self) -> None:
         from codey.operations import completion_gate as gate
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_loop import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -378,7 +378,7 @@ class CompletionGateProdTests(unittest.TestCase):
 
     def test_gate_failure_blocks_never_completes(self) -> None:
         from codey.operations import completion_gate as gate
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_loop import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -402,14 +402,14 @@ class DispatchSwitchTests(unittest.TestCase):
 
         source = (pathlib.Path(__file__).resolve().parents[1] / "codey" / "operations"
                   / "task_phases" / "dispatch.py").read_text(encoding="utf-8")
-        # Cutover: default hybrid enters one session (no two-phase);
-        # project/research/planning already drive the same kernel internally
-        # plus their review/repair phases. "unified" is only an alias.
-        self.assertIn("run_unified_mode", source)
+        # Single entry: hybrid/unified/project/research/planning share one
+        # run_task_mode (same TaskSession/tool loop); no old two-phase hybrid.
+        self.assertIn("run_task_mode", source)
         self.assertIn('"hybrid"', source)
+        self.assertNotIn("run_hybrid_mode", source)
 
     def test_auto_plan_narrows_never_widens(self) -> None:
-        from codey.operations.task_kernel import apply_auto_plan
+        from codey.operations.task_loop import apply_auto_plan
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 

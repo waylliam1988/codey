@@ -23,7 +23,7 @@ def test_issue1_strict_hybrid_no_write_without_explicit():
 
 def test_issue1_strict_hybrid_edit_rejected_at_parse_and_execute(tmp_path):
     from codey.operations.kernel_protocol import normalize_turn
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolCall
     s = _submission(project=str(tmp_path), requested=(), strict=True)
@@ -54,14 +54,14 @@ def test_issue2_default_hybrid_uses_unified_session():
     outcome = ModeOutcome({"type": "task_done", "mode": "hybrid"})
     # After cutover, hybrid must hit unified before any deps access, so empty
     # namespaces suffice. Before cutover it falls through to legacy flows.
-    with patch("codey.operations.task_phases.dispatch.run_unified_mode", return_value=outcome) as unified:
+    with patch("codey.operations.task_phases.dispatch.run_task_mode", return_value=outcome) as unified:
         actual = dispatch_run_mode(SN(), SN(), SN(), SN(), SN(), SN(), "hybrid", SN())
     assert actual is outcome
     assert unified.call_count == 1
 
 
 def test_issue2_unified_interleaves_web_and_project(tmp_path):
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolResult
     from codey.task.model import TaskSubmission
@@ -100,30 +100,39 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
 
 def test_issue3_unified_completion_uses_session_facts_with_evidence():
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_kernel import TaskSession
+    from codey.operations.task_loop import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    fp = "sha256:" + "a" * 64
     session = TaskSession(
         policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.write", "project.verify"})),
         task_kind="project", project="p")
     session.record_edit("app.py")
     latest = max(session.edited_files.values())
-    session.record_verification("pytest", latest, True, exit_code=0)
+    session.set_workspace_state(1, fp)
+    session.record_verification("pytest", latest, True, exit_code=0,
+                                workspace_revision=1, workspace_fingerprint=fp)
     v_no_ctx = evaluate(session, "done work")
     assert v_no_ctx.complete, f"baseline should pass: {v_no_ctx.followup}"
+    # Empty identity stays not_run: never synthesize a fake fingerprint.
     ev = ExecutionEvidence()
-    # unified production passes only evidence + run metadata, no changes/scope
     ctx = {"run_id": "r", "task": "t", "question": "t", "project": "p",
            "execution_evidence": ev, "analysis_run_payloads": []}
     v_ctx = evaluate(session, "done work", context=ctx)
-    assert v_ctx.complete, (
-        f"same session facts with evidence-only ctx should still pass, "
-        f"got complete={v_ctx.complete} followup={v_ctx.followup!r} "
-        f"proof={[ (c.check_id, c.status) for c in (v_ctx.proof.checks if v_ctx.proof else [])]}"
+    assert not v_ctx.complete, "missing workspace identity must stay not_run, not pass"
+    # Real identity match passes.
+    ev_real = ExecutionEvidence(workspace_revision=1, workspace_fingerprint=fp)
+    ctx_real = {"run_id": "r", "task": "t", "question": "t", "project": "p",
+                "execution_evidence": ev_real, "analysis_run_payloads": []}
+    v_real = evaluate(session, "done work", context=ctx_real)
+    assert v_real.complete, (
+        f"matching workspace identity should pass, "
+        f"got complete={v_real.complete} followup={v_real.followup!r} "
+        f"proof={[ (c.check_id, c.status) for c in (v_real.proof.checks if v_real.proof else [])]}"
     )
     # Stale verification (old revision) must not complete, even with evidence.
     session.record_edit("app.py")
-    ev2 = ExecutionEvidence()
+    ev2 = ExecutionEvidence(workspace_revision=1, workspace_fingerprint=fp)
     ctx2 = {"run_id": "r", "task": "t", "question": "t", "project": "p",
             "execution_evidence": ev2, "analysis_run_payloads": []}
     v_stale = evaluate(session, "done work", context=ctx2)
@@ -131,7 +140,7 @@ def test_issue3_unified_completion_uses_session_facts_with_evidence():
 
 
 def test_issue4_same_slot_different_args_must_not_reuse():
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
     session = TaskSession(
@@ -152,7 +161,7 @@ def test_issue4_same_slot_different_args_must_not_reuse():
 
 
 def test_issue4_session_payload_roundtrip_keeps_policy_and_facts():
-    from codey.operations.task_kernel import TaskSession
+    from codey.operations.task_loop import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
     sub = TaskSubmission("s", "E:/codey", "task", 8, False, "local",
@@ -171,7 +180,7 @@ def test_issue4_session_payload_roundtrip_keeps_policy_and_facts():
 
 
 def test_issue5_strict_initial_snapshot_hides_unavailable_tools():
-    from codey.operations.task_kernel import TaskSession, controller_allowed_for_session
+    from codey.operations.task_loop import TaskSession, controller_allowed_for_session
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
     from codey.toolchain.tool_spec import json_contract_text
@@ -199,7 +208,7 @@ def test_issue5_strict_initial_snapshot_hides_unavailable_tools():
 
 def test_issue6_native_prompt_and_done_closure(monkeypatch):
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import build_task_policy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.task.model import TaskSubmission
@@ -211,7 +220,7 @@ def test_issue6_native_prompt_and_done_closure(monkeypatch):
     try:
         import inspect
 
-        from codey.operations.task_kernel import kernel_prompt_for_session as kprompt
+        from codey.operations.task_loop import kernel_prompt_for_session as kprompt
         sig = inspect.signature(kprompt)
         if "native" in sig.parameters or "protocol" in sig.parameters:
             prompt = kprompt(session, native=True)
@@ -246,7 +255,7 @@ def test_issue6_native_prompt_and_done_closure(monkeypatch):
 
 def test_issue7_required_checks_are_enforced():
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_kernel import TaskSession
+    from codey.operations.task_loop import TaskSession
     from codey.policies.task_policy import TaskPolicy
     policy = TaskPolicy(grants=frozenset({"control", "project.read"}),
                         required_checks=("custom_must_run",))

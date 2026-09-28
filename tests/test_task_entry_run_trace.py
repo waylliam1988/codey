@@ -484,7 +484,7 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, agent_run=lambda req: RunResult("writer done", "done", 1))
-            with mock.patch("codey.operations.task_phases.dispatch.run_unified_mode",
+            with mock.patch("codey.operations.task_phases.dispatch.run_task_mode",
                             side_effect=fake_unified):
                 run_task_submission(runner,
                     TaskSubmission(

@@ -7,7 +7,6 @@ from dataclasses import replace
 from typing import Any
 
 from codey.agents.handoff import render_continuation_prompt, render_handoff
-from codey.agents.runner import RunResult
 from codey.operations.context import RunFrame
 from codey.operations.prompting import (
     join_local_contexts,
@@ -19,6 +18,7 @@ from codey.operations.prompting import (
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState
 from codey.runtime.core import cancellation
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 
 

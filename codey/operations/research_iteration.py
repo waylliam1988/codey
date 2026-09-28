@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from codey.research.pipeline import ResearchIterationRun
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 
 
 def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
@@ -15,7 +15,9 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     if not summary or getattr(tools, "store", None) is None or getattr(tools, "changes", None) is None:
         return ""
     from codey.knowledge.note import KnowledgeNote
-    from codey.research.runner import _run_concept_tags, _synthesis_body, _synthesis_title
+    from codey.research.synthesis import run_concept_tags as _run_concept_tags
+    from codey.research.synthesis import synthesis_body as _synthesis_body
+    from codey.research.synthesis import synthesis_title as _synthesis_title
     from codey.runtime.observe.events import RunEvent
 
     note_ids = [*tools.created_ids, *tools.updated_ids]
@@ -62,7 +64,7 @@ def run_unified_research_iteration(
     topic_continuity_payload: Any = None,
     requested_capabilities: tuple[str, ...] = (),
 ) -> ResearchIterationRun:
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import build_task_policy
 
     if tools is None:
@@ -101,7 +103,7 @@ def run_unified_research_iteration(
     active_provider = provider
     mutations = getattr(deps, "runtime_mutations", None)
     if mutations is not None and session_id and run_id:
-        from codey.operations.kernel_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 
         mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
         intent_sink = KernelEffectSink(

@@ -73,33 +73,35 @@ def _session_profile(session: Any) -> str:
     return str(getattr(session, "task_kind", "") or "").strip().lower() or "project"
 
 
-_MODIFICATION_KEYWORDS = (
-    "edit", "fix", "create", "implement", "modify", "change", "add", "update",
-    "refactor", "write", "build", "patch",
-    "修改", "编辑", "修复", "创建", "新建", "实现", "改", "添加", "更新", "重构", "写",
-)
-
-
 def _task_requires_modification(session: Any) -> bool:
+    """Explicit entry requirement; never keyword-guessed.
+
+    The task entry sets ``project_changes_required`` (and/or a
+    ``project_changes_required`` required_check). Write permission alone
+    never implies modification, so read-only tasks like
+    "检查 bug，不要修改任何文件" stay completable without edits.
+    """
     try:
-        kind = str(getattr(session, "task_kind", "") or "").strip().lower()
+        if bool(getattr(session, "project_changes_required", False) is True):
+            try:
+                kind = str(getattr(session, "task_kind", "") or "").strip().lower()
+            except Exception:
+                kind = ""
+            return kind in {"project", "hybrid"}
     except Exception:
-        kind = ""
-    if kind not in {"project", "hybrid"}:
-        return False
+        pass
     try:
         policy = getattr(session, "policy", None)
-        allows_write = bool(policy.allows("project.write")) if policy is not None and callable(getattr(policy, "allows", None)) else False
+        required = tuple(getattr(policy, "required_checks", ()) or ())
+        if "project_changes_required" in {str(r or "").strip() for r in required}:
+            try:
+                kind = str(getattr(session, "task_kind", "") or "").strip().lower()
+            except Exception:
+                kind = ""
+            return kind in {"project", "hybrid"}
     except Exception:
-        allows_write = False
-    if not allows_write:
-        return False
-    try:
-        text = f"{getattr(session, 'task_text', '') or ''} {getattr(session, 'handoff', '') or ''}"
-    except Exception:
-        text = ""
-    folded = str(text or "").lower()
-    return any(kw.lower() in folded for kw in _MODIFICATION_KEYWORDS)
+        pass
+    return False
 
 
 def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
@@ -215,95 +217,118 @@ def _synthesize_selected_check(provided: Any, session: Any) -> Any:
         return None
 
 
-def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
-    """Project session verifications into execution evidence for the engine.
+def _verification_targets_latest_edit(session: Any, latest: Any) -> bool:
+    try:
+        edited = dict(getattr(session, "edited_files", {}) or {})
+    except Exception:
+        return True
+    latest_edit = max((int(v) for v in edited.values()), default=0) if edited else 0
+    try:
+        ver_rev = int(latest.get("revision", -1))
+    except (TypeError, ValueError):
+        return False
+    return not edited or ver_rev == latest_edit
 
-    The unified kernel records fresh verification facts in the session
-    (edited_files + verifications) while the outer RunWork evidence may not
-    yet contain them. Without this projection the engine sees an empty scope
-    and reports engine_empty even though the same session passes without a
-    context. The projection never removes outer facts; it only adds the
-    session's latest verification as a matching check.
-    """
+
+def _verification_exit_code(latest: Any) -> int | None:
+    exit_code = latest.get("exit_code", None)
+    if exit_code is None:
+        return None
+    try:
+        return int(exit_code)
+    except (TypeError, ValueError):
+        return None
+
+
+def _evidence_workspace_identity(evidence: Any) -> tuple[int, str, bool]:
+    rev = getattr(evidence, "workspace_revision", 0)
+    fp = str(getattr(evidence, "workspace_fingerprint", "") or "")
+    try:
+        from codey.workspace.revision import valid_workspace_fingerprint
+    except Exception:
+        valid_workspace_fingerprint = None  # type: ignore[assignment]
+    if not fp:
+        return rev, fp, False
+    if valid_workspace_fingerprint is not None and not valid_workspace_fingerprint(fp):
+        return rev, fp, False
+    return rev, fp, True
+
+
+def _session_identity_matches(session: Any, latest: Any, rev: int, fp: str) -> bool:
+    try:
+        from codey.workspace.revision import valid_workspace_fingerprint
+    except Exception:
+        valid_workspace_fingerprint = None  # type: ignore[assignment]
+    ver_fp = str(latest.get("workspace_fingerprint", "") or "")
+    if ver_fp:
+        if valid_workspace_fingerprint is not None:
+            return bool(valid_workspace_fingerprint(ver_fp)) and ver_fp == fp
+        return ver_fp == fp
+    try:
+        sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
+        sess_rev = int(getattr(session, "workspace_revision", 0) or 0)
+    except Exception:
+        return False
+    if sess_fp and sess_fp != fp:
+        return False
+    if sess_rev and int(rev or 0) and sess_rev != int(rev or 0):
+        return False
+    return bool(sess_fp or ver_fp)
+
+
+def _append_session_check(evidence: Any, command: str, exit_code: int, rev: int, fp: str) -> Any:
     try:
         from codey.runtime.observe.execution_evidence import CheckEvidence
     except Exception:
         return evidence
-    latest = _session_latest_verification(session)
-    if latest is None:
+    item = CheckEvidence(command, ".", exit_code=exit_code, workspace_revision=rev, workspace_fingerprint=fp)
+    try:
+        existing = list(getattr(evidence, "checks_after_edit", []) or [])
+    except Exception:
         return evidence
-    # Freshness: the latest verification must target the latest edit
-    # revision; an old-version check never completes, even with evidence.
-    try:
-        edited = dict(getattr(session, "edited_files", {}) or {})
-        latest_edit = max((int(v) for v in edited.values()), default=0) if edited else 0
+    for row in existing:
         try:
-            ver_rev = int(latest.get("revision", -1))
-        except (TypeError, ValueError):
-            return evidence
-        if edited and ver_rev != latest_edit:
-            return evidence
-    except Exception:
-        pass
-    try:
-        exit_code = latest.get("exit_code", None)
-        if exit_code is not None:
-            try:
-                exit_code = int(exit_code)
-            except (TypeError, ValueError):
-                exit_code = None
-        passed = bool(latest.get("passed", False)) or (exit_code == 0)
-        # Only project passing facts; failures are already visible via the
-        # session fallback and must not be hidden by synthesis.
-        if not passed:
-            return evidence
-        command = str(latest.get("command", "") or "").strip()[:500]
-        if not command or evidence is None:
-            return evidence
-        rev = getattr(evidence, "workspace_revision", 0)
-        fp = str(getattr(evidence, "workspace_fingerprint", "") or "")
-        # When the outer evidence has no workspace identity yet, give it one
-        # so the synthesized check matches the current workspace. The
-        # fingerprint must satisfy the sha256:64hex contract or every check
-        # stays unmatched (unobserved).
-        try:
-            from codey.workspace.revision import valid_workspace_fingerprint
+            if str(getattr(row, "command", "") or "") == command:
+                return evidence
         except Exception:
-            valid_workspace_fingerprint = None  # type: ignore[assignment]
-        needs_fp = not fp or (valid_workspace_fingerprint is not None and not valid_workspace_fingerprint(fp))
-        if needs_fp:
-            try:
-                import hashlib as _hashlib
+            continue
+    import contextlib as _contextlib2
 
-                digest = _hashlib.sha256(f"kernel-session:{rev or 1}".encode()).hexdigest()
-                valid_fp = f"sha256:{digest}"
-                evidence.set_workspace_state(rev or 1, valid_fp)
-                fp = str(getattr(evidence, "workspace_fingerprint", "") or "")
-                rev = getattr(evidence, "workspace_revision", 0)
-            except Exception:
-                pass
-        item = CheckEvidence(command, ".", exit_code=exit_code if exit_code is not None else 0,
-                             workspace_revision=rev, workspace_fingerprint=fp)
-        try:
-            existing = list(getattr(evidence, "checks_after_edit", []) or [])
-        except Exception:
-            return evidence
-        for row in existing:
-            try:
-                if str(getattr(row, "command", "") or "") == command:
-                    return evidence
-            except Exception:
-                continue
-        import contextlib as _contextlib2
-
-        try:
-            evidence._append_check(evidence.checks_after_edit, item)
-        except Exception:
-            with _contextlib2.suppress(Exception):
-                evidence.checks_after_edit.append(item)
+    try:
+        evidence._append_check(evidence.checks_after_edit, item)
     except Exception:
-        pass
+        with _contextlib2.suppress(Exception):
+            evidence.checks_after_edit.append(item)
     return evidence
+
+
+def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
+    """Project session verifications into execution evidence for the engine.
+
+    Only real execution facts with a matching workspace identity complete.
+    A missing or invalid workspace fingerprint stays not_run; the gate never
+    synthesizes a format-valid fingerprint (e.g. sha256("kernel-session:…"))
+    because format-valid does not mean it matches the actual file version.
+    """
+    latest = _session_latest_verification(session)
+    if latest is None or evidence is None:
+        return evidence
+    if not _verification_targets_latest_edit(session, latest):
+        return evidence
+    exit_code = _verification_exit_code(latest)
+    if exit_code is None:
+        return evidence
+    if not (bool(latest.get("passed", False)) or exit_code == 0):
+        return evidence
+    command = str(latest.get("command", "") or "").strip()[:500]
+    if not command:
+        return evidence
+    rev, fp, valid = _evidence_workspace_identity(evidence)
+    if not valid:
+        return evidence
+    if not _session_identity_matches(session, latest, rev, fp):
+        return evidence
+    return _append_session_check(evidence, command, exit_code, rev, fp)
 
 
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
@@ -554,14 +579,28 @@ def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> Ga
 
     Each required id must be produced exactly once with pass. Missing provider,
     not_run/fail/not_applicable, duplicate conflicting statuses, and over-limit
-    (contract None downstream) all fail closed.
+    all fail closed with an explicit message (never silent truncation).
     """
+    try:
+        from codey.completion.contract import MAX_COMPLETION_CHECKS as _MAX_CHECKS
+    except Exception:
+        _MAX_CHECKS = 12
     try:
         policy = getattr(session, "policy", None)
         required = tuple(getattr(policy, "required_checks", ()) or ())
     except Exception:
         return None
-    required = tuple(str(r or "").strip() for r in required if str(r or "").strip())[:16]
+    required = tuple(str(r or "").strip() for r in required if str(r or "").strip())
+    if len(required) > int(_MAX_CHECKS):
+        return GateVerdict(
+            complete=False,
+            followup=(
+                f"Not done yet (too many required checks: {len(required)} > {_MAX_CHECKS}). "
+                "Reduce the task's required checks to at most "
+                f"{_MAX_CHECKS}, then propose done again."
+            ),
+            proof=None,
+        )
     if not required:
         return None
     by_id: dict[str, list[CompletionCheck]] = {}

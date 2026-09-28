@@ -16,15 +16,14 @@ from codey.runtime.core.models import Control, ToolCall, ToolPlan
 
 MAX_NATIVE_CALLS_PER_TURN = 8
 
-_CODING_TOOLS = frozenset({
-    "list_dir", "read_file", "read_files", "grep", "find_references",
-    "parallel", "edit", "run", "shell", "done",
-})
-_RESEARCH_TOOLS = frozenset({
-    "web_search", "open_url", "source_search", "knowledge_search",
-    "knowledge_read", "knowledge_write", "knowledge_link", "done",
-})
-_CONTROLLER_ALIASES = frozenset({"open_result", "reopen_source", "open_hit"})
+# Single tool source is ToolSpec; controller aliases lower via ToolSpec.
+# Kept for backward-compatible imports; new code must use tool_spec.
+try:
+    from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
+
+    _CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS or {})
+except Exception:
+    _CONTROLLER_ALIASES = frozenset({"open_result", "reopen_source", "open_hit"})
 
 
 def _grant_for_tool(tool: str) -> str:
@@ -60,7 +59,7 @@ def _is_coding_only_tool(tool: str) -> bool:
     try:
         from codey.toolchain.tool_spec import spec_for_tool
     except Exception:
-        return name in _CODING_TOOLS and name not in _RESEARCH_TOOLS
+        return False
     try:
         spec = spec_for_tool(name)
     except Exception:
@@ -209,7 +208,8 @@ def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any]
     name = _canonical_name(tool) or str(tool or "").strip().lower()
     # ToolSpec is the single authoritative definition: required-arg presence
     # is decided here so JSON/native schemas and validation cannot drift.
-    # Legacy validators still do type repair and defaults underneath.
+    # Project/research legacy validators are additional type-repair constraints
+    # only; third-task (custom) tools pass on the generic spec alone.
     try:
         from codey.toolchain.tool_spec import spec_for_tool as _spec_for
         from codey.toolchain.tool_spec import validate_args_against_spec
@@ -217,12 +217,14 @@ def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any]
         _spec_for = None  # type: ignore[assignment]
         validate_args_against_spec = None  # type: ignore[assignment]
     executor = ""
+    spec = None
     if _spec_for is not None:
         try:
             spec = _spec_for(name)
             executor = spec.executor if spec is not None else ""
         except Exception:
             executor = ""
+            spec = None
         if spec is None:
             return {}, f"unknown tool: {tool or '?'}"
         if validate_args_against_spec is not None:
@@ -232,7 +234,19 @@ def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any]
                 spec_error = ""
             if spec_error:
                 return {}, spec_error
-    if name in _CONTROLLER_ALIASES or (name == "source_search" and "source_id" in args):
+        # Custom/third-task tools: generic spec validation is sufficient.
+        # They run via injected executors; no legacy coding/research repair.
+        if executor not in {"project", "source", "knowledge"}:
+            # Controller aliases always lower via research validation.
+            try:
+                from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _alias_args
+                is_alias = name in set(_alias_args or {})
+            except Exception:
+                is_alias = name in {"open_result", "reopen_source", "open_hit"}
+            if is_alias or (name == "source_search" and isinstance(args, dict) and "source_id" in args):
+                return _validate_research_args(name, args if isinstance(args, dict) else {})
+            return dict(args) if isinstance(args, dict) else {}, ""
+    if name in _CONTROLLER_ALIASES or (isinstance(args, dict) and name == "source_search" and "source_id" in args):
         return _validate_research_args(name, args)
     if executor == "project":
         return _validate_coding_args(name, args)
@@ -242,6 +256,10 @@ def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any]
     # legacy split so validation still fails closed, never open.
     if name in _CONTROLLER_ALIASES:
         return _validate_research_args(name, args)
+    # Spec exists but executor unknown (e.g. custom registered while legacy
+    # helpers failed to import): generic pass-through on required-args only.
+    if spec is not None:
+        return dict(args) if isinstance(args, dict) else {}, ""
     return {}, f"unknown tool: {tool or '?'}"
 
 

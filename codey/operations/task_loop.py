@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.operations.kernel_protocol import _CONTROLLER_ALIASES, _policy_allows, normalize_turn
-from codey.operations.kernel_session import TaskSession, effect_id_for_call, turn_effect_id
+from codey.operations.task_session import TaskSession, effect_id_for_call, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 
 __all__ = [
@@ -78,7 +78,7 @@ def _build_delegate(session: TaskSession, project_path: Any, tool_fns: Any,
     if project_path is None and research_tools is None:
         return None
     try:
-        from codey.operations.kernel_execution import ExecutionDelegate
+        from codey.operations.task_execution import ExecutionDelegate
     except Exception:
         return None
     try:
@@ -180,6 +180,87 @@ def _replay_settled_slot(
     )
 
 
+def _session_workspace_identity(session: TaskSession) -> tuple[int, str]:
+    try:
+        rev = int(getattr(session, "workspace_revision", 0) or 0)
+    except Exception:
+        rev = 0
+    try:
+        fp = str(getattr(session, "workspace_fingerprint", "") or "")
+    except Exception:
+        fp = ""
+    return rev, fp
+
+
+def _record_run_verification(session: TaskSession, args: dict[str, Any], exit_code: int | None,
+                             sess_rev: int, sess_fp: str) -> None:
+    latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
+    try:
+        passed = int(exit_code) == 0
+    except (TypeError, ValueError):
+        passed = False
+    session.record_verification(str(args.get("command", "") or ""), latest,
+                                passed, exit_code=exit_code,
+                                workspace_revision=sess_rev or None,
+                                workspace_fingerprint=sess_fp or None)
+
+
+def _record_open_fact(session: TaskSession, name: str, args: dict[str, Any], opened_url: str) -> None:
+    if name == "open_url":
+        url = (opened_url or str(args.get("url", "") or "")).strip()
+        if url:
+            session.record_open(url)
+        return
+    url = (opened_url or "").strip()
+    if not url:
+        key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}[name]
+        rid = str(args.get(key, "") or "").strip().lower()
+        url = (session.search_results.get(rid, "") or session.source_ids.get(rid, "")).strip()
+    if url:
+        session.record_open(url)
+
+
+def _record_knowledge_fact(session: TaskSession, evidence_items: list[dict[str, str]] | None) -> None:
+    session.notes_saved += 1
+    for item in evidence_items or ():
+        url = str(item.get("source_url", "") or "").strip()
+        excerpt = str(item.get("excerpt", "") or "").strip()
+        if url and excerpt:
+            session.record_evidence(url, excerpt)
+
+
+def _record_edit_fact(session: TaskSession, args: dict[str, Any], result: ToolResult) -> None:
+    if not isinstance(result.audit, dict) or result.audit.get("changed", True):
+        session.record_edit(str(args.get("path", "") or "file"))
+
+
+def _record_read_fact(session: TaskSession, args: dict[str, Any]) -> None:
+    try:
+        from pathlib import Path
+
+        from codey.agents.protocol import canonical_project_path
+
+        session.read_files.add(canonical_project_path(Path(session.project), str(args.get("path") or "")))
+    except (ValueError, OSError):
+        pass
+
+
+def _record_fallback_run(session: TaskSession, args: dict[str, Any], text: str,
+                         result: ToolResult, sess_rev: int, sess_fp: str) -> None:
+    command = str(args.get("command", "") or "")
+    latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
+    try:
+        audit_exit = None
+        if isinstance(result.audit, dict) and result.audit.get("exit_code") is not None:
+            audit_exit = int(result.audit.get("exit_code"))
+    except Exception:
+        audit_exit = None
+    session.record_verification(command, latest, _fake_run_ok(text),
+                                exit_code=audit_exit,
+                                workspace_revision=sess_rev or None,
+                                workspace_fingerprint=sess_fp or None)
+
+
 def _record_facts_for_result(
     session: TaskSession,
     call: ToolCall,
@@ -193,14 +274,9 @@ def _record_facts_for_result(
     name = str(call.name or "").strip().lower()
     args = call.args if isinstance(call.args, dict) else {}
     text = str(result.model_text or "")
+    sess_rev, sess_fp = _session_workspace_identity(session)
     if name == "run" and exit_code is not None:
-        latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
-        try:
-            passed = int(exit_code) == 0
-        except (TypeError, ValueError):
-            passed = False
-        session.record_verification(str(args.get("command", "") or ""), latest,
-                                    passed, exit_code=exit_code)
+        _record_run_verification(session, args, exit_code, sess_rev, sess_fp)
         if text:
             session.transcript_notes.append(f"run: {text[:500]}")
         return
@@ -208,41 +284,16 @@ def _record_facts_for_result(
         return
     if name == "web_search":
         _record_search_results(session, args, text)
-    elif name == "open_url":
-        url = (opened_url or str(args.get("url", "") or "")).strip()
-        if url:
-            session.record_open(url)
-    elif name in _CONTROLLER_ALIASES:
-        url = (opened_url or "").strip()
-        if not url:
-            key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}[name]
-            rid = str(args.get(key, "") or "").strip().lower()
-            url = (session.search_results.get(rid, "") or session.source_ids.get(rid, "")).strip()
-        if url:
-            session.record_open(url)
+    elif name == "open_url" or name in _CONTROLLER_ALIASES:
+        _record_open_fact(session, name, args, opened_url)
     elif name == "knowledge_write":
-        session.notes_saved += 1
-        for item in evidence_items or ():
-            url = str(item.get("source_url", "") or "").strip()
-            excerpt = str(item.get("excerpt", "") or "").strip()
-            if url and excerpt:
-                session.record_evidence(url, excerpt)
+        _record_knowledge_fact(session, evidence_items)
     elif name == "edit":
-        if not isinstance(result.audit, dict) or result.audit.get("changed", True):
-            session.record_edit(str(args.get("path", "") or "file"))
+        _record_edit_fact(session, args, result)
     elif name == "read_file":
-        try:
-            from pathlib import Path
-
-            from codey.agents.protocol import canonical_project_path
-
-            session.read_files.add(canonical_project_path(Path(session.project), str(args.get("path") or "")))
-        except (ValueError, OSError):
-            pass
+        _record_read_fact(session, args)
     elif name == "run":
-        command = str(args.get("command", "") or "")
-        latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
-        session.record_verification(command, latest, _fake_run_ok(text))
+        _record_fallback_run(session, args, text, result, sess_rev, sess_fp)
     if text:
         session.transcript_notes.append(f"{name}: {text[:500]}")
 
@@ -290,6 +341,45 @@ def _delivered_slot_result(
     return ToolResult(call=call, model_text=stored.model_text)
 
 
+def _is_recovery_mismatch_text(text: object) -> bool:
+    return str(text or "").startswith("ERROR: recovery mismatch")
+
+
+def _batch_recovery_mismatch(
+    session: TaskSession,
+    calls: list[ToolCall],
+    delivered_map: Mapping[str, ToolResult],
+    identity_ref: str,
+    active_turn: int,
+    base_index: int,
+) -> bool:
+    """Pre-check the whole batch before begin_turn; True means abort without side effects."""
+    for offset, call in enumerate(calls or []):
+        name = str(getattr(call, "name", "") or "").strip().lower()
+        identity = turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset)
+        try:
+            delivered_hit = _delivered_slot_result(delivered_map, identity, call)
+        except Exception:
+            delivered_hit = None
+        if delivered_hit is not None and _is_recovery_mismatch_text(delivered_hit.model_text):
+            return True
+        try:
+            replayed = _replay_settled_slot(session, identity, call, name, active_turn)
+        except Exception:
+            replayed = None
+        if replayed is not None and _is_recovery_mismatch_text(replayed.model_text):
+            return True
+    return False
+
+
+def _batch_aborted_results(calls: list[ToolCall]) -> list[ToolResult]:
+    """Native-legal errors for every call id when the batch is aborted; no settlement."""
+    results: list[ToolResult] = []
+    for call in calls or []:
+        results.append(_recovery_mismatch_result(call, "batch", "batch-aborted"))
+    return results
+
+
 def _guarded_slot_result(
     session: TaskSession, identity: str, call: ToolCall, name: str, active_turn: int,
     intent_sink: Any, controller_allowed: Any,
@@ -308,7 +398,8 @@ def _guarded_slot_result(
             if not _allows_ctl(name, {str(n or "").strip().lower() for n in controller_allowed}):
                 return _error_result(call, f"{name} is not allowed by the current controller state")
         except Exception:
-            pass
+            # Fail closed: controller evaluation failure never means unlimited.
+            return _error_result(call, "controller state unavailable; cannot authorize tool")
     return None
 
 
@@ -379,6 +470,11 @@ def execute_turn(
     run_ref = str(run_id or "")
     identity_ref = f"{run_ref}:{effect_scope}" if effect_scope else run_ref
     delivered_map = dict(delivered or {})
+    # Pre-check the whole batch before begin_turn: any slot mismatch aborts
+    # the batch, preserves original receipts/settlement, executes nothing.
+    # Native chains still need an error for every call id in the batch.
+    if calls and _batch_recovery_mismatch(session, list(calls), delivered_map, identity_ref or "adhoc", active_turn, base_index):
+        return _batch_aborted_results(list(calls))
 
     import contextlib as _contextlib
 
@@ -475,10 +571,9 @@ def controller_allowed_for_session(session: TaskSession) -> tuple[str, ...] | No
 
 
 def _controller_for_session(session: TaskSession) -> tuple[str, ...] | None:
-    try:
-        return controller_allowed_for_session(session)
-    except Exception:
-        return None
+    # Fail closed: snapshot computation failure never encodes as None (unlimited).
+    # Callers must treat the exception as a per-turn config error and stop.
+    return controller_allowed_for_session(session)
 
 
 def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
@@ -760,10 +855,26 @@ def _snapshot_for_turn_state(
 def _apply_recovery_first(
     session: TaskSession, native: bool, pending_initial: list[ToolResult],
     prompt: str, pending_native_messages: list[dict[str, Any]] | None,
+    *,
+    provider_session_changed: bool = False,
 ) -> tuple[str, list[dict[str, Any]] | None]:
-    """Deliver undelivered prior results before any new model call."""
+    """Deliver undelivered prior results before any new model call.
+
+    Same native session may continue delivery with old call ids; a new
+    provider or new session must only re-explain results as text so stale
+    call ids are never handed to a different chain.
+    """
     if not pending_initial:
         return prompt, pending_native_messages
+    # Cross-provider / new-session recovery: text only, never old call ids.
+    if provider_session_changed:
+        try:
+            return (
+                "Continue the unfinished task using the latest local tool results below.\n\n"
+                + _format_results(pending_initial, session)
+            ), None
+        except Exception:
+            return prompt, pending_native_messages
     try:
         if native:
             recovered_messages = _native_tool_messages(pending_initial, session)
@@ -781,6 +892,34 @@ def _apply_recovery_first(
         return prompt, pending_native_messages
 
 
+def _call_provider_send(provider: Any, prompt: str) -> Any:
+    """Web send with backward compat for test doubles without timeout."""
+    try:
+        return provider.send(prompt, timeout=None)
+    except TypeError as exc:
+        if "timeout" not in str(exc):
+            raise
+        return provider.send(prompt)
+
+
+def _call_provider_send_turn(provider: Any, prompt: str, tools: Any) -> Any:
+    try:
+        return provider.send_turn(prompt, tools, timeout=None)
+    except TypeError as exc:
+        if "timeout" not in str(exc):
+            raise
+        return provider.send_turn(prompt, tools)
+
+
+def _call_provider_send_results(provider: Any, messages: Any, tools: Any) -> Any:
+    try:
+        return provider.send_tool_results(messages, tools, timeout=None)
+    except TypeError as exc:
+        if "timeout" not in str(exc):
+            raise
+        return provider.send_tool_results(messages, tools)
+
+
 def _send_kernel_reply(
     provider: Any, native: bool, prompt: str, native_tools: Any,
     pending_reply: Any, pending_native_messages: list[dict[str, Any]] | None,
@@ -789,11 +928,11 @@ def _send_kernel_reply(
     if pending_reply is not None:
         return pending_reply, None, pending_native_messages
     if native and pending_native_messages is not None:
-        reply = provider.send_tool_results(pending_native_messages, native_tools, timeout=None)
+        reply = _call_provider_send_results(provider, pending_native_messages, native_tools)
         return reply, None, None
     if native:
-        return provider.send_turn(prompt, native_tools, timeout=None), None, pending_native_messages
-    return provider.send(prompt, timeout=None), None, pending_native_messages
+        return _call_provider_send_turn(provider, prompt, native_tools), None, pending_native_messages
+    return _call_provider_send(provider, prompt), None, pending_native_messages
 
 
 def _repair_native_dangling(
@@ -810,9 +949,10 @@ def _repair_native_dangling(
     if not ids:
         return None
     try:
-        return provider.send_tool_results(
+        return _call_provider_send_results(
+            provider,
             [{"role": "tool", "tool_call_id": i, "content": f"ERROR: {error}"} for i in ids],
-            native_tools, timeout=None,
+            native_tools,
         )
     except Exception:
         return None
@@ -845,6 +985,7 @@ def run_task_kernel(
     propagate_provider_failure: bool = False,
     start_turn: int | None = None,
     initial_results: list[ToolResult] | None = None,
+    provider_session_changed: bool = False,
 ) -> KernelResult:
     runnable = dict(executors or {})
     delivered_map = dict(delivered or {})
@@ -856,30 +997,41 @@ def run_task_kernel(
     pending_initial = list(initial_results or [])
     native = _is_native_provider(provider, provider_id=provider_id)
     identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
-    _, _, _initial_native, _initial_prompt = _snapshot_for_turn_state(
-        session, native=native, user_task=user_task, context_text=context_text,
-    )
+    try:
+        _, initial_contract, _initial_native, _initial_prompt = _snapshot_for_turn_state(
+            session, native=native, user_task=user_task, context_text=context_text,
+        )
+    except Exception as exc:
+        return KernelResult(completed=False, summary=f"controller configuration error: {exc}",
+                            turns=0, stop_reason="controller_failure")
     prompt = _initial_prompt
     native_tools: list[dict[str, Any]] = _initial_native
     pending_reply: Any = None
     pending_native_messages: list[dict[str, Any]] | None = None
     prompt, pending_native_messages = _apply_recovery_first(
         session, native, pending_initial, prompt, pending_native_messages,
+        provider_session_changed=bool(provider_session_changed),
     )
     turns_used = 0
     invalid_turns = 0
+    prev_contract: str = str(initial_contract or "")
     for turn in range(resume_start, max_turns + 1):
         if _stop_requested(stop_flag):
             return KernelResult(completed=False, summary="stopped", turns=turns_used,
                                 stop_reason="stopped")
         session.turn = turn
         turns_used = turn
-        controller, _, turn_native_tools, turn_prompt = _snapshot_for_turn_state(
-            session, native=native, user_task=user_task, context_text=context_text,
-        )
+        try:
+            controller, turn_contract, turn_native_tools, turn_prompt = _snapshot_for_turn_state(
+                session, native=native, user_task=user_task, context_text=context_text,
+            )
+        except Exception as exc:
+            return KernelResult(completed=False, summary=f"controller configuration error: {exc}",
+                                turns=turns_used, stop_reason="controller_failure")
         native_tools = turn_native_tools
         if turn == resume_start and pending_reply is None and pending_native_messages is None and not pending_initial:
             prompt = turn_prompt
+            prev_contract = str(turn_contract or "")
         try:
             reply, pending_reply, pending_native_messages = _send_kernel_reply(
                 provider, native, prompt, native_tools, pending_reply, pending_native_messages,
@@ -931,8 +1083,36 @@ def run_task_kernel(
             if messages:
                 pending_native_messages = messages
                 prompt = ""
+                # Native chains get the fresh schema every turn via send_turn;
+                # still track contract drift for the next web fallback.
+                try:
+                    _, next_contract, _, _ = _snapshot_for_turn_state(
+                        session, native=native, user_task=user_task, context_text=context_text,
+                    )
+                    prev_contract = str(next_contract or "")
+                except Exception:
+                    pass
                 continue
-        prompt = _format_results(results, session)
+        base_prompt = _format_results(results, session)
+        # Web text chains have no per-turn schema: when visible tools change,
+        # resend the current tool contract plus the controller reason.
+        try:
+            _, next_contract, _, _ = _snapshot_for_turn_state(
+                session, native=native, user_task=user_task, context_text=context_text,
+            )
+        except Exception:
+            next_contract = prev_contract
+        next_text = str(next_contract or "")
+        if (not native) and next_text and next_text != prev_contract:
+            names = ", ".join(_snapshot_names(session.policy, controller)) or "none"
+            prompt = (
+                f"Visible tools changed (controller state advanced): {names}\n"
+                f"Tool contract (use exactly these shapes):\n{next_text}\n\n"
+                f"{base_prompt}"
+            )
+            prev_contract = next_text
+        else:
+            prompt = base_prompt
     return _finish_after_budget(
         session, provider, pending_native_messages, native_tools, turns_used,
         propagate_provider_failure=propagate_provider_failure,
@@ -972,7 +1152,7 @@ def _drain_native_budget(
 ) -> KernelResult | None:
     for _ in range(4):
         try:
-            reply = provider.send_tool_results(messages, native_tools, timeout=None)
+            reply = _call_provider_send_results(provider, messages, native_tools)
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
         ids = [str(getattr(call, "id", "") or "")
@@ -1012,22 +1192,35 @@ def _handle_done_reply(
     if verdict.complete:
         # Native chains require every call id closed, including an accepted
         # done. Answer the done id with success before returning so the same
-        # session can continue and the provider chain stays legal.
+        # session can continue and the provider chain stays legal. A failed
+        # receipt never counts as closed: surface provider failure / pending
+        # delivery instead of claiming completion.
         if native and not isinstance(reply, str):
-            import contextlib as _contextlib
-
             try:
                 ids = [str(getattr(c, "id", "") or "") for c in (getattr(reply, "tool_calls", ()) or [])]
                 ids = [i for i in ids if i]
                 if ids:
-                    with _contextlib.suppress(Exception):
-                        provider.send_tool_results(
+                    try:
+                        _call_provider_send_results(
+                            provider,
                             [{"role": "tool", "tool_call_id": i,
                               "content": f"done accepted: {session.last_done_text[:500]}"} for i in ids],
-                            native_tools, timeout=None,
+                            native_tools,
                         )
-            except Exception:
-                pass
+                    except Exception as exc:
+                        return KernelResult(
+                            completed=False,
+                            summary=f"provider failed delivering done receipt: {exc}",
+                            turns=int(session.turn or 0),
+                            stop_reason="provider_failure",
+                        )
+            except Exception as exc:
+                return KernelResult(
+                    completed=False,
+                    summary=f"provider failed delivering done receipt: {exc}",
+                    turns=int(session.turn or 0),
+                    stop_reason="provider_failure",
+                )
         return KernelResult(completed=True, summary=session.last_done_text,
                             turns=int(session.turn or 0), stop_reason="done")
     pending = _take_answered_reply(provider, reply, native, native_tools, verdict.followup)
@@ -1060,9 +1253,10 @@ def _take_answered_reply(
     if not ids:
         return None
     try:
-        return provider.send_tool_results(
+        return _call_provider_send_results(
+            provider,
             [{"role": "tool", "tool_call_id": i, "content": f"ERROR: {followup}"} for i in ids],
-            native_tools, timeout=None,
+            native_tools,
         )
     except Exception:
         return None

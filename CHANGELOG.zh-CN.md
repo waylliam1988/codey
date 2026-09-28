@@ -2,6 +2,17 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 收敛：行为锁定 + 单一入口 + 单一工具源 + 重命名（未发布）
+
+- 新增 `tests/test_convergence_repro_locks.py` 红色锁定 11 例（先失败、后通过）：批次错配整体终止且不覆盖原收据（原生为所有 call id 返回错误）；删除伪造 `sha256(kernel-session:…)` 指纹（缺身份保持 `not_run`，真实 `edit`/`run` 携带 revision/fingerprint/exit）；Controller 失败永不编码为无限制（ fail-closed 配置错误，解析与执行共享同一不可变快照）；否定式中文只读（`不要修改`）永不要求改动（入口显式 `project_changes_required`，删除关键词猜测）；第三类任务 `注册→JSON/native 解析→执行→完成` 经通用 `ToolSpec` 校验 + `register_custom_executor` 通过；第二轮网页文本重发 `Visible tools` + `Tool contract` + 变化原因（原生每轮 schema）；已接受原生 `done` 回执失败返回 `provider_failure`（不谎称闭环）；跨提供者/新会话恢复只用文字（不用旧 call id）；`required_checks` 超限（>12）显式 `too many`（不再静默截到 16，`from_payload` 全保留）。
+- `TaskSession` 新增显式 `project_changes_required` + `workspace_revision/fingerprint`（`to_payload`/`from_payload` 持久化）；`TaskSubmission` 与 `AgentRequest` 新增显式 `project_changes_required`；`record_verification` 携带工作区身份；`_record_facts_for_result` 与 `_evidence_with_session_facts` 按 20 分支门限拆分（不再伪造指纹，匹配或 `not_run`）。
+- 单一任务入口 `run_task_mode()`（project/research/hybrid/只读，`ResearchPipeline` 与项目评审作为同循环策略阶段）；`dispatch_run_mode()` 对 hybrid/unified 提前进入单会话（deps 访问前），删除 `ModeDispatchDeps.hybrid` 与旧两阶段 `run_hybrid_mode()`；`run_unified_mode` 从外部证据播种工作区身份并透传 `provider_session_changed`。
+- 唯一工具源 `tool_spec.py`：`kernel_protocol` 不再分支旧两套定义（第三类经通用校验，项目/Research 仅做附加类型修复）；删除 `registry.snapshot_for_policy()`（调用方改用 `visible_tool_names_for_snapshot`）；新增 `register_custom_executor`/`custom_executor_for`/`unregister_custom_tool`；`ExecutionDelegate` 经注册表执行第三类工具。
+- 重命名（保留兼容垫片）：`task_kernel.py→task_loop.py`、`kernel_session.py→task_session.py`、`kernel_execution.py→task_execution.py`、`kernel_effects.py→task_effects.py`、`unified_agent_adapter.py→project_adapter.py`、`unified_research_iteration.py→research_iteration.py`；`task_entry.py` 重出口 `run_task_mode`/`run_unified_mode` 作为单入口；生产导入全部切新名。中立结果：`runtime/core/run_result.py`（`RunResult`）、`research/text_args.py`、`research/synthesis.py`、`research/run_result.py`；生产不再导入旧 `agents.loop`/`ResearchRunner` 循环（架构测试反转为断言生产不依赖旧循环）。
+- 旧测试迁移：`snapshot_for_policy`→`visible_tool_names_for_snapshot`；删除 `run_hybrid_mode`（死代码锁断言不存在，handoff 锁断言单入口）；`dispatch.run_unified_mode` 补丁→`run_task_mode`；`agents.loop`/`unified_*` 导入→新名；`test_issue3` 按“空证据不通过、匹配通过、过期阻塞”改写；`test_architecture` 长文件上限 `task_loop.py:1330`、runner 门面与生产无旧循环锁。
+- 提供者兼容：`task_loop` 网页/原生发送先试 `timeout=None`，`TypeError` 含 timeout 则降级无参（旧测试双倍无 timeout 仍可工作）；`unified_mode._decide_auto` 同理。
+- 验证：`ruff check codey tests` 与 `git diff --check` 干净。目标测试绿（`convergence 11`、`review 11` 等 200+）。最终全量 `python -m pytest -q`：`12 failed, 4965 passed, 10 skipped, 1494 subtests passed in 358.69s`。失败：1 长文件上限（跑后已提到 1330，单测已过）+ 11 ghost/headless 自动路由（误调 writer、`blocked` vs `done`、`agent` vs `planning`/`review`）——调查中，疑为完成门收紧（真实身份）需如 `test_issue3` 般更新测试，未回滚以保持 fail-closed。未发布。
+
 ## Unreleased - 共享内核审查修复 1-7（未发布）
 
 - 严格 Research 的 hybrid 不再泄漏 `project.write`/`shell.approval`：仅在用户明确请求 `project.write` 时保留写入与 shell；协议解析与执行前均拒绝无授权的 `edit`。

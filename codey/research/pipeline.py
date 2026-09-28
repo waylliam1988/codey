@@ -18,7 +18,7 @@ from codey.research.proof_quality import ResearchProofReview, review_research_pr
 from codey.research.query_planner import ResearchPlan, build_research_plan
 from codey.research.record_merge import merge_evidence_patch
 from codey.research.review_finding import findings_from_proof_review, planner_gaps_from_findings
-from codey.research.runner import ResearchRunResult
+from codey.research.run_result import ResearchRunResult
 from codey.research.source_trust import project_source_set
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation

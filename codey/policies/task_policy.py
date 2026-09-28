@@ -138,6 +138,8 @@ class TaskPolicy:
                 text = str(item or "").strip()
                 if text and text not in checks:
                     checks.append(text)
+        # Never silently truncate: preserve all so the completion gate can
+        # report an explicit over-limit error (contract max is 12).
         strict = payload.get("strict_research") is True
         source = str(payload.get("source") or "")
         try:
@@ -147,7 +149,7 @@ class TaskPolicy:
         return TaskPolicy(
             grants=frozenset(grants),
             strict_research=strict,
-            required_checks=tuple(checks[:16]),
+            required_checks=tuple(checks),
             source=source[:240] if source else "recovered",
             version=version if version >= 1 else TASK_POLICY_VERSION,
         )

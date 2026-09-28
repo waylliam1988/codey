@@ -10,10 +10,10 @@ from codey.knowledge.research_interest import (
     candidate_to_topic_hint,
 )
 from codey.operations.context import RunFrame, RunHooks
+from codey.operations.research_iteration import run_unified_research_iteration
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState
 from codey.operations.unified_evidence_followup import run_unified_evidence_followup
-from codey.operations.unified_research_iteration import run_unified_research_iteration
 from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS
@@ -156,66 +156,6 @@ def run_research_mode(
         "receipt": receipt,
         "research": research_payload(result, pipeline_result=pipeline_result),
     }, research_result=result, research_pipeline_result=pipeline_result)
-
-
-def run_hybrid_mode(
-    frame: RunFrame,
-    work: object,
-    hooks: RunHooks,
-    *,
-    config_result: object | None = None,
-    run_project: Callable[..., ModeOutcome],
-    run_pipeline: Callable[..., object] | None = None,
-) -> ModeOutcome:
-    request = frame.request
-    if frame.provider is None:
-        raise RuntimeError("provider is not connected")
-    pipeline = run_pipeline or run_research_pipeline
-    pipeline_result = pipeline(
-        frame,
-        hooks,
-        max_turns=max(1, min(request.max_turns, 18)),
-    )
-    research_result = pipeline_result.final_result
-    if research_result.stop_reason != "done":
-        return ModeOutcome({
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": research_result.summary,
-            "stop_reason": research_result.stop_reason,
-            "turns": research_result.turns,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "research",
-            "receipt": {"display": {"summary": research_result.receipt}},
-            "research": research_payload(research_result, pipeline_result=pipeline_result),
-        }, research_result=research_result, research_pipeline_result=pipeline_result)
-    # Hybrid continues as one task: keep the current chat session and hand the
-    # writer the research summary. Do not force a fresh chat or drop handoff.
-    research_summary = str(getattr(research_result, "summary", "") or "").strip()
-    if research_summary:
-        prior_handoff = str(getattr(frame, "handoff", "") or "").strip()
-        frame.handoff = f"{prior_handoff}\n{research_summary}".strip() if prior_handoff else research_summary
-    frame.conversation.update_snapshot(replace(
-        frame.conversation.snapshot,
-        mode="research",
-        goal=request.task,
-        project=frame.project_text,
-        provider_id=frame.provider_id,
-        summary=research_result.summary,
-        blocker="",
-        latest_user=request.task,
-        latest_reply=research_result.summary,
-    ))
-    return run_project(
-        frame,
-        work,
-        hooks,
-        config_result=config_result,
-        research_result=research_result,
-        research_pipeline_result=pipeline_result,
-    )
 
 
 def run_research_iteration(
@@ -546,7 +486,6 @@ __all__ = [
     "research_payload",
     "research_queue_item_title",
     "run_research_iteration",
-    "run_hybrid_mode",
     "run_research_mode",
     "run_research_pipeline",
 ]

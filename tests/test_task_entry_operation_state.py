@@ -594,7 +594,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             })
             with (
                 mock.patch.object(state, "get_provider", return_value=_Provider()),
-                mock.patch("codey.operations.task_phases.dispatch.run_unified_mode",
+                mock.patch("codey.operations.task_phases.dispatch.run_task_mode",
                            return_value=stopped),
             ):
                 run_task_submission(runner,

@@ -43,14 +43,13 @@ from codey.operations.research_flow import (
     default_research_search_provider,
     record_evidence_ledger_write,
     research_queue_item_title,
-    run_hybrid_mode,
     run_research_mode,
     run_research_pipeline,
 )
 from codey.operations.result import ModeOutcome
 from codey.operations.review_flow import ReviewFlowDeps, run_review_mode
 from codey.operations.task_state import TaskState
-from codey.operations.unified_mode import run_unified_mode
+from codey.operations.unified_mode import run_task_mode
 from codey.providers.capabilities import rank_providers
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.task.kind import startup_failover_mode, trace_mode
@@ -215,25 +214,20 @@ def dispatch_run_mode(
     task_kind: str,
     config_result: ProjectConfigLoadResult,
 ) -> ModeOutcome:
-    # Single task session for hybrid: web/project tools alternate in one
-    # TaskSession (no two-phase research-then-writer). Project/research and
-    # read-only planning keep their dedicated flows, which already drive the
-    # same kernel internally (writer adapter / research iteration) plus their
-    # review/repair/self-repair phases. Chat/review/auto keep their flows.
-    # "unified" stays as a backward-compatible alias for project.
-    _normalized = str(task_kind or "").strip().lower()
-    if _normalized == "hybrid":
-        return run_unified_mode(
+    # Single task entry: project/research/hybrid/readonly share one
+    # run_task_mode (same TaskSession/tool loop); ResearchPipeline and project
+    # review stay as strategy phases scheduled there. Chat/review/auto keep
+    # their flows. "unified" stays as a backward-compatible alias for project.
+    # Hybrid/unified hit the single session before any deps access, so empty
+    # namespaces suffice in cutover locks (no legacy two-phase).
+    _early = str(task_kind or "").strip().lower()
+    if _early in {"hybrid", "unified"}:
+        return run_task_mode(
             frame, work, hooks, deps,
-            task_kind="hybrid",
+            task_kind="hybrid" if _early == "hybrid" else "project",
             config_result=config_result,
         )
-    if _normalized == "unified":
-        return run_unified_mode(
-            frame, work, hooks, deps,
-            task_kind="project",
-            config_result=config_result,
-        )
+
     research_deps = _research_deps(deps)
 
     def run_project_operation(
@@ -250,16 +244,8 @@ def dispatch_run_mode(
             **kwargs,
         )
 
-    mode_deps = ModeDispatchDeps(
-        chat=lambda active_frame: run_chat_mode(
-            active_frame,
-            state=deps.state,
-            run_consensus=deps.run_consensus,
-            ghost_directive=lambda **kwargs: ghost_directive(deps.state, **kwargs),
-            ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
-            ghost_experiences=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
-        ),        project=run_project_operation,
-        research=lambda active_frame, active_hooks: run_research_mode(
+    def _run_research_op(active_frame: RunFrame, active_hooks: RunHooks) -> ModeOutcome:
+        return run_research_mode(
             research_deps,
             active_frame,
             active_hooks,
@@ -271,28 +257,40 @@ def dispatch_run_mode(
                 record_ledger_write=record_evidence_ledger_write,
                 **kwargs,
             ),
-        ),
-        hybrid=lambda active_frame, active_work, active_hooks: run_hybrid_mode(
-            active_frame,
-            active_work,
-            active_hooks,
-            config_result=config_result,
-            run_project=run_project_operation,
-            run_pipeline=lambda pipeline_frame, pipeline_hooks, **kwargs: run_research_pipeline(
-                research_deps,
-                pipeline_frame,
-                pipeline_hooks,
-                record_ledger_write=record_evidence_ledger_write,
-                **kwargs,
-            ),
-        ),
-        review=lambda active_frame: run_review_mode(review_deps, active_frame),
-        planning=lambda active_frame, active_work, **kwargs: run_planning_readonly_mode(
+        )
+
+    def _run_planning_op(active_frame: RunFrame, active_work: RunWork, **kwargs) -> ModeOutcome:
+        return run_planning_readonly_mode(
             _planning_deps(deps),
             active_frame,
             active_work,
             **kwargs,
-        ),
+        )
+
+    # Unified kinds go through the single entry (no early special, no old hybrid).
+    _normalized = str(task_kind or "").strip().lower()
+    if _normalized in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly", "unified"}:
+        return run_task_mode(
+            frame, work, hooks, deps,
+            task_kind=task_kind,
+            config_result=config_result,
+            run_project=run_project_operation,
+            run_research=_run_research_op,
+            run_planning=_run_planning_op,
+        )
+
+    mode_deps = ModeDispatchDeps(
+        chat=lambda active_frame: run_chat_mode(
+            active_frame,
+            state=deps.state,
+            run_consensus=deps.run_consensus,
+            ghost_directive=lambda **kwargs: ghost_directive(deps.state, **kwargs),
+            ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
+            ghost_experiences=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
+        ),        project=run_project_operation,
+        research=_run_research_op,
+        review=lambda active_frame: run_review_mode(review_deps, active_frame),
+        planning=_run_planning_op,
     )
     # Unified auto runs in the same batch as the Ghost-route removal: the first
     # normal model call decides direct answer vs permission-checked action, so

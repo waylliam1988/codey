@@ -28,7 +28,7 @@ def _unified_kind(task_kind: object) -> str:
 
 
 def build_unified_policy(request: Any, task_kind: object) -> Any:
-    from codey.operations.task_kernel import policy_for_dispatch
+    from codey.operations.task_loop import policy_for_dispatch
 
     kind = _unified_kind(task_kind)
     strict = kind == "research" or bool(getattr(request, "strict_research", False) is True)
@@ -78,7 +78,7 @@ def run_unified_mode(
     task_kind: str = "",
     config_result: Any = None,
 ) -> ModeOutcome:
-    from codey.operations.task_kernel import (
+    from codey.operations.task_loop import (
         TaskSession,
         _record_facts_for_result,
         apply_auto_plan,
@@ -107,7 +107,17 @@ def run_unified_mode(
         max_turns=max(1, int(getattr(request, "max_turns", 8) or 8)),
         task_text=execution_task(request),
         handoff=str(getattr(frame, "handoff", "") or ""),
+        project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
     )
+    # Seed the session workspace identity from the real outer evidence so
+    # verification facts can match the current files (never synthesized).
+    try:
+        ev = getattr(work, "evidence", None)
+        if ev is not None:
+            session.set_workspace_state(getattr(ev, "workspace_revision", 0),
+                                        getattr(ev, "workspace_fingerprint", ""))
+    except Exception:
+        pass
     project_path: Path | None = None
     if frame.project_text:
         candidate = Path(frame.project_text).expanduser()
@@ -150,7 +160,7 @@ def run_unified_mode(
     active_provider = frame.provider
     mutations = getattr(deps, "runtime_mutations", None)
     if mutations is not None and request.session_id and frame.run_id:
-        from codey.operations.kernel_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 
         mutations.mark_writer_running(request.session_id, frame.run_id,
                                       provider_id=frame.provider_id)
@@ -193,6 +203,7 @@ def run_unified_mode(
         },
         start_turn=resume_start,
         initial_results=initial_results or None,
+        provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
     )
     summary = str(result.summary or "")
     receipt = {"display": {"summary": summary[:2000]}}
@@ -221,7 +232,12 @@ def _decide_auto(frame: RunFrame) -> str:
         return ""
     try:
         prompt = build_auto_first_prompt(request.task, project=frame.project_text)
-        raw = provider.send(prompt, timeout=None)
+        try:
+            raw = provider.send(prompt, timeout=None)
+        except TypeError as exc:
+            if "timeout" not in str(exc):
+                raise
+            raw = provider.send(prompt)
     except Exception:
         return ""
     try:
@@ -255,10 +271,83 @@ def _direct_answer_outcome(frame: RunFrame, kind: str) -> ModeOutcome:
     })
 
 
+def run_task_mode(
+    frame: RunFrame,
+    work: RunWork,
+    hooks: RunHooks,
+    deps: Any,
+    *,
+    task_kind: str = "",
+    config_result: Any = None,
+    run_project: Any = None,
+    run_research: Any = None,
+    run_planning: Any = None,
+) -> ModeOutcome:
+    """Single task entry: auth + completion for project/research/hybrid/planning.
+
+    All kinds share one TaskSession/tool loop via ``run_task_kernel``; the
+    ResearchPipeline and project review/repair stay as strategy phases
+    scheduled here (project/research/planning delegate to their flows which
+    already drive the same kernel, hybrid runs one alternating session plus
+    ledger/review projections so outer quality is preserved).
+    """
+    kind = _unified_kind(task_kind or getattr(frame, "task_kind", ""))
+    if kind == "hybrid":
+        outcome = run_unified_mode(frame, work, hooks, deps, task_kind="hybrid", config_result=config_result)
+        # Preserve outer quality signals the old two-phase hybrid carried:
+        # research ledger projection + review trigger live alongside the
+        # single-session outcome (same SSE/events, same final display shape).
+        try:
+            return _enrich_hybrid_outcome(frame, work, outcome)
+        except Exception:
+            return outcome
+    if kind == "project" and callable(run_project):
+        return run_project(frame, work, hooks, config_result=config_result)
+    if kind == "research" and callable(run_research):
+        return run_research(frame, hooks)
+    if kind == "planning" and callable(run_planning):
+        return run_planning(frame, work, config_result=config_result)
+    # Fallback: direct unified kernel for kinds without a dedicated flow.
+    return run_unified_mode(frame, work, hooks, deps, task_kind=kind, config_result=config_result)
+
+
+def _enrich_hybrid_outcome(frame: RunFrame, work: RunWork, outcome: ModeOutcome) -> ModeOutcome:
+    """Attach research ledger + review hints without changing the single-session result."""
+    try:
+        event = dict(outcome.event or {})
+    except Exception:
+        return outcome
+    # Keep the single-session summary/stop_reason/turns; add ledger refs when
+    # the work evidence already carries them (same sources the old pipeline
+    # projected). SSE events were already emitted via hooks.on_event in the
+    # kernel, so the display shape stays ModeOutcome-compatible.
+    try:
+        evidence = getattr(work, "evidence", None)
+        if evidence is not None:
+            rendered = None
+            try:
+                rendered = evidence.render_for_review()
+            except Exception:
+                rendered = None
+            if rendered:
+                receipt = dict(event.get("receipt") or {})
+                display = dict(receipt.get("display") or {})
+                if "evidence" not in display:
+                    display["evidence"] = str(rendered)[:2000]
+                    receipt["display"] = display
+                    event["receipt"] = receipt
+    except Exception:
+        pass
+    try:
+        return ModeOutcome(event)
+    except Exception:
+        return outcome
+
+
 def _delivered_from_recovery(frame: RunFrame, *, effect_scope: str = "") -> dict[str, Any]:
     delivered: dict[str, Any] = {}
     try:
-        from codey.operations.task_kernel import turn_effect_id
+        from codey.operations.task_loop import turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
     except Exception:
         return delivered
@@ -281,4 +370,4 @@ def _delivered_from_recovery(frame: RunFrame, *, effect_scope: str = "") -> dict
     return delivered
 
 
-__all__ = ["build_unified_policy", "run_unified_mode"]
+__all__ = ["build_unified_policy", "run_task_mode", "run_unified_mode"]

@@ -19,7 +19,7 @@ def test_opt_in_task_kind_reaches_shared_kernel(project: str | None, expected: s
     request = TaskSubmission("s", project, "task", 2, False, "local", intent="unified")
     kind = resolve_task_kind(request)
     outcome = ModeOutcome({"type": "task_done", "mode": expected})
-    with patch("codey.operations.task_phases.dispatch.run_unified_mode", return_value=outcome) as unified:
+    with patch("codey.operations.task_phases.dispatch.run_task_mode", return_value=outcome) as unified:
         actual = dispatch_run_mode(
             SimpleNamespace(), SimpleNamespace(), SimpleNamespace(),
             SimpleNamespace(), SimpleNamespace(), SimpleNamespace(), kind,
@@ -42,7 +42,7 @@ def test_default_kinds_all_use_shared_kernel(kind: str) -> None:
     from codey.operations.task_phases.dispatch import dispatch_run_mode
 
     outcome = ModeOutcome({"type": "task_done", "mode": kind})
-    with patch("codey.operations.task_phases.dispatch.run_unified_mode", return_value=outcome) as unified:
+    with patch("codey.operations.task_phases.dispatch.run_task_mode", return_value=outcome) as unified:
         actual = dispatch_run_mode(
             SimpleNamespace(), SimpleNamespace(), SimpleNamespace(),
             SimpleNamespace(), SimpleNamespace(), SimpleNamespace(), kind,
@@ -85,7 +85,7 @@ def test_unified_research_builds_default_search_provider(tmp_path) -> None:
 
 
 def test_opt_in_unified_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
-    from codey.operations.task_kernel import KernelResult
+    from codey.operations.task_loop import KernelResult
     from codey.operations.unified_mode import run_unified_mode
     from codey.task.model import TaskSubmission
 
@@ -105,10 +105,10 @@ def test_opt_in_unified_entry_uses_same_runtime_receipts_and_events(tmp_path) ->
         knowledge_store=None, search_factory=None, runtime_mutations=mutations,
         managed_outputs=managed, state=None,
     )
-    with (patch("codey.operations.task_kernel.run_task_kernel",
+    with (patch("codey.operations.task_loop.run_task_kernel",
                 return_value=KernelResult(True, "done", 1, "done")) as kernel,
-          patch("codey.operations.kernel_effects.KernelEffectSink") as sink_type,
-          patch("codey.operations.kernel_effects.KernelRecordedProvider") as recorded):
+          patch("codey.operations.task_effects.KernelEffectSink") as sink_type,
+          patch("codey.operations.task_effects.KernelRecordedProvider") as recorded):
         result = run_unified_mode(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
                                   hooks, deps)
     assert result.event["stop_reason"] == "done"
@@ -121,7 +121,7 @@ def test_opt_in_unified_entry_uses_same_runtime_receipts_and_events(tmp_path) ->
 
 
 def test_unified_entry_creates_new_authorized_project(tmp_path) -> None:
-    from codey.operations.task_kernel import KernelResult
+    from codey.operations.task_loop import KernelResult
     from codey.operations.unified_mode import run_unified_mode
     from codey.task.model import TaskSubmission
 
@@ -136,7 +136,7 @@ def test_unified_entry_creates_new_authorized_project(tmp_path) -> None:
     )
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=None)
-    with patch("codey.operations.task_kernel.run_task_kernel",
+    with patch("codey.operations.task_loop.run_task_kernel",
                return_value=KernelResult(True, "done", 1, "done")) as kernel:
         run_unified_mode(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
                          hooks, deps)
@@ -145,7 +145,7 @@ def test_unified_entry_creates_new_authorized_project(tmp_path) -> None:
 
 
 def test_unified_kernel_passes_authoritative_research_ledger_to_gate() -> None:
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import TaskPolicy
 
     session = TaskSession(
@@ -164,7 +164,7 @@ def test_unified_kernel_passes_authoritative_research_ledger_to_gate() -> None:
 
 
 def test_explicit_research_prompt_explains_evidence_and_report_contract() -> None:
-    from codey.operations.task_kernel import TaskSession, kernel_prompt_for_session
+    from codey.operations.task_loop import TaskSession, kernel_prompt_for_session
     from codey.policies.task_policy import TaskPolicy
 
     session = TaskSession(
@@ -181,7 +181,7 @@ def test_explicit_research_prompt_explains_evidence_and_report_contract() -> Non
 def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
     from codey.knowledge.changes import KnowledgeChanges
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import build_task_policy
     from codey.research.tools import ResearchTools
     from codey.task.model import TaskSubmission
@@ -218,7 +218,7 @@ def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
 
 
 def test_search_result_ids_remain_stable_across_searches() -> None:
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall
 
@@ -237,7 +237,7 @@ def test_search_result_ids_remain_stable_across_searches() -> None:
 
 
 def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall
 
@@ -288,8 +288,8 @@ def test_default_project_writer_uses_shared_turn_kernel(tmp_path) -> None:
         def close(self):
             return None
 
-    with patch("codey.operations.task_kernel.run_task_kernel", wraps=None) as kernel:
-        from codey.operations.task_kernel import KernelResult
+    with patch("codey.operations.task_loop.run_task_kernel", wraps=None) as kernel:
+        from codey.operations.task_loop import KernelResult
 
         kernel.return_value = KernelResult(True, "read the file", 2, "done")
         result = task_submit.agent_run(AgentRequest(
@@ -301,7 +301,7 @@ def test_default_project_writer_uses_shared_turn_kernel(tmp_path) -> None:
 
 def test_project_writer_can_search_and_read_in_one_model_loop(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     (tmp_path / "file.txt").write_text("local content", encoding="utf-8")
     replies = iter([
@@ -341,7 +341,7 @@ def test_project_writer_can_search_and_read_in_one_model_loop(tmp_path) -> None:
 
 def test_project_writer_keeps_bounded_project_context_in_first_prompt(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     (tmp_path / "AGENTS.md").write_text("Follow the local migration rule.", encoding="utf-8")
     prompts: list[str] = []
@@ -371,7 +371,7 @@ def test_project_writer_keeps_bounded_project_context_in_first_prompt(tmp_path) 
 def test_project_writer_prompts_with_selected_verification_candidates(tmp_path) -> None:
     from codey.agents.request import AgentRequest
     from codey.completion.verification_policy import VerificationCandidate
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     prompts: list[str] = []
 
@@ -392,7 +392,7 @@ def test_project_writer_prompts_with_selected_verification_candidates(tmp_path) 
 
 def test_planning_adapter_exposes_only_read_capabilities(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     prompts: list[str] = []
 
@@ -415,7 +415,7 @@ def test_planning_adapter_exposes_only_read_capabilities(tmp_path) -> None:
 
 def test_web_chat_refresh_failure_keeps_allowed_existing_tab(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     class Provider:
         name = "deepseek"
@@ -436,7 +436,7 @@ def test_web_chat_refresh_failure_keeps_allowed_existing_tab(tmp_path) -> None:
 def test_shared_writer_updates_conversation_window_usage(tmp_path) -> None:
     from codey.agents.handoff import ConversationContext
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     class Provider:
         name = "deepseek"
@@ -459,7 +459,7 @@ def test_shared_writer_updates_conversation_window_usage(tmp_path) -> None:
 
 def test_writer_stops_after_configured_invalid_turn_limit(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     calls: list[str] = []
 
@@ -481,7 +481,7 @@ def test_writer_stops_after_configured_invalid_turn_limit(tmp_path) -> None:
 
 def test_writer_can_create_a_user_selected_new_project(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     project = tmp_path / "new-project"
 
@@ -501,7 +501,7 @@ def test_writer_can_create_a_user_selected_new_project(tmp_path) -> None:
 def test_failed_verification_after_pass_blocks_done_at_same_revision(tmp_path) -> None:
     from codey.agents.tools import AgentToolFns
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolCall
     from codey.task.model import TaskSubmission
@@ -523,7 +523,7 @@ def test_failed_verification_after_pass_blocks_done_at_same_revision(tmp_path) -
 
 
 def test_noop_edit_does_not_create_false_freshness(tmp_path) -> None:
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolCall
     from codey.task.model import TaskSubmission
@@ -542,7 +542,7 @@ def test_noop_edit_does_not_create_false_freshness(tmp_path) -> None:
 
 def test_default_research_iteration_uses_shared_turn_kernel() -> None:
     from codey.operations.research_flow import run_unified_research_iteration
-    from codey.operations.task_kernel import KernelResult
+    from codey.operations.task_loop import KernelResult
     from codey.research.ledger import ResearchLedger
 
     tools = SimpleNamespace(
@@ -551,7 +551,7 @@ def test_default_research_iteration_uses_shared_turn_kernel() -> None:
     )
     deps = SimpleNamespace(knowledge_store=object(), managed_outputs=None, run_research_advisors=None)
     provider = SimpleNamespace(new_chat=lambda: None)
-    with patch("codey.operations.task_kernel.run_task_kernel", return_value=KernelResult(
+    with patch("codey.operations.task_loop.run_task_kernel", return_value=KernelResult(
         False, "unfinished", 1, "max_turns",
     )) as kernel:
         iteration = run_unified_research_iteration(
@@ -567,7 +567,7 @@ def test_default_research_iteration_uses_shared_turn_kernel() -> None:
 
 def test_research_done_builds_proof_record_from_current_ledger() -> None:
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_kernel import TaskSession
+    from codey.operations.task_loop import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.research.ledger import ResearchLedger
 
@@ -583,7 +583,7 @@ def test_research_done_builds_proof_record_from_current_ledger() -> None:
 
 def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> None:
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.unified_research_iteration import run_unified_research_iteration
+    from codey.operations.research_iteration import run_unified_research_iteration
 
     url = "https://example.com/pipeline"
     answer = (
@@ -639,7 +639,7 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> 
 
 def test_project_shell_requests_approval_in_shared_kernel(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     approvals: list[object] = []
 
@@ -662,7 +662,7 @@ def test_project_shell_requests_approval_in_shared_kernel(tmp_path) -> None:
 
 
 def test_shell_approval_records_turn_intent_before_notifying_user(tmp_path) -> None:
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
 
@@ -703,7 +703,7 @@ def test_research_write_requires_project_writer_lease() -> None:
 
 
 def test_kernel_records_intent_before_project_tool_execution(tmp_path) -> None:
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
 
@@ -733,7 +733,7 @@ def test_kernel_records_intent_before_project_tool_execution(tmp_path) -> None:
 
 
 def test_failed_intent_commit_prevents_tool_execution(tmp_path) -> None:
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolCall
     from codey.task.model import TaskSubmission
@@ -753,8 +753,8 @@ def test_failed_intent_commit_prevents_tool_execution(tmp_path) -> None:
 
 
 def test_production_kernel_persists_tool_and_delivery_receipts(tmp_path) -> None:
-    from codey.operations.kernel_effects import KernelEffectSink, KernelRecordedProvider
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
@@ -796,7 +796,7 @@ def test_production_kernel_persists_tool_and_delivery_receipts(tmp_path) -> None
 
 
 def test_shared_effect_replay_class_matches_tool_contract(tmp_path) -> None:
-    from codey.operations.kernel_effects import KernelEffectSink
+    from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.core.models import ToolCall
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.log.session_log import RuntimeSessionLog
@@ -820,8 +820,8 @@ def test_shared_effect_replay_class_matches_tool_contract(tmp_path) -> None:
 
 
 def test_same_run_research_and_writer_effect_slots_do_not_collide(tmp_path) -> None:
-    from codey.operations.kernel_effects import KernelEffectSink, KernelRecordedProvider
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall
     from codey.runtime.effects.effect_records import RuntimeEffectStore
@@ -857,7 +857,7 @@ def test_same_run_research_and_writer_effect_slots_do_not_collide(tmp_path) -> N
 
 def test_default_writer_records_effects_in_existing_runtime(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -892,7 +892,7 @@ def test_default_writer_records_effects_in_existing_runtime(tmp_path) -> None:
 
 def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_path) -> None:
     from codey.agents.request import AgentRequest, RecoveredToolOutcome
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
     from codey.runtime.core.models import ToolCall
     from codey.toolchain.runtime import ToolOutcome
 
@@ -908,7 +908,7 @@ def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_pat
             seen.append(str(prompt))
             return next(replies)
 
-    with patch("codey.operations.kernel_execution.ExecutionDelegate._execute_project") as executed:
+    with patch("codey.operations.task_execution.ExecutionDelegate._execute_project") as executed:
         result = run(AgentRequest(
             provider=Provider(), project=tmp_path, task="read", max_turns=3,
             fresh_chat=False, run_id="r", provider_id="deepseek",
@@ -925,7 +925,7 @@ def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_pat
 
 def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) -> None:
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.unified_research_iteration import run_unified_research_iteration
+    from codey.operations.research_iteration import run_unified_research_iteration
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -1004,7 +1004,7 @@ def test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard() ->
 
 
 def test_unified_edit_keeps_existing_file_guard_and_read_before_edit(tmp_path) -> None:
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolCall
     from codey.task.model import TaskSubmission
@@ -1033,7 +1033,7 @@ def test_unified_edit_keeps_existing_file_guard_and_read_before_edit(tmp_path) -
 
 def test_unified_writer_notifies_change_tracker_around_edit(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
 
     class Tracker:
         def __init__(self):
@@ -1067,7 +1067,7 @@ def test_native_writer_uses_same_durable_delivery_chain(tmp_path, monkeypatch) -
     from codey.agents.handoff import ConversationContext
     from codey.agents.request import AgentRequest
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.log.session_log import RuntimeSessionLog
@@ -1110,7 +1110,7 @@ def test_native_writer_uses_same_durable_delivery_chain(tmp_path, monkeypatch) -
 
 def test_native_final_turn_answers_tool_call_before_budget_stop(tmp_path, monkeypatch) -> None:
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import build_task_policy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.task.model import TaskSubmission
@@ -1141,7 +1141,7 @@ def test_native_final_turn_answers_tool_call_before_budget_stop(tmp_path, monkey
 
 def test_native_budget_stop_rejects_following_dangling_tool_call(tmp_path, monkeypatch) -> None:
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.operations.task_kernel import TaskSession, run_task_kernel
+    from codey.operations.task_loop import TaskSession, run_task_kernel
     from codey.policies.task_policy import build_task_policy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.task.model import TaskSubmission
@@ -1177,7 +1177,7 @@ def test_native_budget_stop_rejects_following_dangling_tool_call(tmp_path, monke
 def test_unified_writer_keeps_managed_output_receipt_in_event(tmp_path) -> None:
     from codey.agents.request import AgentRequest
     from codey.agents.tools import AgentToolFns
-    from codey.operations.unified_agent_adapter import run
+    from codey.operations.project_adapter import run
     from codey.toolchain.runtime import ToolOutcome
 
     replies = iter([
@@ -1213,7 +1213,7 @@ def test_unified_writer_keeps_managed_output_receipt_in_event(tmp_path) -> None:
 def test_unified_research_externalizes_large_opened_source(tmp_path) -> None:
     from codey.knowledge.changes import KnowledgeChanges
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import build_task_policy
     from codey.research.tools import ResearchTools
     from codey.runtime.core.models import ToolCall
@@ -1244,7 +1244,7 @@ def test_unified_research_externalizes_large_opened_source(tmp_path) -> None:
 
 
 def test_research_controller_keeps_authorized_project_read_available(tmp_path) -> None:
-    from codey.operations.task_kernel import (
+    from codey.operations.task_loop import (
         TaskSession,
         controller_allowed_for_session,
         normalize_turn,
@@ -1264,7 +1264,7 @@ def test_research_controller_keeps_authorized_project_read_available(tmp_path) -
 
 def test_research_project_verification_runs_without_write_grant(tmp_path) -> None:
     from codey.agents.tools import AgentToolFns
-    from codey.operations.task_kernel import TaskSession, execute_turn
+    from codey.operations.task_loop import TaskSession, execute_turn
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolCall
     from codey.task.model import TaskSubmission

@@ -13,19 +13,10 @@ from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
 from codey.policies.permissions import PermissionProfile
 from codey.protocols import ProtocolCodec
+from codey.runtime.core.run_result import RunResult  # noqa: F401  (neutral re-export)
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, RenderedPromptSection
 from codey.workspace.context_source import RenderedContextSource
-
-
-@dataclass
-class RunResult:
-    summary: str
-    stop_reason: str = "done"  # done | stopped | max_turns | no_progress | protocol
-    turns: int = 0
-    checks_passed: bool = False
-    changed: bool = False
-    checks_ran: bool = False
 
 
 @dataclass

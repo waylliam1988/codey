@@ -61,46 +61,4 @@ class ToolRegistry:
 DEFAULT_REGISTRY = ToolRegistry()
 
 
-def snapshot_for_policy(
-    policy: object | None,
-    *,
-    research_allowed: Sequence[str] | None = None,
-    mode: str = "coding",
-    registry: ToolRegistry | None = None,
-) -> ToolRegistrySnapshot:
-    """Coding snapshot filtered by an immutable TaskPolicy.
-
-    The Research controller state (``research_allowed``) only narrows research
-    tools; it never removes project tools from a hybrid run. Coding visibility
-    is ``tool grant in policy.grants`` via the single ToolSpec source.
-    Unknown or missing policies expose nothing. ``research_allowed`` is
-    accepted for call-site uniformity and otherwise ignored here.
-    """
-
-    _ = research_allowed
-    if policy is None:
-        return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=())
-    try:
-        allows = getattr(policy, "allows", None)
-        if not callable(allows):
-            return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=())
-        try:
-            from codey.toolchain.tool_spec import tool_specs as _specs
-            specs = _specs()
-            names = [name for name, spec in specs.items()
-                     if spec.executor == "project" and bool(allows(spec.grant))]
-        except Exception:
-            from codey.policies.task_policy import CODING_TOOL_GRANTS as _fallback
-            names = [name for name, grant in _fallback.items() if bool(allows(grant))]
-        if registry is not None:
-            definitions = registry.definitions_for_names(tuple(names))
-        else:
-            definitions = tool_defs.definitions_for_tool_names(tuple(names))
-    except Exception:
-        return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=())
-    if not definitions:
-        return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=())
-    return ToolRegistrySnapshot(profile_name="task_policy", mode=mode, definitions=definitions)
-
-
-__all__ = ["DEFAULT_REGISTRY", "ToolRegistry", "ToolRegistrySnapshot", "snapshot_for_policy"]
+__all__ = ["DEFAULT_REGISTRY", "ToolRegistry", "ToolRegistrySnapshot"]

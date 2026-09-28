@@ -31,8 +31,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
-from codey.agents.runner import RunResult
 from codey.operations.result import ModeOutcome
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 
 AUTO_ACTION_KINDS = ("research", "project", "planning_readonly", "review")

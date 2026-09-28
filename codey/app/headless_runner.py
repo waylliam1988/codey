@@ -23,8 +23,8 @@ from codey.app.context import (
     REVIEW_LOG_LINES,
     AppContext,
 )
+from codey.operations.project_adapter import run as default_agent_run
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
-from codey.operations.unified_agent_adapter import run as default_agent_run
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers.diagnostics import capture_provider_failure as default_capture_provider_failure
 from codey.providers.registry import connect_provider as default_connect_provider

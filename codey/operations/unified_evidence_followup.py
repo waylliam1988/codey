@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from codey.operations.task_kernel import TaskSession, run_task_kernel
+from codey.operations.task_loop import TaskSession, run_task_kernel
 from codey.policies.task_policy import TaskPolicy
 from codey.research.evidence_followup import (
     EvidenceFollowupController,
@@ -67,7 +67,7 @@ def run_unified_evidence_followup(
         active_provider = provider
         sink = None
         if runtime_mutations is not None and session_id and run_id:
-            from codey.operations.kernel_effects import KernelEffectSink, KernelRecordedProvider
+            from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 
             runtime_mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
             sink = KernelEffectSink(

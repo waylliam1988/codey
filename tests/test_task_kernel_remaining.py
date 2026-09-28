@@ -33,7 +33,7 @@ def _policy(**kwargs):
 
 class NormalizeParityTests(unittest.TestCase):
     def test_same_snapshot_same_capability_json_and_native(self) -> None:
-        from codey.operations.task_kernel import normalize_turn
+        from codey.operations.task_loop import normalize_turn
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
         policy = _policy(
@@ -59,7 +59,7 @@ class NormalizeParityTests(unittest.TestCase):
         self.assertEqual(native_plan.calls[0].name, json_plan.calls[0].name)
 
     def test_illegal_args_rejected_before_executor_on_both_paths(self) -> None:
-        from codey.operations.task_kernel import normalize_turn
+        from codey.operations.task_loop import normalize_turn
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
         policy = _policy(
@@ -84,7 +84,7 @@ class NormalizeParityTests(unittest.TestCase):
         self.assertEqual(native_plan.calls, [])
 
     def test_native_rejection_answers_every_call_id(self) -> None:
-        from codey.operations.task_kernel import execute_turn, normalize_turn
+        from codey.operations.task_loop import execute_turn, normalize_turn
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
         policy = _policy(task_kind="planning")
@@ -101,7 +101,7 @@ class NormalizeParityTests(unittest.TestCase):
         # Planning must reject edit at parse time; execution must still answer
         # every native call id with a legal result instead of dropping one.
         self.assertNotEqual(plan.protocol_error, "")
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_loop import TaskSession
 
         session = TaskSession(policy=policy, task_kind="planning", project="demo", max_turns=8)
         results = execute_turn(
@@ -125,7 +125,7 @@ class NormalizeParityTests(unittest.TestCase):
             self.assertIn("ERROR", result.model_text)
 
     def test_controller_denial_applies_to_json_and_native(self) -> None:
-        from codey.operations.task_kernel import normalize_turn
+        from codey.operations.task_loop import normalize_turn
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
         policy = _policy(task_kind="research", strict_research=True)
@@ -158,7 +158,7 @@ class NormalizeParityTests(unittest.TestCase):
 
 class WebOnlyLoopTests(unittest.TestCase):
     def test_web_only_model_completes_mixed_turns_without_native(self) -> None:
-        from codey.operations.task_kernel import TaskSession, run_task_kernel
+        from codey.operations.task_loop import TaskSession, run_task_kernel
         from codey.runtime.core.models import ToolResult
 
         policy = _policy(
@@ -227,7 +227,7 @@ class WebOnlyLoopTests(unittest.TestCase):
         self.assertFalse(hasattr(provider, "send_turn"))
 
     def test_native_parity_same_completion(self) -> None:
-        from codey.operations.task_kernel import TaskSession, run_task_kernel
+        from codey.operations.task_loop import TaskSession, run_task_kernel
         from codey.providers.base import AssistantTurn, ProviderToolCall
         from codey.runtime.core.models import ToolResult
 
@@ -276,7 +276,7 @@ class WebOnlyLoopTests(unittest.TestCase):
 class CompletionGateTests(unittest.TestCase):
     def test_search_only_cannot_complete_strict_research(self) -> None:
         from codey.operations.completion_gate import evaluate
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_loop import TaskSession
 
         policy = _policy(task_kind="research", strict_research=True)
         session = TaskSession(policy=policy, task_kind="research", project="demo", max_turns=8)
@@ -287,7 +287,7 @@ class CompletionGateTests(unittest.TestCase):
 
     def test_stale_verification_cannot_complete_then_fresh_can(self) -> None:
         from codey.operations.completion_gate import evaluate
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_loop import TaskSession
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -310,7 +310,7 @@ class CompletionGateTests(unittest.TestCase):
 
     def test_programming_with_web_needs_no_research_notes(self) -> None:
         from codey.operations.completion_gate import evaluate
-        from codey.operations.task_kernel import TaskSession
+        from codey.operations.task_loop import TaskSession
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -326,7 +326,7 @@ class CompletionGateTests(unittest.TestCase):
 
 class HybridAndPlanningTests(unittest.TestCase):
     def test_hybrid_interleaves_web_and_project_in_one_run(self) -> None:
-        from codey.operations.task_kernel import TaskSession, run_task_kernel
+        from codey.operations.task_loop import TaskSession, run_task_kernel
         from codey.runtime.core.models import ToolResult
 
         policy = _policy(
@@ -376,7 +376,7 @@ class HybridAndPlanningTests(unittest.TestCase):
         self.assertEqual(order, ["web_search", "open_url", "read_file", "edit", "run"])
 
     def test_readonly_planning_cannot_write(self) -> None:
-        from codey.operations.task_kernel import TaskSession, execute_turn, normalize_turn
+        from codey.operations.task_loop import TaskSession, execute_turn, normalize_turn
         from codey.runtime.core.models import ToolCall
 
         policy = _policy(task_kind="planning")
@@ -445,7 +445,7 @@ class RecoveryTests(unittest.TestCase):
     def test_resume_does_not_repeat_dangerous_actions(self) -> None:
         # Call identity is run+turn+index (durable intent slots), never
         # tool+args: same-slot retries reuse, new turns re-execute.
-        from codey.operations.task_kernel import TaskSession, execute_turn
+        from codey.operations.task_loop import TaskSession, execute_turn
         from codey.runtime.core.models import ToolCall, ToolResult
 
         policy = _policy(
@@ -493,7 +493,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(third), 4)
 
     def test_provider_switch_keeps_results(self) -> None:
-        from codey.operations.task_kernel import TaskSession, execute_turn, normalize_turn, turn_effect_id
+        from codey.operations.task_loop import TaskSession, execute_turn, normalize_turn, turn_effect_id
         from codey.runtime.core.models import ToolResult
 
         policy = _policy(
@@ -515,7 +515,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         delivered = {turn_effect_id("run-1", 1, 0): results[0]}
         payload = session.to_payload()
-        from codey.operations.task_kernel import TaskSession as RevivedSession
+        from codey.operations.task_loop import TaskSession as RevivedSession
 
         revived = RevivedSession.from_payload(payload, policy=policy)
         again = execute_turn(revived, plan.calls, executors={"web_search": fake_search},

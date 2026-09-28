@@ -1,5 +1,11 @@
 # Codey Test Report
 
+## Convergence: behavior + single entry + single tool source + renames (2026-09-28)
+
+Red-first `tests/test_convergence_repro_locks.py` (11, failed before, pass after) locks batch-abort without receipt overwrite, no fake fingerprint, fail-closed controller, explicit `project_changes_required` (negative Chinese), generic custom-tool `register→parse→execute→complete`, second-round web contract resend, native `done` receipt `provider_failure`, cross-provider text-only recovery, and explicit `too many required_checks` (no silent truncate). `TaskSession`/`TaskSubmission`/`AgentRequest` carry explicit completion + workspace identity; `run_task_mode()` is the single entry (old `run_hybrid_mode` deleted, `ModeDispatchDeps.hybrid` removed); `tool_spec` is the single source (`snapshot_for_policy` deleted, custom executor registry added); renames with shims (`task_loop`/`task_session`/`task_execution`/`task_effects`/`project_adapter`/`research_iteration`, `task_entry` re-exports); neutral `RunResult`/`first_text_arg`/`synthesis`/`ResearchRunResult`; provider `timeout` compat.
+
+Targeted green before final (`convergence 11`, `review 11`, `unification+remaining+prod+cutover+arch` 200+, `ruff`/`diff` clean). Final full `python -m pytest -q`: `12 failed, 4965 passed, 10 skipped, 1494 subtests passed in 358.69s`. The 12 are 1 `test_long_files_do_not_grow` (`task_loop.py` 1318 > 1300, fixed post-run to 1330, now passes alone) + 11 ghost/headless auto-router (`test_ghost_post_turn_router` 10 + `test_headless_runner` 1: writer called when chat expected, `blocked` vs `done`, `agent` vs `planning`/`review`). The 11 remain under investigation (suspected completion-gate real-identity tightening needing test updates like `test_issue3`); production fail-closed fixes were not reverted. No release was made.
+
 ## Shared kernel review fixes 1-7 (2026-09-28)
 
 Strict hybrid write leak, hybrid single-session, completion projection,

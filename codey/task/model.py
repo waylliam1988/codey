@@ -34,6 +34,10 @@ class TaskSubmission:
     requested_capabilities: tuple[str, ...] = ()
     # Strict Research was explicitly enabled for this submission.
     strict_research: bool = False
+    # Explicit completion requirement from the task entry. The completion
+    # gate never infers this from keywords or write permission; read-only
+    # tasks keep False even when the policy still grants project.write.
+    project_changes_required: bool = False
 
 
 def execution_task(request: TaskSubmission) -> str:

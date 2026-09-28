@@ -92,6 +92,7 @@ class AgentRequest:
     recovered_tool_result_batch_id: str = ""
     requested_capabilities: tuple[str, ...] = ()
     research_tools: object | None = None
+    project_changes_required: bool = False
 
 
 __all__ = [

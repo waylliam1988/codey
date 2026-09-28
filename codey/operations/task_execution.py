@@ -73,7 +73,7 @@ class ExecutionDelegate:
     def handles(self, name: str) -> bool:
         lowered = str(name or "").strip().lower()
         try:
-            from codey.toolchain.tool_spec import spec_for_tool
+            from codey.toolchain.tool_spec import custom_executor_for, spec_for_tool
         except Exception:
             return False
         try:
@@ -86,21 +86,51 @@ class ExecutionDelegate:
             return self.project_path is not None and self.tool_fns is not None
         if spec.executor in {"source", "knowledge"}:
             return self.research_tools is not None
+        try:
+            if custom_executor_for(lowered) is not None:
+                return True
+        except Exception:
+            pass
         return False
 
     def execute(self, call: ToolCall, *, turn: int = 0,
                 tool_index: int = 0) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
         name = str(call.name or "").strip().lower()
         try:
-            from codey.toolchain.tool_spec import spec_for_tool
+            from codey.toolchain.tool_spec import custom_executor_for, spec_for_tool
             spec = spec_for_tool(name)
             executor = spec.executor if spec is not None else ""
         except Exception:
             executor = ""
+            custom_executor_for = None  # type: ignore[assignment]
         if executor == "project":
             return self._execute_project(call)
         if executor in {"source", "knowledge"}:
             return self._execute_research(call, turn=turn, tool_index=tool_index)
+        # Third-task tools run via the generic ToolSpec executor registry.
+        if custom_executor_for is not None:
+            try:
+                fn = custom_executor_for(name)
+            except Exception:
+                fn = None
+            if callable(fn):
+                try:
+                    produced = fn(call)
+                except Exception as exc:
+                    result = ToolResult(call=call, model_text=f"ERROR: {exc or 'tool failed'}")
+                    return result, False, "", [], None
+                if isinstance(produced, ToolResult):
+                    result = produced
+                elif isinstance(produced, str):
+                    result = ToolResult(call=call, model_text=produced)
+                else:
+                    result = ToolResult(call=call, model_text=str(produced))
+                from codey.operations.task_loop import _result_ok as _ok
+                try:
+                    ok = bool(_ok(name, result))
+                except Exception:
+                    ok = not str(result.model_text or "").startswith("ERROR:")
+                return result, ok, "", [], None
         result = ToolResult(call=call, model_text=f"ERROR: no production executor for {name or '?'}")
         return result, False, "", [], None
 
@@ -262,7 +292,7 @@ class ExecutionDelegate:
         args = dict(call.args or {})
         try:
             if name == "web_search":
-                from codey.research.runner import first_text_arg
+                from codey.research.text_args import first_text_arg
 
                 text = tools.web_search(first_text_arg(args, "query"))
                 return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
@@ -292,7 +322,7 @@ class ExecutionDelegate:
                     text = self._attach_hit_ids(text, url)
                 return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
             if name == "knowledge_search":
-                from codey.research.runner import first_text_arg
+                from codey.research.text_args import first_text_arg
 
                 text = tools.knowledge_search(first_text_arg(args, "query"))
                 return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
