@@ -13,8 +13,24 @@ class NativeBudgetExhausted(RuntimeError):
     """Native chain kept emitting tool calls past the budget drain limit."""
 
 
+def _explicit_reply_normalizer(provider: Any) -> Any:
+    """Find an explicitly declared provider hook without triggering ``__getattr__``."""
+    try:
+        instance_attributes = vars(provider)
+    except TypeError:
+        instance_attributes = {}
+    if "normalize_reply" in instance_attributes:
+        return instance_attributes["normalize_reply"]
+    for provider_type in type(provider).__mro__:
+        if "normalize_reply" in provider_type.__dict__:
+            return getattr(provider, "normalize_reply", None)
+    return None
+
+
 def call_provider_send(provider: Any, prompt: str) -> Any:
-    return provider.send(prompt)
+    reply = provider.send(prompt)
+    normalize = _explicit_reply_normalizer(provider)
+    return normalize(reply) if callable(normalize) else reply
 
 
 def call_provider_send_turn(provider: Any, prompt: str, tools: Any) -> Any:

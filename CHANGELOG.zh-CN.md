@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 统一 Kernel 的本地 provider 文本 codec（未发布）
+
+- local provider 响应现在先经过 `local_response_codec`，再进入统一
+  kernel。完整且受支持的文本工具帧会归一化为标准
+  `AssistantTurn`/`ProviderToolCall`；kernel 不认识 Gemma、Qwen 或其他
+  模型模板。
+- codec 使用安全字面量解析、稳定的 local call id 和严格完整帧匹配；半截帧
+  或非法帧保持为普通文本。归一化后仍由 kernel 执行 ToolSpec 与 policy 校验。
+- 新增准确命名的 codec/provider 边界测试，并锁定动态 mock 属性不能被误判为
+  显式 provider hook。统一前后本地实机 A/B 记录于
+  `tests/manual/KERNEL_UNIFICATION_AB_REPORT.zh-CN.md`。
+- 最终验证：`ruff`、`compileall`、`git diff --check` 全洁。全量
+  `python -m pytest -q -p no:cacheprovider`：`5092 passed, 32 skipped，
+  1471 subtests passed in 353.14s`。
+- 未发布。
+
 ## Unreleased - Provider 协议边界与测试收集卫生（未发布）
 
 - kernel 现在只接受 canonical JSON 文档（允许通用 Markdown JSON 围栏）或

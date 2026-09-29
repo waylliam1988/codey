@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Local provider text codec for unified kernel (no release)
+
+- Local provider responses now pass through `local_response_codec` before the
+  unified kernel. A complete supported text tool frame becomes the standard
+  `AssistantTurn`/`ProviderToolCall`; the kernel remains unaware of Gemma,
+  Qwen, or any other model template.
+- The codec uses safe literal parsing, stable local call ids, exact complete
+  frame matching, and leaves partial/invalid frames as plain text. ToolSpec
+  and policy validation still run in the kernel after normalization.
+- Added accurately named codec and provider-boundary tests, including a lock
+  against dynamic mock attributes being mistaken for an explicit provider
+  hook. The local Codey-vs-pre-unification A/B report is recorded in
+  `tests/manual/KERNEL_UNIFICATION_AB_REPORT.zh-CN.md`.
+- Final verification: `ruff`, `compileall`, and `git diff --check` clean.
+  Full `python -m pytest -q -p no:cacheprovider`: `5092 passed, 32 skipped,
+  1471 subtests passed in 353.14s`.
+- No release was made.
+
 ## Unreleased - Provider protocol boundary and test collection hygiene (no release)
 
 - The kernel now accepts canonical JSON documents (with only a generic

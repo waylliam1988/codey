@@ -125,6 +125,12 @@ class LocalOpenAIProvider:
             self._generation += 1
             self._messages = []
 
+    def normalize_reply(self, reply: str) -> object:
+        """Normalize provider-specific text frames before kernel parsing."""
+        from codey.providers.local_response_codec import normalize_local_reply
+
+        return normalize_local_reply(reply)
+
     def abandon_inflight(self) -> None:
         """Invalidate a still-running send so its late reply skips history."""
         with self._state_lock:

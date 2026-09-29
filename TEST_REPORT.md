@@ -1,5 +1,27 @@
 # Codey Test Report
 
+## Local provider codec and kernel-unification A/B (2026-09-30)
+
+- Scope: normalize complete local text tool frames in the provider adapter,
+  keep model-template parsing out of the unified kernel, and compare the
+  pre-unification commit `958bcb485bf05d0ae8232763681d1df5ecee1d34` with the
+  current kernel under the same Gemma 12B task.
+- Deterministic locks: complete frame parsing, direct/wrapped arguments,
+  incomplete/invalid frame rejection, stable call ids, provider normalize hook,
+  kernel ToolSpec/policy validation, and rejection of implicit dynamic mock
+  attributes as hooks.
+- The A/B report is `tests/manual/KERNEL_UNIFICATION_AB_REPORT.zh-CN.md`.
+  r1 reproduced the real Gemma markup gap; r4 completed the text-mode task
+  after the provider codec fix. No duplicate mutation occurred in either r4
+  arm; the unified arm had one repeated tool request but one mutation.
+- Pre-checks: `ruff check codey tests tools`, `python -m compileall -q codey
+  tests`, and `git diff --check` clean. Focused codec/provider/kernel suites:
+  `77 passed, 5 subtests passed`.
+- Final full run `python -m pytest -q -p no:cacheprovider`:
+  `5092 passed, 32 skipped, 1471 subtests passed in 353.14s (0:05:53)`.
+  Zero failures.
+- No release was made.
+
 ## Provider protocol boundary and local A/B harness (2026-09-30)
 
 - Detailed r1-r7 stability analysis: `tests/manual/LOCAL_MODEL_PI_AB_REPORT.zh-CN.md`.
