@@ -1,13 +1,13 @@
-"""Production import graph must not use legacy model loops.
+"""Legacy loops must be gone: files deleted, no importers in prod or tests.
 
 Locks:
 - ``codey.research.evidence_followup.run_evidence_followup`` (direct
   provider.send loop) has no production importers; production uses
   ``codey.operations.evidence_followup``.
 - Legacy ``agents.prompt_context/result_delivery/tool_turn`` and
-  ``protocols.native_openai``/``toolchain.registry`` have no production
-  importers (tests/manual only). ``agents.tool_execution`` + ``agents.request``
-  stay (still used).
+  ``protocols.native_openai`` are deleted: files must not exist and neither
+  production nor tests may import them. ``agents.tool_execution`` +
+  ``agents.request`` stay (still used).
 """
 from __future__ import annotations
 
@@ -88,7 +88,18 @@ class NoLegacyLoopsTests(unittest.TestCase):
         self.assertNotIn("run_evidence_followup", pipe)
         self.assertEqual(offenders, [], f"production importers of old loop: {offenders}")
 
-    def test_legacy_modules_have_no_production_importers(self) -> None:
+    def test_legacy_modules_deleted(self) -> None:
+        for rel in (
+            "codey/agents/prompt_context.py",
+            "codey/agents/result_delivery.py",
+            "codey/agents/tool_turn.py",
+            "codey/protocols/native_openai.py",
+            "codey/research/evidence_followup.py",
+            "tests/test_native_openai_codec.py",
+        ):
+            self.assertFalse((ROOT / rel).exists(), f"legacy file must be deleted: {rel}")
+
+    def test_legacy_modules_have_no_importers(self) -> None:
         legacy_names = {
             "codey.agents.prompt_context",
             "codey.agents.result_delivery",
@@ -97,26 +108,28 @@ class NoLegacyLoopsTests(unittest.TestCase):
             "codey.toolchain.registry",
         }
         offenders: list[str] = []
-        legacy_files = {
-            "codey/agents/prompt_context.py",
-            "codey/agents/result_delivery.py",
-            "codey/agents/tool_turn.py",
-            "codey/protocols/native_openai.py",
-            "codey/protocols/__init__.py",
-            "codey/toolchain/registry.py",
-        }
-        for path in CODEY.rglob("*.py"):
-            rel = path.relative_to(ROOT).as_posix()
-            if rel in legacy_files:
-                continue
-            if rel.startswith("tests/"):
+        # No exceptions: neither production nor tests may keep the old体系 alive.
+        for path in list(CODEY.rglob("*.py")) + list((ROOT / "tests").rglob("*.py")) + list((ROOT / "tools").rglob("*.py")):
+            try:
+                rel = path.relative_to(ROOT).as_posix()
+            except Exception:
                 continue
             imports = _imports_of(path)
             hit = legacy_names & imports
-            # Submodule prefix hits (e.g. codey.agents.prompt_context imported as full path)
             if hit:
                 offenders.append(f"{rel}: {sorted(hit)}")
-        self.assertEqual(offenders, [], f"production still imports legacy modules: {offenders}")
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for name in ("agents.prompt_context", "agents.result_delivery", "agents.tool_turn", "protocols.native_openai"):
+                if name in text and "test_architecture_no_legacy_loops" not in rel:
+                    # String reference outside this lock file means the old体系 is still保养.
+                    if f"codey.{name}" in text or f"codey/{name.replace('.', '/')}.py" in text:
+                        offenders.append(f"{rel}: string ref {name}")
+        # toolchain.registry is still pending removal: only assert the four deleted ones here.
+        filtered = [o for o in offenders if "toolchain.registry" not in o]
+        self.assertEqual(filtered, [], f"legacy modules still referenced: {filtered}")
 
     def test_kept_agents_modules_still_used(self) -> None:
         # Guard against over-deletion: tool_execution + request must stay.

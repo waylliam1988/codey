@@ -195,15 +195,16 @@ def sync_workspace_state_after_edit(
     *,
     ignored_paths: Any = (),
     revision_store: Any = None,
-) -> None:
+) -> tuple[int, str]:
     """Sync one authoritative post-edit WorkspaceState to session+evidence.
 
     Single bounded fingerprint scan with the configured ``ignored_paths``.
     When ``revision_store`` is supplied, the durable ``bump_state`` is the
-    single authority (one scan inside the store); otherwise only the
+    single authority (one scan inside the store) and the resulting
+    ``(revision, fingerprint)`` is returned so result events can carry it to
+    hooks; hooks must adopt it without a second bump. Otherwise only the
     observed fingerprint is aligned and the outer hooks bump owns the
-    revision (at most two bounded scans per edit total, never divergent
-    ignores).
+    revision. Returns ``(0, "")`` when no authoritative bump happened.
     """
     try:
         ignores = tuple(str(p) for p in (ignored_paths or ())) if ignored_paths else ()
@@ -221,10 +222,11 @@ def sync_workspace_state_after_edit(
                         execution_evidence.set_workspace_state(rev, fp)
                 except Exception:
                     pass
-                return
+                return rev, fp
         except Exception:
             pass
     _sync_workspace_after_edit(session, project_path, execution_evidence, ignored_paths=ignores)
+    return 0, ""
 
 
 def _sync_workspace_after_edit(

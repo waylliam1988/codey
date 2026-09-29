@@ -52,7 +52,8 @@ def run_task(
     try:
         from codey.app import consensus_service, review_service
         from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
-        from codey.operations.task_entry import TaskRunDeps, run_task_submission
+        from codey.operations.task_entry import run_task_submission
+        from codey.operations.task_run import TaskRunDeps
 
         state = get_state()
         if review_policy is None:

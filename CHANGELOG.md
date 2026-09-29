@@ -2,6 +2,50 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Review 3643593 hardening + legacy deletion (no release)
+
+- Single workspace bump per edit: `sync_workspace_state_after_edit()` is the
+  sole authority when a revision store is present and returns
+  `(revision, fingerprint)`; `kernel_events` carries it in event metadata and
+  `task_phases.hooks` adopts without a second `bump_state`/scan. Non-kernel
+  edits still bump via hooks. Locked by
+  `tests/test_workspace_single_bump.py` (single, consecutive, ignored paths;
+  session/evidence/store consistency).
+- Recovery failures fail closed: `kernel_recovery.apply_recovery_first()`
+  raises `RecoveryFailed` instead of dropping results; `run_task_kernel`
+  returns `recovery_failure` without sending the initial prompt, re-executing
+  tools, or losing receipts. Locked by
+  `tests/test_kernel_recovery_failure.py`.
+- Hybrid gate reads canonical `tool_name`: `RunEvent` metadata preserves the
+  canonical name through `run_event_ui_payload` -> `headless_event_payload`
+  (`tool` stays display-only); the gate only reads `tool_name` and requires
+  consistent `run_id`/`session_id` on every relevant row. Full-chain locks in
+  `tests/test_hybrid_gate_canonical.py`; old display-only rows now fail.
+- Mixed native batches rejected: `kernel_transport._native_tool_messages`
+  raises on mixed call-id batches; `task_loop` terminates as `protocol`
+  instead of falling back to text. Cross-provider text delivery only in the
+  explicit `provider_session_changed` branch. Locked by
+  `tests/test_native_mixed_batch.py`.
+- Provider `NOT_SENT` preserved: `KernelRecordedProvider` settles
+  `NOT_SENT` for `ContextOverflowError`/`RequestPrepError` (safe retry) and
+  `MAYBE_SENT` otherwise. Locked by
+  `tests/test_provider_not_sent_settlement.py`.
+- First round reuses the startup snapshot (one fewer snapshot build per run).
+- Deleted legacy modules `agents/prompt_context.py`,
+  `agents/result_delivery.py`, `agents/tool_turn.py`,
+  `protocols/native_openai.py`, `research/evidence_followup.py` shim, and
+  `tests/test_native_openai_codec.py`; migrated their tests to
+  `run_task_kernel`/`execute_turn`/`normalize_turn`/`ToolSpec`/`kernel_transport`/
+  `kernel_recovery`/`task_effects`. Kept durable receipt-store tests in
+  `test_tool_result_delivery.py`. Simplified `tests/support/kernel_harness.py`
+  to `TaskPolicy`/`TaskSession`/real `TurnSnapshot` (no native-codec
+  auto-selection). Architecture test now asserts deletion and no importers in
+  prod or tests.
+- Removed `task_entry.TaskRunDeps` dynamic re-export; callers import from
+  `task_run`. Removed `kernel_protocol` compat fallback alias.
+- Verification: full `python -m pytest -q`:
+  `4901 passed, 10 skipped, 1460 subtests passed`. No release was made.
+
 ## Unreleased - Kernel behavior hardening + task_loop split by responsibility (no release)
 
 - Fail-closed protocol validation: a `validate_args_against_spec` exception now

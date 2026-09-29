@@ -52,8 +52,16 @@ def _emit_tool_starts(
     from codey.toolchain.definition import render_tool_activity
 
     for index, call in enumerate(calls):
+        canonical = str(getattr(call, "name", "") or "").strip().lower()
         display_call = _event_call(session, call)
-        on_event(RunEvent.tool_started(turn, display_call, render_tool_activity(display_call), index))
+        event = RunEvent.tool_started(turn, display_call, render_tool_activity(display_call), index)
+        try:
+            if isinstance(getattr(event, "metadata", None), dict):
+                if canonical:
+                    event.metadata["tool_name"] = canonical
+        except Exception:
+            pass
+        on_event(event)
 
 
 def _emit_tool_results(
@@ -84,14 +92,39 @@ def _emit_tool_results(
                 (line.removeprefix("Title: ") for line in display.splitlines() if line.startswith("Title: ")),
                 display.splitlines()[0] if display else "",
             )
+        changed = bool(result.audit.get("changed", ok and result.call.name == "edit"))
         outcome = ToolOutcome(
             model_text=result.model_text,
             ok=ok,
-            changed=bool(result.audit.get("changed", ok and result.call.name == "edit")),
+            changed=changed,
             exit_code=exit_code,
             truncated=result.truncated,
             canonical=result.canonical,
             audit=result.audit,
             presentation={"result": display[:500], **dict(result.presentation)},
         )
-        on_event(RunEvent.tool_finished(turn, _event_call(session, result.call), outcome, index))
+        canonical_name = str(getattr(result.call, "name", "") or "").strip().lower()
+        display_call = _event_call(session, result.call)
+        event = RunEvent.tool_finished(turn, display_call, outcome, index)
+        try:
+            if isinstance(getattr(event, "metadata", None), dict):
+                if canonical_name:
+                    event.metadata["tool_name"] = canonical_name
+                # Kernel edit owns the single authoritative revision bump
+                # (sync_workspace_state_after_edit). Carry it so hooks adopts
+                # instead of bumping a second time.
+                if canonical_name == "edit" and ok and changed:
+                    try:
+                        sess_rev = int(getattr(session, "workspace_revision", 0) or 0)
+                    except Exception:
+                        sess_rev = 0
+                    try:
+                        sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
+                    except Exception:
+                        sess_fp = ""
+                    if sess_rev and sess_fp:
+                        event.metadata["workspace_revision"] = sess_rev
+                        event.metadata["workspace_fingerprint"] = sess_fp
+        except Exception:
+            pass
+        on_event(event)

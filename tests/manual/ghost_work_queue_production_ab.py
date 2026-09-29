@@ -26,7 +26,8 @@ import codey.ghost.work_queue as work_queue_module
 from codey.agents.request import AgentRequest
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.operations.task_run import TaskRunDeps
+from codey.operations.task_entry import run_task_submission
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record

@@ -217,7 +217,6 @@ def test_search_rejects_bad_pagination() -> None:
 
 
 def test_mutation_groups_drive_execution_order(tmp_path: Path) -> None:
-    from codey.agents.tool_turn import PlannedToolCall
     from codey.runtime.write.file_mutation_queue import group_tool_calls_for_execution
 
     calls = [
@@ -231,7 +230,6 @@ def test_mutation_groups_drive_execution_order(tmp_path: Path) -> None:
     # read b.py touches no written file, so it batches with the first edit;
     # the second edit of a.py still serializes after it.
     assert groups == [[0, 1], [2]]
-    assert PlannedToolCall is not None
 
 
 def test_local_context_defaults_come_from_capability() -> None:

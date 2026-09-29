@@ -74,36 +74,34 @@ def build_kernel_fixture(request: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
         codec = getattr(request, "codec", None) or JsonToolCodec(permission_profile=profile.name)
     except Exception:
         codec = getattr(request, "codec", None)
+    # Lightweight production factory: TaskPolicy + TaskSession + real
+    # TurnSnapshot. No NativeOpenAIToolCodec auto-selection and no fallback
+    # to the legacy schema; native schemas come from TurnSnapshot.
+    from codey.operations.kernel_protocol import build_turn_snapshot as _build_snapshot
+    from codey.policies.task_policy import build_task_policy as _build_policy
+    from types import SimpleNamespace as _NS
+
+    try:
+        _policy = _build_policy(
+            _NS(
+                project=str(project),
+                requested_capabilities=tuple(getattr(request, "requested_capabilities", ()) or ()),
+                strict_research=False,
+            ),
+            task_kind="project",
+        )
+    except Exception:
+        _policy = None
     native_tools: list[dict[str, object]] | None = None
     try:
-        active_hint = str(getattr(request, "provider_id", "") or getattr(provider, "name", "") or "")
-        capability = capability_for(active_hint) if callable(capability_for) else None
+        from codey.operations.task_session import TaskSession as _TS
+
+        _tmp_session = _TS(policy=_policy, task_kind="project", project=str(project), max_turns=10) if _policy is not None else None
+        if _tmp_session is not None:
+            _snap = _build_snapshot(_tmp_session, native=callable(getattr(provider, "send_turn", None)))
+            native_tools = list(_snap.native_tools) if _snap.native_tools else None
     except Exception:
-        capability = None
-    wants_native = False
-    if capability is not None and bool(getattr(capability, "supports_native_tools", False)):
-        try:
-            from codey.providers.local_config import load_local_config, resolve_local_native_tools
-
-            wants_native = bool(resolve_local_native_tools(load_local_config()))
-        except Exception:
-            wants_native = bool(getattr(capability, "native_tools_default", False))
-    if wants_native and callable(getattr(provider, "send_turn", None)):
-        try:
-            from codey.policies.permissions import allowed_coding_tool_names
-            from codey.protocols.native_openai import NativeOpenAIToolCodec
-            from codey.toolchain import definition as tool_defs
-            from codey.toolchain.openai_tools import render_openai_tools
-
-            definitions = tool_defs.definitions_for_tool_names(
-                tuple(allowed_coding_tool_names(profile)))
-            codec = NativeOpenAIToolCodec(
-                permission_profile=profile.name,
-                json_fallback=codec if isinstance(codec, JsonToolCodec) else None,
-            )
-            native_tools = render_openai_tools(definitions)
-        except Exception:
-            native_tools = None
+        native_tools = None
     try:
         system_prompt_text = codec.system_prompt() if codec is not None else ""
     except Exception:

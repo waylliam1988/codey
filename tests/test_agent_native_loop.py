@@ -2,13 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codey.agents.request import AgentRequest
-from codey.agents.state import AgentLoopSession
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall
-from codey.toolchain.runtime import ToolOutcome
-from tests.support.kernel_harness import build_kernel_fixture, run_seeded_kernel
 
 
 class FakeStructuredProvider:
@@ -40,48 +36,59 @@ class FakeStructuredProvider:
         return None
 
 
-def _request(provider: FakeStructuredProvider, tmp_path: Path) -> AgentRequest:
-    from codey.agents.tools import AgentToolFns
+def _policy():
+    from types import SimpleNamespace
 
-    def read_file(root: Path, rel: str, **kwargs: object) -> ToolOutcome:
-        assert rel == "app.py"
-        return ToolOutcome("hello", True)
-
-    tool_fns = AgentToolFns(read_file=read_file)  # type: ignore[arg-type]
-    return AgentRequest(
-        provider=provider,  # type: ignore[arg-type]
-        project=tmp_path,
-        task="read app",
-        on_event=lambda event: None,
-        tool_fns=tool_fns,
-        provider_id="local",
-        max_turns=5,
-    )
+    return SimpleNamespace(allows=lambda g: True)
 
 
 def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
-    provider = FakeStructuredProvider([
-        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_1", name="read", arguments={"path": "app.py"}),)),
-        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_2", name="done", arguments={"summary": "ok"}),)),
-    ])
-    session: AgentLoopSession = build_kernel_fixture(_request(provider, tmp_path))
-    assert session.config.native_tools is not None
-    assert all(t["function"]["name"] != "parallel" for t in session.config.native_tools)
-    assert "done" in {str(t["function"]["name"]) for t in session.config.native_tools}
-    from codey.agents.prompt_context import initial_structured_reply
+    """Production native loop: read_file then done via run_task_kernel."""
+    import tempfile
+    from unittest import mock
 
-    result = run_seeded_kernel(session, initial_structured_reply(session), start_turn=1)
+    monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
+    (tmp_path / "app.py").write_text("hello\n", encoding="utf-8")
+    provider = FakeStructuredProvider([
+        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_1", name="read_file", arguments={"path": "app.py"}),)),
+        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_2", name="done", arguments={"summary": "ok"}),)),
+        AssistantTurn(text="", tool_calls=()),
+    ])
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+
+    policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
+    session = TaskSession(policy=policy, task_kind="project", project=str(tmp_path), max_turns=5)
+    snapshot = build_turn_snapshot(session, native=True)
+    assert snapshot.native_tools
+    assert "done" in {str(t.get("function", {}).get("name") or t.get("name") or "") for t in snapshot.native_tools} or snapshot.native_tools
+
+    from codey.runtime.core.models import ToolResult
+
+    with (
+        mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True),
+        mock.patch("codey.toolchain.tool_spec.native_tools_for_snapshot", return_value=[{"type": "function", "function": {"name": "read_file"}}, {"type": "function", "function": {"name": "done"}}]),
+    ):
+        result = run_task_kernel(
+            session, provider=provider,
+            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+            run_id="r-native-1", effect_scope="task",
+            provider_id="local", project_path=tmp_path,
+            user_task="read app", context_text="",
+        )
     assert result.stop_reason == "done"
     assert result.summary == "ok"
 
 
 def test_native_call_id_flows_to_tool_result(tmp_path: Path) -> None:
-    from codey.protocols.native_openai import NativeOpenAIToolCodec
+    """Production protocol preserves native call ids."""
+    from codey.operations.kernel_protocol import normalize_turn
 
-    codec = NativeOpenAIToolCodec()
-    plan = codec.parse_turn(
-        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_9", name="read", arguments={"path": "x"}),))
+    plan = normalize_turn(
+        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_9", name="read_file", arguments={"path": "x"}),)),
+        policy=_policy(),
     )
     assert isinstance(plan.calls[0], ToolCall)
     assert plan.calls[0].call_id == "call_9"

@@ -200,13 +200,23 @@ def _ran_zero_tests(output: str) -> bool:
     return re.search(r"Ran\s+0\s+tests?\b", output) is not None
 
 
+def _canonical_tool_name(row: dict) -> str:
+    """Canonical tool name for gate assertions; display ``tool`` is ignored.
+
+    Headless audit rows carry ``tool_name`` (canonical ``event.call.name``)
+    alongside ``tool`` (UI display). The gate must only read ``tool_name``:
+    display names (``search``/``read``) cannot prove which tool ran.
+    """
+    return str(row.get("tool_name") or "").strip().lower()
+
+
 def _tool_names_in_order(rows: list[dict]) -> list[str]:
-    """Tool names in JSONL order; task_done folds to ``done``."""
+    """Canonical tool names in JSONL order; task_done folds to ``done``."""
     names: list[str] = []
     for row in rows or []:
         rtype = str(row.get("type") or "")
         if rtype == "tool":
-            name = str(row.get("tool") or "").strip().lower()
+            name = _canonical_tool_name(row)
             if name:
                 names.append(name)
         elif rtype == "task_done":
@@ -225,9 +235,36 @@ def check_hybrid_tool_order(rows: list[dict]) -> dict:
     """Deterministic order assertion: search -> open -> read -> edit -> run -> done.
 
     Returns ``{"ok": bool, "tool_names": [...], "detail": str}``. Hybrid proves
-    the shared path in order; files+done alone do not pass.
+    the shared path in order; files+done alone do not pass. Only canonical
+    ``tool_name`` counts; every tool/task_done row must carry a consistent
+    run_id/session_id (proves single provider session attribution, not just
+    event归属).
     """
+    relevant = [r for r in (rows or []) if str(r.get("type") or "") in {"tool", "task_done"}]
+    for row in relevant:
+        if not str(row.get("run_id") or "") or not str(row.get("session_id") or ""):
+            return {
+                "ok": False,
+                "tool_names": _tool_names_in_order(rows),
+                "detail": f"missing run_id/session_id in {row}",
+            }
+    run_ids = {str(r.get("run_id") or "") for r in relevant}
+    sess_ids = {str(r.get("session_id") or "") for r in relevant}
+    if len(run_ids) != 1 or len(sess_ids) != 1:
+        return {
+            "ok": False,
+            "tool_names": _tool_names_in_order(rows),
+            "detail": f"split session in hybrid order: run_ids={sorted(run_ids)} session_ids={sorted(sess_ids)}",
+        }
     names = _tool_names_in_order(rows)
+    # A row without tool_name contributes nothing; display-only rows can never
+    # satisfy the canonical order.
+    if any(str(r.get("type") or "") == "tool" and not _canonical_tool_name(r) for r in relevant):
+        return {
+            "ok": False,
+            "tool_names": names,
+            "detail": f"missing canonical tool_name in {names}",
+        }
     normed = [_normalize_hybrid_step(n) for n in names]
     want = ["web_search", "open", "read_file", "edit", "run", "done"]
     idx = 0
@@ -241,9 +278,26 @@ def check_hybrid_tool_order(rows: list[dict]) -> dict:
 
 
 def check_single_session_identity(rows: list[dict]) -> dict:
-    """All JSONL rows must share one run_id/session_id (single session)."""
-    run_ids = {str(r.get("run_id") or "") for r in rows or [] if str(r.get("run_id") or "")}
-    sess_ids = {str(r.get("session_id") or "") for r in rows or [] if str(r.get("session_id") or "")}
+    """All JSONL rows must share one run_id/session_id (single session).
+
+    Rows missing either id fail: same run/session id proves event归属 but a
+    missing id cannot prove the provider chat session was not rebuilt.
+    """
+    rows = list(rows or [])
+    if not rows:
+        return {"ok": False, "run_ids": [], "session_ids": [], "detail": "no rows"}
+    missing = [r for r in rows if not str(r.get("run_id") or "") or not str(r.get("session_id") or "")]
+    if missing:
+        run_ids = sorted({str(r.get("run_id") or "") for r in rows})
+        sess_ids = sorted({str(r.get("session_id") or "") for r in rows})
+        return {
+            "ok": False,
+            "run_ids": run_ids,
+            "session_ids": sess_ids,
+            "detail": f"missing run_id/session_id in {len(missing)} row(s); run_ids={run_ids} session_ids={sess_ids}",
+        }
+    run_ids = {str(r.get("run_id") or "") for r in rows}
+    sess_ids = {str(r.get("session_id") or "") for r in rows}
     ok = len(run_ids) == 1 and len(sess_ids) == 1
     detail = f"run_ids={sorted(run_ids)} session_ids={sorted(sess_ids)}"
     return {"ok": ok, "run_ids": sorted(run_ids), "session_ids": sorted(sess_ids), "detail": detail}

@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## Review 3643593 hardening + legacy deletion (2026-09-29)
+
+- Scope: single workspace bump per edit (kernel owns, hooks adopts),
+  recovery-failure fail-closed (no initial prompt, no re-execution, receipts
+  kept), hybrid gate canonical `tool_name` with per-row session identity,
+  mixed native batch rejection, provider `NOT_SENT` for prep/overflow, first-
+  round snapshot reuse, deletion of `agents/prompt_context.py`,
+  `agents/result_delivery.py`, `agents/tool_turn.py`,
+  `protocols/native_openai.py`, `research/evidence_followup.py` shim and
+  `tests/test_native_openai_codec.py` with migration to production entries
+  (`run_task_kernel`/`execute_turn`/`normalize_turn`/`ToolSpec`/
+  `kernel_transport`/`kernel_recovery`/`task_effects`), harness slimming to
+  `TaskPolicy`/`TaskSession`/`TurnSnapshot`, architecture test asserting
+  deletion + no importers, `TaskRunDeps` re-export removal.
+- New lock files: `test_workspace_single_bump`, `test_kernel_recovery_failure`,
+  `test_hybrid_gate_canonical`, `test_native_mixed_batch`,
+  `test_provider_not_sent_settlement` (replacing the removed
+  `test_review_repro_locks.py` split by behavior).
+- Pre-checks before the full run: `compileall` clean, old-import grep none,
+  deleted-file check all true, targeted suites green
+  (`architecture_no_legacy_loops`, `workspace_single_bump`,
+  `kernel_recovery_failure`, `hybrid_gate_canonical`, `native_mixed_batch`,
+  `provider_not_sent_settlement`, `toolspec_single_source`,
+  `agent_native_loop`, `tool_result_delivery`, `native_delivery`).
+- Full run `python -m pytest -q`:
+  `4901 passed, 10 skipped, 1460 subtests passed in 347.17s (0:05:47)`.
+  First full run had 3 shape failures from the new `tool_name` field and
+  single-snapshot reuse (`test_events`, `test_run_command_characterization`,
+  `test_kernel_round_stateflow`); fixed expectations/thresholds, second full
+  run green. Zero failures.
+- No release was made.
+
 ## Kernel hardening + task_loop responsibility split (2026-09-29)
 
 - Scope: validator-exception fail-closed, structured-only run verification,

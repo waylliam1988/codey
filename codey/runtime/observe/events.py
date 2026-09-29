@@ -164,7 +164,9 @@ def run_event_ui_payload(
         start_args = _call_args(event.call)
         path = str(start_args.get("path") or "")
         display_kind, display_path = display_tool(event.call.name, start_args, path)
-        tool_index = _safe_tool_index(_event_metadata(event).get("tool_index"))
+        meta = _event_metadata(event)
+        tool_index = _safe_tool_index(meta.get("tool_index"))
+        canonical_name = str(meta.get("tool_name") or event.call.name or "").strip().lower()
         payload = {
             "type": "tool_started",
             "run_id": run_id,
@@ -172,6 +174,7 @@ def run_event_ui_payload(
             "turn": event.turn,
             "tool_id": f"{event.turn}:{tool_index}",
             "kind": display_kind,
+            "tool_name": canonical_name,
             "path": display_path,
             "activity": event.message,
         }
@@ -185,7 +188,9 @@ def run_event_ui_payload(
     path = str(tool_args.get("path") or "")
     display_kind, display_path = display_tool(event.call.name, tool_args, path)
     result = event.outcome.presentation_result(MAX_EVENT_RESULT_CHARS)
-    tool_index = _safe_tool_index(_event_metadata(event).get("tool_index"))
+    meta = _event_metadata(event)
+    tool_index = _safe_tool_index(meta.get("tool_index"))
+    canonical_name = str(meta.get("tool_name") or event.call.name or "").strip().lower()
     status = event.outcome.presentation_status()
     payload = {
         "type": "tool",
@@ -194,6 +199,7 @@ def run_event_ui_payload(
         "turn": event.turn,
         "tool_id": f"{event.turn}:{tool_index}",
         "kind": display_kind,
+        "tool_name": canonical_name,
         "path": display_path,
         "result": result,
         "status": status,

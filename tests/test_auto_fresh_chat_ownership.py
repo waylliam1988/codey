@@ -163,17 +163,28 @@ class AutoFreshChatOwnershipTests(unittest.TestCase):
         # The executor owns the reset: if its own new_chat fails with
         # strict semantics, it must raise instead of reusing the window
         # that still contains the ACTION scaffolding.
-        from codey.agents.prompt_context import open_fresh_chat
+        # Production entry: project_adapter strict fresh-chat path.
+        import tempfile
+        from codey.agents.request import AgentRequest
 
-        session = SimpleNamespace(
-            request=SimpleNamespace(
-                provider=_FailingProvider(),
-                strict_fresh_chat=True,
+        with tempfile.TemporaryDirectory() as td:
+            from pathlib import Path as _Path
+
+            req = AgentRequest(
+                provider=_FailingProvider(),  # type: ignore[arg-type]
+                project=_Path(td),
+                task="fix",
                 on_event=lambda _e: None,
-            ),
-        )
-        with self.assertRaises(RuntimeError):
-            open_fresh_chat(session)
+                fresh_chat=True,
+                strict_fresh_chat=True,
+                permission_profile="coding_writer",
+                provider_id="local",
+                max_turns=1,
+            )
+            from codey.operations import project_adapter as adapter
+
+            with self.assertRaises(RuntimeError):
+                adapter.run(req)
 
     def test_project_executor_sends_full_intro_exactly_once(self) -> None:
         """Near-real chain: one ACTION-after reset + full intro, no reuse."""

@@ -61,6 +61,7 @@ class RunEventUiPayloadTests(unittest.TestCase):
             "turn": 3,
             "tool_id": "3:2",
             "kind": "run",
+            "tool_name": "run",
             "path": "",
             "result": "exit 0",
             "status": "ok",

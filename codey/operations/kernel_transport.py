@@ -60,8 +60,19 @@ def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
 def _native_tool_messages(results: Any, session: Any) -> list[dict[str, Any]]:
     from codey.operations.kernel_prompt import _result_context
 
+    rows = list(results or [])
+    ids = [str(getattr(getattr(r, "call", None), "call_id", "") or "") for r in rows]
+    has_id = [bool(i) for i in ids]
+    if rows and any(has_id) and not all(has_id):
+        # Mixed batches would silently drop the valid call ids if we fell
+        # back to text; fail closed instead. Cross-provider text delivery
+        # only happens in the explicit provider_session_changed branch.
+        raise ValueError(
+            "mixed native batch: some results lack call ids; "
+            "refusing to deliver a partial native chain"
+        )
     messages: list[dict[str, Any]] = []
-    for result in results:
+    for result in rows:
         call_id = str(getattr(result.call, "call_id", "") or "")
         if not call_id:
             # JSON-originated calls in a native session have no chain id;

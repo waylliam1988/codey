@@ -24,7 +24,8 @@ from codey.app.context import (
     AppContext,
 )
 from codey.operations.project_adapter import run as default_agent_run
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.operations.task_run import TaskRunDeps
+from codey.operations.task_entry import run_task_submission
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers.diagnostics import capture_provider_failure as default_capture_provider_failure
 from codey.providers.registry import connect_provider as default_connect_provider
@@ -432,6 +433,7 @@ def _payload_tool_started(common: dict[str, object], event: dict) -> dict[str, o
         "turn": _int_or_zero(event.get("turn")),
         "tool_id": clip_event_text(event.get("tool_id") or "", 40),
         "tool": clip_event_text(event.get("kind") or "", 80),
+        "tool_name": clip_event_text(event.get("tool_name") or event.get("kind") or "", 80),
         "path": clip_event_text(event.get("path") or "", 240),
         "activity": clip_event_text(event.get("activity") or ""),
     }
@@ -447,6 +449,7 @@ def _payload_tool(common: dict[str, object], event: dict) -> dict[str, object]:
         "turn": _int_or_zero(event.get("turn")),
         "tool_id": clip_event_text(event.get("tool_id") or "", 40),
         "tool": clip_event_text(event.get("kind") or "", 80),
+        "tool_name": clip_event_text(event.get("tool_name") or event.get("kind") or "", 80),
         "path": clip_event_text(event.get("path") or "", 240),
         "ok": bool(event.get("ok", not bool(event.get("error")))),
         "status": clip_event_text(event.get("status") or "", 80),

@@ -253,55 +253,47 @@ class GhostCommonHelperTests(unittest.TestCase):
 
 
 class NativeToolsUnifyTests(unittest.TestCase):
-    def test_prompt_context_owns_single_native_check(self) -> None:
-        from codey.agents import prompt_context
+    def test_kernel_transport_owns_single_native_check(self) -> None:
+        from codey.operations import kernel_transport
 
-        self.assertTrue(callable(getattr(prompt_context, "session_uses_native_tools", None)))
-        self.assertIn("session_uses_native_tools", getattr(prompt_context, "__all__", []))
+        self.assertTrue(callable(getattr(kernel_transport, "provider_uses_native", None)))
+        self.assertIn("provider_uses_native", getattr(kernel_transport, "__all__", []))
 
     def test_old_wrappers_removed_and_callers_unified(self) -> None:
         # Cold-start closure: old loop deleted, single native check via new entry.
         self.assertFalse((REPO_ROOT / "codey/agents/loop.py").exists())
         self.assertFalse((REPO_ROOT / "codey/agents/runner.py").exists())
+        self.assertFalse((REPO_ROOT / "codey/agents/prompt_context.py").exists())
+        self.assertFalse((REPO_ROOT / "codey/agents/result_delivery.py").exists())
+        self.assertFalse((REPO_ROOT / "codey/agents/tool_turn.py").exists())
+        self.assertFalse((REPO_ROOT / "codey/protocols/native_openai.py").exists())
         from codey.operations import kernel_transport
 
         self.assertTrue(callable(getattr(kernel_transport, "provider_uses_native", None)))
-        from codey.agents import prompt_context
 
-        self.assertTrue(callable(getattr(prompt_context, "session_uses_native_tools", None)))
+    def test_native_check_via_production_entry(self) -> None:
+        from unittest import mock
 
-    def test_native_check_matches_legacy_condition(self) -> None:
-        from types import SimpleNamespace
+        from codey.operations import kernel_transport
 
-        from codey.agents.prompt_context import provider_supports_structured, session_uses_native_tools
+        class _Structured:
+            def send_turn(self, *a, **k):
+                return None
 
-        class _Provider:
-            def __init__(self, structured: bool) -> None:
-                if structured:
-                    self.send_turn = lambda *a, **k: None
-                    self.send_tool_results = lambda *a, **k: None
+            def send_tool_results(self, *a, **k):
+                return None
 
-        def _session(native, structured: bool):  # type: ignore[no-untyped-def]
-            return SimpleNamespace(
-                config=SimpleNamespace(native_tools=native),
-                request=SimpleNamespace(provider=_Provider(structured)),
-            )
+        class _Plain:
+            pass
 
-        self.assertTrue(session_uses_native_tools(_session([], True)))
-        self.assertFalse(session_uses_native_tools(_session(None, True)))
-        self.assertFalse(session_uses_native_tools(_session([], False)))
-        self.assertFalse(session_uses_native_tools(_session(None, False)))
-        # Unified helper must equal the two removed wrappers' condition.
-        for native in (None, [], [{}]):
-            for structured in (False, True):
-                session = _session(native, structured)
-                expected = session.config.native_tools is not None and provider_supports_structured(session)
-                self.assertEqual(session_uses_native_tools(session), expected)
-
-    def test_recovered_fallback_comment_names_current_flow(self) -> None:
-        text = (REPO_ROOT / "codey/agents/result_delivery.py").read_text(encoding="utf-8")
-        self.assertIn("candidate_from_intent", text)
-        self.assertNotIn("predate", text)
+        with mock.patch(
+            "codey.providers.native_tools.supports_native_tools", return_value=True
+        ):
+            self.assertTrue(kernel_transport.provider_uses_native(_Structured(), provider_id="local"))
+        with mock.patch(
+            "codey.providers.native_tools.supports_native_tools", return_value=False
+        ):
+            self.assertFalse(kernel_transport.provider_uses_native(_Plain(), provider_id="local"))
 
 
 if __name__ == "__main__":

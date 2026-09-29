@@ -30,7 +30,8 @@ from codey.app import task_submit as task_submit
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import build_research_interest_candidates
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.operations.task_run import TaskRunDeps
+from codey.operations.task_entry import run_task_submission
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record

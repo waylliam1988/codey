@@ -137,11 +137,16 @@ def build_hooks(
         if event.kind == "tool_start":
             return
         if project and _workspace_edit_event(event):
-            work.advance_workspace_revision(
-                deps.workspace_revisions,
-                project,
-                ignored_paths=project_config_ignored,
-            )
+            # Kernel edits already bumped exactly once in
+            # sync_workspace_state_after_edit and carry the authoritative
+            # (revision, fingerprint) in event metadata. Adopt it without a
+            # second bump/scan. Non-kernel edits carry no state and still bump.
+            if not _adopt_kernel_workspace_state(work, event):
+                work.advance_workspace_revision(
+                    deps.workspace_revisions,
+                    project,
+                    ignored_paths=project_config_ignored,
+                )
         work.evidence.record(event)
         message = render_run_event(event)
         work.recent_events.append(message)
@@ -246,3 +251,33 @@ def _workspace_edit_event(event: RunEvent) -> bool:
         and bool(event.outcome.ok)
         and bool(event.outcome.changed)
     )
+
+
+def _adopt_kernel_workspace_state(work: RunWork, event: RunEvent) -> bool:
+    """Adopt kernel-owned revision without bumping; True when adopted."""
+    try:
+        meta = getattr(event, "metadata", None)
+        if not isinstance(meta, dict):
+            return False
+        rev_raw = meta.get("workspace_revision")
+        fp_raw = meta.get("workspace_fingerprint")
+        if rev_raw is None or fp_raw is None:
+            return False
+        from codey.workspace.revision import (
+            valid_workspace_fingerprint,
+            valid_workspace_revision,
+        )
+
+        rev = valid_workspace_revision(rev_raw)
+        fp = valid_workspace_fingerprint(fp_raw)
+        if not rev or not fp:
+            return False
+        work.workspace_revision = rev
+        work.workspace_fingerprint = fp
+        try:
+            work.evidence.set_workspace_state(rev, fp)
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False

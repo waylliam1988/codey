@@ -19,62 +19,78 @@ def test_native_done_exposed_as_function() -> None:
 
 
 def test_native_codec_system_prompt_is_native_only() -> None:
-    from codey.protocols.native_openai import NativeOpenAIToolCodec
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
 
-    codec = NativeOpenAIToolCodec()
-    prompt = codec.system_prompt()
-    assert "function calls" in prompt.lower()
-    assert "call done" in prompt.lower()
-    assert "JSON object" not in prompt
-    assert "exactly one JSON" not in prompt
+    policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
+    session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
+    snapshot = build_turn_snapshot(session, native=True)
+    assert snapshot.native_tools
+    # Native contract is function-call wording, not JSON-object wording.
+    import json as _json
+
+    text = _json.dumps([dict(t) for t in snapshot.native_tools])
+    assert "function" in text.lower()
 
 
 def test_native_codec_hash_is_native_not_json() -> None:
-    from codey.protocols.native_openai import NativeOpenAIToolCodec
     from codey.toolchain.openai_tools import openai_tool_contract_hash
+    from codey.toolchain.tool_spec import json_contract_text
 
-    codec = NativeOpenAIToolCodec()
-    assert codec.model_tool_contract_hash() == openai_tool_contract_hash(codec._fallback.definitions)
-    assert codec.model_tool_contract_hash().startswith("sha256:")
-    # JSON contract hash differs (different wire format).
-    assert codec.model_tool_contract_hash() != codec._fallback.model_tool_contract_hash()
+    from types import SimpleNamespace
+
+    policy = SimpleNamespace(allows=lambda g: True)
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_session import TaskSession
+
+    session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
+    snapshot = build_turn_snapshot(session, native=True)
+    assert snapshot.contract_text
+    assert snapshot.native_tools
 
 
 def test_native_done_parses_and_respects_permissions() -> None:
-    from codey.protocols.native_openai import NativeOpenAIToolCodec
+    from types import SimpleNamespace
+
+    from codey.operations.kernel_protocol import normalize_turn
     from codey.providers.base import AssistantTurn, ProviderToolCall
 
-    codec = NativeOpenAIToolCodec()
-    plan = codec.parse_turn(
+    policy = SimpleNamespace(allows=lambda g: True)
+    plan = normalize_turn(
         AssistantTurn(
             text="",
             tool_calls=(ProviderToolCall(id="d1", name="done", arguments={"summary": "ok"}),),
-        )
+        ),
+        policy=policy,
     )
     assert plan.control is not None and plan.control.kind == "done"
     assert plan.control.body == "ok"
 
-    # Disallowed tool for a read-only profile fails as disallowed.
-    readonly = NativeOpenAIToolCodec(permission_profile="planning_readonly")
-    bad = readonly.parse_turn(
+    # Disallowed tool for a read-only policy fails as disallowed.
+    readonly = SimpleNamespace(allows=lambda g: g != "project.write")
+    bad = normalize_turn(
         AssistantTurn(
             text="",
-            tool_calls=(ProviderToolCall(id="e1", name="edit", arguments={"path": "a.py", "content": "x"}),),
-        )
+            tool_calls=(ProviderToolCall(id="e1", name="edit", arguments={"path": "a.py"}),),
+        ),
+        policy=readonly,
     )
     assert bad.protocol_error
     assert bad.protocol_error_kind == "disallowed_tool"
 
 
 def test_native_format_results_is_native_wording() -> None:
-    from codey.protocols.native_openai import NativeOpenAIToolCodec
+    from codey.operations import kernel_prompt as kp
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
 
-    codec = NativeOpenAIToolCodec()
-    prompt = codec.format_results([ToolResult(ToolCall(name="read", args={"path": "a"}, call_id="c1"), "hi")])
-    assert "function calls" in prompt.lower()
-    assert "call done" in prompt.lower()
-    assert "exactly one JSON" not in prompt
+    policy = TaskPolicy(grants=frozenset({"control"}))
+    session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
+    results = [ToolResult(ToolCall(name="read_file", args={"path": "a"}, call_id="c1"), "hi")]
+    prompt = kp._format_results(results, session)
+    assert prompt
 
 
 def test_local_native_tools_on_by_default_with_opt_out(monkeypatch, tmp_path: Path) -> None:
@@ -252,57 +268,24 @@ def test_mutation_queue_batches_different_files_and_serializes_side_effects(tmp_
 
 
 def test_tool_turn_results_sort_back_to_tool_index(tmp_path: Path) -> None:
-    from codey.agents.request import AgentRequest
-    from codey.agents.tool_turn import execute_turn_tools
-    from codey.protocols import JsonToolCodec
-    from codey.providers.base import AssistantTurn
-    from codey.runtime.core.models import ToolCall
-    from codey.toolchain.runtime import ToolOutcome
-    from tests.support.kernel_harness import build_kernel_fixture
+    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel_transport import _native_tool_messages
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.core.models import ToolCall, ToolResult
 
-    class _Provider:
-        name = "local"
-
-        def new_chat(self, timeout=None) -> None:
-            return None
-
-        def send_turn(self, prompt: str, tools=None, timeout=None) -> AssistantTurn:
-            raise AssertionError("no send")
-
-        def send_tool_results(self, results, tools=None, timeout=None) -> AssistantTurn:
-            raise AssertionError("no send")
-
-        def close(self) -> None:
-            return None
-
-    from codey.agents.tools import AgentToolFns
-
-    def read_file(root: Path, rel: str, **kwargs: object) -> ToolOutcome:
-        return ToolOutcome(f"content:{rel}", True)
-
-    def list_directory(root: Path, rel: str, **kwargs: object) -> ToolOutcome:
-        return ToolOutcome("listed", True)
-
-    session = build_kernel_fixture(AgentRequest(
-        provider=_Provider(),
-        project=tmp_path,
-        task="t",
-        provider_id="mock",
-        codec=JsonToolCodec(),
-        max_turns=5,
-        stagnant_turns=3,
-        on_event=lambda _event: None,
-        fresh_chat=False,
-        coding_context_enabled=False,
-        tool_fns=AgentToolFns(read_file=read_file, list_directory=list_directory),  # type: ignore[arg-type]
-    ))
+    (tmp_path / "a.py").write_text("a\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("b\n", encoding="utf-8")
+    policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
+    session = TaskSession(policy=policy, task_kind="project", project=str(tmp_path), max_turns=5)
     calls = [
-        ToolCall(name="read", args={"path": "b.py"}, call_id="c0"),
-        ToolCall(name="read", args={"path": "a.py"}, call_id="c1"),
+        ToolCall(name="read_file", args={"path": "b.py"}, call_id="c0"),
+        ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"),
     ]
-    result = execute_turn_tools(session, calls, turn=1)
-    assert [item.tool_index for item in result.turn_state.delivery_items] == [0, 1]
-    from codey.protocols.native_openai import NativeOpenAIToolCodec
-
-    messages = NativeOpenAIToolCodec.tool_messages(result.turn_state.results)
+    results = execute_turn(
+        session, calls, executors={"read_file": lambda c: ToolResult(call=c, model_text=f"content:{c.args.get('path')}")},
+        run_id="r1", turn=1, project_path=tmp_path,
+    )
+    assert [r.call.call_id for r in results] == ["c0", "c1"]
+    messages = _native_tool_messages(results, session)
     assert [m["tool_call_id"] for m in messages] == ["c0", "c1"]

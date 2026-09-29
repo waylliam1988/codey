@@ -256,14 +256,14 @@ def _kernel_startup(
     initial_results: list[ToolResult] | None,
     provider_session_changed: bool,
     delivered: Mapping[str, ToolResult] | None,
-) -> tuple[dict[str, Any], dict[str, ToolResult], int, bool, str, str, list[dict[str, Any]], str, Any, Any]:
+) -> tuple[dict[str, Any], dict[str, ToolResult], int, bool, str, str, list[dict[str, Any]], str, Any, Any, Any]:
     runnable = dict(executors or {})
     delivered_map = dict(delivered or {})
     max_turns = max(1, int(getattr(session, "max_turns", 8) or 8))
     pending_initial = list(initial_results or [])
     native = _is_native_provider(provider, provider_id=provider_id)
     identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
-    _, initial_contract, initial_native, initial_prompt = _snapshot_for_turn_state(
+    initial_allowed, initial_contract, initial_native, initial_prompt = _snapshot_for_turn_state(
         session,
         native=native,
         user_task=user_task,
@@ -294,6 +294,7 @@ def _kernel_startup(
         prompt,
         pending_reply,
         pending_native_messages,
+        initial_allowed,
     )
 
 
@@ -340,6 +341,7 @@ def run_task_kernel(
             prompt,
             pending_reply,
             pending_native_messages,
+            initial_allowed,
         ) = _kernel_startup(
             session,
             provider,
@@ -355,6 +357,20 @@ def run_task_kernel(
             delivered=delivered,
         )
     except Exception as exc:
+        # Recovery delivery failures must never fall through to the initial
+        # prompt: the model would continue without the recovered results.
+        try:
+            from codey.operations.kernel_recovery import RecoveryFailed as _RecoveryFailed
+
+            if isinstance(exc, _RecoveryFailed):
+                return KernelResult(
+                    completed=False,
+                    summary=f"recovery failed: {exc}",
+                    turns=0,
+                    stop_reason="recovery_failure",
+                )
+        except Exception:
+            pass
         return KernelResult(
             completed=False, summary=f"controller configuration error: {exc}", turns=0, stop_reason="controller_failure"
         )
@@ -374,25 +390,32 @@ def run_task_kernel(
             return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
         session.turn = turn
         turns_used = turn
-        try:
-            controller, turn_contract, turn_native_tools, turn_prompt = _snapshot_for_turn_state(
-                session,
-                native=native,
-                user_task=user_task,
-                context_text=context_text,
-            )
-        except Exception as exc:
-            return KernelResult(
-                completed=False,
-                summary=f"controller configuration error: {exc}",
-                turns=turns_used,
-                stop_reason="controller_failure",
-            )
-        native_tools = turn_native_tools
+        # First round reuses the startup snapshot (same session facts); later
+        # rounds rebuild once per round. Saves one snapshot build per run.
         if turn == resume_start and pending_reply is None and pending_native_messages is None and not pending_initial:
-            prompt = turn_prompt
+            controller, turn_contract, turn_native_tools, turn_prompt = (
+                initial_allowed,
+                initial_contract,
+                native_tools,
+                prompt,
+            )
             prev_contract = str(turn_contract or "")
         else:
+            try:
+                controller, turn_contract, turn_native_tools, turn_prompt = _snapshot_for_turn_state(
+                    session,
+                    native=native,
+                    user_task=user_task,
+                    context_text=context_text,
+                )
+            except Exception as exc:
+                return KernelResult(
+                    completed=False,
+                    summary=f"controller configuration error: {exc}",
+                    turns=turns_used,
+                    stop_reason="controller_failure",
+                )
+            native_tools = turn_native_tools
             # One snapshot per round: compare this round's contract with the
             # previous round's. Web text chains have no per-turn schema, so a
             # changed contract is prepended to the carried prompt here; native
@@ -490,7 +513,15 @@ def run_task_kernel(
         )
         _events._emit_tool_results(on_event, session, results, run_id=identity_ref, turn=turn)
         if native:
-            messages = _transport._native_tool_messages(results, session)
+            try:
+                messages = _transport._native_tool_messages(results, session)
+            except ValueError as exc:
+                return KernelResult(
+                    completed=False,
+                    summary=f"native mixed call ids: {exc}",
+                    turns=turns_used,
+                    stop_reason="protocol",
+                )
             if messages:
                 pending_native_messages = messages
                 prompt = ""

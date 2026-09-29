@@ -25,7 +25,8 @@ from codey.completion.decision import (
     completion_blocked_reason,
 )
 from codey.operations.project_completion_flow import COMPLETION_REPAIR_FOLLOWUP
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.operations.task_run import TaskRunDeps
+from codey.operations.task_entry import run_task_submission
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult

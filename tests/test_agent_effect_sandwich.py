@@ -11,7 +11,6 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
-from codey.agents.prompt_context import _send_provider_with_effect
 from codey.agents.request import AgentRequest
 from codey.agents.state import AgentLoopSession, RunResult
 from codey.agents.tool_execution import (
@@ -228,15 +227,15 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(getattr(replay_decision, "reason", ""), "policy_denied")
 
     def test_provider_send_intent_and_settlement_on_success(self) -> None:
-        provider = MockProvider("hello model")
-        session = self._create_session(provider)
+        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 
-        reply = _send_provider_with_effect(
-            session,
-            "user prompt",
-            purpose="test provider send",
-            source_ref="provider_send:test",
+        provider = MockProvider("hello model")
+        sink = KernelEffectSink(
+            self.line, session_id=self.session_id, run_id=self.run_id,
+            provider_id="mock_provider",
         )
+        recorded = KernelRecordedProvider(provider, sink)
+        reply = recorded.send("user prompt")
         self.assertEqual(reply, "hello model")
 
         effects = self.effects.load_effects(self.session_id, self.run_id)
@@ -248,16 +247,16 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.sent_state, "settled")
 
     def test_provider_send_intent_and_settlement_on_error(self) -> None:
-        provider = MockProvider(fail=True)
-        session = self._create_session(provider)
+        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 
+        provider = MockProvider(fail=True)
+        sink = KernelEffectSink(
+            self.line, session_id=self.session_id, run_id=self.run_id,
+            provider_id="mock_provider",
+        )
+        recorded = KernelRecordedProvider(provider, sink)
         with self.assertRaises(RuntimeError):
-            _send_provider_with_effect(
-                session,
-                "user prompt",
-                purpose="test provider send error",
-                source_ref="provider_send:test",
-            )
+            recorded.send("user prompt")
 
         effects = self.effects.load_effects(self.session_id, self.run_id)
         self.assertEqual(len(effects), 1)

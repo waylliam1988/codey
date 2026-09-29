@@ -10,6 +10,7 @@ from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
     SENT_STATE_MAYBE_SENT,
+    SENT_STATE_NOT_SENT,
     SENT_STATE_SETTLED,
     SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_OK,
@@ -139,13 +140,25 @@ class KernelRecordedProvider:
         try:
             reply = getattr(self.provider, name)(*args, **kwargs)
         except Exception as exc:
+            try:
+                from codey.providers import error_classification as errors
+
+                overflow_or_prep = isinstance(
+                    exc, (errors.ContextOverflowError, errors.RequestPrepError)
+                )
+            except Exception:
+                overflow_or_prep = False
+            # Overflow deterministically produced no usable reply and prep
+            # failures sent nothing: settle NOT_SENT so the same batch can
+            # safely retry/supersede. All other faults stay MAYBE_SENT.
+            sent_state = SENT_STATE_NOT_SENT if overflow_or_prep else SENT_STATE_MAYBE_SENT
             sink.mutations.settle_provider_effect(
                 sink.session_id, sink.run_id,
                 RuntimeEffectSettlement(
                     effect_id=effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
                     session_id=sink.session_id, run_id=sink.run_id,
                     status=SETTLEMENT_STATUS_ERROR, error_code=type(exc).__name__[:80],
-                    sent_state=SENT_STATE_MAYBE_SENT,
+                    sent_state=sent_state,
                 ),
             )
             raise

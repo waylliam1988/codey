@@ -2,6 +2,33 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Review 3643593 收口 + 旧模块删除（未发布）
+
+- 单次编辑单次推进：有 revision store 时仅
+  `sync_workspace_state_after_edit()` 推进，返回
+  `(revision, fingerprint)` 经事件 metadata 交给 hooks 采纳，不再二次
+  `bump_state`/扫描；非内核编辑仍由 hooks 推进
+ （`test_workspace_single_bump`：单次/连续/ignored，一致性）。
+- 恢复失败显式终止：`apply_recovery_first()` 抛 `RecoveryFailed`；
+  `run_task_kernel` 返回 `recovery_failure`，不发初始 prompt、不重执行、
+  不丢收据（`test_kernel_recovery_failure`）。
+- Hybrid 门槛只读规范名：事件 metadata 经 UI 投影透传 `tool_name`
+ （`tool` 仅展示）；门槛只读 `tool_name` 且要求每行 `run/session ID` 一致
+  （`test_hybrid_gate_canonical`）。
+- 混合 call ID 批次拒绝：`_native_tool_messages` 遇混合抛错，主循环以
+  `protocol` 终止，不回退文本；跨提供者文本仅在
+  `provider_session_changed` 分支（`test_native_mixed_batch`）。
+- Provider `NOT_SENT` 保留：`ContextOverflow`/`RequestPrep` 记 `NOT_SENT`
+  可安全重试，其余 `MAYBE_SENT`（`test_provider_not_sent_settlement`）。
+- 首轮复用启动快照，每轮一次快照。
+- 删除 `prompt_context`/`result_delivery`/`tool_turn`/`native_openai`、
+  `research/evidence_followup` 垫片及旧 codec 测试；测试改走
+  `run_task_kernel`/`execute_turn`/`normalize_turn` 等生产入口；harness
+  精简为 `TaskPolicy`/`TaskSession`/`TurnSnapshot`；架构测试断言文件不
+  存在且生产测试均无旧导入；删除 `task_entry.TaskRunDeps` 动态重出口。
+- 验证：全量 `python -m pytest -q`：
+  `4901 passed, 10 skipped, 1460 subtests passed`。未发布。
+
 ## Unreleased - 内核行为收紧 + task_loop 按职责拆分（未发布）
 
 - 协议校验失败即关闭：`validate_args_against_spec` 抛异常时，JSON 与原生

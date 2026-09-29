@@ -129,6 +129,7 @@ class RunEventUiPayloadCharacterizationTests(unittest.TestCase):
             "turn": 2,
             "tool_id": "2:0",
             "kind": "run",
+            "tool_name": "run",
             "path": "",
             "result": "exit 0: pytest -q",
             "status": "ok",

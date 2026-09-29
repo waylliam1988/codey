@@ -84,14 +84,9 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
         native_tools=tuple(native_now),
     )
 
-# Single tool source is ToolSpec; controller aliases lower via ToolSpec.
-# Kept for backward-compatible imports; new code must use tool_spec.
-try:
-    from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
+from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
 
-    _CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS or {})
-except Exception:
-    _CONTROLLER_ALIASES = frozenset({"open_result", "reopen_source", "open_hit"})
+_CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS or {})
 
 
 def _grant_for_tool(tool: str) -> str:
@@ -315,11 +310,7 @@ def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any]
         # They run via injected executors; no legacy coding/research repair.
         if executor not in {"project", "source", "knowledge"}:
             # Controller aliases always lower via research validation.
-            try:
-                from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _alias_args
-                is_alias = name in set(_alias_args or {})
-            except Exception:
-                is_alias = name in {"open_result", "reopen_source", "open_hit"}
+            is_alias = name in set(_ALIAS_ARGS or {})
             if is_alias or (name == "source_search" and isinstance(args, dict) and "source_id" in args):
                 return _validate_research_args(name, args if isinstance(args, dict) else {})
             return dict(args) if isinstance(args, dict) else {}, ""

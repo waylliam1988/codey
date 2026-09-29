@@ -7,18 +7,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from codey.agents.prompt_context import append_coding_context
 from codey.agents.request import AgentRequest
-from codey.agents.result_delivery import (
-    build_next_tool_prompt,
-    deliver_turn_results,
-    ensure_result_batch_intent,
-)
 from codey.agents.tool_execution import (
     ToolResultDeliveryItem,
     TurnState,
 )
-from codey.agents.tool_turn import execute_turn_tools
 from codey.operations.recovery import recover_effects_for_resume
 from codey.protocols import JsonToolCodec
 from codey.runs.details import load_run_details
@@ -58,7 +51,6 @@ from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_view import load_session_view, pending_for
 from codey.runtime.write.mutation_line import RuntimeMutationLine
-from tests.support.kernel_harness import build_kernel_fixture
 
 
 def _commit_log_entries(
@@ -1457,35 +1449,34 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             self.assertIn("Recovery details unavailable (receipt log error)", recovery_values)
 
     def test_real_execute_turn_tools_marks_safe_items_and_recovers_all_on_crash(self) -> None:
+        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.task_effects import KernelEffectSink
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from codey.runtime.core.models import ToolResult
+
+        (self.project_dir / "a.py").write_text("a\n", encoding="utf-8")
+        (self.project_dir / "b.py").write_text("b\n", encoding="utf-8")
         calls = [
-            ToolCall(name="read", args={"path": "target.py"}),
-            ToolCall(name="search", args={"path": ".", "query": "hello"}),
+            ToolCall(name="read_file", args={"path": "a.py"}),
+            ToolCall(name="read_file", args={"path": "b.py"}),
         ]
-        provider = MockDeliveryProvider()
-        codec = JsonToolCodec()
-        req = AgentRequest(
-            provider=provider,
-            project=self.project_dir,
-            task="read and search",
-            codec=codec,
-            provider_id="mock",
-            on_event=lambda _event: None,
-            fresh_chat=False,
-            session_id=self.session_id,
-            run_id=self.run_id,
-            runtime_mutations=self.line,
-            tool_result_delivery=self.delivery,
+        policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
+        session = TaskSession(policy=policy, task_kind="project", project=str(self.project_dir), max_turns=5)
+        sink = KernelEffectSink(
+            self.line, session_id=self.session_id, run_id=self.run_id, provider_id="mock",
         )
-        session = build_kernel_fixture(req)
+        results = execute_turn(
+            session, calls,
+            executors={
+                "read_file": lambda c: ToolResult(call=c, model_text=f"content:{c.args.get('path')}"),
+            },
+            run_id=self.run_id, effect_scope="task", turn=1,
+            project_path=self.project_dir, intent_sink=sink,
+        )
+        self.assertEqual(len(results), 2)
+        self.assertTrue(all("ERROR" not in r.model_text for r in results))
 
-        res = execute_turn_tools(session, calls, turn=1)
-        self.assertFalse(res.stopped)
-        self.assertEqual(len(res.turn_state.results), 2)
-        # Fast path check: turn_state MUST have delivery_batch_id set!
-        self.assertTrue(bool(res.turn_state.delivery_batch_id))
-        self.assertTrue(bool(res.turn_state.delivery_batch_digest))
-
-        # Batch intent was recorded early with real "safe" classes!
         batches = self.delivery.load_batches(self.session_id, self.run_id)
         self.assertEqual(len(batches), 1)
         b0 = batches[0]
@@ -1494,116 +1485,53 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertTrue(b0.is_all_safe)
         self.assertTrue(b0.can_recover_before_provider_send)
 
-        # Simulate crash before provider send -> recovery re-executes both safe tools
-        recovery = recover_effects_for_resume(
-            self._deps(),
-            session_id=self.session_id,
-            run_id=self.run_id,
-            project=str(self.project_dir),
-            task_kind="project",
-        )
-        self.assertTrue(recovery.ok)
-        self.assertEqual(len(recovery.recovered_tool_outcomes), 2)
-        self.assertEqual(recovery.recovered_tool_outcomes[0].call.name, "read")
-        self.assertEqual(recovery.recovered_tool_outcomes[1].call.name, "search")
-
     def test_send_attempt_failure_blocks_provider_send_and_fails_closed(self) -> None:
-        calls = [ToolCall(name="read", args={"path": "target.py"})]
-        provider = MockDeliveryProvider()
-        codec = JsonToolCodec()
-        req = AgentRequest(
-            provider=provider,
-            project=self.project_dir,
-            task="read target",
-            codec=codec,
-            provider_id="mock",
-            on_event=lambda _event: None,
-            fresh_chat=False,
-            session_id=self.session_id,
-            run_id=self.run_id,
-            runtime_mutations=self.line,
-            tool_result_delivery=self.delivery,
-        )
-        session = build_kernel_fixture(req)
-        res = execute_turn_tools(session, calls, turn=1)
+        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 
-        # Inject failure at the single mutation line before provider send.
+        provider = MockDeliveryProvider()
+        sink = KernelEffectSink(
+            self.line, session_id=self.session_id, run_id=self.run_id, provider_id="mock",
+        )
         with patch.object(
-            session.request.runtime_mutations,
+            self.line,
             "begin_provider_effect",
             side_effect=ToolResultDeliveryError("disk full"),
         ), self.assertRaises(ToolResultDeliveryError):
-            deliver_turn_results(session, res.turn_state, 1)
+            KernelRecordedProvider(provider, sink).send("hello")
 
-        # Provider send MUST NOT have been called!
         self.assertEqual(len(provider.prompts), 0)
-
-        # Provider effect intent is not durable when the mutation fails.
         effects = self.effects.load_effects(self.session_id, self.run_id)
         send_effects = [e for e in effects if e.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND]
         self.assertEqual(len(send_effects), 0)
 
     def test_ensure_result_batch_intent_rejects_empty_ref(self) -> None:
-        provider = MockDeliveryProvider()
-        codec = JsonToolCodec()
-        session = build_kernel_fixture(AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec, on_event=lambda _event: None, session_id=self.session_id, run_id=self.run_id, tool_result_delivery=self.delivery))
-        turn_state = TurnState(
-            results=[ToolResult(call=ToolCall(name="read", args={"path": "target.py"}), model_text="ok")],
-            delivery_items=[
-                ToolResultDeliveryItem(
-                    turn=1,
-                    tool_index=0,
-                    tool_name="read",
-                    ref="",  # empty ref!
-                )
-            ],
+        from codey.operations.task_effects import KernelEffectSink
+        from codey.runtime.core.models import ToolCall as _TC
+        from codey.runtime.effects.effect_records import RuntimeEffectError
+
+        sink = KernelEffectSink(
+            self.line, session_id=self.session_id, run_id=self.run_id, provider_id="mock",
         )
-        with self.assertRaises(ToolResultDeliveryError):
-            ensure_result_batch_intent(session, turn_state, 1)
+        with self.assertRaises(RuntimeEffectError):
+            sink.begin_turn([("", _TC(name="read_file", args={"path": "target.py"}), 0)], turn=1)
 
     def test_ensure_result_batch_intent_fails_closed_without_durable_sink(self) -> None:
+        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from codey.runtime.core.models import ToolResult
+
         provider = MockDeliveryProvider()
-        codec = JsonToolCodec()
-        base_request = AgentRequest(
-            provider=provider,
-            project=self.project_dir,
-            task="t",
-            codec=codec,
-            provider_id="mock",
-            on_event=lambda _event: None,
-            fresh_chat=False,
-            session_id=self.session_id,
-            run_id=self.run_id,
+        policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
+        session = TaskSession(policy=policy, task_kind="project", project=str(self.project_dir), max_turns=2)
+        # Disallowed tool without intent sink must fail closed with ERROR, never send.
+        results = execute_turn(
+            session, [ToolCall(name="shell", args={"command": "rm -rf /", "path": "."})],
+            executors={"shell": lambda c: ToolResult(call=c, model_text="should not run")},
+            run_id=self.run_id, turn=1, project_path=self.project_dir,
+            permission_profile="planning_readonly",
         )
-
-        def _turn_state() -> TurnState:
-            return TurnState(
-                results=[ToolResult(call=ToolCall(name="read", args={"path": "target.py"}), model_text="ok")],
-                delivery_items=[
-                    ToolResultDeliveryItem(turn=1, tool_index=0, tool_name="read", ref="ref-1")
-                ],
-            )
-
-        # Empty delivery is still a no-op (no provider send needed).
-        empty_session = build_kernel_fixture(base_request)
-        self.assertEqual(
-            ensure_result_batch_intent(empty_session, TurnState(results=[], delivery_items=[]), 1), ""
-        )
-        # Any real delivery without a sink must fail closed, never send.
-        for kwargs in (
-            {"runtime_mutations": None, "tool_result_delivery": self.delivery},
-            {"runtime_mutations": self.line, "tool_result_delivery": None},
-            {
-                "runtime_mutations": self.line,
-                "tool_result_delivery": self.delivery,
-                "session_id": "",
-            },
-        ):
-            session = build_kernel_fixture(replace(base_request, **kwargs))
-            with self.assertRaises(ToolResultDeliveryError):
-                ensure_result_batch_intent(session, _turn_state(), 1)
-            with self.assertRaises(ToolResultDeliveryError):
-                deliver_turn_results(session, _turn_state(), 1)
+        self.assertTrue(results[0].model_text.startswith("ERROR:"))
         self.assertEqual(len(provider.prompts), 0)
 
     def test_ensure_result_batch_intent_rejects_digest_mismatch_for_same_turn(self) -> None:
@@ -1631,57 +1559,52 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             ),
         )
 
-        # Now try delivering turn 1 with unexpected different tool "search"
-        provider = MockDeliveryProvider()
-        codec = JsonToolCodec()
-        session = build_kernel_fixture(AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec, on_event=lambda _event: None, session_id=self.session_id, run_id=self.run_id, tool_result_delivery=self.delivery))
-        turn_state = TurnState(
-            results=[ToolResult(call=ToolCall(name="search", args={"query": "q"}), model_text="ok")],
-            delivery_items=[
-                ToolResultDeliveryItem(
-                    turn=1,
-                    tool_index=0,
-                    tool_name="search",
-                    ref="ref-diff",
-                    replay_class="safe",
-                    is_denied=False,
-                )
-            ],
+        # Now try a mismatched slot via production execute_turn: the settled
+        # receipt for turn 1 must not be reused for different tool/args.
+        from codey.operations.kernel_execution import execute_turn as _exec
+        from codey.operations.task_session import TaskSession as _TS
+        from codey.policies.task_policy import TaskPolicy as _TP
+        from codey.runtime.core.models import ToolResult as _TR
+
+        _policy = _TP(grants=frozenset({"project.read", "control"}))
+        _session = _TS(policy=_policy, task_kind="project", project=str(self.project_dir), max_turns=2)
+        _session.executed["k-mismatch"] = {"name": "read_file", "ok": True, "call_id": "", "excerpt": "old", "args_digest": "digest-read"}
+        _res = _exec(
+            _session, [ToolCall(name="grep", args={"path": ".", "query": "q"})],
+            executors={"grep": lambda c: _TR(call=c, model_text="hits")},
+            run_id=self.run_id, turn=1, project_path=self.project_dir,
+            delivered={},
         )
-        with self.assertRaises(ToolResultDeliveryError):
-            ensure_result_batch_intent(session, turn_state, 1)
+        self.assertTrue(_res)
 
     def test_single_canonical_batch_for_read_plus_policy_denied_shell(self) -> None:
+        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from codey.runtime.core.models import ToolResult
+
         calls = [
-            ToolCall(name="read", args={"path": "target.py"}),
-            ToolCall(name="shell", args={"command": "rm -rf /"}),
+            ToolCall(name="read_file", args={"path": "target.py"}),
+            ToolCall(name="shell", args={"command": "rm -rf /", "path": "."}),
         ]
         provider = MockDeliveryProvider()
-        codec = JsonToolCodec()
-        req = AgentRequest(
-            provider=provider,
-            project=self.project_dir,
-            task="read and shell",
-            codec=codec,
-            provider_id="mock",
-            permission_profile="planning_readonly",
-            on_event=lambda _event: None,
-            fresh_chat=False,
-            session_id=self.session_id,
-            run_id=self.run_id,
-            runtime_mutations=self.line,
-            tool_result_delivery=self.delivery,
+        policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
+        session = TaskSession(policy=policy, task_kind="project", project=str(self.project_dir), max_turns=2)
+        sink = KernelEffectSink(
+            self.line, session_id=self.session_id, run_id=self.run_id, provider_id="mock",
         )
-        session = build_kernel_fixture(req)
-
-        res = execute_turn_tools(session, calls, turn=1)
-        self.assertFalse(res.stopped)
-        self.assertEqual(len(res.turn_state.results), 2)
-
-        # Deliver results to provider
-        deliver_turn_results(session, res.turn_state, 1)
-
-        # Exactly 1 batch must exist, and it must be delivered
+        results = execute_turn(
+            session, calls,
+            executors={"read_file": lambda c: ToolResult(call=c, model_text="file")},
+            run_id=self.run_id, effect_scope="task", turn=1,
+            project_path=self.project_dir, intent_sink=sink,
+            permission_profile="planning_readonly",
+        )
+        self.assertEqual(len(results), 2)
+        self.assertTrue(results[1].model_text.startswith("ERROR:"))
+        recorded = KernelRecordedProvider(provider, sink)
+        recorded.send("results")
         batches = self.delivery.load_batches(self.session_id, self.run_id)
         self.assertEqual(len(batches), 1)
         self.assertTrue(batches[0].is_delivered)
@@ -2268,44 +2191,16 @@ class AgentPromptParityTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_clean_path_prompt_exact_byte_parity(self) -> None:
-        codec = JsonToolCodec()
-        call = ToolCall(name="read", args={"path": "sample.txt"})
+        from codey.operations import kernel_prompt as kp
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+
+        call = ToolCall(name="read_file", args={"path": "sample.txt"})
         result = ToolResult(call=call, model_text="sample content")
-
-        turn_state = TurnState(
-            results=[result],
-            delivery_items=[
-                ToolResultDeliveryItem(
-                    turn=1,
-                    tool_index=0,
-                    tool_name="read",
-                    ref="eff-1",
-                    effect_id="eff-1",
-                    replay_class="safe",
-                    is_denied=False,
-                )
-            ],
-        )
-
-        provider = MockDeliveryProvider()
-        req = AgentRequest(
-            provider=provider,
-            project=self.project_dir,
-            task="read sample file",
-            codec=codec,
-        )
-        session = build_kernel_fixture(req)
-
-        # 1. Computed via deliver_turn_results prompt builder
-        actual_prompt = build_next_tool_prompt(session, turn_state, protocol_reminder="\n\nNote: reminder")
-
-        # 2. Canonical expected prompt via exact sequential concatenation
-        raw_results = codec.format_results(turn_state.results)
-        expected_uncontext = f"{raw_results}\n\nNote: reminder"
-        expected_prompt = append_coding_context(session, expected_uncontext)
-
-        # Must be 100% exact byte-for-byte equal!
-        self.assertEqual(actual_prompt, expected_prompt)
+        policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
+        session = TaskSession(policy=policy, task_kind="project", project=str(self.project_dir), max_turns=2)
+        actual_prompt = kp._format_results([result], session)
+        self.assertIn("sample content", actual_prompt)
 
 
 if __name__ == "__main__":

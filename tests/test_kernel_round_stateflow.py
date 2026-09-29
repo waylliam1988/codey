@@ -64,8 +64,9 @@ class SnapshotFailClosedTests(unittest.TestCase):
             def flaky(*args, **kwargs):
                 calls["n"] += 1
                 # One TurnSnapshot builds contract + names (2 underlying
-                # calls). Allow startup + round 1, then fail persistently.
-                if calls["n"] > 4:
+                # calls). Startup builds once and round 1 reuses it; fail on
+                # round 2 so exactly one provider send precedes the failure.
+                if calls["n"] > 2:
                     raise RuntimeError("snapshot boom")
                 return real_visible(*args, **kwargs)
 

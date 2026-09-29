@@ -468,18 +468,7 @@ def run_task_submission(deps: Any, request: TaskSubmission) -> None:
     runtime.run(request)
 
 
-def __getattr__(name: str) -> Any:
-    # Lazy re-export without a top-level cycle:
-    # task_run -> task_phases.dispatch -> task_entry -> task_run.
-    if name == "TaskRunDeps":
-        from codey.operations.task_run import TaskRunDeps
-
-        return TaskRunDeps
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 __all__ = [
-    "TaskRunDeps",
     "build_task_policy_for_entry",
     "run_entry_kernel",
     "run_task_mode",
