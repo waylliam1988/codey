@@ -226,16 +226,53 @@ class WorkspaceRevisionStore:
     ) -> WorkspaceState:
         path = self.path_for(project)
         try:
-            if not path.exists():
-                return WorkspaceState(
-                    revision=INITIAL_WORKSPACE_REVISION,
-                    fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
-                )
+            missing = not path.exists()
         except OSError:
-            return WorkspaceState(
-                revision=INITIAL_WORKSPACE_REVISION,
-                fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
-            )
+            missing = True
+        if missing:
+            # Missing-file init must stay read-only when no state exists
+            # (no directory creation) yet still avoid pairing stale revision
+            # 1 with a concurrently bumped fingerprint.
+            try:
+                parent_exists = path.parent.exists()
+            except OSError:
+                parent_exists = True
+            if not parent_exists:
+                fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+                try:
+                    appeared = path.exists()
+                except OSError:
+                    appeared = False
+                if not appeared:
+                    return WorkspaceState(
+                        revision=INITIAL_WORKSPACE_REVISION,
+                        fingerprint=fingerprint,
+                    )
+                # A first bump completed during the scan: fall through to
+                # the version-check path below for the authoritative pair.
+            else:
+                with with_file_lock(path):
+                    try:
+                        still_missing = not path.exists()
+                    except OSError:
+                        still_missing = True
+                    if still_missing:
+                        fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+                        try:
+                            appeared = path.exists()
+                        except OSError:
+                            appeared = False
+                        if appeared:
+                            revision = self._read_revision_unlocked(path)
+                            fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+                            return WorkspaceState(
+                                revision=revision,
+                                fingerprint=fingerprint,
+                            )
+                        return WorkspaceState(
+                            revision=INITIAL_WORKSPACE_REVISION,
+                            fingerprint=fingerprint,
+                        )
         # Consistent read without holding the scan under lock: the revision
         # is read before and after the fingerprint scan (version check). A
         # stable revision pairs exactly; a concurrent bump retries once with

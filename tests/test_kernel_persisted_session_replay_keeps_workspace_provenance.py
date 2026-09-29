@@ -87,21 +87,20 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
                     restored, identity,
                     ToolCall(name="edit", args={"path": "b.py", "content": "y=2\n"}),
                     "edit", 1,
+                    project_path=project, revision_store=store,
                 )
                 self.assertIsNotNone(replayed, "persisted edit slot must replay")
                 assert replayed is not None
-                # Unsafe replay without provenance must fail closed, never a
-                # bare success that would bump again.
+                # Successful persisted replay must restore the same verified
+                # identity (durable store corroboration); never an ERROR.
                 replay_text = str(replayed.model_text or "")
+                self.assertFalse(
+                    replay_text.startswith("ERROR:"),
+                    f"verified persisted replay must succeed, got {replay_text!r}",
+                )
                 replay_rev, replay_fp = ke._trusted_workspace_from_result(replayed)
-                if not (replay_rev and replay_fp):
-                    self.assertTrue(
-                        replay_text.startswith("ERROR:"),
-                        f"provenance-less unsafe replay must be ERROR, got {replay_text!r}",
-                    )
-                else:
-                    self.assertEqual(replay_rev, first_rev)
-                    self.assertEqual(replay_fp, first_fp)
+                self.assertEqual(replay_rev, first_rev)
+                self.assertEqual(replay_fp, first_fp)
 
                 work = RunWork(
                     recent_events=[], evidence=evidence,
@@ -133,13 +132,12 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
                     )
                     first_bumps = len(bump_calls)
                     self.assertEqual(first_bumps, 1, f"first event must bump once: {bump_calls}")
-                    # Replayed event must not bump again when it carries the
-                    # same trusted identity; a fail-closed ERROR also bumps 0.
-                    if replay_rev and replay_fp:
-                        kev._emit_tool_results(
-                            hooks.on_event, restored, [replayed],
-                            run_id="r-persist-1:task", turn=1,
-                        )
+                    # Replayed event carries the same verified identity and
+                    # must not bump again.
+                    kev._emit_tool_results(
+                        hooks.on_event, restored, [replayed],
+                        run_id="r-persist-1:task", turn=1,
+                    )
                 self.assertEqual(
                     len(bump_calls), first_bumps,
                     f"replay must not bump again: {bump_calls}",

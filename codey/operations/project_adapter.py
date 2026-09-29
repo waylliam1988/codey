@@ -90,19 +90,24 @@ def _project_context(request: AgentRequest) -> str:
 
 
 def _recovered_result_for_row(row: Any) -> Any:
-    from codey.operations.kernel_execution import build_recovered_tool_result
+    from codey.operations.kernel_recovery import RecoveryFailed
+    from codey.operations.kernel_result import build_recovered_tool_result
 
     # Preserve the full kernel-owned recovery metadata (audit with the
     # trusted workspace identity, presentation/canonical/truncated) so a
     # recovered edit keeps its (revision, fingerprint) and hooks adopt
     # without a second bump. Building audit={"changed": ...} only would
-    # drop the trusted identity.
+    # drop the trusted identity. Any failure raises RecoveryFailed: the
+    # caller must stop instead of consuming a half-recovered success.
     try:
         outcome_audit = dict(getattr(row.outcome, "audit", {}) or {})
-    except Exception:
-        outcome_audit = {}
-    if row.call.name == "edit" and "changed" not in outcome_audit:
-        outcome_audit["changed"] = bool(row.outcome.changed)
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
+    try:
+        if row.call.name == "edit" and "changed" not in outcome_audit:
+            outcome_audit["changed"] = bool(row.outcome.changed)
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered changed unreadable: {exc}") from exc
     try:
         return build_recovered_tool_result(
             row.call,
@@ -112,10 +117,10 @@ def _recovered_result_for_row(row: Any) -> Any:
             audit=outcome_audit,
             canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
         )
-    except Exception:
-        from codey.runtime.core.models import ToolResult
-
-        return ToolResult(call=row.call, model_text=row.outcome.model_text, audit=outcome_audit)
+    except RecoveryFailed:
+        raise
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered result rebuild failed: {exc}") from exc
 
 
 def _open_fresh_chat(request: AgentRequest) -> bool:
@@ -193,7 +198,6 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
 
 
 def run(request: AgentRequest) -> RunResult:
-    from codey.operations.kernel_execution import record_facts_for_result
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession, turn_effect_id
 
@@ -222,23 +226,46 @@ def run(request: AgentRequest) -> RunResult:
         coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
     )
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
+    from codey.operations.kernel_recovery import RecoveryFailed as _RecoveryFailed
+
+    try:
+        for row in list(request.recovered_tool_outcomes or ()):
+            if getattr(row, "call", None) is None or getattr(row, "outcome", None) is None:
+                raise _RecoveryFailed("malformed recovered row: missing call/outcome")
+            int(getattr(row, "turn", None))
+            int(getattr(row, "tool_index", None))
+        recovered_sorted = sorted(
+            list(request.recovered_tool_outcomes or ()),
+            key=lambda item: (int(item.turn), int(item.tool_index)),
+        )
+    except _RecoveryFailed:
+        raise
+    except Exception as exc:
+        raise _RecoveryFailed(f"malformed recovered rows: {exc}") from exc
     delivered: dict[str, Any] = {}
-    recovered_sorted = sorted(request.recovered_tool_outcomes, key=lambda item: (item.turn, item.tool_index))
-    for row in recovered_sorted:
-        result = _recovered_result_for_row(row)
-        delivered[turn_effect_id(f"{request.run_id or 'adhoc'}:{effect_scope}",
-                                 row.turn, row.tool_index)] = result
-        record_facts_for_result(session, row.call, result, ok=row.outcome.ok,
-                                 exit_code=row.outcome.exit_code)
+    try:
+        from codey.operations.kernel_facts import record_facts_for_result as _record_facts
+
+        for row in recovered_sorted:
+            result = _recovered_result_for_row(row)
+            delivered[turn_effect_id(f"{request.run_id or 'adhoc'}:{effect_scope}",
+                                     row.turn, row.tool_index)] = result
+            _record_facts(session, row.call, result, ok=row.outcome.ok,
+                          exit_code=row.outcome.exit_code)
+    except _RecoveryFailed:
+        raise
+    except Exception as exc:
+        raise _RecoveryFailed(f"recovered facts replay failed: {exc}") from exc
     # Recovery-first: deliver the original batch before any new model call,
     # and resume after the max recovered turn so identities never collide.
     resume_start = 1
     initial_results: list[Any] = []
     if recovered_sorted:
         try:
-            resume_start = max(int(getattr(r, "turn", 1) or 1) for r in recovered_sorted) + 1
-        except Exception:
-            resume_start = 1
+            resume_start = max(int(getattr(r, "turn", None)) for r in recovered_sorted) + 1
+            resume_start = max(1, resume_start)
+        except Exception as exc:
+            raise _RecoveryFailed(f"recovered resume turn unreadable: {exc}") from exc
         for row in recovered_sorted:
             initial_results.append(delivered[turn_effect_id(
                 f"{request.run_id or 'adhoc'}:{effect_scope}", row.turn, row.tool_index)])

@@ -1,5 +1,36 @@
 # Codey Test Report
 
+## Unified recovery + durable provenance verification + kernel split (2026-09-29)
+
+- Scope: P1 delivered full metadata via shared builder + explicit side-channel
+  (no bare ToolResult/continue); P1 persisted executed requires exact durable
+  store corroboration (999 rejected, no re-exec); P1 delegate outage denies
+  explicit executor with project path; P2 delegate audit-only exit 1 forces
+  ok=False; P2 missing-file init lock内复核 yet read-only; recovery tri-state
+  fail-closed across entry/adapter/harness/kernel; kernel split 1242->504
+  (result/provenance/recovery/facts) with baseline removal; persisted replay
+  test tightened to require verified identity.
+- TDD: 9 new accurate-name locks
+  (`test_delivered_from_frame_preserves_recovery_metadata`,
+  `test_persisted_executed_tampered_provenance_rejected`,
+  `test_explicit_executor_delegate_unavailable_denies_path_traversal`,
+  `test_delegate_audit_only_nonzero_exit_is_failure`,
+  `test_workspace_current_state_missing_file_concurrent_init`,
+  `test_entry_recovery_fail_closed`,
+  `test_project_adapter_recovery_failure_is_error`,
+  `test_kernel_recovery_error_aborts_batch_without_executor`,
+  `test_kernel_recovered_result_and_trusted_attach_fail_closed`). All 14
+  repros failed before the fix and pass after; tightened
+  `test_kernel_persisted_session_replay_keeps_workspace_provenance` passes;
+  pre-checks (`ruff`, `compileall`, `git diff --check`, targeted suites)
+  green before the full run.
+- Full run `python -m pytest -q`:
+  `4972 passed, 10 skipped, 1460 subtests passed in 344.27s (0:05:44)`.
+  First full run after the fix had 1 failure (missing read created the state
+  directory); fixed the read-only missing path, second full run green. Zero
+  failures.
+- No release was made.
+
 ## Strict provenance + strict exit + fail-closed replay (2026-09-29)
 
 - Scope: P1 executor workspace forgery stripped at the boundary with a

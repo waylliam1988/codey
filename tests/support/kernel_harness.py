@@ -383,63 +383,62 @@ def run_kernel_request(request: Any) -> Any:
         except Exception:
             tool_fns = None
         # Recovery-first like the entry kernel: deliver original batch before
-        # any new model call so prompts carry recovered facts.
+        # any new model call so prompts carry recovered facts. Any malformed
+        # row fails closed (no silent empty map / bare result / turn-1 reset).
+        from codey.operations.kernel_recovery import RecoveryFailed as _RecoveryFailed
+
         try:
+            for row in list(getattr(request, "recovered_tool_outcomes", ()) or ()):
+                if getattr(row, "call", None) is None or getattr(row, "outcome", None) is None:
+                    raise _RecoveryFailed("malformed recovered row: missing call/outcome")
+                int(getattr(row, "turn", None))
+                int(getattr(row, "tool_index", None))
             recovered_rows = sorted(
                 list(getattr(request, "recovered_tool_outcomes", ()) or ()),
-                key=lambda r: (int(getattr(r, "turn", 0) or 0), int(getattr(r, "tool_index", 0) or 0)),
+                key=lambda r: (int(r.turn), int(r.tool_index)),
             )
-        except Exception:
-            recovered_rows = []
+        except _RecoveryFailed:
+            raise
+        except Exception as exc:
+            raise _RecoveryFailed(f"malformed recovered rows: {exc}") from exc
         try:
-            from codey.operations.kernel_execution import build_recovered_tool_result as _build_recovered
+            from codey.operations.kernel_result import build_recovered_tool_result as _build_recovered
 
             _sess = task_session if hasattr(task_session, "policy") else getattr(session, "task_session", None)
             for row in recovered_rows:
-                try:
-                    try:
-                        _audit = dict(getattr(row.outcome, "audit", {}) or {})
-                    except Exception:
-                        _audit = {}
-                    if row.call.name == "edit" and "changed" not in _audit:
-                        _audit["changed"] = bool(row.outcome.changed)
-                    prior = _build_recovered(
-                        row.call, model_text=row.outcome.model_text,
-                        truncated=bool(getattr(row.outcome, "truncated", False)),
-                        presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
-                        audit=_audit,
-                        canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
-                    )
-                    record_facts_for_result(
-                        _sess, row.call, prior, ok=bool(row.outcome.ok), exit_code=row.outcome.exit_code,
-                    )
-                except Exception:
-                    pass
+                _audit = dict(getattr(row.outcome, "audit", {}) or {})
+                if row.call.name == "edit" and "changed" not in _audit:
+                    _audit["changed"] = bool(row.outcome.changed)
+                prior = _build_recovered(
+                    row.call, model_text=row.outcome.model_text,
+                    truncated=bool(getattr(row.outcome, "truncated", False)),
+                    presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
+                    audit=_audit,
+                    canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
+                )
+                record_facts_for_result(
+                    _sess, row.call, prior, ok=bool(row.outcome.ok), exit_code=row.outcome.exit_code,
+                )
             resume_start = 1
             initial_results: list[Any] = []
             if recovered_rows:
-                try:
-                    resume_start = max(int(getattr(r, "turn", 0) or 0) for r in recovered_rows) + 1
-                    resume_start = max(1, resume_start)
-                except Exception:
-                    resume_start = 1
+                resume_start = max(int(getattr(r, "turn", None)) for r in recovered_rows) + 1
+                resume_start = max(1, resume_start)
                 for row in recovered_rows:
-                    with contextlib.suppress(Exception):
-                        try:
-                            _audit2 = dict(getattr(row.outcome, "audit", {}) or {})
-                        except Exception:
-                            _audit2 = {}
-                        if row.call.name == "edit" and "changed" not in _audit2:
-                            _audit2["changed"] = bool(row.outcome.changed)
-                        initial_results.append(_build_recovered(
-                            row.call, model_text=row.outcome.model_text,
-                            truncated=bool(getattr(row.outcome, "truncated", False)),
-                            presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
-                            audit=_audit2,
-                            canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
-                        ))
-        except Exception:
-            resume_start, initial_results = 1, []
+                    _audit2 = dict(getattr(row.outcome, "audit", {}) or {})
+                    if row.call.name == "edit" and "changed" not in _audit2:
+                        _audit2["changed"] = bool(row.outcome.changed)
+                    initial_results.append(_build_recovered(
+                        row.call, model_text=row.outcome.model_text,
+                        truncated=bool(getattr(row.outcome, "truncated", False)),
+                        presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
+                        audit=_audit2,
+                        canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
+                    ))
+        except _RecoveryFailed:
+            raise
+        except Exception as exc:
+            raise _RecoveryFailed(f"recovered rebuild failed: {exc}") from exc
         try:
             from codey.operations.project_adapter import _project_context
 

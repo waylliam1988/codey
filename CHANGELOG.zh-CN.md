@@ -2,6 +2,38 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 统一恢复 + 持久化来源验证 + 内核拆分（未发布）
+
+- P1 `delivered_from_frame` 经 `build_recovered_tool_result` 保留完整恢复元数据
+  （audit/presentation/canonical/truncated），并从 durable audit 显式附加可信
+  side-channel；坏 row 直接 `RecoveryFailed`，不再 `continue`/空 map。以
+  `test_delivered_from_frame_preserves_recovery_metadata` 锁定。
+- P1 持久化 `executed` 必须经 durable 佐证：只有
+  `WorkspaceRevisionStore.current_state` 返回完全相同的
+  `(revision, fingerprint)` 才信任，否则 unsafe replay 返回明确 ERROR 且不重执行。
+  以 `test_persisted_executed_tampered_provenance_rejected` 锁定（999/`0*64` 拒绝）；
+  `test_kernel_persisted_session_replay_keeps_workspace_provenance` 已收紧为成功时必须相同身份。
+- P1 delegate 不可用不再绕过路径策略：有 project path 时构造失败直接
+  `RecoveryFailed`，显式 executor 被拒绝；无 project path 的测试注入仍放行。以
+  `test_explicit_executor_delegate_unavailable_denies_path_traversal` 锁定。
+- P2 delegate 仅 audit 退出码修复：`audit={"exit_code": 1}` 且参数为 `None` 时
+  `run` 必须 `ok=False`，与显式路径统一。以
+  `test_delegate_audit_only_nonzero_exit_is_failure` 锁定。
+- P2 `current_state` 无文件竞态修复：缺文件初始化在锁内复核，扫描期间出现文件则返回权威对；
+  无 state 时保持只读不建目录。以
+  `test_workspace_current_state_missing_file_concurrent_init` 锁定。
+- 恢复三态 fail-closed：`build`/`attach`/`delivered`/`batch` 失败一律显式 ERROR 或
+  `RecoveryFailed`，不再裸 `ToolResult`/`None`/`pass`/`suppress` 或回退 turn 1。以
+  `test_entry_recovery_fail_closed`、`test_project_adapter_recovery_failure_is_error`、
+  `test_kernel_recovery_error_aborts_batch_without_executor`、
+  `test_kernel_recovered_result_and_trusted_attach_fail_closed` 锁定。
+- 架构：`kernel_execution.py` 按不变量拆为 `kernel_result`/`kernel_provenance`/
+  `kernel_recovery`/`kernel_facts`（1242→504 行），仅保留编排并兼容重导出；
+  `task_execution` 改用公开 `result_ok`；架构基线移除 `kernel_execution`。
+- 验证：`ruff`、`compileall`、`diff --check` 全绿，全量
+  `4972 passed, 10 skipped, 1460 subtests passed in 344.27s`。首轮 1 失败
+  （缺文件读取建目录），修复只读路径后第二轮全绿。未发布。
+
 ## Unreleased - 严格来源 + 严格退出码 + 重放闭环（未发布）
 
 - P1 执行器伪造工作区身份已堵住：显式执行器返回的

@@ -178,7 +178,7 @@ class ExecutionDelegate:
                     result = ToolResult(call=call, model_text=produced)
                 else:
                     result = ToolResult(call=call, model_text=str(produced))
-                from codey.operations.kernel_execution import _result_ok as _ok
+                from codey.operations.kernel_result import result_ok as _ok
                 try:
                     ok = bool(_ok(name, result))
                 except Exception:

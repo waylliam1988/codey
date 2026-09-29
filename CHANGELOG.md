@@ -2,6 +2,66 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Unified recovery + durable provenance verification + kernel split (no release)
+
+- P1 `delivered_from_frame` now preserves full recovery metadata via
+  `build_recovered_tool_result` (audit/presentation/canonical/truncated)
+  plus an explicit trusted side-channel from the durable audit display;
+  malformed rows raise `RecoveryFailed` instead of `continue`/empty map.
+  Locked by `tests/test_delivered_from_frame_preserves_recovery_metadata.py`.
+- P1 persisted `executed` provenance now requires durable corroboration:
+  `_verified_persisted_identity` trusts a persisted `(revision, fingerprint)`
+  only when `WorkspaceRevisionStore.current_state` returns the exact pair;
+  otherwise unsafe replay returns `ERROR: persisted unsafe result lacks
+  verified workspace provenance` and `execute_turn` never re-executes.
+  Locked by `tests/test_persisted_executed_tampered_provenance_rejected.py`
+  (999/`0*64` rejected, executor not called); tightened
+  `tests/test_kernel_persisted_session_replay_keeps_workspace_provenance.py`
+  to require the same verified identity on success.
+- P1 delegate outage no longer bypasses path policy: `_build_delegate`
+  raises `RecoveryFailed` when a project path needs a delegate but
+  construction fails, and `_explicit_policy_denial` denies the explicit
+  executor when `delegate is None` with a project path (test-only injection
+  without a project path still allowed). Locked by
+  `tests/test_explicit_executor_delegate_unavailable_denies_path_traversal.py`.
+- P2 delegate audit-only exit fixed: `_normalize_delegate_result` treats an
+  audit-only `exit_code=1` as authoritative for `run` (`ok=False`), unified
+  with the explicit path via `_result_ok`. Locked by
+  `tests/test_delegate_audit_only_nonzero_exit_is_failure.py`.
+- P2 `current_state` missing-file race fixed: the no-file init re-checks
+  inside the revision lock and re-reads the authoritative pair when the file
+  appears during the scan, while staying read-only (no state directory
+  creation) when no state exists. Locked by
+  `tests/test_workspace_current_state_missing_file_concurrent_init.py`.
+- Recovery fail-closed tri-state: `Recovered` / `RecoveryMismatch` /
+  `RecoveryFailed` only. `build_recovered_tool_result` raises on audit or
+  construction failure (presentation/canonical stay display-only);
+  `_with_trusted_workspace_state` raises on any attach failure and the edit
+  settles as unconfirmed ERROR blocking the batch; `_delivered` rebuild
+  failure returns `ERROR: recovery failed` (never bare `stored`);
+  `_batch_recovery_mismatch` treats check exceptions as abort (never `None`);
+  `task_entry`/`project_adapter`/harness no longer swallow with
+  `except Exception: pass`/`suppress` or reset to turn 1 / bare `ToolResult`.
+  Locked by `tests/test_entry_recovery_fail_closed.py`,
+  `tests/test_project_adapter_recovery_failure_is_error.py`,
+  `tests/test_kernel_recovery_error_aborts_batch_without_executor.py`,
+  `tests/test_kernel_recovered_result_and_trusted_attach_fail_closed.py`.
+- Arch: split `operations/kernel_execution.py` (1242 -> 504 lines) by
+  invariant into `kernel_result.py` (result normalization, public
+  `result_ok`), `kernel_provenance.py` (trusted identity + sync),
+  `kernel_recovery.py` (replay/batch tri-state + `RecoveryFailed`), and
+  `kernel_facts.py` (fact recording); `kernel_execution.py` keeps only
+  orchestration and re-exports for compatibility. `task_execution.py` now
+  imports public `result_ok`. Removed `kernel_execution` from the
+  `test_long_files_do_not_grow` baseline/ceiling.
+- Verification: `ruff check codey tests tools` clean, `compileall` clean,
+  `git diff --check` clean, targeted suites green before the full run. Full
+  `python -m pytest -q`:
+  `4972 passed, 10 skipped, 1460 subtests passed in 344.27s (0:05:44)`.
+  First full run after the fix had 1 failure (missing-read created the state
+  directory); fixed the read-only missing path, second full run green.
+  No release.
+
 ## Unreleased - Strict provenance + strict exit + fail-closed replay (no release)
 
 - P1 executor workspace forgery closed: explicit executor
