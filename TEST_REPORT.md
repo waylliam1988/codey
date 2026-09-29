@@ -2,7 +2,7 @@
 
 ## Provider protocol boundary and local A/B harness (2026-09-30)
 
-- Detailed r1-r7 stability analysis: `tests/manual/REAL_LOCAL_AB_REPORT.md`.
+- Detailed r1-r7 stability analysis: `tests/manual/LOCAL_MODEL_PI_AB_REPORT.zh-CN.md`.
 - Scope: keep model-template parsing in provider adapters, reject provider
   markup in the kernel, preserve the generic Markdown JSON fence used by the
   research flow, and exclude ignored manual benchmark results from pytest
