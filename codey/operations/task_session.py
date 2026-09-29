@@ -164,13 +164,33 @@ class TaskSession:
         for key, record in (self.executed or {}).items():
             if not isinstance(record, dict):
                 continue
-            executed_refs[str(key)] = {
+            row: dict[str, Any] = {
                 "name": str(record.get("name", "") or "")[:80],
                 "ok": bool(record.get("ok", False)),
                 "call_id": str(record.get("call_id", "") or "")[:80],
                 "excerpt": str(record.get("excerpt", "") or "")[:500],
                 "args_digest": str(record.get("args_digest", "") or "")[:80],
             }
+            # Minimal durable provenance for unsafe replay: only a fully
+            # valid (revision, fingerprint) pair is persisted.
+            try:
+                from codey.workspace.revision import (
+                    valid_workspace_fingerprint as _valid_fp,
+                )
+                from codey.workspace.revision import valid_workspace_revision as _valid_rev
+            except Exception:
+                _valid_rev = None  # type: ignore[assignment]
+                _valid_fp = None  # type: ignore[assignment]
+            try:
+                if _valid_rev is not None and _valid_fp is not None:
+                    rev = _valid_rev(record.get("workspace_revision", 0))
+                    fp = _valid_fp(record.get("workspace_fingerprint", ""))
+                    if rev and fp:
+                        row["workspace_revision"] = rev
+                        row["workspace_fingerprint"] = fp
+            except Exception:
+                pass
+            executed_refs[str(key)] = row
         return {
             "task_kind": str(self.task_kind or ""),
             "project": str(self.project or ""),

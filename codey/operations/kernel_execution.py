@@ -11,11 +11,23 @@ from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
 
 __all__ = [
+    "build_recovered_tool_result",
     "execute_turn",
     "record_facts_for_result",
     "sync_workspace_state_after_edit",
     "strict_exit_code_or_none",
 ]
+
+
+# Kernel-owned workspace provenance travels outside the executor-controlled
+# audit dict. Executor-provided ``workspace_revision``/``workspace_fingerprint``
+# are stripped at the kernel boundary; only ``_with_trusted_workspace_state``
+# may attach the authoritative pair via both audit keys (for durable display)
+# and the private side-channel attribute read by the event projection.
+_KERNEL_WORKSPACE_ATTR = "_kernel_workspace_identity"
+_EXECUTOR_STRIPPED_AUDIT_KEYS = frozenset(
+    {"workspace_revision", "workspace_fingerprint", "_kernel_workspace_trusted"}
+)
 
 
 def strict_exit_code_or_none(value: object) -> int | None:
@@ -26,13 +38,161 @@ def strict_exit_code_or_none(value: object) -> int | None:
 
 
 def _result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) -> bool:
+    # Explicit exit_code param wins (delegate structured exit); otherwise the
+    # audit exit_code is authoritative when present. Any present-but-invalid
+    # exit (bool/str/float) fails closed. Valid run exits decide by code==0.
+    audit_code: int | None = None
+    audit_present_invalid = False
+    try:
+        audit = getattr(result, "audit", None)
+        if isinstance(audit, dict) and "exit_code" in audit:
+            raw = audit.get("exit_code")
+            if raw is not None:
+                parsed = strict_exit_code_or_none(raw)
+                if parsed is None:
+                    audit_present_invalid = True
+                else:
+                    audit_code = parsed
+    except Exception:
+        audit_present_invalid = False
     if exit_code is not None:
         code = strict_exit_code_or_none(exit_code)
         if code is None:
             return False
-        return code == 0
+        if str(name or "").strip().lower() == "run":
+            text = str(result.model_text or "")
+            if text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"):
+                return False
+            return code == 0
+        text = str(result.model_text or "")
+        return not (text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"))
+    if audit_present_invalid:
+        return False
+    if audit_code is not None and str(name or "").strip().lower() == "run":
+        text = str(result.model_text or "")
+        if text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"):
+            return False
+        return audit_code == 0
     text = str(result.model_text or "")
     return not (text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"))
+
+
+def _strip_executor_workspace_audit(audit: object) -> dict:
+    """Remove executor-forgeable workspace provenance from an audit dict."""
+    try:
+        source = dict(audit) if isinstance(audit, dict) else {}
+    except Exception:
+        return {}
+    for key in _EXECUTOR_STRIPPED_AUDIT_KEYS:
+        source.pop(key, None)
+    return source
+
+
+def _normalize_audit_exit_code(audit: dict) -> tuple[dict, int | None, bool]:
+    """Split audit exit_code into (cleaned_audit, strict_code_or_None, invalid).
+
+    Invalid means the key was present with a non-None value that is not a
+    real int (bool/str/float rejected). Callers must fail closed on invalid
+    and omit the key from downstream projections instead of coercing to 0.
+    """
+    try:
+        raw_present = "exit_code" in audit
+        raw = audit.get("exit_code") if raw_present else None
+    except Exception:
+        return dict(audit) if isinstance(audit, dict) else {}, None, False
+    if not raw_present or raw is None:
+        return audit, None, False
+    code = strict_exit_code_or_none(raw)
+    if code is None:
+        cleaned = dict(audit)
+        cleaned.pop("exit_code", None)
+        return cleaned, None, True
+    return audit, code, False
+
+
+def _kernel_workspace_identity_of(result: ToolResult) -> Any | None:
+    """Return the kernel-attached trusted identity, else None.
+
+    Only the private side-channel set by ``_with_trusted_workspace_state``
+    counts. Audit-dict workspace keys alone are never trusted because an
+    explicit executor can forge them.
+    """
+    try:
+        identity = getattr(result, _KERNEL_WORKSPACE_ATTR, None)
+        if identity is None:
+            return None
+        if bool(getattr(identity, "trusted", False)):
+            return identity
+    except Exception:
+        pass
+    return None
+
+
+def _copy_kernel_workspace_provenance(src: ToolResult, dst: ToolResult) -> None:
+    """Carry the kernel side-channel across a ToolResult rebuild."""
+    try:
+        identity = getattr(src, _KERNEL_WORKSPACE_ATTR, None)
+        if identity is not None and bool(getattr(identity, "trusted", False)):
+            object.__setattr__(dst, _KERNEL_WORKSPACE_ATTR, identity)
+    except Exception:
+        pass
+
+
+def _is_unsafe_tool(name: str) -> bool:
+    """True when a replay without full provenance must fail closed."""
+    try:
+        from codey.toolchain.tool_spec import spec_for_tool
+
+        spec = spec_for_tool(str(name or "").strip().lower())
+    except Exception:
+        return True
+    if spec is None:
+        return True
+    return str(getattr(spec, "replay_class", "unsafe") or "unsafe").strip().lower() != "safe"
+
+
+def build_recovered_tool_result(
+    call: ToolCall,
+    *,
+    model_text: object = "",
+    audit: object = None,
+    presentation: object = None,
+    canonical: object = None,
+    truncated: object = False,
+) -> ToolResult:
+    """Shared rebuild for recovered/delivered results (single helper).
+
+    Preserves kernel-owned metadata (audit/presentation/canonical/truncated)
+    so a recovered edit keeps its trusted workspace identity. Edit audits
+    without an explicit ``changed`` flag inherit ``changed=False`` only when
+    the caller passes no audit; callers that know the outcome changed must
+    include it explicitly. Executor-forgeable workspace keys are never added
+    here: only ``_with_trusted_workspace_state`` may attach provenance via
+    the side-channel.
+    """
+    try:
+        audit_dict = dict(audit) if isinstance(audit, dict) else {}
+    except Exception:
+        audit_dict = {}
+    try:
+        presentation_dict = dict(presentation) if isinstance(presentation, dict) else {}
+    except Exception:
+        presentation_dict = {}
+    try:
+        canonical_dict = dict(canonical) if isinstance(canonical, dict) else {}
+    except Exception:
+        canonical_dict = {}
+    try:
+        return ToolResult(
+            call=call,
+            model_text=str(model_text or ""),
+            truncated=bool(truncated),
+            presentation=presentation_dict,
+            audit=audit_dict,
+            canonical=canonical_dict,
+        )
+    except Exception:
+        return ToolResult(call=call, model_text=str(model_text or ""), audit=audit_dict)
 
 
 def _error_result(call: ToolCall, message: str) -> ToolResult:
@@ -66,39 +226,44 @@ def _consistent_tool_result(requested: ToolCall, produced: ToolResult) -> ToolRe
                 requested,
                 f"tool call_id mismatch: requested {want_id or '?'} got {got_id or '?'}; refusing to lose receipt",
             )
-        if _call_args_digest(requested) != _call_args_digest(produced_call):
+        want_digest = _call_args_digest(requested)
+        got_digest = _call_args_digest(produced_call)
+        # An unavailable digest proves nothing: two empty digests must never
+        # compare equal. Fail closed so a digest outage cannot accept a
+        # divergent path as the requested call.
+        if not want_digest or not got_digest or want_digest != got_digest:
             return _error_result(
                 requested,
                 "tool call args mismatch: returned args differ from requested args; refusing to lose receipt",
             )
     except Exception:
         return _error_result(requested, "tool call validation failed; refusing to lose receipt")
-    # Normalize identity: the receipt always carries the requested call, so a
-    # compliant executor that rebuilt an equal call cannot smuggle a divergent
-    # identity downstream.
+    # Normalize identity: validation success always rebuilds with the requested
+    # call. Executor audit workspace keys are stripped here so only the kernel
+    # bump (via _with_trusted_workspace_state) can re-attach provenance.
     try:
-        if produced.call is not requested and (
-            produced.call.name != requested.name
-            or produced.call.call_id != requested.call_id
-            or dict(getattr(produced.call, "args", {}) or {}) != dict(getattr(requested, "args", {}) or {})
-        ):
-            return produced
-        if produced.call is requested:
-            return produced
+        cleaned_audit = _strip_executor_workspace_audit(
+            dict(produced.audit) if isinstance(getattr(produced, "audit", None), dict) else {}
+        )
         return ToolResult(
             call=requested,
             model_text=produced.model_text,
             truncated=bool(produced.truncated),
             presentation=dict(produced.presentation) if isinstance(produced.presentation, dict) else {},
-            audit=dict(produced.audit) if isinstance(produced.audit, dict) else {},
+            audit=cleaned_audit,
             canonical=dict(produced.canonical) if isinstance(produced.canonical, dict) else {},
         )
     except Exception:
-        return produced
+        return _error_result(requested, "tool result normalization failed; refusing to lose receipt")
 
 
 def _with_trusted_workspace_state(result: ToolResult, *, revision: int, fingerprint: str) -> ToolResult:
-    """Attach the authoritative (revision, fingerprint) to one edit result."""
+    """Attach the authoritative (revision, fingerprint) to one edit result.
+
+    The pair is stored both in audit (durable display) and in the private
+    side-channel. Only the side-channel is trusted downstream; audit keys
+    alone never confer trust.
+    """
     from codey.workspace.revision import WorkspaceIdentity
 
     identity = WorkspaceIdentity.trusted_pair(revision, fingerprint)
@@ -110,7 +275,7 @@ def _with_trusted_workspace_state(result: ToolResult, *, revision: int, fingerpr
         audit = {}
     audit = identity.attach_to_audit(audit)
     try:
-        return ToolResult(
+        trusted = ToolResult(
             call=result.call,
             model_text=result.model_text,
             truncated=bool(result.truncated),
@@ -120,28 +285,22 @@ def _with_trusted_workspace_state(result: ToolResult, *, revision: int, fingerpr
         )
     except Exception:
         return result
+    try:
+        object.__setattr__(trusted, _KERNEL_WORKSPACE_ATTR, identity)
+    except Exception:
+        return result
+    return trusted
 
 
 def _trusted_workspace_from_result(result: ToolResult) -> tuple[int, str]:
-    from codey.workspace.revision import WorkspaceIdentity
-
+    """Strict kernel provenance: side-channel only, never raw audit."""
     try:
-        identity = WorkspaceIdentity.from_audit(getattr(result, "audit", {}))
-        if identity.trusted:
+        identity = _kernel_workspace_identity_of(result)
+        if identity is not None:
             return int(identity.revision), str(identity.fingerprint)
     except Exception:
         pass
     return 0, ""
-
-
-def _trusted_workspace_identity_from_result(result: ToolResult) -> Any:
-    """Kernel-owned provenance for one result; untrusted when incomplete."""
-    from codey.workspace.revision import WorkspaceIdentity
-
-    try:
-        return WorkspaceIdentity.from_audit(getattr(result, "audit", {}))
-    except Exception:
-        return WorkspaceIdentity()
 
 
 def _build_delegate(
@@ -252,7 +411,7 @@ def _replay_settled_slot(
         # them loses the (revision, fingerprint) and causes a second bump.
         call_id = str(getattr(call, "call_id", "") or full.call.call_id or "")
         try:
-            return ToolResult(
+            rebuilt = ToolResult(
                 call=ToolCall(name=full.call.name, args=dict(full.call.args), call_id=call_id),
                 model_text=full.model_text,
                 truncated=bool(full.truncated),
@@ -262,12 +421,66 @@ def _replay_settled_slot(
             )
         except Exception:
             return full
+        _copy_kernel_workspace_provenance(full, rebuilt)
+        return rebuilt
     record = session.executed[identity]
     stored_name = str(record.get("name", "") or "")
     stored_digest = str(record.get("args_digest", "") or "")
     if not _same_effect_call(stored_name, stored_digest, call):
         return _recovery_mismatch_result(call, stored_name, stored_digest or "unknown-args")
     call_id = str(getattr(call, "call_id", "") or record.get("call_id", ""))
+    was_ok = bool(record.get("ok", False))
+    # Persisted replay (no _memory_results, no delivered): the bounded
+    # ``executed`` record carries the minimal provenance. Unsafe tools
+    # without trusted provenance fail closed instead of replaying a bare
+    # success that hooks would bump a second time.
+    if was_ok and _is_unsafe_tool(name):
+        try:
+            from codey.workspace.revision import WorkspaceIdentity
+        except Exception:
+            WorkspaceIdentity = None  # type: ignore[assignment]
+        persisted_rev: Any = record.get("workspace_revision", None)
+        persisted_fp: Any = record.get("workspace_fingerprint", None)
+        persisted_identity = None
+        try:
+            if WorkspaceIdentity is not None:
+                persisted_identity = WorkspaceIdentity.trusted_pair(persisted_rev, persisted_fp)
+        except Exception:
+            persisted_identity = None
+        if persisted_identity is None or not bool(getattr(persisted_identity, "trusted", False)):
+            return ToolResult(
+                call=ToolCall(
+                    name=str(record.get("name", "") or name),
+                    args=dict(call.args if isinstance(call.args, dict) else {}),
+                    call_id=call_id,
+                ),
+                model_text=(
+                    "ERROR: persisted unsafe result lacks workspace provenance; "
+                    "refusing to replay as success"
+                ),
+            )
+        try:
+            audit = {"workspace_revision": int(persisted_identity.revision),
+                     "workspace_fingerprint": str(persisted_identity.fingerprint)}
+            if str(record.get("name", "") or name).strip().lower() == "edit":
+                audit["changed"] = True
+            rebuilt = ToolResult(
+                call=ToolCall(
+                    name=str(record.get("name", "") or name),
+                    args=dict(call.args if isinstance(call.args, dict) else {}),
+                    call_id=call_id,
+                ),
+                model_text=str(record.get("excerpt", "") or ""),
+                audit=audit,
+            )
+        except Exception:
+            return ToolResult(
+                call=call,
+                model_text="ERROR: persisted unsafe result lacks workspace provenance; refusing to replay as success",
+            )
+        with contextlib.suppress(Exception):
+            object.__setattr__(rebuilt, _KERNEL_WORKSPACE_ATTR, persisted_identity)
+        return rebuilt
     return ToolResult(
         call=ToolCall(
             name=str(record.get("name", "") or name),
@@ -275,7 +488,7 @@ def _replay_settled_slot(
             call_id=call_id,
         ),
         model_text=f"ERROR: already settled in turn {active_turn}; see prior delivery"
-        if not bool(record.get("ok", False))
+        if not was_ok
         else str(record.get("excerpt", "") or ""),
     )
 
@@ -334,9 +547,10 @@ def sync_workspace_state_after_edit(
     single authority (one atomic scan inside the store lock) and the trusted
     pair is returned so result events can carry it to hooks; hooks must adopt
     it without a second bump. Otherwise only the observed fingerprint is
-    aligned and the outer hooks bump owns the revision (this compat path
-    scans once here for session alignment and hooks scan again for the
-    revision by design; the no-store case never emits trusted state).
+    aligned and the outer hooks bump owns the revision (compat path retained
+    for tests only: it scans once here for session alignment and hooks scan
+    again for the revision; production must pass a durable store to avoid the
+    double scan; the no-store case never emits trusted state).
 
     A supplied store that fails (exception, invalid revision, or empty
     fingerprint) never falls back to the session-guess path: the session
@@ -579,8 +793,8 @@ def _delivered_slot_result(
     # Preserve kernel-owned metadata (audit/presentation/canonical/truncated)
     # so a recovered edit keeps its trusted workspace identity.
     try:
-        return ToolResult(
-            call=call,
+        rebuilt = build_recovered_tool_result(
+            call,
             model_text=stored.model_text,
             truncated=bool(getattr(stored, "truncated", False)),
             presentation=dict(stored.presentation) if isinstance(stored.presentation, dict) else {},
@@ -589,6 +803,8 @@ def _delivered_slot_result(
         )
     except Exception:
         return stored
+    _copy_kernel_workspace_provenance(stored, rebuilt)
+    return rebuilt
 
 
 def _is_recovery_mismatch_text(text: object) -> bool:
@@ -659,6 +875,97 @@ def _guarded_slot_result(
     return None
 
 
+def _explicit_policy_denial(
+    delegate: Any, call: ToolCall
+) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None, bool] | None:
+    """Delegate guard for the explicit executor; fail-closed on outage."""
+    if delegate is None:
+        return None
+    try:
+        handles = bool(delegate.handles(call.name if hasattr(call, "name") else ""))
+    except Exception:
+        return (
+            _error_result(call, "policy check unavailable; refusing to run executor"),
+            False, "", [], None, True,
+        )
+    if not handles:
+        return None
+    try:
+        check = getattr(delegate, "_policy_check", None)
+        if callable(check):
+            denied, message, _approval = check(call)
+            if denied:
+                return (
+                    ToolResult(call=call, model_text=f"ERROR: {message}"),
+                    False, "", [], None, True,
+                )
+    except Exception as exc:
+        # Fail closed: a policy-check outage never authorizes the
+        # explicit executor. The executor is not invoked.
+        return (
+            _error_result(call, f"policy check unavailable; refusing to run {call.name or '?'}: {exc}"),
+            False, "", [], None, True,
+        )
+    return None
+
+
+def _normalize_explicit_result(name: str, result: ToolResult) -> tuple[ToolResult, bool]:
+    """Strip invalid audit exits; invalid forces ok=False (never 0)."""
+    try:
+        audit_dict = dict(result.audit) if isinstance(result.audit, dict) else {}
+    except Exception:
+        audit_dict = {}
+    cleaned_audit, _strict_code, audit_invalid = _normalize_audit_exit_code(audit_dict)
+    if audit_invalid:
+        with contextlib.suppress(Exception):
+            result = ToolResult(
+                call=result.call,
+                model_text=result.model_text,
+                truncated=bool(result.truncated),
+                presentation=dict(result.presentation) if isinstance(result.presentation, dict) else {},
+                audit=cleaned_audit,
+                canonical=dict(result.canonical) if isinstance(result.canonical, dict) else {},
+            )
+    ok = _result_ok(name, result)
+    if audit_invalid:
+        ok = False
+    if str(result.model_text or "").startswith("ERROR: tool call"):
+        ok = False
+    return result, ok
+
+
+def _normalize_delegate_result(
+    name: str, result: ToolResult, ok: bool, exit_code: int | None
+) -> tuple[ToolResult, bool, int | None]:
+    """Strict delegate exits: non-int structured/audit exits fail closed."""
+    if str(result.model_text or "").startswith("ERROR: tool call"):
+        ok = False
+    if name == "run" and exit_code is not None and strict_exit_code_or_none(exit_code) is None:
+        exit_code = None
+        ok = False
+    try:
+        delegate_audit = dict(result.audit) if isinstance(result.audit, dict) else {}
+    except Exception:
+        delegate_audit = {}
+    cleaned_audit, _code, invalid = _normalize_audit_exit_code(delegate_audit)
+    if invalid:
+        with contextlib.suppress(Exception):
+            rebuilt = ToolResult(
+                call=result.call,
+                model_text=result.model_text,
+                truncated=bool(result.truncated),
+                presentation=dict(result.presentation) if isinstance(result.presentation, dict) else {},
+                audit=cleaned_audit,
+                canonical=dict(result.canonical) if isinstance(result.canonical, dict) else {},
+            )
+            _copy_kernel_workspace_provenance(result, rebuilt)
+            result = rebuilt
+        ok = False
+    elif name == "run" and exit_code is not None and not _result_ok(name, result, exit_code=exit_code):
+        ok = False
+    return result, ok, exit_code
+
+
 def _run_via_delegate_or_fn(
     delegate: Any,
     runnable: Mapping[str, Any],
@@ -679,18 +986,9 @@ def _run_via_delegate_or_fn(
     """
     fn = runnable.get(name)
     if fn is not None:
-        if delegate is not None and delegate.handles(name):
-            try:
-                check = getattr(delegate, "_policy_check", None)
-                if callable(check):
-                    denied, message, _approval = check(call)
-                    if denied:
-                        return (
-                            ToolResult(call=call, model_text=f"ERROR: {message}"),
-                            False, "", [], None, True,
-                        )
-            except Exception:
-                pass
+        denial = _explicit_policy_denial(delegate, call)
+        if denial is not None:
+            return denial
         try:
             produced = fn(call)
         except Exception as exc:
@@ -701,9 +999,7 @@ def _run_via_delegate_or_fn(
             result = ToolResult(call=call, model_text=produced)
         else:
             result = ToolResult(call=call, model_text=str(produced))
-        ok = _result_ok(name, result)
-        if str(result.model_text or "").startswith("ERROR: tool call"):
-            ok = False
+        result, ok = _normalize_explicit_result(name, result)
         return result, ok, "", [], None, True
     if delegate is not None and delegate.handles(name):
         result, ok, opened, evidence, exit_code = delegate.execute(
@@ -712,17 +1008,9 @@ def _run_via_delegate_or_fn(
             tool_index=tool_index,
         )
         result = _consistent_tool_result(call, result)
-        if str(result.model_text or "").startswith("ERROR: tool call"):
-            ok = False
-        # Delegate structured exits are int-only; bool/str never imply pass.
-        if name == "run" and exit_code is not None and strict_exit_code_or_none(exit_code) is None:
-            exit_code = None
-            ok = False
+        result, ok, exit_code = _normalize_delegate_result(name, result, ok, exit_code)
         return result, ok, opened, evidence, exit_code, True
     return _error_result(call, f"unknown tool executor: {name or '?'}"), False, "", [], None, True
-    # ``run`` without a structured exit code never counts as verified pass;
-    # verification is decided in record_facts_for_result from exit codes only.
-    return result, ok, "", [], None, True
 
 
 def execute_turn(
@@ -932,11 +1220,23 @@ def _settle_slot(session: TaskSession, identity: str, call: ToolCall, result: To
     import contextlib as _contextlib
 
     with _contextlib.suppress(Exception):
-        session.executed[identity] = {
+        record: dict[str, Any] = {
             "name": str(result.call.name or ""),
             "ok": bool(ok),
             "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
             "excerpt": str(result.model_text or "")[:500],
             "args_digest": _call_args_digest(call),
         }
+        # Minimal durable provenance for persisted replay: the trusted
+        # (revision, fingerprint) is persisted alongside the excerpt so a
+        # restored session can replay the same identity without a second
+        # bump. Only the kernel side-channel is persisted, never raw audit.
+        try:
+            identity_obj = _kernel_workspace_identity_of(result)
+            if identity_obj is not None and bool(ok):
+                record["workspace_revision"] = int(identity_obj.revision)
+                record["workspace_fingerprint"] = str(identity_obj.fingerprint)
+        except Exception:
+            pass
+        session.executed[identity] = record
 

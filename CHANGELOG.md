@@ -2,6 +2,64 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Strict provenance + strict exit + fail-closed replay (no release)
+
+- P1 executor workspace forgery closed: explicit executor
+  `workspace_revision`/`workspace_fingerprint` are stripped at the kernel
+  boundary (`_strip_executor_workspace_audit` in `_consistent_tool_result`);
+  only `_with_trusted_workspace_state` may attach the authoritative pair via
+  audit keys plus the private `_kernel_workspace_identity` side-channel.
+  `kernel_events` emits workspace metadata from the side-channel only, so the
+  no-store path never carries trusted identity and hooks bump exactly once
+  instead of adopting 999. Locked by
+  `tests/test_kernel_explicit_executor_forges_workspace_identity_no_store.py`.
+- P1 strict exit end to end: explicit and delegate audit exits are normalized
+  at the boundary (`_normalize_audit_exit_code`); present-but-invalid exits
+  (`False/True/"0"/1.0/"1"`) are stripped and force `ok=False`, record no
+  verification, and are omitted from `RunEvent`/`run_event_ui_payload`/
+  headless `_payload_tool` instead of coercing to 0. `ToolOutcome`,
+  `run_event_ui_payload`, and headless projection are strict (`type is int`).
+  Locked by
+  `tests/test_kernel_explicit_executor_invalid_exit_code_projection.py` plus
+  the tightened `tests/test_kernel_exit_code_strict_bool_rejected.py`.
+- P1 policy-check outage fail-closed: `_explicit_policy_denial` returns an
+  explicit ERROR without invoking the executor when `_policy_check` raises.
+  Locked by
+  `tests/test_kernel_explicit_executor_policy_check_exception_fail_closed.py`.
+- P2 persisted replay keeps provenance: `_settle_slot` persists the trusted
+  pair into `executed`, `TaskSession.to_payload` carries it, and the
+  record-only `_replay_settled_slot` fallback restores the same identity with
+  the side-channel (bumps once) or fails closed with ERROR when an unsafe
+  tool has no provenance (never a bare success that bumps again). Shared
+  `build_recovered_tool_result` unifies `project_adapter`/`task_entry`/
+  harness rebuilds. Locked by
+  `tests/test_kernel_persisted_session_replay_keeps_workspace_provenance.py`.
+- P2 `_consistent_tool_result` normalized: validation success always rebuilds
+  `ToolResult(call=requested)` with stripped audit; empty digests never
+  compare equal (digest outage is a mismatch error); the divergent
+  passthrough branch is gone. Locked by
+  `tests/test_kernel_consistent_tool_result_normalizes_identity.py`.
+- Hygiene: removed `_trusted_workspace_identity_from_result` and the
+  unreachable return; `display_provider_name` centralizes the display-only
+  `provider.name` fallback; harness no longer synthesizes empty
+  `AssistantTurn` or falls back to `send("")` on provider errors (protocol
+  faults surface as `provider_failure`); residual `if False` import and weak
+  assertions fixed; replay test asserts `first_bumps == 1`.
+- Perf/arch: `current_state` uses a revision version check (outside scan,
+  retry once inside the lock) instead of pairing across moments, locked by
+  `tests/test_workspace_current_state_version_check_retries_on_concurrent_bump.py`;
+  no-store double scan marked compat-only (production must pass a durable
+  store); `_provider_failure` preserves the exception type;
+  `kernel_execution` split helpers keep `ruff` green (added to the
+  architecture baseline with a 1300 ceiling pending a support-module split).
+- Verification: `ruff check codey tests tools` clean, `compileall` clean,
+  `git diff --check` clean, targeted suites green before the full run. Full
+  `python -m pytest -q`:
+  `4958 passed, 10 skipped, 1460 subtests passed in 360.07s (0:06:00)`.
+  First full run had 2 failures (new `kernel_execution` over-1000 baseline,
+  `current_state` outside-lock assertion); fixed the baseline and the version
+  check, second full run green. No release.
+
 ## Unreleased - Durable workspace + strict exit + identity hardening (no release)
 
 - P1 durable single settlement: `execute_turn()` defers edit settlement until

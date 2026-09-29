@@ -52,9 +52,16 @@ def _is_native_provider(provider: Any, *, provider_id: object = "") -> bool:
 def _provider_failure(exc: Exception, turns_used: int, *, propagate: bool) -> KernelResult:
     if propagate:
         raise exc
+    # Preserve the error type for invariant diagnostics: a bare str(exc)
+    # would hide whether the fault was a settle invariant, a digest outage,
+    # or a genuine provider transport error.
+    try:
+        kind = type(exc).__name__ or "Exception"
+    except Exception:
+        kind = "Exception"
     return KernelResult(
         completed=False,
-        summary=f"provider failed: {exc}",
+        summary=f"provider failed [{kind}]: {exc}",
         turns=turns_used,
         stop_reason="provider_failure",
     )

@@ -134,10 +134,14 @@ def build_kernel_fixture(request: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
     except Exception:
         trace = None
     try:
-        # Test-only trace label: provider.name fallback is display-only here.
+        # Test-only trace label via the centralized display helper.
         # Durable kernel paths still require an explicit provider_id; this
         # fallback never authorizes persistence.
-        active_provider_id = str(getattr(request, "provider_id", "") or getattr(provider, "name", "") or "")
+        from codey.providers.catalog import display_provider_name
+
+        active_provider_id = display_provider_name(
+            getattr(request, "provider_id", ""), provider
+        )
     except Exception:
         active_provider_id = ""
     try:
@@ -285,37 +289,29 @@ def run_seeded_kernel(session: Any, reply: Any, *, start_turn: int = 1) -> Any: 
             if not self._used:
                 self._used = True
                 return self._first
-            try:
-                fn = getattr(self._fallback, "send_turn", None)
-                if callable(fn):
-                    try:
-                        return fn(prompt, tools, timeout=timeout)
-                    except TypeError:
-                        return fn(prompt, tools)
-            except Exception:
-                pass
+            fn = getattr(self._fallback, "send_turn", None)
+            if callable(fn):
+                try:
+                    return fn(prompt, tools, timeout=timeout)
+                except TypeError:
+                    return fn(prompt, tools)
+            # No native entry: fall back to text only when the provider has
+            # no native method at all. Provider errors always propagate so
+            # the kernel records an honest provider_failure.
             return self.send(str(prompt) if isinstance(prompt, str) else "")
 
         def send_tool_results(self, messages: Any, tools: Any = None, timeout: Any = None) -> Any:
             # Seeded first reply is already consumed via send/send_turn; tool
-            # results always go to the fallback chain. Old native tests provide
-            # only read+done (no third turn for the done receipt); synthesize
-            # an empty ack so the new fail-closed receipt delivery still closes
-            # via the new entry instead of failing the migrated behavior test.
+            # results always go to the fallback chain. Provider protocol
+            # errors (IndexError/AssertionError/...) propagate so missing
+            # receipts surface as provider_failure instead of a synthesized
+            # empty ack that would hide the fixture bug.
             fn = getattr(self._fallback, "send_tool_results", None)
             if callable(fn):
                 try:
-                    try:
-                        return fn(messages, tools, timeout=timeout)
-                    except TypeError:
-                        return fn(messages, tools)
-                except (IndexError, AssertionError):
-                    try:
-                        from codey.providers.base import AssistantTurn as _AT
-
-                        return _AT(text="", tool_calls=())
-                    except Exception:
-                        return ""
+                    return fn(messages, tools, timeout=timeout)
+                except TypeError:
+                    return fn(messages, tools)
             return self.send("")
 
     seeded = _SeededProvider(reply, provider)
@@ -389,8 +385,6 @@ def run_kernel_request(request: Any) -> Any:
         # Recovery-first like the entry kernel: deliver original batch before
         # any new model call so prompts carry recovered facts.
         try:
-            from codey.runtime.core.models import ToolResult as _TR
-
             recovered_rows = sorted(
                 list(getattr(request, "recovered_tool_outcomes", ()) or ()),
                 key=lambda r: (int(getattr(r, "turn", 0) or 0), int(getattr(r, "tool_index", 0) or 0)),
@@ -398,6 +392,8 @@ def run_kernel_request(request: Any) -> Any:
         except Exception:
             recovered_rows = []
         try:
+            from codey.operations.kernel_execution import build_recovered_tool_result as _build_recovered
+
             _sess = task_session if hasattr(task_session, "policy") else getattr(session, "task_session", None)
             for row in recovered_rows:
                 try:
@@ -407,8 +403,8 @@ def run_kernel_request(request: Any) -> Any:
                         _audit = {}
                     if row.call.name == "edit" and "changed" not in _audit:
                         _audit["changed"] = bool(row.outcome.changed)
-                    prior = _TR(
-                        call=row.call, model_text=row.outcome.model_text,
+                    prior = _build_recovered(
+                        row.call, model_text=row.outcome.model_text,
                         truncated=bool(getattr(row.outcome, "truncated", False)),
                         presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
                         audit=_audit,
@@ -435,8 +431,8 @@ def run_kernel_request(request: Any) -> Any:
                             _audit2 = {}
                         if row.call.name == "edit" and "changed" not in _audit2:
                             _audit2["changed"] = bool(row.outcome.changed)
-                        initial_results.append(_TR(
-                            call=row.call, model_text=row.outcome.model_text,
+                        initial_results.append(_build_recovered(
+                            row.call, model_text=row.outcome.model_text,
                             truncated=bool(getattr(row.outcome, "truncated", False)),
                             presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
                             audit=_audit2,

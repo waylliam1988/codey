@@ -1,5 +1,36 @@
 # Codey Test Report
 
+## Strict provenance + strict exit + fail-closed replay (2026-09-29)
+
+- Scope: P1 executor workspace forgery stripped at the boundary with a
+  kernel side-channel (no-store never trusted, hooks bump once); P1 invalid
+  audit exits stripped and fail closed end to end (event/UI/headless omit,
+  never 0); P1 policy-check exception blocks the executor; P2 persisted
+  replay restores the same trusted pair or fails closed (shared recovered
+  helper); P2 consistent result always normalizes to the requested call with
+  empty digests as mismatch; harness no longer synthesizes receipts;
+  display fallback centralized; current_state version check; provider
+  failure keeps the error type.
+- TDD: 6 new accurate-name locks
+  (`test_kernel_explicit_executor_forges_workspace_identity_no_store`,
+  `test_kernel_explicit_executor_invalid_exit_code_projection`,
+  `test_kernel_explicit_executor_policy_check_exception_fail_closed`,
+  `test_kernel_persisted_session_replay_keeps_workspace_provenance`,
+  `test_kernel_consistent_tool_result_normalizes_identity`,
+  `test_workspace_current_state_version_check_retries_on_concurrent_bump`).
+  All 7 bug repros failed before the fix and pass after (plus the valid-int
+  guard); tightened old locks (`exit_code_strict_bool_rejected`,
+  `edit_replay_preserves_trusted_workspace_audit`) pass; pre-checks
+  (`ruff`, `compileall`, `git diff --check`, targeted suites) green before
+  the full run.
+- Full run `python -m pytest -q`:
+  `4958 passed, 10 skipped, 1460 subtests passed in 360.07s (0:06:00)`.
+  First full run after the fix had 2 failures (new `kernel_execution`
+  over-1000 architecture baseline, `current_state` outside-lock assertion);
+  fixed the baseline (1300 ceiling) and the version-check retry, second full
+  run green. Zero failures.
+- No release was made.
+
 ## Durable workspace + strict exit + identity hardening (2026-09-29)
 
 - Scope: P1 single settlement for bump failure (real durable sink, no double

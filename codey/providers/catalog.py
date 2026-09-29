@@ -36,11 +36,31 @@ def provider_ids() -> tuple[str, ...]:
     return tuple(PROVIDER_LABELS)
 
 
+def display_provider_name(explicit_id: object, provider: object) -> str:
+    """Display-only provider label; never a durable identity.
+
+    Durable kernel paths require an explicit ``provider_id`` and fail when
+    it is empty. This helper only resolves the human-readable label for
+    conversation windows and test traces.
+    """
+    try:
+        text = str(explicit_id or "").strip()
+        if text:
+            return text
+    except Exception:
+        pass
+    try:
+        return str(getattr(provider, "name", "") or "")
+    except Exception:
+        return ""
+
+
 __all__ = [
     "DEFAULT_PROVIDER_ID",
     "PROVIDER_LABELS",
     "PROVIDER_WORKER_PORT_OFFSETS",
     "WEB_PROVIDER_LABELS",
     "WORKER_CHILD_ENV",
+    "display_provider_name",
     "provider_ids",
 ]

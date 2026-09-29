@@ -23,8 +23,15 @@ class KernelExitCodeStrictBoolRejectedTests(unittest.TestCase):
         self.assertFalse(_result_ok("run", res, exit_code=False), "bool False must not be ok")
         self.assertFalse(_result_ok("run", res, exit_code=True))
         self.assertFalse(_result_ok("run", res, exit_code="0"), "str must not be ok")
-        self.assertFalse(_result_ok("run", res, exit_code=None) is True and False)  # None path uses text
+        # None path falls back to model text: plain "ok" passes, ERROR fails.
+        self.assertTrue(_result_ok("run", res, exit_code=None))
+        err = ToolResult(call=call, model_text="ERROR: boom")
+        self.assertFalse(_result_ok("run", err, exit_code=None))
         self.assertFalse(_result_ok("run", res, exit_code=1))
+        # Audit-carried exits are strict as well: bool/str audit never passes.
+        for bad in (False, True, "0", 1.0):
+            bad_res = ToolResult(call=call, model_text="ok", audit={"exit_code": bad})
+            self.assertFalse(_result_ok("run", bad_res), f"audit exit {bad!r} must not be ok")
 
     def test_record_facts_rejects_bool_exit_in_audit(self) -> None:
         from codey.operations.kernel_execution import record_facts_for_result

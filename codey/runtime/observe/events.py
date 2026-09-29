@@ -211,7 +211,8 @@ def run_event_ui_payload(
     command = str(tool_args.get("command") or "")
     if command:
         payload["command"] = command
-    if event.outcome.exit_code is not None:
+    # Strict exit: only real ints are projected; bool/str/float are omitted.
+    if event.outcome.exit_code is not None and type(event.outcome.exit_code) is int:
         payload["exit_code"] = event.outcome.exit_code
     managed = event.outcome.managed_output()
     if managed:

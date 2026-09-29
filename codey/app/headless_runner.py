@@ -460,8 +460,19 @@ def _payload_tool(common: dict[str, object], event: dict) -> dict[str, object]:
     command = clip_event_text(event.get("command") or "")
     if command:
         payload["command"] = command
-    if event.get("exit_code") is not None:
-        payload["exit_code"] = _int_or_zero(event.get("exit_code"))
+    # Strict exit: only real ints are projected; bool/str/float are omitted
+    # instead of being coerced to 0 (bool False must not become exit 0).
+    try:
+        from codey.utils.refs import strict_exit_code as _strict_exit
+    except Exception:
+        _strict_exit = None  # type: ignore[assignment]
+    try:
+        raw_exit = event.get("exit_code")
+        strict_exit = _strict_exit(raw_exit) if _strict_exit is not None else None
+    except Exception:
+        strict_exit = None
+    if strict_exit is not None:
+        payload["exit_code"] = strict_exit
     _copy_if_present(payload, event, "output_handle", limit=120)
     for key in ("output_bytes", "output_stored_bytes"):
         if event.get(key) is not None:

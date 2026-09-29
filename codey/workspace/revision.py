@@ -236,12 +236,22 @@ class WorkspaceRevisionStore:
                 revision=INITIAL_WORKSPACE_REVISION,
                 fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
             )
+        # Consistent read without holding the scan under lock: the revision
+        # is read before and after the fingerprint scan (version check). A
+        # stable revision pairs exactly; a concurrent bump retries once with
+        # the authoritative inside-lock scan so provenance never mixes
+        # revision N with another moment's fingerprint.
+        with with_file_lock(path):
+            first = self._read_revision_unlocked(path)
+        fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+        with with_file_lock(path):
+            second = self._read_revision_unlocked(path)
+        if first == second:
+            return WorkspaceState(revision=first, fingerprint=fingerprint)
         with with_file_lock(path):
             revision = self._read_revision_unlocked(path)
-        return WorkspaceState(
-            revision=revision,
-            fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
-        )
+            fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+        return WorkspaceState(revision=revision, fingerprint=fingerprint)
 
     def bump(self, project: str | Path) -> int:
         return self.bump_state(project).revision

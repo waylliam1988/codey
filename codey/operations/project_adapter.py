@@ -90,7 +90,7 @@ def _project_context(request: AgentRequest) -> str:
 
 
 def _recovered_result_for_row(row: Any) -> Any:
-    from codey.runtime.core.models import ToolResult
+    from codey.operations.kernel_execution import build_recovered_tool_result
 
     # Preserve the full kernel-owned recovery metadata (audit with the
     # trusted workspace identity, presentation/canonical/truncated) so a
@@ -104,8 +104,8 @@ def _recovered_result_for_row(row: Any) -> Any:
     if row.call.name == "edit" and "changed" not in outcome_audit:
         outcome_audit["changed"] = bool(row.outcome.changed)
     try:
-        return ToolResult(
-            call=row.call,
+        return build_recovered_tool_result(
+            row.call,
             model_text=row.outcome.model_text,
             truncated=bool(getattr(row.outcome, "truncated", False)),
             presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
@@ -113,6 +113,8 @@ def _recovered_result_for_row(row: Any) -> Any:
             canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
         )
     except Exception:
+        from codey.runtime.core.models import ToolResult
+
         return ToolResult(call=row.call, model_text=row.outcome.model_text, audit=outcome_audit)
 
 
@@ -199,11 +201,12 @@ def run(request: AgentRequest) -> RunResult:
         request.project.mkdir(parents=True, exist_ok=True)
     opened_fresh_chat = _open_fresh_chat(request)
     if request.conversation is not None and opened_fresh_chat:
-        # Compat fallback: provider.name is display-only for the conversation
-        # window. Durable paths require an explicit provider_id (see below);
-        # this fallback never authorizes persistence.
+        # Display-only label via the centralized helper; durable paths
+        # require an explicit provider_id (see below) and never use this.
+        from codey.providers.catalog import display_provider_name
+
         request.conversation.begin_window(
-            request.provider_id or getattr(request.provider, "name", ""),
+            display_provider_name(request.provider_id, request.provider),
             "project", str(request.project),
         )
     task_kind, policy = _task_kind_and_policy(request)

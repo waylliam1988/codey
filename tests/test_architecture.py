@@ -2098,6 +2098,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "runtime/effects/tool_result_delivery.py",
             "toolchain/runtime.py",
             "workspace/changes.py",
+            # Strict provenance 2026-09-29: executor workspace strip,
+            # strict exit normalization, persisted replay provenance,
+            # fail-closed policy check (1242 lines); split planned.
+            "operations/kernel_execution.py",
         }
         self.assertEqual(set(over_limit) - baseline, set())
         # Reverse direction: a baseline entry that shrank back under the
@@ -2147,6 +2151,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # Read-only require_baseline + stat-size capacity guard.
             # PLR split 2026-09-26: 1214 lines after git-command split.
             "workspace/changes.py": 1270,
+            # Strict provenance 2026-09-29: 1242 lines after kernel boundary
+            # hardening; will shrink when helpers move to a support module.
+            "operations/kernel_execution.py": 1300,
         }
         grown = {
             name: size

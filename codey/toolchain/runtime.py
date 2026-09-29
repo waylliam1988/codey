@@ -141,8 +141,26 @@ class ToolOutcome:
         audit = json_safe_projection(self.audit, label="audit")
         if error_code:
             audit["error_code"] = error_code
-        if self.exit_code is not None:
-            audit["exit_code"] = self.exit_code
+        # Strict exit: only real ints are projected. Bool/str/float exits
+        # are omitted instead of being coerced (bool False must not become 0).
+        try:
+            strict_code: int | None = None
+            if self.exit_code is not None and type(self.exit_code) is int:
+                strict_code = self.exit_code
+            if strict_code is None and audit.get("exit_code") is not None:
+                raw = audit.get("exit_code")
+                strict_code = raw if type(raw) is int else None
+                if strict_code is None:
+                    audit.pop("exit_code", None)
+            if strict_code is not None:
+                audit["exit_code"] = strict_code
+                object.__setattr__(self, "exit_code", strict_code)
+            else:
+                audit.pop("exit_code", None) if "exit_code" in audit and self.exit_code is not None else None
+                if self.exit_code is not None and type(self.exit_code) is not int:
+                    object.__setattr__(self, "exit_code", None)
+        except Exception:
+            pass
         if self.changed:
             audit["changed"] = True
         if self.truncated:

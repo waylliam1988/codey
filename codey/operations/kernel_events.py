@@ -80,11 +80,27 @@ def _emit_tool_results(
         identity = turn_effect_id(str(run_id or "adhoc"), turn, index)
         record = session.executed.get(identity, {})
         ok = bool(record.get("ok", False))
+        # Strict exit projection: only real ints pass. A present-but-invalid
+        # audit exit (bool/str/float) is omitted, never coerced to 0. The
+        # verification fallback is strict as well.
         exit_code = None
-        if isinstance(result.audit, dict):
-            exit_code = result.audit.get("exit_code")
+        try:
+            from codey.utils.refs import strict_exit_code as _strict_exit
+        except Exception:
+            _strict_exit = None  # type: ignore[assignment]
+        if isinstance(result.audit, dict) and result.audit.get("exit_code") is not None:
+            try:
+                raw_exit = result.audit.get("exit_code")
+                exit_code = _strict_exit(raw_exit) if _strict_exit is not None else None
+            except Exception:
+                exit_code = None
         if result.call.name == "run" and session.verifications:
-            exit_code = exit_code if exit_code is not None else session.verifications[-1].get("exit_code")
+            try:
+                fallback_raw = session.verifications[-1].get("exit_code")
+                fallback = _strict_exit(fallback_raw) if _strict_exit is not None else None
+            except Exception:
+                fallback = None
+            exit_code = exit_code if exit_code is not None else fallback
         display = str(result.model_text or "")
         if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"}:
             display = next(
@@ -109,20 +125,24 @@ def _emit_tool_results(
             if isinstance(getattr(event, "metadata", None), dict):
                 if canonical_name:
                     event.metadata["tool_name"] = canonical_name
-                # Only the kernel-owned WorkspaceIdentity captured by
-                # execute_turn() from the authoritative bump may be carried;
-                # the session guess is never trusted, so a failed bump emits
-                # no workspace state and hooks must not adopt the old revision.
+                # Only the kernel side-channel attached by
+                # _with_trusted_workspace_state may be carried. Raw audit
+                # workspace keys are executor-forgeable and never trusted;
+                # the no-store path never sets the side-channel so it never
+                # emits trusted state and hooks must bump.
                 if canonical_name == "edit" and ok and changed:
                     try:
-                        from codey.workspace.revision import WorkspaceIdentity
-
-                        identity = WorkspaceIdentity.from_audit(getattr(result, "audit", {}))
+                        kernel_identity = getattr(result, "_kernel_workspace_identity", None)
+                        trusted = bool(getattr(kernel_identity, "trusted", False))
                     except Exception:
-                        identity = None
-                    if identity is not None and identity.trusted:
-                        event.metadata["workspace_revision"] = int(identity.revision)
-                        event.metadata["workspace_fingerprint"] = str(identity.fingerprint)
+                        kernel_identity = None
+                        trusted = False
+                    if trusted:
+                        try:
+                            event.metadata["workspace_revision"] = int(kernel_identity.revision)
+                            event.metadata["workspace_fingerprint"] = str(kernel_identity.fingerprint)
+                        except Exception:
+                            pass
         except Exception:
             pass
         on_event(event)

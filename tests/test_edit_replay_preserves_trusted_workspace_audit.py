@@ -76,10 +76,10 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
             )
             self.assertEqual(len(results), 1)
             first = results[0]
+            from codey.operations.task_session import turn_effect_id as _turn_effect_id
+
             replayed = ke._replay_settled_slot(
-                session, ke.turn_effect_id if False else __import__(
-                    "codey.operations.task_session", fromlist=["turn_effect_id"]
-                ).turn_effect_id("r-replay-audit-1:task", 1, 0),
+                session, _turn_effect_id("r-replay-audit-1:task", 1, 0),
                 ToolCall(name="edit", args={"path": "b.py", "content": "y=2\n"}),
                 "edit", 1,
             )
@@ -95,12 +95,24 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
         from codey.runtime.core.models import ToolCall, ToolResult
 
         call = ToolCall(name="edit", args={"path": "b.py", "content": "y=2\n"}, call_id="c1")
-        stored = ToolResult(
+        # Strict provenance: audit keys alone are never trusted. The stored
+        # result must carry the kernel side-channel attached by the bump.
+        base = ToolResult(
+            call=call, model_text="edited",
+            audit={"changed": True},
+            presentation={"result": "p"}, canonical={"tool": "edit"},
+        )
+        stored = ke._with_trusted_workspace_state(
+            base, revision=2, fingerprint="sha256:" + "ab" * 32
+        )
+        # Audit-only forgery without the side-channel must stay untrusted.
+        forged = ToolResult(
             call=call, model_text="edited",
             audit={"changed": True, "workspace_revision": 2,
                    "workspace_fingerprint": "sha256:" + "ab" * 32},
-            presentation={"result": "p"}, canonical={"tool": "edit"},
         )
+        forged_rev, _forged_fp = ke._trusted_workspace_from_result(forged)
+        self.assertEqual((forged_rev, _forged_fp), (0, ""), f"audit-only must be untrusted: {dict(forged.audit)!r}")
         got = ke._delivered_slot_result({"slot-1": stored}, "slot-1", call)
         self.assertIsNotNone(got)
         assert got is not None
@@ -178,6 +190,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
                     on_event = _real_hooks_on_event(store=store, work=work, project=str(project))
                     kev._emit_tool_results(on_event, session, results, run_id="r-replay-bump-1:task", turn=2)
                     first_bumps = len(bump_calls)
+                    self.assertEqual(first_bumps, 1, f"first event must bump once: {bump_calls}")
                     identity = turn_effect_id("r-replay-bump-1:task", 2, 0)
                     replayed = ke._replay_settled_slot(
                         session, identity,

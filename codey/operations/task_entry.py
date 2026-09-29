@@ -167,8 +167,6 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
 
 
 def _entry_recovery(frame: RunFrame, session: Any) -> tuple[dict[str, Any], list[Any], int, list[Any]]:
-    from codey.runtime.core.models import ToolResult
-
     try:
         from codey.operations.recovery import delivered_from_frame
     except Exception:
@@ -182,18 +180,33 @@ def _entry_recovery(frame: RunFrame, session: Any) -> tuple[dict[str, Any], list
         key=lambda r: (int(getattr(r, "turn", 0) or 0), int(getattr(r, "tool_index", 0) or 0)),
     )
     try:
-        from codey.operations.kernel_execution import record_facts_for_result
+        from codey.operations.kernel_execution import (
+            build_recovered_tool_result,
+            record_facts_for_result,
+        )
 
         for row in recovered_rows:
-            prior = ToolResult(
-                call=row.call, model_text=row.outcome.model_text,
-                audit={"changed": bool(row.outcome.changed)} if row.call.name == "edit" else {},
+            try:
+                outcome_audit = dict(getattr(row.outcome, "audit", {}) or {})
+            except Exception:
+                outcome_audit = {}
+            if row.call.name == "edit" and "changed" not in outcome_audit:
+                outcome_audit["changed"] = bool(row.outcome.changed)
+            prior = build_recovered_tool_result(
+                row.call,
+                model_text=row.outcome.model_text,
+                audit=outcome_audit,
+                presentation=getattr(row.outcome, "presentation", {}),
+                canonical=getattr(row.outcome, "canonical", {}),
+                truncated=getattr(row.outcome, "truncated", False),
             )
             record_facts_for_result(session, row.call, prior, ok=bool(row.outcome.ok),
                                      exit_code=row.outcome.exit_code)
     except Exception:
         pass
     import contextlib as _ctx
+
+    from codey.runtime.core.models import ToolResult
 
     resume_start = 1
     initial_results: list[Any] = []
@@ -205,7 +218,22 @@ def _entry_recovery(frame: RunFrame, session: Any) -> tuple[dict[str, Any], list
             resume_start = 1
         for row in recovered_rows:
             with _ctx.suppress(Exception):
-                initial_results.append(ToolResult(call=row.call, model_text=row.outcome.model_text))
+                try:
+                    from codey.operations.kernel_execution import build_recovered_tool_result as _build
+
+                    audit = dict(getattr(row.outcome, "audit", {}) or {})
+                    if row.call.name == "edit" and "changed" not in audit:
+                        audit["changed"] = bool(row.outcome.changed)
+                    initial_results.append(_build(
+                        row.call,
+                        model_text=row.outcome.model_text,
+                        audit=audit,
+                        presentation=getattr(row.outcome, "presentation", {}),
+                        canonical=getattr(row.outcome, "canonical", {}),
+                        truncated=getattr(row.outcome, "truncated", False),
+                    ))
+                except Exception:
+                    initial_results.append(ToolResult(call=row.call, model_text=row.outcome.model_text))
     return delivered, recovered_rows, resume_start, initial_results
 
 

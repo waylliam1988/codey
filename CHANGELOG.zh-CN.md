@@ -2,6 +2,43 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 严格来源 + 严格退出码 + 重放闭环（未发布）
+
+- P1 执行器伪造工作区身份已堵住：显式执行器返回的
+  `workspace_revision`/`workspace_fingerprint` 在内核边界直接剥离，只有
+  `_with_trusted_workspace_state` 能通过 audit + 私有 side-channel 附加权威
+  对；事件投影只认 side-channel，no-store 路径永不携带可信身份，hooks 只
+  bump 一次不再采纳 999。以
+  `test_kernel_explicit_executor_forges_workspace_identity_no_store` 锁定。
+- P1 退出码端到端严格：显式/delegate 的 audit 退出码在边界统一归一化，
+  `False/True/"0"/1.0/"1"` 剥离并令 `ok=False`，不记验证，事件/UI/headless
+  均省略而不转成 0；`ToolOutcome`、UI meanwhile 与 headless 均为 `type is int`
+  才通过。以 `test_kernel_explicit_executor_invalid_exit_code_projection` 及
+  收紧后的旧退出码测试锁定。
+- P1 策略检查异常闭环：`_policy_check` 抛异常时直接返回显式 ERROR，不执行
+  注入执行器。以
+  `test_kernel_explicit_executor_policy_check_exception_fail_closed` 锁定。
+- P2 持久化重放保留来源：`_settle_slot` 把可信对写入 `executed`，
+  `to_payload` 持久化，无内存结果的重放按同一身份恢复（只 bump 一次），无
+  来源的不安全重放直接 ERROR（不再裸成功二次 bump）；三处恢复重建统一为
+  `build_recovered_tool_result`。以
+  `test_kernel_persisted_session_replay_keeps_workspace_provenance` 锁定。
+- P2 `_consistent_tool_result` 归一化：验证通过必重建
+  `ToolResult(call=requested)` 并剥离工作区键；空 digest 永不相等（digest
+  故障即错配错）；删除不可达分支。以
+  `test_kernel_consistent_tool_result_normalizes_identity` 锁定。
+- 卫生：删除无调用者与不可达 return；`display_provider_name` 集中展示用回退；
+  harness 不再合成空 receipt、不再吞 provider 异常；残留 `if False` 与恒假
+  断言已修复；重放测试断言首次确 bump 一次。
+- 性能/架构：`current_state` 改为版本校验（锁外扫描、变化则锁内重扫），以新
+  测试锁定；no-store 双扫描标为仅兼容（生产必须传 durable store）；
+  `_provider_failure` 保留异常类型；`kernel_execution` 拆小 helper 保 ruff 全
+  绿（暂入架构基线，上限 1300，后续拆支持模块）。
+- 验证：`ruff`、`compileall`、`git diff --check`、目标套件全绿后才全量；
+  全量 `python -m pytest -q`：
+  `4958 passed, 10 skipped, 1460 subtests passed in 360.07s`。首次全量 2 失败
+  （新增超 1000 行基线、current_state 锁外断言），修复后第二次全绿。未发布。
+
 ## Unreleased - durable 工作区 + 严格退出码 + 身份收口（未发布）
 
 - P1 单次结算：`execute_turn()` 对 edit 延迟结算，等权威 `bump_state()`
