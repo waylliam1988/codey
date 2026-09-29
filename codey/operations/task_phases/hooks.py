@@ -242,13 +242,16 @@ def build_hooks(
 
 
 def _workspace_edit_event(event: RunEvent) -> bool:
+    outcome = getattr(event, "outcome", None)
     return (
         event.kind == "tool"
         and event.call is not None
-        and event.outcome is not None
+        and outcome is not None
         and event.call.name == "edit"
-        and bool(event.outcome.ok)
-        and bool(event.outcome.changed)
+        and type(getattr(outcome, "ok", None)) is bool
+        and outcome.ok is True
+        and type(getattr(outcome, "changed", None)) is bool
+        and outcome.changed is True
     )
 
 
@@ -259,24 +262,16 @@ def _adopt_kernel_workspace_state(work: RunWork, event: RunEvent) -> bool:
     ``kernel_events._emit_tool_results`` (``event_proof``). Display
     ``event.metadata`` workspace keys are never consulted for trust.
     """
-    try:
-        from codey.operations.kernel_provenance import event_proof
+    from codey.operations.kernel_provenance import event_proof
 
-        proof = event_proof(event)
-        if proof is None:
-            return False
-        identity = getattr(proof, "identity", None)
-        try:
-            rev = int(getattr(identity, "revision", 0) or 0)
-            fp = str(getattr(identity, "fingerprint", "") or "")
-        except Exception:
-            return False
-        if not rev or not fp:
-            return False
-        work.workspace_revision = rev
-        work.workspace_fingerprint = fp
-        with suppress(Exception):
-            work.evidence.set_workspace_state(rev, fp)
-        return True
-    except Exception:
+    proof = event_proof(event)
+    if proof is None:
         return False
+    identity = proof.identity
+    rev = identity.revision
+    fp = identity.fingerprint
+    work.workspace_revision = rev
+    work.workspace_fingerprint = fp
+    with suppress(Exception):
+        work.evidence.set_workspace_state(rev, fp)
+    return True

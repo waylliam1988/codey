@@ -2,6 +2,34 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Fault injection closure and recovery context split (no release)
+
+- P1 unsafe replay now refreshes the durable workspace state for every guarded
+  delivery, closing the gap between batch validation and result construction.
+  `RecoveryContext` and persisted receipt verification now live in the focused
+  `kernel_recovery_context` module.
+- P1 corrupted event proofs are distinct from absent proofs: invalid present
+  proofs raise `RecoveryFailed` and cannot fall back to a second workspace
+  bump. Projection-failure callbacks are best-effort so the original recovery
+  failure remains authoritative.
+- P2 frame recovery validates exact boolean `ok` and integer `exit_code`;
+  `TaskSession.from_payload` rejects malformed fields instead of returning a
+  partial session. Proof and identity validation now require exact types.
+- P2 strict execution/completion projections reject truthy strings for
+  `ok`, `passed`, `changed`, and receipt verdicts. Invalid edit change flags
+  cannot trigger a workspace bump.
+- Fault-injection coverage was rerun for provider timeout, process kill,
+  duplicate delivery, lost/corrupt receipts, workspace bump failure, and SSE
+  reconnect. The existing stress suite remains current and green.
+- TDD: new accurately named locks cover the recovery race, proof tri-state,
+  frame/result types, session restoration, strict projections, receipt verdicts,
+  and the recovery-context split. Deterministic reproductions were red before
+  their fixes and green afterward.
+- Verification: `ruff`, `compileall`, and `git diff --check` clean. Full
+  `python -m pytest -q -p no:cacheprovider`:
+  `5063 passed, 32 skipped, 1471 subtests passed in 371.77s (0:06:11)`.
+  Zero failures. No release.
+
 ## Unreleased - Recovery boundary sweep and receipt type hardening (no release)
 
 - P1 trusted proof capability is now revalidated by `event_proof()` through the

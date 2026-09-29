@@ -71,7 +71,8 @@ def effective_project_profile(permission_profile: object) -> str:
 def _tool_result(call: ToolCall, outcome: Any) -> ToolResult:
     audit = dict(getattr(outcome, "audit", {}) or {})
     if call.name == "edit":
-        audit["changed"] = bool(getattr(outcome, "changed", False))
+        changed = getattr(outcome, "changed", False)
+        audit["changed"] = changed if type(changed) is bool else False
     return ToolResult(
         call=call, model_text=str(outcome.model_text or ""),
         truncated=bool(getattr(outcome, "truncated", False)),
@@ -242,11 +243,13 @@ class ExecutionDelegate:
                     ToolCall(runtime_name, dict(call.args or {})),
                 )
                 result = _tool_result(call, outcome)
-                return result, bool(outcome.ok), "", [], None
+                ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
+                return result, ok, "", [], None
             if name == "edit":
                 outcome = self._execute_edit(call)
                 result = _tool_result(call, outcome)
-                return result, bool(outcome.ok), "", [], None
+                ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
+                return result, ok, "", [], None
             if name == "run":
                 outcome = self.tool_fns.execute_run_command(
                     self.project_path, str((call.args or {}).get("path", ".") or "."),
@@ -255,7 +258,8 @@ class ExecutionDelegate:
                     tool_id=str(getattr(call, "call_id", "") or ""),
                 )
                 result = _tool_result(call, outcome)
-                return result, bool(outcome.ok), "", [], getattr(outcome, "exit_code", None)
+                ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
+                return result, ok, "", [], getattr(outcome, "exit_code", None)
         except Exception as exc:
             result = ToolResult(call=call, model_text=f"ERROR: {exc}")
             return result, False, "", [], None

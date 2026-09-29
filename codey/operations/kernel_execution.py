@@ -23,13 +23,13 @@ from codey.operations.kernel_provenance import (
     sync_workspace_state_after_edit,
 )
 from codey.operations.kernel_recovery import (
-    RecoveryContext,
     _batch_aborted_results,
     _batch_recovery_failed_results,
     _check_batch_recovery,
     _guarded_slot_result,
     delivered_slot_typed,
 )
+from codey.operations.kernel_recovery_context import RecoveryContext
 from codey.operations.kernel_result import (
     _call_args_digest,
     _consistent_tool_result,
@@ -259,7 +259,7 @@ def execute_turn(
         with _contextlib.suppress(Exception):
             session._memory_results[identity] = result
         if intent_sink is not None:
-            intent_sink.settle(identity, bool(ok))
+            intent_sink.settle(identity, ok if type(ok) is bool else False)
 
     def reconcile_intent_only(identity: str, ok: bool) -> None:
         # Already-durable replay: never rewrite ``session.executed``, only
@@ -267,7 +267,7 @@ def execute_turn(
         # a second unsafe execution.
         if intent_sink is None:
             return
-        intent_sink.settle(identity, bool(ok))
+        intent_sink.settle(identity, ok if type(ok) is bool else False)
 
     delegate = _build_delegate(
         session,
@@ -499,11 +499,15 @@ def _settle_edit_with_workspace_bump(
     """Settle one edit with its authoritative bump; None means not handled."""
     if name != "edit" or not ok:
         return None
-    try:
-        changed = True
-        if isinstance(result.audit, dict) and "changed" in result.audit:
-            changed = bool(result.audit.get("changed"))
-    except Exception:
+    if isinstance(result.audit, dict) and "changed" in result.audit:
+        raw_changed = result.audit.get("changed")
+        if type(raw_changed) is not bool:
+            failed = _error_result(call, "edit result changed flag must be a boolean")
+            settle(identity, call, failed, ok=False)
+            results.append(failed)
+            return "unconfirmed"
+        changed = raw_changed
+    else:
         changed = True
     if not changed:
         return None
@@ -588,7 +592,7 @@ def _settle_slot(
     try:
         record: dict[str, Any] = {
             "name": str(result.call.name or ""),
-            "ok": bool(ok),
+            "ok": ok if type(ok) is bool else False,
             "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
             "excerpt": str(result.model_text or "")[:500],
             "args_digest": _call_args_digest(call),
@@ -605,7 +609,7 @@ def _settle_slot(
     # closed on later replay); the receipt write below is fail-hard.
     try:
         identity_obj = _kernel_workspace_identity_of(result)
-        if identity_obj is not None and bool(ok):
+        if identity_obj is not None and type(ok) is bool and ok is True:
             record["workspace_revision"] = int(identity_obj.revision)
             record["workspace_fingerprint"] = str(identity_obj.fingerprint)
     except Exception as exc:

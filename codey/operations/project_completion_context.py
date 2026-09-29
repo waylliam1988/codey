@@ -405,7 +405,11 @@ def handle_project_tool_event(
         args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else {}
         command = str(args.get("command") or "")
         cwd = str(args.get("path") or ".")
-        ok = bool(getattr(outcome, "ok", False) and getattr(outcome, "exit_code", None) == 0)
+        from codey.utils.refs import strict_run_success
+
+        ok = strict_run_success(
+            getattr(outcome, "ok", None), getattr(outcome, "exit_code", None)
+        )
         try:
             meta = getattr(event, "metadata", {}) or {}
             tool_index = int(meta.get("tool_index") or 0) if isinstance(meta, dict) else 0
@@ -436,9 +440,13 @@ def handle_project_tool_event(
             ok=ok,
             outcome=outcome,
         )
-    elif name == "edit" and bool(getattr(outcome, "ok", False)) and bool(
-        getattr(outcome, "changed", False)
-    ):
+    elif name == "edit":
+        outcome_ok = getattr(outcome, "ok", None)
+        outcome_changed = getattr(outcome, "changed", None)
+        if type(outcome_ok) is not bool or outcome_ok is not True:
+            return
+        if type(outcome_changed) is not bool or outcome_changed is not True:
+            return
         args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else {}
         rel = str(args.get("path") or "")
         update_checkpoint(lambda store, item: store.record_edit(item, rel))

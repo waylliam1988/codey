@@ -10,6 +10,85 @@ from codey.runtime.core.models import ToolResult
 from codey.utils.refs import stable_ref
 
 
+def _validate_restored_receipts(
+    raw_verifications: object, raw_executed: object
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    from codey.operations.kernel_errors import RecoveryFailed
+
+    if not isinstance(raw_verifications, list):
+        raise RecoveryFailed("session field verifications must be a list")
+    verifications: list[dict[str, Any]] = []
+    for item in raw_verifications:
+        if not isinstance(item, Mapping):
+            raise RecoveryFailed("session verification row must be a mapping")
+        if "passed" in item and type(item["passed"]) is not bool:
+            raise RecoveryFailed("session verification passed must be a boolean")
+        if "exit_code" in item and item["exit_code"] is not None and type(item["exit_code"]) is not int:
+            raise RecoveryFailed("session verification exit_code must be an integer")
+        verifications.append(dict(item))
+    if not isinstance(raw_executed, Mapping):
+        raise RecoveryFailed("session field executed must be a mapping")
+    executed: dict[str, dict[str, Any]] = {}
+    for identity, row in raw_executed.items():
+        if not isinstance(row, Mapping):
+            raise RecoveryFailed(f"session executed receipt {identity!r} must be a mapping")
+        if "ok" in row and type(row["ok"]) is not bool:
+            raise RecoveryFailed("session executed ok must be a boolean")
+        if "exit_code" in row and row["exit_code"] is not None and type(row["exit_code"]) is not int:
+            raise RecoveryFailed("session executed exit_code must be an integer")
+        executed[str(identity)] = dict(row)
+    return verifications, executed
+
+
+def _strict_text_list(value: object, field: str) -> list[str]:
+    from codey.operations.kernel_errors import RecoveryFailed
+
+    if not isinstance(value, list):
+        raise RecoveryFailed(f"session field {field} must be a list")
+    if any(type(item) is not str for item in value):
+        raise RecoveryFailed(f"session field {field} must contain only strings")
+    return [str(item) for item in value]
+
+
+def _strict_text_mapping(value: object, field: str) -> dict[str, str]:
+    from codey.operations.kernel_errors import RecoveryFailed
+
+    if not isinstance(value, Mapping):
+        raise RecoveryFailed(f"session field {field} must be a mapping")
+    if any(type(key) is not str or type(item) is not str for key, item in value.items()):
+        raise RecoveryFailed(f"session field {field} must contain only string pairs")
+    return dict(value)
+
+
+def _strict_evidence_list(value: object) -> list[dict[str, Any]]:
+    from codey.operations.kernel_errors import RecoveryFailed
+
+    if not isinstance(value, list):
+        raise RecoveryFailed("session field evidence must be a list")
+    if any(not isinstance(item, Mapping) for item in value):
+        raise RecoveryFailed("session evidence rows must be mappings")
+    return [dict(item) for item in value]
+
+
+def _strict_hit_targets(value: object) -> dict[str, dict[str, Any]]:
+    from codey.operations.kernel_errors import RecoveryFailed
+
+    if not isinstance(value, Mapping):
+        raise RecoveryFailed("session field hit_targets must be a mapping")
+    targets: dict[str, dict[str, Any]] = {}
+    for key, item in value.items():
+        if type(key) is not str or not isinstance(item, Mapping) or type(item.get("url")) is not str:
+            raise RecoveryFailed("session hit target rows are malformed")
+        offset = item.get("offset", 0)
+        if type(offset) is not int or offset < 0:
+            raise RecoveryFailed("session hit target offset must be a nonnegative integer")
+        pages = item.get("pages", "")
+        if type(pages) is not str:
+            raise RecoveryFailed("session hit target pages must be a string")
+        targets[key] = {"url": item["url"][:500], "offset": offset, "pages": pages[:40]}
+    return targets
+
+
 def turn_effect_id(run_id: object, turn: object, tool_index: object) -> str:
     """Call identity for intents: run + turn + index, never tool name+args.
 
@@ -86,8 +165,7 @@ class TaskSession:
             self.evidence.append({"source_url": url[:500], "excerpt": clip[:600]})
 
     def record_hit(self, url: str, *, offset: int = 0, pages: str = "") -> str:
-        target = {"url": str(url or "")[:500], "offset": max(0, int(offset)),
-                  "pages": str(pages or "")[:40]}
+        target = {"url": str(url or "")[:500], "offset": max(0, int(offset)), "pages": str(pages or "")[:40]}
         existing = next((key for key, value in self.hit_targets.items() if value == target), "")
         hit_id = existing or f"h{len(self.hit_targets) + 1}"
         self.hit_targets[hit_id] = target
@@ -105,17 +183,25 @@ class TaskSession:
         self.edited_files[key] = rev
         return rev
 
-    def record_verification(self, command: str, revision: int, passed: bool, *,
-                            exit_code: int | None = None,
-                            workspace_revision: int | None = None,
-                            workspace_fingerprint: str | None = None) -> None:
+    def record_verification(
+        self,
+        command: str,
+        revision: int,
+        passed: bool,
+        *,
+        exit_code: int | None = None,
+        workspace_revision: int | None = None,
+        workspace_fingerprint: str | None = None,
+    ) -> None:
+        if type(passed) is not bool:
+            raise TypeError("verification passed must be a boolean")
         try:
             rev = int(revision)
         except (TypeError, ValueError):
             return
         import contextlib as _contextlib
 
-        row: dict[str, Any] = {"command": str(command or "")[:240], "revision": rev, "passed": bool(passed)}
+        row: dict[str, Any] = {"command": str(command or "")[:240], "revision": rev, "passed": passed}
         if exit_code is not None:
             try:
                 from codey.utils.refs import strict_exit_code as _strict_exit
@@ -208,30 +294,37 @@ class TaskSession:
             "search_results": {str(k): str(v)[:500] for k, v in list((self.search_results or {}).items())[-20:]},
             "opened_sources": sorted(str(u)[:500] for u in (self.opened_sources or set()))[-20:],
             "source_ids": {str(k): str(v)[:500] for k, v in list((self.source_ids or {}).items())[-20:]},
-            "hit_targets": {str(k): {"url": str(v.get("url", ""))[:500],
-                                      "offset": int(v.get("offset", 0) or 0),
-                                      "pages": str(v.get("pages", ""))[:40]}
-                            for k, v in list((self.hit_targets or {}).items())[-20:]
-                            if isinstance(v, dict)},
+            "hit_targets": {
+                str(k): {
+                    "url": str(v.get("url", ""))[:500],
+                    "offset": int(v.get("offset", 0) or 0),
+                    "pages": str(v.get("pages", ""))[:40],
+                }
+                for k, v in list((self.hit_targets or {}).items())[-20:]
+                if isinstance(v, dict)
+            },
             "evidence": [
-                {"source_url": str(item.get("source_url", ""))[:500],
-                 "excerpt": str(item.get("excerpt", ""))[:300]}
-                for item in (self.evidence or []) if isinstance(item, dict)
+                {"source_url": str(item.get("source_url", ""))[:500], "excerpt": str(item.get("excerpt", ""))[:300]}
+                for item in (self.evidence or [])
+                if isinstance(item, dict)
             ][-20:],
             "edited_files": {str(k)[:240]: int(v) for k, v in (self.edited_files or {}).items()},
             "read_files": sorted(str(path)[:240] for path in self.read_files)[-40:],
             "verifications": [
-                {"command": str(item.get("command", ""))[:240],
-                 "revision": int(item.get("revision", 0) or 0),
-                 "passed": (
-                     item.get("passed")
-                     if type(item.get("passed")) is bool
-                     else False
-                 ),
-                 "exit_code": item.get("exit_code", None),
-                 "workspace_revision": int(item.get("workspace_revision", 0) or 0) if item.get("workspace_revision") is not None else None,
-                 "workspace_fingerprint": str(item.get("workspace_fingerprint", "") or "")[:120] if item.get("workspace_fingerprint") else ""}
-                for item in (self.verifications or []) if isinstance(item, dict)
+                {
+                    "command": str(item.get("command", ""))[:240],
+                    "revision": int(item.get("revision", 0) or 0),
+                    "passed": (item.get("passed") if type(item.get("passed")) is bool else False),
+                    "exit_code": item.get("exit_code", None),
+                    "workspace_revision": int(item.get("workspace_revision", 0) or 0)
+                    if item.get("workspace_revision") is not None
+                    else None,
+                    "workspace_fingerprint": str(item.get("workspace_fingerprint", "") or "")[:120]
+                    if item.get("workspace_fingerprint")
+                    else "",
+                }
+                for item in (self.verifications or [])
+                if isinstance(item, dict)
             ][-20:],
             "notes_saved": int(self.notes_saved or 0),
             "transcript_notes": notes,
@@ -243,56 +336,83 @@ class TaskSession:
 
     @staticmethod
     def from_payload(payload: Mapping[str, Any] | None, *, policy: Any = None) -> TaskSession:
-        data = dict(payload) if isinstance(payload, Mapping) else {}
+        from codey.operations.kernel_errors import RecoveryFailed
+
+        if payload is not None and not isinstance(payload, Mapping):
+            raise RecoveryFailed("task session payload must be a mapping")
+        data = dict(payload) if payload is not None else {}
         active_policy = policy if policy is not None else data.get("policy")
         if not hasattr(active_policy, "allows"):
             try:
                 from codey.policies.task_policy import TaskPolicy
 
                 active_policy = TaskPolicy.from_payload(data.get("policy"))
-            except Exception:
-                active_policy = policy
-        session = TaskSession(
-            policy=active_policy,
-            task_kind=str(data.get("task_kind", "") or "project"),
-            project=str(data.get("project", "") or ""),
-            max_turns=int(data.get("max_turns", 8) or 8),
-        )
+            except Exception as exc:
+                raise RecoveryFailed(f"task session policy is malformed: {exc}") from exc
         try:
-            session.task_text = str(data.get("task_text", "") or "")[:2000]
-            session.handoff = str(data.get("handoff", "") or "")[:2000]
-            session.project_changes_required = bool(data.get("project_changes_required") is True)
-            session.coding_context_enabled = bool(data.get("coding_context_enabled", True) is True)
+            session = TaskSession(
+                policy=active_policy,
+                task_kind=str(data.get("task_kind", "") or "project"),
+                project=str(data.get("project", "") or ""),
+                max_turns=int(data.get("max_turns", 8) or 8),
+            )
+        except Exception as exc:
+            raise RecoveryFailed(f"task session header is malformed: {exc}") from exc
+
+        def restore(field: str, parser: Any) -> Any:
             try:
-                session.workspace_revision = int(data.get("workspace_revision", 0) or 0)
-            except (TypeError, ValueError):
-                session.workspace_revision = 0
-            session.workspace_fingerprint = str(data.get("workspace_fingerprint", "") or "")[:120]
-            session.searches = [str(i) for i in (data.get("searches", []) or []) if str(i)]
-            raw_results = data.get("search_results", {}) or {}
-            session.search_results = {str(k): str(v) for k, v in raw_results.items() if str(k) and str(v)}
-            session.opened_sources = {str(i) for i in (data.get("opened_sources", []) or []) if str(i)}
-            raw_sids = data.get("source_ids", {}) or {}
-            session.source_ids = {str(k): str(v) for k, v in raw_sids.items() if str(k) and str(v)}
-            raw_hits = data.get("hit_targets", {}) or {}
-            session.hit_targets = {
-                str(k): {"url": str(v.get("url", ""))[:500],
-                         "offset": max(0, int(v.get("offset", 0) or 0)),
-                         "pages": str(v.get("pages", ""))[:40]}
-                for k, v in raw_hits.items() if isinstance(v, dict) and v.get("url")
-            }
-            session.evidence = [dict(i) for i in (data.get("evidence", []) or []) if isinstance(i, dict)]
-            session.edited_files = {str(k): int(v) for k, v in (data.get("edited_files", {}) or {}).items()}
-            session.read_files = {str(path) for path in (data.get("read_files", []) or []) if str(path)}
-            session.verifications = [dict(i) for i in (data.get("verifications", []) or []) if isinstance(i, dict)]
-            session.notes_saved = int(data.get("notes_saved", 0) or 0)
-            session.transcript_notes = [str(i) for i in (data.get("transcript_notes", []) or [])]
-            session.last_done_text = str(data.get("last_done_text", "") or "")
-            session.turn = int(data.get("turn", 0) or 0)
-            raw_executed = data.get("executed", {}) or {}
-            session.executed = {str(k): dict(v) for k, v in raw_executed.items() if isinstance(v, dict)}
-        except Exception:
-            pass
+                return parser()
+            except RecoveryFailed:
+                raise
+            except Exception as exc:
+                raise RecoveryFailed(f"session field {field} is malformed: {exc}") from exc
+
+        session.task_text = restore("task_text", lambda: str(data.get("task_text", "") or "")[:2000])
+        session.handoff = restore("handoff", lambda: str(data.get("handoff", "") or "")[:2000])
+        session.project_changes_required = restore(
+            "project_changes_required", lambda: data.get("project_changes_required", False) is True
+        )
+        session.coding_context_enabled = restore(
+            "coding_context_enabled", lambda: data.get("coding_context_enabled", True) is True
+        )
+        session.workspace_revision = restore("workspace_revision", lambda: int(data.get("workspace_revision", 0) or 0))
+        session.workspace_fingerprint = restore(
+            "workspace_fingerprint", lambda: str(data.get("workspace_fingerprint", "") or "")[:120]
+        )
+        session.searches = restore("searches", lambda: _strict_text_list(data.get("searches", []) or [], "searches"))
+        session.search_results = restore(
+            "search_results", lambda: _strict_text_mapping(data.get("search_results", {}) or {}, "search_results")
+        )
+        session.opened_sources = set(
+            restore("opened_sources", lambda: _strict_text_list(data.get("opened_sources", []) or [], "opened_sources"))
+        )
+        session.source_ids = restore(
+            "source_ids", lambda: _strict_text_mapping(data.get("source_ids", {}) or {}, "source_ids")
+        )
+        session.hit_targets = restore(
+            "hit_targets", lambda: _strict_hit_targets(data.get("hit_targets", {}) or {})
+        )
+        session.evidence = restore(
+            "evidence", lambda: _strict_evidence_list(data.get("evidence", []) or [])
+        )
+        raw_edited = restore("edited_files", lambda: data.get("edited_files", {}) or {})
+        if not isinstance(raw_edited, Mapping):
+            raise RecoveryFailed("session field edited_files must be a mapping")
+        session.edited_files = restore("edited_files", lambda: {str(k): int(v) for k, v in raw_edited.items()})
+        session.read_files = set(
+            restore("read_files", lambda: _strict_text_list(data.get("read_files", []) or [], "read_files"))
+        )
+        raw_verifications = restore("verifications", lambda: data.get("verifications", []) or [])
+        raw_executed = restore("executed", lambda: data.get("executed", {}) or {})
+        session.verifications, session.executed = _validate_restored_receipts(
+            raw_verifications, raw_executed
+        )
+        session.notes_saved = restore("notes_saved", lambda: int(data.get("notes_saved", 0) or 0))
+        session.transcript_notes = restore(
+            "transcript_notes", lambda: _strict_text_list(data.get("transcript_notes", []) or [], "transcript_notes")
+        )
+        session.last_done_text = restore("last_done_text", lambda: str(data.get("last_done_text", "") or ""))
+        session.turn = restore("turn", lambda: int(data.get("turn", 0) or 0))
         return session
 
 

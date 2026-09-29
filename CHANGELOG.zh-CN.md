@@ -2,6 +2,29 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 故障注入收口与恢复上下文拆分（未发布）
+
+- P1 unsafe replay 每次 guarded delivery 都重新读取 durable workspace state，
+  关闭批次校验到结果构造之间的竞态。`RecoveryContext` 与 persisted receipt
+  校验移入职责单一的 `kernel_recovery_context` 模块。
+- P1 区分损坏 proof 与缺失 proof：已存在但非法的 event proof 抛出
+  `RecoveryFailed`，禁止降级为第二次 workspace bump。补发 ERROR 事件时，
+  callback 故障不会替换原始 recovery failure。
+- P2 frame recovery 严格校验布尔 `ok` 与整数 `exit_code`；
+  `TaskSession.from_payload` 遇到坏字段直接失败，不再返回部分恢复 session。
+  proof 与 identity 也要求精确类型。
+- P2 execution/completion 投影拒绝 `ok`、`passed`、`changed` 和 receipt verdict
+  的 truthy 字符串；非法 edit change flag 不会触发 workspace bump。
+- 重新运行 provider timeout、进程 kill、重复 delivery、receipt 丢失/损坏、
+  workspace bump 失败和 SSE reconnect 故障注入。现有 stress 套件无需过时兼容，
+  全部通过。
+- TDD：新增准确命名测试锁定恢复竞态、proof 三态、frame/result 类型、session
+  恢复、严格投影、receipt verdict 与恢复上下文拆分；确定性复现均先红后绿。
+- 验证：`ruff`、`compileall`、`git diff --check` 全洁。全量
+  `python -m pytest -q -p no:cacheprovider`：
+  `5063 passed, 32 skipped, 1471 subtests passed in 371.77s (0:06:11)`，
+  零失败。未发布。
+
 ## Unreleased - 恢复边界扫描与 receipt 类型加固（未发布）
 
 - P1 `event_proof()` 现在与两个 attach 路径共用同一校验 helper，重新校验

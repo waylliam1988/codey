@@ -101,16 +101,16 @@ def _validated_trusted_proof(proof: Any) -> tuple[Any, str]:
     """Validate the kernel proof object and return its identity/source."""
     from codey.operations.kernel_errors import RecoveryFailed
 
-    if not isinstance(proof, TrustedWorkspaceProof):
+    if type(proof) is not TrustedWorkspaceProof:
         raise RecoveryFailed("trusted workspace proof has an invalid type")
     if getattr(proof, "_capability", None) is not _TRUSTED_PROOF_CAPABILITY:
         raise RecoveryFailed("trusted workspace proof was not kernel-created")
     try:
-        source = str(getattr(proof, "source", "") or "")
+        source = getattr(proof, "source", "")
         identity = getattr(proof, "identity", None)
     except Exception as exc:
         raise RecoveryFailed(f"trusted workspace proof unreadable: {exc}") from exc
-    if source not in _TRUSTED_PROOF_SOURCES:
+    if type(source) is not str or source not in _TRUSTED_PROOF_SOURCES:
         raise RecoveryFailed(f"trusted workspace proof invalid source: {source or '?'}")
     if not _is_trusted_identity(identity):
         raise RecoveryFailed("trusted workspace proof invalid: untrusted identity")
@@ -124,9 +124,9 @@ def _is_trusted_identity(identity: Any) -> bool:
     except Exception:
         return False
     try:
-        if not isinstance(identity, WorkspaceIdentity):
+        if type(identity) is not WorkspaceIdentity:
             return False
-        return bool(identity.trusted)
+        return type(identity.trusted) is bool and identity.trusted is True
     except Exception:
         return False
 
@@ -170,20 +170,26 @@ def attach_proof_to_event(event: Any, proof: TrustedWorkspaceProof) -> None:
 
 
 def event_proof(event: Any) -> TrustedWorkspaceProof | None:
-    """Return the validated kernel proof carried beside event metadata.
+    """Return a validated event proof, distinguishing absent from corrupt.
 
-    Returns ``None`` when absent or invalid (wrong type, unknown source,
-    or non-``WorkspaceIdentity`` identity). Display ``metadata`` is never
-    consulted here.
+    An event without the private attribute is an ordinary non-kernel event and
+    may use the legacy workspace bump path.  Once the attribute exists, any
+    malformed proof is an internal recovery failure and must not be silently
+    downgraded to that path.
     """
+    from codey.operations.kernel_errors import RecoveryFailed
+
+    missing = object()
     try:
-        proof = getattr(event, _EVENT_PROOF_ATTR, None)
-        if proof is None:
-            return None
-        identity, _source = _validated_trusted_proof(proof)
-        return proof
-    except Exception:
+        proof = getattr(event, _EVENT_PROOF_ATTR, missing)
+    except Exception as exc:
+        raise RecoveryFailed(f"event proof unreadable: {exc}") from exc
+    if proof is missing:
         return None
+    if proof is None:
+        raise RecoveryFailed("event proof attribute is present but empty")
+    _validated_trusted_proof(proof)
+    return proof
 
 
 def attach_trusted_workspace(result: ToolResult, proof: TrustedWorkspaceProof) -> ToolResult:

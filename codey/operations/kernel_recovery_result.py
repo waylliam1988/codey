@@ -38,6 +38,8 @@ __all__ = [
     "sanitize_recovery_audit",
     "spec_from_delivered_result",
     "spec_from_frame_row",
+    "frame_outcome_ok",
+    "frame_outcome_exit_code",
     "spec_from_memory_result",
     "spec_from_persisted_record",
 ]
@@ -212,6 +214,33 @@ def _row_text_fields(outcome: Any) -> tuple[Any, Any, Any, Any, Any]:
     return audit_dict, presentation, canonical, truncated, model_text
 
 
+def frame_outcome_ok(item: Any) -> bool:
+    """Read the frame outcome status only after strict type validation."""
+    outcome = getattr(item, "outcome", None)
+    if outcome is None:
+        raise RecoveryFailed("recovered row missing outcome")
+    value = getattr(outcome, "ok", None)
+    if type(value) is not bool:
+        raise RecoveryFailed(
+            f"recovered outcome ok must be a boolean, got {type(value).__name__}"
+        )
+    return value
+
+
+def frame_outcome_exit_code(item: Any) -> int | None:
+    outcome = getattr(item, "outcome", None)
+    if outcome is None:
+        raise RecoveryFailed("recovered row missing outcome")
+    value = getattr(outcome, "exit_code", None)
+    if value is None:
+        return None
+    if type(value) is not int:
+        raise RecoveryFailed(
+            f"recovered outcome exit_code must be an integer, got {type(value).__name__}"
+        )
+    return value
+
+
 def _strict_slot_index(value: Any, *, field: str) -> int:
     """Strict slot index: exact int, non-bool, non-negative."""
     if type(value) is not int:
@@ -234,6 +263,8 @@ def spec_from_frame_row(item: Any) -> RecoveredResultSpec:
     outcome = getattr(item, "outcome", None)
     if call is None or outcome is None:
         raise RecoveryFailed("recovered row missing call/outcome")
+    frame_outcome_ok(item)
+    frame_outcome_exit_code(item)
     try:
         _strict_slot_index(getattr(item, "turn", None), field="turn")
         _strict_slot_index(getattr(item, "tool_index", None), field="tool_index")

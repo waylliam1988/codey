@@ -240,13 +240,14 @@ def run(request: AgentRequest) -> RunResult:
     delivered: dict[str, Any] = {}
     try:
         from codey.operations.kernel_facts import record_facts_for_result as _record_facts
+        from codey.operations.kernel_recovery_result import frame_outcome_exit_code, frame_outcome_ok
 
         for row in recovered_sorted:
             result = _recovered_result_for_row(row)
             delivered[turn_effect_id(f"{request.run_id or 'adhoc'}:{effect_scope}",
                                      row.turn, row.tool_index)] = result
-            _record_facts(session, row.call, result, ok=row.outcome.ok,
-                          exit_code=row.outcome.exit_code)
+            _record_facts(session, row.call, result, ok=frame_outcome_ok(row),
+                          exit_code=frame_outcome_exit_code(row))
     except _RecoveryFailed:
         raise
     except Exception as exc:

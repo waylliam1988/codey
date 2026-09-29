@@ -16,7 +16,10 @@ class EventProofRequiresKernelCapabilityTests(unittest.TestCase):
         object.__setattr__(proof, "source", "event_side_channel")
         object.__setattr__(event, "_kernel_workspace_proof", proof)
 
-        self.assertIsNone(event_proof(event))
+        from codey.operations.kernel_errors import RecoveryFailed
+
+        with self.assertRaises(RecoveryFailed):
+            event_proof(event)
 
     def test_wrong_capability_is_rejected(self) -> None:
         from codey.operations.kernel_provenance import (
@@ -34,7 +37,10 @@ class EventProofRequiresKernelCapabilityTests(unittest.TestCase):
         object.__setattr__(proof, "_capability", object())
         object.__setattr__(event, _EVENT_PROOF_ATTR, proof)
 
-        self.assertIsNone(event_proof(event))
+        from codey.operations.kernel_errors import RecoveryFailed
+
+        with self.assertRaises(RecoveryFailed):
+            event_proof(event)
 
     def test_forged_identity_is_rejected_even_with_kernel_capability(self) -> None:
         from codey.operations.kernel_provenance import (
@@ -52,7 +58,10 @@ class EventProofRequiresKernelCapabilityTests(unittest.TestCase):
         event = RunEvent.info("x")
         object.__setattr__(event, _EVENT_PROOF_ATTR, _trusted_workspace_proof(Forged(), "event_side_channel"))
 
-        self.assertIsNone(event_proof(event))
+        from codey.operations.kernel_errors import RecoveryFailed
+
+        with self.assertRaises(RecoveryFailed):
+            event_proof(event)
 
 
 if __name__ == "__main__":

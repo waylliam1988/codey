@@ -247,13 +247,14 @@ def build_task_receipt(
         # unobserved verdict, and the shared trust helper downgrades it.
         integrity_section = ReceiptIntegrity()
 
+    checks_passed_bool = checks_passed if type(checks_passed) is bool else False
     trust = _verification_trust_from_status(
-        checks_passed=bool(checks_passed),
+        checks_passed=checks_passed_bool,
         integrity_status=integrity_section.status,
         integrity_severity=integrity_section.severity,
         changed_count=changed_count,
     )
-    summary, detail = _display_text(trust, changed_count, checks_passed)
+    summary, detail = _display_text(trust, changed_count, checks_passed_bool)
 
     return TaskReceipt(
         schema_version=RECEIPT_SCHEMA_VERSION,
@@ -265,7 +266,7 @@ def build_task_receipt(
         ),
         verification=ReceiptVerification(
             trust=trust,
-            checks_passed=bool(checks_passed),
+            checks_passed=checks_passed_bool,
             state=state,
             stance=stance,
             source=source,

@@ -6,6 +6,7 @@ These helpers format and emit only; they never decide, send, or execute.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from typing import Any
 
@@ -41,7 +42,9 @@ def _emit_tool_projection_failure(
     canonical_name = str(getattr(call, "name", "") or "").strip().lower()
     if canonical_name and isinstance(getattr(event, "metadata", None), dict):
         event.metadata["tool_name"] = canonical_name
-    on_event(event)
+    # Keep the original RecoveryFailed authoritative if a secondary sink is down.
+    with contextlib.suppress(Exception):
+        on_event(event)
 
 
 def _emit_turn_event(on_event: Callable[[Any], None] | None, turn: int, reply: Any) -> None:

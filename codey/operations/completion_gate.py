@@ -357,7 +357,11 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
     exit_code = _verification_exit_code(latest)
     if exit_code is None:
         return evidence
-    if not (bool(latest.get("passed", False)) or exit_code == 0):
+    from codey.utils.refs import strict_verification_success
+
+    if not strict_verification_success(
+        latest.get("passed"), exit_code, passed_present="passed" in latest
+    ):
         return evidence
     command = str(latest.get("command", "") or "").strip()[:500]
     if not command:

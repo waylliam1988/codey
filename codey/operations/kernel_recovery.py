@@ -9,8 +9,8 @@ recovery-failure errors.
 
 All rebuilds funnel through ``kernel_recovery_result`` unified builders;
 no entry constructs ``ToolResult`` directly and none derives trust from
-display audit. One ``RecoveryContext`` per ``execute_turn`` shares a single
-durable workspace snapshot; contexts are never cached across turns.
+display audit. One ``RecoveryContext`` per ``execute_turn`` owns the batch
+epoch; unsafe replay refreshes the durable state before each delivery.
 """
 
 from __future__ import annotations
@@ -20,12 +20,18 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.operations.kernel_errors import RecoveryFailed
+from codey.operations.kernel_recovery_context import (
+    RecoveryContext,
+    strict_receipt_bool,
+    strict_receipt_exit_code,
+    strict_receipt_text,
+    verified_persisted_identity,
+)
 from codey.operations.task_session import turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
 
 __all__ = [
     "RecoveryCheckResult",
-    "RecoveryContext",
     "RecoverySlotResult",
     "_batch_aborted_results",
     "_batch_recovery_failed_results",
@@ -39,7 +45,6 @@ __all__ = [
     "_recovery_mismatch_result",
     "_same_effect_call",
     "_skip_unsettled",
-    "_verified_persisted_identity",
     "apply_recovery_first",
     "delivered_slot_typed",
     "replay_slot_typed",
@@ -68,54 +73,6 @@ class RecoverySlotResult:
 
     disposition: str = "NO_MATCH"
     result: ToolResult | None = None
-
-
-@dataclass
-class RecoveryContext:
-    """Per-``execute_turn`` durable snapshot (never cached across turns)."""
-
-    project_path: Any = None
-    revision_store: Any = None
-    ignored_paths: tuple[str, ...] = ()
-    _cached_state: Any | None = None
-    _state_loaded: bool = False
-
-    def current_state(self, *, refresh: bool = False) -> Any | None:
-        if self._state_loaded and not refresh:
-            return self._cached_state
-        if self.revision_store is None or self.project_path is None:
-            self._state_loaded = True
-            self._cached_state = None
-            return None
-        try:
-            state = self.revision_store.current_state(
-                self.project_path, ignored_paths=self.ignored_paths
-            )
-        except Exception:
-            state = None
-        if not self._state_loaded:
-            self._cached_state = state
-        self._state_loaded = True
-        return state
-
-    def workspace_epoch_stable(self) -> bool:
-        """Re-read a loaded durable snapshot and reject concurrent changes."""
-        if not self._state_loaded or self.revision_store is None or self.project_path is None:
-            return True
-        initial = self._cached_state
-        latest = self.current_state(refresh=True)
-        if initial is None or latest is None:
-            return initial is latest
-        try:
-            return (
-                int(getattr(initial, "revision", 0) or 0),
-                str(getattr(initial, "fingerprint", "") or ""),
-            ) == (
-                int(getattr(latest, "revision", 0) or 0),
-                str(getattr(latest, "fingerprint", "") or ""),
-            )
-        except Exception:
-            return False
 
 
 def apply_recovery_first(
@@ -199,63 +156,6 @@ def _recovery_failed_result(call: ToolCall, message: str) -> ToolResult:
     return build_recovery_error_result(call, message)
 
 
-def _verified_persisted_identity(
-    record: Mapping[str, Any],
-    *,
-    project_path: Any = None,
-    revision_store: Any = None,
-    ignored_paths: Any = (),
-    recovery_ctx: RecoveryContext | None = None,
-) -> Any | None:
-    """Verify a persisted unsafe record against the durable revision store.
-
-    Format validation alone is forgeable (``revision=999`` with a well-formed
-    fingerprint). The persisted pair is trusted only when a durable
-    ``WorkspaceRevisionStore`` corroborates the exact ``(revision,
-    fingerprint)`` for the same project. Without a store/project, or on any
-    mismatch/read failure, returns ``None`` so the caller fails closed.
-    When ``recovery_ctx`` is supplied its cached snapshot is reused so one
-    ``execute_turn`` scans once, not once per slot.
-    """
-    try:
-        persisted_rev: Any = record.get("workspace_revision", None)
-        persisted_fp: Any = record.get("workspace_fingerprint", None)
-        from codey.operations.kernel_provenance import _is_trusted_identity
-        from codey.workspace.revision import WorkspaceIdentity
-
-        persisted_identity = WorkspaceIdentity.trusted_pair(persisted_rev, persisted_fp)
-    except Exception:
-        return None
-    if persisted_identity is None or not _is_trusted_identity(persisted_identity):
-        return None
-    try:
-        if recovery_ctx is not None:
-            current = recovery_ctx.current_state()
-        else:
-            if revision_store is None or project_path is None:
-                return None
-            try:
-                ignores = tuple(str(p) for p in (ignored_paths or ())) if ignored_paths else ()
-            except Exception:
-                ignores = ()
-            try:
-                current = revision_store.current_state(project_path, ignored_paths=ignores)
-            except Exception:
-                return None
-    except Exception:
-        return None
-    if current is None:
-        return None
-    try:
-        cur_rev = int(getattr(current, "revision", 0) or 0)
-        cur_fp = str(getattr(current, "fingerprint", "") or "")
-    except Exception:
-        return None
-    if cur_rev != int(persisted_identity.revision) or cur_fp != str(persisted_identity.fingerprint):
-        return None
-    return persisted_identity
-
-
 def _replay_memory_slot(
     full: Any, call: ToolCall,
 ) -> RecoverySlotResult:
@@ -319,7 +219,7 @@ def _replay_persisted_unsafe_slot(
         spec_from_persisted_record,
     )
 
-    persisted_identity = _verified_persisted_identity(
+    persisted_identity = verified_persisted_identity(
         record,
         project_path=project_path,
         revision_store=revision_store,
@@ -397,12 +297,12 @@ def replay_slot_typed(
     try:
         if not isinstance(record, Mapping):
             raise RecoveryFailed("persisted receipt must be a mapping")
-        stored_name = _strict_receipt_text(record, "name", default=name)
-        stored_digest = _strict_receipt_text(record, "args_digest", default="")
-        call_id = _strict_receipt_text(record, "call_id", default=str(getattr(call, "call_id", "") or ""))
-        excerpt = _strict_receipt_text(record, "excerpt", default="")
-        was_ok = _strict_receipt_bool(record, "ok", default=False)
-        exit_code = _strict_receipt_exit_code(record)
+        stored_name = strict_receipt_text(record, "name", default=name)
+        stored_digest = strict_receipt_text(record, "args_digest", default="")
+        call_id = strict_receipt_text(record, "call_id", default=str(getattr(call, "call_id", "") or ""))
+        excerpt = strict_receipt_text(record, "excerpt", default="")
+        was_ok = strict_receipt_bool(record, "ok", default=False)
+        exit_code = strict_receipt_exit_code(record)
     except RecoveryFailed as exc:
         return RecoverySlotResult(disposition="FAILED", result=_recovery_failed_result(call, str(exc)))
     if not _same_effect_call(stored_name, stored_digest, call):
@@ -465,33 +365,6 @@ def replay_slot_typed(
             disposition="FAILED",
             result=_recovery_failed_result(call, f"persisted replay rebuild failed: {exc}"),
         )
-
-
-def _strict_receipt_text(record: Mapping[str, Any], field: str, *, default: str) -> str:
-    if field not in record:
-        return default
-    value = record[field]
-    if type(value) is not str:
-        raise RecoveryFailed(f"persisted receipt {field} must be a string")
-    return value
-
-
-def _strict_receipt_bool(record: Mapping[str, Any], field: str, *, default: bool) -> bool:
-    if field not in record:
-        return default
-    value = record[field]
-    if type(value) is not bool:
-        raise RecoveryFailed(f"persisted receipt {field} must be a boolean")
-    return value
-
-
-def _strict_receipt_exit_code(record: Mapping[str, Any]) -> int | None:
-    if "exit_code" not in record:
-        return None
-    value = record["exit_code"]
-    if type(value) is not int:
-        raise RecoveryFailed("persisted receipt exit_code must be an integer")
-    return value
 
 
 def delivered_slot_typed(

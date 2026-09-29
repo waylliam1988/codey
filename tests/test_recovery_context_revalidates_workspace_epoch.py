@@ -6,7 +6,7 @@ import unittest
 
 class RecoveryContextRevalidatesWorkspaceEpochTests(unittest.TestCase):
     def test_final_epoch_check_rejects_workspace_bump_between_replays(self) -> None:
-        from codey.operations.kernel_recovery import RecoveryContext, _verified_persisted_identity
+        from codey.operations.kernel_recovery_context import RecoveryContext, verified_persisted_identity
         from codey.workspace.revision import WorkspaceIdentity
 
         first = WorkspaceIdentity.trusted_pair(2, "sha256:" + "ab" * 32)
@@ -27,7 +27,7 @@ class RecoveryContextRevalidatesWorkspaceEpochTests(unittest.TestCase):
             "workspace_fingerprint": first.fingerprint,
         }
         self.assertIsNotNone(
-            _verified_persisted_identity(record, project_path="project", revision_store=store, recovery_ctx=ctx)
+            verified_persisted_identity(record, project_path="project", revision_store=store, recovery_ctx=ctx)
         )
         self.assertFalse(ctx.workspace_epoch_stable())
 

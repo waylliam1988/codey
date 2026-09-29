@@ -241,7 +241,11 @@ class RunLedgerWriter:
                 tool_id=_tool_id(event),
                 path="" if path == "." else _clip(path, MAX_PATH_CHARS),
             )
-        if event.call.name == "run" and event.outcome.ok and event.outcome.exit_code == 0:
+        from codey.utils.refs import strict_run_success
+
+        if event.call.name == "run" and strict_run_success(
+            event.outcome.ok, event.outcome.exit_code
+        ):
             self.append(
                 "command_verified",
                 turn=event.turn,
@@ -293,7 +297,8 @@ class RunLedgerWriter:
             changed_count=_int_or_none(changes.get("changed_count")) or 0,
             files=files,
             files_truncated=len(source_files) > MAX_CHANGE_FILES,
-            checks_passed=bool(checks_passed) if checks_passed is not None else None,
+            checks_passed=(checks_passed if type(checks_passed) is bool else False)
+            if checks_passed is not None else None,
             # The receipt enters the durable stream only in full schema-v1
             # shape: the projection layer rebuilds the user-visible receipt
             # from this row, so a schema-incomplete or malformed payload must never

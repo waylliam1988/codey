@@ -1,5 +1,28 @@
 # Codey Test Report
 
+## Fault injection closure and recovery context split (2026-09-30)
+
+- Scope: unsafe replay refreshes, focused recovery context/persisted receipt
+  module, invalid-present event proof handling, strict frame `ok`/`exit_code`,
+  fail-closed session restoration, exact proof identity types, callback-safe
+  recovery error projection, and strict execution/completion receipt verdicts.
+- Fault injection: the existing stress suite was rerun for provider timeout,
+  process kill, duplicate delivery, lost/corrupt receipts, workspace bump
+  failure, and SSE reconnect. All 59 stress tests passed; no stale test path
+  was found.
+- TDD: new accurately named tests cover the post-batch workspace race, proof
+  tri-state, frame/result type validation, malformed session restoration,
+  strict execution projections, receipt verdicts, and the recovery-context
+  split. Each deterministic production regression was observed failing before
+  its fix and passing afterward.
+- Pre-checks: `ruff check codey tests tools`, `python -m compileall -q codey
+  tests`, and `git diff --check` clean. Expanded kernel/recovery/stress suites:
+  `509 passed, 286 subtests passed`.
+- Full run `python -m pytest -q -p no:cacheprovider`:
+  `5063 passed, 32 skipped, 1471 subtests passed in 371.77s (0:06:11)`.
+  Zero failures.
+- No release was made.
+
 ## Recovery boundary sweep and receipt type hardening (2026-09-29)
 
 - Scope: proof capability validation; recovery failure event closure;

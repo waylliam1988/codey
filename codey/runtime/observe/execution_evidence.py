@@ -303,9 +303,10 @@ class ExecutionEvidence:
         cwd = _text(args.get("path"), 240) or "."
         if not command:
             return
-        ok = bool(
-            getattr(outcome, "ok", False)
-            and getattr(outcome, "exit_code", None) == 0
+        from codey.utils.refs import strict_run_success
+
+        ok = strict_run_success(
+            getattr(outcome, "ok", None), getattr(outcome, "exit_code", None)
         )
         handle = ""
         managed = getattr(outcome, "managed_output", None)

@@ -80,6 +80,29 @@ def strict_exit_code(value: object) -> int | None:
     return value
 
 
+def strict_run_success(ok: object, exit_code: object) -> bool:
+    """True only for an exact successful tool outcome and integer zero exit."""
+    return type(ok) is bool and ok is True and strict_exit_code(exit_code) == 0
+
+
+def strict_verification_success(
+    passed: object, exit_code: object, *, passed_present: bool = True
+) -> bool:
+    """Evaluate persisted verification facts without truthiness coercion.
+
+    A present ``passed`` field must be an exact bool and must agree with the
+    strict exit code.  Conflicting facts are a failure, never a success.
+    """
+    code = strict_exit_code(exit_code)
+    if code is None:
+        return False
+    if passed_present and type(passed) is not bool:
+        return False
+    if passed_present and passed is not (code == 0):
+        return False
+    return code == 0
+
+
 def identifier(value: object, limit: int = 120) -> str:
     text = clip(value, limit)
     return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
@@ -210,5 +233,7 @@ __all__ = [
     "normalize_text",
     "stable_ref",
     "strict_exit_code",
+    "strict_run_success",
+    "strict_verification_success",
     "strict_nonnegative_int",
 ]

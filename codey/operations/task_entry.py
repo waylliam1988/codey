@@ -204,12 +204,13 @@ def _replay_recovered_facts(session: Any, recovered_rows: list[Any], recovered_r
 
     try:
         from codey.operations.kernel_facts import record_facts_for_result
+        from codey.operations.kernel_recovery_result import frame_outcome_exit_code, frame_outcome_ok
     except Exception as exc:
         raise RecoveryFailed(f"recovery helpers unavailable: {exc}") from exc
     for row, prior in zip(recovered_rows, recovered_results, strict=True):
         try:
-            record_facts_for_result(session, row.call, prior, ok=bool(row.outcome.ok),
-                                    exit_code=row.outcome.exit_code)
+            record_facts_for_result(session, row.call, prior, ok=frame_outcome_ok(row),
+                                    exit_code=frame_outcome_exit_code(row))
         except Exception as exc:
             raise RecoveryFailed(f"recovered facts replay failed: {exc}") from exc
 

@@ -233,6 +233,7 @@ class ResearchToolOutcome(_BaseOutcome):  # type: ignore[valid-type,misc]
 
     def __init__(self, model_text: str = "", ok: bool = True, **kwargs: Any) -> None:
         text = str(model_text or "")
+        exact_ok = ok if type(ok) is bool else False
         # Old SKIPPED/NEEDS_OPEN outcomes carried status needs_action.
         status = str(kwargs.get("status", "") or "")
         if not status:
@@ -241,11 +242,11 @@ class ResearchToolOutcome(_BaseOutcome):  # type: ignore[valid-type,misc]
             elif text.startswith("ERROR:"):
                 status = "error"
             else:
-                status = "ok" if bool(ok) else "error"
+                status = "ok" if exact_ok else "error"
         try:
             super().__init__(  # type: ignore[call-arg]
                 model_text=text,
-                ok=bool(ok),
+                ok=exact_ok,
                 canonical=dict(kwargs.get("canonical", {}) or {}),
                 presentation=dict(kwargs.get("presentation", {}) or {}),
                 audit=dict(kwargs.get("audit", {}) or {}),
@@ -256,7 +257,7 @@ class ResearchToolOutcome(_BaseOutcome):  # type: ignore[valid-type,misc]
             )
         except Exception:
             self.model_text = text
-            self.ok = bool(ok)
+            self.ok = exact_ok
             self.changed = bool(kwargs.get("changed", False))
             self.truncated = bool(kwargs.get("truncated", False))
             self.presentation = dict(kwargs.get("presentation", {}) or {})
