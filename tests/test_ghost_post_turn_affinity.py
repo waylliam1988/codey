@@ -8,8 +8,8 @@ import codey.ghost.work_queue as work_queue_module
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.knowledge.research_interest import ResearchInterestCandidate
-from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_entry import run_task_submission
+from codey.operations.task_run import TaskRunDeps
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun

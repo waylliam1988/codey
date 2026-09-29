@@ -12,7 +12,8 @@ import unittest
 def _full_chain_rows(testcase, run_id="r1", session_id="s1"):
     from codey.app.headless_runner import headless_event_payload
     from codey.operations import kernel_events as kev
-    from codey.operations.task_session import TaskSession, turn_effect_id as _tid
+    from codey.operations.task_session import TaskSession
+    from codey.operations.task_session import turn_effect_id as _tid
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.runtime.observe.events import run_event_ui_payload
@@ -26,7 +27,12 @@ def _full_chain_rows(testcase, run_id="r1", session_id="s1"):
         ToolCall(name="edit", args={"path": "pricing.py", "content": "x"}),
         ToolCall(name="run", args={"command": "python -m unittest discover", "path": "."}),
     ]
-    results = [ToolResult(call=c, model_text="ok", audit={"changed": (c.name == "edit")}) for c in calls]
+    results = []
+    for c in calls:
+        audit: dict = {"changed": (c.name == "edit")}
+        if c.name == "run":
+            audit["exit_code"] = 0
+        results.append(ToolResult(call=c, model_text="ok", audit=audit))
     for idx, call in enumerate(calls):
         ident = _tid("r1:task", 1, idx)
         session.executed[ident] = {
@@ -34,9 +40,15 @@ def _full_chain_rows(testcase, run_id="r1", session_id="s1"):
             "excerpt": "ok", "args_digest": "",
         }
         session._memory_results[ident] = results[idx]
+    # Real verifications carry the observed workspace identity; the run
+    # receipt below only counts with a structured zero exit.
+    session.record_verification(
+        "python -m unittest discover", 1, True, exit_code=0,
+        workspace_revision=1, workspace_fingerprint="sha256:" + "0" * 64,
+    )
     events: list = []
     kev._emit_tool_results(events.append, session, results, run_id="r1:task", turn=1)
-    rows: list[dict] = []
+    rows: list[dict] = [{"type": "task_start", "run_id": run_id, "session_id": session_id}]
     for ev in events:
         ui = run_event_ui_payload(run_id, session_id, ev)
         testcase.assertIsNotNone(ui)
@@ -67,11 +79,12 @@ class HybridGateCanonicalTests(unittest.TestCase):
         import tools.local_model_release_gate as gate
 
         rows = [
-            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read", "tool_name": "open_url", "run_id": "", "session_id": ""},
-            {"type": "tool", "tool": "read_file", "tool_name": "read_file", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "edit", "tool_name": "edit", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "run", "tool_name": "run", "run_id": "r1", "session_id": "s1"},
+            {"type": "task_start", "run_id": "r1", "session_id": "s1"},
+            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read", "tool_name": "open_url", "run_id": "", "session_id": "", "ok": True},
+            {"type": "tool", "tool": "read_file", "tool_name": "read_file", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "edit", "tool_name": "edit", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "run", "tool_name": "run", "run_id": "r1", "session_id": "s1", "ok": True, "exit_code": 0},
             {"type": "task_done", "run_id": "r1", "session_id": "s1", "stop_reason": "done"},
         ]
         single = gate.check_single_session_identity(rows)
@@ -83,15 +96,17 @@ class HybridGateCanonicalTests(unittest.TestCase):
         import tools.local_model_release_gate as gate
 
         rows = _full_chain_rows(self)
-        shuffled = [rows[2], rows[0], rows[1], rows[3], rows[4], rows[5]]
+        # rows = [task_start, web_search, open, read, edit, run, task_done]
+        shuffled = [rows[0], rows[3], rows[1], rows[2], rows[4], rows[5], rows[6]]
         order = gate.check_hybrid_tool_order(shuffled)
         self.assertFalse(order["ok"], f"shuffled must fail: {order}")
         display_only = [
-            {"type": "tool", "tool": "search", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "edit", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "run", "run_id": "r1", "session_id": "s1"},
+            {"type": "task_start", "run_id": "r1", "session_id": "s1"},
+            {"type": "tool", "tool": "search", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "edit", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "run", "run_id": "r1", "session_id": "s1", "ok": True, "exit_code": 0},
             {"type": "task_done", "run_id": "r1", "session_id": "s1", "stop_reason": "done"},
         ]
         order2 = gate.check_hybrid_tool_order(display_only)

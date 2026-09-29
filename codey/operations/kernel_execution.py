@@ -26,6 +26,73 @@ def _error_result(call: ToolCall, message: str) -> ToolResult:
     return ToolResult(call=call, model_text=f"ERROR: {message}")
 
 
+def _consistent_tool_result(requested: ToolCall, produced: ToolResult) -> ToolResult:
+    """Ensure a custom executor ToolResult reuses the requested call identity.
+
+    Native chains receipt every requested call id; a rogue call with its own
+    name/call_id would lose the receipt. Mismatches become an explicit error
+    that reuses the original call id.
+    """
+    try:
+        produced_call = getattr(produced, "call", None)
+        if produced_call is None:
+            return _error_result(requested, "tool returned no call; refusing to lose receipt")
+        want_name = str(getattr(requested, "name", "") or "").strip().lower()
+        got_name = str(getattr(produced_call, "name", "") or "").strip().lower()
+        if want_name != got_name:
+            return _error_result(
+                requested,
+                f"tool call mismatch: requested {want_name or '?'} got {got_name or '?'}; refusing to lose receipt",
+            )
+        want_id = str(getattr(requested, "call_id", "") or "")
+        got_id = str(getattr(produced_call, "call_id", "") or "")
+        if want_id != got_id:
+            return _error_result(
+                requested,
+                f"tool call_id mismatch: requested {want_id or '?'} got {got_id or '?'}; refusing to lose receipt",
+            )
+    except Exception:
+        return _error_result(requested, "tool call validation failed; refusing to lose receipt")
+    return produced
+
+
+def _with_trusted_workspace_state(result: ToolResult, *, revision: int, fingerprint: str) -> ToolResult:
+    """Attach the authoritative (revision, fingerprint) to one edit result."""
+    try:
+        audit = dict(result.audit) if isinstance(result.audit, dict) else {}
+    except Exception:
+        audit = {}
+    audit["workspace_revision"] = int(revision or 0)
+    audit["workspace_fingerprint"] = str(fingerprint or "")
+    try:
+        return ToolResult(
+            call=result.call,
+            model_text=result.model_text,
+            truncated=bool(result.truncated),
+            presentation=dict(result.presentation) if isinstance(result.presentation, dict) else {},
+            audit=audit,
+            canonical=dict(result.canonical) if isinstance(result.canonical, dict) else {},
+        )
+    except Exception:
+        return result
+
+
+def _trusted_workspace_from_result(result: ToolResult) -> tuple[int, str]:
+    try:
+        audit = result.audit if isinstance(result.audit, dict) else {}
+        rev_raw = audit.get("workspace_revision")
+        fp_raw = audit.get("workspace_fingerprint")
+        from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
+
+        rev = valid_workspace_revision(rev_raw)
+        fp = valid_workspace_fingerprint(fp_raw)
+        if rev and fp:
+            return rev, fp
+    except Exception:
+        pass
+    return 0, ""
+
+
 def _build_delegate(
     session: TaskSession,
     project_path: Any,
@@ -205,6 +272,11 @@ def sync_workspace_state_after_edit(
     hooks; hooks must adopt it without a second bump. Otherwise only the
     observed fingerprint is aligned and the outer hooks bump owns the
     revision. Returns ``(0, "")`` when no authoritative bump happened.
+
+    A supplied store that fails (exception, invalid revision, or empty
+    fingerprint) never falls back to the session-guess path: the session
+    keeps its prior identity so the old revision is never paired with the
+    new fingerprint as new evidence.
     """
     try:
         ignores = tuple(str(p) for p in (ignored_paths or ())) if ignored_paths else ()
@@ -213,18 +285,24 @@ def sync_workspace_state_after_edit(
     if revision_store is not None and project_path is not None:
         try:
             state = revision_store.bump_state(project_path, ignored_paths=ignores)
-            rev, fp = int(state.revision or 0), str(state.fingerprint or "")
-            if fp:
-                with contextlib.suppress(Exception):
-                    session.set_workspace_state(rev, fp)
-                try:
-                    if execution_evidence is not None and hasattr(execution_evidence, "set_workspace_state"):
-                        execution_evidence.set_workspace_state(rev, fp)
-                except Exception:
-                    pass
-                return rev, fp
+        except Exception:
+            return 0, ""
+        try:
+            from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
+        except Exception:
+            return 0, ""
+        rev = valid_workspace_revision(getattr(state, "revision", 0))
+        fp = valid_workspace_fingerprint(getattr(state, "fingerprint", ""))
+        if not rev or not fp:
+            return 0, ""
+        with contextlib.suppress(Exception):
+            session.set_workspace_state(rev, fp)
+        try:
+            if execution_evidence is not None and hasattr(execution_evidence, "set_workspace_state"):
+                execution_evidence.set_workspace_state(rev, fp)
         except Exception:
             pass
+        return rev, fp
     _sync_workspace_after_edit(session, project_path, execution_evidence, ignored_paths=ignores)
     return 0, ""
 
@@ -518,6 +596,9 @@ def _run_via_delegate_or_fn(
             turn=active_turn,
             tool_index=tool_index,
         )
+        result = _consistent_tool_result(call, result)
+        if str(result.model_text or "").startswith("ERROR: tool call"):
+            ok = False
         return result, ok, opened, evidence, exit_code, True
     fn = runnable.get(name)
     if fn is None:
@@ -527,12 +608,16 @@ def _run_via_delegate_or_fn(
     except Exception as exc:
         return _error_result(call, str(exc) or "tool failed"), False, "", [], None, True
     if isinstance(produced, ToolResult):
-        result = produced
+        result = _consistent_tool_result(call, produced)
     elif isinstance(produced, str):
         result = ToolResult(call=call, model_text=produced)
     else:
         result = ToolResult(call=call, model_text=str(produced))
     ok = _result_ok(name, result)
+    # A call-identity mismatch is already an explicit ERROR above; never
+    # treat it as ok even if the text check missed it.
+    if str(result.model_text or "").startswith("ERROR: tool call"):
+        ok = False
     # ``run`` without a structured exit code never counts as verified pass;
     # verification is decided in record_facts_for_result from exit codes only.
     return result, ok, "", [], None, True
@@ -617,9 +702,19 @@ def execute_turn(
         ]
         if pending_items:
             intent_sink.begin_turn(pending_items, turn=active_turn)
+    workspace_unconfirmed = False
     for offset, call in enumerate(calls or []):
         name = str(getattr(call, "name", "") or "").strip().lower()
         identity = turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset)
+        if workspace_unconfirmed:
+            blocked = _error_result(
+                call,
+                "prior edit workspace identity unconfirmed (edit happened, revision not bumped); "
+                "verification skipped, re-check workspace before continuing",
+            )
+            settle(identity, call, blocked, ok=False)
+            results.append(blocked)
+            continue
         delivered_hit = _delivered_slot_result(delivered_map, identity, call)
         if delivered_hit is not None:
             is_mismatch = str(getattr(delivered_hit, "model_text", "") or "").startswith("ERROR: recovery mismatch")
@@ -647,24 +742,44 @@ def execute_turn(
         record_facts_for_result(
             session, call, result, ok=ok, opened_url=opened, evidence_items=evidence, exit_code=exit_code
         )
-        # After a confirmed edit, sync the real post-edit file identity into
-        # both the session and the outer evidence before any later run
-        # receipt in the same batch or the next turn. Single observation
-        # with the configured ignores; revision owned by the outer store
-        # unless an explicit store is injected (single authoritative bump).
+        # After a confirmed edit, the authoritative bump (when a store is
+        # present) owns the single revision; only that trusted (rev, fp) may
+        # be carried to hooks via the result. The session guess is never
+        # trusted. A managed bump failure marks the edit unconfirmed and
+        # blocks later verification in the same batch.
         if name == "edit" and ok:
             try:
                 changed = True
                 if isinstance(result.audit, dict) and "changed" in result.audit:
                     changed = bool(result.audit.get("changed"))
-                if changed:
-                    sync_workspace_state_after_edit(
+            except Exception:
+                changed = True
+            if changed:
+                try:
+                    rev, fp = sync_workspace_state_after_edit(
                         session, project_path, execution_evidence,
                         ignored_paths=workspace_ignored_paths,
                         revision_store=workspace_revision_store,
                     )
-            except Exception:
-                pass
+                except Exception:
+                    rev, fp = 0, ""
+                if rev and fp:
+                    trusted = _with_trusted_workspace_state(result, revision=rev, fingerprint=fp)
+                    with _contextlib.suppress(Exception):
+                        session._memory_results[identity] = trusted
+                    result = trusted
+                elif workspace_revision_store is not None:
+                    failed = _error_result(
+                        call,
+                        "edit happened but workspace identity unconfirmed (revision bump failed); "
+                        "re-check workspace before verifying, do not re-apply the edit",
+                    )
+                    settle(identity, call, failed, ok=False)
+                    with _contextlib.suppress(Exception):
+                        session._memory_results[identity] = failed
+                    result = failed
+                    ok = False
+                    workspace_unconfirmed = True
         results.append(result)
     return results
 

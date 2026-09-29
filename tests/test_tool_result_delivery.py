@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from codey.agents.request import AgentRequest
-from codey.agents.tool_execution import (
-    ToolResultDeliveryItem,
-    TurnState,
-)
 from codey.operations.recovery import recover_effects_for_resume
 from codey.protocols import JsonToolCodec
 from codey.runs.details import load_run_details
@@ -1515,7 +1510,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         with self.assertRaises(RuntimeEffectError):
             sink.begin_turn([("", _TC(name="read_file", args={"path": "target.py"}), 0)], turn=1)
 
-    def test_ensure_result_batch_intent_fails_closed_without_durable_sink(self) -> None:
+    def test_readonly_policy_rejects_shell(self) -> None:
         from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
@@ -1524,7 +1519,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         provider = MockDeliveryProvider()
         policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
         session = TaskSession(policy=policy, task_kind="project", project=str(self.project_dir), max_turns=2)
-        # Disallowed tool without intent sink must fail closed with ERROR, never send.
+        # Read-only policy denies shell with ERROR, never sends.
         results = execute_turn(
             session, [ToolCall(name="shell", args={"command": "rm -rf /", "path": "."})],
             executors={"shell": lambda c: ToolResult(call=c, model_text="should not run")},
@@ -1535,47 +1530,43 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(len(provider.prompts), 0)
 
     def test_ensure_result_batch_intent_rejects_digest_mismatch_for_same_turn(self) -> None:
-        # Pre-record batch intent for turn 1 with tool "read"
-        items_early = (
-            DeliveryBatchItem(
-                tool_index=0,
-                tool_name="read",
-                ref="ref-1",
-                replay_class="safe",
-                is_denied=False,
-            ),
-        )
-        self.line.begin_tool_batch(
-            self.session_id,
-            self.run_id,
-            intents=(),
-            delivery_intent=DeliveryBatchIntent(
-                batch_id="batch-early-1",
-                session_id=self.session_id,
-                run_id=self.run_id,
-                turn=1,
-                items=items_early,
-                batch_digest=compute_batch_digest(items_early),
-            ),
-        )
-
-        # Now try a mismatched slot via production execute_turn: the settled
-        # receipt for turn 1 must not be reused for different tool/args.
         from codey.operations.kernel_execution import execute_turn as _exec
         from codey.operations.task_session import TaskSession as _TS
+        from codey.operations.task_session import turn_effect_id as _tid
         from codey.policies.task_policy import TaskPolicy as _TP
         from codey.runtime.core.models import ToolResult as _TR
 
         _policy = _TP(grants=frozenset({"project.read", "control"}))
         _session = _TS(policy=_policy, task_kind="project", project=str(self.project_dir), max_turns=2)
-        _session.executed["k-mismatch"] = {"name": "read_file", "ok": True, "call_id": "", "excerpt": "old", "args_digest": "digest-read"}
+        real_identity = _tid(self.run_id, 1, 0)
+        before = {
+            "name": "read_file", "ok": True, "call_id": "call-before",
+            "excerpt": "old", "args_digest": "digest-read-target",
+        }
+        _session.executed[real_identity] = dict(before)
+        _session._memory_results[real_identity] = _TR(
+            call=ToolCall(name="read_file", args={"path": "target.py"}, call_id="call-before"),
+            model_text="old",
+        )
+        calls: list = []
+
+        def _grep(call):
+            calls.append(call)
+            return _TR(call=call, model_text="hits")
+
         _res = _exec(
-            _session, [ToolCall(name="grep", args={"path": ".", "query": "q"})],
-            executors={"grep": lambda c: _TR(call=c, model_text="hits")},
+            _session, [ToolCall(name="grep", args={"path": ".", "query": "q"}, call_id="call-new")],
+            executors={"grep": _grep},
             run_id=self.run_id, turn=1, project_path=self.project_dir,
             delivered={},
         )
-        self.assertTrue(_res)
+        self.assertEqual(len(_res), 1)
+        self.assertEqual(calls, [], "mismatched slot must not execute")
+        self.assertTrue(
+            str(_res[0].model_text).startswith("ERROR: recovery mismatch"),
+            f"must return explicit mismatch: {_res[0].model_text[:300]}",
+        )
+        self.assertEqual(_session.executed[real_identity], before)
 
     def test_single_canonical_batch_for_read_plus_policy_denied_shell(self) -> None:
         from codey.operations.kernel_execution import execute_turn
@@ -2151,11 +2142,12 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(len(recovery.recovered_tool_outcomes), 1)
         self.assertEqual(recovery.recovered_tool_result_batch_id, batch_id)
 
-        from tests.support.kernel_harness import run_kernel_request
+        from codey.operations.project_adapter import run as run_kernel_request
 
         provider = MockDeliveryProvider()
         result = run_kernel_request(AgentRequest(
             provider=provider,
+            provider_id="mock_provider",
             project=self.project_dir,
             task="finish after recovery",
             codec=JsonToolCodec(),

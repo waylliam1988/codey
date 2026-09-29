@@ -23,13 +23,13 @@ if __package__ in (None, ""):
 
 from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
+from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.toolchain.runtime import ToolOutcome, _python_syntax_regression_hint
 from codey.toolchain.runtime import edit_file as runtime_edit_file
 from tests.manual.project_task_context import render_production_project_map
-from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 ARMS = ("baseline", "hint")
 

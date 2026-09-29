@@ -35,13 +35,13 @@ if str(ROOT) not in sys.path:
 import contextlib
 
 from codey.agents.request import AgentRequest
+from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.protocols.json_codec import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent
 from codey.toolchain.runtime import ToolOutcome
-from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-readonly-parallel-ab.json"
 PARALLEL_READONLY_TOOL_NAMES = frozenset({"read", "ls", "search"})

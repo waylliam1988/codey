@@ -35,8 +35,6 @@ def test_native_codec_system_prompt_is_native_only() -> None:
 
 
 def test_native_codec_hash_is_native_not_json() -> None:
-    from codey.toolchain.openai_tools import openai_tool_contract_hash
-    from codey.toolchain.tool_spec import json_contract_text
 
     from types import SimpleNamespace
 

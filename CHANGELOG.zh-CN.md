@@ -2,6 +2,37 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 00facf6 复核门槛/版本/harness 收口（未发布）
+
+- 发布门槛假阴性修复：`check_single_session_identity()` 只检查任务运行事件
+  （`task_start`、`turn`、`tool_started`、`tool`、`task_done`），全局
+  `status=connecting` 不参与；每行需非空一致 ID，且至少有 `task_start` 与
+  `task_done`。“同一个 provider session”改为“同一个 Codey run/session”
+  （相同 ID 不能证明未调用过 `new_chat()`）。以真实 `run_headless()` + 假
+  provider（保留自动 `status` 行）锁定。
+- 发布门槛假阳性修复：`check_hybrid_tool_order()` 不只看工具名，每步需
+  `ok=True`，`run` 还需结构化零退出码。headless 缺规范 `tool_name` 时保持
+  缺失，不再用展示 `kind` 回填，门槛直接拒绝。
+- 版本失败路径闭环：有 store 但 `bump_state()` 失败时不再回退写 session
+  猜测（杜绝旧 revision + 新指纹）；`execute_turn()` 只把成功 `(rev, fp)`
+  写入该编辑的可信结果元数据，`kernel_events` 只从该结果取数；托管失败返回
+  “编辑已发生、工作区身份未确认”，同批次后续 `run` 跳过且不记验证，恢复时
+  重核工作区不重做编辑。自定义执行器 `ToolResult.call` 不一致则用原 call ID
+  生成错误结果，native 链不丢回执。
+- 空心断言收紧：digest 错配改用真实 effect ID 并断言零执行、明确错配、原收据
+  不变；“without durable sink”改名为只读策略拒绝 shell；native 循环用真实
+  快照并断言 `read_file`、`done`；溢出收紧为确定性 `provider_failure` 且不
+  重试并改名；混合批次补 `run_task_kernel()` `protocol` 场景。
+  `test_workspace_single_bump.py` 改走真实 `build_hooks().on_event`。
+- 卫生：`ruff` 41 -> 0；`run_task_kernel` 直接捕获 `RecoveryFailed` 并抽取
+  同文件小 helper 降复杂度；架构测试解析失败不再返回空集并删残留常量；
+  harness 27 -> 3 处引用（`run_task_kernel` 直引生产，`run_kernel_request`
+  直引 `project_adapter.run`），剩余 3 处旧 `AgentLoopSession` 为下一删除边界；
+  补齐两处缺 `provider_id` 的测试。新增 TDD 锁定测试名均准确反映内容。
+- 验证：预检全绿；全量 `python -m pytest -q -p no:cacheprovider`：
+  `4925 passed, 10 skipped, 1460 subtests passed in 363.29s`。未发布，无端到端
+  耗时数据；单次编辑少一次扫描仍是唯一可确认性能收益。
+
 ## Unreleased - Review 3643593 收口 + 旧模块删除（未发布）
 
 - 单次编辑单次推进：有 revision store 时仅

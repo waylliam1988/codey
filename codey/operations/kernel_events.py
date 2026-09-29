@@ -56,9 +56,8 @@ def _emit_tool_starts(
         display_call = _event_call(session, call)
         event = RunEvent.tool_started(turn, display_call, render_tool_activity(display_call), index)
         try:
-            if isinstance(getattr(event, "metadata", None), dict):
-                if canonical:
-                    event.metadata["tool_name"] = canonical
+            if isinstance(getattr(event, "metadata", None), dict) and canonical:
+                event.metadata["tool_name"] = canonical
         except Exception:
             pass
         on_event(event)
@@ -110,21 +109,20 @@ def _emit_tool_results(
             if isinstance(getattr(event, "metadata", None), dict):
                 if canonical_name:
                     event.metadata["tool_name"] = canonical_name
-                # Kernel edit owns the single authoritative revision bump
-                # (sync_workspace_state_after_edit). Carry it so hooks adopts
-                # instead of bumping a second time.
+                # Only the trusted (revision, fingerprint) captured by
+                # execute_turn() from the authoritative bump may be carried;
+                # the session guess is never trusted, so a failed bump emits
+                # no workspace state and hooks must not adopt the old revision.
                 if canonical_name == "edit" and ok and changed:
                     try:
-                        sess_rev = int(getattr(session, "workspace_revision", 0) or 0)
+                        from codey.operations.kernel_execution import _trusted_workspace_from_result
+
+                        rev, fp = _trusted_workspace_from_result(result)
                     except Exception:
-                        sess_rev = 0
-                    try:
-                        sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
-                    except Exception:
-                        sess_fp = ""
-                    if sess_rev and sess_fp:
-                        event.metadata["workspace_revision"] = sess_rev
-                        event.metadata["workspace_fingerprint"] = sess_fp
+                        rev, fp = 0, ""
+                    if rev and fp:
+                        event.metadata["workspace_revision"] = rev
+                        event.metadata["workspace_fingerprint"] = fp
         except Exception:
             pass
         on_event(event)

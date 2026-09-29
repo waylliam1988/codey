@@ -15,10 +15,10 @@ class WorkspaceFingerprintStaleTests(unittest.TestCase):
         from pathlib import Path
         from unittest.mock import patch
 
+        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
-        from tests.support.kernel_harness import run_task_kernel
 
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "proj"

@@ -4,39 +4,6 @@ from __future__ import annotations
 import unittest
 
 
-def _tool_names(rows):
-    names = []
-    for row in rows:
-        t = str(row.get("type") or "")
-        if t in {"tool", "tool_start", "tool_result", "tool_event"}:
-            name = str((row.get("call") or {}).get("name") or row.get("tool") or row.get("name") or "")
-            if name:
-                names.append(name.lower())
-        # headless JSONL uses type=tool with call payload
-        if t == "tool" and isinstance(row.get("call"), dict):
-            pass
-    return names
-
-
-def assert_hybrid_order(names):
-    """web_search -> open -> read -> edit -> run -> done (open/result/hit allowed)."""
-    order = ["web_search", "open", "read_file", "edit", "run", "done"]
-
-    def norm(n):
-        if n in {"open_url", "open_result", "reopen_source", "open_hit"}:
-            return "open"
-        return n
-
-    normed = [norm(n) for n in names]
-    idx = 0
-    for want in order:
-        try:
-            found = normed.index(want, idx)
-        except ValueError as err:
-            raise AssertionError(f"missing step {want!r} in order {normed}") from err
-        idx = found + 1
-
-
 class ReleaseGateToolOrderTests(unittest.TestCase):
     def test_hybrid_task_prompt_requires_search_open_read_edit_verify_done(self) -> None:
         from tools import local_model_release_gate as gate
@@ -48,23 +15,16 @@ class ReleaseGateToolOrderTests(unittest.TestCase):
             self.assertIn(keyword, lowered, f"hybrid prompt missing {keyword!r}: {task}")
         self.assertEqual(intent, "hybrid")
 
-    def test_hybrid_order_checker_accepts_good_trace(self) -> None:
-        names = ["web_search", "open_url", "read_file", "edit", "run", "done"]
-        assert_hybrid_order(names)
-
-    def test_hybrid_order_checker_rejects_skipped_search(self) -> None:
-        with self.assertRaises(AssertionError):
-            assert_hybrid_order(["read_file", "edit", "run", "done"])
-
     def test_gate_helper_accepts_ordered_hybrid_rows(self) -> None:
         from tools import local_model_release_gate as gate
 
         rows = [
-            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read", "tool_name": "open_url", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read_file", "tool_name": "read_file", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "edit", "tool_name": "edit", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "run", "tool_name": "run", "run_id": "r1", "session_id": "s1"},
+            {"type": "task_start", "run_id": "r1", "session_id": "s1"},
+            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read", "tool_name": "open_url", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read_file", "tool_name": "read_file", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "edit", "tool_name": "edit", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "run", "tool_name": "run", "run_id": "r1", "session_id": "s1", "ok": True, "exit_code": 0},
             {"type": "task_done", "stop_reason": "done", "run_id": "r1", "session_id": "s1"},
         ]
         order = gate.check_hybrid_tool_order(rows)
@@ -76,10 +36,11 @@ class ReleaseGateToolOrderTests(unittest.TestCase):
         from tools import local_model_release_gate as gate
 
         rows = [
-            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read_file", "tool_name": "read_file", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "edit", "tool_name": "edit", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "run", "tool_name": "run", "run_id": "r1", "session_id": "s1"},
+            {"type": "task_start", "run_id": "r1", "session_id": "s1"},
+            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read_file", "tool_name": "read_file", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "edit", "tool_name": "edit", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "run", "tool_name": "run", "run_id": "r1", "session_id": "s1", "ok": True, "exit_code": 0},
             {"type": "task_done", "stop_reason": "done", "run_id": "r1", "session_id": "s1"},
         ]
         order = gate.check_hybrid_tool_order(rows)
@@ -90,8 +51,9 @@ class ReleaseGateToolOrderTests(unittest.TestCase):
         from tools import local_model_release_gate as gate
 
         rows = [
-            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read", "tool_name": "open_url", "run_id": "r2", "session_id": "s1"},
+            {"type": "task_start", "run_id": "r1", "session_id": "s1"},
+            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read", "tool_name": "open_url", "run_id": "r2", "session_id": "s1", "ok": True},
             {"type": "task_done", "run_id": "r1", "session_id": "s1", "stop_reason": "done"},
         ]
         single = gate.check_single_session_identity(rows)
@@ -101,33 +63,35 @@ class ReleaseGateToolOrderTests(unittest.TestCase):
         from tools import local_model_release_gate as gate
 
         display_only = [
-            {"type": "tool", "tool": "search", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read_file", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "edit", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "run", "run_id": "r1", "session_id": "s1"},
+            {"type": "task_start", "run_id": "r1", "session_id": "s1"},
+            {"type": "tool", "tool": "search", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read_file", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "edit", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "run", "run_id": "r1", "session_id": "s1", "ok": True, "exit_code": 0},
             {"type": "task_done", "run_id": "r1", "session_id": "s1", "stop_reason": "done"},
         ]
         self.assertFalse(gate.check_hybrid_tool_order(display_only)["ok"])
         missing = [
-            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "read", "tool_name": "open_url", "run_id": "", "session_id": ""},
-            {"type": "tool", "tool": "read_file", "tool_name": "read_file", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "edit", "tool_name": "edit", "run_id": "r1", "session_id": "s1"},
-            {"type": "tool", "tool": "run", "tool_name": "run", "run_id": "r1", "session_id": "s1"},
+            {"type": "task_start", "run_id": "r1", "session_id": "s1"},
+            {"type": "tool", "tool": "search", "tool_name": "web_search", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "read", "tool_name": "open_url", "run_id": "", "session_id": "", "ok": True},
+            {"type": "tool", "tool": "read_file", "tool_name": "read_file", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "edit", "tool_name": "edit", "run_id": "r1", "session_id": "s1", "ok": True},
+            {"type": "tool", "tool": "run", "tool_name": "run", "run_id": "r1", "session_id": "s1", "ok": True, "exit_code": 0},
             {"type": "task_done", "run_id": "r1", "session_id": "s1", "stop_reason": "done"},
         ]
         self.assertFalse(gate.check_single_session_identity(missing)["ok"])
         self.assertFalse(gate.check_hybrid_tool_order(missing)["ok"])
 
     def test_full_projection_chain_passes_gate(self) -> None:
+        import tools.local_model_release_gate as gate
         from codey.app.headless_runner import headless_event_payload
         from codey.operations import kernel_events as kev
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.observe.events import run_event_ui_payload
-        import tools.local_model_release_gate as gate
 
         policy = TaskPolicy(grants=frozenset({"control", "project.write"}))
         session = TaskSession(policy=policy, task_kind="hybrid", project="", max_turns=6)
@@ -138,14 +102,23 @@ class ReleaseGateToolOrderTests(unittest.TestCase):
             ToolCall(name="edit", args={"path": "pricing.py", "content": "x"}),
             ToolCall(name="run", args={"command": "python -m unittest discover", "path": "."}),
         ]
-        results = [ToolResult(call=c, model_text="ok", audit={"changed": (c.name == "edit")}) for c in calls]
+        results = []
+        for c in calls:
+            audit: dict = {"changed": (c.name == "edit")}
+            if c.name == "run":
+                audit["exit_code"] = 0
+            results.append(ToolResult(call=c, model_text="ok", audit=audit))
         for idx, call in enumerate(calls):
             ident = turn_effect_id("r1:task", 1, idx)
             session.executed[ident] = {"name": call.name, "ok": True, "call_id": "", "excerpt": "ok", "args_digest": ""}
             session._memory_results[ident] = results[idx]
+        session.record_verification(
+            "python -m unittest discover", 1, True, exit_code=0,
+            workspace_revision=1, workspace_fingerprint="sha256:" + "0" * 64,
+        )
         events: list = []
         kev._emit_tool_results(events.append, session, results, run_id="r1:task", turn=1)
-        rows: list[dict] = []
+        rows: list[dict] = [{"type": "task_start", "run_id": "r1", "session_id": "s1"}]
         for ev in events:
             ui = run_event_ui_payload("r1", "s1", ev)
             self.assertIsNotNone(ui)

@@ -1,8 +1,8 @@
 """工作区版本单次推进：一次真实编辑恰好一次 bump_state。
 
 生产链：execute_turn（sync_workspace_state_after_edit 唯一推进）
-  -> kernel_events._emit_tool_results（把 revision/fingerprint 写入事件 metadata）
-  -> task_phases.hooks.on_event（只采纳，不再推进）。
+  -> kernel_events._emit_tool_results（把可信 revision/fingerprint 写入事件 metadata）
+  -> task_phases.hooks.build_hooks().on_event（只采纳，不再推进）。
 
 非内核编辑（事件无 workspace metadata）仍由 hooks 推进。
 """
@@ -11,7 +11,37 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
+
+
+def _real_hooks_on_event(*, store, work, session_id="s1", run_id="r1", project, ignored=()):
+    from codey.operations.task_phases import hooks as hooks_mod
+
+    emitted: list[dict] = []
+    state = SimpleNamespace(
+        emit=emitted.append,
+        providers=SimpleNamespace(supervisor=None),
+        self_repair=None,
+        provider_failover_order=lambda: (),
+        add_pending_shell_approval=lambda *args, **kwargs: None,
+    )
+    deps = SimpleNamespace(work_checkpoints=None, workspace_revisions=store)
+    completion_deps = SimpleNamespace(state=state)
+    hooks = hooks_mod.build_hooks(
+        deps,
+        state,
+        work,
+        session_id=session_id,
+        run_id=run_id,
+        project=project,
+        max_turns=4,
+        project_config_ignored=tuple(ignored),
+        review_log_lines=80,
+        project_completion_deps=completion_deps,
+        current_provider_id=lambda: "local",
+    )
+    return hooks.on_event
 
 
 class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
@@ -19,7 +49,6 @@ class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
-        from codey.operations.task_phases import hooks as hooks_mod
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -58,11 +87,6 @@ class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
                 target.write_text(str(call.args.get("content") or "y=2\n"), encoding="utf-8")
                 return ToolResult(call=call, model_text="edited", audit={"changed": True})
 
-            def production_on_event(event):
-                if hooks_mod._workspace_edit_event(event):
-                    if not hooks_mod._adopt_kernel_workspace_state(work, event):
-                        work.advance_workspace_revision(store, str(project), ignored_paths=())
-
             with mock.patch.object(store, "bump_state", side_effect=counting_bump):
                 results = ke.execute_turn(
                     session,
@@ -78,7 +102,13 @@ class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
                     workspace_ignored_paths=(),
                     workspace_revision_store=store,
                 )
-                kev._emit_tool_results(production_on_event, session, results, run_id="r1:task", turn=1)
+                with mock.patch(
+                    "codey.operations.task_phases.hooks.handle_project_tool_event", return_value=None
+                ):
+                    on_event = _real_hooks_on_event(
+                        store=store, work=work, project=str(project), ignored=()
+                    )
+                    kev._emit_tool_results(on_event, session, results, run_id="r1:task", turn=1)
             self.assertEqual(len(results), 1)
             self.assertEqual(len(bump_calls), 1, f"single edit must bump once total, got {bump_calls}")
             sess_rev = int(getattr(session, "workspace_revision", 0) or 0)
@@ -95,7 +125,6 @@ class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
-        from codey.operations.task_phases import hooks as hooks_mod
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -133,11 +162,6 @@ class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
                 target.write_text(str(call.args.get("content") or "x"), encoding="utf-8")
                 return ToolResult(call=call, model_text="edited", audit={"changed": True})
 
-            def production_on_event(event):
-                if hooks_mod._workspace_edit_event(event):
-                    if not hooks_mod._adopt_kernel_workspace_state(work, event):
-                        work.advance_workspace_revision(store, str(project), ignored_paths=("gen",))
-
             with mock.patch.object(store, "bump_state", side_effect=counting_bump):
                 for turn, (fname, content) in ((1, ("n1.py", "x=2\n")), (2, ("n2.py", "x=3\n"))):
                     results = ke.execute_turn(
@@ -150,7 +174,13 @@ class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
                         workspace_ignored_paths=("gen",),
                         workspace_revision_store=store,
                     )
-                    kev._emit_tool_results(production_on_event, session, results, run_id="r1:task", turn=turn)
+                    with mock.patch(
+                        "codey.operations.task_phases.hooks.handle_project_tool_event", return_value=None
+                    ):
+                        on_event = _real_hooks_on_event(
+                            store=store, work=work, project=str(project), ignored=("gen",)
+                        )
+                        kev._emit_tool_results(on_event, session, results, run_id="r1:task", turn=turn)
                 (project / "gen" / "out.py").write_text("v2 ignored\n", encoding="utf-8")
             self.assertEqual(len(bump_calls), 2, f"two edits must bump twice total, got {bump_calls}")
             for _, ignores in bump_calls:

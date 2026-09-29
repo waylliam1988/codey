@@ -49,8 +49,8 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import build_research_interest_candidates
 from codey.knowledge.store import KnowledgeStore
 from codey.operations import research_flow as research_flow_module
-from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_entry import run_task_submission
+from codey.operations.task_run import TaskRunDeps
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_fresh_provider_tab, provider_ids
 from codey.research.context import ResearchContext
 from codey.research.ledger import ResearchLedger

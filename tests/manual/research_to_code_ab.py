@@ -40,6 +40,7 @@ from codey.agents.request import AgentRequest
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
@@ -55,7 +56,6 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
-from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 # Shared manual-layer plumbing (journaling provider, schedules, atomic JSON);
 # the alias keeps the historical name for existing tests and callers.

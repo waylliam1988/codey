@@ -11,14 +11,11 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.result import ModeOutcome
 from codey.task.model import TaskSubmission, execution_task
-
-if TYPE_CHECKING:
-    from codey.operations.task_run import TaskRunDeps
 
 _TASK_KINDS = frozenset({"project", "research", "hybrid", "planning", "planning_readonly", "readonly"})
 

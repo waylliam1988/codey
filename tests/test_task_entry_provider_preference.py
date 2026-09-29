@@ -10,8 +10,8 @@ from unittest import mock
 from codey.agents.request import AgentRequest
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_entry import run_task_submission
+from codey.operations.task_run import TaskRunDeps
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     ProviderActionError,

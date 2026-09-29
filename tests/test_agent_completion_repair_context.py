@@ -13,7 +13,7 @@ from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY,
     project_repair_context,
 )
-from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
+from codey.operations.project_adapter import run as _agent_kernel_request
 
 
 class FakeProvider:

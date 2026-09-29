@@ -165,6 +165,7 @@ class AutoFreshChatOwnershipTests(unittest.TestCase):
         # that still contains the ACTION scaffolding.
         # Production entry: project_adapter strict fresh-chat path.
         import tempfile
+
         from codey.agents.request import AgentRequest
 
         with tempfile.TemporaryDirectory() as td:

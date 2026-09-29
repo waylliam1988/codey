@@ -19,8 +19,8 @@ from codey.operations.project_completion_flow import (
     COMPLETION_REPAIR_FOLLOWUP,
     blocked_result,
 )
-from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_entry import run_task_submission
+from codey.operations.task_run import TaskRunDeps
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent

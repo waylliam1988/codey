@@ -31,10 +31,15 @@ class ProviderNotSentSettlementTests(unittest.TestCase):
                 sink = KernelEffectSink(line, session_id="s1", run_id="r1", provider_id="local")
 
                 class BoomProvider:
-                    def send(self, prompt, timeout=None):
-                        raise exc
+                    def __init__(self, failure: Exception) -> None:
+                        self._failure = failure
 
-                recorded = KernelRecordedProvider(BoomProvider(), sink)
+                    def send(self, prompt, timeout=None):
+                        raise self._failure
+
+                BoomProvider.__name__ = f"BoomProvider_{type(exc).__name__}"
+
+                recorded = KernelRecordedProvider(BoomProvider(exc), sink)
                 with self.assertRaises((errors.RequestPrepError, errors.ContextOverflowError)):
                     recorded.send("hello")
                 store = RuntimeEffectStore(log)

@@ -2,6 +2,82 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Gate/version/harness hardening from 00facf6 review (no release)
+
+- Release gate false negative fixed: `check_single_session_identity()` now
+  checks only task-run events (`task_start`, `turn`, `tool_started`,
+  `tool`, `task_done`); global `status=connecting` and other run-level rows
+  are ignored. Each participating row must carry non-empty consistent ids
+  and at least `task_start` + `task_done` must be present. Wording changed
+  from "same provider session" to "same Codey run/session" (ids cannot prove
+  `new_chat()` was not called). Locked by
+  `tests/test_gate_task_identity_excludes_global_status.py` (synthetic +
+  real `run_headless()` with fake done provider preserving the auto status
+  row).
+- Release gate false positive fixed: `check_hybrid_tool_order()` now requires
+  successful evidence, not just names. Every required step needs `ok=True`;
+  `run` additionally requires structured `exit_code == 0`. Locked by
+  `tests/test_gate_hybrid_requires_successful_tool_evidence.py`.
+- Headless keeps missing canonical names missing: `_payload_tool_started` /
+  `_payload_tool` no longer fall back from display `kind` to `tool_name`;
+  spec-missing rows stay empty so the gate rejects. Locked by
+  `tests/test_headless_missing_tool_name_stays_missing.py`.
+- Workspace bump failure fail-closed: `sync_workspace_state_after_edit()`
+  with a supplied store never falls back to the session guess on bump
+  failure (no old-revision + new-fingerprint pairing). `execute_turn()`
+  captures the authoritative `(rev, fp)` into the edit result's trusted
+  audit; `kernel_events` emits only that trusted pair, never the session
+  guess. A managed bump failure returns explicit
+  "edit happened, workspace identity unconfirmed", blocks same-batch later
+  verification (`run` skipped, no verification recorded), and recovery must
+  re-check the workspace instead of re-doing the edit. Custom executor
+  `ToolResult.call` mismatches are replaced by an error reusing the original
+  call id so native chains never lose receipts. Locked by
+  `tests/test_workspace_bump_failure_does_not_reuse_old_revision.py` (bump
+  error, missing store, consecutive, same-batch `edit->run`) and
+  `tests/test_native_mixed_batch_kernel_stops_with_receipts.py` /
+  `tests/test_native_mixed_batch.py` (kernel `protocol` stop with receipts).
+- Hollow migration assertions tightened: digest-mismatch test uses the real
+  `turn_effect_id` with different tool/digest, asserts zero executor calls,
+  explicit mismatch, and unchanged receipt; `without durable sink` renamed to
+  `test_readonly_policy_rejects_shell`; native loop uses the real snapshot
+  (asserts `read_file` + `done`, no `or` / schema mock); overflow is exactly
+  `provider_failure` with no retry (`test_strict_ledger_overflow_does_not_retry_same_batch`);
+  mixed batch adds a `run_task_kernel()` `protocol` scenario with receipts.
+  New accurate-name locks: `test_execute_turn_real_slot_digest_mismatch`,
+  `test_native_loop_real_snapshot_requires_read_and_done`,
+  `test_native_overflow_is_provider_failure_without_retry`.
+- `test_workspace_single_bump.py` now drives the real
+  `build_hooks().on_event` (with `handle_project_tool_event` stubbed) instead
+  of a copied condition, covering the adopt-vs-bump path.
+- Hygiene: `ruff check codey tests tools` clean (41 -> 0, mostly `I001`
+  auto-sort); `run_task_kernel` complexity via direct `RecoveryFailed` catch
+  plus same-file `_advance_after_results` helper (23 -> <=20, no new layer);
+  `build_hooks` `SIM102`/`SIM105`; `kernel_events` `SIM102`;
+  `kernel_protocol` `E402`; `task_entry` unused import; architecture test
+  fail-closed `_imports_of()` (parse errors raise), removed unused
+  `LEGACY_MODULES`/`ALLOWED_*`/`_module_name` and the registry-pending
+  filter; release-gate duplicate order helper deleted; `B023` loop-var bind.
+- Harness convergence 27 -> 3 refs: all `run_task_kernel` imports now from
+  `codey.operations.task_loop`, all `run_kernel_request` (entry behavior)
+  now from `codey.operations.project_adapter.run`. Remaining 3
+  `build_kernel_fixture` refs (`test_abab_cycle`, `test_agent_effect_sandwich`,
+  `test_prompt_envelope`) still exercise legacy `AgentLoopSession`; the
+  dual-session file is the next deletion boundary, with per-function cleanup
+  for `agents/state.AgentLoopSession` / `agents/tool_execution.execute_tool_call`
+  (still used by legacy tests, policy/info helpers still used in prod) and
+  `runaway_guard` (only via old record path; new kernel uses stagnant).
+  Migration exposed two missing `provider_id` test bugs (harness fallback
+  masked them): `test_tool_result_delivery` recovery and
+  `test_agent_effect_sandwich` resume now pass explicit `mock_provider`.
+  Locked by `tests/test_project_adapter_requires_explicit_provider_id.py`.
+- Verification: pre-checks `compileall` clean, `ruff` clean,
+  `git diff --check` clean, targeted suites green; full
+  `python -m pytest -q -p no:cacheprovider`:
+  `4925 passed, 10 skipped, 1460 subtests passed in 363.29s (0:06:03)`.
+  No release was made. No e2e latency data; single edit still saves the
+  second scan vs the old double-bump (confirmed perf gain only).
+
 ## Unreleased - Review 3643593 hardening + legacy deletion (no release)
 
 - Single workspace bump per edit: `sync_workspace_state_after_edit()` is the

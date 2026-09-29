@@ -6,8 +6,8 @@ from unittest import mock
 
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_entry import run_task_submission
+from codey.operations.task_run import TaskRunDeps
 from codey.providers import controls as provider_controls
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult

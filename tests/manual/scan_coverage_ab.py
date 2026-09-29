@@ -24,13 +24,13 @@ if __package__ in (None, ""):
 
 from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
+from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.toolchain.runtime import ToolOutcome, safe_join
 from codey.utils.references import find_reference_hints
 from codey.utils.scan_report import render_scan_coverage
-from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 ARMS = ("baseline", "coverage")
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-scan-coverage-ab.json"

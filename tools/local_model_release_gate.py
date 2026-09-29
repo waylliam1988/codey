@@ -231,14 +231,32 @@ def _normalize_hybrid_step(name: str) -> str:
     return name
 
 
+_TASK_IDENTITY_TYPES = frozenset({"task_start", "turn", "tool_started", "tool", "task_done"})
+
+
+def _row_ok(row: dict) -> bool:
+    return bool(row.get("ok") is True)
+
+
+def _run_row_ok(row: dict) -> bool:
+    if not _row_ok(row):
+        return False
+    try:
+        return int(row.get("exit_code")) == 0
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 def check_hybrid_tool_order(rows: list[dict]) -> dict:
     """Deterministic order assertion: search -> open -> read -> edit -> run -> done.
 
     Returns ``{"ok": bool, "tool_names": [...], "detail": str}``. Hybrid proves
     the shared path in order; files+done alone do not pass. Only canonical
     ``tool_name`` counts; every tool/task_done row must carry a consistent
-    run_id/session_id (proves single provider session attribution, not just
-    event归属).
+    run_id/session_id (proves the same Codey run/session, not just event
+   归属). Same ids cannot prove the provider never called new_chat().
+    Every required tool step must carry ok=True; ``run`` additionally
+    requires a structured zero exit_code (text never implies pass).
     """
     relevant = [r for r in (rows or []) if str(r.get("type") or "") in {"tool", "task_done"}]
     for row in relevant:
@@ -265,39 +283,71 @@ def check_hybrid_tool_order(rows: list[dict]) -> dict:
             "tool_names": names,
             "detail": f"missing canonical tool_name in {names}",
         }
-    normed = [_normalize_hybrid_step(n) for n in names]
+    # Ordered successful evidence: each required step must be ok, run needs
+    # structured zero exit. Walk rows in order so extra retries do not help.
     want = ["web_search", "open", "read_file", "edit", "run", "done"]
     idx = 0
+    ordered = [r for r in (rows or []) if str(r.get("type") or "") in {"tool", "task_done"}]
     for step in want:
-        try:
-            found = normed.index(step, idx)
-        except ValueError:
-            return {"ok": False, "tool_names": names, "detail": f"missing step {step!r} in {names}"}
+        found = -1
+        for pos in range(idx, len(ordered)):
+            row = ordered[pos]
+            rtype = str(row.get("type") or "")
+            if rtype == "task_done":
+                name = "done"
+                ok = str(row.get("stop_reason") or "") == "done"
+            else:
+                name = _normalize_hybrid_step(_canonical_tool_name(row))
+                ok = _run_row_ok(row) if name == "run" else _row_ok(row)
+            if name == step and ok:
+                found = pos
+                break
+        if found < 0:
+            return {
+                "ok": False,
+                "tool_names": names,
+                "detail": f"missing successful step {step!r} in {names}",
+            }
         idx = found + 1
     return {"ok": True, "tool_names": names, "detail": "search->open->read->edit->run->done"}
 
 
 def check_single_session_identity(rows: list[dict]) -> dict:
-    """All JSONL rows must share one run_id/session_id (single session).
+    """Task-run rows must share one run_id/session_id (same Codey run/session).
 
-    Rows missing either id fail: same run/session id proves event归属 but a
-    missing id cannot prove the provider chat session was not rebuilt.
+    Only task-run events participate (task_start, turn, tool_started, tool,
+    task_done); global connection status and other run-level rows carry no
+    task identity and are ignored. Each participating row must carry
+    non-empty consistent ids, and at least task_start and task_done must be
+    present. Same ids prove the same Codey run/session attribution only;
+    they cannot prove the provider never called new_chat().
     """
     rows = list(rows or [])
-    if not rows:
-        return {"ok": False, "run_ids": [], "session_ids": [], "detail": "no rows"}
-    missing = [r for r in rows if not str(r.get("run_id") or "") or not str(r.get("session_id") or "")]
+    task_rows = [r for r in rows if str(r.get("type") or "") in _TASK_IDENTITY_TYPES]
+    if not task_rows:
+        return {"ok": False, "run_ids": [], "session_ids": [], "detail": "no task rows"}
+    missing = [
+        r for r in task_rows if not str(r.get("run_id") or "") or not str(r.get("session_id") or "")
+    ]
     if missing:
-        run_ids = sorted({str(r.get("run_id") or "") for r in rows})
-        sess_ids = sorted({str(r.get("session_id") or "") for r in rows})
+        run_ids = sorted({str(r.get("run_id") or "") for r in task_rows})
+        sess_ids = sorted({str(r.get("session_id") or "") for r in task_rows})
         return {
             "ok": False,
             "run_ids": run_ids,
             "session_ids": sess_ids,
-            "detail": f"missing run_id/session_id in {len(missing)} row(s); run_ids={run_ids} session_ids={sess_ids}",
+            "detail": f"missing run_id/session_id in {len(missing)} task row(s); run_ids={run_ids} session_ids={sess_ids}",
         }
-    run_ids = {str(r.get("run_id") or "") for r in rows}
-    sess_ids = {str(r.get("session_id") or "") for r in rows}
+    run_ids = {str(r.get("run_id") or "") for r in task_rows}
+    sess_ids = {str(r.get("session_id") or "") for r in task_rows}
+    kinds = {str(r.get("type") or "") for r in task_rows}
+    if "task_start" not in kinds or "task_done" not in kinds:
+        return {
+            "ok": False,
+            "run_ids": sorted(run_ids),
+            "session_ids": sorted(sess_ids),
+            "detail": f"missing task_start/task_done in {sorted(kinds)}",
+        }
     ok = len(run_ids) == 1 and len(sess_ids) == 1
     detail = f"run_ids={sorted(run_ids)} session_ids={sorted(sess_ids)}"
     return {"ok": ok, "run_ids": sorted(run_ids), "session_ids": sorted(sess_ids), "detail": detail}

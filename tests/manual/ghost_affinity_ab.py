@@ -30,8 +30,8 @@ from codey.env_names import PROVIDER_CDP_PORT_ENV
 from codey.ghost.affinity import AffinityNode
 from codey.ghost.hebbian import GhostNode
 from codey.knowledge.research_interest import ResearchInterestCandidate
-from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_entry import run_task_submission
+from codey.operations.task_run import TaskRunDeps
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record

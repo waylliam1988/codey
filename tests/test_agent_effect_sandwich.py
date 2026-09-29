@@ -1323,7 +1323,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
     def test_agent_loop_with_recovered_tool_outcomes_resumes_cleanly(self) -> None:
         from codey.agents.request import RecoveredToolOutcome
-        from tests.support.kernel_harness import run_kernel_request
+        from codey.operations.project_adapter import run as run_kernel_request
 
         provider = MockProvider(
             reply='{"tool": "done", "args": {"summary": "task finished after resume"}}'
@@ -1337,6 +1337,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         req = AgentRequest(
             provider=provider,
+            provider_id="mock_provider",
             project=self.project_dir,
             task="finish the task",
             session_id=self.session_id,
@@ -1355,7 +1356,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
     def test_agent_loop_with_recovered_tool_outcomes_respects_turn_budget(self) -> None:
         from codey.agents.request import RecoveredToolOutcome
-        from tests.support.kernel_harness import run_kernel_request
+        from codey.operations.project_adapter import run as run_kernel_request
 
         provider = MockProvider(
             reply='{"tool": "done", "args": {"summary": "should not be sent"}}'
@@ -1369,6 +1370,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         req = AgentRequest(
             provider=provider,
+            provider_id="mock_provider",
             project=self.project_dir,
             task="finish the task",
             max_turns=1,

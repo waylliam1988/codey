@@ -23,6 +23,7 @@ from codey.operations import kernel_transport as _transport
 from codey.operations.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot as _build_turn_snapshot
 from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
+from codey.operations.kernel_recovery import RecoveryFailed
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
@@ -356,21 +357,16 @@ def run_task_kernel(
             provider_session_changed=bool(provider_session_changed),
             delivered=delivered,
         )
-    except Exception as exc:
+    except RecoveryFailed as exc:
         # Recovery delivery failures must never fall through to the initial
         # prompt: the model would continue without the recovered results.
-        try:
-            from codey.operations.kernel_recovery import RecoveryFailed as _RecoveryFailed
-
-            if isinstance(exc, _RecoveryFailed):
-                return KernelResult(
-                    completed=False,
-                    summary=f"recovery failed: {exc}",
-                    turns=0,
-                    stop_reason="recovery_failure",
-                )
-        except Exception:
-            pass
+        return KernelResult(
+            completed=False,
+            summary=f"recovery failed: {exc}",
+            turns=0,
+            stop_reason="recovery_failure",
+        )
+    except Exception as exc:
         return KernelResult(
             completed=False, summary=f"controller configuration error: {exc}", turns=0, stop_reason="controller_failure"
         )
@@ -512,25 +508,12 @@ def run_task_kernel(
             workspace_revision_store=workspace_revision_store,
         )
         _events._emit_tool_results(on_event, session, results, run_id=identity_ref, turn=turn)
-        if native:
-            try:
-                messages = _transport._native_tool_messages(results, session)
-            except ValueError as exc:
-                return KernelResult(
-                    completed=False,
-                    summary=f"native mixed call ids: {exc}",
-                    turns=turns_used,
-                    stop_reason="protocol",
-                )
-            if messages:
-                pending_native_messages = messages
-                prompt = ""
-                continue
-        base_prompt = _prompt._format_results(results, session)
-        current_context = _prompt._coding_context_for_session(session)
-        if current_context:
-            base_prompt = f"{base_prompt}\n\n{current_context}"
-        prompt = base_prompt
+        advance = _advance_after_results(native, results, session, pending_native_messages)
+        if isinstance(advance, KernelResult):
+            return advance
+        pending_native_messages, prompt = advance
+        if pending_native_messages is not None and prompt == "":
+            continue
     return _finish_after_budget(
         session,
         provider,
@@ -539,6 +522,32 @@ def run_task_kernel(
         turns_used,
         propagate_provider_failure=propagate_provider_failure,
     )
+
+
+def _advance_after_results(
+    native: bool,
+    results: list[ToolResult],
+    session: TaskSession,
+    pending_native_messages: list[dict[str, Any]] | None,
+) -> tuple[list[dict[str, Any]] | None, str] | KernelResult:
+    """Deliver native receipts or build the next text prompt."""
+    if native:
+        try:
+            messages = _transport._native_tool_messages(results, session)
+        except ValueError as exc:
+            return KernelResult(
+                completed=False,
+                summary=f"native mixed call ids: {exc}",
+                turns=int(getattr(session, "turn", 0) or 0),
+                stop_reason="protocol",
+            )
+        if messages:
+            return messages, ""
+    base_prompt = _prompt._format_results(results, session)
+    current_context = _prompt._coding_context_for_session(session)
+    if current_context:
+        base_prompt = f"{base_prompt}\n\n{current_context}"
+    return pending_native_messages, base_prompt
 
 
 def _finish_after_budget(

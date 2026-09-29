@@ -22,6 +22,7 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.agents.request import AgentRequest
+from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.protocols.json_codec import (
     PROTOCOL_INVALID_ARGS,
     JsonToolCodec,
@@ -32,7 +33,6 @@ from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, prov
 from codey.runs.trace import RunTraceStore
 from codey.runtime.core.models import ToolPlan
 from codey.runtime.observe.events import render_run_event
-from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "candidate")

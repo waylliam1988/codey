@@ -136,17 +136,16 @@ def build_hooks(
             state.emit(payload)
         if event.kind == "tool_start":
             return
-        if project and _workspace_edit_event(event):
+        if project and _workspace_edit_event(event) and not _adopt_kernel_workspace_state(work, event):
             # Kernel edits already bumped exactly once in
             # sync_workspace_state_after_edit and carry the authoritative
             # (revision, fingerprint) in event metadata. Adopt it without a
             # second bump/scan. Non-kernel edits carry no state and still bump.
-            if not _adopt_kernel_workspace_state(work, event):
-                work.advance_workspace_revision(
-                    deps.workspace_revisions,
-                    project,
-                    ignored_paths=project_config_ignored,
-                )
+            work.advance_workspace_revision(
+                deps.workspace_revisions,
+                project,
+                ignored_paths=project_config_ignored,
+            )
         work.evidence.record(event)
         message = render_run_event(event)
         work.recent_events.append(message)
@@ -274,10 +273,8 @@ def _adopt_kernel_workspace_state(work: RunWork, event: RunEvent) -> bool:
             return False
         work.workspace_revision = rev
         work.workspace_fingerprint = fp
-        try:
+        with suppress(Exception):
             work.evidence.set_workspace_state(rev, fp)
-        except Exception:
-            pass
         return True
     except Exception:
         return False

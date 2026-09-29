@@ -177,7 +177,7 @@ def test_native_overflow_fails_closed_without_fallback(tmp_path: Path) -> None:
             user_task="read app", context_text="",
         )
     assert not result.completed
-    assert result.stop_reason in ("provider_failure", "protocol", "recovery_failure")
+    assert result.stop_reason == "provider_failure", f"overflow must be provider_failure: {result}"
     # No retry of the failed delivery and no text fallback beyond the single
     # initial native prompt.
     assert provider.tool_sends == 1, f"overflow must not retry delivery, got {provider.tool_sends}"
@@ -237,7 +237,7 @@ def test_compaction_noop_cut_leaves_messages_untouched() -> None:
     assert messages == before
 
 
-def test_strict_ledger_overflow_retries_same_batch(tmp_path: Path) -> None:
+def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> None:
     """Overflow fails closed on the ledger: single NOT_SENT attempt, no retry."""
     (tmp_path / "app.py").write_text("hello\n", encoding="utf-8")
 
@@ -281,8 +281,7 @@ def test_strict_ledger_overflow_retries_same_batch(tmp_path: Path) -> None:
     assert not result.completed
     assert result.stop_reason == "provider_failure"
     assert provider.tool_sends == 1
-    from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.effects.effect_records import SENT_STATE_NOT_SENT
+    from codey.runtime.effects.effect_records import SENT_STATE_NOT_SENT, RuntimeEffectStore
 
     effects = RuntimeEffectStore(log).load_effects("sess-native-1", "run-native-1")
     failed = [r for r in effects if r.intent.effect_category == "provider_send" and r.settlement is not None and r.settlement.status == "error"]

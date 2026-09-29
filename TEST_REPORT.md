@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Gate/version/harness hardening from 00facf6 review (2026-09-29)
+
+- Scope: gate task-identity excludes global status (requires task_start +
+  task_done, Codey run/session wording) + hybrid requires ok + run zero exit
+  + headless keeps missing tool_name missing; workspace bump failure
+  fail-closed (trusted result metadata only, same-batch run skipped, no old
+  rev reuse) + custom executor call-id validation; hollow assertions
+  tightened (real-slot digest mismatch, readonly rename, real-snapshot native
+  loop, deterministic provider_failure overflow + rename, mixed-batch kernel
+  protocol with receipts); real build_hooks().on_event in single-bump test;
+  ruff 41 -> 0; run_task_kernel RecoveryFailed direct catch + helper;
+  architecture scanner fail-closed + helper cleanup; harness 27 -> 3 refs
+  (direct production imports; 3 legacy AgentLoopSession refs remain as next
+  boundary); 2 missing provider_id test fixes + explicit-provider_id lock.
+- TDD: 8 new accurate-name locks
+  (`test_gate_task_identity_excludes_global_status`,
+  `test_gate_hybrid_requires_successful_tool_evidence`,
+  `test_headless_missing_tool_name_stays_missing`,
+  `test_workspace_bump_failure_does_not_reuse_old_revision`,
+  `test_execute_turn_real_slot_digest_mismatch`,
+  `test_native_loop_real_snapshot_requires_read_and_done`,
+  `test_native_overflow_is_provider_failure_without_retry`,
+  `test_native_mixed_batch_kernel_stops_with_receipts`,
+  `test_project_adapter_requires_explicit_provider_id`: 9 files). All 13
+  production-bug repros failed before the fix and pass after; pre-checks
+  (`compileall`, `ruff`, `git diff --check`, targeted suites) green before
+  the full run.
+- Full run `python -m pytest -q -p no:cacheprovider`:
+  `4925 passed, 10 skipped, 1460 subtests passed in 363.29s (0:06:03)`.
+  First full run after migration had 1 failure (missing provider_id masked
+  by the old harness fallback in
+  `test_agent_effect_sandwich.test_agent_loop_with_recovered_tool_outcomes_resumes_cleanly`);
+  fixed the test data (explicit `mock_provider`) + added the lock, second
+  full run green. Zero failures.
+- No release was made. No e2e latency data; single-edit second-scan saving
+  remains the only confirmed perf gain.
+
 ## Review 3643593 hardening + legacy deletion (2026-09-29)
 
 - Scope: single workspace bump per edit (kernel owns, hooks adopts),

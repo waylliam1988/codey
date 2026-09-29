@@ -44,7 +44,6 @@ def _policy():
 
 def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
     """Production native loop: read_file then done via run_task_kernel."""
-    import tempfile
     from unittest import mock
 
     monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
@@ -63,14 +62,13 @@ def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
     session = TaskSession(policy=policy, task_kind="project", project=str(tmp_path), max_turns=5)
     snapshot = build_turn_snapshot(session, native=True)
     assert snapshot.native_tools
-    assert "done" in {str(t.get("function", {}).get("name") or t.get("name") or "") for t in snapshot.native_tools} or snapshot.native_tools
+    names = {str(t.get("function", {}).get("name") or t.get("name") or "") for t in snapshot.native_tools}
+    assert "read_file" in names, f"real snapshot must contain read_file: {names}"
+    assert "done" in names, f"real snapshot must contain done: {names}"
 
     from codey.runtime.core.models import ToolResult
 
-    with (
-        mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True),
-        mock.patch("codey.toolchain.tool_spec.native_tools_for_snapshot", return_value=[{"type": "function", "function": {"name": "read_file"}}, {"type": "function", "function": {"name": "done"}}]),
-    ):
+    with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session, provider=provider,
             executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},

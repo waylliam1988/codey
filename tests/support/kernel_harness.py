@@ -53,11 +53,6 @@ def build_kernel_fixture(request: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
             return default
         return parsed if parsed >= 1 else default
 
-    try:
-        from codey.providers.capabilities import capability_for
-    except Exception:
-        capability_for = None  # type: ignore[assignment]
-
     provider = getattr(request, "provider", None)
     try:
         from pathlib import Path as _Path
@@ -77,9 +72,10 @@ def build_kernel_fixture(request: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
     # Lightweight production factory: TaskPolicy + TaskSession + real
     # TurnSnapshot. No NativeOpenAIToolCodec auto-selection and no fallback
     # to the legacy schema; native schemas come from TurnSnapshot.
+    from types import SimpleNamespace as _NS
+
     from codey.operations.kernel_protocol import build_turn_snapshot as _build_snapshot
     from codey.policies.task_policy import build_task_policy as _build_policy
-    from types import SimpleNamespace as _NS
 
     try:
         _policy = _build_policy(

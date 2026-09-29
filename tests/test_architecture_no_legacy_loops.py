@@ -18,39 +18,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CODEY = ROOT / "codey"
 
-LEGACY_MODULES = [
-    "codey/agents/prompt_context.py",
-    "codey/agents/result_delivery.py",
-    "codey/agents/tool_turn.py",
-    "codey/protocols/native_openai.py",
-    "codey/toolchain/registry.py",
-]
-
-# Files that are allowed to reference legacy modules (tests, manual, the
-# legacy modules themselves, and package re-exports pending removal).
-ALLOWED_REFERENCERS_PREFIXES = (
-    "tests/",
-    "tools/",
-    "codey/agents/prompt_context.py",
-    "codey/agents/result_delivery.py",
-    "codey/agents/tool_turn.py",
-    "codey/protocols/native_openai.py",
-    "codey/protocols/__init__.py",
-    "codey/toolchain/registry.py",
-)
-
-
-def _module_name(path: Path) -> str:
-    rel = path.relative_to(ROOT).as_posix()
-    assert rel.endswith(".py")
-    return rel[:-3].replace("/", ".")
-
 
 def _imports_of(path: Path) -> set[str]:
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
-    except Exception:
-        return set()
+    except Exception as exc:
+        raise AssertionError(f"cannot parse {path}: {exc}") from exc
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
@@ -123,13 +96,13 @@ class NoLegacyLoopsTests(unittest.TestCase):
             except Exception:
                 continue
             for name in ("agents.prompt_context", "agents.result_delivery", "agents.tool_turn", "protocols.native_openai"):
-                if name in text and "test_architecture_no_legacy_loops" not in rel:
-                    # String reference outside this lock file means the old体系 is still保养.
-                    if f"codey.{name}" in text or f"codey/{name.replace('.', '/')}.py" in text:
-                        offenders.append(f"{rel}: string ref {name}")
-        # toolchain.registry is still pending removal: only assert the four deleted ones here.
-        filtered = [o for o in offenders if "toolchain.registry" not in o]
-        self.assertEqual(filtered, [], f"legacy modules still referenced: {filtered}")
+                if (
+                    name in text
+                    and "test_architecture_no_legacy_loops" not in rel
+                    and (f"codey.{name}" in text or f"codey/{name.replace('.', '/')}.py" in text)
+                ):
+                    offenders.append(f"{rel}: string ref {name}")
+        self.assertEqual(offenders, [], f"legacy modules still referenced: {offenders}")
 
     def test_kept_agents_modules_still_used(self) -> None:
         # Guard against over-deletion: tool_execution + request must stay.

@@ -236,9 +236,9 @@ class AgentLoopSplitTests(unittest.TestCase):
         # Old _track_continue_progress/_check_runaway_guard deleted with the old
         # loop; stagnant handling now lives in the single run_task_kernel
         # (invalid_turns >= stagnant_turns stops as protocol).
+        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
-        from tests.support.kernel_harness import run_task_kernel
 
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=5, task_text="hi")

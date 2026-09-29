@@ -8,13 +8,13 @@ from unittest import mock
 from codey.agents.request import AgentRequest
 from codey.app import consensus_service, review_service, server
 from codey.app import task_submit as task_submit
+from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import CheckEvidence
 from codey.toolchain.runtime import ToolOutcome
 from codey.workspace.facts import MAX_VERIFIED_COMMANDS, ProjectFactsStore
-from tests.support.kernel_harness import run_kernel_request as _agent_kernel_request
 
 
 class FakeProvider:

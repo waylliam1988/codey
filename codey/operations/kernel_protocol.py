@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
+from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
 
 MAX_NATIVE_CALLS_PER_TURN = 8
 
@@ -84,7 +85,6 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
         native_tools=tuple(native_now),
     )
 
-from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
 
 _CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS or {})
 
