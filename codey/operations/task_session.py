@@ -117,8 +117,14 @@ class TaskSession:
 
         row: dict[str, Any] = {"command": str(command or "")[:240], "revision": rev, "passed": bool(passed)}
         if exit_code is not None:
-            with _contextlib.suppress(TypeError, ValueError):
-                row["exit_code"] = int(exit_code)
+            try:
+                from codey.utils.refs import strict_exit_code as _strict_exit
+
+                code = _strict_exit(exit_code)
+            except Exception:
+                code = None
+            if code is not None:
+                row["exit_code"] = code
         if workspace_revision is not None:
             with _contextlib.suppress(TypeError, ValueError):
                 row["workspace_revision"] = int(workspace_revision)

@@ -89,37 +89,57 @@ def _project_context(request: AgentRequest) -> str:
     return f"{rendered.text}\n\n{candidate_text}" if candidate_text else rendered.text
 
 
-def run(request: AgentRequest) -> RunResult:
-    from codey.operations.kernel_execution import record_facts_for_result
-    from codey.operations.task_loop import run_task_kernel
-    from codey.operations.task_session import TaskSession, turn_effect_id
-    from codey.policies.task_policy import build_task_policy
+def _recovered_result_for_row(row: Any) -> Any:
     from codey.runtime.core.models import ToolResult
 
-    if request.permission_profile == "coding_writer":
-        request.project.mkdir(parents=True, exist_ok=True)
-    opened_fresh_chat = False
-    if request.fresh_chat:
-        from codey.runtime.core import cancellation
-        from codey.runtime.observe.events import RunEvent
-
-        try:
-            request.provider.new_chat()
-            opened_fresh_chat = True
-        except cancellation.TaskCancelled:
-            raise
-        except Exception as exc:
-            if request.strict_fresh_chat:
-                raise
-            if request.on_event is not None:
-                request.on_event(RunEvent.status(
-                    f"[agent] could not open new chat: {exc}; reusing current tab"
-                ))
-    if request.conversation is not None and opened_fresh_chat:
-        request.conversation.begin_window(
-            request.provider_id or getattr(request.provider, "name", ""),
-            "project", str(request.project),
+    # Preserve the full kernel-owned recovery metadata (audit with the
+    # trusted workspace identity, presentation/canonical/truncated) so a
+    # recovered edit keeps its (revision, fingerprint) and hooks adopt
+    # without a second bump. Building audit={"changed": ...} only would
+    # drop the trusted identity.
+    try:
+        outcome_audit = dict(getattr(row.outcome, "audit", {}) or {})
+    except Exception:
+        outcome_audit = {}
+    if row.call.name == "edit" and "changed" not in outcome_audit:
+        outcome_audit["changed"] = bool(row.outcome.changed)
+    try:
+        return ToolResult(
+            call=row.call,
+            model_text=row.outcome.model_text,
+            truncated=bool(getattr(row.outcome, "truncated", False)),
+            presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
+            audit=outcome_audit,
+            canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
         )
+    except Exception:
+        return ToolResult(call=row.call, model_text=row.outcome.model_text, audit=outcome_audit)
+
+
+def _open_fresh_chat(request: AgentRequest) -> bool:
+    if not request.fresh_chat:
+        return False
+    from codey.runtime.core import cancellation
+    from codey.runtime.observe.events import RunEvent
+
+    try:
+        request.provider.new_chat()
+        return True
+    except cancellation.TaskCancelled:
+        raise
+    except Exception as exc:
+        if request.strict_fresh_chat:
+            raise
+        if request.on_event is not None:
+            request.on_event(RunEvent.status(
+                f"[agent] could not open new chat: {exc}; reusing current tab"
+            ))
+        return False
+
+
+def _task_kind_and_policy(request: AgentRequest) -> tuple[str, Any]:
+    from codey.policies.task_policy import build_task_policy
+
     task_kind = "planning" if request.permission_profile == "planning_readonly" else "project"
     policy = build_task_policy(
         SimpleNamespace(
@@ -129,6 +149,10 @@ def run(request: AgentRequest) -> RunResult:
         ),
         task_kind=task_kind,
     )
+    return task_kind, policy
+
+
+def _require_write_permission(task_kind: str, policy: Any, request: AgentRequest) -> None:
     try:
         _requires = bool(getattr(request, "project_changes_required", False) is True)
     except Exception:
@@ -143,6 +167,47 @@ def run(request: AgentRequest) -> RunResult:
                 "project_changes_required without project.write: task declares must-change "
                 "but entry grants no write permission"
             )
+
+
+def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any, Any]:
+    intent_sink = None
+    if request.runtime_mutations is not None and request.session_id and request.run_id:
+        # Durable path requires an explicit provider_id; the empty string
+        # fails instead of silently falling back to provider.name. The
+        # provider.name fallback above is conversation-display only.
+        if not str(request.provider_id or "").strip():
+            raise ValueError("provider_id must not be empty when runtime_mutations are supplied")
+        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+
+        intent_sink = KernelEffectSink(
+            request.runtime_mutations, session_id=request.session_id,
+            run_id=request.run_id, provider_id=request.provider_id,
+            recovered_batch_id=request.recovered_tool_result_batch_id,
+        )
+        provider = KernelRecordedProvider(provider, intent_sink)
+    if request.conversation is not None:
+        provider = _ConversationProvider(provider, request.conversation)
+    return provider, intent_sink
+
+
+def run(request: AgentRequest) -> RunResult:
+    from codey.operations.kernel_execution import record_facts_for_result
+    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_session import TaskSession, turn_effect_id
+
+    if request.permission_profile == "coding_writer":
+        request.project.mkdir(parents=True, exist_ok=True)
+    opened_fresh_chat = _open_fresh_chat(request)
+    if request.conversation is not None and opened_fresh_chat:
+        # Compat fallback: provider.name is display-only for the conversation
+        # window. Durable paths require an explicit provider_id (see below);
+        # this fallback never authorizes persistence.
+        request.conversation.begin_window(
+            request.provider_id or getattr(request.provider, "name", ""),
+            "project", str(request.project),
+        )
+    task_kind, policy = _task_kind_and_policy(request)
+    _require_write_permission(task_kind, policy, request)
     session = TaskSession(
         policy=policy,
         task_kind=task_kind,
@@ -154,11 +219,10 @@ def run(request: AgentRequest) -> RunResult:
         coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
     )
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
-    delivered: dict[str, ToolResult] = {}
+    delivered: dict[str, Any] = {}
     recovered_sorted = sorted(request.recovered_tool_outcomes, key=lambda item: (item.turn, item.tool_index))
     for row in recovered_sorted:
-        result = ToolResult(call=row.call, model_text=row.outcome.model_text,
-                            audit={"changed": bool(row.outcome.changed)} if row.call.name == "edit" else {})
+        result = _recovered_result_for_row(row)
         delivered[turn_effect_id(f"{request.run_id or 'adhoc'}:{effect_scope}",
                                  row.turn, row.tool_index)] = result
         record_facts_for_result(session, row.call, result, ok=row.outcome.ok,
@@ -166,29 +230,16 @@ def run(request: AgentRequest) -> RunResult:
     # Recovery-first: deliver the original batch before any new model call,
     # and resume after the max recovered turn so identities never collide.
     resume_start = 1
-    initial_results: list[ToolResult] = []
+    initial_results: list[Any] = []
     if recovered_sorted:
         try:
             resume_start = max(int(getattr(r, "turn", 1) or 1) for r in recovered_sorted) + 1
         except Exception:
             resume_start = 1
         for row in recovered_sorted:
-            initial_results.append(ToolResult(call=row.call, model_text=row.outcome.model_text,
-                                              audit={"changed": bool(row.outcome.changed)}
-                                              if row.call.name == "edit" else {}))
-    provider = request.provider
-    intent_sink = None
-    if request.runtime_mutations is not None and request.session_id and request.run_id:
-        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
-
-        intent_sink = KernelEffectSink(
-            request.runtime_mutations, session_id=request.session_id,
-            run_id=request.run_id, provider_id=request.provider_id,
-            recovered_batch_id=request.recovered_tool_result_batch_id,
-        )
-        provider = KernelRecordedProvider(provider, intent_sink)
-    if request.conversation is not None:
-        provider = _ConversationProvider(provider, request.conversation)
+            initial_results.append(delivered[turn_effect_id(
+                f"{request.run_id or 'adhoc'}:{effect_scope}", row.turn, row.tool_index)])
+    provider, intent_sink = _wrap_provider_with_sink(request, request.provider)
     outcome = run_task_kernel(
         session,
         provider=provider,

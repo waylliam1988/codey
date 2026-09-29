@@ -169,8 +169,12 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
             # Missing structured exit code: not_run, never pass/fail from text.
             continue
         try:
-            code = int(item["exit_code"])
-        except (TypeError, ValueError):
+            from codey.utils.refs import strict_exit_code as _strict_exit
+
+            code = _strict_exit(item["exit_code"])
+        except Exception:
+            code = None
+        if code is None:
             fresh_fail = True
             continue
         if code != 0:
@@ -268,8 +272,10 @@ def _verification_exit_code(latest: Any) -> int | None:
     if exit_code is None:
         return None
     try:
-        return int(exit_code)
-    except (TypeError, ValueError):
+        from codey.utils.refs import strict_exit_code as _strict_exit
+
+        return _strict_exit(exit_code)
+    except Exception:
         return None
 
 

@@ -397,38 +397,14 @@ def run_task_kernel(
             )
             prev_contract = str(turn_contract or "")
         else:
-            try:
-                controller, turn_contract, turn_native_tools, turn_prompt = _snapshot_for_turn_state(
-                    session,
-                    native=native,
-                    user_task=user_task,
-                    context_text=context_text,
-                )
-            except Exception as exc:
-                return KernelResult(
-                    completed=False,
-                    summary=f"controller configuration error: {exc}",
-                    turns=turns_used,
-                    stop_reason="controller_failure",
-                )
+            snapshot_out = _rebuild_turn_snapshot(
+                session, native=native, user_task=user_task, context_text=context_text,
+                prompt=prompt, prev_contract=prev_contract,
+            )
+            if isinstance(snapshot_out, KernelResult):
+                return snapshot_out
+            controller, turn_contract, turn_native_tools, turn_prompt, prompt, prev_contract = snapshot_out
             native_tools = turn_native_tools
-            # One snapshot per round: compare this round's contract with the
-            # previous round's. Web text chains have no per-turn schema, so a
-            # changed contract is prepended to the carried prompt here; native
-            # chains get the fresh schema via send_turn/send_tool_results.
-            fresh_text = str(turn_contract or "")
-            if (not native) and fresh_text and fresh_text != prev_contract and prompt:
-                try:
-                    names = ", ".join(_prompt._snapshot_names(session.policy, controller)) or "none"
-                except Exception:
-                    names = "none"
-                prompt = (
-                    f"Visible tools changed (controller state advanced): {names}\n"
-                    f"Tool contract (use exactly these shapes):\n{fresh_text}\n\n"
-                    f"{prompt}"
-                )
-            if fresh_text:
-                prev_contract = fresh_text
         try:
             reply, pending_reply, pending_native_messages = _transport.send_kernel_reply(
                 provider,
@@ -486,27 +462,17 @@ def run_task_kernel(
             return approval
         _events._emit_tool_starts(on_event, session, turn, calls)
         _outer_evidence = _outer_evidence_for_context(completion_context)
-        results = _execute_turn(
-            session,
-            calls,
-            executors=runnable,
-            run_id=run_id,
-            effect_scope=effect_scope,
-            turn=turn,
-            project_path=project_path,
-            tool_fns=tool_fns,
-            research_tools=research_tools,
-            change_tracker=change_tracker,
-            managed_outputs=managed_outputs,
-            session_id=session_id,
-            permission_profile=permission_profile,
-            delivered=delivered_map or None,
-            intent_sink=intent_sink,
-            controller_allowed=controller,
-            execution_evidence=_outer_evidence,
-            workspace_ignored_paths=workspace_ignored_paths,
-            workspace_revision_store=workspace_revision_store,
+        results_or_failure = _call_execute_turn(
+            session, calls, runnable, run_id, effect_scope, turn,
+            project_path, tool_fns, research_tools, change_tracker,
+            managed_outputs, session_id, permission_profile,
+            delivered_map, intent_sink, controller, _outer_evidence,
+            workspace_ignored_paths, workspace_revision_store,
+            turns_used, propagate_provider_failure,
         )
+        if isinstance(results_or_failure, KernelResult):
+            return results_or_failure
+        results = results_or_failure
         _events._emit_tool_results(on_event, session, results, run_id=identity_ref, turn=turn)
         advance = _advance_after_results(native, results, session, pending_native_messages)
         if isinstance(advance, KernelResult):
@@ -522,6 +488,67 @@ def run_task_kernel(
         turns_used,
         propagate_provider_failure=propagate_provider_failure,
     )
+
+
+def _rebuild_turn_snapshot(
+    session: Any, *, native: bool, user_task: Any, context_text: Any,
+    prompt: str, prev_contract: str,
+) -> Any:
+    """Rebuild one per-round snapshot; KernelResult on controller failure."""
+    try:
+        controller, turn_contract, turn_native_tools, turn_prompt = _snapshot_for_turn_state(
+            session, native=native, user_task=user_task, context_text=context_text,
+        )
+    except Exception as exc:
+        return KernelResult(
+            completed=False, summary=f"controller configuration error: {exc}",
+            turns=int(getattr(session, "turn", 0) or 0), stop_reason="controller_failure",
+        )
+    # One snapshot per round: compare this round's contract with the previous
+    # round's. Web text chains have no per-turn schema, so a changed contract
+    # is prepended to the carried prompt here; native chains get the fresh
+    # schema via send_turn/send_tool_results.
+    fresh_text = str(turn_contract or "")
+    if (not native) and fresh_text and fresh_text != prev_contract and prompt:
+        try:
+            names = ", ".join(_prompt._snapshot_names(session.policy, controller)) or "none"
+        except Exception:
+            names = "none"
+        prompt = (
+            f"Visible tools changed (controller state advanced): {names}\n"
+            f"Tool contract (use exactly these shapes):\n{fresh_text}\n\n{prompt}"
+        )
+    if fresh_text:
+        prev_contract = fresh_text
+    return controller, turn_contract, turn_native_tools, turn_prompt, prompt, prev_contract
+
+
+def _call_execute_turn(
+    session: Any, calls: Any, runnable: Any, run_id: Any, effect_scope: Any, turn: Any,
+    project_path: Any, tool_fns: Any, research_tools: Any, change_tracker: Any,
+    managed_outputs: Any, session_id: Any, permission_profile: Any,
+    delivered_map: Any, intent_sink: Any, controller: Any, outer_evidence: Any,
+    workspace_ignored_paths: Any, workspace_revision_store: Any,
+    turns_used: int, propagate_provider_failure: bool,
+) -> Any:
+    """Run one execution turn; faults fail closed as provider_failure."""
+    try:
+        return _execute_turn(
+            session, calls, executors=runnable, run_id=run_id,
+            effect_scope=effect_scope, turn=turn, project_path=project_path,
+            tool_fns=tool_fns, research_tools=research_tools,
+            change_tracker=change_tracker, managed_outputs=managed_outputs,
+            session_id=session_id, permission_profile=permission_profile,
+            delivered=delivered_map or None, intent_sink=intent_sink,
+            controller_allowed=controller, execution_evidence=outer_evidence,
+            workspace_ignored_paths=workspace_ignored_paths,
+            workspace_revision_store=workspace_revision_store,
+        )
+    except Exception as exc:
+        # Fail closed: an execution-layer fault (e.g. durable settle) never
+        # bubbles as an unhandled exception; it terminates as provider
+        # failure so receipts/ledger stay consistent.
+        return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
 
 
 def _advance_after_results(

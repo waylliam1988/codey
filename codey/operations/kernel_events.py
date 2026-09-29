@@ -109,20 +109,20 @@ def _emit_tool_results(
             if isinstance(getattr(event, "metadata", None), dict):
                 if canonical_name:
                     event.metadata["tool_name"] = canonical_name
-                # Only the trusted (revision, fingerprint) captured by
+                # Only the kernel-owned WorkspaceIdentity captured by
                 # execute_turn() from the authoritative bump may be carried;
                 # the session guess is never trusted, so a failed bump emits
                 # no workspace state and hooks must not adopt the old revision.
                 if canonical_name == "edit" and ok and changed:
                     try:
-                        from codey.operations.kernel_execution import _trusted_workspace_from_result
+                        from codey.workspace.revision import WorkspaceIdentity
 
-                        rev, fp = _trusted_workspace_from_result(result)
+                        identity = WorkspaceIdentity.from_audit(getattr(result, "audit", {}))
                     except Exception:
-                        rev, fp = 0, ""
-                    if rev and fp:
-                        event.metadata["workspace_revision"] = rev
-                        event.metadata["workspace_fingerprint"] = fp
+                        identity = None
+                    if identity is not None and identity.trusted:
+                        event.metadata["workspace_revision"] = int(identity.revision)
+                        event.metadata["workspace_fingerprint"] = str(identity.fingerprint)
         except Exception:
             pass
         on_event(event)

@@ -241,10 +241,10 @@ def _row_ok(row: dict) -> bool:
 def _run_row_ok(row: dict) -> bool:
     if not _row_ok(row):
         return False
-    try:
-        return int(row.get("exit_code")) == 0
-    except (TypeError, ValueError, OverflowError):
-        return False
+    from codey.utils.refs import strict_exit_code
+
+    code = strict_exit_code(row.get("exit_code"))
+    return code is not None and code == 0
 
 
 def check_hybrid_tool_order(rows: list[dict]) -> dict:

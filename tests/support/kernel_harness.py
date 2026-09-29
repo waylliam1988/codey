@@ -134,6 +134,9 @@ def build_kernel_fixture(request: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
     except Exception:
         trace = None
     try:
+        # Test-only trace label: provider.name fallback is display-only here.
+        # Durable kernel paths still require an explicit provider_id; this
+        # fallback never authorizes persistence.
         active_provider_id = str(getattr(request, "provider_id", "") or getattr(provider, "name", "") or "")
     except Exception:
         active_provider_id = ""
@@ -398,9 +401,18 @@ def run_kernel_request(request: Any) -> Any:
             _sess = task_session if hasattr(task_session, "policy") else getattr(session, "task_session", None)
             for row in recovered_rows:
                 try:
+                    try:
+                        _audit = dict(getattr(row.outcome, "audit", {}) or {})
+                    except Exception:
+                        _audit = {}
+                    if row.call.name == "edit" and "changed" not in _audit:
+                        _audit["changed"] = bool(row.outcome.changed)
                     prior = _TR(
                         call=row.call, model_text=row.outcome.model_text,
-                        audit={"changed": bool(row.outcome.changed)} if row.call.name == "edit" else {},
+                        truncated=bool(getattr(row.outcome, "truncated", False)),
+                        presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
+                        audit=_audit,
+                        canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
                     )
                     record_facts_for_result(
                         _sess, row.call, prior, ok=bool(row.outcome.ok), exit_code=row.outcome.exit_code,
@@ -417,7 +429,19 @@ def run_kernel_request(request: Any) -> Any:
                     resume_start = 1
                 for row in recovered_rows:
                     with contextlib.suppress(Exception):
-                        initial_results.append(_TR(call=row.call, model_text=row.outcome.model_text))
+                        try:
+                            _audit2 = dict(getattr(row.outcome, "audit", {}) or {})
+                        except Exception:
+                            _audit2 = {}
+                        if row.call.name == "edit" and "changed" not in _audit2:
+                            _audit2["changed"] = bool(row.outcome.changed)
+                        initial_results.append(_TR(
+                            call=row.call, model_text=row.outcome.model_text,
+                            truncated=bool(getattr(row.outcome, "truncated", False)),
+                            presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
+                            audit=_audit2,
+                            canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
+                        ))
         except Exception:
             resume_start, initial_results = 1, []
         try:

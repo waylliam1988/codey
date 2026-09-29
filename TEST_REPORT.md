@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Durable workspace + strict exit + identity hardening (2026-09-29)
+
+- Scope: P1 single settlement for bump failure (real durable sink, no double
+  settle, same-batch run blocked) + execution faults to provider_failure; P1
+  replay preserves trusted audit (event->replay->event bumps once, full
+  recovery metadata); P2 strict int-only exit codes (gate/kernel/session/
+  completion_gate/delegate, bool/str rejected); P2 executor precedence with
+  delegate guards; P2 ToolResult args-digest identity; durable-sink
+  fail-closed restored; WorkspaceIdentity, atomic bump_state, explicit
+  provider_id, no-store documented; ruff/complexity green via small helpers.
+- TDD: 11 new accurate-name locks
+  (`test_edit_bump_failure_single_settlement_durable`,
+  `test_edit_replay_preserves_trusted_workspace_audit`,
+  `test_gate_hybrid_run_exit_code_strict_types`,
+  `test_execute_turn_executor_precedence_over_delegate`,
+  `test_tool_result_call_args_digest_mismatch`,
+  `test_kernel_exit_code_strict_bool_rejected`,
+  `test_workspace_revision_store_atomic_bump`,
+  `test_durable_sink_single_settlement_fail_closed`,
+  `test_provider_id_fallback_only_without_mutations`,
+  `test_delegate_run_bool_exit_code_rejected`,
+  `test_task_loop_execute_turn_failure_is_provider_failure`). All 16
+  production-bug repros failed before the fix and pass after (plus 5
+  already-green contract locks); pre-checks (`compileall`, `ruff`,
+  `git diff --check`, targeted suites) green before the full run.
+- Full run `python -m pytest -q -p no:cacheprovider`:
+  `4948 passed, 10 skipped, 1460 subtests passed in 343.67s (0:05:43)`.
+  First full run after the fix had 17 failures (11 research prompt regressions
+  from a task_loop prompt-carry refactor, 2 guard bypasses from executor
+  precedence, 1 stale bump-lock assertion, 2 ab/cutover order flakes, 1 new
+  precedence command denied by guard); fixed the prompt-carry refactor
+  (restored carried-prompt send via `_rebuild_turn_snapshot`), enforced
+  delegate guards for injected fakes, updated the bump-lock test to
+  inside-the-lock, and fixed the precedence test command; second full run had
+  1 failure (precedence command), third full run green. Zero failures.
+- No release was made.
+
 ## Gate/version/harness hardening from 00facf6 review (2026-09-29)
 
 - Scope: gate task-identity excludes global status (requires task_start +

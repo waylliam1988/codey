@@ -72,6 +72,47 @@ class WorkspaceState:
     fingerprint: str = ""
 
 
+@dataclass(frozen=True)
+class WorkspaceIdentity:
+    """Kernel-owned authoritative workspace provenance.
+
+    Replaces the old plain-audit ``(0, "")`` sentinel + scattered
+    ``workspace_revision``/``workspace_fingerprint`` dict handling. Only a
+    fully valid ``(revision, fingerprint)`` pair is trusted; anything else
+    is explicitly untrusted and must never be emitted as new evidence.
+    """
+
+    revision: int = 0
+    fingerprint: str = ""
+
+    @property
+    def trusted(self) -> bool:
+        return bool(
+            valid_workspace_revision(self.revision) and valid_workspace_fingerprint(self.fingerprint)
+        )
+
+    @classmethod
+    def trusted_pair(cls, revision: object, fingerprint: object) -> WorkspaceIdentity:
+        rev = valid_workspace_revision(revision)
+        fp = valid_workspace_fingerprint(fingerprint)
+        if rev and fp:
+            return cls(revision=rev, fingerprint=fp)
+        return cls()
+
+    @classmethod
+    def from_audit(cls, audit: object) -> WorkspaceIdentity:
+        if not isinstance(audit, dict):
+            return cls()
+        return cls.trusted_pair(audit.get("workspace_revision"), audit.get("workspace_fingerprint"))
+
+    def attach_to_audit(self, audit: dict) -> dict:
+        out = dict(audit)
+        if self.trusted:
+            out["workspace_revision"] = int(self.revision)
+            out["workspace_fingerprint"] = str(self.fingerprint)
+        return out
+
+
 def valid_workspace_revision(value: object) -> int:
     if isinstance(value, bool):
         return 0
@@ -211,6 +252,10 @@ class WorkspaceRevisionStore:
         *,
         ignored_paths: Iterable[str] = (),
     ) -> WorkspaceState:
+        # Atomic: the fingerprint scan runs inside the revision file lock so
+        # one bump returns one (revision, fingerprint) pair. Scanning outside
+        # the lock could pair revision N with another moment's fingerprint
+        # under concurrent tasks.
         path = self.path_for(project)
         with with_file_lock(path):
             revision = self._read_revision_unlocked(path) + 1
@@ -219,10 +264,8 @@ class WorkspaceRevisionStore:
                 {"schema_version": SCHEMA_VERSION, "revision": revision},
                 max_bytes=MAX_REVISION_BYTES,
             )
-        return WorkspaceState(
-            revision=revision,
-            fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
-        )
+            fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+        return WorkspaceState(revision=revision, fingerprint=fingerprint)
 
     @staticmethod
     def _read_revision_unlocked(path: Path) -> int:
@@ -264,6 +307,7 @@ def _file_content_digest(path: Path) -> str:
 __all__ = [
     "FINGERPRINT_EXCLUDED_DIRS",
     "INITIAL_WORKSPACE_REVISION",
+    "WorkspaceIdentity",
     "WorkspaceRevisionCorruption",
     "WorkspaceRevisionError",
     "WorkspaceRevisionStore",

@@ -258,23 +258,19 @@ def _adopt_kernel_workspace_state(work: RunWork, event: RunEvent) -> bool:
         meta = getattr(event, "metadata", None)
         if not isinstance(meta, dict):
             return False
-        rev_raw = meta.get("workspace_revision")
-        fp_raw = meta.get("workspace_fingerprint")
-        if rev_raw is None or fp_raw is None:
+        if meta.get("workspace_revision") is None or meta.get("workspace_fingerprint") is None:
             return False
-        from codey.workspace.revision import (
-            valid_workspace_fingerprint,
-            valid_workspace_revision,
-        )
+        from codey.workspace.revision import WorkspaceIdentity
 
-        rev = valid_workspace_revision(rev_raw)
-        fp = valid_workspace_fingerprint(fp_raw)
-        if not rev or not fp:
+        identity = WorkspaceIdentity.trusted_pair(
+            meta.get("workspace_revision"), meta.get("workspace_fingerprint")
+        )
+        if not identity.trusted:
             return False
-        work.workspace_revision = rev
-        work.workspace_fingerprint = fp
+        work.workspace_revision = int(identity.revision)
+        work.workspace_fingerprint = str(identity.fingerprint)
         with suppress(Exception):
-            work.evidence.set_workspace_state(rev, fp)
+            work.evidence.set_workspace_state(int(identity.revision), str(identity.fingerprint))
         return True
     except Exception:
         return False

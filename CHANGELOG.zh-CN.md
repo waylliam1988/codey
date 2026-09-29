@@ -2,6 +2,44 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - durable 工作区 + 严格退出码 + 身份收口（未发布）
+
+- P1 单次结算：`execute_turn()` 对 edit 延迟结算，等权威 `bump_state()`
+  决定最终结果再结算一次。bump 失败只结算一次显式错误（编辑已发生、工作区
+  身份未确认），记录 edit 事实，阻断同批 `run`，不再出现
+  `effect already settled`。`run_task_kernel()` 经 `_call_execute_turn()`
+  把执行层异常闭环为 `provider_failure`。以
+  `test_edit_bump_failure_single_settlement_durable`（真实 durable sink、
+  单条 ledger 记录）与 `test_task_loop_execute_turn_failure_is_provider_failure`
+  锁定。
+- P1 重放保留可信 audit：`_replay_settled_slot()` 与
+  `_delivered_slot_result()` 完整保留 `audit/presentation/canonical/
+  truncated`（含可信 revision/fingerprint），edit 事件重放不再二次 bump；
+  `project_adapter` 与 harness 恢复时保留完整元数据。以
+  `test_edit_replay_preserves_trusted_workspace_audit` 锁定。
+- P2 严格退出码：新增 `strict_exit_code()`（仅 `type is int` 通过）作为唯一
+  口径，统一 gate、kernel、session、completion_gate 与 delegate run 路径；
+  `False/True/"0"/None/1` 永不视为成功。以 gate/ kernel/ delegate 三组测试锁定。
+- P2 执行器优先级与安全：显式 `executors` 优先于 delegate（真实目录下不再
+  静默忽略 fake），但仍先过 delegate `_policy_check`，路径穿越/策略拒绝不被
+  绕过。以 `test_execute_turn_executor_precedence_over_delegate` 锁定。
+- P2 身份检查 args：`_consistent_tool_result()` 比较 name、call_id 与 args
+  digest，不一致即显式错误并复用请求 call。以
+  `test_tool_result_call_args_digest_mismatch` 锁定。
+- P2 覆盖恢复：新增 `test_durable_sink_single_settlement_fail_closed`
+  恢复 durable 闭环覆盖（二次异态结算抛错、同态重试幂等），只读 shell 测试保留
+  为独立策略锁；native/workspace 重复文件保留为不同生产路径锁。
+- 卫生：新增 `WorkspaceIdentity` 替代 `(0, "")` 哨兵与散落 audit；
+  `bump_state()` 指纹扫描移入文件锁内（原子对，以新测试与更新后的旧测试锁定）；
+  `provider.name` 回退仅展示用，durable 路径要求显式 `provider_id`（否则抛错，
+  以新测试锁定）；no-store 双扫描为设计使然（对齐一次、hooks 推进一次，不发可信态）。
+  复杂度经多个小 helper 保持全绿。
+- 顺带确定性修复均先测试后修改：delegate bool 退出拒绝、执行异常转
+  provider_failure、恢复元数据保留、显式 provider_id 闭环。
+- 验证：`compileall`、`ruff`、`git diff --check`、目标套件全绿后才全量；
+  全量 `python -m pytest -q -p no:cacheprovider`：
+  `4948 passed, 10 skipped, 1460 subtests passed in 343.67s`。未发布。
+
 ## Unreleased - 00facf6 复核门槛/版本/harness 收口（未发布）
 
 - 发布门槛假阴性修复：`check_single_session_identity()` 只检查任务运行事件

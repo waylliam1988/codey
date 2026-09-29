@@ -105,7 +105,10 @@ class WorkspaceRevisionStoreTests(unittest.TestCase):
         self.assertEqual(state.revision, INITIAL_WORKSPACE_REVISION + 1)
         self.assertEqual(state.fingerprint, "sha256:" + ("a" * 64))
 
-    def test_bump_state_computes_fingerprint_outside_revision_lock(self) -> None:
+    def test_bump_state_computes_fingerprint_inside_revision_lock(self) -> None:
+        # Atomic bump: the fingerprint scan runs inside the revision file
+        # lock so one bump returns one (revision, fingerprint) pair. A
+        # concurrent task must not acquire the lock mid-scan.
         with tempfile.TemporaryDirectory() as td:
             project = Path(td) / "project"
             project.mkdir()
@@ -113,7 +116,7 @@ class WorkspaceRevisionStoreTests(unittest.TestCase):
             path = store.path_for(project)
 
             def fingerprint(_project: object, *, ignored_paths: object = ()) -> str:
-                self.assertTrue(_lock_can_be_acquired_from_another_thread(path))
+                self.assertFalse(_lock_can_be_acquired_from_another_thread(path))
                 return "sha256:" + ("b" * 64)
 
             with mock.patch("codey.workspace.revision.workspace_fingerprint", fingerprint):

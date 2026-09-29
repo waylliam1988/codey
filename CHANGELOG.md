@@ -2,6 +2,69 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Durable workspace + strict exit + identity hardening (no release)
+
+- P1 durable single settlement: `execute_turn()` defers edit settlement until
+  the authoritative `bump_state()` decides the final result. A failing bump
+  settles ONCE as `ERROR: edit happened but workspace identity unconfirmed`,
+  records the edit fact, blocks same-batch `run`, and never double-settles
+  (`effect already settled` gone). `run_task_kernel()` fails closed to
+  `provider_failure` on execution-layer faults via `_call_execute_turn()`.
+  Locked by `tests/test_edit_bump_failure_single_settlement_durable.py`
+  (real `KernelEffectSink + RuntimeMutationLine`, single ledger row) and
+  `tests/test_task_loop_execute_turn_failure_is_provider_failure.py`.
+- P1 replay preserves trusted audit: `_replay_settled_slot()` and
+  `_delivered_slot_result()` keep full `audit/presentation/canonical/
+  truncated`, including the kernel-owned `(revision, fingerprint)`. Edit
+  `event -> replay -> event` bumps once. `project_adapter` and
+  `tests/support/kernel_harness` preserve full recovery metadata instead of
+  `audit={"changed": ...}` only. Locked by
+  `tests/test_edit_replay_preserves_trusted_workspace_audit.py`.
+- P2 strict exit codes: new `strict_exit_code()` (`codey/utils/refs.py`,
+  `type(value) is int`) is the single authority for `tools/
+  local_model_release_gate._run_row_ok`, `kernel_execution._result_ok`,
+  `record_facts_for_result`, `_record_run_verification`,
+  `task_session.record_verification`, `completion_gate`, and delegate `run`
+  exits. `False/True/"0"/None/1` never count as zero. Locked by
+  `tests/test_gate_hybrid_run_exit_code_strict_types.py`,
+  `tests/test_kernel_exit_code_strict_bool_rejected.py`, and
+  `tests/test_delegate_run_bool_exit_code_rejected.py`.
+- P2 executor precedence + safety: explicit `executors` win over
+  `ExecutionDelegate` (no more silent ignore with a real `project_path`),
+  but injected fakes still pass the delegate `_policy_check` so path
+  traversal/policy deny stays enforced. Locked by
+  `tests/test_execute_turn_executor_precedence_over_delegate.py`.
+- P2 ToolResult identity checks args: `_consistent_tool_result()` compares
+  name, `call_id`, AND args digest; mismatches become explicit errors reusing
+  the requested call, and compliant results are normalized to the requested
+  call. Locked by `tests/test_tool_result_call_args_digest_mismatch.py`.
+- P2 coverage restored: new `tests/
+  test_durable_sink_single_settlement_fail_closed.py` restores durable-sink
+  fail-closed (second settlement with opposite status raises, identical retry
+  idempotent); the readonly-shell test stays as a separate policy lock, not a
+  replacement. Native/workspace duplicates kept as distinct production-path
+  locks (real snapshot, deterministic overflow, mixed-batch protocol).
+- Hygiene: new `WorkspaceIdentity` (`codey/workspace/revision.py`) replaces
+  the `(0, "")` sentinel + scattered audit handling; `bump_state()` scans the
+  fingerprint inside the file lock (atomic pair, locked by
+  `tests/test_workspace_revision_store_atomic_bump.py` and updated
+  `test_bump_state_computes_fingerprint_inside_revision_lock`);
+  `provider.name` fallback kept display-only with durable paths requiring an
+  explicit `provider_id` (`project_adapter` raises `ValueError`, locked by
+  `tests/test_provider_id_fallback_only_without_mutations.py`); no-store
+  double scan documented by design (session align + hooks bump, never emits
+  trusted state). Complexity kept green via `_settle_edit_with_workspace_bump`,
+  `_recovered_result_for_row`/`_open_fresh_chat`/`_task_kind_and_policy`/
+  `_require_write_permission`/`_wrap_provider_with_sink`, and
+  `_rebuild_turn_snapshot`/`_call_execute_turn`.
+- Incidental deterministic fixes locked: delegate bool exit rejected,
+  `run_task_kernel` execution faults to `provider_failure`, recovery metadata
+  preserved, explicit `provider_id` fail-closed.
+- Verification: `compileall` clean, `ruff check codey tests tools` clean,
+  `git diff --check` clean, targeted suites green before the full run.
+  Full `python -m pytest -q -p no:cacheprovider`:
+  `4948 passed, 10 skipped, 1460 subtests passed in 343.67s`. No release.
+
 ## Unreleased - Gate/version/harness hardening from 00facf6 review (no release)
 
 - Release gate false negative fixed: `check_single_session_identity()` now

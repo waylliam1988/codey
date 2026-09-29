@@ -68,6 +68,18 @@ def strict_nonnegative_int(value: object) -> int:
     return 0
 
 
+def strict_exit_code(value: object) -> int | None:
+    """Strict structured exit code: only real int (bool/str/float rejected).
+
+    ``int(False) == 0`` and ``int("0") == 0`` must never count as a zero
+    exit. Only ``type(value) is int`` passes; everything else (including
+    bool, str, float, None) returns None so callers fail closed.
+    """
+    if type(value) is not int:
+        return None
+    return value
+
+
 def identifier(value: object, limit: int = 120) -> str:
     text = clip(value, limit)
     return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
@@ -197,5 +209,6 @@ __all__ = [
     "generated_ref",
     "normalize_text",
     "stable_ref",
+    "strict_exit_code",
     "strict_nonnegative_int",
 ]
