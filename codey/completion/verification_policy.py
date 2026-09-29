@@ -43,6 +43,18 @@ PYTEST_FULL_SUITE_FLAGS = frozenset({
     "-ra",
     "-rA",
 })
+UNITTEST_DISCOVER_FLAGS = frozenset({
+    "-v",
+    "--verbose",
+    "-q",
+    "--quiet",
+    "-f",
+    "--failfast",
+    "-c",
+    "--catch",
+    "-b",
+    "--buffer",
+})
 NODE_PACKAGE_MANAGER_LOCKFILES = (
     ("pnpm-lock.yaml", "pnpm"),
     ("yarn.lock", "yarn"),
@@ -410,6 +422,29 @@ def _python_candidates(root: Path, directory: Path, cwd: str) -> list[Verificati
         )
         if candidate is not None:
             found.append(candidate)
+    else:
+        try:
+            has_unittest_files = any(
+                child.is_file()
+                and not child.is_symlink()
+                and child.suffix.lower() == ".py"
+                and (
+                    child.name.startswith("test")
+                    or child.name.endswith("_test.py")
+                )
+                for child in directory.iterdir()
+            )
+        except OSError:
+            has_unittest_files = False
+        if has_unittest_files:
+            candidate = _candidate(
+                root,
+                "python -m unittest discover",
+                cwd,
+                "unittest test files",
+            )
+            if candidate is not None:
+                found.append(candidate)
     return found
 
 
@@ -668,7 +703,11 @@ def _is_full_family_command(command: str) -> bool:
             if module == "pytest":
                 return _pytest_full_suite_args(rest)
             if module == "unittest":
-                return rest in ([], ["discover"])
+                if rest in ([], ["discover"]):
+                    return True
+                return bool(rest) and rest[0] == "discover" and all(
+                    item in UNITTEST_DISCOVER_FLAGS for item in rest[1:]
+                )
             if module == "mypy":
                 return rest in ([], ["."])
             if module == "ruff":

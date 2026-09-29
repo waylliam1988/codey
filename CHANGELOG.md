@@ -2,6 +2,22 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Provider protocol boundary and test collection hygiene (no release)
+
+- The kernel now accepts canonical JSON documents (with only a generic
+  Markdown JSON fence allowed) or standard `AssistantTurn`/`ProviderToolCall`
+  values. Provider-specific model markup is rejected instead of being mined
+  for executable JSON.
+- Added architecture locks preventing concrete provider adapters from being
+  imported by kernel modules, plus deterministic Codey/Pi local A/B harness
+  helpers and accurately named regression tests.
+- Pytest now excludes ignored manual benchmark results so fixture `test_*.py`
+  files cannot contaminate collection.
+- Verification: `ruff`, `compileall`, and `git diff --check` clean. Full
+  `python -m pytest -q -p no:cacheprovider`: `5081 passed, 32 skipped,
+  1471 subtests passed in 347.07s`.
+- No release was made.
+
 ## Unreleased - Fault injection closure and recovery context split (no release)
 
 - P1 unsafe replay now refreshes the durable workspace state for every guarded

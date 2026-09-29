@@ -15,6 +15,41 @@ def _policy():
 
 
 class ValidatorExceptionFailClosedTests(unittest.TestCase):
+    def test_kernel_accepts_generic_json_code_fence(self) -> None:
+        from codey.operations import kernel_protocol as kp
+
+        plan = kp.normalize_turn(
+            '```json\n{"tool":"read_file","args":{"path":"app.py"}}\n```',
+            policy=_policy(),
+        )
+
+        assert plan.protocol_error == ""
+        assert [call.name for call in plan.calls] == ["read_file"]
+
+    def test_kernel_rejects_provider_markup_wrapping_canonical_json(self) -> None:
+        from codey.operations import kernel_protocol as kp
+
+        plan = kp.normalize_turn(
+            '<|tool_call>call:tool:read_file'
+            '{"tool":"read_file","args":{"path":"app.py"}}'
+            '<tool_call|>',
+            policy=_policy(),
+        )
+
+        assert plan.calls == []
+        assert plan.protocol_error_kind == "no_json"
+
+    def test_kernel_rejects_provider_specific_tool_markup(self) -> None:
+        from codey.operations import kernel_protocol as kp
+
+        plan = kp.normalize_turn(
+            '<|tool_call>call:tool:read_file{path: "app.py"}<tool_call|>',
+            policy=_policy(),
+        )
+
+        assert plan.calls == []
+        assert plan.protocol_error_kind == "no_json"
+
     def test_json_done_rejected_when_spec_validator_raises(self) -> None:
         from codey.operations import kernel_protocol as kp
 

@@ -462,6 +462,27 @@ class VerificationPolicyTests(unittest.TestCase):
             candidates,
         )
 
+    def test_root_unittest_file_discovers_and_matches_verbose_discover(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "codey.completion.verification_policy.shutil.which", return_value="python"
+        ):
+            root = Path(td)
+            (root / "test_app.py").write_text("import unittest\n", encoding="utf-8")
+            candidates = discover_verification_candidates(root)
+
+        candidate = next(
+            item for item in candidates if item.command == "python -m unittest discover"
+        )
+        self.assertTrue(
+            check_covers_selected_candidate(
+                candidate,
+                "python -m unittest discover -v",
+                ".",
+                ("app.py",),
+                root=root,
+            )
+        )
+
     def test_ruff_and_mypy_configs_are_discovered(self) -> None:
         def which(command: str) -> str | None:
             return command if command in {"mypy", "ruff"} else None

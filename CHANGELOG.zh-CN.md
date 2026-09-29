@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Provider 协议边界与测试收集卫生（未发布）
+
+- kernel 现在只接受 canonical JSON 文档（允许通用 Markdown JSON 围栏）或
+  标准 `AssistantTurn`/`ProviderToolCall`；provider 专属模型模板会被拒绝，
+  不再从中挖掘可执行 JSON。
+- 新增架构锁，禁止 kernel 模块导入具体 provider adapter；补充准确命名的
+  Codey/Pi 实机 A/B harness 辅助测试与协议回归测试。
+- pytest 排除被忽略的手工 benchmark 结果目录，避免其中的 `test_*.py` fixture
+  污染测试收集。
+- 验证：`ruff`、`compileall`、`git diff --check` 全洁。全量
+  `python -m pytest -q -p no:cacheprovider`：`5081 passed, 32 skipped，
+  1471 subtests passed in 347.07s`。
+- 未发布。
+
 ## Unreleased - 故障注入收口与恢复上下文拆分（未发布）
 
 - P1 unsafe replay 每次 guarded delivery 都重新读取 durable workspace state，

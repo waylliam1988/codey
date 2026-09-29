@@ -1,5 +1,29 @@
 # Codey Test Report
 
+## Provider protocol boundary and local A/B harness (2026-09-30)
+
+- Scope: keep model-template parsing in provider adapters, reject provider
+  markup in the kernel, preserve the generic Markdown JSON fence used by the
+  research flow, and exclude ignored manual benchmark results from pytest
+  collection.
+- TDD: `test_kernel_rejects_provider_markup_wrapping_canonical_json` reproduced
+  executable JSON hidden inside a Gemma-style frame; the fix was then locked
+  with the standard-turn, concrete-provider-import, generic-fence, and
+  collection-hygiene tests.
+- Local A/B r7 used the same Gemma 12B model, task, temperature `0`, and
+  `max_tokens=2048`: both arms achieved correct patches and passing tests with
+  one successful mutation and no duplicate mutation. Pi took `144.415s` and
+  Codey `50.807s`; Pi streaming did not expose usage, so its token count stays
+  unavailable rather than being estimated. Codey reported `9492` tokens.
+  No interruption was injected in r7, so recovery success is explicitly
+  unmeasured rather than reported as a false pass.
+- Pre-checks: `ruff check codey tests tools`, `python -m compileall -q codey
+  tests`, `git diff --check`, and collection hygiene clean.
+- Full run `python -m pytest -q -p no:cacheprovider`:
+  `5081 passed, 32 skipped, 1471 subtests passed in 347.07s (0:05:47)`.
+  Zero failures.
+- No release was made.
+
 ## Fault injection closure and recovery context split (2026-09-30)
 
 - Scope: unsafe replay refreshes, focused recovery context/persisted receipt

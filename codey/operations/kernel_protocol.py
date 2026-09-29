@@ -172,7 +172,15 @@ def _extract_json_objects(text: str) -> list[dict[str, Any]]:
         from codey.protocols.json_scanner import balanced_json_spans
     except Exception:
         balanced_json_spans = None  # type: ignore[assignment]
-    source = str(text or "")
+    source = str(text or "").strip()
+    if source.startswith("```") and source.endswith("```"):
+        first_newline = source.find("\n")
+        if first_newline < 0:
+            return []
+        language = source[3:first_newline].strip().lower()
+        if language not in {"", "json"}:
+            return []
+        source = source[first_newline + 1:-3].strip()
     if balanced_json_spans is None:
         try:
             value = json.loads(source)
@@ -183,6 +191,17 @@ def _extract_json_objects(text: str) -> list[dict[str, Any]]:
     try:
         spans = balanced_json_spans(source)
     except Exception:
+        return []
+    if not spans:
+        return []
+    # Text mode is a canonical JSON protocol.  Do not mine an arbitrary
+    # provider frame or prose for an executable object: every non-JSON byte
+    # between the first and last object must be whitespace.
+    first_start = spans[0][0]
+    last_end = spans[-1][1]
+    if source[:first_start].strip() or source[last_end:].strip():
+        return []
+    if any(source[end:start].strip() for (_, end), (start, _) in zip(spans, spans[1:], strict=False)):
         return []
     for start, end in spans:
         try:
