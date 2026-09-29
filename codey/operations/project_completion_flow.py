@@ -2,16 +2,16 @@
 
 Keeps only orchestration; phase logic lives in
 project_completion_context / project_writer_phase /
-project_review_phase / project_completion_enforcement.
+project_review_phase / project_completion_enforcement. Re-exports below
+exist for external API compat only; production code imports from the true
+owner (context for dataclasses/helpers, phase modules for phase entries).
 """
 
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 from codey.agents.consensus import render_project_context
 from codey.knowledge.brief import KnowledgeBriefBuilder
@@ -31,10 +31,11 @@ from codey.operations.project_completion_context import (
     RuntimeAccess,
     VerificationAccess,
     _bullet_lines,
-    _ProjectRun,
     blocked_result,
+    handle_project_tool_event,
     managed_tool_fns,
     project_has_user_files,
+    record_analysis_run,
     record_completion_proof_trace,
     record_edit_integrity_trace,
     record_review_input_prepared_trace,
@@ -49,17 +50,8 @@ from codey.operations.prompting import (
 from codey.operations.research_flow import research_payload as _research_payload
 from codey.operations.result import ModeOutcome
 from codey.operations.task_context import ProjectTaskContextBuilder
-from codey.research.analysis_run import analysis_run_record
-from codey.research.artifact_lineage import artifact_ref_from_managed_output
-from codey.research.reproducibility import build_reproducibility_capsule
 from codey.runs.receipt import VERIFICATION_TRUST_TRUSTED, build_task_receipt
-from codey.runs.trace_schema import MAX_ANALYSIS_RUNS, MAX_ARTIFACT_REFS
-from codey.runs.work_checkpoint import (
-    WorkCheckpoint,
-    WorkCheckpointStore,
-)
 from codey.runtime.core import cancellation
-from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.terminalizer import task_done_event
 from codey.task.model import execution_task
 from codey.workspace.change_brief import (
@@ -81,7 +73,6 @@ __all__ = [
     "ReviewAccess",
     "RuntimeAccess",
     "VerificationAccess",
-    "_ProjectRun",
     "blocked_result",
     "handle_project_tool_event",
     "managed_tool_fns",
@@ -371,145 +362,6 @@ def run_project_mode(
     run_review_phase(ctx)
     enforce_completion(ctx)
     return _finalize_project(ctx)
-
-
-def handle_project_tool_event(
-    deps: ProjectCompletionDeps,
-    *,
-    event: RunEvent,
-    project: str,
-    work: RunWork,
-    run_id: str,
-    update_checkpoint: Callable[
-        [Callable[[WorkCheckpointStore, WorkCheckpoint], WorkCheckpoint]],
-        None,
-    ],
-) -> None:
-    call = event.call
-    outcome = event.outcome
-    if call is None or outcome is None:
-        return
-    name = str(call.name or "")
-    if name == "run":
-        command = str(call.args.get("command") or "")
-        cwd = str(call.args.get("path") or ".")
-        ok = bool(outcome.ok and outcome.exit_code == 0)
-        try:
-            tool_index = int(event.metadata.get("tool_index") or 0)
-        except (TypeError, ValueError):
-            tool_index = 0
-        tool_id = f"{event.turn}:{max(0, tool_index)}"
-        if ok and deps.persistence.project_facts is not None:
-            with contextlib.suppress(OSError, ValueError):
-                deps.persistence.project_facts.record_success(project, cwd, command)
-        update_checkpoint(
-            lambda store, item: store.record_run(
-                item,
-                command=command,
-                cwd=cwd,
-                ok=ok,
-                workspace_revision=work.workspace_revision,
-                workspace_fingerprint=work.workspace_fingerprint,
-            )
-        )
-        record_analysis_run(
-            work=work,
-            project=project,
-            run_id=run_id,
-            tool_id=tool_id,
-            tool_name=name,
-            command=command,
-            cwd=cwd,
-            ok=ok,
-            outcome=outcome,
-        )
-    elif name == "edit" and outcome.ok and outcome.changed:
-        rel = str(call.args.get("path") or "")
-        update_checkpoint(lambda store, item: store.record_edit(item, rel))
-
-
-def record_analysis_run(
-    *,
-    work: RunWork,
-    project: str,
-    run_id: str,
-    tool_id: str,
-    tool_name: str,
-    command: str,
-    cwd: str,
-    ok: bool,
-    outcome: Any,
-) -> None:
-    """Project one audited run-command execution into the run trace.
-
-    Fail-open by contract: projection or trace failures never affect the
-    running task, its receipt, or the model-visible tool result.
-    """
-
-    trace = work.trace
-    if trace is None or not command:
-        return
-    try:
-        audit = outcome.audit if isinstance(outcome.audit, Mapping) else {}
-        # Only real executions become AnalysisRun records. Policy denials,
-        # invalid cwd, and command-not-found outcomes carry no timing and
-        # must stay out of the execution audit (roadmap: record existing
-        # executions, not attempts).
-        if not audit.get("command_started_at"):
-            return
-        managed = outcome.managed_output()
-        record = analysis_run_record(
-            {
-                "run_id": run_id,
-                "tool_id": tool_id,
-                "tool_name": tool_name,
-                "command": command,
-                "cwd": cwd,
-                "project": project,
-                "exit_code": outcome.exit_code,
-                "ok": ok,
-                "started_at": audit.get("command_started_at"),
-                "finished_at": audit.get("command_finished_at"),
-                "duration_ms": audit.get("command_duration_ms"),
-                "managed_output": dict(managed) if managed else {},
-                "capture_truncated": bool(audit.get("capture_truncated")),
-            }
-        )
-        if record is None:
-            return
-        record_payload = record.to_payload()
-        trace.record_analysis_run(record_payload)
-        work.analysis_run_payloads.append(record_payload)
-        if len(work.analysis_run_payloads) > MAX_ANALYSIS_RUNS:
-            del work.analysis_run_payloads[:-MAX_ANALYSIS_RUNS]
-
-        artifact_payload: dict[str, object] | None = None
-        if managed:
-            artifact = artifact_ref_from_managed_output(
-                {
-                    **managed,
-                    "origin_run_id": run_id,
-                    "produced_by": record.analysis_run_id,
-                }
-            )
-            if artifact is not None:
-                artifact_payload = artifact.to_payload()
-                trace.record_artifact_refs([artifact_payload])
-                work.artifact_payloads.append(artifact_payload)
-                if len(work.artifact_payloads) > MAX_ARTIFACT_REFS:
-                    del work.artifact_payloads[:-MAX_ARTIFACT_REFS]
-
-        capsule = build_reproducibility_capsule(
-            run_id=run_id,
-            analysis_runs=work.analysis_run_payloads,
-            artifacts=work.artifact_payloads,
-        )
-        if capsule is not None:
-            trace.record_reproducibility_capsule(capsule.to_payload())
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception:
-        return
 
 
 def record_project_memory(

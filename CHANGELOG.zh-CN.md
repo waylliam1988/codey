@@ -2,6 +2,55 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 信任边界关闭：event proof、frame 仅安全重放、typed disposition（未发布）
+
+- P1 event metadata 伪造关闭：`hooks` 不再从 `RunEvent.metadata` 推导可信
+  身份；`kernel_events` 经 `attach_proof_to_event` 附加内核 side-channel
+  `TrustedWorkspaceProof(source=event_side_channel)`，hooks 只认
+  `event_proof`，metadata 仅展示/日志。由
+  `tests/test_event_metadata_forgery_never_adopts_workspace.py` 锁定。
+- P1 frame legacy fallback 删除：`spec_from_frame_row` 忽略 sibling
+  `workspace_revision`/`workspace_fingerprint` 与原始 `workspace_identity`
+ （不再从 frame `trusted_pair`，无 `frame_kernel_payload` 来源）。由
+  `tests/test_frame_legacy_workspace_fields_never_trusted.py` 锁定。
+- P1 proof 不可伪造：要求精确 `WorkspaceIdentity`
+ （`_is_trusted_identity`，拒绝鸭子类型 `trusted=True`）与封闭来源白名单
+ （`bump_state`/`persisted_revision_store`/`in_memory_kernel_result`/
+  `event_side_channel`）；未知来源拒绝。仅 `kernel_provenance` 可写
+  side-channel（架构测试已扩展到 event proof）。由
+  `tests/test_trusted_proof_source_allowlist_rejected.py` 锁定。
+- P2 严格恢复转换：缺失/None 用默认值，存在但类型错误或不可读的
+  audit/presentation/canonical/model_text/truncated 抛 `RecoveryFailed`，
+  不再静默降级为 `{}`。由
+  `tests/test_recovery_strict_conversion_no_silent_downgrade.py` 锁定。
+- P2 frame 仅安全重放：`edit`/`run`/`shell` 直接 `RecoveryFailed`。由
+  `tests/test_frame_unsafe_tools_rejected.py` 锁定。
+- P2 恢复错误统一构造：`build_recovery_error_result`/
+  `build_recovery_mismatch_result` 为唯一构造者，`kernel_recovery` 无散落
+  `ToolResult(...)`。由 `tests/test_recovery_error_builders_unified.py` 锁定。
+- P2 typed disposition：`RecoverySlotResult(disposition)` 替代
+  `model_text.startswith("ERROR: ...")` 解析；以错误前缀开头的合法安全
+  excerpt 仍为 `RECOVERED`。由
+  `tests/test_recovery_slot_disposition_typed.py` 锁定。
+- P2 slot 身份：`turn`/`tool_index` 要求精确非负 int（拒绝 bool/负数）且
+  不重复，覆盖 `delivered_from_frame`、`task_entry`、`project_adapter`。由
+  `tests/test_recovered_rows_duplicate_slot_rejected.py` 锁定。
+- P2 结算原子性：`session.executed` 已写 + `intent_sink.settle` 失败后，
+  下次恢复只补 settlement、不重执行 unsafe（replay 优先于 pending
+  intent；replay 不重写 receipt，新鲜 guard 拒绝仍结算）。每个
+  `execute_turn` 一个 `RecoveryContext` 共享一次 durable 快照。由
+  `tests/test_intent_settlement_failure_reconciles_receipt.py` 与
+  `tests/test_guarded_fresh_denial_settles_receipt.py` 锁定。
+- Completion 卫生：`handle_project_tool_event`/`record_analysis_run` 移入
+  `project_completion_context`（flow 保留外部 re-export）；内部导入改到
+  真实 owner；删除 `_ProjectRun` 别名并以架构测试锁定。由
+  `tests/test_project_completion_split_lock.py` 锁定。
+- 收紧 fail-closed 契约为单一行为（`assertRaises`
+  `RecoveryFailed`/`EffectSettlementFailed`）。
+- 验证：`ruff`、`compileall`、`git diff --check` 全洁，目标套件先绿。全量
+  `python -m pytest -q`：`5031 passed, 10 skipped, 1474 subtests passed in
+  347.31s (0:05:47)`，零失败。未发布。
+
 ## Unreleased - 统一恢复协议 + 结算/三态加固 + completion 拆分（未发布）
 
 - P1 恢复信任边界关闭：`delivered_from_frame` 不再从展示 `audit` 推导可信身份；

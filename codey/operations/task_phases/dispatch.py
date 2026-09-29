@@ -28,15 +28,15 @@ from codey.operations.planning_flow import (
     PlanningFlowDeps,
     run_planning_readonly_mode,
 )
-from codey.operations.project_completion_flow import (
+from codey.operations.project_completion_context import (
     AgentAccess,
     PersistenceAccess,
     ProjectCompletionDeps,
     ReviewAccess,
     RuntimeAccess,
     VerificationAccess,
-    run_project_mode,
 )
+from codey.operations.project_completion_flow import run_project_mode
 from codey.operations.provider_preflight import connect_provider_with_preflight
 from codey.operations.research_flow import (
     ResearchFlowDeps,

@@ -12,7 +12,8 @@ from unittest import mock
 
 
 class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
-    def test_build_recovered_failure_is_not_bare_success(self) -> None:
+    def test_build_recovered_failure_raises_recovery_failed(self) -> None:
+        from codey.operations.kernel_errors import RecoveryFailed
         from codey.operations.kernel_result import build_recovered_tool_result
         from codey.runtime.core.models import ToolCall
 
@@ -20,22 +21,11 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
         with mock.patch(
             "codey.operations.kernel_result.ToolResult", side_effect=RuntimeError("ctor boom")
         ):
-            try:
-                result = build_recovered_tool_result(call, model_text="edited")
-            except Exception as exc:
-                from codey.operations.kernel_recovery import RecoveryFailed
-
-                self.assertIsInstance(exc, RecoveryFailed, f"must be RecoveryFailed, got {type(exc).__name__}: {exc!r}")
-                self.assertTrue(
-                    any(token in str(exc).lower() for token in ("recovered", "rebuild", "provenance")),
-                    f"RecoveryFailed must mention recovered/rebuild/provenance, got {exc!r}",
-                )
-                return
-            # If it returns, it must be an explicit error, never bare success.
-            text = str(getattr(result, "model_text", "") or "")
+            with self.assertRaises(RecoveryFailed) as ctx:
+                build_recovered_tool_result(call, model_text="edited")
             self.assertTrue(
-                text.startswith("ERROR:"),
-                f"recovered ctor failure must be ERROR, got {text!r}",
+                any(token in str(ctx.exception).lower() for token in ("recovered", "rebuild", "provenance")),
+                f"RecoveryFailed must mention recovered/rebuild/provenance, got {ctx.exception!r}",
             )
 
     def test_trusted_side_channel_failure_is_unconfirmed(self) -> None:

@@ -37,10 +37,10 @@ class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
         # Both the recovery module and the execution orchestrator's bound
         # references are patched so the pre-check sees the outage.
         with mock.patch(
-            "codey.operations.kernel_recovery._delivered_slot_result",
+            "codey.operations.kernel_recovery.delivered_slot_typed",
             side_effect=RuntimeError("delivery boom"),
         ), mock.patch(
-            "codey.operations.kernel_execution._delivered_slot_result",
+            "codey.operations.kernel_execution.delivered_slot_typed",
             side_effect=RuntimeError("delivery boom"),
         ):
             results = ke.execute_turn(

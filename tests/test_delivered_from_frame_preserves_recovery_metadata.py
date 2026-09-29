@@ -18,37 +18,32 @@ class DeliveredFromFramePreservesRecoveryMetadataTests(unittest.TestCase):
         from codey.operations.recovery import delivered_from_frame
         from codey.runtime.core.models import ToolCall
         from codey.toolchain.runtime import ToolOutcome
-        from codey.workspace.revision import WorkspaceIdentity
 
-        call = ToolCall(name="edit", args={"path": "a.py", "content": "x\n"}, call_id="c1")
-        legit = WorkspaceIdentity.trusted_pair(2, "sha256:" + "ab" * 32)
-        # Display audit carries no provenance keys (sanitized); the trusted
-        # pair travels in the kernel-owned payload beside audit.
+        # Frame is safe-replay only and never carries trusted provenance;
+        # display metadata is preserved sanitized, side-channel stays empty.
+        call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         outcome = ToolOutcome(
-            "edited",
+            "content",
             True,
             canonical={"path": "a.py"},
             presentation={"status": "ok"},
-            audit={"changed": True},
-            changed=True,
+            audit={"extra": "keep"},
             truncated=True,
         )
         frame = SimpleNamespace(
             run_id="r-delivered-meta",
             recovered_tool_outcomes=(
-                SimpleNamespace(call=call, outcome=outcome, turn=1, tool_index=0, workspace_identity=legit),
+                SimpleNamespace(call=call, outcome=outcome, turn=1, tool_index=0),
             ),
         )
         delivered = delivered_from_frame(frame, effect_scope="task")
         self.assertEqual(len(delivered), 1)
         result = next(iter(delivered.values()))
         audit = dict(getattr(result, "audit", {}) or {})
-        self.assertTrue(audit.get("changed") is True, f"audit lost changed: {audit!r}")
-        # Verified payload restores authoritative display + side-channel.
-        self.assertEqual(audit.get("workspace_revision"), 2, f"provenance lost: {audit!r}")
-        self.assertEqual(audit.get("workspace_fingerprint"), "sha256:" + "ab" * 32)
+        self.assertEqual(audit.get("extra"), "keep", f"audit lost: {audit!r}")
+        self.assertNotIn("workspace_revision", audit)
         rev, fp = _trusted_workspace_from_result(result)
-        self.assertEqual((rev, fp), (2, "sha256:" + "ab" * 32))
+        self.assertEqual((rev, fp), (0, ""))
         presentation = dict(getattr(result, "presentation", {}) or {})
         self.assertIn("status", presentation, f"presentation lost: {presentation!r}")
         canonical = dict(getattr(result, "canonical", {}) or {})
@@ -61,11 +56,10 @@ class DeliveredFromFramePreservesRecoveryMetadataTests(unittest.TestCase):
         from codey.runtime.core.models import ToolCall
         from codey.toolchain.runtime import ToolOutcome
 
-        call = ToolCall(name="edit", args={"path": "a.py", "content": "x\n"}, call_id="c1")
+        call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         outcome = ToolOutcome(
-            "edited", True, audit={"changed": True, "workspace_revision": 999,
-                                   "workspace_fingerprint": "sha256:" + "0" * 64},
-            changed=True,
+            "content", True, audit={"workspace_revision": 999,
+                                    "workspace_fingerprint": "sha256:" + "0" * 64},
         )
         frame = SimpleNamespace(
             run_id="r-delivered-meta-sanitize",

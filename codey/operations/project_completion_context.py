@@ -1,12 +1,15 @@
 """Shared context for project completion phases.
 
-Owns dataclasses, limits, and pure helpers. No imports from
-writer/review/enforcement/flow to keep the split acyclic.
+Owns dataclasses, limits, and shared helpers (checkpoint view, runtime
+commit, tool-event projection, analysis-run projection). No imports from
+writer/review/enforcement/flow to keep the split acyclic. Production code
+imports helpers from here, never via ``project_completion_flow`` re-exports.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import contextlib
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -380,8 +383,150 @@ class ProjectRun:
     receipt: Any = None
 
 
-# Backward-compat alias for the pre-split private name.
-_ProjectRun = ProjectRun
+def handle_project_tool_event(
+    deps: ProjectCompletionDeps,
+    *,
+    event: Any,
+    project: str,
+    work: RunWork,
+    run_id: str,
+    update_checkpoint: Callable[
+        [Callable[[Any, Any], Any]],
+        None,
+    ],
+) -> None:
+    """Shared tool-event projection (single owner; hooks must not duplicate)."""
+    call = getattr(event, "call", None)
+    outcome = getattr(event, "outcome", None)
+    if call is None or outcome is None:
+        return
+    name = str(getattr(call, "name", "") or "")
+    if name == "run":
+        args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else {}
+        command = str(args.get("command") or "")
+        cwd = str(args.get("path") or ".")
+        ok = bool(getattr(outcome, "ok", False) and getattr(outcome, "exit_code", None) == 0)
+        try:
+            meta = getattr(event, "metadata", {}) or {}
+            tool_index = int(meta.get("tool_index") or 0) if isinstance(meta, dict) else 0
+        except (TypeError, ValueError):
+            tool_index = 0
+        tool_id = f"{getattr(event, 'turn', 0)}:{max(0, tool_index)}"
+        if ok and deps.persistence.project_facts is not None:
+            with contextlib.suppress(OSError, ValueError):
+                deps.persistence.project_facts.record_success(project, cwd, command)
+        update_checkpoint(
+            lambda store, item: store.record_run(
+                item,
+                command=command,
+                cwd=cwd,
+                ok=ok,
+                workspace_revision=work.workspace_revision,
+                workspace_fingerprint=work.workspace_fingerprint,
+            )
+        )
+        record_analysis_run(
+            work=work,
+            project=project,
+            run_id=run_id,
+            tool_id=tool_id,
+            tool_name=name,
+            command=command,
+            cwd=cwd,
+            ok=ok,
+            outcome=outcome,
+        )
+    elif name == "edit" and bool(getattr(outcome, "ok", False)) and bool(
+        getattr(outcome, "changed", False)
+    ):
+        args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else {}
+        rel = str(args.get("path") or "")
+        update_checkpoint(lambda store, item: store.record_edit(item, rel))
+
+
+def record_analysis_run(
+    *,
+    work: RunWork,
+    project: str,
+    run_id: str,
+    tool_id: str,
+    tool_name: str,
+    command: str,
+    cwd: str,
+    ok: bool,
+    outcome: Any,
+) -> None:
+    """Project one audited run-command execution into the run trace.
+
+    Fail-open by contract: projection or trace failures never affect the
+    running task, its receipt, or the model-visible tool result.
+    """
+    from codey.research.analysis_run import analysis_run_record
+    from codey.research.artifact_lineage import artifact_ref_from_managed_output
+    from codey.research.reproducibility import build_reproducibility_capsule
+    from codey.runs.trace_schema import MAX_ANALYSIS_RUNS, MAX_ARTIFACT_REFS
+    from codey.runtime.core import cancellation
+
+    trace = work.trace
+    if trace is None or not command:
+        return
+    try:
+        audit = outcome.audit if isinstance(getattr(outcome, "audit", None), Mapping) else {}
+        if not audit.get("command_started_at"):
+            return
+        managed = outcome.managed_output() if callable(getattr(outcome, "managed_output", None)) else {}
+        record = analysis_run_record(
+            {
+                "run_id": run_id,
+                "tool_id": tool_id,
+                "tool_name": tool_name,
+                "command": command,
+                "cwd": cwd,
+                "project": project,
+                "exit_code": getattr(outcome, "exit_code", None),
+                "ok": ok,
+                "started_at": audit.get("command_started_at"),
+                "finished_at": audit.get("command_finished_at"),
+                "duration_ms": audit.get("command_duration_ms"),
+                "managed_output": dict(managed) if managed else {},
+                "capture_truncated": bool(audit.get("capture_truncated")),
+            }
+        )
+        if record is None:
+            return
+        record_payload = record.to_payload()
+        trace.record_analysis_run(record_payload)
+        work.analysis_run_payloads.append(record_payload)
+        if len(work.analysis_run_payloads) > MAX_ANALYSIS_RUNS:
+            del work.analysis_run_payloads[:-MAX_ANALYSIS_RUNS]
+
+        artifact_payload: dict[str, object] | None = None
+        if managed:
+            artifact = artifact_ref_from_managed_output(
+                {
+                    **managed,
+                    "origin_run_id": run_id,
+                    "produced_by": record.analysis_run_id,
+                }
+            )
+            if artifact is not None:
+                artifact_payload = artifact.to_payload()
+                trace.record_artifact_refs([artifact_payload])
+                work.artifact_payloads.append(artifact_payload)
+                if len(work.artifact_payloads) > MAX_ARTIFACT_REFS:
+                    del work.artifact_payloads[:-MAX_ARTIFACT_REFS]
+
+        capsule = build_reproducibility_capsule(
+            run_id=run_id,
+            analysis_runs=work.analysis_run_payloads,
+            artifacts=work.artifact_payloads,
+        )
+        if capsule is not None:
+            trace.record_reproducibility_capsule(capsule.to_payload())
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        return
 
 
 __all__ = [
@@ -397,11 +542,12 @@ __all__ = [
     "ReviewAccess",
     "RuntimeAccess",
     "VerificationAccess",
-    "_ProjectRun",
     "blocked_result",
     "commit_runtime_operation",
+    "handle_project_tool_event",
     "managed_tool_fns",
     "project_has_user_files",
+    "record_analysis_run",
     "record_completion_proof_trace",
     "record_edit_integrity_trace",
     "record_review_input_prepared_trace",

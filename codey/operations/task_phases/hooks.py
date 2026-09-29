@@ -15,7 +15,7 @@ from codey.agents.shell_approval import (
     shell_command_text,
 )
 from codey.operations.context import RunHooks, RunWork
-from codey.operations.project_completion_flow import (
+from codey.operations.project_completion_context import (
     ProjectCompletionDeps,
     handle_project_tool_event,
 )
@@ -253,24 +253,30 @@ def _workspace_edit_event(event: RunEvent) -> bool:
 
 
 def _adopt_kernel_workspace_state(work: RunWork, event: RunEvent) -> bool:
-    """Adopt kernel-owned revision without bumping; True when adopted."""
-    try:
-        meta = getattr(event, "metadata", None)
-        if not isinstance(meta, dict):
-            return False
-        if meta.get("workspace_revision") is None or meta.get("workspace_fingerprint") is None:
-            return False
-        from codey.workspace.revision import WorkspaceIdentity
+    """Adopt kernel-owned revision without bumping; True when adopted.
 
-        identity = WorkspaceIdentity.trusted_pair(
-            meta.get("workspace_revision"), meta.get("workspace_fingerprint")
-        )
-        if not identity.trusted:
+    Trust comes only from the kernel side-channel proof attached by
+    ``kernel_events._emit_tool_results`` (``event_proof``). Display
+    ``event.metadata`` workspace keys are never consulted for trust.
+    """
+    try:
+        from codey.operations.kernel_provenance import event_proof
+
+        proof = event_proof(event)
+        if proof is None:
             return False
-        work.workspace_revision = int(identity.revision)
-        work.workspace_fingerprint = str(identity.fingerprint)
+        identity = getattr(proof, "identity", None)
+        try:
+            rev = int(getattr(identity, "revision", 0) or 0)
+            fp = str(getattr(identity, "fingerprint", "") or "")
+        except Exception:
+            return False
+        if not rev or not fp:
+            return False
+        work.workspace_revision = rev
+        work.workspace_fingerprint = fp
         with suppress(Exception):
-            work.evidence.set_workspace_state(int(identity.revision), str(identity.fingerprint))
+            work.evidence.set_workspace_state(rev, fp)
         return True
     except Exception:
         return False

@@ -7,13 +7,15 @@ Trust matrix (locked by tests):
 - ``WorkspaceRevisionStore.bump_state`` -> trusted
 - durable ledger exact match -> trusted
 - kernel side-channel copy -> trusted
-- ``RecoveredToolOutcome.workspace_identity`` (kernel-owned payload)
-  verified into ``TrustedWorkspaceProof`` -> trusted
+- frame ``workspace_identity`` payload -> never trusted on its own;
+  frame recovery is safe-replay only and carries no proof
 
-Only this module may write ``_KERNEL_WORKSPACE_ATTR`` (enforced by the
-architecture test). All recovery entries go through ``attach_trusted_workspace``
-with an already-verified ``TrustedWorkspaceProof``; they never derive trust
-from display audit.
+Only this module may write ``_KERNEL_WORKSPACE_ATTR`` or the event
+proof attribute (enforced by the architecture test). All recovery entries
+go through ``attach_trusted_workspace`` with an already-verified
+``TrustedWorkspaceProof``; they never derive trust from display audit or
+from event metadata. Event metadata workspace keys stay display/logging
+only; hooks adopt only ``event_proof``.
 """
 
 from __future__ import annotations
@@ -31,22 +33,38 @@ from codey.runtime.core.models import ToolResult
 # audit keys (for durable display) and the private side-channel attribute
 # read by the event projection.
 _KERNEL_WORKSPACE_ATTR = "_kernel_workspace_identity"
+_EVENT_PROOF_ATTR = "_kernel_workspace_proof"
 _EXECUTOR_STRIPPED_AUDIT_KEYS = frozenset(
     {"workspace_revision", "workspace_fingerprint", "_kernel_workspace_trusted"}
+)
+# Closed source allowlist: only these origins may produce a proof that
+# ``attach_trusted_workspace`` accepts. Unknown/empty sources are rejected.
+_TRUSTED_PROOF_SOURCES = frozenset(
+    {
+        "bump_state",
+        "persisted_revision_store",
+        "in_memory_kernel_result",
+        "event_side_channel",
+    }
 )
 
 __all__ = [
     "TrustedWorkspaceProof",
+    "_EVENT_PROOF_ATTR",
     "_EXECUTOR_STRIPPED_AUDIT_KEYS",
     "_KERNEL_WORKSPACE_ATTR",
+    "_TRUSTED_PROOF_SOURCES",
     "_copy_kernel_workspace_provenance",
     "_disk_workspace_fingerprint",
+    "_is_trusted_identity",
     "_kernel_workspace_identity_of",
     "_session_workspace_identity",
     "_sync_workspace_after_edit",
     "_trusted_workspace_from_result",
     "_with_trusted_workspace_state",
+    "attach_proof_to_event",
     "attach_trusted_workspace",
+    "event_proof",
     "sync_workspace_state_after_edit",
     "with_trusted_workspace_state",
 ]
@@ -56,28 +74,45 @@ __all__ = [
 class TrustedWorkspaceProof:
     """Already-verified workspace provenance (never constructed from audit).
 
-    ``identity`` must be a trusted ``WorkspaceIdentity``; ``source`` names
-    the verification origin (``bump_state``, ``persisted_revision_store``,
-    ``in_memory_kernel_result``). Recovery code cannot build this from two
-    raw ints: only verified adapters in the kernel may create it.
+    ``identity`` must be a trusted ``WorkspaceIdentity`` (exact type, not a
+    duck-typed ``trusted=True`` stand-in); ``source`` must be in
+    ``_TRUSTED_PROOF_SOURCES``. Recovery code cannot build this from two
+    raw ints: only verified adapters in the kernel may create it, and
+    ``attach_trusted_workspace`` re-validates both fields fail-closed.
     """
 
     identity: Any
     source: str = ""
 
 
+def _is_trusted_identity(identity: Any) -> bool:
+    """True only for a real trusted ``WorkspaceIdentity`` (no duck-typing)."""
+    try:
+        from codey.workspace.revision import WorkspaceIdentity
+    except Exception:
+        return False
+    try:
+        if not isinstance(identity, WorkspaceIdentity):
+            return False
+        return bool(identity.trusted)
+    except Exception:
+        return False
+
+
 def _kernel_workspace_identity_of(result: ToolResult) -> Any | None:
     """Return the kernel-attached trusted identity, else None.
 
     Only the private side-channel set by ``_with_trusted_workspace_state``
-    counts. Audit-dict workspace keys alone are never trusted because an
-    explicit executor can forge them.
+    counts, and only when it is a real trusted ``WorkspaceIdentity``.
+    Audit-dict workspace keys alone are never trusted because an
+    explicit executor can forge them; duck-typed ``trusted=True`` objects
+    are rejected by ``_is_trusted_identity``.
     """
     try:
         identity = getattr(result, _KERNEL_WORKSPACE_ATTR, None)
         if identity is None:
             return None
-        if bool(getattr(identity, "trusted", False)):
+        if _is_trusted_identity(identity):
             return identity
     except Exception:
         pass
@@ -88,10 +123,56 @@ def _copy_kernel_workspace_provenance(src: ToolResult, dst: ToolResult) -> None:
     """Carry the kernel side-channel across a ToolResult rebuild."""
     try:
         identity = getattr(src, _KERNEL_WORKSPACE_ATTR, None)
-        if identity is not None and bool(getattr(identity, "trusted", False)):
+        if identity is not None and _is_trusted_identity(identity):
             object.__setattr__(dst, _KERNEL_WORKSPACE_ATTR, identity)
     except Exception:
         pass
+
+
+def attach_proof_to_event(event: Any, proof: TrustedWorkspaceProof) -> None:
+    """Attach a verified proof to a ``RunEvent`` side-channel (kernel only).
+
+    Event ``metadata`` workspace keys stay display-only; hooks read only
+    this attribute via ``event_proof``. Fail-closed: invalid proofs raise
+    ``RecoveryFailed`` instead of attaching a forgeable marker.
+    """
+    from codey.operations.kernel_errors import RecoveryFailed
+
+    try:
+        source = str(getattr(proof, "source", "") or "")
+        identity = getattr(proof, "identity", None)
+    except Exception as exc:
+        raise RecoveryFailed(f"trusted workspace proof unreadable: {exc}") from exc
+    if source not in _TRUSTED_PROOF_SOURCES:
+        raise RecoveryFailed(f"trusted workspace proof invalid source: {source or '?'}")
+    if not _is_trusted_identity(identity):
+        raise RecoveryFailed("trusted workspace proof invalid: untrusted identity")
+    try:
+        object.__setattr__(event, _EVENT_PROOF_ATTR, proof)
+    except Exception as exc:
+        raise RecoveryFailed(f"event proof attach failed: {exc}") from exc
+
+
+def event_proof(event: Any) -> TrustedWorkspaceProof | None:
+    """Return the validated kernel proof carried beside event metadata.
+
+    Returns ``None`` when absent or invalid (wrong type, unknown source,
+    or non-``WorkspaceIdentity`` identity). Display ``metadata`` is never
+    consulted here.
+    """
+    try:
+        proof = getattr(event, _EVENT_PROOF_ATTR, None)
+        if proof is None:
+            return None
+        if not isinstance(proof, TrustedWorkspaceProof):
+            return None
+        if str(getattr(proof, "source", "") or "") not in _TRUSTED_PROOF_SOURCES:
+            return None
+        if not _is_trusted_identity(getattr(proof, "identity", None)):
+            return None
+        return proof
+    except Exception:
+        return None
 
 
 def attach_trusted_workspace(result: ToolResult, proof: TrustedWorkspaceProof) -> ToolResult:
@@ -109,10 +190,10 @@ def attach_trusted_workspace(result: ToolResult, proof: TrustedWorkspaceProof) -
         source = str(getattr(proof, "source", "") or "")
     except Exception as exc:
         raise RecoveryFailed(f"trusted workspace proof unreadable: {exc}") from exc
-    if identity is None or not bool(getattr(identity, "trusted", False)):
+    if not _is_trusted_identity(identity):
         raise RecoveryFailed("trusted workspace proof invalid: untrusted identity")
-    if not source:
-        raise RecoveryFailed("trusted workspace proof invalid: missing source")
+    if source not in _TRUSTED_PROOF_SOURCES:
+        raise RecoveryFailed(f"trusted workspace proof invalid source: {source or '?'}")
     try:
         audit = dict(result.audit) if isinstance(result.audit, dict) else {}
     except Exception as exc:

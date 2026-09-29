@@ -81,6 +81,43 @@ class ProjectCompletionSplitLockTests(unittest.TestCase):
         self.assertTrue(hasattr(rev, "run_review_phase"))
         self.assertTrue(hasattr(enf, "enforce_completion"))
 
+    def test_internal_imports_use_true_owner_not_flow_reexport(self) -> None:
+        import ast
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        # Production code must import shared helpers from the true owner
+        # (context / phase modules), never via flow re-exports. The only
+        # allowed flow import is dispatch's run_project_mode (flow owns
+        # orchestration).
+        checked = {
+            "codey/operations/task_phases/hooks.py": {"run_project_mode"},
+            "codey/operations/task_phases/dispatch.py": {"run_project_mode"},
+            "codey/operations/task_phases/lifecycle.py": set(),
+            "codey/operations/review_flow.py": set(),
+        }
+        for rel, allowed in checked.items():
+            source = (root / rel).read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module == "codey.operations.project_completion_flow":
+                    for alias in node.names:
+                        self.assertIn(
+                            alias.name, allowed,
+                            f"{rel} must not import {alias.name} via flow re-export",
+                        )
+
+    def test_no_project_run_compat_alias(self) -> None:
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        for rel in (
+            "codey/operations/project_completion_context.py",
+            "codey/operations/project_completion_flow.py",
+        ):
+            source = (root / rel).read_text(encoding="utf-8")
+            self.assertNotIn("_ProjectRun", source, f"{rel} must not keep _ProjectRun alias")
+
 
 if __name__ == "__main__":
     unittest.main()

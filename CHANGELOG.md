@@ -2,6 +2,69 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Trust-boundary closure: event proof, frame safe-only, typed disposition (no release)
+
+- P1 event metadata forgery closed: `hooks._adopt_kernel_workspace_state`
+  no longer derives trust from `RunEvent.metadata` ints; `kernel_events`
+  attaches a kernel side-channel `TrustedWorkspaceProof(source=
+  event_side_channel)` via `attach_proof_to_event` and hooks adopt only
+  `event_proof`. Metadata stays display/logging only. Locked by
+  `tests/test_event_metadata_forgery_never_adopts_workspace.py`.
+- P1 frame legacy fallback deleted: `spec_from_frame_row` ignores sibling
+  `workspace_revision`/`workspace_fingerprint` and raw `workspace_identity`
+  payloads (no `trusted_pair` from frame, no `frame_kernel_payload` source).
+  Locked by `tests/test_frame_legacy_workspace_fields_never_trusted.py`.
+- P1 proof unforgeability: `TrustedWorkspaceProof` requires an exact
+  `WorkspaceIdentity` (`_is_trusted_identity`, no duck-typed `trusted=True`)
+  and a closed source allowlist (`bump_state`/`persisted_revision_store`/
+  `in_memory_kernel_result`/`event_side_channel`); `attach_trusted_workspace`
+  and `attach_proof_to_event` reject unknown sources. Only
+  `kernel_provenance` writes the side-channels (architecture test extended
+  to the event proof attr). Locked by
+  `tests/test_trusted_proof_source_allowlist_rejected.py`.
+- P2 strict recovery conversion: missing/None uses defaults, present-but-
+  wrong-type or unreadable audit/presentation/canonical/model_text/truncated
+  raises `RecoveryFailed` (no silent `{}` downgrade) in both
+  `kernel_recovery_result` and `kernel_result.build_recovered_tool_result`.
+  Locked by `tests/test_recovery_strict_conversion_no_silent_downgrade.py`.
+- P2 frame safe-only: `spec_from_frame_row` raises `RecoveryFailed` for
+  `edit`/`run`/`shell`; safe reads/searches rebuild untrusted. Locked by
+  `tests/test_frame_unsafe_tools_rejected.py`.
+- P2 unified recovery errors: `build_recovery_error_result`/
+  `build_recovery_mismatch_result` own all error construction;
+  `kernel_recovery` contains no direct `ToolResult(...)` (arch-locked by
+  `tests/test_recovery_error_builders_unified.py`).
+- P2 typed disposition: `RecoverySlotResult(disposition)` replaces
+  `model_text.startswith("ERROR: ...")` parsing; safe excerpts starting
+  with error prefixes stay `RECOVERED`; `_check_batch_recovery` and
+  `execute_turn` read dispositions. Locked by
+  `tests/test_recovery_slot_disposition_typed.py`.
+- P2 slot identity: exact-int non-negative `turn`/`tool_index` (no bool, no
+  negatives) with duplicate rejection in `delivered_from_frame`,
+  `task_entry._validate_recovered_rows`, and `project_adapter`. Locked by
+  `tests/test_recovered_rows_duplicate_slot_rejected.py`.
+- P2 settlement atomicity: durable `session.executed` receipt plus failed
+  `intent_sink.settle` reconciles on next recovery without re-executing
+  unsafe tools (replay wins over pending intent; replays never rewrite the
+  receipt, fresh guard denials still settle). One `RecoveryContext` per
+  `execute_turn` shares a single durable snapshot. Locked by
+  `tests/test_intent_settlement_failure_reconciles_receipt.py` and
+  `tests/test_guarded_fresh_denial_settles_receipt.py`.
+- Completion hygiene: `handle_project_tool_event`/`record_analysis_run`
+  moved to `project_completion_context` (flow keeps re-exports for external
+  API); internal imports use the true owner (hooks/lifecycle/review_flow
+  from context, dispatch dataclasses from context, `run_project_mode` from
+  flow as orchestration owner); `_ProjectRun` alias deleted with
+  architecture locks. Locked by `tests/test_project_completion_split_lock.py`.
+- Tightened fail-closed contracts to single behaviors (`assertRaises`
+  `RecoveryFailed`/`EffectSettlementFailed`): entry, adapter, recovered
+  builder, and settlement paths.
+- Verification: `ruff check codey tests tools` clean, `compileall` clean,
+  `git diff --check` clean, targeted suites green before the full run. Full
+  `python -m pytest -q`:
+  `5031 passed, 10 skipped, 1474 subtests passed in 347.31s (0:05:47)`.
+  Zero failures. No release.
+
 ## Unreleased - Unified recovery protocol + settlement/tri-state hardening + completion split (no release)
 
 - P1 recovery trust boundary closed: `delivered_from_frame` no longer derives

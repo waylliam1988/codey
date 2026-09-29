@@ -115,38 +115,60 @@ def build_recovered_tool_result(
     canonical: object = None,
     truncated: object = False,
 ) -> ToolResult:
-    """Shared rebuild for recovered/delivered results (single helper).
+    """Shared rebuild for recovered/delivered results (single helper, strict).
 
-    Preserves kernel-owned metadata (audit/presentation/canonical/truncated)
-    so a recovered edit keeps its trusted workspace identity. Edit audits
-    without an explicit ``changed`` flag inherit ``changed=False`` only when
-    the caller passes no audit; callers that know the outcome changed must
-    include it explicitly. Executor-forgeable workspace keys are never added
-    here: only ``with_trusted_workspace_state`` may attach provenance via
-    the side-channel. Audit construction failure raises ``RecoveryFailed``;
-    presentation/canonical fall back to empty (display-only).
+    Missing/``None`` audit/presentation/canonical use ``{}``. Present-but-
+    non-mapping or unreadable fields raise ``RecoveryFailed`` instead of
+    silently becoming ``{}``. Executor-forgeable workspace keys are never
+    added here: only ``with_trusted_workspace_state`` may attach provenance
+    via the side-channel.
     """
     from codey.operations.kernel_errors import RecoveryFailed
 
-    if not isinstance(audit, dict) and audit is not None:
-        raise RecoveryFailed("recovered audit must be a mapping or None")
+    if audit is None:
+        audit_dict: dict = {}
+    elif not isinstance(audit, dict):
+        raise RecoveryFailed(f"recovered audit must be a mapping, got {type(audit).__name__}")
+    else:
+        try:
+            audit_dict = dict(audit)
+        except Exception as exc:
+            raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
+    if presentation is None:
+        presentation_dict: dict = {}
+    elif not isinstance(presentation, dict):
+        raise RecoveryFailed(
+            f"recovered presentation must be a mapping, got {type(presentation).__name__}"
+        )
+    else:
+        try:
+            presentation_dict = dict(presentation)
+        except Exception as exc:
+            raise RecoveryFailed(f"recovered presentation unreadable: {exc}") from exc
+    if canonical is None:
+        canonical_dict: dict = {}
+    elif not isinstance(canonical, dict):
+        raise RecoveryFailed(
+            f"recovered canonical must be a mapping, got {type(canonical).__name__}"
+        )
+    else:
+        try:
+            canonical_dict = dict(canonical)
+        except Exception as exc:
+            raise RecoveryFailed(f"recovered canonical unreadable: {exc}") from exc
     try:
-        audit_dict = dict(audit) if isinstance(audit, dict) else {}
+        text = str(model_text or "")
     except Exception as exc:
-        raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
+        raise RecoveryFailed(f"recovered model_text unreadable: {exc}") from exc
     try:
-        presentation_dict = dict(presentation) if isinstance(presentation, dict) else {}
-    except Exception:
-        presentation_dict = {}
-    try:
-        canonical_dict = dict(canonical) if isinstance(canonical, dict) else {}
-    except Exception:
-        canonical_dict = {}
+        truncated_flag = bool(truncated)
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered truncated unreadable: {exc}") from exc
     try:
         return ToolResult(
             call=call,
-            model_text=str(model_text or ""),
-            truncated=bool(truncated),
+            model_text=text,
+            truncated=truncated_flag,
             presentation=presentation_dict,
             audit=audit_dict,
             canonical=canonical_dict,

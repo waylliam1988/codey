@@ -1,5 +1,52 @@
 # Codey Test Report
 
+## Trust-boundary closure: event proof, frame safe-only, typed disposition (2026-09-29)
+
+- Scope: P1 metadata forgery closed via event side-channel proof
+  (`attach_proof_to_event`/`event_proof`, metadata display-only); P1 frame
+  legacy fallback deleted (sibling fields + raw payload never trusted); P1
+  proof allowlist + exact `WorkspaceIdentity` (no duck-typing, unknown
+  sources rejected, sole side-channel writer extended to event proof); P2
+  strict conversion (no silent `{}`); P2 frame safe-only (unsafe raises);
+  P2 unified error builders (no scattered `ToolResult`); P2 typed
+  `RecoverySlotResult` disposition (no text-prefix parsing, safe excerpts
+  with error prefixes stay `RECOVERED`); P2 exact non-negative unique
+  slots (no bool/negatives/duplicates); P2 settlement reconciliation
+  (executed+pending replays without re-execution, replays never rewrite
+  receipts, fresh denials still settle, per-turn `RecoveryContext`
+  snapshot); completion helpers moved to true owner with `_ProjectRun`
+  removed; loose fail-closed tests tightened to single `assertRaises`.
+- TDD: 10 new accurate-name locks
+  (`test_event_metadata_forgery_never_adopts_workspace` 3 cases,
+  `test_frame_legacy_workspace_fields_never_trusted` 2,
+  `test_trusted_proof_source_allowlist_rejected` 3,
+  `test_recovery_strict_conversion_no_silent_downgrade` 5,
+  `test_frame_unsafe_tools_rejected` 4,
+  `test_recovery_slot_disposition_typed` 2,
+  `test_recovered_rows_duplicate_slot_rejected` 5,
+  `test_intent_settlement_failure_reconciles_receipt` 2,
+  `test_recovery_error_builders_unified` 2,
+  `test_guarded_fresh_denial_settles_receipt` 2). All 24 forgery repros
+  failed before the fix and pass after; updated legacy locks
+  (`test_kernel_recovery_result_protocol`,
+  `test_delivered_from_frame_trust_boundary`,
+  `test_delivered_from_frame_preserves_recovery_metadata`,
+  `test_kernel_recovery_tristate`,
+  `test_kernel_recovery_error_aborts_batch_without_executor`) to the
+  safe-only contract; tightened 4 fail-closed tests to single raises;
+  extended `test_project_completion_split_lock` (true-owner imports, no
+  `_ProjectRun`) and `test_architecture` (event proof writer, context
+  trace-schema reader). During verification the new settlement path
+  exposed one deterministic bug (fresh guard denials no longer settled,
+  breaking the provider transition); fixed with receipt-preserving
+  settle/reconcile split and locked by the new guard test. Pre-checks
+  (`ruff`, `compileall`, `git diff --check`, targeted suites incl.
+  `test_architecture` 93) green before the full run.
+- Full run `python -m pytest -q`:
+  `5031 passed, 10 skipped, 1474 subtests passed in 347.31s (0:05:47)`.
+  Zero failures.
+- No release was made.
+
 ## Unified recovery protocol + settlement/tri-state + completion split (2026-09-29)
 
 - Scope: P1 audit never promotes to trusted (sanitize + kernel-owned

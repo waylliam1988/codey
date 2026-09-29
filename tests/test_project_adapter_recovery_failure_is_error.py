@@ -13,33 +13,24 @@ from unittest import mock
 
 
 class ProjectAdapterRecoveryFailureIsErrorTests(unittest.TestCase):
-    def test_builder_failure_is_not_half_recovered_success(self) -> None:
+    def test_builder_failure_raises_recovery_failed(self) -> None:
         from codey.operations import project_adapter as pa
+        from codey.operations.kernel_errors import RecoveryFailed
         from codey.runtime.core.models import ToolCall
         from codey.toolchain.runtime import ToolOutcome
 
-        call = ToolCall(name="edit", args={"path": "a.py", "content": "x\n"}, call_id="c1")
-        outcome = ToolOutcome("edited", True, audit={"changed": True}, changed=True)
+        call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
+        outcome = ToolOutcome("content", True, audit={})
         row = SimpleNamespace(call=call, outcome=outcome, turn=1, tool_index=0)
         with mock.patch(
             "codey.operations.kernel_result.build_recovered_tool_result",
             side_effect=RuntimeError("builder boom"),
         ):
-            try:
-                result = pa._recovered_result_for_row(row)
-            except Exception as exc:
-                from codey.operations.kernel_errors import RecoveryFailed
-
-                self.assertIsInstance(exc, RecoveryFailed, f"must be RecoveryFailed, got {type(exc).__name__}: {exc!r}")
-                self.assertTrue(
-                    any(token in str(exc).lower() for token in ("recovered", "rebuild", "provenance")),
-                    f"RecoveryFailed must mention recovered/rebuild/provenance, got {exc!r}",
-                )
-                return
-            text = str(getattr(result, "model_text", "") or "")
+            with self.assertRaises(RecoveryFailed) as ctx:
+                pa._recovered_result_for_row(row)
             self.assertTrue(
-                text.startswith("ERROR:"),
-                f"adapter recovery failure must be explicit ERROR, got {text!r}",
+                any(token in str(ctx.exception).lower() for token in ("recovered", "rebuild", "provenance")),
+                f"RecoveryFailed must mention recovered/rebuild/provenance, got {ctx.exception!r}",
             )
 
 

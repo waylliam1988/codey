@@ -209,11 +209,17 @@ def run(request: AgentRequest) -> RunResult:
     from codey.operations.kernel_errors import RecoveryFailed as _RecoveryFailed
 
     try:
+        from codey.operations.kernel_recovery_result import _strict_slot_index as _strict_idx
+
+        seen: set[tuple[int, int]] = set()
         for row in list(request.recovered_tool_outcomes or ()):
             if getattr(row, "call", None) is None or getattr(row, "outcome", None) is None:
                 raise _RecoveryFailed("malformed recovered row: missing call/outcome")
-            int(getattr(row, "turn", None))
-            int(getattr(row, "tool_index", None))
+            turn = _strict_idx(getattr(row, "turn", None), field="turn")
+            index = _strict_idx(getattr(row, "tool_index", None), field="tool_index")
+            if (turn, index) in seen:
+                raise _RecoveryFailed(f"duplicate recovered slot: turn={turn} index={index}")
+            seen.add((turn, index))
         recovered_sorted = sorted(
             list(request.recovered_tool_outcomes or ()),
             key=lambda item: (int(item.turn), int(item.tool_index)),

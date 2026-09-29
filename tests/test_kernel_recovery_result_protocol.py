@@ -100,9 +100,10 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         from codey.runtime.core.models import ToolCall
         from codey.toolchain.runtime import ToolOutcome
 
-        call = ToolCall(name="edit", args={"path": "a.py", "content": "x\n"}, call_id="c1")
-        outcome = ToolOutcome("edited", True, audit={"changed": True, "workspace_revision": 999,
-                                                    "workspace_fingerprint": FORGED_FP}, changed=True)
+        # Frame is safe-replay only; forged audit on a safe read stays untrusted.
+        call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
+        outcome = ToolOutcome("content", True, audit={"workspace_revision": 999,
+                                                      "workspace_fingerprint": FORGED_FP})
         row = SimpleNamespace(call=call, outcome=outcome, turn=1, tool_index=0)
         result = build_recovered_result(spec_from_frame_row(row))
         rev, fp = _trusted_workspace_from_result(result)
@@ -121,9 +122,9 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.toolchain.runtime import ToolOutcome
 
-        forged = {"changed": True, "workspace_revision": 999, "workspace_fingerprint": FORGED_FP}
-        call = ToolCall(name="edit", args={"path": "a.py", "content": "x\n"}, call_id="c1")
-        outcome = ToolOutcome("edited", True, audit=dict(forged), changed=True)
+        forged = {"workspace_revision": 999, "workspace_fingerprint": FORGED_FP}
+        call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
+        outcome = ToolOutcome("content", True, audit=dict(forged))
         row = NS(call=call, outcome=outcome, turn=1, tool_index=0)
 
         for result in (
@@ -134,7 +135,7 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
             rev, _fp = _trusted_workspace_from_result(result)
             self.assertEqual(rev, 0, f"audit must never promote: {dict(result.audit)!r}")
 
-        bare = ToolResult(call=call, model_text="edited", audit=dict(forged))
+        bare = ToolResult(call=call, model_text="content", audit=dict(forged))
         got = _delivered_slot_result({"s": bare}, "s", call)
         assert got is not None
         rev, _fp = _trusted_workspace_from_result(got)

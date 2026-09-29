@@ -4,16 +4,21 @@
 rebuilt from a persisted row. ``TrustedProvenance`` (revision/fingerprint)
 may only be attached after verification as ``TrustedWorkspaceProof``.
 
-All five recovery entries funnel through ``build_recovered_result``:
+All recovery entries funnel through ``build_recovered_result``; all
+recovery errors funnel through ``build_recovery_error_result`` /
+``build_recovery_mismatch_result`` (no scattered ``ToolResult(...)``):
 
-- ``recovery.delivered_from_frame``
+- ``recovery.delivered_from_frame`` (safe replay only)
 - ``task_entry._entry_recovery``
-- ``project_adapter._recovered_result_for_row``
-- ``kernel_recovery._replay_settled_slot``
-- ``kernel_recovery._delivered_slot_result``
+- ``project_adapter._recovered_result_for_row`` (safe replay only)
+- ``kernel_recovery`` replay/delivered slots
 
-Source adapters decide "can this be trusted"; the builder decides "how to
-construct". No entry derives trust from display audit.
+Frame recovery is safe-replay only: ``edit``/``run``/``shell`` rows raise
+``RecoveryFailed`` instead of building an unprovenanced success. Frame
+sibling ``workspace_revision``/``workspace_fingerprint`` fields and raw
+``workspace_identity`` payloads never become trusted; only verified
+adapters (bump, durable store, in-memory side-channel copy) create proofs.
+No entry derives trust from display audit or event metadata.
 """
 
 from __future__ import annotations
@@ -27,6 +32,8 @@ from codey.runtime.core.models import ToolCall, ToolResult
 __all__ = [
     "RecoveredResultSpec",
     "build_recovered_result",
+    "build_recovery_error_result",
+    "build_recovery_mismatch_result",
     "sanitize_recovery_audit",
     "spec_from_delivered_result",
     "spec_from_frame_row",
@@ -52,8 +59,10 @@ class RecoveredResultSpec:
 
 
 def sanitize_recovery_audit(audit: object) -> dict:
-    """Keep display fields; drop forgeable provenance keys.
+    """Keep display fields; drop forgeable provenance keys (strict).
 
+    Missing/``None`` audit uses ``{}``. A present-but-non-mapping audit
+    raises ``RecoveryFailed`` instead of silently becoming ``{}``.
     ``workspace_revision``/``workspace_fingerprint``/
     ``_kernel_workspace_trusted`` are never copied from recovery display.
     A verified proof re-adds the authoritative pair via
@@ -61,13 +70,43 @@ def sanitize_recovery_audit(audit: object) -> dict:
     """
     from codey.operations.kernel_provenance import _EXECUTOR_STRIPPED_AUDIT_KEYS
 
+    if audit is None:
+        return {}
+    if not isinstance(audit, dict):
+        raise RecoveryFailed(f"recovered audit must be a mapping, got {type(audit).__name__}")
     try:
-        source = dict(audit) if isinstance(audit, dict) else {}
+        source = dict(audit)
     except Exception as exc:
         raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
     for key in _EXECUTOR_STRIPPED_AUDIT_KEYS:
         source.pop(key, None)
     return source
+
+
+def _strict_display_mapping(value: object, *, field: str) -> dict:
+    """Strict display mapping: None/missing -> {}, non-mapping -> fail."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise RecoveryFailed(f"recovered {field} must be a mapping, got {type(value).__name__}")
+    try:
+        return dict(value)
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered {field} unreadable: {exc}") from exc
+
+
+def _strict_model_text(value: object) -> str:
+    try:
+        return str(value or "")
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered model_text unreadable: {exc}") from exc
+
+
+def _strict_truncated(value: object) -> bool:
+    try:
+        return bool(value)
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered truncated unreadable: {exc}") from exc
 
 
 def build_recovered_result(spec: RecoveredResultSpec) -> ToolResult:
@@ -78,14 +117,18 @@ def build_recovered_result(spec: RecoveredResultSpec) -> ToolResult:
     if getattr(spec, "call", None) is None:
         raise RecoveryFailed("recovered row missing call")
     audit = sanitize_recovery_audit(getattr(spec, "audit", None))
+    presentation = _strict_display_mapping(getattr(spec, "presentation", None), field="presentation")
+    canonical = _strict_display_mapping(getattr(spec, "canonical", None), field="canonical")
+    model_text = _strict_model_text(getattr(spec, "model_text", ""))
+    truncated = _strict_truncated(getattr(spec, "truncated", False))
     try:
         result = build_recovered_tool_result(
             spec.call,
-            model_text=getattr(spec, "model_text", ""),
+            model_text=model_text,
             audit=audit,
-            presentation=getattr(spec, "presentation", None),
-            canonical=getattr(spec, "canonical", None),
-            truncated=getattr(spec, "truncated", False),
+            presentation=presentation,
+            canonical=canonical,
+            truncated=truncated,
         )
     except RecoveryFailed:
         raise
@@ -97,6 +140,30 @@ def build_recovered_result(spec: RecoveredResultSpec) -> ToolResult:
     if bool(getattr(spec, "require_workspace_provenance", False)):
         raise RecoveryFailed("recovered result lacks verified workspace provenance")
     return result
+
+
+def build_recovery_error_result(call: ToolCall, message: str) -> ToolResult:
+    """Single constructor for recovery-failure errors (never success-like)."""
+    try:
+        return ToolResult(call=call, model_text=f"ERROR: recovery failed: {message}")
+    except Exception as exc:
+        raise RecoveryFailed(f"recovery error rebuild failed: {exc}") from exc
+
+
+def build_recovery_mismatch_result(call: ToolCall, expected: str, actual: str) -> ToolResult:
+    """Single constructor for recovery-mismatch errors (never success-like)."""
+    try:
+        return ToolResult(
+            call=call,
+            model_text=(
+                "ERROR: recovery mismatch for this turn slot: "
+                f"expected {expected or '?'} with args {actual or '?'}; "
+                "the prior settled result was for a different tool/args and must not be reused. "
+                "Stop this batch and re-issue the correct call."
+            ),
+        )
+    except Exception as exc:
+        raise RecoveryFailed(f"recovery mismatch rebuild failed: {exc}") from exc
 
 
 def _call_from_row_call(call: Any) -> ToolCall:
@@ -114,59 +181,72 @@ def _call_from_row_call(call: Any) -> ToolCall:
 
 def _row_text_fields(outcome: Any) -> tuple[Any, Any, Any, Any, Any]:
     try:
-        audit = getattr(outcome, "audit", {}) or {}
+        audit_raw = getattr(outcome, "audit", None)
     except Exception as exc:
         raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
     try:
-        presentation = getattr(outcome, "presentation", {}) or {}
+        presentation_raw = getattr(outcome, "presentation", None)
     except Exception as exc:
         raise RecoveryFailed(f"recovered presentation unreadable: {exc}") from exc
     try:
-        canonical = getattr(outcome, "canonical", {}) or {}
+        canonical_raw = getattr(outcome, "canonical", None)
     except Exception as exc:
         raise RecoveryFailed(f"recovered canonical unreadable: {exc}") from exc
     try:
-        truncated = bool(getattr(outcome, "truncated", False))
-        model_text = str(getattr(outcome, "model_text", "") or "")
+        truncated = _strict_truncated(getattr(outcome, "truncated", False))
+        model_text = _strict_model_text(getattr(outcome, "model_text", ""))
+    except RecoveryFailed:
+        raise
     except Exception as exc:
         raise RecoveryFailed(f"recovered outcome unreadable: {exc}") from exc
-    # edit changed flag: row outcome knows it, display audit may not.
-    try:
-        audit_dict = dict(audit) if isinstance(audit, dict) else {}
-    except Exception:
-        audit_dict = {}
+    audit_dict = sanitize_recovery_audit(audit_raw)
+    presentation = _strict_display_mapping(presentation_raw, field="presentation")
+    canonical = _strict_display_mapping(canonical_raw, field="canonical")
     return audit_dict, presentation, canonical, truncated, model_text
 
 
-def spec_from_frame_row(item: Any, *, changed_fallback: bool = False) -> RecoveredResultSpec:
-    """Adapter for ``RecoveredToolOutcome``-shaped rows (frame/delivery).
+def _strict_slot_index(value: Any, *, field: str) -> int:
+    """Strict slot index: exact int, non-bool, non-negative."""
+    if type(value) is not int:
+        raise RecoveryFailed(f"malformed {field}: must be exact int, got {type(value).__name__}")
+    if value < 0:
+        raise RecoveryFailed(f"malformed {field}: must be >= 0, got {value}")
+    return value
 
-    Trust comes only from the kernel-owned ``workspace_identity`` payload
-    carried beside audit; display audit never confers trust. When the payload
-    is present but only format-valid, it still needs a durable check by the
-    caller: this adapter wraps it as a proof with source
-    ``frame_kernel_payload`` only when the caller has already decided the
-    frame itself is kernel-owned (in-memory recovery). Persisted frames must
-    verify via the store before calling the builder.
+
+def spec_from_frame_row(item: Any) -> RecoveredResultSpec:
+    """Adapter for ``RecoveredToolOutcome``-shaped rows (safe replay only).
+
+    Frame recovery never carries trusted workspace provenance: legacy
+    sibling ``workspace_revision``/``workspace_fingerprint`` fields and raw
+    ``workspace_identity`` payloads are ignored (display only). Unsafe tools
+    (``edit``/``run``/``shell``) raise ``RecoveryFailed`` instead of
+    building an unprovenanced success.
     """
     call = getattr(item, "call", None)
     outcome = getattr(item, "outcome", None)
     if call is None or outcome is None:
         raise RecoveryFailed("recovered row missing call/outcome")
     try:
-        int(getattr(item, "turn", None))
-        int(getattr(item, "tool_index", None))
+        _strict_slot_index(getattr(item, "turn", None), field="turn")
+        _strict_slot_index(getattr(item, "tool_index", None), field="tool_index")
+    except RecoveryFailed:
+        raise
     except Exception as exc:
         raise RecoveryFailed(f"malformed turn/index: {exc}") from exc
     call_obj = _call_from_row_call(call)
-    audit_dict, presentation, canonical, truncated, model_text = _row_text_fields(outcome)
-    # edit changed補完: outcome.changed is the source, not audit guess.
     try:
-        if str(getattr(call, "name", "") or "") == "edit" and "changed" not in (audit_dict or {}):
-            audit_dict["changed"] = bool(getattr(outcome, "changed", changed_fallback))
+        from codey.operations.kernel_recovery import _is_unsafe_tool
+
+        if _is_unsafe_tool(str(getattr(call_obj, "name", "") or "")):
+            raise RecoveryFailed(
+                f"frame recovery forbids unsafe tool: {getattr(call_obj, 'name', '?')}"
+            )
+    except RecoveryFailed:
+        raise
     except Exception as exc:
-        raise RecoveryFailed(f"recovered changed unreadable: {exc}") from exc
-    proof = _proof_from_kernel_payload(item)
+        raise RecoveryFailed(f"frame tool class unreadable: {exc}") from exc
+    audit_dict, presentation, canonical, truncated, model_text = _row_text_fields(outcome)
     return RecoveredResultSpec(
         call=call_obj,
         model_text=model_text,
@@ -174,40 +254,15 @@ def spec_from_frame_row(item: Any, *, changed_fallback: bool = False) -> Recover
         presentation=presentation,
         canonical=canonical,
         truncated=truncated,
-        trusted_workspace=proof,
+        trusted_workspace=None,
     )
-
-
-def _proof_from_kernel_payload(item: Any) -> Any | None:
-    """Extract a verified proof from the kernel-owned row payload only."""
-    from codey.operations.kernel_provenance import TrustedWorkspaceProof
-
-    payload = getattr(item, "workspace_identity", None)
-    # Legacy shape: separate kernel-owned revision/fingerprint fields beside audit.
-    if payload is None:
-        rev = getattr(item, "workspace_revision", None)
-        fp = getattr(item, "workspace_fingerprint", None)
-        if rev is None and fp is None:
-            return None
-        try:
-            from codey.workspace.revision import WorkspaceIdentity
-
-            payload = WorkspaceIdentity.trusted_pair(rev, fp)
-        except Exception:
-            return None
-    try:
-        trusted = bool(getattr(payload, "trusted", False))
-    except Exception:
-        return None
-    if not trusted:
-        return None
-    return TrustedWorkspaceProof(identity=payload, source="frame_kernel_payload")
 
 
 def spec_from_memory_result(stored: ToolResult, call: ToolCall) -> RecoveredResultSpec:
     """Adapter for in-memory settled results (side-channel copy only)."""
     from codey.operations.kernel_provenance import (
         TrustedWorkspaceProof,
+        _is_trusted_identity,
         _kernel_workspace_identity_of,
     )
 
@@ -217,24 +272,29 @@ def spec_from_memory_result(stored: ToolResult, call: ToolCall) -> RecoveredResu
         identity = None
     proof = (
         TrustedWorkspaceProof(identity=identity, source="in_memory_kernel_result")
-        if identity is not None and bool(getattr(identity, "trusted", False))
+        if identity is not None and _is_trusted_identity(identity)
         else None
     )
     try:
-        audit = dict(getattr(stored, "audit", {}) or {})
+        audit_raw = getattr(stored, "audit", None)
     except Exception as exc:
         raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
     try:
-        presentation = dict(getattr(stored, "presentation", {}) or {})
-    except Exception:
-        presentation = {}
+        presentation_raw = getattr(stored, "presentation", None)
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered presentation unreadable: {exc}") from exc
     try:
-        canonical = dict(getattr(stored, "canonical", {}) or {})
-    except Exception:
-        canonical = {}
+        canonical_raw = getattr(stored, "canonical", None)
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered canonical unreadable: {exc}") from exc
+    audit = sanitize_recovery_audit(audit_raw)
+    presentation = _strict_display_mapping(presentation_raw, field="presentation")
+    canonical = _strict_display_mapping(canonical_raw, field="canonical")
     try:
-        truncated = bool(getattr(stored, "truncated", False))
-        model_text = str(getattr(stored, "model_text", "") or "")
+        truncated = _strict_truncated(getattr(stored, "truncated", False))
+        model_text = _strict_model_text(getattr(stored, "model_text", ""))
+    except RecoveryFailed:
+        raise
     except Exception as exc:
         raise RecoveryFailed(f"recovered outcome unreadable: {exc}") from exc
     return RecoveredResultSpec(
@@ -256,10 +316,10 @@ def spec_from_persisted_record(
     require_provenance: bool = False,
 ) -> RecoveredResultSpec:
     """Adapter for persisted ``executed`` records (verified identity only)."""
-    from codey.operations.kernel_provenance import TrustedWorkspaceProof
+    from codey.operations.kernel_provenance import TrustedWorkspaceProof, _is_trusted_identity
 
     proof = None
-    if verified_identity is not None and bool(getattr(verified_identity, "trusted", False)):
+    if verified_identity is not None and _is_trusted_identity(verified_identity):
         proof = TrustedWorkspaceProof(identity=verified_identity, source="persisted_revision_store")
     try:
         excerpt = str(record.get("excerpt", "") or "") if isinstance(record, dict) else ""

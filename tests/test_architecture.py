@@ -1827,10 +1827,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             )
             if hits:
                 readers[rel] = hits
-        # project_completion_flow only borrows two numeric limits, never
-        # Trace state; everything else must go through trace.py.
+        # Completion helpers only borrow two numeric limits, never Trace
+        # state; everything else must go through trace.py. The flow keeps
+        # re-exports for external API, the true owner is the context.
         allowed_readers = {
-            "codey/operations/project_completion_flow.py": [
+            "codey/operations/project_completion_context.py": [
                 "codey.runs.trace_schema"
             ],
         }
@@ -2072,11 +2073,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("run_task_submission(", submit_source)
 
     def test_only_kernel_provenance_writes_trusted_side_channel(self) -> None:
-        # Trust boundary: ``_KERNEL_WORKSPACE_ATTR`` is kernel-owned. Only
-        # ``kernel_provenance.py`` may attach it via ``object.__setattr__``;
-        # recovery/delivery paths must go through its verified API instead of
-        # re-deriving trust from display audit. AST-based so string tricks
-        # cannot smuggle a direct write past a grep.
+        # Trust boundary: ``_KERNEL_WORKSPACE_ATTR`` and the event proof
+        # attribute are kernel-owned. Only ``kernel_provenance.py`` may attach
+        # them via ``object.__setattr__``; recovery/delivery/event paths must
+        # go through its verified API instead of re-deriving trust from
+        # display audit or event metadata. AST-based so string tricks cannot
+        # smuggle a direct write past a grep.
         offenders: list[str] = []
         for path in sorted((ROOT / "codey" / "operations").glob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -2098,9 +2100,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     src = ast.unparse(node)
                 except Exception:
                     src = ""
-                if ("_KERNEL_WORKSPACE_ATTR" in src or "_kernel_workspace_identity" in src) and (
-                    path.name != "kernel_provenance.py"
-                ):
+                if (
+                    "_KERNEL_WORKSPACE_ATTR" in src
+                    or "_kernel_workspace_identity" in src
+                    or "_EVENT_PROOF_ATTR" in src
+                    or "_kernel_workspace_proof" in src
+                ) and (path.name != "kernel_provenance.py"):
                     offenders.append(path.relative_to(ROOT).as_posix())
                     break
         self.assertEqual(offenders, [])

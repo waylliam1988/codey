@@ -58,39 +58,28 @@ class EntryRecoveryFailClosedTests(unittest.TestCase):
         with self.assertRaises(RecoveryFailed):
             te._entry_recovery(frame, session)
 
-    def test_recovery_builder_failure_is_explicit_error_not_bare_success(self) -> None:
+    def test_recovery_builder_failure_raises_recovery_failed(self) -> None:
         from codey.operations import task_entry as te
+        from codey.operations.kernel_errors import RecoveryFailed
         from codey.operations.task_session import TaskSession
 
         session = TaskSession(policy=_policy(), task_kind="project", project="p", max_turns=4)
         frame = SimpleNamespace(
             run_id="r-entry-fail-3",
-            recovered_tool_outcomes=(_row(1, 0),),
+            recovered_tool_outcomes=(_row(1, 0, name="read_file"),),
         )
         with mock.patch(
             "codey.operations.kernel_result.build_recovered_tool_result",
             side_effect=RuntimeError("builder boom"),
         ):
-            # Builder outage is a recovery failure: either raise typed
-            # RecoveryFailed or return explicit ERROR results (never bare
-            # success, never empty success, executor never called).
-            from codey.operations.kernel_errors import RecoveryFailed
-
-            try:
-                _delivered, _rows, _resume, initial = te._entry_recovery(frame, session)
-            except RecoveryFailed as exc:
-                self.assertTrue(
-                    any(token in str(exc).lower() for token in ("recovered", "rebuild", "provenance", "recovery")),
-                    f"RecoveryFailed must mention recovery, got {exc!r}",
-                )
-                return
-            self.assertTrue(initial, "builder failure must not yield empty success list")
-            for result in initial:
-                text = str(getattr(result, "model_text", "") or "")
-                self.assertTrue(
-                    text.startswith("ERROR:"),
-                    f"builder failure must be explicit ERROR, got {text!r}",
-                )
+            # Builder outage is a typed recovery failure; the entry never
+            # returns bare success and never invokes executors.
+            with self.assertRaises(RecoveryFailed) as ctx:
+                te._entry_recovery(frame, session)
+            self.assertTrue(
+                any(token in str(ctx.exception).lower() for token in ("recovered", "rebuild", "provenance", "recovery")),
+                f"RecoveryFailed must mention recovery, got {ctx.exception!r}",
+            )
 
 
 if __name__ == "__main__":

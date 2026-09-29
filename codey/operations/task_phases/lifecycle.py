@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from codey.operations.context import RunWork
-from codey.operations.project_completion_flow import MAX_COMPLETION_REPAIR_ROUNDS
+from codey.operations.project_completion_context import MAX_COMPLETION_REPAIR_ROUNDS
 from codey.operations.task_state import TaskState
 from codey.runs.ledger import LedgerWriteFailed
 from codey.runtime.core.operation_state import RuntimeOperationTransitionError

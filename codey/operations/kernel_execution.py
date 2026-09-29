@@ -23,13 +23,12 @@ from codey.operations.kernel_provenance import (
     sync_workspace_state_after_edit,
 )
 from codey.operations.kernel_recovery import (
+    RecoveryContext,
     _batch_aborted_results,
     _batch_recovery_failed_results,
     _check_batch_recovery,
-    _delivered_slot_result,
     _guarded_slot_result,
-    _is_recovery_failed_text,
-    _is_recovery_mismatch_text,
+    delivered_slot_typed,
 )
 from codey.operations.kernel_result import (
     _call_args_digest,
@@ -230,6 +229,64 @@ def execute_turn(
     """
 
     runnable = dict(executors or {})
+    active_turn, base_index, run_ref_str, identity_ref, delivered_map, ignores, recovery_ctx = (
+        _turn_setup(
+            session, calls, run_id, effect_scope, turn, tool_index_base,
+            delivered, workspace_ignored_paths, project_path, workspace_revision_store,
+        )
+    )
+    # Tri-state pre-check before begin_turn: MISMATCH and FAILED both abort
+    # without side effects and without invoking any executor.
+    abort = _precheck_abort(
+        session, calls, delivered_map, identity_ref, active_turn, base_index,
+        project_path, workspace_revision_store, ignores, recovery_ctx,
+    )
+    if abort is not None:
+        return abort
+
+    import contextlib as _contextlib
+
+    def settle(identity: str, call: ToolCall, result: ToolResult, ok: bool) -> None:
+        _settle_slot(session, identity, call, result, ok=ok)
+        with _contextlib.suppress(Exception):
+            session._memory_results[identity] = result
+        if intent_sink is not None:
+            intent_sink.settle(identity, bool(ok))
+
+    def reconcile_intent_only(identity: str, ok: bool) -> None:
+        # Already-durable replay: never rewrite ``session.executed``, only
+        # the intent settlement so a prior ``settle`` outage cannot cause
+        # a second unsafe execution.
+        if intent_sink is None:
+            return
+        with _contextlib.suppress(Exception):
+            intent_sink.settle(identity, bool(ok))
+
+    delegate = _build_delegate(
+        session,
+        project_path,
+        tool_fns,
+        research_tools,
+        change_tracker,
+        managed_outputs,
+        session_id,
+        run_ref_str,
+        permission_profile,
+    )
+    _begin_pending_intents(intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index)
+    return _execute_slots(
+        session, calls, runnable, delegate, identity_ref, active_turn, base_index,
+        delivered_map, intent_sink, controller_allowed, project_path,
+        workspace_ignored_paths, ignores, recovery_ctx, workspace_revision_store,
+        execution_evidence, settle, reconcile_intent_only,
+    )
+
+
+def _turn_setup(
+    session: TaskSession, calls: list[ToolCall], run_id: object, effect_scope: str,
+    turn: object | None, tool_index_base: object, delivered: Mapping[str, ToolResult] | None,
+    workspace_ignored_paths: Any, project_path: Any, workspace_revision_store: Any,
+) -> tuple[int, int, str, str, dict[str, ToolResult], tuple[str, ...], RecoveryContext]:
     try:
         active_turn = int(turn) if turn is not None else int(session.turn or 0)
     except (TypeError, ValueError):
@@ -245,56 +302,106 @@ def execute_turn(
         ignores = tuple(str(p) for p in (workspace_ignored_paths or ())) if workspace_ignored_paths else ()
     except Exception:
         ignores = ()
-    # Tri-state pre-check before begin_turn: MISMATCH and FAILED both abort
-    # without side effects and without invoking any executor. FAILED keeps
-    # its recovery message instead of being relabeled as mismatch.
-    if calls:
-        check = _check_batch_recovery(
-            session,
-            list(calls),
-            delivered_map,
-            identity_ref or "adhoc",
-            active_turn,
-            base_index,
-            project_path=project_path,
-            revision_store=workspace_revision_store,
-            ignored_paths=ignores,
-        )
-        if check.kind == "MISMATCH":
-            return _batch_aborted_results(list(calls))
-        if check.kind == "FAILED":
-            return _batch_recovery_failed_results(list(calls), check.message or "recovery check failed")
-
-    import contextlib as _contextlib
-
-    def settle(identity: str, call: ToolCall, result: ToolResult, ok: bool) -> None:
-        _settle_slot(session, identity, call, result, ok=ok)
-        with _contextlib.suppress(Exception):
-            session._memory_results[identity] = result
-        if intent_sink is not None:
-            intent_sink.settle(identity, bool(ok))
-
-    results: list[ToolResult] = []
-    delegate = _build_delegate(
-        session,
-        project_path,
-        tool_fns,
-        research_tools,
-        change_tracker,
-        managed_outputs,
-        session_id,
-        run_ref_str,
-        permission_profile,
+    recovery_ctx = RecoveryContext(
+        project_path=project_path,
+        revision_store=workspace_revision_store,
+        ignored_paths=ignores,
     )
-    if intent_sink is not None and calls:
-        pending_items = [
-            (turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset), call, base_index + offset)
-            for offset, call in enumerate(calls)
-            if turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset) not in delivered_map
-            and turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset) not in session.executed
-        ]
-        if pending_items:
-            intent_sink.begin_turn(pending_items, turn=active_turn)
+    return active_turn, base_index, run_ref_str, identity_ref, delivered_map, ignores, recovery_ctx
+
+
+def _precheck_abort(
+    session: TaskSession, calls: list[ToolCall], delivered_map: dict[str, ToolResult],
+    identity_ref: str, active_turn: int, base_index: int, project_path: Any,
+    workspace_revision_store: Any, ignores: tuple[str, ...], recovery_ctx: RecoveryContext,
+) -> list[ToolResult] | None:
+    if not calls:
+        return None
+    check = _check_batch_recovery(
+        session, list(calls), delivered_map, identity_ref or "adhoc",
+        active_turn, base_index, project_path=project_path,
+        revision_store=workspace_revision_store, ignored_paths=ignores,
+        recovery_ctx=recovery_ctx,
+    )
+    if check.kind == "MISMATCH":
+        return _batch_aborted_results(list(calls))
+    if check.kind == "FAILED":
+        return _batch_recovery_failed_results(list(calls), check.message or "recovery check failed")
+    return None
+
+
+def _begin_pending_intents(
+    intent_sink: Any, calls: list[ToolCall], session: TaskSession,
+    delivered_map: dict[str, ToolResult], identity_ref: str, active_turn: int, base_index: int,
+) -> None:
+    if intent_sink is None or not calls:
+        return
+    pending_items = [
+        (turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset), call, base_index + offset)
+        for offset, call in enumerate(calls)
+        if turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset) not in delivered_map
+        and turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset) not in session.executed
+    ]
+    if pending_items:
+        intent_sink.begin_turn(pending_items, turn=active_turn)
+
+
+def _settle_delivered_slot(
+    delivered_map: dict[str, ToolResult], identity: str, call: ToolCall,
+    settle: Any, results: list[ToolResult],
+) -> bool:
+    slot = delivered_slot_typed(delivered_map, identity, call)
+    if slot.disposition == "NO_MATCH":
+        return False
+    assert slot.result is not None
+    settle(identity, call, slot.result, ok=slot.disposition == "RECOVERED")
+    results.append(slot.result)
+    return True
+
+
+def _reconcile_guarded_slot(
+    session: TaskSession, identity: str, call: ToolCall, name: str, active_turn: int,
+    project_path: Any, workspace_revision_store: Any, ignores: tuple[str, ...],
+    recovery_ctx: RecoveryContext, reconcile_intent_only: Any, settle: Any,
+    guarded: ToolResult,
+) -> None:
+    """Settle or reconcile one guarded result without losing receipts.
+
+    Fresh guard errors (policy/controller/skip with no durable receipt) are
+    settled as errors so intents close. Already-durable replays never rewrite
+    ``session.executed``; successful replays only reconcile the intent.
+    """
+    try:
+        from codey.operations.kernel_recovery import replay_slot_typed as _replay_typed
+
+        slot = _replay_typed(
+            session, identity, call, name, active_turn, project_path=project_path,
+            revision_store=workspace_revision_store, ignored_paths=ignores,
+            recovery_ctx=recovery_ctx,
+        )
+    except Exception:
+        return
+    if slot.disposition == "NO_MATCH":
+        with contextlib.suppress(Exception):
+            settle(identity, call, guarded, ok=False)
+        return
+    if slot.disposition == "RECOVERED":
+        try:
+            orig_ok = bool((session.executed.get(identity) or {}).get("ok", True))
+        except Exception:
+            orig_ok = True
+        reconcile_intent_only(identity, ok=orig_ok)
+
+
+def _execute_slots(
+    session: TaskSession, calls: list[ToolCall], runnable: dict[str, Any], delegate: Any,
+    identity_ref: str, active_turn: int, base_index: int, delivered_map: dict[str, ToolResult],
+    intent_sink: Any, controller_allowed: Any, project_path: Any,
+    workspace_ignored_paths: Any, ignores: tuple[str, ...], recovery_ctx: RecoveryContext,
+    workspace_revision_store: Any, execution_evidence: Any, settle: Any,
+    reconcile_intent_only: Any,
+) -> list[ToolResult]:
+    results: list[ToolResult] = []
     workspace_unconfirmed = False
     for offset, call in enumerate(calls or []):
         name = str(getattr(call, "name", "") or "").strip().lower()
@@ -308,63 +415,36 @@ def execute_turn(
             settle(identity, call, blocked, ok=False)
             results.append(blocked)
             continue
-        delivered_hit = _delivered_slot_result(delivered_map, identity, call)
-        if delivered_hit is not None:
-            text = str(getattr(delivered_hit, "model_text", "") or "")
-            failed = _is_recovery_failed_text(text) or text.startswith("ERROR: persisted unsafe")
-            mismatch = _is_recovery_mismatch_text(text)
-            settle(identity, call, delivered_hit, ok=not (mismatch or failed))
-            results.append(delivered_hit)
+        if _settle_delivered_slot(delivered_map, identity, call, settle, results):
             continue
         guarded = _guarded_slot_result(
-            session,
-            identity,
-            call,
-            name,
-            active_turn,
-            intent_sink,
-            controller_allowed,
-            project_path=project_path,
-            revision_store=workspace_revision_store,
-            ignored_paths=ignores,
+            session, identity, call, name, active_turn, intent_sink, controller_allowed,
+            project_path=project_path, revision_store=workspace_revision_store,
+            ignored_paths=ignores, recovery_ctx=recovery_ctx,
         )
         if guarded is not None:
-            text = str(getattr(guarded, "model_text", "") or "")
-            if text.startswith("ERROR: recovery mismatch") or text.startswith("ERROR:"):
-                settle(identity, call, guarded, ok=False)
-            # Settled replay successes are already stored; do not re-settle.
+            # Fresh guard errors settle inside the helper; already-durable
+            # replays only reconcile the intent and never rewrite the receipt.
+            _reconcile_guarded_slot(
+                session, identity, call, name, active_turn, project_path,
+                workspace_revision_store, ignores, recovery_ctx, reconcile_intent_only,
+                settle, guarded,
+            )
             results.append(guarded)
             continue
         result, ok, opened, evidence, exit_code, _handled = _run_via_delegate_or_fn(
-            delegate,
-            runnable,
-            session,
-            call,
-            name,
-            active_turn=active_turn,
-            tool_index=base_index + offset,
-            project_path=project_path,
+            delegate, runnable, session, call, name, active_turn=active_turn,
+            tool_index=base_index + offset, project_path=project_path,
         )
         # Single settlement per effect: edits defer settlement until the
-        # authoritative bump decides the final result. Settling ok=True first
-        # and then ok=False on bump failure double-settles the same effect
-        # and the durable ledger raises "effect already settled".
+        # authoritative bump decides the final result.
         edit_done = _settle_edit_with_workspace_bump(
-            session,
-            identity,
-            call,
-            name,
-            result,
-            ok,
-            opened=opened,
-            evidence=evidence,
-            exit_code=exit_code,
-            project_path=project_path,
+            session, identity, call, name, result, ok, opened=opened,
+            evidence=evidence, exit_code=exit_code, project_path=project_path,
             execution_evidence=execution_evidence,
             workspace_ignored_paths=workspace_ignored_paths,
             workspace_revision_store=workspace_revision_store,
-            settle=settle,
-            results=results,
+            settle=settle, results=results,
         )
         if edit_done is not None:
             if edit_done == "unconfirmed":

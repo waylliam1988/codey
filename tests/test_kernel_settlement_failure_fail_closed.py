@@ -36,7 +36,8 @@ class KernelSettlementFailureFailClosedTests(unittest.TestCase):
             _settle_slot(session, "slot-1", call, result, ok=True)
         self.assertIn("settlement", str(ctx.exception).lower())
 
-    def test_settlement_failure_blocks_batch_as_provider_failure(self) -> None:
+    def test_settlement_failure_raises_settlement_error(self) -> None:
+        from codey.operations.kernel_errors import EffectSettlementFailed
         from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -52,23 +53,15 @@ class KernelSettlementFailureFailClosedTests(unittest.TestCase):
                 raise RuntimeError("durable receipt boom")
 
         session.executed = BoomDict()  # type: ignore[assignment]
-        # Settlement outage must not return a bare success; execute_turn must
-        # surface it (raise for the loop to map to provider_failure, or
-        # return explicit ERROR). Executor already ran, so the batch must not
-        # continue as if settled.
-        try:
-            results = execute_turn(
+        # Durable receipt outage after execution must raise typed
+        # EffectSettlementFailed so the loop maps it to provider_failure;
+        # it must never return bare success.
+        with self.assertRaises(EffectSettlementFailed):
+            execute_turn(
                 session, [call],
                 executors={"read_file": fake_read},
                 run_id="r-settle-fail-1", effect_scope="task", turn=1,
             )
-        except Exception as exc:
-            from codey.operations.kernel_errors import EffectSettlementFailed
-
-            self.assertIsInstance(exc, EffectSettlementFailed)
-            return
-        text = str(results[0].model_text or "")
-        self.assertTrue(text.startswith("ERROR:"), f"settlement failure must be ERROR, got {text!r}")
 
     def test_memory_cache_failure_stays_tolerant(self) -> None:
         """Process-local _memory_results is a cache: its failure never blocks."""

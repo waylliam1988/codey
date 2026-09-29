@@ -51,7 +51,7 @@ class KernelRecoveryTriStateTests(unittest.TestCase):
         session = TaskSession(policy=_policy(), task_kind="project", project="p", max_turns=4)
         call = ToolCall(name="edit", args={"path": "a.py", "content": "x\n"}, call_id="c1")
         with mock.patch(
-            "codey.operations.kernel_recovery._delivered_slot_result",
+            "codey.operations.kernel_recovery.delivered_slot_typed",
             side_effect=RuntimeError("delivery boom"),
         ):
             result = _check_batch_recovery(session, [call], {"k": mock.MagicMock()}, "r-tri-3", 1, 0)
@@ -74,10 +74,10 @@ class KernelRecoveryTriStateTests(unittest.TestCase):
             return ToolResult(call=_c, model_text="edited")
 
         with mock.patch(
-            "codey.operations.kernel_recovery._delivered_slot_result",
+            "codey.operations.kernel_recovery.delivered_slot_typed",
             side_effect=RuntimeError("delivery boom"),
         ), mock.patch(
-            "codey.operations.kernel_execution._delivered_slot_result",
+            "codey.operations.kernel_execution.delivered_slot_typed",
             side_effect=RuntimeError("delivery boom"),
         ):
             # Pre-check outage with a non-empty delivered map must fail the

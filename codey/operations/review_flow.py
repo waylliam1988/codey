@@ -8,7 +8,7 @@ from pathlib import Path
 
 from codey.completion.edit_scope import changed_paths_from_changes
 from codey.operations.context import RunFrame
-from codey.operations.project_completion_flow import record_review_input_prepared_trace
+from codey.operations.project_completion_context import record_review_input_prepared_trace
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState
 from codey.reviews.core import has_reviewable_changes

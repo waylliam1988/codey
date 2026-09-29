@@ -6,6 +6,7 @@ These helpers format and emit only; they never decide, send, or execute.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from typing import Any
 
@@ -129,10 +130,16 @@ def _emit_tool_results(
                 # _with_trusted_workspace_state may be carried. Raw audit
                 # workspace keys are executor-forgeable and never trusted;
                 # the no-store path never sets the side-channel so it never
-                # emits trusted state and hooks must bump.
+                # emits trusted state and hooks must bump. Metadata keys are
+                # display/logging only; the authoritative proof travels in
+                # the event side-channel read by hooks via ``event_proof``.
                 if canonical_name == "edit" and ok and changed:
                     try:
-                        from codey.operations.kernel_provenance import _kernel_workspace_identity_of
+                        from codey.operations.kernel_provenance import (
+                            TrustedWorkspaceProof,
+                            _kernel_workspace_identity_of,
+                            attach_proof_to_event,
+                        )
 
                         kernel_identity = _kernel_workspace_identity_of(result)
                         trusted = kernel_identity is not None
@@ -140,11 +147,16 @@ def _emit_tool_results(
                         kernel_identity = None
                         trusted = False
                     if trusted:
-                        try:
+                        with contextlib.suppress(Exception):
                             event.metadata["workspace_revision"] = int(kernel_identity.revision)
                             event.metadata["workspace_fingerprint"] = str(kernel_identity.fingerprint)
-                        except Exception:
-                            pass
+                        with contextlib.suppress(Exception):
+                            attach_proof_to_event(
+                                event,
+                                TrustedWorkspaceProof(
+                                    identity=kernel_identity, source="event_side_channel"
+                                ),
+                            )
         except Exception:
             pass
         on_event(event)

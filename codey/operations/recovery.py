@@ -355,33 +355,45 @@ def _settle_interrupted(
 
 
 def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any]:
-    """Rebuild durable delivery map from recovered frame rows (recovery module).
+    """Rebuild durable delivery map from recovered frame rows (safe only).
 
     Identity is run+turn+index, never tool name+args. Every row goes through
-    the single ``build_recovered_result`` protocol: display audit is sanitized
-    (provenance keys dropped) and trust comes only from the kernel-owned
-    ``workspace_identity`` payload beside audit. Audit display alone never
-    confers the trusted side-channel. Malformed rows raise ``RecoveryFailed``.
+    the single ``build_recovered_result`` protocol with strict turn/index
+    (exact non-negative ints, no bool, no duplicates). Frame recovery is
+    safe-replay only and carries no trusted provenance. Malformed,
+    duplicate, or unsafe rows raise ``RecoveryFailed``.
     """
     from codey.operations.kernel_errors import RecoveryFailed
 
     try:
-        from codey.operations.kernel_recovery_result import build_recovered_result, spec_from_frame_row
+        from codey.operations.kernel_recovery_result import (
+            _strict_slot_index,
+            build_recovered_result,
+            spec_from_frame_row,
+        )
         from codey.operations.task_session import turn_effect_id
     except Exception as exc:
         raise RecoveryFailed(f"recovery rebuild unavailable: {exc}") from exc
     delivered: dict[str, Any] = {}
+    seen: set[tuple[int, int]] = set()
     for item in getattr(frame, "recovered_tool_outcomes", ()) or ():
         try:
             try:
-                turn = int(getattr(item, "turn", None))
-                index = int(getattr(item, "tool_index", None))
+                turn = _strict_slot_index(getattr(item, "turn", None), field="turn")
+                index = _strict_slot_index(getattr(item, "tool_index", None), field="tool_index")
+            except RecoveryFailed:
+                raise
             except Exception as exc:
                 raise RecoveryFailed(f"malformed turn/index: {exc}") from exc
+            if (turn, index) in seen:
+                raise RecoveryFailed(f"duplicate recovered slot: turn={turn} index={index}")
+            seen.add((turn, index))
             spec = spec_from_frame_row(item)
             rebuilt = build_recovered_result(spec)
             identity_ref = f"{frame.run_id}:{effect_scope}" if effect_scope else frame.run_id
             identity = turn_effect_id(identity_ref, turn, index)
+            if identity in delivered:
+                raise RecoveryFailed(f"duplicate recovered slot: turn={turn} index={index}")
             delivered[identity] = rebuilt
         except RecoveryFailed:
             raise

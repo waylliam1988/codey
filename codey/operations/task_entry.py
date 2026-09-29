@@ -168,13 +168,18 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
 
 def _validate_recovered_rows(raw_rows: list[Any]) -> None:
     from codey.operations.kernel_errors import RecoveryFailed
+    from codey.operations.kernel_recovery_result import _strict_slot_index
 
+    seen: set[tuple[int, int]] = set()
     for row in raw_rows:
         try:
             if getattr(row, "call", None) is None or getattr(row, "outcome", None) is None:
-                raise ValueError("missing call/outcome")
-            int(getattr(row, "turn", None))
-            int(getattr(row, "tool_index", None))
+                raise RecoveryFailed("missing call/outcome")
+            turn = _strict_slot_index(getattr(row, "turn", None), field="turn")
+            index = _strict_slot_index(getattr(row, "tool_index", None), field="tool_index")
+            if (turn, index) in seen:
+                raise RecoveryFailed(f"duplicate recovered slot: turn={turn} index={index}")
+            seen.add((turn, index))
         except RecoveryFailed:
             raise
         except Exception as exc:
