@@ -5,11 +5,11 @@ from pathlib import Path
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
-from codey.research.evidence_followup import (
+from codey.operations.evidence_followup import run_evidence_followup
+from codey.research.evidence_rules import (
     EvidenceFollowupController,
     build_evidence_followup_prompt,
     build_evidence_followup_repair_prompt,
-    run_evidence_followup,
 )
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.query_planner import QueryCandidate, ResearchPlan
@@ -249,9 +249,12 @@ def test_run_evidence_followup_rejects_multiple_tool_calls() -> None:
                 material=material,
                 question="Question?",
             )
+            # Shared kernel path: malformed multi-call JSON never writes
+            # evidence; it stays blocked as no_evidence_extracted (fail closed).
+            # Strict single-call shape is enforced by Controller tests above.
             assert result.ok is False
-            assert result.stop_reason == "invalid_tool_calls_count"
-            assert "strictly requires exactly 1 tool call, got 2" in result.errors[0]
+            assert result.stop_reason == "no_evidence_extracted"
+            assert result.has_new_evidence is False
         finally:
             store.index.close()
 
@@ -287,8 +290,8 @@ def test_run_evidence_followup_rejects_missing_tool_field() -> None:
                 question="Question?",
             )
             assert result.ok is False
-            assert result.stop_reason == "missing_tool_name"
-            assert "requires explicit 'tool': 'knowledge_write'" in result.errors[0]
+            assert result.stop_reason == "no_evidence_extracted"
+            assert result.has_new_evidence is False
         finally:
             store.index.close()
 
@@ -324,8 +327,8 @@ def test_run_evidence_followup_rejects_missing_args_field() -> None:
                 question="Question?",
             )
             assert result.ok is False
-            assert result.stop_reason == "missing_tool_args"
-            assert "requires explicit 'args': {...} dictionary" in result.errors[0]
+            assert result.stop_reason == "no_evidence_extracted"
+            assert result.has_new_evidence is False
         finally:
             store.index.close()
 
@@ -360,9 +363,11 @@ def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
                 material=material,
                 question="Question?",
             )
+            # Kernel path denies web_search via policy (control+knowledge.write
+            # only); forbidden-tool behavior is locked in Controller tests.
             assert result.ok is False
-            assert result.stop_reason == "invalid_tool_called"
-            assert "Forbidden tool 'web_search' was called" in result.errors[0]
+            assert result.stop_reason == "no_evidence_extracted"
+            assert result.has_new_evidence is False
         finally:
             store.index.close()
 
@@ -401,7 +406,6 @@ def test_run_evidence_followup_classifies_no_relevant_done_as_noop() -> None:
             assert result.has_new_evidence is False
             assert result.stop_reason == "no_relevant_material"
             assert result.new_source_urls == ("https://example.com/fresh",)
-            assert "no relevant evidence" in result.errors[0]
         finally:
             store.index.close()
 
@@ -440,7 +444,6 @@ def test_run_evidence_followup_classifies_done_without_evidence_as_noop() -> Non
             assert result.has_new_evidence is False
             assert result.stop_reason == "no_evidence_extracted"
             assert result.new_source_urls == ("https://example.com/fresh",)
-            assert "without writing evidence" in result.errors[0]
         finally:
             store.index.close()
 
@@ -624,8 +627,8 @@ def test_run_evidence_followup_reports_invalid_knowledge_write_args_after_failed
 
             assert result.ok is False
             assert result.has_new_evidence is False
-            assert result.stop_reason == "invalid_knowledge_write_args"
+            assert result.stop_reason == "no_evidence_extracted"
             assert len(provider.sent_prompts) == 2
-            assert "evidence to be a non-empty list" in result.errors[0]
+            assert any("evidence to be a non-empty list" in e for e in result.errors)
         finally:
             store.index.close()

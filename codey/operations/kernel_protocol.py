@@ -9,11 +9,80 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 
 MAX_NATIVE_CALLS_PER_TURN = 8
+
+
+@dataclass(frozen=True)
+class TurnSnapshot:
+    """One authoritative per-round observation: policy ∩ current facts.
+
+    Built once at round start; any build failure raises and the kernel
+    terminates the turn as controller_failure (fail-closed), never a stale
+    fallback list. Carries the allowed tools plus both protocols' contracts
+    for the round.
+    """
+
+    allowed: tuple[str, ...] | None
+    contract_text: str
+    native_tools: tuple[dict[str, Any], ...]
+
+
+def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
+    policy = getattr(session, "policy", None)
+    if not bool(getattr(policy, "strict_research", False)):
+        return None
+    results = dict(getattr(session, "search_results", {}) or {})
+    opened = set(getattr(session, "opened_sources", set()) or set())
+    evidence = list(getattr(session, "evidence", []) or [])
+    if not results and not opened:
+        return ("knowledge_search", "knowledge_read", "web_search", "done")
+    if not opened:
+        return ("knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "done")
+    if not evidence:
+        return (
+            "knowledge_search",
+            "knowledge_read",
+            "web_search",
+            "open_url",
+            "open_result",
+            "reopen_source",
+            "open_hit",
+            "source_search",
+            "knowledge_write",
+            "done",
+        )
+    return None
+
+
+def _native_tools_for_policy(policy: Any, controller_allowed: Any = None) -> list[dict[str, Any]]:
+    """Native schemas for one turn's snapshot; fail-closed like the names."""
+    try:
+        from codey.toolchain.tool_spec import native_tools_for_snapshot
+    except Exception as exc:
+        raise RuntimeError(f"native tool snapshot unavailable: {exc}") from exc
+    return list(native_tools_for_snapshot(policy, controller_allowed))
+
+
+def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
+    """Build the round's authoritative snapshot; raises on failure."""
+    # Fail closed: a snapshot computation failure never encodes as None
+    # (unlimited). Callers must treat the exception as a per-turn config
+    # error and stop.
+    allowed = controller_allowed_for_session(session)
+    from codey.toolchain.tool_spec import json_contract_text as _contract
+
+    contract_now = _contract(session.policy, controller_allowed=allowed) if _contract is not None else ""
+    native_now = _native_tools_for_policy(session.policy, allowed) if native else []
+    return TurnSnapshot(
+        allowed=allowed,
+        contract_text=str(contract_now or ""),
+        native_tools=tuple(native_now),
+    )
 
 # Single tool source is ToolSpec; controller aliases lower via ToolSpec.
 # Kept for backward-compatible imports; new code must use tool_spec.
@@ -229,10 +298,15 @@ def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any]
         if validate_args_against_spec is not None:
             try:
                 spec_error = validate_args_against_spec(name, args if isinstance(args, dict) else {})
-            except Exception:
-                spec_error = ""
+            except Exception as exc:
+                # Fail closed: a broken validator never means "accept".
+                detail = str(exc).strip()[:200] or type(exc).__name__
+                return {}, f"{name} args invalid: spec validator failed ({detail})"
             if spec_error:
                 return {}, spec_error
+        else:
+            # Spec validator unavailable: fail closed, never accept.
+            return {}, f"{name} args invalid: spec validator unavailable"
         if name == "done":
             # ``done`` is a control tool with no runtime executor. Its
             # canonical ToolSpec validation above is the complete contract.
@@ -363,4 +437,10 @@ def normalize_turn(
     return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed)
 
 
-__all__ = ["MAX_NATIVE_CALLS_PER_TURN", "normalize_turn"]
+__all__ = [
+    "MAX_NATIVE_CALLS_PER_TURN",
+    "TurnSnapshot",
+    "build_turn_snapshot",
+    "controller_allowed_for_session",
+    "normalize_turn",
+]

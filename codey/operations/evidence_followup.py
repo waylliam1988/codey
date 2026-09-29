@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from codey.operations.task_loop import TaskSession, run_task_kernel
+from codey.operations.task_loop import run_task_kernel
+from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.research.evidence_followup import (
+from codey.research.evidence_rules import (
     EvidenceFollowupController,
     EvidenceFollowupResult,
     build_evidence_followup_prompt,
@@ -92,7 +93,7 @@ def run_evidence_followup(
                 errors=tuple(errors[:10]),
             )
         if outcome.stop_reason == "done":
-            from codey.research.evidence_followup import _done_reports_no_relevant_material
+            from codey.research.evidence_rules import _done_reports_no_relevant_material
 
             no_relevant = _done_reports_no_relevant_material({"summary": last_summary})
             return EvidenceFollowupResult(

@@ -104,6 +104,33 @@ def _task_requires_modification(session: Any) -> bool:
     return False
 
 
+def _verification_identity_matches(item: dict[str, Any], sess_fp: str, sess_rev: int) -> bool:
+    """Exit-0 verification passes only with matching file identity.
+
+    When neither side carries a fingerprint (workspace-less unit sessions),
+    exit 0 passes for backward compatibility; mixed/mismatched stays not_run.
+    """
+    ver_fp = str(item.get("workspace_fingerprint", "") or "")
+    ver_rev = item.get("workspace_revision")
+    if ver_fp or sess_fp:
+        if not (ver_fp and sess_fp):
+            return False
+        try:
+            from codey.workspace.revision import valid_workspace_fingerprint as _valid_fp
+        except Exception:
+            _valid_fp = None  # type: ignore[assignment]
+        if _valid_fp is not None and (not _valid_fp(ver_fp) or not _valid_fp(sess_fp)):
+            return False
+        if ver_fp != sess_fp:
+            return False
+    try:
+        if ver_rev is not None and sess_rev and int(ver_rev) != int(sess_rev):
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     if context is not None:
         real = _engine_checks(session, context)
@@ -124,6 +151,11 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
         return [row] if row is not None else []
     fresh_pass = False
     fresh_fail = False
+    try:
+        sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
+        sess_rev = int(getattr(session, "workspace_revision", 0) or 0)
+    except Exception:
+        sess_fp, sess_rev = "", 0
     for item in verifs:
         if not isinstance(item, dict):
             continue
@@ -133,18 +165,19 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
             continue
         if rev != latest:
             continue
-        if item.get("exit_code", None) is not None:
-            try:
-                if int(item["exit_code"]) == 0:
-                    fresh_pass = True
-                else:
-                    fresh_fail = True
-            except (TypeError, ValueError):
-                fresh_fail = True
-        elif bool(item.get("passed")):
-            fresh_pass = True
-        else:
+        if item.get("exit_code", None) is None:
+            # Missing structured exit code: not_run, never pass/fail from text.
+            continue
+        try:
+            code = int(item["exit_code"])
+        except (TypeError, ValueError):
             fresh_fail = True
+            continue
+        if code != 0:
+            fresh_fail = True
+            continue
+        if _verification_identity_matches(item, sess_fp, sess_rev):
+            fresh_pass = True
     if fresh_pass and not fresh_fail:
         row = completion_check("relevant_verification", CHECK_PASS)
     elif fresh_fail:

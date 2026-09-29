@@ -175,8 +175,14 @@ def test_runaway_blocks_exact_repeat() -> None:
 
 
 def test_registry_snapshot_stable() -> None:
-    from codey.toolchain.registry import ToolRegistry
+    # Old ToolRegistry removed; single ToolSpec snapshot stays stable.
+    from codey.policies.task_policy import TaskPolicy
+    from codey.toolchain.tool_spec import tool_specs, visible_tool_names
 
-    snapshot = ToolRegistry().snapshot(profile_name="coding_writer", mode="coding")
-    assert "read_file" in snapshot.names
-    assert "read" in snapshot.runtime_names
+    policy = TaskPolicy(
+        grants=frozenset({"project.read", "project.write", "project.verify", "control"}),
+        strict_research=False,
+    )
+    names = set(visible_tool_names(policy))
+    assert "read_file" in names
+    assert "read_file" in tool_specs()

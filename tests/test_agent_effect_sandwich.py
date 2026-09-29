@@ -379,7 +379,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         # test (test_convergence_repro_locks batch-abort, no receipt overwrite).
         # This placeholder keeps the behavior category (no execution on batch
         # failure) via the new entry.
-        from codey.operations.task_loop import execute_turn
+        from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall

@@ -249,7 +249,7 @@ class AgentLoopSplitTests(unittest.TestCase):
 
         from unittest.mock import patch
 
-        with patch("codey.operations.task_loop.provider_uses_native", return_value=False):
+        with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
             result = run_task_kernel(
                 session, provider=_BadProvider(), executors={}, run_id="r-stagnant",
                 stagnant_turns=2,

@@ -25,8 +25,16 @@ def _install_isolated_state_home() -> Path:
     os.environ["HOME"] = str(root)
     if os.name == "nt":
         os.environ["USERPROFILE"] = str(root)
-        os.environ["HOMEDRIVE"] = root.drive
-        os.environ["HOMEPATH"] = root.anchor[len(root.drive):] or "\\"
+        os.environ["HOMEDRIVE"] = root.drive or Path(str(root)).drive
+        # Full temp-home remainder after the drive (e.g. \Users\...\Temp\...),
+        # never the bare anchor "\", so child processes resolve the same home.
+        try:
+            remainder = str(root)[len(os.environ["HOMEDRIVE"]):] or "\\"
+        except Exception:
+            remainder = "\\"
+        if not remainder.startswith("\\"):
+            remainder = "\\" + remainder
+        os.environ["HOMEPATH"] = remainder
     return root
 
 

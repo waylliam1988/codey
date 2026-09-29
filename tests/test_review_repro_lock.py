@@ -22,8 +22,9 @@ def test_issue1_strict_hybrid_no_write_without_explicit():
 
 
 def test_issue1_strict_hybrid_edit_rejected_at_parse_and_execute(tmp_path):
+    from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import normalize_turn
-    from codey.operations.task_loop import TaskSession, execute_turn
+    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolCall
     s = _submission(project=str(tmp_path), requested=(), strict=True)
@@ -61,7 +62,8 @@ def test_issue2_default_hybrid_uses_unified_session():
 
 
 def test_issue2_unified_interleaves_web_and_project(tmp_path):
-    from codey.operations.task_loop import TaskSession, run_task_kernel
+    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolResult
     from codey.task.model import TaskSubmission
@@ -79,15 +81,16 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
     class Provider:
         def send(self, prompt, timeout=None):
             return next(replies)
-    def _ok(text):
+    def _ok(text, exit_code=None):
         def _fn(call):
-            return ToolResult(call=call, model_text=text)
+            audit = {"exit_code": exit_code} if exit_code is not None else {}
+            return ToolResult(call=call, model_text=text, audit=audit)
         return _fn
     executors = {
         "web_search": _ok("1. Docs\n   https://example.com/docs"),
         "read_file": _ok("local content"),
         "edit": _ok("edited new.txt"),
-        "run": _ok("1 passed"),
+        "run": _ok("1 passed", exit_code=0),
     }
     result = run_task_kernel(session, provider=Provider(), executors=executors,
                              run_id="r-interleave", effect_scope="hybrid")
@@ -100,7 +103,7 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
 
 def test_issue3_unified_completion_uses_session_facts_with_evidence():
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_loop import TaskSession
+    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
     fp = "sha256:" + "a" * 64
@@ -140,7 +143,8 @@ def test_issue3_unified_completion_uses_session_facts_with_evidence():
 
 
 def test_issue4_same_slot_different_args_must_not_reuse():
-    from codey.operations.task_loop import TaskSession, execute_turn
+    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
     session = TaskSession(
@@ -161,7 +165,7 @@ def test_issue4_same_slot_different_args_must_not_reuse():
 
 
 def test_issue4_session_payload_roundtrip_keeps_policy_and_facts():
-    from codey.operations.task_loop import TaskSession
+    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
     sub = TaskSubmission("s", "E:/codey", "task", 8, False, "local",
@@ -180,7 +184,8 @@ def test_issue4_session_payload_roundtrip_keeps_policy_and_facts():
 
 
 def test_issue5_strict_initial_snapshot_hides_unavailable_tools():
-    from codey.operations.task_loop import TaskSession, controller_allowed_for_session
+    from codey.operations.kernel_protocol import controller_allowed_for_session
+    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
     from codey.toolchain.tool_spec import json_contract_text
@@ -208,7 +213,8 @@ def test_issue5_strict_initial_snapshot_hides_unavailable_tools():
 
 def test_issue6_native_prompt_and_done_closure(monkeypatch):
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.operations.task_loop import TaskSession, run_task_kernel
+    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.task.model import TaskSubmission
@@ -220,7 +226,7 @@ def test_issue6_native_prompt_and_done_closure(monkeypatch):
     try:
         import inspect
 
-        from codey.operations.task_loop import kernel_prompt_for_session as kprompt
+        from codey.operations.kernel_prompt import kernel_prompt_for_session as kprompt
         sig = inspect.signature(kprompt)
         if "native" in sig.parameters or "protocol" in sig.parameters:
             prompt = kprompt(session, native=True)
@@ -255,7 +261,7 @@ def test_issue6_native_prompt_and_done_closure(monkeypatch):
 
 def test_issue7_required_checks_are_enforced():
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_loop import TaskSession
+    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     policy = TaskPolicy(grants=frozenset({"control", "project.read"}),
                         required_checks=("custom_must_run",))

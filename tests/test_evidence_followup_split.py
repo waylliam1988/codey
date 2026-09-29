@@ -8,7 +8,7 @@ allowed_urls + tools.knowledge_write).
 
 from __future__ import annotations
 
-from codey.research.evidence_followup import EvidenceFollowupController
+from codey.research.evidence_rules import EvidenceFollowupController
 
 
 class _FakeTools:

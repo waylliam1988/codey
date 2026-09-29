@@ -1,12 +1,16 @@
-"""Provider transport primitives for the shared task kernel.
+"""Provider transport for the shared task kernel.
 
-This module owns provider method selection and native call-id repair. The task
-loop decides *when* to send; this module decides *how* to invoke the provider.
+Provider capability selection, sending, native call-id receipts, and budget
+drain. Failures raise explicit errors; the task loop maps them to results.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+
+class NativeBudgetExhausted(RuntimeError):
+    """Native chain kept emitting tool calls past the budget drain limit."""
 
 
 def call_provider_send(provider: Any, prompt: str) -> Any:
@@ -40,6 +44,94 @@ def send_kernel_reply(
     return call_provider_send(provider, prompt), None, pending_native_messages
 
 
+def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
+    """Reuse the production native-tool decision; never bare hasattr checks.
+
+    The protocol is decided once at task start. An identification failure
+    raises instead of silently falling back to web: continuing on the wrong
+    protocol would mis-deliver native call ids.
+    """
+    from codey.providers.native_tools import supports_native_tools
+
+    probe = getattr(provider, "provider", provider)
+    return bool(supports_native_tools(probe, str(provider_id or "")))
+
+
+def _native_tool_messages(results: Any, session: Any) -> list[dict[str, Any]]:
+    from codey.operations.kernel_prompt import _result_context
+
+    messages: list[dict[str, Any]] = []
+    for result in results:
+        call_id = str(getattr(result.call, "call_id", "") or "")
+        if not call_id:
+            # JSON-originated calls in a native session have no chain id;
+            # synthesize a follow-up prompt instead of a tool message.
+            return []
+        messages.append({"role": "tool", "tool_call_id": call_id, "content": _result_context(result, session)})
+    return messages
+
+
+def _take_answered_reply(
+    provider: Any,
+    reply: Any,
+    native: bool,
+    native_tools: Any,
+    followup: str,
+) -> Any:
+    """Answer one native rejection so every call id is closed.
+
+    Returns the provider's answer, or None when there is nothing to answer
+    (web reply, or a native reply without call ids, which normalize_turn
+    already rejects upstream). A receipt send failure raises: callers must
+    report provider_failure and stop instead of continuing with unanswered
+    ids. Valid ids always get their error result; only a missing-id call,
+    which can never be legally receipted, terminates without one.
+    """
+    if not native or isinstance(reply, str):
+        return None
+    try:
+        ids = [str(getattr(c, "id", "") or "") for c in (getattr(reply, "tool_calls", ()) or [])]
+    except Exception:
+        return None
+    ids = [i for i in ids if i]
+    if not ids:
+        return None
+    return call_provider_send_results(
+        provider,
+        [{"role": "tool", "tool_call_id": i, "content": f"ERROR: {followup}"} for i in ids],
+        native_tools,
+    )
+
+
+def _drain_native_budget(
+    provider: Any,
+    messages: list[dict[str, Any]],
+    native_tools: Any,
+) -> None:
+    """Deliver the final native batch when the turn budget is exhausted.
+
+    Returns None once the chain is closed (the caller then reports the
+    regular budget outcome). A receipt send failure raises, and a chain
+    that keeps emitting tool calls past the drain limit raises
+    NativeBudgetExhausted; the caller maps both to terminal results.
+    """
+    for _ in range(4):
+        reply = call_provider_send_results(provider, messages, native_tools)
+        ids = [str(getattr(call, "id", "") or "") for call in (getattr(reply, "tool_calls", ()) or ())]
+        ids = [item for item in ids if item]
+        if not ids:
+            return None
+        messages = [
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": "ERROR: turn budget exhausted; tool call was not executed",
+            }
+            for call_id in ids
+        ]
+    raise NativeBudgetExhausted("native tool chain exceeded budget drain limit")
+
+
 def repair_native_dangling(
     provider: Any,
     reply: Any,
@@ -47,7 +139,13 @@ def repair_native_dangling(
     native_tools: Any,
     error: str,
 ) -> Any:
-    """Close native call ids after a protocol error so the provider chain stays valid."""
+    """Close native call ids after a protocol error so the provider chain stays valid.
+
+    Returns the provider's answer for the error receipts, or None when there
+    is nothing to receipt (web reply, unparsable reply, or no call ids).
+    A receipt send failure raises: the caller must report provider_failure
+    and stop instead of continuing the dialogue with unanswered call ids.
+    """
     if not native or isinstance(reply, str):
         return None
     try:
@@ -57,20 +155,19 @@ def repair_native_dangling(
     ids = [item for item in ids if item]
     if not ids:
         return None
-    try:
-        return call_provider_send_results(
-            provider,
-            [{"role": "tool", "tool_call_id": item, "content": f"ERROR: {error}"} for item in ids],
-            native_tools,
-        )
-    except Exception:
-        return None
+    return call_provider_send_results(
+        provider,
+        [{"role": "tool", "tool_call_id": item, "content": f"ERROR: {error}"} for item in ids],
+        native_tools,
+    )
 
 
 __all__ = [
+    "NativeBudgetExhausted",
     "call_provider_send",
     "call_provider_send_results",
     "call_provider_send_turn",
+    "provider_uses_native",
     "repair_native_dangling",
     "send_kernel_reply",
 ]

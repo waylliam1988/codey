@@ -10,7 +10,7 @@ import unittest
 
 class BatchMismatchTests(unittest.TestCase):
     def test_mismatch_aborts_batch_and_preserves_receipt(self) -> None:
-        from codey.operations.task_loop import execute_turn
+        from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall
@@ -77,28 +77,28 @@ class FakeFingerprintTests(unittest.TestCase):
 
 class ControllerFailureTests(unittest.TestCase):
     def test_controller_failure_is_fail_closed(self) -> None:
-        from codey.operations import task_loop as kernel
+        from codey.operations import kernel_protocol as proto
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
 
         policy = TaskPolicy(grants=frozenset({"web.read", "knowledge.read", "knowledge.write", "control"}), strict_research=True)
         session = TaskSession(policy=policy, task_kind="research", project="demo", max_turns=2)
-        orig = kernel.controller_allowed_for_session
+        orig = proto.controller_allowed_for_session
 
         def _boom(_session):
             raise RuntimeError("controller boom")
 
-        kernel.controller_allowed_for_session = _boom  # type: ignore[assignment]
+        proto.controller_allowed_for_session = _boom  # type: ignore[assignment]
         try:
             try:
-                controller = kernel._controller_for_session(session)
+                snapshot = proto.build_turn_snapshot(session)
             except RuntimeError:
-                controller = "raised"
+                snapshot = "raised"
             # Must NOT encode failure as None (unlimited): either raise or
             # return an explicit fail-closed sentinel, never None.
-            self.assertNotEqual(controller, None, "controller failure must not become unlimited")
+            self.assertNotEqual(snapshot, None, "controller failure must not become unlimited")
         finally:
-            kernel.controller_allowed_for_session = orig  # type: ignore[assignment]
+            proto.controller_allowed_for_session = orig  # type: ignore[assignment]
 
     def test_guarded_slot_exception_does_not_allow(self) -> None:
         from codey.operations import kernel_execution as kernel
@@ -146,7 +146,7 @@ class ReadonlyNegationTests(unittest.TestCase):
 
 class CustomToolTests(unittest.TestCase):
     def test_register_parse_execute_complete(self) -> None:
-        from codey.operations.task_loop import execute_turn
+        from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall
@@ -223,7 +223,7 @@ class SecondRoundWebPromptTests(unittest.TestCase):
         # run_task_kernel with research_tools FakeTools will handle web_search/open via delegate.
         from unittest.mock import patch
 
-        with patch("codey.operations.task_loop.provider_uses_native", return_value=False):
+        with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
             run_task_kernel(session, provider=FakeWeb(), executors={}, run_id="r-web2", research_tools=FakeTools(), session_id="s", completion_context=None)
         self.assertGreaterEqual(len(sent_prompts), 2)
         second = sent_prompts[1]
@@ -255,7 +255,7 @@ class DoneReceiptFailureTests(unittest.TestCase):
         from unittest.mock import patch
 
         with (
-            patch("codey.operations.task_loop.provider_uses_native", return_value=True),
+            patch("codey.operations.kernel_transport.provider_uses_native", return_value=True),
             patch("codey.toolchain.tool_spec.native_tools_for_snapshot", return_value=[{"type": "function", "function": {"name": "done", "description": "d", "parameters": {"type": "object", "properties": {}, "required": []}}}]),
         ):
             result = run_task_kernel(session, provider=FakeNative(), executors={}, run_id="r-done-fail", provider_id="local")

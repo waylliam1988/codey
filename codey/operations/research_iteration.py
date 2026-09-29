@@ -68,7 +68,8 @@ def run_research_iteration(
     requested_capabilities: tuple[str, ...] = (),
     controller_enabled: bool = True,
 ) -> ResearchIterationRun:
-    from codey.operations.task_loop import TaskSession, run_task_kernel
+    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
 
     if tools is None:

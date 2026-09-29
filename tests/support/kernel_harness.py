@@ -90,12 +90,18 @@ def build_kernel_fixture(request: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
             wants_native = bool(getattr(capability, "native_tools_default", False))
     if wants_native and callable(getattr(provider, "send_turn", None)):
         try:
-            from codey.protocols.native_openai import build_native_codec_for_profile
+            from codey.policies.permissions import allowed_coding_tool_names
+            from codey.protocols.native_openai import NativeOpenAIToolCodec
+            from codey.toolchain import definition as tool_defs
+            from codey.toolchain.openai_tools import render_openai_tools
 
-            codec, native_tools = build_native_codec_for_profile(
-                profile.name,
-                fallback_codec=codec if isinstance(codec, JsonToolCodec) else None,
+            definitions = tool_defs.definitions_for_tool_names(
+                tuple(allowed_coding_tool_names(profile)))
+            codec = NativeOpenAIToolCodec(
+                permission_profile=profile.name,
+                json_fallback=codec if isinstance(codec, JsonToolCodec) else None,
             )
+            native_tools = render_openai_tools(definitions)
         except Exception:
             native_tools = None
     try:

@@ -6,6 +6,15 @@ http://127.0.0.1:5001/v1), captures headless JSONL per case into
 .e2e-artifacts/local-model-release-<case>.jsonl, and verifies independently of the
 model's own claims (like tools/live_smoke.py does for web providers).
 
+Verified scope (and only this scope):
+- with-hybrid-intent start, final files correct, independent ``unittest``
+  verification passes, and the task reports ``done``;
+- hybrid additionally proves ordered tool use on one session:
+  ``web_search -> open -> read_file -> edit -> run -> done`` with a single
+  ``run_id``/``session_id`` across JSONL rows.
+It does not prove web-search relevance, citation quality, or multi-session
+behavior beyond the recorded rows.
+
 Usage:
     python tools/local_model_release_gate.py --json
     python tools/local_model_release_gate.py --case hybrid --json
@@ -153,10 +162,13 @@ def _task_for(case: str) -> tuple[str, str, int]:
         )
     if case == "hybrid":
         return (
-            "Use the shared hybrid task path to inspect pricing.py, fix LIVE_SMOKE_BUG "
-            "with read and edit, run python -m unittest discover, and finish with done.",
+            "Use the shared hybrid task path. First web_search for the pricing "
+            "discount context, then open_url/open_result the relevant source, "
+            "then read_file pricing.py, fix LIVE_SMOKE_BUG with edit, "
+            "run python -m unittest discover, and finish with done. "
+            "Do the steps in order: search -> open -> read -> edit -> verify -> done.",
             "hybrid",
-            10,
+            12,
         )
     if case == "discussion":
         return (
@@ -186,6 +198,55 @@ def _task_for(case: str) -> tuple[str, str, int]:
 def _ran_zero_tests(output: str) -> bool:
     """unittest exits 0 with 'Ran 0 tests / OK' when nothing was discovered."""
     return re.search(r"Ran\s+0\s+tests?\b", output) is not None
+
+
+def _tool_names_in_order(rows: list[dict]) -> list[str]:
+    """Tool names in JSONL order; task_done folds to ``done``."""
+    names: list[str] = []
+    for row in rows or []:
+        rtype = str(row.get("type") or "")
+        if rtype == "tool":
+            name = str(row.get("tool") or "").strip().lower()
+            if name:
+                names.append(name)
+        elif rtype == "task_done":
+            names.append("done")
+    return names
+
+
+def _normalize_hybrid_step(name: str) -> str:
+    name = str(name or "").strip().lower()
+    if name in {"open_url", "open_result", "reopen_source", "open_hit"}:
+        return "open"
+    return name
+
+
+def check_hybrid_tool_order(rows: list[dict]) -> dict:
+    """Deterministic order assertion: search -> open -> read -> edit -> run -> done.
+
+    Returns ``{"ok": bool, "tool_names": [...], "detail": str}``. Hybrid proves
+    the shared path in order; files+done alone do not pass.
+    """
+    names = _tool_names_in_order(rows)
+    normed = [_normalize_hybrid_step(n) for n in names]
+    want = ["web_search", "open", "read_file", "edit", "run", "done"]
+    idx = 0
+    for step in want:
+        try:
+            found = normed.index(step, idx)
+        except ValueError:
+            return {"ok": False, "tool_names": names, "detail": f"missing step {step!r} in {names}"}
+        idx = found + 1
+    return {"ok": True, "tool_names": names, "detail": "search->open->read->edit->run->done"}
+
+
+def check_single_session_identity(rows: list[dict]) -> dict:
+    """All JSONL rows must share one run_id/session_id (single session)."""
+    run_ids = {str(r.get("run_id") or "") for r in rows or [] if str(r.get("run_id") or "")}
+    sess_ids = {str(r.get("session_id") or "") for r in rows or [] if str(r.get("session_id") or "")}
+    ok = len(run_ids) == 1 and len(sess_ids) == 1
+    detail = f"run_ids={sorted(run_ids)} session_ids={sorted(sess_ids)}"
+    return {"ok": ok, "run_ids": sorted(run_ids), "session_ids": sorted(sess_ids), "detail": detail}
 
 
 def _verify_fixture(root: Path, case: str) -> dict:
@@ -282,11 +343,21 @@ def run_agent_case(case: str) -> dict:
         done = next((r for r in reversed(rows) if str(r.get("type") or "") == "task_done"), None)
         verification = _verify_fixture(root, case)
         stop_reason = str((done or {}).get("stop_reason") or result.stop_reason)
+        tool_names = _tool_names_in_order(rows)
+        single_session = check_single_session_identity(rows)
+        # Hybrid additionally proves ordered tool use on one session:
+        # search -> open -> read -> edit -> run -> done. Other cases prove
+        # files+done+independent verification only (see module docstring).
+        hybrid_order: dict | None = None
+        if case == "hybrid":
+            hybrid_order = check_hybrid_tool_order(rows)
         ok = (
             stop_reason == "done"
             and result.exit_code == 0
             and done is not None
             and verification["ok"]
+            and single_session["ok"]
+            and (hybrid_order is None or bool(hybrid_order.get("ok")))
         )
         data = {
             "case": case, "ok": ok, "seconds": dt,
@@ -297,6 +368,9 @@ def run_agent_case(case: str) -> dict:
             "project": str(root),
             "run_id": result.run_id, "session_id": result.session_id,
             "jsonl_rows": len(rows),
+            "tool_names": tool_names,
+            "tool_order": hybrid_order,
+            "single_session": single_session,
         }
     except Exception as exc:  # noqa: BLE001 - gate must report, not raise
         data = {"case": case, "ok": False, "error": f"{type(exc).__name__}: {exc}", "project": str(root)}

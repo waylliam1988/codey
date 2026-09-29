@@ -56,6 +56,18 @@ def build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | N
         return None
 
 
+def effective_project_profile(permission_profile: object) -> str:
+    """Project-guard profile shared by execution and shell approval.
+
+    The Research profile controls research context and source tools. A
+    project tool still needs the coding path/command guard; TaskPolicy
+    has already authorized the individual project capability. Approval
+    must evaluate with exactly this profile, never a hardcoded duplicate.
+    """
+    return "coding_writer" if str(permission_profile or "") == "research" else str(
+        permission_profile or "coding_writer")
+
+
 def _tool_result(call: ToolCall, outcome: Any) -> ToolResult:
     audit = dict(getattr(outcome, "audit", {}) or {})
     if call.name == "edit":
@@ -211,10 +223,7 @@ class ExecutionDelegate:
         return False, "", False
 
     def _project_permission_profile(self) -> str:
-        # The Research profile controls research context and source tools. A
-        # project tool still needs the coding path/command guard; TaskPolicy
-        # has already authorized the individual project capability.
-        return "coding_writer" if self.permission_profile == "research" else self.permission_profile
+        return effective_project_profile(self.permission_profile)
 
     def _execute_project(self, call: ToolCall) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
         denied, message, _approval = self._policy_check(call)

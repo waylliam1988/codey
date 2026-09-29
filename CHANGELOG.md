@@ -2,6 +2,73 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Kernel behavior hardening + task_loop split by responsibility (no release)
+
+- Fail-closed protocol validation: a `validate_args_against_spec` exception now
+  rejects the call for both JSON and native turns instead of accepting it with
+  undeclared args. New locks in `tests/test_kernel_protocol_validator_failclosed.py`.
+- Structured run verification only: deleted `_fake_run_ok()` text inference and
+  the fallback text-based verification record. A `run` without a structured
+  exit code records `not_run`, never pass; only `exit_code == 0` with matching
+  workspace identity passes. Injected-executor and recovery paths covered by
+  `tests/test_kernel_run_verification_structured.py`; affected kernel tests now
+  use `audit={"exit_code": 0}` for structured passes.
+- Hybrid display projects the kernel verdict instead of re-judging quality:
+  removed the post-hoc `report_quality` branch and the misleading "Project
+  review trigger" comment from `_enrich_hybrid_outcome()`; strict quality stays
+  in `completion_gate` before `done`. Locked by
+  `tests/test_hybrid_outcome_projection.py`.
+- One authoritative workspace state per edit: `sync_workspace_state_after_edit()`
+  carries the configured `ignored_paths` through `execute_turn`/`run_task_kernel`
+  from the task entry, so the kernel fingerprint scan and the hooks revision
+  bump describe the same files (at most two bounded scans per edit, never
+  divergent ignores). Locked by `tests/test_workspace_authoritative_state.py`.
+- Fixed `tests/conftest.py` Windows `HOMEPATH` to the full temp-home remainder
+  instead of the bare drive anchor; added `tests/test_pytest_home_isolation.py`
+  (full-path vars + child-process home check).
+- Hybrid release gate now proves ordered tool use on one session
+  (`web_search -> open -> read_file -> edit -> run -> done` plus a single
+  `run_id`/`session_id`); the prompt requires the chain and the module
+  docstring claims only the verified scope. Deterministic locks in
+  `tests/test_release_gate_tool_order.py`.
+- Evidence follow-up: extracted provider-free rules to
+  `codey/research/evidence_rules.py`; deleted the old direct-`provider.send`
+  loop from `codey/research/evidence_followup.py` (now a deprecated shim);
+  production uses `codey/operations/evidence_followup.py` via the shared
+  kernel. Manual probes and pipeline imports migrated; behavior assertions
+  (whitelist, forbidden tools, repair rounds) preserved.
+- Deleted the obsolete `codey/toolchain/registry.py` (`ToolSpec` is the single
+  source; registry tests migrated to `visible_tool_names`/`tool_specs`) and
+  removed the `NativeOpenAIToolCodec` re-export from `codey/protocols/__init__.py`.
+  `tests/support/kernel_harness.py` builds native tools from ToolSpec
+  definitions instead of the deleted registry.
+- `ToolSpec` single-source locks in `tests/test_toolspec_single_source.py`
+  (custom tools via spec alone, unknown tools denied, path safety at the
+  execution boundary). `task_entry` docstring now states the actual topology
+  (one tool loop, multiple orchestration paths/sessions).
+- `task_loop.py` split by responsibility (983 -> ~620 lines, no new
+  cross-cutting modules): pure prompts to new `kernel_prompt.py`, RunEvent
+  projection to new `kernel_events.py`, capability selection/receipts/budget
+  drain to `kernel_transport.py` (failures raise; loop maps to results),
+  `TurnSnapshot` + `build_turn_snapshot()` + controller narrowing to
+  `kernel_protocol.py`, `policy_for_dispatch()`/`apply_auto_plan()` to
+  `task_policy.py` (single implementations). No `kernel_terminal`,
+  `kernel_approval`, or `kernel_types` modules: approval pause and done
+  handling stay in the loop. Rounds build one snapshot at round start;
+  post-execution snapshot precompute and old-contract fallbacks deleted, with
+  drift comparison moved to the next round start. Approval uses the shared
+  `effective_project_profile()` after `TaskPolicy` `shell.approval`
+  authorization. `task_loop` now binds only `KernelResult`/`run_task_kernel`;
+  production and test imports updated to canonical homes (verified: explicit
+  `from task_loop import TaskSession` fails; no reverse imports).
+- New round-stateflow locks in `tests/test_kernel_round_stateflow.py` (15
+  cases: snapshot fail-closed, shared approval profile, native receipt
+  failures -> `provider_failure`, coding-context diagnostic, native
+  identification fail-closed).
+- Verification: `ruff check codey tests tools` clean; final full
+  `python -m pytest tests -q`: `4890 passed, 10 skipped, 1464 subtests passed`.
+  No release was made.
+
 ## Unreleased - Shared kernel cold-start cleanup (no release)
 
 - Test startup now installs a writable temporary home before application

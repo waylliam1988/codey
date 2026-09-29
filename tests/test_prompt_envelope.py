@@ -364,7 +364,8 @@ class PromptEnvelopeTests(unittest.TestCase):
         # Old _intro deleted with the old runner; prompt now built via the
         # single kernel_prompt_for_session (new entry). Behavior (prompt
         # contains the question) is locked here via the new entry.
-        from codey.operations.task_loop import TaskSession, kernel_prompt_for_session
+        from codey.operations.kernel_prompt import kernel_prompt_for_session
+        from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
 
         policy = TaskPolicy(grants=frozenset({"web.read", "control"}))
@@ -373,7 +374,8 @@ class PromptEnvelopeTests(unittest.TestCase):
         self.assertIn("Why alpha?", prompt)
 
     def test_research_prompt_trace_does_not_claim_trace_attr(self) -> None:
-        from codey.operations.task_loop import TaskSession, kernel_prompt_for_session
+        from codey.operations.kernel_prompt import kernel_prompt_for_session
+        from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
 
         policy = TaskPolicy(grants=frozenset({"web.read", "control"}))
@@ -385,7 +387,8 @@ class PromptEnvelopeTests(unittest.TestCase):
         # Old trace-section envelope deleted with the old runner; the new
         # single entry builds one prompt via kernel_prompt_for_session with
         # the verbatim user task (no duplicate request rows).
-        from codey.operations.task_loop import TaskSession, kernel_prompt_for_session
+        from codey.operations.kernel_prompt import kernel_prompt_for_session
+        from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
 
         policy = TaskPolicy(grants=frozenset({"web.read", "control"}))

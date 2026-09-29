@@ -18,19 +18,25 @@ import unittest
 
 class RegistryFailClosedTests(unittest.TestCase):
     def test_unknown_profile_snapshot_is_empty_not_all(self) -> None:
-        from codey.toolchain.registry import ToolRegistry
+        # Old ToolRegistry removed; ToolSpec is the single source. An empty
+        # policy (no grants) exposes no tools, never all tools.
+        from codey.policies.task_policy import TaskPolicy
+        from codey.toolchain.tool_spec import visible_tool_names
 
-        snapshot = ToolRegistry().snapshot(profile_name="definitely_unknown_profile_xyz", mode="coding")
-        self.assertEqual(tuple(snapshot.definitions), ())
-        self.assertEqual(tuple(snapshot.names), ())
+        policy = TaskPolicy(grants=frozenset(), strict_research=False)
+        self.assertEqual(tuple(visible_tool_names(policy)), ())
 
     def test_profile_without_coding_tools_snapshots_empty(self) -> None:
-        from codey.toolchain.registry import ToolRegistry
+        # Research-only grants expose no project tools via the single ToolSpec.
+        from codey.policies.task_policy import TaskPolicy
+        from codey.toolchain.tool_spec import visible_tool_names
 
-        # The research permission profile owns no coding tools; a coding
-        # snapshot for it must be empty, never the full writer set.
-        snapshot = ToolRegistry().snapshot(profile_name="research", mode="coding")
-        self.assertEqual(tuple(snapshot.names), ())
+        policy = TaskPolicy(grants=frozenset({"web.read", "control"}), strict_research=False)
+        names = set(visible_tool_names(policy))
+        self.assertTrue(names, "research grants still expose web tools")
+        self.assertNotIn("read_file", names)
+        self.assertNotIn("edit", names)
+        self.assertNotIn("run", names)
 
 
 class CompletionOverflowTests(unittest.TestCase):

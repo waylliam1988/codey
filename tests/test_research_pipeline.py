@@ -12,8 +12,8 @@ import codey.research.followup_selection as followup_selection_module
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.research.context import ResearchContext, ResearchPipelineConfig, RunTraceResearchSink
-from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore
+from codey.research.evidence_rules import EvidenceFollowupResult
 from codey.research.followup_selection import ResearchCandidateScore, candidate_score, selects_candidate
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
@@ -498,7 +498,7 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
             del plan, tools
             return followup_material
 
-        from codey.research.evidence_followup import EvidenceFollowupResult
+        from codey.research.evidence_rules import EvidenceFollowupResult
 
         def fake_followup_runner(*, tools, plan, material, question, initial_summary="", max_context_chars=8000, should_stop=None):
             del tools, plan, material, question, initial_summary, max_context_chars, should_stop

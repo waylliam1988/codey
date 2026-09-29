@@ -263,9 +263,9 @@ class NativeToolsUnifyTests(unittest.TestCase):
         # Cold-start closure: old loop deleted, single native check via new entry.
         self.assertFalse((REPO_ROOT / "codey/agents/loop.py").exists())
         self.assertFalse((REPO_ROOT / "codey/agents/runner.py").exists())
-        from codey.operations import task_loop
+        from codey.operations import kernel_transport
 
-        self.assertTrue(callable(getattr(task_loop, "provider_uses_native", None)))
+        self.assertTrue(callable(getattr(kernel_transport, "provider_uses_native", None)))
         from codey.agents import prompt_context
 
         self.assertTrue(callable(getattr(prompt_context, "session_uses_native_tools", None)))

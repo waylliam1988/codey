@@ -91,7 +91,8 @@ def _project_context(request: AgentRequest) -> str:
 
 def run(request: AgentRequest) -> RunResult:
     from codey.operations.kernel_execution import record_facts_for_result
-    from codey.operations.task_loop import TaskSession, run_task_kernel, turn_effect_id
+    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_session import TaskSession, turn_effect_id
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolResult
 

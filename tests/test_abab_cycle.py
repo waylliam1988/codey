@@ -161,7 +161,7 @@ def test_runaway_guard_failure_is_visible(tmp_path: Path) -> None:
         def send(self, prompt: str, timeout: object = None) -> str:
             return "not json"
 
-    with patch("codey.operations.task_loop.provider_uses_native", return_value=False):
+    with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
         result = run_task_kernel(session, provider=_BadProvider(), executors={}, run_id="r-runaway", stagnant_turns=2)
     assert result.stop_reason == "protocol"
 

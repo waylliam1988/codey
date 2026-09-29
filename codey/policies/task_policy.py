@@ -276,6 +276,48 @@ def _alias_allowed(canonical: str, allowed: set[str]) -> bool:
     return False
 
 
+def policy_for_dispatch(request: object, kind: object, *, strict_research: object = False) -> TaskPolicy | None:
+    """Build the immutable TaskPolicy for one dispatch kind (user intent only).
+
+    Moved from operations.task_loop so policy lives with policy; task_loop
+    re-exports it for backward compatibility.
+    """
+    try:
+        return build_task_policy(request, task_kind=kind, strict_research=strict_research)
+    except Exception:
+        return None
+
+
+def apply_auto_plan(policy: object, plan_text: object) -> object:
+    """Narrow a policy by an auto PLAN; the plan can never widen grants."""
+    if policy is None or not callable(getattr(policy, "allows", None)):
+        return policy
+    text = str(plan_text or "")
+    lowered = text.lower()
+    if "action:" not in lowered and "plan:" not in lowered:
+        return policy
+    grants = set(getattr(policy, "grants", frozenset()) or frozenset())
+    if "action: project" not in lowered and "action:project" not in lowered:
+        grants.discard("project.write")
+        grants.discard("shell.approval")
+    if "action: research" not in lowered and "action:research" not in lowered:
+        grants.discard("web.read")
+        grants.discard("knowledge.read")
+        grants.discard("knowledge.write")
+        grants.discard("knowledge.link")
+    grants.add("control")
+    try:
+        return TaskPolicy(
+            grants=frozenset(grants),
+            strict_research=bool(getattr(policy, "strict_research", False)),
+            required_checks=tuple(getattr(policy, "required_checks", ()) or ()),
+            source=str(getattr(policy, "source", "") or "") + ";auto_narrowed",
+            version=int(getattr(policy, "version", 1) or 1),
+        )
+    except Exception:
+        return policy
+
+
 __all__ = [
     "CODING_TOOL_GRANTS",
     "KNOWN_TASK_GRANTS",
@@ -283,6 +325,8 @@ __all__ = [
     "STRICT_RESEARCH_REQUIRED_CHECKS",
     "TASK_POLICY_VERSION",
     "TaskPolicy",
+    "apply_auto_plan",
     "build_task_policy",
+    "policy_for_dispatch",
     "visible_research_tools",
 ]

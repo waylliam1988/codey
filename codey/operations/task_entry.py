@@ -1,9 +1,11 @@
 """Single task entry: runtime submission + mode dispatch (one import point).
 
 Runtime entry ``run_task_submission`` and mode entry ``run_task_mode`` converge
-here so project/research/hybrid/readonly share one authorization + completion
-path. The task entry owns the single ``TaskSession``/common fact view; flows
-provide strategy phases and result projections on that session.
+here. Hybrid runs on the shared entry kernel with one ``TaskSession``/common
+fact view; project/research/planning delegate to their dedicated flows with
+their own sessions. All production tool calls converge in
+``run_task_kernel``/``execute_turn``; ``done`` converges in the single
+``completion_gate``.
 """
 from __future__ import annotations
 
@@ -29,7 +31,7 @@ def _task_kind(task_kind: object) -> str:
 
 
 def build_task_policy_for_entry(request: Any, task_kind: object) -> Any:
-    from codey.operations.task_loop import policy_for_dispatch
+    from codey.policies.task_policy import policy_for_dispatch
 
     kind = _task_kind(task_kind)
     strict = kind == "research" or bool(getattr(request, "strict_research", False) is True)
@@ -48,7 +50,7 @@ def _build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | 
 
 
 def _create_entry_session(frame: RunFrame, work: RunWork, policy: Any, kind: str) -> Any:
-    from codey.operations.task_loop import TaskSession
+    from codey.operations.task_session import TaskSession
 
     request = frame.request
     session = TaskSession(
@@ -119,7 +121,7 @@ def _entry_check_conflict(policy: Any, request: Any, kind: str) -> None:
 
 
 def _entry_apply_auto(frame: RunFrame, policy: Any, kind: str) -> tuple[Any, str]:
-    from codey.operations.task_loop import apply_auto_plan
+    from codey.policies.task_policy import apply_auto_plan
 
     request = frame.request
     try:
@@ -265,6 +267,10 @@ def run_entry_kernel(
     project_path, tool_fns, research_tools = _entry_executors(frame, deps, policy)
     delivered, _, resume_start, initial_results = _entry_recovery(frame, session)
     active_provider, intent_sink, stop_flag = _entry_provider_sink(frame, deps, kind)
+    try:
+        ignored = tuple(getattr(getattr(config_result, "config", None), "ignored_paths", ()) or ())
+    except Exception:
+        ignored = ()
     result = run_task_kernel(
         session,
         provider=active_provider,
@@ -296,6 +302,8 @@ def run_entry_kernel(
         start_turn=resume_start,
         initial_results=initial_results or None,
         provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
+        workspace_ignored_paths=ignored,
+        workspace_revision_store=getattr(deps, "workspace_revisions", None),
     )
     # Stash the session + ledger for hybrid quality phases (same fact view).
     try:
@@ -412,35 +420,9 @@ def _enrich_hybrid_outcome(
             rendered = ""
         if rendered and "evidence" not in display:
             display["evidence"] = str(rendered)[:2000]
-        # 2) Quality review: research report/proof signals on the same ledger.
-        try:
-            ledger = getattr(research_tools, "ledger", None) if research_tools is not None else None
-            summary = str(event.get("summary") or "")
-            if ledger is not None and summary:
-                from codey.research.report_quality import review_report_quality
-
-                try:
-                    opened = set(getattr(ledger, "final_url_set", lambda: set())() or ())
-                except Exception:
-                    opened = set()
-                try:
-                    urls = set(getattr(session, "search_results", {}).values()) if session is not None else set()
-                except Exception:
-                    urls = set()
-                try:
-                    review = review_report_quality(summary, ledger=ledger, opened_sources=opened, search_result_urls=urls)
-                    display["report_quality"] = "pass" if bool(getattr(review, "ok", False)) else "fail"
-                    try:
-                        warnings = list(getattr(review, "warnings", ()) or [])[:5]
-                        if warnings:
-                            display["report_warnings"] = [str(w)[:200] for w in warnings]
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # 3) Project review trigger: changed files + verification state.
+        # Strict research quality is decided in completion_gate before done;
+        # display never re-judges quality after the kernel verdict.
+        # 2) Changed files projection: already-decided session facts only.
         try:
             edited = dict(getattr(session, "edited_files", {}) or {}) if session is not None else {}
             verifs = list(getattr(session, "verifications", ()) or []) if session is not None else []
@@ -453,7 +435,7 @@ def _enrich_hybrid_outcome(
                     pass
         except Exception:
             pass
-        # 4) SSE/final display: keep single-session result, add projections.
+        # 3) SSE/final display: keep single-session result, add projections.
         # SSE turn/tool events were already emitted via hooks.on_event in the
         # kernel; here we keep the ModeOutcome display shape compatible.
         if display != (event.get("receipt") or {}).get("display", {}):

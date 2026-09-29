@@ -10,7 +10,7 @@ from codey.operations.kernel_protocol import _CONTROLLER_ALIASES, _policy_allows
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
 
-__all__ = ["execute_turn", "record_facts_for_result"]
+__all__ = ["execute_turn", "record_facts_for_result", "sync_workspace_state_after_edit"]
 
 def _result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) -> bool:
     if exit_code is not None:
@@ -20,25 +20,6 @@ def _result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) -
             return False
     text = str(result.model_text or "")
     return not (text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"))
-
-
-def _fake_run_ok(text: str) -> bool:
-    import re as _re
-
-    lowered = str(text or "").lower()
-    for match in _re.finditer(r"(\d+)\s+failed", lowered):
-        try:
-            if int(match.group(1)) > 0:
-                return False
-        except (TypeError, ValueError):
-            return False
-    for match in _re.finditer(r"(\d+)\s+passed", lowered):
-        try:
-            if int(match.group(1)) > 0:
-                return True
-        except (TypeError, ValueError):
-            continue
-    return "pass" in lowered or lowered.strip().endswith("ok")
 
 
 def _error_result(call: ToolCall, message: str) -> ToolResult:
@@ -183,7 +164,7 @@ def _session_workspace_identity(session: TaskSession) -> tuple[int, str]:
     return rev, fp
 
 
-def _disk_workspace_fingerprint(project_path: Any) -> str:
+def _disk_workspace_fingerprint(project_path: Any, *, ignored_paths: Any = ()) -> str:
     """Real post-edit file identity; empty when it cannot be observed."""
     try:
         if project_path is None:
@@ -198,15 +179,60 @@ def _disk_workspace_fingerprint(project_path: Any) -> str:
                 return ""
         except Exception:
             return ""
-        return str(workspace_fingerprint(candidate) or "")
+        try:
+            ignores = tuple(str(p) for p in (ignored_paths or ())) if ignored_paths else ()
+        except Exception:
+            ignores = ()
+        return str(workspace_fingerprint(candidate, ignored_paths=ignores) or "")
     except Exception:
         return ""
+
+
+def sync_workspace_state_after_edit(
+    session: TaskSession,
+    project_path: Any,
+    execution_evidence: Any = None,
+    *,
+    ignored_paths: Any = (),
+    revision_store: Any = None,
+) -> None:
+    """Sync one authoritative post-edit WorkspaceState to session+evidence.
+
+    Single bounded fingerprint scan with the configured ``ignored_paths``.
+    When ``revision_store`` is supplied, the durable ``bump_state`` is the
+    single authority (one scan inside the store); otherwise only the
+    observed fingerprint is aligned and the outer hooks bump owns the
+    revision (at most two bounded scans per edit total, never divergent
+    ignores).
+    """
+    try:
+        ignores = tuple(str(p) for p in (ignored_paths or ())) if ignored_paths else ()
+    except Exception:
+        ignores = ()
+    if revision_store is not None and project_path is not None:
+        try:
+            state = revision_store.bump_state(project_path, ignored_paths=ignores)
+            rev, fp = int(state.revision or 0), str(state.fingerprint or "")
+            if fp:
+                with contextlib.suppress(Exception):
+                    session.set_workspace_state(rev, fp)
+                try:
+                    if execution_evidence is not None and hasattr(execution_evidence, "set_workspace_state"):
+                        execution_evidence.set_workspace_state(rev, fp)
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+    _sync_workspace_after_edit(session, project_path, execution_evidence, ignored_paths=ignores)
 
 
 def _sync_workspace_after_edit(
     session: TaskSession,
     project_path: Any,
     execution_evidence: Any = None,
+    *,
+    ignored_paths: Any = (),
 ) -> None:
     """Write the same real WorkspaceState to session and outer evidence.
 
@@ -215,10 +241,15 @@ def _sync_workspace_after_edit(
     WorkspaceRevisionStore (hooks bump exactly once); here we only sync the
     observed file fingerprint so verification never carries the stale
     pre-edit identity. No inference from the startup-cached fingerprint,
-    no second revision bump.
+    no second revision bump. ``ignored_paths`` must match the outer store
+    config so both scans describe the same files.
     """
     try:
-        fp = _disk_workspace_fingerprint(project_path)
+        ignores = tuple(str(p) for p in (ignored_paths or ())) if ignored_paths else ()
+    except Exception:
+        ignores = ()
+    try:
+        fp = _disk_workspace_fingerprint(project_path, ignored_paths=ignores)
     except Exception:
         fp = ""
     if not fp:
@@ -305,27 +336,6 @@ def _record_read_fact(session: TaskSession, args: dict[str, Any]) -> None:
         pass
 
 
-def _record_fallback_run(
-    session: TaskSession, args: dict[str, Any], text: str, result: ToolResult, sess_rev: int, sess_fp: str
-) -> None:
-    command = str(args.get("command", "") or "")
-    latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
-    try:
-        audit_exit = None
-        if isinstance(result.audit, dict) and result.audit.get("exit_code") is not None:
-            audit_exit = int(result.audit.get("exit_code"))
-    except Exception:
-        audit_exit = None
-    session.record_verification(
-        command,
-        latest,
-        _fake_run_ok(text),
-        exit_code=audit_exit,
-        workspace_revision=sess_rev or None,
-        workspace_fingerprint=sess_fp or None,
-    )
-
-
 def record_facts_for_result(
     session: TaskSession,
     call: ToolCall,
@@ -340,8 +350,22 @@ def record_facts_for_result(
     args = call.args if isinstance(call.args, dict) else {}
     text = str(result.model_text or "")
     sess_rev, sess_fp = _session_workspace_identity(session)
-    if name == "run" and exit_code is not None:
-        _record_run_verification(session, args, exit_code, sess_rev, sess_fp)
+    if name == "run":
+        # Structured exit codes only; text never implies pass. Missing
+        # structured exit stays not_run (no passing verification recorded).
+        # Audit exit codes are structured when present; otherwise no record.
+        effective_exit = exit_code
+        if effective_exit is None and isinstance(result.audit, dict):
+            try:
+                if result.audit.get("exit_code") is not None:
+                    effective_exit = int(result.audit.get("exit_code"))
+            except (TypeError, ValueError):
+                effective_exit = None
+        if effective_exit is not None:
+            _record_run_verification(session, args, effective_exit, sess_rev, sess_fp)
+            if text:
+                session.transcript_notes.append(f"run: {text[:500]}")
+            return
         if text:
             session.transcript_notes.append(f"run: {text[:500]}")
         return
@@ -357,8 +381,6 @@ def record_facts_for_result(
         _record_edit_fact(session, args, result)
     elif name == "read_file":
         _record_read_fact(session, args)
-    elif name == "run":
-        _record_fallback_run(session, args, text, result, sess_rev, sess_fp)
     if text:
         session.transcript_notes.append(f"{name}: {text[:500]}")
 
@@ -509,8 +531,8 @@ def _run_via_delegate_or_fn(
     else:
         result = ToolResult(call=call, model_text=str(produced))
     ok = _result_ok(name, result)
-    if name == "run":
-        ok = _fake_run_ok(str(result.model_text or ""))
+    # ``run`` without a structured exit code never counts as verified pass;
+    # verification is decided in record_facts_for_result from exit codes only.
     return result, ok, "", [], None, True
 
 
@@ -534,6 +556,8 @@ def execute_turn(
     intent_sink: Any = None,
     controller_allowed: Any = None,
     execution_evidence: Any = None,
+    workspace_ignored_paths: Any = (),
+    workspace_revision_store: Any = None,
 ) -> list[ToolResult]:
     """Execute one turn; identity is run+turn+index with durable delivery first.
 
@@ -623,15 +647,20 @@ def execute_turn(
         )
         # After a confirmed edit, sync the real post-edit file identity into
         # both the session and the outer evidence before any later run
-        # receipt in the same batch or the next turn. Single observation,
-        # no second revision bump (revision owned by the outer store).
+        # receipt in the same batch or the next turn. Single observation
+        # with the configured ignores; revision owned by the outer store
+        # unless an explicit store is injected (single authoritative bump).
         if name == "edit" and ok:
             try:
                 changed = True
                 if isinstance(result.audit, dict) and "changed" in result.audit:
                     changed = bool(result.audit.get("changed"))
                 if changed:
-                    _sync_workspace_after_edit(session, project_path, execution_evidence)
+                    sync_workspace_state_after_edit(
+                        session, project_path, execution_evidence,
+                        ignored_paths=workspace_ignored_paths,
+                        revision_store=workspace_revision_store,
+                    )
             except Exception:
                 pass
         results.append(result)

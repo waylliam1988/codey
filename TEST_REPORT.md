@@ -1,5 +1,31 @@
 # Codey Test Report
 
+## Kernel hardening + task_loop responsibility split (2026-09-29)
+
+- Scope: validator-exception fail-closed, structured-only run verification,
+  hybrid projection without post-hoc quality, authoritative per-edit workspace
+  state with shared `ignored_paths`, pytest home full-path fix, hybrid release
+  gate ordered tool chain + single session, evidence-rules extraction with old
+  loop deletion, obsolete `ToolRegistry` deletion, `ToolSpec` single-source
+  locks, and `task_loop` split (`kernel_prompt`/`kernel_events` enlarged
+  `kernel_transport`/`TurnSnapshot` in `kernel_protocol`/policy in
+  `task_policy`; one snapshot per round; shared approval profile; fail-closed
+  native receipts).
+- New lock files: `test_kernel_protocol_validator_failclosed`,
+  `test_kernel_run_verification_structured`, `test_hybrid_outcome_projection`,
+  `test_workspace_authoritative_state`, `test_pytest_home_isolation`,
+  `test_release_gate_tool_order`, `test_toolspec_single_source`,
+  `test_kernel_round_stateflow` (15 cases), plus `test_architecture_no_legacy_loops`.
+- Pre-checks before the full run: `ruff check codey tests tools` clean,
+  `py_compile` clean, `git diff --check` clean (run at commit time).
+- Full run `python -m pytest tests -q -p no:cacheprovider`:
+  `4890 passed, 10 skipped, 1464 subtests passed in 383.19s (0:06:23)`.
+  Zero failures (previous run: 4882 passed + 8 failed; the 8 were registry
+  deletion fallout in `kernel_harness` native branch + architecture import
+  assertions, fixed by ToolSpec-based harness tools and explicit submodule
+  imports in `task_loop`).
+- No release was made.
+
 ## Shared task kernel cold-start cleanup (2026-09-29)
 
 - Renamed vendor-specific live tooling to behavior-based names:

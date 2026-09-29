@@ -10,8 +10,8 @@ from typing import Protocol
 import codey.research.followup_selection as followup_selection
 from codey.research.brief_projection import project_research_brief
 from codey.research.context import ResearchContext, ResearchPipelineConfig
-from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
+from codey.research.evidence_rules import EvidenceFollowupResult
 from codey.research.evidence_runtime import snapshot_from_research_record
 from codey.research.plan_executor import PlanExecutionResult, PlanExecutor
 from codey.research.proof_quality import ResearchProofReview, review_research_proof

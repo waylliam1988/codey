@@ -72,7 +72,7 @@ class WorkspaceFingerprintStaleTests(unittest.TestCase):
 
             from codey.agents.tools import DEFAULT_TOOL_FNS
 
-            with patch("codey.operations.task_loop.provider_uses_native", return_value=False):
+            with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
                 run_task_kernel(
                     session,
                     provider=FakeProvider(),
@@ -312,7 +312,7 @@ class ToolSpecValidationTests(unittest.TestCase):
 class SnapshotFailClosedTests(unittest.TestCase):
     def test_snapshot_build_failure_does_not_fallback(self) -> None:
         """Snapshot import failure must terminate the turn, not show stale tools."""
-        from codey.operations import task_loop as kernel
+        from codey.operations import kernel_prompt, kernel_protocol
         from codey.policies.task_policy import TaskPolicy
 
         policy = TaskPolicy(grants=frozenset({"web.read", "knowledge.read", "control"}), strict_research=True)
@@ -329,9 +329,9 @@ class SnapshotFailClosedTests(unittest.TestCase):
             # _snapshot_names must not silently fallback to policy-scope list;
             # it must raise/fail-closed so the kernel terminates the turn.
             with self.assertRaises(RuntimeError, msg="snapshot failure must not fallback"):
-                kernel._snapshot_names(policy, ("web_search",))
+                kernel_prompt._snapshot_names(policy, ("web_search",))
             with self.assertRaises(RuntimeError, msg="native snapshot failure must not fallback"):
-                kernel._native_tools_for_policy(policy, ("web_search",))
+                kernel_protocol._native_tools_for_policy(policy, ("web_search",))
         finally:
             spec_mod.visible_tool_names_for_snapshot = orig  # type: ignore[assignment]
 

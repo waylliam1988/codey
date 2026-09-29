@@ -362,7 +362,7 @@ def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any
     """
     delivered: dict[str, Any] = {}
     try:
-        from codey.operations.task_loop import turn_effect_id
+        from codey.operations.task_session import turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
     except Exception:
         return delivered

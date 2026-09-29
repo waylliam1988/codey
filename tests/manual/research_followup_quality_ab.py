@@ -22,11 +22,11 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.evidence_followup import run_evidence_followup
 from codey.operations.research_iteration import ResearchIteration
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider
 from codey.research.context import ResearchContext, ResearchPipelineConfig
-from codey.research.evidence_followup import run_evidence_followup
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.proof_quality import review_research_proof

@@ -2,6 +2,38 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 内核行为收紧 + task_loop 按职责拆分（未发布）
+
+- 协议校验失败即关闭：`validate_args_against_spec` 抛异常时，JSON 与原生
+  调用一律拒绝，不再接受未声明参数（`test_kernel_protocol_validator_failclosed`）。
+- 验证只认结构化退出码：删除 `_fake_run_ok()` 文本推断与 fallback 记录；
+  无退出码一律 `not_run`，仅零退出码且工作区身份匹配才通过
+  （`test_kernel_run_verification_structured`；存量测试改用
+  `audit={"exit_code": 0}`）。
+- 混合展示只投影内核结论：删除事后 `report_quality` 分支与误导性
+  “Project review trigger”注释；严格质量判定只在完成门内
+  （`test_hybrid_outcome_projection`）。
+- 每次编辑一份权威工作区状态：`sync_workspace_state_after_edit()` 携带配置
+  的 `ignored_paths`，内核指纹扫描与 hooks 修订递增描述同一文件集
+  （`test_workspace_authoritative_state`）。
+- 修正 `tests/conftest.py` Windows `HOMEPATH` 为完整临时 home 路径，并加
+  子进程 home 断言（`test_pytest_home_isolation`）。
+- Hybrid 发布门槛证明有序工具链（搜索→打开→读→改→验证→完成）与单会话；
+  任务提示与文档仅宣称实际验证范围（`test_release_gate_tool_order`）。
+- 证据补充：规则抽取到 `research/evidence_rules.py`（无模型循环），删除旧
+  `provider.send` 直连循环；旧 `ToolRegistry` 已删除（唯一源为 `ToolSpec`），
+  `protocols.__init__` 移除旧导出；测试探针已迁移，行为断言保留。
+- `task_loop.py` 按职责拆分（约 983 → 620 行，不新增交叉模块）：纯文本到
+  `kernel_prompt.py`，事件投影到 `kernel_events.py`，能力选择/回执/预算排空到
+  `kernel_transport.py`（失败上抛，循环映射为结果），`TurnSnapshot` 与快照
+  构造到 `kernel_protocol.py`，策略构造收紧到 `task_policy.py`。每轮仅在轮次
+  开始构造一次快照；审批经 `effective_project_profile()` 与策略授权；
+  原生回执失败一律 `provider_failure`。`task_loop` 仅保留
+  `KernelResult`/`run_task_kernel`，无反向导入。
+- 验证：`ruff check codey tests tools` 通过；全量
+  `python -m pytest tests -q`：`4890 passed, 10 skipped, 1464 subtests passed`。
+  未发布。
+
 ## Unreleased - 共享任务内核冷启动收口（未发布）
 
 - pytest 在应用模块导入前安装可写的临时 home，测试不会再写入宿主用户的
