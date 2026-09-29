@@ -55,9 +55,9 @@ class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
         )
 
     def test_delivered_rebuild_failure_does_not_return_bare_stored(self) -> None:
-        from codey.operations.kernel_recovery import _delivered_slot_result
         from codey.operations.task_session import turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
+        from tests.recovery_test_helpers import delivered_slot_result as _delivered_slot_result
 
         call = ToolCall(name="edit", args={"path": "a.py", "content": "x\n"}, call_id="c1")
         stored = ToolResult(call=call, model_text="stored-bare")

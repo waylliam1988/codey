@@ -63,6 +63,60 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
 
         self.assertEqual(captured[0].workspace_revision_store, store)
 
+    def test_coding_writer_without_workspace_revision_store_fails_before_agent_run(self) -> None:
+        from codey.agents.writer_failover import CheckpointView, WriterAttempt
+        from codey.operations import project_writer_phase
+
+        run = mock.Mock()
+        deps = SimpleNamespace(
+            agent=SimpleNamespace(run=run),
+            runtime=SimpleNamespace(mutations=None, tool_result_delivery=None),
+            persistence=SimpleNamespace(managed_outputs=None),
+            verification=SimpleNamespace(workspace_revisions=None),
+        )
+        frame = SimpleNamespace(
+            recovered_tool_outcomes=(),
+            recovered_tool_result_batch_id="",
+            conversation=None,
+            provider_session_changed=False,
+            run_id="run-1",
+            trace=None,
+            project_text="project",
+        )
+        ctx = SimpleNamespace(
+            writer_attempt_index=0,
+            frame=frame,
+            state=SimpleNamespace(run_registry=SimpleNamespace(stop_flag=None)),
+            request=SimpleNamespace(session_id="session-1", requested_capabilities=()),
+            project="project",
+            deps=deps,
+            verified_facts="",
+            project_context=SimpleNamespace(research_context="", project_config_warnings=""),
+            project_map="",
+            repair_projection=None,
+            tracker=None,
+            verification_candidates=(),
+            hooks=SimpleNamespace(on_shell_request=lambda _approval: None),
+        )
+        spec = WriterAttempt(
+            task="write",
+            provider_id="local",
+            provider=object(),
+            remaining_turns=1,
+            fresh_chat=False,
+            strict_fresh_chat=False,
+            handoff="",
+            checkpoint=CheckpointView(),
+        )
+
+        with mock.patch.object(project_writer_phase, "_ghost_experiences", return_value=""), self.assertRaises(
+            RuntimeError
+        ) as raised:
+            project_writer_phase._run_one_writer_attempt(ctx, spec, lambda _turn: None)
+
+        self.assertIn("WorkspaceRevisionStore", str(raised.exception))
+        run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

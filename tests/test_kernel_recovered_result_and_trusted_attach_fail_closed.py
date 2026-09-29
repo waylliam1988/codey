@@ -33,10 +33,10 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
         from pathlib import Path
 
         from codey.operations import kernel_execution as ke
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.workspace.revision import WorkspaceRevisionStore
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         def _policy():
             from codey.policies.task_policy import TaskPolicy

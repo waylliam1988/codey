@@ -29,12 +29,12 @@ class ExplicitExecutorForgesWorkspaceIdentityNoStoreTests(unittest.TestCase):
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.task_phases import hooks as hooks_mod
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.observe.execution_evidence import ExecutionEvidence
         from codey.workspace.revision import WorkspaceRevisionStore
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         forged_fp = "sha256:" + "0" * 64
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as home:

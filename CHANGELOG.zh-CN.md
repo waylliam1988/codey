@@ -2,6 +2,27 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 恢复边界扫描与 receipt 类型加固（未发布）
+
+- P1 `event_proof()` 现在与两个 attach 路径共用同一校验 helper，重新校验
+  capability；伪造或无 capability 的 proof 不会被采纳。
+- P1 事件投影失败会补发 ERROR `tool_finished` 关闭已开始的工具，并以
+  `recovery_failure` 结束 kernel，保证任务只有一个完整终态，不留下 UI
+  pending 工具。
+- P1 持久化 receipt 的 `ok` 只接受精确布尔值；异常值不能把 intent、事件或
+  replay 标成成功。provenance 读取和 durable 结算失败会 fail-closed，不再写
+  成功 receipt。
+- P2 `exit_code` 在 `TaskSession` payload 往返中保留并严格校验；生产
+  project writer 缺少共享 `WorkspaceRevisionStore` 时在调用 agent 前明确失败。
+- P2 删除无调用者的恢复 wrapper 和第二条 provenance 复制路径；生产只保留
+  typed recovery API。批次恢复结束增加 workspace epoch 一致性复核。
+- TDD 锁定：新增 9 个准确命名测试模块，并收紧旧恢复测试。所有确定性复现均
+  先失败、修复后通过。
+- 验证：`ruff`、`compileall`、`git diff --check` 全洁。全量
+  `python -m pytest -q -p no:cacheprovider`：
+  `5044 passed, 32 skipped, 1471 subtests passed in 349.22s (0:05:49)`，
+  零失败。未发布。
+
 ## Unreleased - Kernel 恢复与结算加固（未发布）
 
 - P1 退出码按 effect 隔离：tool event 只读取当前 durable receipt 或当前

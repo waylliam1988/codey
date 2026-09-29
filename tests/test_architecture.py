@@ -2110,6 +2110,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     break
         self.assertEqual(offenders, [])
 
+    def test_project_writer_requires_durable_workspace_revision_store(self) -> None:
+        source = (ROOT / "codey" / "operations" / "project_writer_phase.py").read_text(encoding="utf-8")
+        self.assertIn("workspace_revision_store = ctx.deps.verification.workspace_revisions", source)
+        self.assertIn('raise RuntimeError("coding writer requires WorkspaceRevisionStore")', source)
+
     def test_kernel_execution_exposes_only_orchestration(self) -> None:
         # Cold-start boundary: ``kernel_execution`` is the thin orchestrator
         # (``execute_turn`` only in ``__all__``). Result/provenance/recovery/
@@ -2135,10 +2140,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         for name in (
             "_result_ok",
             "_consistent_tool_result",
-            "_replay_settled_slot",
-            "_delivered_slot_result",
             "_with_trusted_workspace_state",
-            "_trusted_workspace_from_result",
             "_kernel_workspace_identity_of",
             "record_facts_for_result",
             "build_recovered_tool_result",

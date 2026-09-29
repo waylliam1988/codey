@@ -2,6 +2,30 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Recovery boundary sweep and receipt type hardening (no release)
+
+- P1 trusted proof capability is now revalidated by `event_proof()` through the
+  same helper used by both attach paths; forged or capability-less proofs are
+  ignored.
+- P1 event projection failures close the started tool with an ERROR
+  `tool_finished` event and terminate the kernel as `recovery_failure`, leaving
+  one complete task terminal event instead of a pending UI tool.
+- P1 persisted receipt booleans are exact: malformed `ok` values cannot mark
+  intents, events, or replayed sessions successful. Provenance read and durable
+  settlement failures now fail closed instead of writing a success receipt.
+- P2 `exit_code` survives `TaskSession` payload round trips with strict type
+  checks; project writer startup requires the shared `WorkspaceRevisionStore`.
+- P2 removed unused recovery wrappers and the second provenance copy path;
+  typed recovery APIs are now the only production entry points. Workspace
+  epoch recovery performs a final batch consistency check.
+- TDD locks: nine new accurately named test modules plus tightened legacy
+  recovery tests. All deterministic reproductions were confirmed failing
+  before their production fixes and passing afterward.
+- Verification: `ruff`, `compileall`, and `git diff --check` clean. Full
+  `python -m pytest -q -p no:cacheprovider`:
+  `5044 passed, 32 skipped, 1471 subtests passed in 349.22s (0:05:49)`.
+  Zero failures. No release.
+
 ## Unreleased - Kernel recovery and settlement hardening (no release)
 
 - P1 effect-local exit projection: tool events read `exit_code` from the

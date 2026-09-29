@@ -139,8 +139,8 @@ def build_hooks(
         if project and _workspace_edit_event(event) and not _adopt_kernel_workspace_state(work, event):
             # Kernel edits already bumped exactly once in
             # sync_workspace_state_after_edit and carry the authoritative
-            # (revision, fingerprint) in event metadata. Adopt it without a
-            # second bump/scan. Non-kernel edits carry no state and still bump.
+            # proof in the event side-channel. Adopt it without a second
+            # bump/scan. Non-kernel edits carry no state and still bump.
             work.advance_workspace_revision(
                 deps.workspace_revisions,
                 project,

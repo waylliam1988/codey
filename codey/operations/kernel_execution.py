@@ -395,7 +395,8 @@ def _reconcile_guarded_slot(
             settle(identity, call, guarded, ok=False)
         else:
             try:
-                prior_ok = bool(prior.get("ok", False)) if isinstance(prior, dict) else False
+                raw_ok = prior.get("ok", False) if isinstance(prior, dict) else False
+                prior_ok = raw_ok if type(raw_ok) is bool else False
             except Exception:
                 prior_ok = False
             reconcile_intent_only(identity, ok=prior_ok)
@@ -405,9 +406,10 @@ def _reconcile_guarded_slot(
         return
     if slot.disposition == "RECOVERED":
         try:
-            orig_ok = bool((session.executed.get(identity) or {}).get("ok", True))
+            raw_ok = (session.executed.get(identity) or {}).get("ok", False)
+            orig_ok = raw_ok if type(raw_ok) is bool else False
         except Exception:
-            orig_ok = True
+            orig_ok = False
         reconcile_intent_only(identity, ok=orig_ok)
 
 
@@ -606,8 +608,8 @@ def _settle_slot(
         if identity_obj is not None and bool(ok):
             record["workspace_revision"] = int(identity_obj.revision)
             record["workspace_fingerprint"] = str(identity_obj.fingerprint)
-    except Exception:
-        pass
+    except Exception as exc:
+        raise EffectSettlementFailed(f"effect settlement provenance failed for {identity}: {exc}") from exc
     try:
         session.executed[identity] = record
     except Exception as exc:

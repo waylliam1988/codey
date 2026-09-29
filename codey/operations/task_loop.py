@@ -480,7 +480,15 @@ def run_task_kernel(
         if isinstance(results_or_failure, KernelResult):
             return results_or_failure
         results = results_or_failure
-        _events._emit_tool_results(on_event, session, results, run_id=identity_ref, turn=turn)
+        try:
+            _events._emit_tool_results(on_event, session, results, run_id=identity_ref, turn=turn)
+        except RecoveryFailed as exc:
+            return KernelResult(
+                completed=False,
+                summary=f"recovery failed: {exc}",
+                turns=turns_used,
+                stop_reason="recovery_failure",
+            )
         advance = _advance_after_results(native, results, session, pending_native_messages)
         if isinstance(advance, KernelResult):
             return advance

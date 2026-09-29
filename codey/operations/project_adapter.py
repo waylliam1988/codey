@@ -89,6 +89,15 @@ def _project_context(request: AgentRequest) -> str:
     return f"{rendered.text}\n\n{candidate_text}" if candidate_text else rendered.text
 
 
+def _session_checks_passed(session: Any) -> bool:
+    """Project only an exact boolean verification result into the receipt."""
+    verifications = getattr(session, "verifications", ()) or ()
+    if not verifications:
+        return False
+    latest = verifications[-1]
+    return isinstance(latest, dict) and type(latest.get("passed")) is bool and latest["passed"]
+
+
 def _recovered_result_for_row(row: Any) -> Any:
     """Thin adapter: row -> unified spec -> single builder (no local trust)."""
     from codey.operations.kernel_errors import RecoveryFailed
@@ -286,7 +295,7 @@ def run(request: AgentRequest) -> RunResult:
         summary=outcome.summary,
         stop_reason=outcome.stop_reason,
         turns=outcome.turns,
-        checks_passed=bool(session.verifications and session.verifications[-1].get("passed")),
+        checks_passed=_session_checks_passed(session),
         changed=bool(session.edited_files),
         checks_ran=bool(session.verifications),
     )

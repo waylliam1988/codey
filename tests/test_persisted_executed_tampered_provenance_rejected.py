@@ -3,7 +3,7 @@
 Repro: ``TaskSession.executed`` accepts any payload with a well-formed
 ``workspace_revision``/``workspace_fingerprint``. A tampered record such as
 ``revision=999, fingerprint=sha256:0*64`` is rebuilt by
-``_replay_settled_slot`` into a trusted side-channel, so the replayed event
+the persisted replay path into a trusted side-channel, so the replayed event
 carries 999 and hooks skip the real bump. Format validation is not source
 validation.
 """
@@ -22,12 +22,16 @@ def _policy():
 
 class PersistedExecutedTamperedProvenanceRejectedTests(unittest.TestCase):
     def test_tampered_executed_payload_does_not_replay_as_trusted(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
-        from codey.operations.kernel_recovery import _replay_settled_slot
         from codey.operations.kernel_result import _call_args_digest
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall
         from codey.workspace.revision import WorkspaceRevisionStore
+        from tests.recovery_test_helpers import (
+            replay_settled_result as _replay_settled_slot,
+        )
+        from tests.recovery_test_helpers import (
+            trusted_workspace_pair as _trusted_workspace_from_result,
+        )
 
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as home:
             project = Path(td)

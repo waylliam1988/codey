@@ -71,6 +71,9 @@ def _run_one_writer_attempt(
     spec: WriterAttempt,
     note_turn: Callable[[int], None],
 ) -> RunResult:
+    workspace_revision_store = ctx.deps.verification.workspace_revisions
+    if workspace_revision_store is None:
+        raise RuntimeError("coding writer requires WorkspaceRevisionStore")
     ctx.writer_attempt_index += 1
     recovered_outcomes = ctx.frame.recovered_tool_outcomes
     ctx.frame.recovered_tool_outcomes = ()
@@ -135,7 +138,7 @@ def _run_one_writer_attempt(
         effect_scope=f"writer:{ctx.writer_attempt_index}",
         tool_result_delivery=ctx.deps.runtime.tool_result_delivery,
         runtime_mutations=ctx.deps.runtime.mutations,
-        workspace_revision_store=ctx.deps.verification.workspace_revisions,
+        workspace_revision_store=workspace_revision_store,
         managed_outputs=ctx.deps.persistence.managed_outputs,
         recovered_tool_outcomes=recovered_outcomes,
         recovered_tool_result_batch_id=recovered_batch_id,

@@ -37,8 +37,8 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         self.assertNotIn("_kernel_workspace_trusted", cleaned)
 
     def test_builder_preserves_metadata_without_proof(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.kernel_recovery_result import RecoveredResultSpec, build_recovered_result
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         spec = RecoveredResultSpec(
             call=_call(), model_text="edited",
@@ -54,9 +54,10 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         self.assertEqual((rev, fp), (0, ""))
 
     def test_builder_restores_verified_proof(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result, _trusted_workspace_proof
+        from codey.operations.kernel_provenance import _trusted_workspace_proof
         from codey.operations.kernel_recovery_result import RecoveredResultSpec, build_recovered_result
         from codey.workspace.revision import WorkspaceIdentity
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         ident = WorkspaceIdentity.trusted_pair(2, LEGIT_FP)
         proof = _trusted_workspace_proof(ident, "bump_state")
@@ -95,10 +96,10 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
             build_recovered_result(RecoveredResultSpec(call=_call(), audit={}, trusted_workspace=no_source))
 
     def test_frame_row_forged_audit_stays_untrusted(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.kernel_recovery_result import build_recovered_result, spec_from_frame_row
         from codey.runtime.core.models import ToolCall
         from codey.toolchain.runtime import ToolOutcome
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         # Frame is safe-replay only; forged audit on a safe read stays untrusted.
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
@@ -114,13 +115,17 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         """Regression lock across all entries with the same forged audit."""
         from types import SimpleNamespace as NS
 
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
-        from codey.operations.kernel_recovery import _delivered_slot_result
         from codey.operations.kernel_recovery_result import build_recovered_result, spec_from_frame_row
         from codey.operations.project_adapter import _recovered_result_for_row
         from codey.operations.recovery import delivered_from_frame
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.toolchain.runtime import ToolOutcome
+        from tests.recovery_test_helpers import (
+            delivered_slot_result as _delivered_slot_result,
+        )
+        from tests.recovery_test_helpers import (
+            trusted_workspace_pair as _trusted_workspace_from_result,
+        )
 
         forged = {"workspace_revision": 999, "workspace_fingerprint": FORGED_FP}
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")

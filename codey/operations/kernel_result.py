@@ -309,8 +309,6 @@ def _normalize_delegate_result(
     cleaned_audit, audit_code, invalid = _normalize_audit_exit_code(delegate_audit)
     if invalid:
         with contextlib.suppress(Exception):
-            from codey.operations.kernel_provenance import _copy_kernel_workspace_provenance
-
             rebuilt = ToolResult(
                 call=result.call,
                 model_text=result.model_text,
@@ -319,7 +317,6 @@ def _normalize_delegate_result(
                 audit=cleaned_audit,
                 canonical=dict(result.canonical) if isinstance(result.canonical, dict) else {},
             )
-            _copy_kernel_workspace_provenance(result, rebuilt)
             result = rebuilt
         ok = False
         return result, ok, exit_code

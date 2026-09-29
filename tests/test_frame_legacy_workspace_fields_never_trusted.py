@@ -24,11 +24,11 @@ def _safe_row(**extra):
 
 class FrameLegacyFieldsNeverTrustedTests(unittest.TestCase):
     def test_legacy_sibling_fields_stay_untrusted(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.kernel_recovery_result import (
             build_recovered_result,
             spec_from_frame_row,
         )
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         row = _safe_row(workspace_revision=999, workspace_fingerprint=FORGED_FP)
         result = build_recovered_result(spec_from_frame_row(row))

@@ -1,7 +1,7 @@
 """Recovery errors must come from unified builders, never scattered ToolResult.
 
 Locks P2 builder unification:
-- ``_replay_settled_slot`` contains no direct ``ToolResult(...)`` construction
+- ``kernel_recovery`` contains no direct ``ToolResult(...)`` construction
 - mismatch/failed helpers live in ``kernel_recovery_result`` (single owner)
 """
 from __future__ import annotations

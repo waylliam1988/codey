@@ -30,13 +30,17 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
-        from codey.operations.kernel_recovery import _replay_settled_slot
         from codey.operations.task_phases import hooks as hooks_mod
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.observe.execution_evidence import ExecutionEvidence
         from codey.workspace.revision import WorkspaceRevisionStore
+        from tests.recovery_test_helpers import (
+            replay_settled_result as _replay_settled_slot,
+        )
+        from tests.recovery_test_helpers import (
+            trusted_workspace_pair as _trusted_workspace_from_result,
+        )
 
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as home:
             project = Path(td)

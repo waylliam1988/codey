@@ -333,40 +333,59 @@ def run_entry_kernel(
         ignored = tuple(getattr(getattr(config_result, "config", None), "ignored_paths", ()) or ())
     except Exception:
         ignored = ()
-    result = run_task_kernel(
-        session,
-        provider=active_provider,
-        executors={},
-        run_id=frame.run_id,
-        effect_scope="task",
-        provider_id=frame.provider_id,
-        project_path=project_path,
-        tool_fns=tool_fns,
-        research_tools=research_tools,
-        managed_outputs=getattr(deps, "managed_outputs", None),
-        session_id=request.session_id,
-        permission_profile="research" if kind == "research" else "coding_writer",
-        user_task=execution_task(request),
-        stop_flag=stop_flag,
-        delivered=delivered or None,
-        intent_sink=intent_sink,
-        on_event=hooks.on_event,
-        on_shell_request=hooks.on_shell_request,
-        completion_context={
+    try:
+        result = run_task_kernel(
+            session,
+            provider=active_provider,
+            executors={},
+            run_id=frame.run_id,
+            effect_scope="task",
+            provider_id=frame.provider_id,
+            project_path=project_path,
+            tool_fns=tool_fns,
+            research_tools=research_tools,
+            managed_outputs=getattr(deps, "managed_outputs", None),
+            session_id=request.session_id,
+            permission_profile="research" if kind == "research" else "coding_writer",
+            user_task=execution_task(request),
+            stop_flag=stop_flag,
+            delivered=delivered or None,
+            intent_sink=intent_sink,
+            on_event=hooks.on_event,
+            on_shell_request=hooks.on_shell_request,
+            completion_context={
+                "run_id": frame.run_id,
+                "task": request.task,
+                "question": request.task,
+                "project": frame.project_text,
+                "execution_evidence": work.evidence,
+                "analysis_run_payloads": work.analysis_run_payloads,
+                "research_ledger": getattr(research_tools, "ledger", None),
+            },
+            start_turn=resume_start,
+            initial_results=initial_results or None,
+            provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
+            workspace_ignored_paths=ignored,
+            workspace_revision_store=getattr(deps, "workspace_revisions", None),
+        )
+    except Exception as exc:
+        from codey.operations.kernel_errors import RecoveryFailed
+
+        if not isinstance(exc, RecoveryFailed):
+            raise
+        reason = f"recovery failed: {exc}"
+        return ModeOutcome({
+            "type": "task_done",
             "run_id": frame.run_id,
-            "task": request.task,
-            "question": request.task,
-            "project": frame.project_text,
-            "execution_evidence": work.evidence,
-            "analysis_run_payloads": work.analysis_run_payloads,
-            "research_ledger": getattr(research_tools, "ledger", None),
-        },
-        start_turn=resume_start,
-        initial_results=initial_results or None,
-        provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
-        workspace_ignored_paths=ignored,
-        workspace_revision_store=getattr(deps, "workspace_revisions", None),
-    )
+            "session_id": request.session_id,
+            "summary": reason,
+            "stop_reason": "recovery_failure",
+            "turns": 0,
+            "max_turns": request.max_turns,
+            "provider": frame.provider_id,
+            "mode": kind,
+            "receipt": {"display": {"summary": reason[:2000]}},
+        })
     # Stash the session + ledger for hybrid quality phases (same fact view).
     try:
         frame.entry_session = session

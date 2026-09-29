@@ -166,11 +166,14 @@ class TaskSession:
                 continue
             row: dict[str, Any] = {
                 "name": str(record.get("name", "") or "")[:80],
-                "ok": bool(record.get("ok", False)),
                 "call_id": str(record.get("call_id", "") or "")[:80],
                 "excerpt": str(record.get("excerpt", "") or "")[:500],
                 "args_digest": str(record.get("args_digest", "") or "")[:80],
             }
+            raw_ok = record.get("ok", False)
+            row["ok"] = raw_ok if type(raw_ok) is bool else False
+            if type(record.get("exit_code")) is int:
+                row["exit_code"] = record["exit_code"]
             # Minimal durable provenance for unsafe replay: only a fully
             # valid (revision, fingerprint) pair is persisted.
             try:
@@ -220,7 +223,11 @@ class TaskSession:
             "verifications": [
                 {"command": str(item.get("command", ""))[:240],
                  "revision": int(item.get("revision", 0) or 0),
-                 "passed": bool(item.get("passed", False)),
+                 "passed": (
+                     item.get("passed")
+                     if type(item.get("passed")) is bool
+                     else False
+                 ),
                  "exit_code": item.get("exit_code", None),
                  "workspace_revision": int(item.get("workspace_revision", 0) or 0) if item.get("workspace_revision") is not None else None,
                  "workspace_fingerprint": str(item.get("workspace_fingerprint", "") or "")[:120] if item.get("workspace_fingerprint") else ""}

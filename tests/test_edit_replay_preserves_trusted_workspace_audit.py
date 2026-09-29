@@ -1,9 +1,9 @@
 """Edit replay preserves the trusted workspace audit (no second bump).
 
-Repro (P1): _replay_settled_slot() and _delivered_slot_result() rebuilt a
-ToolResult with only model_text, dropping audit/presentation/canonical/
-truncated. A first edit carried trusted (revision, fingerprint); the replay
-returned audit={} so hooks could not adopt and bumped again.
+Repro (P1): typed replay and delivery rebuilt a ToolResult with only
+model_text, dropping audit/presentation/canonical/truncated. A first edit
+carried trusted (revision, fingerprint); the replay returned audit={} so
+hooks could not adopt and bumped again.
 
 Lock: "edit success -> event -> replay -> event" keeps the same trusted
 (revision, fingerprint) and the store bumps exactly once total.
@@ -47,9 +47,9 @@ def _real_hooks_on_event(*, store, work, project, ignored=()):
 class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
     def test_memory_replay_keeps_audit_presentation_canonical_truncated(self) -> None:
         from codey.operations import kernel_execution as ke
-        from codey.operations.kernel_recovery import _replay_settled_slot
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
+        from tests.recovery_test_helpers import replay_settled_result as _replay_settled_slot
 
         with tempfile.TemporaryDirectory() as td:
             project = Path(td)
@@ -92,12 +92,14 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
             self.assertEqual(bool(replayed.truncated), bool(first.truncated))
 
     def test_delivered_replay_keeps_trusted_workspace_identity(self) -> None:
-        from codey.operations.kernel_provenance import (
-            _trusted_workspace_from_result,
-            _with_trusted_workspace_state,
-        )
-        from codey.operations.kernel_recovery import _delivered_slot_result
+        from codey.operations.kernel_provenance import _with_trusted_workspace_state
         from codey.runtime.core.models import ToolCall, ToolResult
+        from tests.recovery_test_helpers import (
+            delivered_slot_result as _delivered_slot_result,
+        )
+        from tests.recovery_test_helpers import (
+            trusted_workspace_pair as _trusted_workspace_from_result,
+        )
 
         call = ToolCall(name="edit", args={"path": "b.py", "content": "y=2\n"}, call_id="c1")
         # Strict provenance: audit keys alone are never trusted. The stored
@@ -129,12 +131,16 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
-        from codey.operations.kernel_recovery import _replay_settled_slot
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.observe.execution_evidence import ExecutionEvidence
         from codey.workspace.revision import WorkspaceRevisionStore
+        from tests.recovery_test_helpers import (
+            replay_settled_result as _replay_settled_slot,
+        )
+        from tests.recovery_test_helpers import (
+            trusted_workspace_pair as _trusted_workspace_from_result,
+        )
 
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as home:
             project = Path(td)

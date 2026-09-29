@@ -61,8 +61,8 @@ def _frame_with(*rows, run_id: str = "r-trust-boundary"):
 
 class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
     def test_forged_audit_does_not_become_trusted(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.recovery import delivered_from_frame
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         row = _safe_row(audit={"workspace_revision": FORGED_REV, "workspace_fingerprint": FORGED_FP})
         delivered = delivered_from_frame(_frame_with(row), effect_scope="task")
@@ -80,9 +80,9 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
         )
 
     def test_frame_payload_never_restores_trusted(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.recovery import delivered_from_frame
         from codey.workspace.revision import WorkspaceIdentity
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         legit = WorkspaceIdentity.trusted_pair(2, LEGIT_FP)
         self.assertTrue(legit.trusted)
@@ -105,11 +105,15 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
 
     def test_all_recovery_entries_share_trust_rule(self) -> None:
         """Every recovery entry must refuse forged audit without kernel provenance."""
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
-        from codey.operations.kernel_recovery import _delivered_slot_result
         from codey.operations.project_adapter import _recovered_result_for_row
         from codey.operations.recovery import delivered_from_frame
         from codey.runtime.core.models import ToolCall
+        from tests.recovery_test_helpers import (
+            delivered_slot_result as _delivered_slot_result,
+        )
+        from tests.recovery_test_helpers import (
+            trusted_workspace_pair as _trusted_workspace_from_result,
+        )
 
         forged_audit = {"workspace_revision": FORGED_REV, "workspace_fingerprint": FORGED_FP}
         row = _safe_row(audit=forged_audit)
@@ -133,7 +137,7 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
         self.assertIsNotNone(got)
         assert got is not None
         rev, _fp = _trusted_workspace_from_result(got)
-        self.assertEqual(rev, 0, "_delivered_slot_result must not trust forged audit")
+        self.assertEqual(rev, 0, "delivered slot replay must not trust forged audit")
 
 
 if __name__ == "__main__":

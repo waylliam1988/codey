@@ -329,14 +329,23 @@ def spec_from_persisted_record(
     if verified_identity is not None and _is_trusted_identity(verified_identity):
         proof = _trusted_workspace_proof(verified_identity, "persisted_revision_store")
     try:
-        excerpt = str(record.get("excerpt", "") or "") if isinstance(record, dict) else ""
+        excerpt = record.get("excerpt", "") if isinstance(record, Mapping) else ""
+        if type(excerpt) is not str:
+            raise RecoveryFailed("persisted replay excerpt must be a string")
     except Exception as exc:
         raise RecoveryFailed(f"persisted replay unreadable: {exc}") from exc
     audit: dict = {}
     try:
-        name = str(record.get("name", "") or "") if isinstance(record, dict) else ""
+        name = record.get("name", "") if isinstance(record, Mapping) else ""
+        if type(name) is not str:
+            raise RecoveryFailed("persisted replay name must be a string")
         if name.strip().lower() == "edit":
             audit["changed"] = True
+        if isinstance(record, Mapping) and "exit_code" in record:
+            exit_code = record["exit_code"]
+            if type(exit_code) is not int:
+                raise RecoveryFailed("persisted replay exit_code must be an integer")
+            audit["exit_code"] = exit_code
     except Exception as exc:
         raise RecoveryFailed(f"persisted replay unreadable: {exc}") from exc
     return RecoveredResultSpec(

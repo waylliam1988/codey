@@ -1,5 +1,24 @@
 # Codey Test Report
 
+## Recovery boundary sweep and receipt type hardening (2026-09-29)
+
+- Scope: proof capability validation; recovery failure event closure;
+  strict persisted `ok` and `exit_code` handling across replay, intent
+  reconciliation, event projection, session serialization, and project
+  adapter receipts; provenance read and settlement fail-closed behavior;
+  durable writer store enforcement; recovery wrapper cleanup; final workspace
+  epoch validation.
+- TDD: nine new accurately named test modules plus tightened existing recovery
+  tests. Each deterministic reproduction was confirmed failing before the
+  production fix and passing afterward; no compatibility wrapper was retained.
+- Pre-checks: `ruff check codey tests tools`, `python -m compileall -q codey
+  tests`, and `git diff --check` clean. Expanded kernel/recovery/architecture/
+  writer suites passed `211 passed, 365 subtests passed` before the full run.
+- Full run `python -m pytest -q -p no:cacheprovider`:
+  `5044 passed, 32 skipped, 1471 subtests passed in 349.22s (0:05:49)`.
+  Zero failures.
+- No release was made.
+
 ## Kernel recovery and settlement hardening (2026-09-29)
 
 - Scope: effect-local exit-code projection; durable workspace-store forwarding

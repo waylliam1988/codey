@@ -56,13 +56,13 @@ class TrustedProofSourceAllowlistTests(unittest.TestCase):
             )
 
     def test_persisted_frame_payload_requires_durable_verification(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.kernel_recovery_result import (
             build_recovered_result,
             spec_from_frame_row,
         )
         from codey.toolchain.runtime import ToolOutcome
         from codey.workspace.revision import WorkspaceIdentity
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         legit = WorkspaceIdentity.trusted_pair(2, LEGIT_FP)
         call = _call("read_file")

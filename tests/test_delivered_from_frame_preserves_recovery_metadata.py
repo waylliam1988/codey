@@ -14,10 +14,10 @@ from types import SimpleNamespace
 
 class DeliveredFromFramePreservesRecoveryMetadataTests(unittest.TestCase):
     def test_preserves_audit_presentation_canonical_truncated(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.recovery import delivered_from_frame
         from codey.runtime.core.models import ToolCall
         from codey.toolchain.runtime import ToolOutcome
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         # Frame is safe-replay only and never carries trusted provenance;
         # display metadata is preserved sanitized, side-channel stays empty.
@@ -51,10 +51,10 @@ class DeliveredFromFramePreservesRecoveryMetadataTests(unittest.TestCase):
         self.assertTrue(bool(getattr(result, "truncated", False)), "truncated lost")
 
     def test_display_audit_provenance_is_sanitized_without_payload(self) -> None:
-        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.recovery import delivered_from_frame
         from codey.runtime.core.models import ToolCall
         from codey.toolchain.runtime import ToolOutcome
+        from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         outcome = ToolOutcome(

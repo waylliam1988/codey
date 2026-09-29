@@ -40,7 +40,9 @@ class KernelEventProofAttachFailureStopsDeliveryTests(unittest.TestCase):
                 turn=1,
             )
 
-        self.assertEqual(events, [])
+        self.assertEqual(len(events), 1)
+        self.assertFalse(events[0].outcome.ok)
+        self.assertTrue(str(events[0].outcome.model_text).startswith("ERROR: recovery failed:"))
 
     def test_provenance_read_failure_is_not_downgraded_to_untrusted_event(self) -> None:
         from codey.operations import kernel_events
@@ -79,7 +81,9 @@ class KernelEventProofAttachFailureStopsDeliveryTests(unittest.TestCase):
                 turn=1,
             )
 
-        self.assertEqual(events, [])
+        self.assertEqual(len(events), 1)
+        self.assertFalse(events[0].outcome.ok)
+        self.assertTrue(str(events[0].outcome.model_text).startswith("ERROR: recovery failed:"))
 
 
 if __name__ == "__main__":

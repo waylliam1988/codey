@@ -30,7 +30,6 @@ __all__ = [
     "_batch_aborted_results",
     "_batch_recovery_failed_results",
     "_check_batch_recovery",
-    "_delivered_slot_result",
     "_guarded_slot_result",
     "_is_recovery_error_text",
     "_is_recovery_failed_text",
@@ -38,7 +37,6 @@ __all__ = [
     "_is_unsafe_tool",
     "_recovery_failed_result",
     "_recovery_mismatch_result",
-    "_replay_settled_slot",
     "_same_effect_call",
     "_skip_unsettled",
     "_verified_persisted_identity",
@@ -82,20 +80,42 @@ class RecoveryContext:
     _cached_state: Any | None = None
     _state_loaded: bool = False
 
-    def current_state(self) -> Any | None:
-        if self._state_loaded:
+    def current_state(self, *, refresh: bool = False) -> Any | None:
+        if self._state_loaded and not refresh:
             return self._cached_state
-        self._state_loaded = True
         if self.revision_store is None or self.project_path is None:
+            self._state_loaded = True
             self._cached_state = None
             return None
         try:
-            self._cached_state = self.revision_store.current_state(
+            state = self.revision_store.current_state(
                 self.project_path, ignored_paths=self.ignored_paths
             )
         except Exception:
-            self._cached_state = None
-        return self._cached_state
+            state = None
+        if not self._state_loaded:
+            self._cached_state = state
+        self._state_loaded = True
+        return state
+
+    def workspace_epoch_stable(self) -> bool:
+        """Re-read a loaded durable snapshot and reject concurrent changes."""
+        if not self._state_loaded or self.revision_store is None or self.project_path is None:
+            return True
+        initial = self._cached_state
+        latest = self.current_state(refresh=True)
+        if initial is None or latest is None:
+            return initial is latest
+        try:
+            return (
+                int(getattr(initial, "revision", 0) or 0),
+                str(getattr(initial, "fingerprint", "") or ""),
+            ) == (
+                int(getattr(latest, "revision", 0) or 0),
+                str(getattr(latest, "fingerprint", "") or ""),
+            )
+        except Exception:
+            return False
 
 
 def apply_recovery_first(
@@ -374,15 +394,22 @@ def replay_slot_typed(
     if full is not None:
         return _replay_memory_slot(full, call)
     record = session.executed[identity]
-    stored_name = str(record.get("name", "") or "")
-    stored_digest = str(record.get("args_digest", "") or "")
+    try:
+        if not isinstance(record, Mapping):
+            raise RecoveryFailed("persisted receipt must be a mapping")
+        stored_name = _strict_receipt_text(record, "name", default=name)
+        stored_digest = _strict_receipt_text(record, "args_digest", default="")
+        call_id = _strict_receipt_text(record, "call_id", default=str(getattr(call, "call_id", "") or ""))
+        excerpt = _strict_receipt_text(record, "excerpt", default="")
+        was_ok = _strict_receipt_bool(record, "ok", default=False)
+        exit_code = _strict_receipt_exit_code(record)
+    except RecoveryFailed as exc:
+        return RecoverySlotResult(disposition="FAILED", result=_recovery_failed_result(call, str(exc)))
     if not _same_effect_call(stored_name, stored_digest, call):
         return RecoverySlotResult(
             disposition="MISMATCH",
             result=_recovery_mismatch_result(call, stored_name, stored_digest or "unknown-args"),
         )
-    call_id = str(getattr(call, "call_id", "") or record.get("call_id", ""))
-    was_ok = bool(record.get("ok", False))
     if was_ok and _is_unsafe_tool(name):
         return _replay_persisted_unsafe_slot(
             record, call, name, call_id,
@@ -411,13 +438,6 @@ def replay_slot_typed(
             ),
         )
     try:
-        excerpt = str(record.get("excerpt", "") or "")
-    except Exception as exc:
-        return RecoverySlotResult(
-            disposition="FAILED",
-            result=_recovery_failed_result(call, f"persisted replay unreadable: {exc}"),
-        )
-    try:
         from codey.operations.kernel_recovery_result import (
             build_recovered_result as _build,
         )
@@ -425,8 +445,11 @@ def replay_slot_typed(
             spec_from_persisted_record as _spec_persisted,
         )
 
+        persisted_payload = {"excerpt": excerpt, "name": stored_name}
+        if exit_code is not None:
+            persisted_payload["exit_code"] = exit_code
         spec = _spec_persisted(
-            {"excerpt": excerpt, "name": str(record.get("name", "") or name)},
+            persisted_payload,
             want,
             verified_identity=None,
         )
@@ -444,27 +467,31 @@ def replay_slot_typed(
         )
 
 
-def _replay_settled_slot(
-    session: Any,
-    identity: str,
-    call: ToolCall,
-    name: str,
-    active_turn: int,
-    *,
-    project_path: Any = None,
-    revision_store: Any = None,
-    ignored_paths: Any = (),
-    recovery_ctx: RecoveryContext | None = None,
-) -> ToolResult | None:
-    """Compat wrapper: typed replay, returning the result or None on NO_MATCH."""
-    slot = replay_slot_typed(
-        session, identity, call, name, active_turn,
-        project_path=project_path, revision_store=revision_store,
-        ignored_paths=ignored_paths, recovery_ctx=recovery_ctx,
-    )
-    if slot.disposition == "NO_MATCH":
+def _strict_receipt_text(record: Mapping[str, Any], field: str, *, default: str) -> str:
+    if field not in record:
+        return default
+    value = record[field]
+    if type(value) is not str:
+        raise RecoveryFailed(f"persisted receipt {field} must be a string")
+    return value
+
+
+def _strict_receipt_bool(record: Mapping[str, Any], field: str, *, default: bool) -> bool:
+    if field not in record:
+        return default
+    value = record[field]
+    if type(value) is not bool:
+        raise RecoveryFailed(f"persisted receipt {field} must be a boolean")
+    return value
+
+
+def _strict_receipt_exit_code(record: Mapping[str, Any]) -> int | None:
+    if "exit_code" not in record:
         return None
-    return slot.result
+    value = record["exit_code"]
+    if type(value) is not int:
+        raise RecoveryFailed("persisted receipt exit_code must be an integer")
+    return value
 
 
 def delivered_slot_typed(
@@ -512,18 +539,6 @@ def delivered_slot_typed(
             disposition="FAILED",
             result=_recovery_failed_result(call, f"delivered rebuild failed: {exc}"),
         )
-
-
-def _delivered_slot_result(
-    delivered_map: Mapping[str, ToolResult],
-    identity: str,
-    call: ToolCall,
-) -> ToolResult | None:
-    """Compat wrapper: typed delivered lookup, result or None on NO_MATCH."""
-    slot = delivered_slot_typed(delivered_map, identity, call)
-    if slot.disposition == "NO_MATCH":
-        return None
-    return slot.result
 
 
 def _is_recovery_mismatch_text(text: object) -> bool:
@@ -598,6 +613,8 @@ def _check_batch_recovery(
         if replayed_slot.disposition == "MISMATCH":
             text = str(getattr(replayed_slot.result, "model_text", "") or "")
             return RecoveryCheckResult(kind="MISMATCH", message=text or "replay mismatch")
+    if ctx is not None and not ctx.workspace_epoch_stable():
+        return RecoveryCheckResult(kind="MISMATCH", message="workspace changed during recovery")
     return RecoveryCheckResult(kind="NO_MATCH")
 
 

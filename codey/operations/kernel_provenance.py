@@ -55,13 +55,11 @@ __all__ = [
     "_EXECUTOR_STRIPPED_AUDIT_KEYS",
     "_KERNEL_WORKSPACE_ATTR",
     "_TRUSTED_PROOF_SOURCES",
-    "_copy_kernel_workspace_provenance",
     "_disk_workspace_fingerprint",
     "_is_trusted_identity",
     "_kernel_workspace_identity_of",
     "_session_workspace_identity",
     "_sync_workspace_after_edit",
-    "_trusted_workspace_from_result",
     "_trusted_workspace_proof",
     "_with_trusted_workspace_state",
     "attach_proof_to_event",
@@ -99,6 +97,26 @@ def _trusted_workspace_proof(identity: Any, source: str) -> TrustedWorkspaceProo
     return TrustedWorkspaceProof(identity=identity, source=source, _capability=_TRUSTED_PROOF_CAPABILITY)
 
 
+def _validated_trusted_proof(proof: Any) -> tuple[Any, str]:
+    """Validate the kernel proof object and return its identity/source."""
+    from codey.operations.kernel_errors import RecoveryFailed
+
+    if not isinstance(proof, TrustedWorkspaceProof):
+        raise RecoveryFailed("trusted workspace proof has an invalid type")
+    if getattr(proof, "_capability", None) is not _TRUSTED_PROOF_CAPABILITY:
+        raise RecoveryFailed("trusted workspace proof was not kernel-created")
+    try:
+        source = str(getattr(proof, "source", "") or "")
+        identity = getattr(proof, "identity", None)
+    except Exception as exc:
+        raise RecoveryFailed(f"trusted workspace proof unreadable: {exc}") from exc
+    if source not in _TRUSTED_PROOF_SOURCES:
+        raise RecoveryFailed(f"trusted workspace proof invalid source: {source or '?'}")
+    if not _is_trusted_identity(identity):
+        raise RecoveryFailed("trusted workspace proof invalid: untrusted identity")
+    return identity, source
+
+
 def _is_trusted_identity(identity: Any) -> bool:
     """True only for a real trusted ``WorkspaceIdentity`` (no duck-typing)."""
     try:
@@ -122,25 +140,17 @@ def _kernel_workspace_identity_of(result: ToolResult) -> Any | None:
     explicit executor can forge them; duck-typed ``trusted=True`` objects
     are rejected by ``_is_trusted_identity``.
     """
+    from codey.operations.kernel_errors import RecoveryFailed
+
     try:
         identity = getattr(result, _KERNEL_WORKSPACE_ATTR, None)
-        if identity is None:
-            return None
-        if _is_trusted_identity(identity):
-            return identity
-    except Exception:
-        pass
+    except Exception as exc:
+        raise RecoveryFailed(f"workspace provenance unreadable: {exc}") from exc
+    if identity is None:
+        return None
+    if _is_trusted_identity(identity):
+        return identity
     return None
-
-
-def _copy_kernel_workspace_provenance(src: ToolResult, dst: ToolResult) -> None:
-    """Carry the kernel side-channel across a ToolResult rebuild."""
-    try:
-        identity = getattr(src, _KERNEL_WORKSPACE_ATTR, None)
-        if identity is not None and _is_trusted_identity(identity):
-            object.__setattr__(dst, _KERNEL_WORKSPACE_ATTR, identity)
-    except Exception:
-        pass
 
 
 def attach_proof_to_event(event: Any, proof: TrustedWorkspaceProof) -> None:
@@ -152,17 +162,7 @@ def attach_proof_to_event(event: Any, proof: TrustedWorkspaceProof) -> None:
     """
     from codey.operations.kernel_errors import RecoveryFailed
 
-    try:
-        if getattr(proof, "_capability", None) is not _TRUSTED_PROOF_CAPABILITY:
-            raise RecoveryFailed("trusted workspace proof was not kernel-created")
-        source = str(getattr(proof, "source", "") or "")
-        identity = getattr(proof, "identity", None)
-    except Exception as exc:
-        raise RecoveryFailed(f"trusted workspace proof unreadable: {exc}") from exc
-    if source not in _TRUSTED_PROOF_SOURCES:
-        raise RecoveryFailed(f"trusted workspace proof invalid source: {source or '?'}")
-    if not _is_trusted_identity(identity):
-        raise RecoveryFailed("trusted workspace proof invalid: untrusted identity")
+    _validated_trusted_proof(proof)
     try:
         object.__setattr__(event, _EVENT_PROOF_ATTR, proof)
     except Exception as exc:
@@ -180,12 +180,7 @@ def event_proof(event: Any) -> TrustedWorkspaceProof | None:
         proof = getattr(event, _EVENT_PROOF_ATTR, None)
         if proof is None:
             return None
-        if not isinstance(proof, TrustedWorkspaceProof):
-            return None
-        if str(getattr(proof, "source", "") or "") not in _TRUSTED_PROOF_SOURCES:
-            return None
-        if not _is_trusted_identity(getattr(proof, "identity", None)):
-            return None
+        identity, _source = _validated_trusted_proof(proof)
         return proof
     except Exception:
         return None
@@ -201,17 +196,7 @@ def attach_trusted_workspace(result: ToolResult, proof: TrustedWorkspaceProof) -
     """
     from codey.operations.kernel_errors import RecoveryFailed
 
-    try:
-        if getattr(proof, "_capability", None) is not _TRUSTED_PROOF_CAPABILITY:
-            raise RecoveryFailed("trusted workspace proof was not kernel-created")
-        identity = getattr(proof, "identity", None)
-        source = str(getattr(proof, "source", "") or "")
-    except Exception as exc:
-        raise RecoveryFailed(f"trusted workspace proof unreadable: {exc}") from exc
-    if not _is_trusted_identity(identity):
-        raise RecoveryFailed("trusted workspace proof invalid: untrusted identity")
-    if source not in _TRUSTED_PROOF_SOURCES:
-        raise RecoveryFailed(f"trusted workspace proof invalid source: {source or '?'}")
+    identity, _source = _validated_trusted_proof(proof)
     try:
         audit = dict(result.audit) if isinstance(result.audit, dict) else {}
     except Exception as exc:
@@ -265,17 +250,6 @@ def with_trusted_workspace_state(
 ) -> ToolResult:
     """Public alias for the trusted attach (fail-closed on failure)."""
     return _with_trusted_workspace_state(result, revision=revision, fingerprint=fingerprint)
-
-
-def _trusted_workspace_from_result(result: ToolResult) -> tuple[int, str]:
-    """Strict kernel provenance: side-channel only, never raw audit."""
-    try:
-        identity = _kernel_workspace_identity_of(result)
-        if identity is not None:
-            return int(identity.revision), str(identity.fingerprint)
-    except Exception:
-        pass
-    return 0, ""
 
 
 def _session_workspace_identity(session: Any) -> tuple[int, str]:
