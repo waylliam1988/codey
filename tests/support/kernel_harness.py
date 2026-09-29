@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
-from codey.operations.kernel_execution import record_facts_for_result
+from codey.operations.kernel_facts import record_facts_for_result
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
 

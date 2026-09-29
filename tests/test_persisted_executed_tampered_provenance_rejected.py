@@ -22,7 +22,9 @@ def _policy():
 
 class PersistedExecutedTamperedProvenanceRejectedTests(unittest.TestCase):
     def test_tampered_executed_payload_does_not_replay_as_trusted(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel_provenance import _trusted_workspace_from_result
+        from codey.operations.kernel_recovery import _replay_settled_slot
+        from codey.operations.kernel_result import _call_args_digest
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall
         from codey.workspace.revision import WorkspaceRevisionStore
@@ -41,16 +43,16 @@ class PersistedExecutedTamperedProvenanceRejectedTests(unittest.TestCase):
                 "ok": True,
                 "call_id": "c1",
                 "excerpt": "edited",
-                "args_digest": ke._call_args_digest(call),
+                "args_digest": _call_args_digest(call),
                 "workspace_revision": 999,
                 "workspace_fingerprint": "sha256:" + "0" * 64,
             }
             # Durable store knows nothing about revision 999: current is 1.
-            replayed = ke._replay_settled_slot(
+            # Current contract requires the verified replay signature
+            # (project_path/revision_store); no legacy-signature fallback.
+            replayed = _replay_settled_slot(
                 session, identity, call, "edit", 1,
                 project_path=project, revision_store=store,
-            ) if "project_path" in ke._replay_settled_slot.__code__.co_varnames else ke._replay_settled_slot(
-                session, identity, call, "edit", 1,
             )
             self.assertIsNotNone(replayed)
             assert replayed is not None
@@ -59,11 +61,12 @@ class PersistedExecutedTamperedProvenanceRejectedTests(unittest.TestCase):
                 text.startswith("ERROR:"),
                 f"tampered provenance must fail closed, got {text!r}",
             )
-            rev, fp = ke._trusted_workspace_from_result(replayed)
+            rev, fp = _trusted_workspace_from_result(replayed)
             self.assertEqual((rev, fp), (0, ""), f"tampered replay must be untrusted, got {(rev, fp)!r}")
 
     def test_tampered_payload_never_executes_executor(self) -> None:
         from codey.operations import kernel_execution as ke
+        from codey.operations.kernel_result import _call_args_digest
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall
         from codey.workspace.revision import WorkspaceRevisionStore
@@ -82,7 +85,7 @@ class PersistedExecutedTamperedProvenanceRejectedTests(unittest.TestCase):
                 "ok": True,
                 "call_id": "c1",
                 "excerpt": "edited",
-                "args_digest": ke._call_args_digest(call),
+                "args_digest": _call_args_digest(call),
                 "workspace_revision": 999,
                 "workspace_fingerprint": "sha256:" + "0" * 64,
             }

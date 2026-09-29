@@ -167,7 +167,7 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
 
 
 def _validate_recovered_rows(raw_rows: list[Any]) -> None:
-    from codey.operations.kernel_recovery import RecoveryFailed
+    from codey.operations.kernel_errors import RecoveryFailed
 
     for row in raw_rows:
         try:
@@ -182,7 +182,7 @@ def _validate_recovered_rows(raw_rows: list[Any]) -> None:
 
 
 def _sort_recovered_rows(raw_rows: list[Any]) -> list[Any]:
-    from codey.operations.kernel_recovery import RecoveryFailed
+    from codey.operations.kernel_errors import RecoveryFailed
 
     try:
         return sorted(
@@ -193,34 +193,15 @@ def _sort_recovered_rows(raw_rows: list[Any]) -> list[Any]:
         raise RecoveryFailed(f"recovered row ordering failed: {exc}") from exc
 
 
-def _replay_recovered_facts(session: Any, recovered_rows: list[Any]) -> None:
-    from codey.operations.kernel_recovery import RecoveryFailed
+def _replay_recovered_facts(session: Any, recovered_rows: list[Any], recovered_results: list[Any]) -> None:
+    """Replay facts from the single-built recovered results (no rebuild)."""
+    from codey.operations.kernel_errors import RecoveryFailed
 
     try:
         from codey.operations.kernel_facts import record_facts_for_result
-        from codey.operations.kernel_result import build_recovered_tool_result
     except Exception as exc:
         raise RecoveryFailed(f"recovery helpers unavailable: {exc}") from exc
-    for row in recovered_rows:
-        try:
-            outcome_audit = dict(getattr(row.outcome, "audit", {}) or {})
-        except Exception as exc:
-            raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
-        try:
-            if row.call.name == "edit" and "changed" not in outcome_audit:
-                outcome_audit["changed"] = bool(row.outcome.changed)
-            prior = build_recovered_tool_result(
-                row.call,
-                model_text=row.outcome.model_text,
-                audit=outcome_audit,
-                presentation=getattr(row.outcome, "presentation", {}),
-                canonical=getattr(row.outcome, "canonical", {}),
-                truncated=getattr(row.outcome, "truncated", False),
-            )
-        except RecoveryFailed:
-            raise
-        except Exception as exc:
-            raise RecoveryFailed(f"recovered result rebuild failed: {exc}") from exc
+    for row, prior in zip(recovered_rows, recovered_results, strict=True):
         try:
             record_facts_for_result(session, row.call, prior, ok=bool(row.outcome.ok),
                                     exit_code=row.outcome.exit_code)
@@ -228,69 +209,47 @@ def _replay_recovered_facts(session: Any, recovered_rows: list[Any]) -> None:
             raise RecoveryFailed(f"recovered facts replay failed: {exc}") from exc
 
 
-def _build_initial_results(recovered_rows: list[Any]) -> tuple[int, list[Any]]:
-    from codey.operations.kernel_recovery import RecoveryFailed
-
-    try:
-        from codey.operations.kernel_result import build_recovered_tool_result
-    except Exception as exc:
-        raise RecoveryFailed(f"recovery helpers unavailable: {exc}") from exc
-    resume_start = 1
-    initial_results: list[Any] = []
-    if not recovered_rows:
-        return resume_start, initial_results
-    try:
-        resume_start = max(int(getattr(r, "turn", 0) or 0) for r in recovered_rows) + 1
-        resume_start = max(1, resume_start)
-    except Exception as exc:
-        raise RecoveryFailed(f"recovered resume turn unreadable: {exc}") from exc
-    for row in recovered_rows:
-        try:
-            audit = dict(getattr(row.outcome, "audit", {}) or {})
-            if row.call.name == "edit" and "changed" not in audit:
-                audit["changed"] = bool(row.outcome.changed)
-            initial_results.append(build_recovered_tool_result(
-                row.call,
-                model_text=row.outcome.model_text,
-                audit=audit,
-                presentation=getattr(row.outcome, "presentation", {}),
-                canonical=getattr(row.outcome, "canonical", {}),
-                truncated=getattr(row.outcome, "truncated", False),
-            ))
-        except RecoveryFailed:
-            raise
-        except Exception as exc:
-            raise RecoveryFailed(f"recovered initial result rebuild failed: {exc}") from exc
-    return resume_start, initial_results
-
-
 def _entry_recovery(frame: RunFrame, session: Any) -> tuple[dict[str, Any], list[Any], int, list[Any]]:
     """Rebuild recovery state; any failure raises RecoveryFailed (fail-closed).
 
-    Only ``recovery success`` or ``explicit recovery failure`` exist. An
-    empty delivered map, a bare ToolResult, or a reset to turn 1 must never
-    mask a malformed row: the run stops before any new tool executes.
+    Single construction: ``delivered_from_frame`` builds each row once via
+    the unified builder; facts and ``initial_results`` reuse those exact
+    objects so facts/initial can never drift into two versions.
     """
-    from codey.operations.kernel_recovery import RecoveryFailed
+    from codey.operations.kernel_errors import RecoveryFailed
 
     try:
         from codey.operations.recovery import delivered_from_frame
+        from codey.operations.task_session import turn_effect_id
     except Exception as exc:
         raise RecoveryFailed(f"recovery import failed: {exc}") from exc
     if not callable(delivered_from_frame):
         raise RecoveryFailed("recovery builder unavailable")
+    raw_rows = list(getattr(frame, "recovered_tool_outcomes", ()) or ())
+    _validate_recovered_rows(raw_rows)
+    recovered_rows = _sort_recovered_rows(raw_rows)
     try:
         delivered = delivered_from_frame(frame, effect_scope="task")
     except RecoveryFailed:
         raise
     except Exception as exc:
         raise RecoveryFailed(f"recovery delivery failed: {exc}") from exc
-    raw_rows = list(getattr(frame, "recovered_tool_outcomes", ()) or ())
-    _validate_recovered_rows(raw_rows)
-    recovered_rows = _sort_recovered_rows(raw_rows)
-    _replay_recovered_facts(session, recovered_rows)
-    resume_start, initial_results = _build_initial_results(recovered_rows)
-    return delivered, recovered_rows, resume_start, initial_results
+    # Reuse the single-built objects in sorted order for facts + initial.
+    try:
+        identities = [
+            turn_effect_id(f"{frame.run_id}:task", int(r.turn), int(r.tool_index))
+            for r in recovered_rows
+        ]
+        recovered_results = [delivered[ident] for ident in identities]
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered delivery map incomplete: {exc}") from exc
+    _replay_recovered_facts(session, recovered_rows, recovered_results)
+    try:
+        resume_start = max(int(getattr(r, "turn", 0) or 0) for r in recovered_rows) + 1 if recovered_rows else 1
+        resume_start = max(1, resume_start)
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered resume turn unreadable: {exc}") from exc
+    return delivered, recovered_rows, resume_start, list(recovered_results)
 
 
 def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, Any, Any]:
@@ -349,7 +308,7 @@ def run_entry_kernel(
     try:
         delivered, _, resume_start, initial_results = _entry_recovery(frame, session)
     except Exception as exc:
-        from codey.operations.kernel_recovery import RecoveryFailed as _RecoveryFailed
+        from codey.operations.kernel_errors import RecoveryFailed as _RecoveryFailed
 
         reason = f"recovery failed: {exc}" if isinstance(exc, _RecoveryFailed) else f"recovery failed: {exc}"
         return ModeOutcome({

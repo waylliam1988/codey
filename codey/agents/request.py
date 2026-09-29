@@ -43,6 +43,10 @@ class RecoveredToolOutcome:
     turn: int
     tool_index: int
     effect_id: str = ""
+    # Kernel-owned provenance payload beside display audit (WorkspaceIdentity,
+    # unverified until a durable check turns it into TrustedWorkspaceProof).
+    # Display ``outcome.audit`` workspace keys never confer trust.
+    workspace_identity: object | None = None
 
 
 @dataclass(frozen=True)

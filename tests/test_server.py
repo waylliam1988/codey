@@ -4682,7 +4682,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(consensus_service, "run_project_audit", return_value=()),
             mock.patch(
-                "codey.operations.project_completion_flow.rank_providers",
+                "codey.operations.project_writer_phase.rank_providers",
                 return_value=("glm", "stepfun"),
             ) as rank,
         ):

@@ -47,6 +47,7 @@ def _real_hooks_on_event(*, store, work, project, ignored=()):
 class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
     def test_memory_replay_keeps_audit_presentation_canonical_truncated(self) -> None:
         from codey.operations import kernel_execution as ke
+        from codey.operations.kernel_recovery import _replay_settled_slot
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -78,7 +79,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
             first = results[0]
             from codey.operations.task_session import turn_effect_id as _turn_effect_id
 
-            replayed = ke._replay_settled_slot(
+            replayed = _replay_settled_slot(
                 session, _turn_effect_id("r-replay-audit-1:task", 1, 0),
                 ToolCall(name="edit", args={"path": "b.py", "content": "y=2\n"}),
                 "edit", 1,
@@ -91,7 +92,11 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
             self.assertEqual(bool(replayed.truncated), bool(first.truncated))
 
     def test_delivered_replay_keeps_trusted_workspace_identity(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel_provenance import (
+            _trusted_workspace_from_result,
+            _with_trusted_workspace_state,
+        )
+        from codey.operations.kernel_recovery import _delivered_slot_result
         from codey.runtime.core.models import ToolCall, ToolResult
 
         call = ToolCall(name="edit", args={"path": "b.py", "content": "y=2\n"}, call_id="c1")
@@ -102,7 +107,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
             audit={"changed": True},
             presentation={"result": "p"}, canonical={"tool": "edit"},
         )
-        stored = ke._with_trusted_workspace_state(
+        stored = _with_trusted_workspace_state(
             base, revision=2, fingerprint="sha256:" + "ab" * 32
         )
         # Audit-only forgery without the side-channel must stay untrusted.
@@ -111,12 +116,12 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
             audit={"changed": True, "workspace_revision": 2,
                    "workspace_fingerprint": "sha256:" + "ab" * 32},
         )
-        forged_rev, _forged_fp = ke._trusted_workspace_from_result(forged)
+        forged_rev, _forged_fp = _trusted_workspace_from_result(forged)
         self.assertEqual((forged_rev, _forged_fp), (0, ""), f"audit-only must be untrusted: {dict(forged.audit)!r}")
-        got = ke._delivered_slot_result({"slot-1": stored}, "slot-1", call)
+        got = _delivered_slot_result({"slot-1": stored}, "slot-1", call)
         self.assertIsNotNone(got)
         assert got is not None
-        rev, fp = ke._trusted_workspace_from_result(got)
+        rev, fp = _trusted_workspace_from_result(got)
         self.assertEqual(rev, 2, f"trusted revision lost: {got.audit!r}")
         self.assertTrue(fp.startswith("sha256:"), f"trusted fingerprint lost: {got.audit!r}")
 
@@ -124,6 +129,8 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
+        from codey.operations.kernel_provenance import _trusted_workspace_from_result
+        from codey.operations.kernel_recovery import _replay_settled_slot
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.observe.execution_evidence import ExecutionEvidence
@@ -170,7 +177,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
                 # instead emulate first-event emission then a same-slot replay.
                 # First, manually trust via sync when store present requires
                 # project_path; use a direct trusted attach for this lock:
-                rev0, fp0 = ke._trusted_workspace_from_result(results[0])
+                rev0, fp0 = _trusted_workspace_from_result(results[0])
                 # When project_path=None the store path returns (0,""); drive
                 # the real path with project_path set but executor precedence
                 # (fixed) so the fake still runs:
@@ -192,14 +199,14 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
                     first_bumps = len(bump_calls)
                     self.assertEqual(first_bumps, 1, f"first event must bump once: {bump_calls}")
                     identity = turn_effect_id("r-replay-bump-1:task", 2, 0)
-                    replayed = ke._replay_settled_slot(
+                    replayed = _replay_settled_slot(
                         session, identity,
                         ToolCall(name="edit", args={"path": "c.py", "content": "z=3\n"}),
                         "edit", 2,
                     )
                     self.assertIsNotNone(replayed)
                     assert replayed is not None
-                    rrev, rfp = ke._trusted_workspace_from_result(replayed)
+                    rrev, rfp = _trusted_workspace_from_result(replayed)
                     self.assertTrue(rrev and rfp, f"replay lost trusted identity: {replayed.audit!r}")
                     kev._emit_tool_results(on_event, session, [replayed], run_id="r-replay-bump-1:task", turn=2)
             self.assertEqual(len(bump_calls), first_bumps,

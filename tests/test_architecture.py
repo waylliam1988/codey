@@ -328,11 +328,18 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
         phases_source = task_phases_sources()
         completion_source = (ROOT / "codey" / "operations" / "project_completion_flow.py").read_text(encoding="utf-8")
+        writer_source = (ROOT / "codey" / "operations" / "project_writer_phase.py").read_text(encoding="utf-8")
+        review_source = (ROOT / "codey" / "operations" / "project_review_phase.py").read_text(encoding="utf-8")
+        enforcement_source = (ROOT / "codey" / "operations" / "project_completion_enforcement.py").read_text(encoding="utf-8")
 
         self.assertIn("def run_project_mode", completion_source)
-        self.assertIn("WriterFailoverRunner", completion_source)
-        self.assertIn("project_repair_context", completion_source)
+        self.assertIn("def run_writer_phase", writer_source)
+        self.assertIn("def run_review_phase", review_source)
+        self.assertIn("def enforce_completion", enforcement_source)
+        self.assertIn("WriterFailoverRunner", writer_source)
+        self.assertIn("project_repair_context", enforcement_source)
         self.assertIn("build_task_receipt", completion_source)
+        self.assertIn("ReviewCoordinator", review_source)
         self.assertIn("run_project_mode(", task_run_source + phases_source)
         self.assertNotIn("def _run_project_mode", task_run_source)
         self.assertNotIn("def _run_project_mode", phases_source)
@@ -1594,9 +1601,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_completion_enforcement_has_explicit_stop_conditions(self) -> None:
         # The repair loop must be bounded by named stop conditions, never a
         # bare `while not complete`. Locks the v1 shape: one round max.
-        completion_source = (ROOT / "codey" / "operations" / "project_completion_flow.py").read_text(encoding="utf-8")
+        completion_source = (ROOT / "codey" / "operations" / "project_completion_context.py").read_text(encoding="utf-8")
+        flow_source = (ROOT / "codey" / "operations" / "project_completion_flow.py").read_text(encoding="utf-8")
         engine_source = (ROOT / "codey" / "completion" / "engine.py").read_text(encoding="utf-8")
         self.assertIn("MAX_COMPLETION_REPAIR_ROUNDS = 1", completion_source)
+        self.assertNotIn("MAX_COMPLETION_REPAIR_ROUNDS = 1", flow_source)
         self.assertNotIn("_COMPLETION_BLOCKED_NOTE", completion_source)
         self.assertIn("COMPLETION_BLOCKED_NOTES", engine_source)
         for reason in (
@@ -2062,6 +2071,95 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("TaskRunDeps(", submit_source)
         self.assertIn("run_task_submission(", submit_source)
 
+    def test_only_kernel_provenance_writes_trusted_side_channel(self) -> None:
+        # Trust boundary: ``_KERNEL_WORKSPACE_ATTR`` is kernel-owned. Only
+        # ``kernel_provenance.py`` may attach it via ``object.__setattr__``;
+        # recovery/delivery paths must go through its verified API instead of
+        # re-deriving trust from display audit. AST-based so string tricks
+        # cannot smuggle a direct write past a grep.
+        offenders: list[str] = []
+        for path in sorted((ROOT / "codey" / "operations").glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                is_setattr = (
+                    isinstance(func, ast.Name) and func.id == "object.__setattr__"
+                ) or (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "__setattr__"
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "object"
+                )
+                if not is_setattr:
+                    continue
+                try:
+                    src = ast.unparse(node)
+                except Exception:
+                    src = ""
+                if ("_KERNEL_WORKSPACE_ATTR" in src or "_kernel_workspace_identity" in src) and (
+                    path.name != "kernel_provenance.py"
+                ):
+                    offenders.append(path.relative_to(ROOT).as_posix())
+                    break
+        self.assertEqual(offenders, [])
+
+    def test_kernel_execution_exposes_only_orchestration(self) -> None:
+        # Cold-start boundary: ``kernel_execution`` is the thin orchestrator
+        # (``execute_turn`` only in ``__all__``). Result/provenance/recovery/
+        # facts owners must be imported from their canonical homes in tests;
+        # importing privates via ``kernel_execution`` is forbidden even when
+        # the name still exists as an internal import.
+        import codey.operations.kernel_execution as ke
+
+        self.assertEqual(set(getattr(ke, "__all__", ())), {"execute_turn"})
+        source = (ROOT / "codey" / "operations" / "kernel_execution.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        reexported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(
+                "codey.operations.kernel_"
+            ):
+                for alias in node.names:
+                    if alias.asname is None:
+                        reexported.add(alias.name)
+        # Internal orchestration may still import its direct collaborators;
+        # the public contract is ``__all__`` above plus no private forwarder
+        # in ``__all__``. Tests must not import these via kernel_execution.
+        for name in (
+            "_result_ok",
+            "_consistent_tool_result",
+            "_replay_settled_slot",
+            "_delivered_slot_result",
+            "_with_trusted_workspace_state",
+            "_trusted_workspace_from_result",
+            "_kernel_workspace_identity_of",
+            "record_facts_for_result",
+            "build_recovered_tool_result",
+            "result_ok",
+        ):
+            with self.subTest(name=name):
+                self.assertNotIn(name, set(getattr(ke, "__all__", ())))
+
+    def test_kernel_errors_owns_recovery_failures(self) -> None:
+        # ``RecoveryFailed``/``EffectSettlementFailed`` live in exactly one
+        # place; kernel modules import them instead of defining or
+        # lazily re-importing each other in circles.
+        import codey.operations.kernel_errors as kerr
+
+        self.assertTrue(hasattr(kerr, "RecoveryFailed"))
+        self.assertTrue(hasattr(kerr, "EffectSettlementFailed"))
+        for path in (
+            ROOT / "codey" / "operations" / "kernel_result.py",
+            ROOT / "codey" / "operations" / "kernel_provenance.py",
+            ROOT / "codey" / "operations" / "kernel_recovery.py",
+            ROOT / "codey" / "operations" / "kernel_execution.py",
+        ):
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertNotIn("class RecoveryFailed(", source)
+
     def test_long_files_do_not_grow(self) -> None:
         # 1000-line guardrail (warning-grade): the files above the line are
         # known cohesive stores/flows. They must shrink over time; this test
@@ -2079,7 +2177,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/hebbian.py",
             "ghost/inbox.py",
             "ghost/work_queue.py",
-            "operations/project_completion_flow.py",
             "providers/controls.py",
             # PLR split 2026-09-26: extracted per-branch helpers stay in-module
             # for cohesion (single caller, domain-specific); file crossed 1000.

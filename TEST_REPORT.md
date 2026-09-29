@@ -1,5 +1,29 @@
 # Codey Test Report
 
+## Unified recovery protocol + settlement/tri-state + completion split (2026-09-29)
+
+- Scope: P1 audit never promotes to trusted (sanitize + kernel-owned
+  `workspace_identity` + single `build_recovered_result` across all 5 entries,
+  sole writer `attach_trusted_workspace`); P1 settlement raises
+  `EffectSettlementFailed` (memory cache tolerant); P2 tri-state
+  `NO_MATCH`/`MISMATCH`/`FAILED` with failed-specific results; `kernel_errors`
+  single owner + `execute_turn`-only exports +恒真 tests tightened;
+  `project_completion_flow` 1748->527 via context/writer/review/enforcement
+  with shared checkpoint/commit deduped and patch paths moved to owners.
+- TDD: 5 new locks (`test_delivered_from_frame_trust_boundary` 4 cases,
+  `test_kernel_recovery_result_protocol` 7 cases incl. never-promote,
+  `test_kernel_settlement_failure_fail_closed` 3 cases,
+  `test_kernel_recovery_tristate` 4 cases,
+  `test_project_completion_split_lock` 5 cases). Forged 999 repros failed
+  before and pass after; tightened `test_delivered_from_frame_preserves...`
+  (sanitize + verified payload) passes; pre-checks (`ruff`, `compileall`,
+  `git diff --check`, targeted suites incl. `test_architecture` 93) green
+  before the full run.
+- Full run `python -m pytest -q`:
+  `4999 passed, 10 skipped, 1474 subtests passed in 351.47s (0:05:51)`.
+  Zero failures.
+- No release was made.
+
 ## Unified recovery + durable provenance verification + kernel split (2026-09-29)
 
 - Scope: P1 delivered full metadata via shared builder + explicit side-channel

@@ -547,7 +547,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
         with (
             mock.patch.object(state, "get_provider", return_value=_Provider()),
             mock.patch(
-                "codey.operations.project_completion_flow.safe_review_impact_map",
+                "codey.operations.project_review_phase.safe_review_impact_map",
                 return_value="SECRET_REVIEW_IMPACT_SHOULD_NOT_BE_SAVED",
             ) as impact_map,
         ):

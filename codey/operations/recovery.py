@@ -357,88 +357,31 @@ def _settle_interrupted(
 def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any]:
     """Rebuild durable delivery map from recovered frame rows (recovery module).
 
-    Moved here from the old task entry so recovery rebuilding lives with
-    recovery. Identity is run+turn+index, never tool name+args. Every row
-    preserves full kernel metadata via ``build_recovered_tool_result``;
-    any malformed row raises ``RecoveryFailed`` instead of being skipped,
-    so a dropped receipt can never be re-executed as a fresh tool call.
+    Identity is run+turn+index, never tool name+args. Every row goes through
+    the single ``build_recovered_result`` protocol: display audit is sanitized
+    (provenance keys dropped) and trust comes only from the kernel-owned
+    ``workspace_identity`` payload beside audit. Audit display alone never
+    confers the trusted side-channel. Malformed rows raise ``RecoveryFailed``.
     """
-    from codey.operations.kernel_recovery import RecoveryFailed
+    from codey.operations.kernel_errors import RecoveryFailed
 
     try:
-        from codey.operations.kernel_result import build_recovered_tool_result
+        from codey.operations.kernel_recovery_result import build_recovered_result, spec_from_frame_row
         from codey.operations.task_session import turn_effect_id
-        from codey.runtime.core.models import ToolCall
     except Exception as exc:
         raise RecoveryFailed(f"recovery rebuild unavailable: {exc}") from exc
     delivered: dict[str, Any] = {}
     for item in getattr(frame, "recovered_tool_outcomes", ()) or ():
         try:
-            call = getattr(item, "call", None)
-            outcome = getattr(item, "outcome", None)
-            if call is None or outcome is None:
-                raise ValueError("recovered row missing call/outcome")
             try:
                 turn = int(getattr(item, "turn", None))
                 index = int(getattr(item, "tool_index", None))
             except Exception as exc:
-                raise ValueError(f"malformed turn/index: {exc}") from exc
-            try:
-                call_obj = ToolCall(
-                    str(getattr(call, "name", "") or ""),
-                    dict(getattr(call, "args", {}) or {}),
-                    str(getattr(call, "call_id", "") or ""),
-                )
-            except Exception as exc:
-                raise ValueError(f"malformed recovered call: {exc}") from exc
-            try:
-                outcome_audit = dict(getattr(outcome, "audit", {}) or {})
-            except Exception as exc:
-                raise ValueError(f"recovered audit unreadable: {exc}") from exc
-            if call_obj.name == "edit" and "changed" not in outcome_audit:
-                try:
-                    outcome_audit["changed"] = bool(getattr(outcome, "changed", False))
-                except Exception as exc:
-                    raise ValueError(f"recovered changed unreadable: {exc}") from exc
-            try:
-                presentation = dict(getattr(outcome, "presentation", {}) or {})
-            except Exception as exc:
-                raise ValueError(f"recovered presentation unreadable: {exc}") from exc
-            try:
-                canonical = dict(getattr(outcome, "canonical", {}) or {})
-            except Exception as exc:
-                raise ValueError(f"recovered canonical unreadable: {exc}") from exc
-            try:
-                truncated = bool(getattr(outcome, "truncated", False))
-                model_text = str(getattr(outcome, "model_text", "") or "")
-            except Exception as exc:
-                raise ValueError(f"recovered outcome unreadable: {exc}") from exc
+                raise RecoveryFailed(f"malformed turn/index: {exc}") from exc
+            spec = spec_from_frame_row(item)
+            rebuilt = build_recovered_result(spec)
             identity_ref = f"{frame.run_id}:{effect_scope}" if effect_scope else frame.run_id
             identity = turn_effect_id(identity_ref, turn, index)
-            rebuilt = build_recovered_tool_result(
-                call_obj,
-                model_text=model_text,
-                audit=outcome_audit,
-                presentation=presentation,
-                canonical=canonical,
-                truncated=truncated,
-            )
-            # Explicit trusted side-channel from the durable audit display:
-            # only a fully valid pair is attached; anything else stays
-            # untrusted so hooks bump instead of adopting a forgery.
-            try:
-                from codey.workspace.revision import WorkspaceIdentity
-
-                identity_obj = WorkspaceIdentity.trusted_pair(
-                    outcome_audit.get("workspace_revision"),
-                    outcome_audit.get("workspace_fingerprint"),
-                )
-                if identity_obj.trusted:
-                    from codey.operations.kernel_provenance import _KERNEL_WORKSPACE_ATTR
-
-                    object.__setattr__(rebuilt, _KERNEL_WORKSPACE_ATTR, identity_obj)
-            except Exception:
-                pass
             delivered[identity] = rebuilt
         except RecoveryFailed:
             raise

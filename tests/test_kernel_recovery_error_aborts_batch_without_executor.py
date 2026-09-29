@@ -21,7 +21,6 @@ def _policy():
 class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
     def test_batch_check_exception_never_runs_executor(self) -> None:
         from codey.operations import kernel_execution as ke
-        from codey.operations import kernel_recovery as kr
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall
 
@@ -34,14 +33,15 @@ class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
             from codey.runtime.core.models import ToolResult
             return ToolResult(call=_c, model_text="edited")
 
-        with mock.patch.object(
-            kr, "_delivered_slot_result", side_effect=RuntimeError("delivery boom")
-        ), mock.patch.object(
-            kr, "_replay_settled_slot", side_effect=RuntimeError("replay boom")
-        ), mock.patch.object(
-            ke, "_delivered_slot_result", side_effect=RuntimeError("delivery boom")
-        ), mock.patch.object(
-            ke, "_replay_settled_slot", side_effect=RuntimeError("replay boom")
+        # Tri-state pre-check outage must abort without invoking the executor.
+        # Both the recovery module and the execution orchestrator's bound
+        # references are patched so the pre-check sees the outage.
+        with mock.patch(
+            "codey.operations.kernel_recovery._delivered_slot_result",
+            side_effect=RuntimeError("delivery boom"),
+        ), mock.patch(
+            "codey.operations.kernel_execution._delivered_slot_result",
+            side_effect=RuntimeError("delivery boom"),
         ):
             results = ke.execute_turn(
                 session, [call],
@@ -55,7 +55,7 @@ class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
         )
 
     def test_delivered_rebuild_failure_does_not_return_bare_stored(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel_recovery import _delivered_slot_result
         from codey.operations.task_session import turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -67,7 +67,7 @@ class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
             "codey.operations.kernel_result.build_recovered_tool_result",
             side_effect=RuntimeError("rebuild boom"),
         ):
-            result = ke._delivered_slot_result(delivered, identity, call)
+            result = _delivered_slot_result(delivered, identity, call)
         self.assertIsNotNone(result)
         assert result is not None
         text = str(result.model_text or "")

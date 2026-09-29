@@ -28,7 +28,13 @@ class ProjectAdapterRecoveryFailureIsErrorTests(unittest.TestCase):
             try:
                 result = pa._recovered_result_for_row(row)
             except Exception as exc:
-                self.assertTrue(str(exc) or True)
+                from codey.operations.kernel_errors import RecoveryFailed
+
+                self.assertIsInstance(exc, RecoveryFailed, f"must be RecoveryFailed, got {type(exc).__name__}: {exc!r}")
+                self.assertTrue(
+                    any(token in str(exc).lower() for token in ("recovered", "rebuild", "provenance")),
+                    f"RecoveryFailed must mention recovered/rebuild/provenance, got {exc!r}",
+                )
                 return
             text = str(getattr(result, "model_text", "") or "")
             self.assertTrue(

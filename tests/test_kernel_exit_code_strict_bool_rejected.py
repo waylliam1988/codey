@@ -14,7 +14,7 @@ import unittest
 
 class KernelExitCodeStrictBoolRejectedTests(unittest.TestCase):
     def test_result_ok_rejects_bool_and_str(self) -> None:
-        from codey.operations.kernel_execution import _result_ok
+        from codey.operations.kernel_result import _result_ok
         from codey.runtime.core.models import ToolCall, ToolResult
 
         call = ToolCall(name="run", args={"command": "x"})
@@ -34,7 +34,7 @@ class KernelExitCodeStrictBoolRejectedTests(unittest.TestCase):
             self.assertFalse(_result_ok("run", bad_res), f"audit exit {bad!r} must not be ok")
 
     def test_record_facts_rejects_bool_exit_in_audit(self) -> None:
-        from codey.operations.kernel_execution import record_facts_for_result
+        from codey.operations.kernel_facts import record_facts_for_result
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult

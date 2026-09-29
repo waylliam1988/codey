@@ -20,10 +20,10 @@ from typing import TYPE_CHECKING, Any
 from codey.operations import kernel_events as _events
 from codey.operations import kernel_prompt as _prompt
 from codey.operations import kernel_transport as _transport
+from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot as _build_turn_snapshot
 from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
-from codey.operations.kernel_recovery import RecoveryFailed
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult

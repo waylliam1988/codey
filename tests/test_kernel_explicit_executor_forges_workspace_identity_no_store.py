@@ -29,6 +29,7 @@ class ExplicitExecutorForgesWorkspaceIdentityNoStoreTests(unittest.TestCase):
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
+        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.task_phases import hooks as hooks_mod
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -85,7 +86,7 @@ class ExplicitExecutorForgesWorkspaceIdentityNoStoreTests(unittest.TestCase):
                 f"forged fingerprint leaked into result: {dict(results[0].audit)!r}",
             )
             # No-store path never emits trusted identity.
-            rev, fp = ke._trusted_workspace_from_result(results[0])
+            rev, fp = _trusted_workspace_from_result(results[0])
             self.assertEqual((rev, fp), (0, ""), f"no-store must be untrusted: {dict(results[0].audit)!r}")
 
             emitted: list = []

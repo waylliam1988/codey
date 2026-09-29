@@ -126,7 +126,7 @@ def build_recovered_tool_result(
     the side-channel. Audit construction failure raises ``RecoveryFailed``;
     presentation/canonical fall back to empty (display-only).
     """
-    from codey.operations.kernel_recovery import RecoveryFailed
+    from codey.operations.kernel_errors import RecoveryFailed
 
     if not isinstance(audit, dict) and audit is not None:
         raise RecoveryFailed("recovered audit must be a mapping or None")

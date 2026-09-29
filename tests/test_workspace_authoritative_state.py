@@ -15,9 +15,9 @@ from pathlib import Path
 
 class WorkspaceAuthoritativeStateTests(unittest.TestCase):
     def test_sync_uses_configured_ignored_paths(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations import kernel_provenance as kp
 
-        source = inspect.getsource(ke._sync_workspace_after_edit)
+        source = inspect.getsource(kp._sync_workspace_after_edit)
         # Must not compute a fingerprint without the configured ignore set.
         # Either it accepts ignored_paths or it delegates to the revision store.
         self.assertTrue(
@@ -28,11 +28,11 @@ class WorkspaceAuthoritativeStateTests(unittest.TestCase):
         self.assertNotIn("workspace_fingerprint(project_path)", source)
 
     def test_hooks_and_kernel_share_single_scan_helper(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations import kernel_provenance as kp
 
         self.assertTrue(
-            hasattr(ke, "sync_workspace_state_after_edit")
-            or "ignored_paths" in inspect.getsource(ke._sync_workspace_after_edit),
+            hasattr(kp, "sync_workspace_state_after_edit")
+            or "ignored_paths" in inspect.getsource(kp._sync_workspace_after_edit),
             "kernel sync must expose a single-scan helper honoring ignored_paths",
         )
 

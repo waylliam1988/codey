@@ -2,6 +2,60 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Unified recovery protocol + settlement/tri-state hardening + completion split (no release)
+
+- P1 recovery trust boundary closed: `delivered_from_frame` no longer derives
+  trusted identity from display `audit`; audit is sanitized
+  (`sanitize_recovery_audit`) and trust comes only from the kernel-owned
+  `RecoveredToolOutcome.workspace_identity` payload via the single
+  `build_recovered_result(RecoveredResultSpec)` protocol
+  (`TrustedWorkspaceProof` with `bump_state`/`persisted_revision_store`/
+  `in_memory_kernel_result`/`frame_kernel_payload` sources). Only
+  `kernel_provenance.attach_trusted_workspace` may write
+  `_KERNEL_WORKSPACE_ATTR` (architecture test enforces). All five entries
+  (`delivered_from_frame`, `task_entry._entry_recovery` single-build,
+  `project_adapter._recovered_result_for_row`, `_replay_settled_slot`
+  memory/persisted, `_delivered_slot_result` side-channel-only) share the
+  builder; `task_entry` no longer double-builds facts vs initial. Locked by
+  `tests/test_delivered_from_frame_trust_boundary.py`,
+  `tests/test_kernel_recovery_result_protocol.py` (sanitize/proof/require/
+  never-promote), tightened
+  `tests/test_delivered_from_frame_preserves_recovery_metadata.py`.
+- P1 durable settlement fail-closed: `_settle_slot` raises
+  `EffectSettlementFailed` on `session.executed` write failure (memory cache
+  stays tolerant); `task_loop._call_execute_turn` maps it to
+  `provider_failure`. Locked by
+  `tests/test_kernel_settlement_failure_fail_closed.py`.
+- P2 tri-state pre-check: `_check_batch_recovery` returns
+  `NO_MATCH`/`MISMATCH`/`FAILED` (`RecoveryCheckResult`); `MISMATCH` emits
+  `_batch_aborted_results`, `FAILED` emits `_batch_recovery_failed_results`
+  with its message; neither invokes executors nor mutates receipts. Locked by
+  `tests/test_kernel_recovery_tristate.py`.
+- P2 kernel boundary cleanup: new `kernel_errors.py` owns `RecoveryFailed`/
+  `EffectSettlementFailed` (all kernel modules import it, no lazy cycles);
+  `kernel_execution.__all__` is `{"execute_turn"}` only; tests import
+  `_result_ok`/`_consistent_tool_result` from `kernel_result`,
+  replay/delivered from `kernel_recovery`, trusted helpers from
+  `kernel_provenance`, facts from `kernel_facts`. Tightened恒真 tests
+  (`test_kernel_recovered_result...`, `test_project_adapter...`,
+  `test_entry_recovery...`) to assert typed `RecoveryFailed` and removed the
+  `co_varnames` reflection fallback.
+- `project_completion_flow.py` split 1748->527 lines (TDD lock first):
+  new `project_completion_context.py` (dataclasses/limits/`ProjectRun`/
+  shared `refresh_checkpoint_view`/`commit_runtime_operation`/pure helpers),
+  `project_writer_phase.run_writer_phase`, `project_review_phase.run_review_phase`,
+  `project_completion_enforcement.enforce_completion`; flow keeps only
+  `run_project_mode`/`handle_project_tool_event`/prepare/persist/settle/
+  finalize orchestration calling the three public entries. Patch paths moved
+  to actual owners; architecture test asserts main defines no private phase
+  impls and only `kernel_provenance` writes the side-channel. Locked by
+  `tests/test_project_completion_split_lock.py`.
+- Verification: `ruff check codey tests tools` clean, `compileall` clean,
+  `git diff --check` clean, targeted suites green before the full run. Full
+  `python -m pytest -q`:
+  `4999 passed, 10 skipped, 1474 subtests passed in 351.47s (0:05:51)`.
+  Zero failures. No release.
+
 ## Unreleased - Unified recovery + durable provenance verification + kernel split (no release)
 
 - P1 `delivered_from_frame` now preserves full recovery metadata via

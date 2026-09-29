@@ -71,9 +71,18 @@ class EntryRecoveryFailClosedTests(unittest.TestCase):
             "codey.operations.kernel_result.build_recovered_tool_result",
             side_effect=RuntimeError("builder boom"),
         ):
+            # Builder outage is a recovery failure: either raise typed
+            # RecoveryFailed or return explicit ERROR results (never bare
+            # success, never empty success, executor never called).
+            from codey.operations.kernel_errors import RecoveryFailed
+
             try:
                 _delivered, _rows, _resume, initial = te._entry_recovery(frame, session)
-            except Exception:
+            except RecoveryFailed as exc:
+                self.assertTrue(
+                    any(token in str(exc).lower() for token in ("recovered", "rebuild", "provenance", "recovery")),
+                    f"RecoveryFailed must mention recovery, got {exc!r}",
+                )
                 return
             self.assertTrue(initial, "builder failure must not yield empty success list")
             for result in initial:

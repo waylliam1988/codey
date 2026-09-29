@@ -31,6 +31,7 @@ class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
     def test_bump_error_does_not_emit_old_revision_as_new(self) -> None:
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
+        from codey.operations.kernel_provenance import _disk_workspace_fingerprint
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -79,7 +80,7 @@ class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
             # Session must not look like "revision 5 + new fingerprint".
             sess_rev = int(getattr(session, "workspace_revision", 0) or 0)
             sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
-            disk_fp = ke._disk_workspace_fingerprint(project)
+            disk_fp = _disk_workspace_fingerprint(project)
             if disk_fp and sess_fp == disk_fp:
                 self.assertNotEqual(sess_rev, 5, "old revision must not be paired with the new fingerprint")
 

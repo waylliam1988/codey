@@ -712,7 +712,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", review),
                 mock.patch(
-                    "codey.operations.project_completion_flow.render_verification_map",
+                    "codey.operations.project_completion_context.render_verification_map",
                     side_effect=RuntimeError("scan failed"),
                 ),
             ):

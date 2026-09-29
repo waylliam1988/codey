@@ -17,7 +17,7 @@ from unittest import mock
 
 class ConsistentToolResultNormalizesIdentityTests(unittest.TestCase):
     def test_case_variant_returns_requested_call(self) -> None:
-        from codey.operations.kernel_execution import _consistent_tool_result
+        from codey.operations.kernel_result import _consistent_tool_result
         from codey.runtime.core.models import ToolCall, ToolResult
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
@@ -33,7 +33,7 @@ class ConsistentToolResultNormalizesIdentityTests(unittest.TestCase):
         self.assertEqual(dict(out.audit).get("extra"), "keep")
 
     def test_digest_failure_is_mismatch_not_match(self) -> None:
-        from codey.operations.kernel_execution import _consistent_tool_result
+        from codey.operations.kernel_result import _consistent_tool_result
         from codey.runtime.core.models import ToolCall, ToolResult
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
@@ -53,7 +53,7 @@ class ConsistentToolResultNormalizesIdentityTests(unittest.TestCase):
         self.assertIs(out.call, requested)
 
     def test_args_mismatch_is_error_with_requested_call(self) -> None:
-        from codey.operations.kernel_execution import _consistent_tool_result
+        from codey.operations.kernel_result import _consistent_tool_result
         from codey.runtime.core.models import ToolCall, ToolResult
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")

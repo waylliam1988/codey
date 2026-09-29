@@ -132,8 +132,10 @@ def _emit_tool_results(
                 # emits trusted state and hooks must bump.
                 if canonical_name == "edit" and ok and changed:
                     try:
-                        kernel_identity = getattr(result, "_kernel_workspace_identity", None)
-                        trusted = bool(getattr(kernel_identity, "trusted", False))
+                        from codey.operations.kernel_provenance import _kernel_workspace_identity_of
+
+                        kernel_identity = _kernel_workspace_identity_of(result)
+                        trusted = kernel_identity is not None
                     except Exception:
                         kernel_identity = None
                         trusted = False

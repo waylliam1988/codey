@@ -1,23 +1,42 @@
-"""Kernel-owned workspace provenance (trusted identity only)."""
+"""Kernel-owned workspace provenance (trusted identity only).
+
+Trust matrix (locked by tests):
+
+- executor/frame audit, UI/event metadata -> display only, never trusted
+- ``TaskSession.executed`` fields -> verified via durable store only
+- ``WorkspaceRevisionStore.bump_state`` -> trusted
+- durable ledger exact match -> trusted
+- kernel side-channel copy -> trusted
+- ``RecoveredToolOutcome.workspace_identity`` (kernel-owned payload)
+  verified into ``TrustedWorkspaceProof`` -> trusted
+
+Only this module may write ``_KERNEL_WORKSPACE_ATTR`` (enforced by the
+architecture test). All recovery entries go through ``attach_trusted_workspace``
+with an already-verified ``TrustedWorkspaceProof``; they never derive trust
+from display audit.
+"""
 
 from __future__ import annotations
 
 import contextlib
+from dataclasses import dataclass
 from typing import Any
 
 from codey.runtime.core.models import ToolResult
 
 # Kernel-owned workspace provenance travels outside the executor-controlled
 # audit dict. Executor-provided ``workspace_revision``/``workspace_fingerprint``
-# are stripped at the kernel boundary; only ``with_trusted_workspace_state``
-# may attach the authoritative pair via both audit keys (for durable display)
-# and the private side-channel attribute read by the event projection.
+# are stripped at the kernel boundary; only ``with_trusted_workspace_state`` /
+# ``attach_trusted_workspace`` may attach the authoritative pair via both
+# audit keys (for durable display) and the private side-channel attribute
+# read by the event projection.
 _KERNEL_WORKSPACE_ATTR = "_kernel_workspace_identity"
 _EXECUTOR_STRIPPED_AUDIT_KEYS = frozenset(
     {"workspace_revision", "workspace_fingerprint", "_kernel_workspace_trusted"}
 )
 
 __all__ = [
+    "TrustedWorkspaceProof",
     "_EXECUTOR_STRIPPED_AUDIT_KEYS",
     "_KERNEL_WORKSPACE_ATTR",
     "_copy_kernel_workspace_provenance",
@@ -27,9 +46,24 @@ __all__ = [
     "_sync_workspace_after_edit",
     "_trusted_workspace_from_result",
     "_with_trusted_workspace_state",
+    "attach_trusted_workspace",
     "sync_workspace_state_after_edit",
     "with_trusted_workspace_state",
 ]
+
+
+@dataclass(frozen=True)
+class TrustedWorkspaceProof:
+    """Already-verified workspace provenance (never constructed from audit).
+
+    ``identity`` must be a trusted ``WorkspaceIdentity``; ``source`` names
+    the verification origin (``bump_state``, ``persisted_revision_store``,
+    ``in_memory_kernel_result``). Recovery code cannot build this from two
+    raw ints: only verified adapters in the kernel may create it.
+    """
+
+    identity: Any
+    source: str = ""
 
 
 def _kernel_workspace_identity_of(result: ToolResult) -> Any | None:
@@ -60,31 +94,33 @@ def _copy_kernel_workspace_provenance(src: ToolResult, dst: ToolResult) -> None:
         pass
 
 
-def _with_trusted_workspace_state(
-    result: ToolResult, *, revision: int, fingerprint: str
-) -> ToolResult:
-    """Attach the authoritative (revision, fingerprint) to one edit result.
+def attach_trusted_workspace(result: ToolResult, proof: TrustedWorkspaceProof) -> ToolResult:
+    """Attach an already-verified proof (sole side-channel writer).
 
-    The pair is stored both in audit (durable display) and in the private
-    side-channel. Only the side-channel is trusted downstream; audit keys
-    alone never confer trust. Any construction or attach failure raises
-    ``RecoveryFailed`` so the caller settles as unconfirmed instead of
-    returning the unmarked original.
+    This is the only function that may ``object.__setattr__`` the private
+    ``_KERNEL_WORKSPACE_ATTR``. Callers pass a ``TrustedWorkspaceProof``
+    produced by a verified adapter (bump, durable store, in-memory copy);
+    raw audit ints are never accepted here.
     """
-    from codey.operations.kernel_recovery import RecoveryFailed
-    from codey.workspace.revision import WorkspaceIdentity
+    from codey.operations.kernel_errors import RecoveryFailed
 
     try:
-        identity = WorkspaceIdentity.trusted_pair(revision, fingerprint)
+        identity = getattr(proof, "identity", None)
+        source = str(getattr(proof, "source", "") or "")
     except Exception as exc:
-        raise RecoveryFailed(f"trusted workspace identity invalid: {exc}") from exc
-    if not identity.trusted:
-        raise RecoveryFailed("trusted workspace identity invalid: untrusted pair")
+        raise RecoveryFailed(f"trusted workspace proof unreadable: {exc}") from exc
+    if identity is None or not bool(getattr(identity, "trusted", False)):
+        raise RecoveryFailed("trusted workspace proof invalid: untrusted identity")
+    if not source:
+        raise RecoveryFailed("trusted workspace proof invalid: missing source")
     try:
         audit = dict(result.audit) if isinstance(result.audit, dict) else {}
     except Exception as exc:
         raise RecoveryFailed(f"trusted workspace audit unreadable: {exc}") from exc
-    audit = identity.attach_to_audit(audit)
+    try:
+        audit = identity.attach_to_audit(audit)
+    except Exception as exc:
+        raise RecoveryFailed(f"trusted workspace audit attach failed: {exc}") from exc
     try:
         trusted = ToolResult(
             call=result.call,
@@ -101,6 +137,28 @@ def _with_trusted_workspace_state(
     except Exception as exc:
         raise RecoveryFailed(f"trusted workspace side-channel attach failed: {exc}") from exc
     return trusted
+
+
+def _with_trusted_workspace_state(
+    result: ToolResult, *, revision: int, fingerprint: str
+) -> ToolResult:
+    """Attach the authoritative (revision, fingerprint) to one edit result.
+
+    Bump-path helper: validates the pair then delegates to the sole writer
+    ``attach_trusted_workspace`` with source ``bump_state``. Only the
+    side-channel is trusted downstream; audit keys alone never confer trust.
+    Any failure raises ``RecoveryFailed`` so the caller settles as unconfirmed.
+    """
+    from codey.operations.kernel_errors import RecoveryFailed
+    from codey.workspace.revision import WorkspaceIdentity
+
+    try:
+        identity = WorkspaceIdentity.trusted_pair(revision, fingerprint)
+    except Exception as exc:
+        raise RecoveryFailed(f"trusted workspace identity invalid: {exc}") from exc
+    if not identity.trusted:
+        raise RecoveryFailed("trusted workspace identity invalid: untrusted pair")
+    return attach_trusted_workspace(result, TrustedWorkspaceProof(identity=identity, source="bump_state"))
 
 
 def with_trusted_workspace_state(

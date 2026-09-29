@@ -2,8 +2,9 @@
 
 Result normalization lives in :mod:`kernel_result`, trusted workspace
 provenance in :mod:`kernel_provenance`, replay/batch guards in
-:mod:`kernel_recovery`, and fact recording in :mod:`kernel_facts`. This
-module only orchestrates: delegate construction, explicit-executor
+:mod:`kernel_recovery`, recovery construction in
+:mod:`kernel_recovery_result`, and fact recording in :mod:`kernel_facts`.
+This module only orchestrates: delegate construction, explicit-executor
 dispatch, edit bump settlement, and per-turn execution. New modules must
 never import ``execute_turn`` back (no cycles).
 """
@@ -14,95 +15,34 @@ import contextlib
 from collections.abc import Callable, Mapping
 from typing import Any
 
-# Re-export the split boundaries so existing imports keep working:
-# ``from codey.operations.kernel_execution import _result_ok`` etc.
+from codey.operations.kernel_errors import EffectSettlementFailed, RecoveryFailed
 from codey.operations.kernel_facts import record_facts_for_result
-from codey.operations.kernel_protocol import _CONTROLLER_ALIASES, _policy_allows  # noqa: F401
 from codey.operations.kernel_provenance import (
-    _EXECUTOR_STRIPPED_AUDIT_KEYS,
-    _KERNEL_WORKSPACE_ATTR,
-    _copy_kernel_workspace_provenance,
-    _disk_workspace_fingerprint,
     _kernel_workspace_identity_of,
-    _session_workspace_identity,
-    _sync_workspace_after_edit,
-    _trusted_workspace_from_result,
     _with_trusted_workspace_state,
     sync_workspace_state_after_edit,
-    with_trusted_workspace_state,  # noqa: F401
 )
 from codey.operations.kernel_recovery import (
-    RecoveryFailed,  # noqa: F401
     _batch_aborted_results,
-    _batch_recovery_failed_results,  # noqa: F401
-    _batch_recovery_mismatch,
+    _batch_recovery_failed_results,
+    _check_batch_recovery,
     _delivered_slot_result,
     _guarded_slot_result,
-    _is_recovery_error_text,  # noqa: F401
-    _is_recovery_failed_text,  # noqa: F401
+    _is_recovery_failed_text,
     _is_recovery_mismatch_text,
-    _is_unsafe_tool,
-    _recovery_failed_result,  # noqa: F401
-    _recovery_mismatch_result,
-    _replay_settled_slot,
-    _same_effect_call,  # noqa: F401
-    _skip_unsettled,  # noqa: F401
-    _verified_persisted_identity,  # noqa: F401
 )
 from codey.operations.kernel_result import (
     _call_args_digest,
     _consistent_tool_result,
     _error_result,
-    _normalize_audit_exit_code,  # noqa: F401
     _normalize_delegate_result,
     _normalize_explicit_result,
-    _result_ok,
-    _strip_executor_workspace_audit,  # noqa: F401
-    build_recovered_tool_result,
-    result_ok,  # noqa: F401
-    strict_exit_code_or_none,
 )
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
 
 __all__ = [
-    "_KERNEL_WORKSPACE_ATTR",
-    "_EXECUTOR_STRIPPED_AUDIT_KEYS",
-    "_batch_aborted_results",
-    "_batch_recovery_mismatch",
-    "_build_delegate",
-    "_call_args_digest",
-    "_consistent_tool_result",
-    "_copy_kernel_workspace_provenance",
-    "_delivered_slot_result",
-    "_disk_workspace_fingerprint",
-    "_error_result",
-    "_explicit_policy_denial",
-    "_guarded_slot_result",
-    "_is_recovery_mismatch_text",
-    "_is_unsafe_tool",
-    "_kernel_workspace_identity_of",
-    "_normalize_delegate_result",
-    "_normalize_explicit_result",
-    "_recovery_mismatch_result",
-    "_replay_settled_slot",
-    "_result_ok",
-    "_run_via_delegate_or_fn",
-    "_same_effect_call",
-    "_session_workspace_identity",
-    "_settle_edit_with_workspace_bump",
-    "_settle_slot",
-    "_skip_unsettled",
-    "_strip_executor_workspace_audit",
-    "_sync_workspace_after_edit",
-    "_trusted_workspace_from_result",
-    "_with_trusted_workspace_state",
-    "build_recovered_tool_result",
     "execute_turn",
-    "record_facts_for_result",
-    "result_ok",
-    "strict_exit_code_or_none",
-    "sync_workspace_state_after_edit",
 ]
 
 
@@ -135,13 +75,17 @@ def _build_delegate(
             change_tracker=change_tracker,
             managed_outputs=managed_outputs,
             session_id=session_id,
-            run_id=run_id,
+            run_id=run_ref(run_id),
             permission_profile=permission_profile,
         )
     except Exception as exc:
         if project_path is not None:
             raise RecoveryFailed(f"delegate construction failed with project path: {exc}") from exc
         return None
+
+
+def run_ref(run_id: object) -> str:
+    return str(run_id or "")
 
 
 def _explicit_policy_denial(
@@ -161,7 +105,11 @@ def _explicit_policy_denial(
                     call,
                     "delegate unavailable with project path; refusing to run explicit executor",
                 ),
-                False, "", [], None, True,
+                False,
+                "",
+                [],
+                None,
+                True,
             )
         return None
     try:
@@ -169,7 +117,11 @@ def _explicit_policy_denial(
     except Exception:
         return (
             _error_result(call, "policy check unavailable; refusing to run executor"),
-            False, "", [], None, True,
+            False,
+            "",
+            [],
+            None,
+            True,
         )
     if not handles:
         return None
@@ -180,14 +132,22 @@ def _explicit_policy_denial(
             if denied:
                 return (
                     ToolResult(call=call, model_text=f"ERROR: {message}"),
-                    False, "", [], None, True,
+                    False,
+                    "",
+                    [],
+                    None,
+                    True,
                 )
     except Exception as exc:
         # Fail closed: a policy-check outage never authorizes the
         # explicit executor. The executor is not invoked.
         return (
             _error_result(call, f"policy check unavailable; refusing to run {call.name or '?'}: {exc}"),
-            False, "", [], None, True,
+            False,
+            "",
+            [],
+            None,
+            True,
         )
     return None
 
@@ -278,23 +238,32 @@ def execute_turn(
         base_index = int(tool_index_base or 0)
     except (TypeError, ValueError):
         base_index = 0
-    run_ref = str(run_id or "")
-    identity_ref = f"{run_ref}:{effect_scope}" if effect_scope else run_ref
+    run_ref_str = str(run_id or "")
+    identity_ref = f"{run_ref_str}:{effect_scope}" if effect_scope else run_ref_str
     delivered_map = dict(delivered or {})
     try:
         ignores = tuple(str(p) for p in (workspace_ignored_paths or ())) if workspace_ignored_paths else ()
     except Exception:
         ignores = ()
-    # Pre-check the whole batch before begin_turn: any slot mismatch or
-    # recovery error aborts the batch, preserves original receipts/
-    # settlement, executes nothing. Native chains still need an error for
-    # every call id in the batch.
-    if calls and _batch_recovery_mismatch(
-        session, list(calls), delivered_map, identity_ref or "adhoc", active_turn, base_index,
-        project_path=project_path, revision_store=workspace_revision_store,
-        ignored_paths=ignores,
-    ):
-        return _batch_aborted_results(list(calls))
+    # Tri-state pre-check before begin_turn: MISMATCH and FAILED both abort
+    # without side effects and without invoking any executor. FAILED keeps
+    # its recovery message instead of being relabeled as mismatch.
+    if calls:
+        check = _check_batch_recovery(
+            session,
+            list(calls),
+            delivered_map,
+            identity_ref or "adhoc",
+            active_turn,
+            base_index,
+            project_path=project_path,
+            revision_store=workspace_revision_store,
+            ignored_paths=ignores,
+        )
+        if check.kind == "MISMATCH":
+            return _batch_aborted_results(list(calls))
+        if check.kind == "FAILED":
+            return _batch_recovery_failed_results(list(calls), check.message or "recovery check failed")
 
     import contextlib as _contextlib
 
@@ -314,7 +283,7 @@ def execute_turn(
         change_tracker,
         managed_outputs,
         session_id,
-        run_ref,
+        run_ref_str,
         permission_profile,
     )
     if intent_sink is not None and calls:
@@ -341,17 +310,22 @@ def execute_turn(
             continue
         delivered_hit = _delivered_slot_result(delivered_map, identity, call)
         if delivered_hit is not None:
-            is_mismatch = str(getattr(delivered_hit, "model_text", "") or "").startswith("ERROR: recovery mismatch")
-            is_failed = str(getattr(delivered_hit, "model_text", "") or "").startswith("ERROR: recovery failed")
-            is_persisted_unverified = str(getattr(delivered_hit, "model_text", "") or "").startswith(
-                "ERROR: persisted unsafe"
-            )
-            settle(identity, call, delivered_hit, ok=not (is_mismatch or is_failed or is_persisted_unverified))
+            text = str(getattr(delivered_hit, "model_text", "") or "")
+            failed = _is_recovery_failed_text(text) or text.startswith("ERROR: persisted unsafe")
+            mismatch = _is_recovery_mismatch_text(text)
+            settle(identity, call, delivered_hit, ok=not (mismatch or failed))
             results.append(delivered_hit)
             continue
         guarded = _guarded_slot_result(
-            session, identity, call, name, active_turn, intent_sink, controller_allowed,
-            project_path=project_path, revision_store=workspace_revision_store,
+            session,
+            identity,
+            call,
+            name,
+            active_turn,
+            intent_sink,
+            controller_allowed,
+            project_path=project_path,
+            revision_store=workspace_revision_store,
             ignored_paths=ignores,
         )
         if guarded is not None:
@@ -376,12 +350,21 @@ def execute_turn(
         # and then ok=False on bump failure double-settles the same effect
         # and the durable ledger raises "effect already settled".
         edit_done = _settle_edit_with_workspace_bump(
-            session, identity, call, name, result, ok,
-            opened=opened, evidence=evidence, exit_code=exit_code,
-            project_path=project_path, execution_evidence=execution_evidence,
+            session,
+            identity,
+            call,
+            name,
+            result,
+            ok,
+            opened=opened,
+            evidence=evidence,
+            exit_code=exit_code,
+            project_path=project_path,
+            execution_evidence=execution_evidence,
             workspace_ignored_paths=workspace_ignored_paths,
             workspace_revision_store=workspace_revision_store,
-            settle=settle, results=results,
+            settle=settle,
+            results=results,
         )
         if edit_done is not None:
             if edit_done == "unconfirmed":
@@ -426,7 +409,9 @@ def _settle_edit_with_workspace_bump(
         return None
     try:
         rev, fp = sync_workspace_state_after_edit(
-            session, project_path, execution_evidence,
+            session,
+            project_path,
+            execution_evidence,
             ignored_paths=workspace_ignored_paths,
             revision_store=workspace_revision_store,
         )
@@ -454,8 +439,13 @@ def _settle_edit_with_workspace_bump(
             return "unconfirmed"
         settle(identity, call, trusted, ok=True)
         record_facts_for_result(
-            session, call, trusted, ok=True, opened_url=opened,
-            evidence_items=evidence, exit_code=exit_code,
+            session,
+            call,
+            trusted,
+            ok=True,
+            opened_url=opened,
+            evidence_items=evidence,
+            exit_code=exit_code,
         )
         results.append(trusted)
         return "trusted"
@@ -480,9 +470,14 @@ def _settle_edit_with_workspace_bump(
 
 
 def _settle_slot(session: TaskSession, identity: str, call: ToolCall, result: ToolResult, *, ok: bool) -> None:
-    import contextlib as _contextlib
+    """Settle the durable receipt; failure raises ``EffectSettlementFailed``.
 
-    with _contextlib.suppress(Exception):
+    ``session._memory_results`` stays a tolerant process-local cache (handled
+    by the caller with suppress). The durable ``session.executed`` write must
+    never be suppressed: an already-executed tool without a receipt would look
+    never-executed on the next recovery and risk a second unsafe execution.
+    """
+    try:
         record: dict[str, Any] = {
             "name": str(result.call.name or ""),
             "ok": bool(ok),
@@ -490,15 +485,19 @@ def _settle_slot(session: TaskSession, identity: str, call: ToolCall, result: To
             "excerpt": str(result.model_text or "")[:500],
             "args_digest": _call_args_digest(call),
         }
-        # Minimal durable provenance for persisted replay: the trusted
-        # (revision, fingerprint) is persisted alongside the excerpt so a
-        # restored session can replay the same identity without a second
-        # bump. Only the kernel side-channel is persisted, never raw audit.
-        try:
-            identity_obj = _kernel_workspace_identity_of(result)
-            if identity_obj is not None and bool(ok):
-                record["workspace_revision"] = int(identity_obj.revision)
-                record["workspace_fingerprint"] = str(identity_obj.fingerprint)
-        except Exception:
-            pass
+    except Exception as exc:
+        raise EffectSettlementFailed(f"effect settlement failed for {identity}: {exc}") from exc
+    # Minimal durable provenance: only the kernel side-channel is persisted,
+    # never raw audit. Extraction stays tolerant (missing provenance fails
+    # closed on later replay); the receipt write below is fail-hard.
+    try:
+        identity_obj = _kernel_workspace_identity_of(result)
+        if identity_obj is not None and bool(ok):
+            record["workspace_revision"] = int(identity_obj.revision)
+            record["workspace_fingerprint"] = str(identity_obj.fingerprint)
+    except Exception:
+        pass
+    try:
         session.executed[identity] = record
+    except Exception as exc:
+        raise EffectSettlementFailed(f"effect settlement failed for {identity}: {exc}") from exc

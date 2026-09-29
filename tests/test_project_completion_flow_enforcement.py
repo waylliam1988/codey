@@ -14,7 +14,6 @@ from codey.app import task_submit as task_submit
 from codey.completion.decision import BLOCKED_TURN_BUDGET_EXHAUSTED
 from codey.completion.engine import COMPLETION_BLOCKED_NOTES
 from codey.completion.verification_policy import VerificationCandidate
-from codey.operations import project_completion_flow as project_completion_module
 from codey.operations.project_completion_flow import (
     COMPLETION_REPAIR_FOLLOWUP,
     blocked_result,
@@ -311,10 +310,14 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
             runtime_mutations=state.runtime_mutations,
             runtime_effects=state.runtime_effects,
         )
-        with mock.patch.object(
-            project_completion_module,
-            "safe_verification_candidates",
-            candidates,
+        import codey.operations.project_completion_enforcement as _enf
+        import codey.operations.project_review_phase as _rev
+        import codey.operations.project_writer_phase as _wrt
+
+        with (
+            mock.patch.object(_enf, "safe_verification_candidates", candidates),
+            mock.patch.object(_rev, "safe_verification_candidates", candidates),
+            mock.patch.object(_wrt, "safe_verification_candidates", candidates),
         ):
             event = _run(runner, state, project)
 

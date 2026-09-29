@@ -13,7 +13,7 @@ from unittest import mock
 
 class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
     def test_build_recovered_failure_is_not_bare_success(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel_result import build_recovered_tool_result
         from codey.runtime.core.models import ToolCall
 
         call = ToolCall(name="edit", args={"path": "a.py"}, call_id="c1")
@@ -21,9 +21,15 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
             "codey.operations.kernel_result.ToolResult", side_effect=RuntimeError("ctor boom")
         ):
             try:
-                result = ke.build_recovered_tool_result(call, model_text="edited")
+                result = build_recovered_tool_result(call, model_text="edited")
             except Exception as exc:
-                self.assertTrue(str(exc) or True)
+                from codey.operations.kernel_recovery import RecoveryFailed
+
+                self.assertIsInstance(exc, RecoveryFailed, f"must be RecoveryFailed, got {type(exc).__name__}: {exc!r}")
+                self.assertTrue(
+                    any(token in str(exc).lower() for token in ("recovered", "rebuild", "provenance")),
+                    f"RecoveryFailed must mention recovered/rebuild/provenance, got {exc!r}",
+                )
                 return
             # If it returns, it must be an explicit error, never bare success.
             text = str(getattr(result, "model_text", "") or "")
@@ -37,6 +43,7 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
         from pathlib import Path
 
         from codey.operations import kernel_execution as ke
+        from codey.operations.kernel_provenance import _trusted_workspace_from_result
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.workspace.revision import WorkspaceRevisionStore
@@ -61,8 +68,8 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
             with mock.patch(
                 "codey.operations.kernel_provenance._with_trusted_workspace_state",
                 side_effect=RuntimeError("attach boom"),
-            ), mock.patch.object(
-                ke, "_with_trusted_workspace_state",
+            ), mock.patch(
+                "codey.operations.kernel_execution._with_trusted_workspace_state",
                 side_effect=RuntimeError("attach boom"),
             ):
                 results = ke.execute_turn(
@@ -76,7 +83,7 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
             # happened, identity unconfirmed) and carry no trusted identity,
             # never raise past execute_turn and never look like success.
             text = str(results[0].model_text or "")
-            rev, fp = ke._trusted_workspace_from_result(results[0])
+            rev, fp = _trusted_workspace_from_result(results[0])
             self.assertTrue(
                 text.startswith("ERROR:"),
                 f"attach failure must be explicit ERROR, got {text!r}",

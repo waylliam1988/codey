@@ -30,6 +30,8 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
+        from codey.operations.kernel_provenance import _trusted_workspace_from_result
+        from codey.operations.kernel_recovery import _replay_settled_slot
         from codey.operations.task_phases import hooks as hooks_mod
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -74,7 +76,7 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
                     workspace_revision_store=store,
                 )
                 self.assertEqual(len(results), 1)
-                first_rev, first_fp = ke._trusted_workspace_from_result(results[0])
+                first_rev, first_fp = _trusted_workspace_from_result(results[0])
                 self.assertTrue(first_rev and first_fp, f"first edit untrusted: {dict(results[0].audit)!r}")
 
                 # Persist across restart: memory results are dropped.
@@ -83,7 +85,7 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
                 self.assertEqual(restored._memory_results, {})
 
                 identity = turn_effect_id("r-persist-1:task", 1, 0)
-                replayed = ke._replay_settled_slot(
+                replayed = _replay_settled_slot(
                     restored, identity,
                     ToolCall(name="edit", args={"path": "b.py", "content": "y=2\n"}),
                     "edit", 1,
@@ -98,7 +100,7 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
                     replay_text.startswith("ERROR:"),
                     f"verified persisted replay must succeed, got {replay_text!r}",
                 )
-                replay_rev, replay_fp = ke._trusted_workspace_from_result(replayed)
+                replay_rev, replay_fp = _trusted_workspace_from_result(replayed)
                 self.assertEqual(replay_rev, first_rev)
                 self.assertEqual(replay_fp, first_fp)
 

@@ -90,33 +90,13 @@ def _project_context(request: AgentRequest) -> str:
 
 
 def _recovered_result_for_row(row: Any) -> Any:
-    from codey.operations.kernel_recovery import RecoveryFailed
-    from codey.operations.kernel_result import build_recovered_tool_result
+    """Thin adapter: row -> unified spec -> single builder (no local trust)."""
+    from codey.operations.kernel_errors import RecoveryFailed
+    from codey.operations.kernel_recovery_result import build_recovered_result, spec_from_frame_row
 
-    # Preserve the full kernel-owned recovery metadata (audit with the
-    # trusted workspace identity, presentation/canonical/truncated) so a
-    # recovered edit keeps its (revision, fingerprint) and hooks adopt
-    # without a second bump. Building audit={"changed": ...} only would
-    # drop the trusted identity. Any failure raises RecoveryFailed: the
-    # caller must stop instead of consuming a half-recovered success.
     try:
-        outcome_audit = dict(getattr(row.outcome, "audit", {}) or {})
-    except Exception as exc:
-        raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
-    try:
-        if row.call.name == "edit" and "changed" not in outcome_audit:
-            outcome_audit["changed"] = bool(row.outcome.changed)
-    except Exception as exc:
-        raise RecoveryFailed(f"recovered changed unreadable: {exc}") from exc
-    try:
-        return build_recovered_tool_result(
-            row.call,
-            model_text=row.outcome.model_text,
-            truncated=bool(getattr(row.outcome, "truncated", False)),
-            presentation=dict(getattr(row.outcome, "presentation", {}) or {}),
-            audit=outcome_audit,
-            canonical=dict(getattr(row.outcome, "canonical", {}) or {}),
-        )
+        spec = spec_from_frame_row(row)
+        return build_recovered_result(spec)
     except RecoveryFailed:
         raise
     except Exception as exc:
@@ -226,7 +206,7 @@ def run(request: AgentRequest) -> RunResult:
         coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
     )
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
-    from codey.operations.kernel_recovery import RecoveryFailed as _RecoveryFailed
+    from codey.operations.kernel_errors import RecoveryFailed as _RecoveryFailed
 
     try:
         for row in list(request.recovered_tool_outcomes or ()):

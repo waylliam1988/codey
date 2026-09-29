@@ -8,19 +8,56 @@ Only three recovery outcomes exist:
 - ``RecoveryFailed``: raised as :class:`RecoveryFailed`; the caller must stop
   without invoking any new tool and surface ``provider_failure`` /
   ``recovery_failure``. ``None`` never means failure: it means no match.
+
+All rebuilds funnel through ``kernel_recovery_result.build_recovered_result``;
+no entry derives trust from display audit.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
+from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.task_session import turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
 
+__all__ = [
+    "RecoveryCheckResult",
+    "_batch_aborted_results",
+    "_batch_recovery_failed_results",
+    "_check_batch_recovery",
+    "_delivered_slot_result",
+    "_guarded_slot_result",
+    "_is_recovery_error_text",
+    "_is_recovery_failed_text",
+    "_is_recovery_mismatch_text",
+    "_is_unsafe_tool",
+    "_recovery_failed_result",
+    "_recovery_mismatch_result",
+    "_replay_settled_slot",
+    "_same_effect_call",
+    "_skip_unsettled",
+    "_verified_persisted_identity",
+    "apply_recovery_first",
+]
 
-class RecoveryFailed(RuntimeError):
-    """Recovered tool results could not be delivered; the run must stop."""
+
+@dataclass(frozen=True)
+class RecoveryCheckResult:
+    """Tri-state batch pre-check: NO_MATCH / MISMATCH / FAILED."""
+
+    kind: str = "NO_MATCH"
+    message: str = ""
+
+    @property
+    def matched(self) -> bool:
+        return self.kind in ("MISMATCH", "FAILED")
+
+    @property
+    def failed(self) -> bool:
+        return self.kind == "FAILED"
 
 
 def apply_recovery_first(
@@ -164,13 +201,14 @@ def _replay_settled_slot(
     revision_store: Any = None,
     ignored_paths: Any = (),
 ) -> ToolResult | None:
+    from codey.operations.kernel_recovery_result import (
+        build_recovered_result,
+        spec_from_memory_result,
+        spec_from_persisted_record,
+    )
+
     if identity not in (session.executed or {}):
         return None
-    # Same turn slot already settled (retry after crash before delivery):
-    # answer without re-executing dangerous writes. Full results stay
-    # process-local (never in the bounded payload). The slot is identical
-    # only when tool name and args digest both match; otherwise fail closed
-    # and never reuse the old result.
     full = session._memory_results.get(identity)
     if full is not None:
         stored_name = str(getattr(full.call, "name", "") or "")
@@ -182,25 +220,18 @@ def _replay_settled_slot(
             stored_digest = ""
         if not _same_effect_call(stored_name, stored_digest, call):
             return _recovery_mismatch_result(call, stored_name, stored_digest)
-        # Preserve the full trusted result (audit/presentation/canonical/
-        # truncated), including the kernel-owned workspace identity. Dropping
-        # them loses the (revision, fingerprint) and causes a second bump.
         call_id = str(getattr(call, "call_id", "") or full.call.call_id or "")
         try:
-            from codey.operations.kernel_provenance import _copy_kernel_workspace_provenance
-
-            rebuilt = ToolResult(
-                call=ToolCall(name=full.call.name, args=dict(full.call.args), call_id=call_id),
-                model_text=full.model_text,
-                truncated=bool(full.truncated),
-                presentation=dict(full.presentation) if isinstance(full.presentation, dict) else {},
-                audit=dict(full.audit) if isinstance(full.audit, dict) else {},
-                canonical=dict(full.canonical) if isinstance(full.canonical, dict) else {},
-            )
+            want = ToolCall(name=full.call.name, args=dict(full.call.args), call_id=call_id)
         except Exception as exc:
             return _recovery_failed_result(call, f"settled replay rebuild failed: {exc}")
-        _copy_kernel_workspace_provenance(full, rebuilt)
-        return rebuilt
+        try:
+            spec = spec_from_memory_result(full, want)
+            return build_recovered_result(spec)
+        except RecoveryFailed as exc:
+            return _recovery_failed_result(call, str(exc))
+        except Exception as exc:
+            return _recovery_failed_result(call, f"settled replay rebuild failed: {exc}")
     record = session.executed[identity]
     stored_name = str(record.get("name", "") or "")
     stored_digest = str(record.get("args_digest", "") or "")
@@ -208,10 +239,6 @@ def _replay_settled_slot(
         return _recovery_mismatch_result(call, stored_name, stored_digest or "unknown-args")
     call_id = str(getattr(call, "call_id", "") or record.get("call_id", ""))
     was_ok = bool(record.get("ok", False))
-    # Persisted replay (no _memory_results, no delivered): the bounded
-    # ``executed`` record carries the minimal provenance. Unsafe tools
-    # without durable corroboration fail closed instead of replaying a bare
-    # success that hooks would bump a second time.
     if was_ok and _is_unsafe_tool(name):
         persisted_identity = _verified_persisted_identity(
             record,
@@ -232,28 +259,19 @@ def _replay_settled_slot(
                 ),
             )
         try:
-            audit = {"workspace_revision": int(persisted_identity.revision),
-                     "workspace_fingerprint": str(persisted_identity.fingerprint)}
-            if str(record.get("name", "") or name).strip().lower() == "edit":
-                audit["changed"] = True
-            rebuilt = ToolResult(
-                call=ToolCall(
-                    name=str(record.get("name", "") or name),
-                    args=dict(call.args if isinstance(call.args, dict) else {}),
-                    call_id=call_id,
-                ),
-                model_text=str(record.get("excerpt", "") or ""),
-                audit=audit,
+            want = ToolCall(
+                name=str(record.get("name", "") or name),
+                args=dict(call.args if isinstance(call.args, dict) else {}),
+                call_id=call_id,
             )
+            spec = spec_from_persisted_record(
+                record, want, verified_identity=persisted_identity,
+            )
+            return build_recovered_result(spec)
+        except RecoveryFailed as exc:
+            return _recovery_failed_result(call, str(exc))
         except Exception as exc:
             return _recovery_failed_result(call, f"persisted replay rebuild failed: {exc}")
-        try:
-            from codey.operations.kernel_provenance import _KERNEL_WORKSPACE_ATTR
-
-            object.__setattr__(rebuilt, _KERNEL_WORKSPACE_ATTR, persisted_identity)
-        except Exception as exc:
-            return _recovery_failed_result(call, f"persisted provenance attach failed: {exc}")
-        return rebuilt
     return ToolResult(
         call=ToolCall(
             name=str(record.get("name", "") or name),
@@ -272,6 +290,11 @@ def _delivered_slot_result(
     call: ToolCall,
 ) -> ToolResult | None:
     """Return the delivered recovery result or a mismatch/error, else None."""
+    from codey.operations.kernel_recovery_result import (
+        build_recovered_result,
+        spec_from_delivered_result,
+    )
+
     if identity not in delivered_map:
         return None
     stored = delivered_map[identity]
@@ -289,26 +312,13 @@ def _delivered_slot_result(
         stored_call, stored_name, stored_digest = None, "", ""
     if stored_call is None or not _same_effect_call(stored_name, stored_digest, call):
         return _recovery_mismatch_result(call, stored_name or "unknown", stored_digest or "unknown-args")
-    # Preserve kernel-owned metadata (audit/presentation/canonical/truncated)
-    # so a recovered edit keeps its trusted workspace identity.
     try:
-        from codey.operations.kernel_provenance import _copy_kernel_workspace_provenance
-        from codey.operations.kernel_result import build_recovered_tool_result
-
-        rebuilt = build_recovered_tool_result(
-            call,
-            model_text=stored.model_text,
-            truncated=bool(getattr(stored, "truncated", False)),
-            presentation=dict(stored.presentation) if isinstance(stored.presentation, dict) else {},
-            audit=dict(stored.audit) if isinstance(stored.audit, dict) else {},
-            canonical=dict(stored.canonical) if isinstance(stored.canonical, dict) else {},
-        )
+        spec = spec_from_delivered_result(stored, call)
+        return build_recovered_result(spec)
     except RecoveryFailed as exc:
         return _recovery_failed_result(call, str(exc))
     except Exception as exc:
         return _recovery_failed_result(call, f"delivered rebuild failed: {exc}")
-    _copy_kernel_workspace_provenance(stored, rebuilt)
-    return rebuilt
 
 
 def _is_recovery_mismatch_text(text: object) -> bool:
@@ -326,7 +336,7 @@ def _is_recovery_error_text(text: object) -> bool:
     return _is_recovery_mismatch_text(text) or _is_recovery_failed_text(text)
 
 
-def _batch_recovery_mismatch(
+def _check_batch_recovery(
     session: Any,
     calls: list[ToolCall],
     delivered_map: Mapping[str, ToolResult],
@@ -337,29 +347,42 @@ def _batch_recovery_mismatch(
     project_path: Any = None,
     revision_store: Any = None,
     ignored_paths: Any = (),
-) -> bool:
-    """Pre-check the whole batch before begin_turn; True means abort without side effects."""
+) -> RecoveryCheckResult:
+    """Pre-check the whole batch; tri-state, no side effects.
+
+    ``NO_MATCH`` means proceed to execution. ``MISMATCH`` means a slot call
+    differs (abort with mismatch results). ``FAILED`` means recovery
+    construction itself failed (abort with failed results). Both abort paths
+    preserve receipts and invoke no executor.
+    """
     for offset, call in enumerate(calls or []):
         name = str(getattr(call, "name", "") or "").strip().lower()
         identity = turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset)
         try:
             delivered_hit = _delivered_slot_result(delivered_map, identity, call)
-        except Exception:
-            # Recovery check outage is a recovery error, never "no match".
-            return True
-        if delivered_hit is not None and _is_recovery_error_text(delivered_hit.model_text):
-            return True
+        except Exception as exc:
+            return RecoveryCheckResult(kind="FAILED", message=f"delivered check failed: {exc}")
+        if delivered_hit is not None:
+            text = str(getattr(delivered_hit, "model_text", "") or "")
+            if _is_recovery_failed_text(text):
+                return RecoveryCheckResult(kind="FAILED", message=text)
+            if _is_recovery_mismatch_text(text):
+                return RecoveryCheckResult(kind="MISMATCH", message=text)
         try:
             replayed = _replay_settled_slot(
                 session, identity, call, name, active_turn,
                 project_path=project_path, revision_store=revision_store,
                 ignored_paths=ignored_paths,
             )
-        except Exception:
-            return True
-        if replayed is not None and _is_recovery_error_text(replayed.model_text):
-            return True
-    return False
+        except Exception as exc:
+            return RecoveryCheckResult(kind="FAILED", message=f"replay check failed: {exc}")
+        if replayed is not None:
+            text = str(getattr(replayed, "model_text", "") or "")
+            if _is_recovery_failed_text(text):
+                return RecoveryCheckResult(kind="FAILED", message=text)
+            if _is_recovery_mismatch_text(text):
+                return RecoveryCheckResult(kind="MISMATCH", message=text)
+    return RecoveryCheckResult(kind="NO_MATCH")
 
 
 def _batch_aborted_results(calls: list[ToolCall]) -> list[ToolResult]:
@@ -400,9 +423,11 @@ def _guarded_slot_result(
     ignored_paths: Any = (),
 ) -> ToolResult | None:
     """Policy/controller/replay guards; None means proceed to real execution."""
+    from codey.operations.kernel_errors import RecoveryFailed as _RecoveryFailed
     from codey.operations.kernel_protocol import _policy_allows
     from codey.operations.kernel_result import _error_result
 
+    _ = _RecoveryFailed
     if _skip_unsettled(intent_sink, identity, name):
         return _error_result(call, f"interrupted {name} not re-executed; see prior intent")
     try:
@@ -427,24 +452,3 @@ def _guarded_slot_result(
             # Fail closed: controller evaluation failure never means unlimited.
             return _error_result(call, "controller state unavailable; cannot authorize tool")
     return None
-
-
-__all__ = [
-    "RecoveryFailed",
-    "_batch_aborted_results",
-    "_batch_recovery_failed_results",
-    "_batch_recovery_mismatch",
-    "_delivered_slot_result",
-    "_guarded_slot_result",
-    "_is_recovery_error_text",
-    "_is_recovery_failed_text",
-    "_is_recovery_mismatch_text",
-    "_is_unsafe_tool",
-    "_recovery_failed_result",
-    "_recovery_mismatch_result",
-    "_replay_settled_slot",
-    "_same_effect_call",
-    "_skip_unsettled",
-    "_verified_persisted_identity",
-    "apply_recovery_first",
-]

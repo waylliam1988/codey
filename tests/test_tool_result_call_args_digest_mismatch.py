@@ -16,7 +16,7 @@ from codey.runtime.core.models import ToolCall, ToolResult
 
 class ToolResultCallArgsDigestMismatchTests(unittest.TestCase):
     def test_different_path_same_name_and_id_is_rejected(self) -> None:
-        from codey.operations.kernel_execution import _consistent_tool_result
+        from codey.operations.kernel_result import _consistent_tool_result
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         produced = ToolResult(
@@ -29,7 +29,7 @@ class ToolResultCallArgsDigestMismatchTests(unittest.TestCase):
         self.assertEqual(dict(out.call.args), {"path": "a.py"})
 
     def test_matching_args_pass_through(self) -> None:
-        from codey.operations.kernel_execution import _consistent_tool_result
+        from codey.operations.kernel_result import _consistent_tool_result
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         produced = ToolResult(call=requested, model_text="hello")

@@ -2,6 +2,34 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 统一恢复协议 + 结算/三态加固 + completion 拆分（未发布）
+
+- P1 恢复信任边界关闭：`delivered_from_frame` 不再从展示 `audit` 推导可信身份；
+  audit 经 `sanitize_recovery_audit` 净化，可信只来自内核自有
+  `RecoveredToolOutcome.workspace_identity`，经统一
+  `build_recovered_result(RecoveredResultSpec)`（`TrustedWorkspaceProof`，来源
+  `bump_state`/`persisted_revision_store`/`in_memory_kernel_result`/
+  `frame_kernel_payload`）附加；仅 `kernel_provenance.attach_trusted_workspace`
+  可写 `_KERNEL_WORKSPACE_ATTR`（架构测试强制）。五个入口共用同一 builder，
+  `task_entry` 单次构造复用于 facts/initial。以
+  `test_delivered_from_frame_trust_boundary`、
+  `test_kernel_recovery_result_protocol` 锁定。
+- P1 持久化结算失败显式化：`_settle_slot` 写 `session.executed` 失败抛
+  `EffectSettlementFailed`（内存缓存仍宽容），外层转 `provider_failure`。以
+  `test_kernel_settlement_failure_fail_closed` 锁定。
+- P2 三态预检：`_check_batch_recovery` 返回 `NO_MATCH`/`MISMATCH`/`FAILED`；
+  mismatch 与 failed 分别出不同 ERROR，均不调 executor。以
+  `test_kernel_recovery_tristate` 锁定。
+- P2 内核边界清理：新增 `kernel_errors.py` 统一异常；`kernel_execution`
+  仅导出 `execute_turn`；测试按归属导入；收紧恒真断言并删除签名反射兼容。
+- `project_completion_flow.py` 1748->527：抽 `project_completion_context`
+ （含共享 checkpoint/commit）、`project_writer_phase`、`project_review_phase`、
+  `project_completion_enforcement`；主文件仅编排并调用三公开入口；patch 路径
+  改到实际 owner。以 `test_project_completion_split_lock` 锁定。
+- 验证：`ruff`、`compileall`、`git diff --check` 全绿，全量
+  `python -m pytest -q`：`4999 passed, 10 skipped, 1474 subtests passed in
+  351.47s (0:05:51)`。零失败。未发布。
+
 ## Unreleased - 统一恢复 + 持久化来源验证 + 内核拆分（未发布）
 
 - P1 `delivered_from_frame` 经 `build_recovered_tool_result` 保留完整恢复元数据
