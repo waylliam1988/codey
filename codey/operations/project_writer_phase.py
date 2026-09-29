@@ -135,6 +135,7 @@ def _run_one_writer_attempt(
         effect_scope=f"writer:{ctx.writer_attempt_index}",
         tool_result_delivery=ctx.deps.runtime.tool_result_delivery,
         runtime_mutations=ctx.deps.runtime.mutations,
+        workspace_revision_store=ctx.deps.verification.workspace_revisions,
         managed_outputs=ctx.deps.persistence.managed_outputs,
         recovered_tool_outcomes=recovered_outcomes,
         recovered_tool_result_batch_id=recovered_batch_id,

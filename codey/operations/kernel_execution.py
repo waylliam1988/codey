@@ -36,6 +36,7 @@ from codey.operations.kernel_result import (
     _error_result,
     _normalize_delegate_result,
     _normalize_explicit_result,
+    strict_exit_code_or_none,
 )
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -246,8 +247,15 @@ def execute_turn(
 
     import contextlib as _contextlib
 
-    def settle(identity: str, call: ToolCall, result: ToolResult, ok: bool) -> None:
-        _settle_slot(session, identity, call, result, ok=ok)
+    def settle(
+        identity: str,
+        call: ToolCall,
+        result: ToolResult,
+        ok: bool,
+        *,
+        exit_code: object = None,
+    ) -> None:
+        _settle_slot(session, identity, call, result, ok=ok, exit_code=exit_code)
         with _contextlib.suppress(Exception):
             session._memory_results[identity] = result
         if intent_sink is not None:
@@ -259,8 +267,7 @@ def execute_turn(
         # a second unsafe execution.
         if intent_sink is None:
             return
-        with _contextlib.suppress(Exception):
-            intent_sink.settle(identity, bool(ok))
+        intent_sink.settle(identity, bool(ok))
 
     delegate = _build_delegate(
         session,
@@ -380,10 +387,21 @@ def _reconcile_guarded_slot(
             recovery_ctx=recovery_ctx,
         )
     except Exception:
+        try:
+            prior = getattr(session, "executed", {}).get(identity)
+        except Exception:
+            prior = None
+        if prior is None:
+            settle(identity, call, guarded, ok=False)
+        else:
+            try:
+                prior_ok = bool(prior.get("ok", False)) if isinstance(prior, dict) else False
+            except Exception:
+                prior_ok = False
+            reconcile_intent_only(identity, ok=prior_ok)
         return
     if slot.disposition == "NO_MATCH":
-        with contextlib.suppress(Exception):
-            settle(identity, call, guarded, ok=False)
+        settle(identity, call, guarded, ok=False)
         return
     if slot.disposition == "RECOVERED":
         try:
@@ -450,7 +468,7 @@ def _execute_slots(
             if edit_done == "unconfirmed":
                 workspace_unconfirmed = True
             continue
-        settle(identity, call, result, ok=ok)
+        settle(identity, call, result, ok=ok, exit_code=exit_code)
         record_facts_for_result(
             session, call, result, ok=ok, opened_url=opened, evidence_items=evidence, exit_code=exit_code
         )
@@ -500,7 +518,7 @@ def _settle_edit_with_workspace_bump(
     if rev and fp:
         try:
             trusted = _with_trusted_workspace_state(result, revision=rev, fingerprint=fp)
-        except (RecoveryFailed, Exception):
+        except Exception:
             # Edit happened but provenance attach failed: record the edit
             # fact, settle ONCE as error, block same-batch work.
             with contextlib.suppress(Exception):
@@ -549,7 +567,15 @@ def _settle_edit_with_workspace_bump(
     return None
 
 
-def _settle_slot(session: TaskSession, identity: str, call: ToolCall, result: ToolResult, *, ok: bool) -> None:
+def _settle_slot(
+    session: TaskSession,
+    identity: str,
+    call: ToolCall,
+    result: ToolResult,
+    *,
+    ok: bool,
+    exit_code: object = None,
+) -> None:
     """Settle the durable receipt; failure raises ``EffectSettlementFailed``.
 
     ``session._memory_results`` stays a tolerant process-local cache (handled
@@ -565,6 +591,11 @@ def _settle_slot(session: TaskSession, identity: str, call: ToolCall, result: To
             "excerpt": str(result.model_text or "")[:500],
             "args_digest": _call_args_digest(call),
         }
+        strict_exit = strict_exit_code_or_none(exit_code)
+        if strict_exit is None and isinstance(result.audit, dict):
+            strict_exit = strict_exit_code_or_none(result.audit.get("exit_code"))
+        if strict_exit is not None:
+            record["exit_code"] = strict_exit
     except Exception as exc:
         raise EffectSettlementFailed(f"effect settlement failed for {identity}: {exc}") from exc
     # Minimal durable provenance: only the kernel side-channel is persisted,

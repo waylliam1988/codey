@@ -21,7 +21,7 @@ only; hooks adopt only ``event_proof``.
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from codey.runtime.core.models import ToolResult
@@ -47,6 +47,7 @@ _TRUSTED_PROOF_SOURCES = frozenset(
         "event_side_channel",
     }
 )
+_TRUSTED_PROOF_CAPABILITY = object()
 
 __all__ = [
     "TrustedWorkspaceProof",
@@ -61,6 +62,7 @@ __all__ = [
     "_session_workspace_identity",
     "_sync_workspace_after_edit",
     "_trusted_workspace_from_result",
+    "_trusted_workspace_proof",
     "_with_trusted_workspace_state",
     "attach_proof_to_event",
     "attach_trusted_workspace",
@@ -70,7 +72,7 @@ __all__ = [
 ]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class TrustedWorkspaceProof:
     """Already-verified workspace provenance (never constructed from audit).
 
@@ -83,6 +85,18 @@ class TrustedWorkspaceProof:
 
     identity: Any
     source: str = ""
+    _capability: object = field(repr=False, compare=False)
+
+    def __init__(self, identity: Any, source: str = "", *, _capability: object = None) -> None:
+        if _capability is not _TRUSTED_PROOF_CAPABILITY:
+            raise TypeError("TrustedWorkspaceProof must be created by kernel provenance")
+        object.__setattr__(self, "identity", identity)
+        object.__setattr__(self, "source", source)
+        object.__setattr__(self, "_capability", _capability)
+
+
+def _trusted_workspace_proof(identity: Any, source: str) -> TrustedWorkspaceProof:
+    return TrustedWorkspaceProof(identity=identity, source=source, _capability=_TRUSTED_PROOF_CAPABILITY)
 
 
 def _is_trusted_identity(identity: Any) -> bool:
@@ -139,6 +153,8 @@ def attach_proof_to_event(event: Any, proof: TrustedWorkspaceProof) -> None:
     from codey.operations.kernel_errors import RecoveryFailed
 
     try:
+        if getattr(proof, "_capability", None) is not _TRUSTED_PROOF_CAPABILITY:
+            raise RecoveryFailed("trusted workspace proof was not kernel-created")
         source = str(getattr(proof, "source", "") or "")
         identity = getattr(proof, "identity", None)
     except Exception as exc:
@@ -186,6 +202,8 @@ def attach_trusted_workspace(result: ToolResult, proof: TrustedWorkspaceProof) -
     from codey.operations.kernel_errors import RecoveryFailed
 
     try:
+        if getattr(proof, "_capability", None) is not _TRUSTED_PROOF_CAPABILITY:
+            raise RecoveryFailed("trusted workspace proof was not kernel-created")
         identity = getattr(proof, "identity", None)
         source = str(getattr(proof, "source", "") or "")
     except Exception as exc:
@@ -239,7 +257,7 @@ def _with_trusted_workspace_state(
         raise RecoveryFailed(f"trusted workspace identity invalid: {exc}") from exc
     if not identity.trusted:
         raise RecoveryFailed("trusted workspace identity invalid: untrusted pair")
-    return attach_trusted_workspace(result, TrustedWorkspaceProof(identity=identity, source="bump_state"))
+    return attach_trusted_workspace(result, _trusted_workspace_proof(identity, "bump_state"))
 
 
 def with_trusted_workspace_state(
@@ -343,13 +361,19 @@ def sync_workspace_state_after_edit(
         if not identity.trusted:
             return 0, ""
         rev, fp = int(identity.revision), str(identity.fingerprint)
-        with contextlib.suppress(Exception):
+        try:
             session.set_workspace_state(rev, fp)
+        except Exception as exc:
+            from codey.operations.kernel_errors import RecoveryFailed
+
+            raise RecoveryFailed(f"session workspace state sync failed: {exc}") from exc
         try:
             if execution_evidence is not None and hasattr(execution_evidence, "set_workspace_state"):
                 execution_evidence.set_workspace_state(rev, fp)
-        except Exception:
-            pass
+        except Exception as exc:
+            from codey.operations.kernel_errors import RecoveryFailed
+
+            raise RecoveryFailed(f"execution evidence workspace state sync failed: {exc}") from exc
         return rev, fp
     _sync_workspace_after_edit(session, project_path, execution_evidence, ignored_paths=ignores)
     return 0, ""

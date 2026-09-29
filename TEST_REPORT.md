@@ -1,5 +1,24 @@
 # Codey Test Report
 
+## Kernel recovery and settlement hardening (2026-09-29)
+
+- Scope: effect-local exit-code projection; durable workspace-store forwarding
+  for project writers; fail-closed event proof and in-memory provenance reads;
+  propagation of guarded replay settlement failures; strict recovery mappings,
+  `model_text`, and `truncated`; removal of an unused recovery alias and a
+  redundant exception tuple.
+- TDD: eight new accurately named test modules, plus focused locks for
+  provenance-read failure, settlement-failure propagation, and unused-alias
+  removal. Each deterministic reproduction was confirmed failing before its
+  production fix and passing afterward. Related kernel/recovery suites passed
+  `135 passed, 4 skipped, 3 subtests passed` before the full run.
+- Pre-checks: `ruff check codey tests tools`, `python -m compileall -q codey
+  tests`, and `git diff --check` clean.
+- Full run `python -m pytest -q -p no:cacheprovider`:
+  `5022 passed, 32 skipped, 1474 subtests passed in 345.70s (0:05:45)`.
+  Zero failures.
+- No release was made.
+
 ## Trust-boundary closure: event proof, frame safe-only, typed disposition (2026-09-29)
 
 - Scope: P1 metadata forgery closed via event side-channel proof

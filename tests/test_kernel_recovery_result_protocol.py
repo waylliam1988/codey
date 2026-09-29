@@ -54,12 +54,12 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         self.assertEqual((rev, fp), (0, ""))
 
     def test_builder_restores_verified_proof(self) -> None:
-        from codey.operations.kernel_provenance import TrustedWorkspaceProof, _trusted_workspace_from_result
+        from codey.operations.kernel_provenance import _trusted_workspace_from_result, _trusted_workspace_proof
         from codey.operations.kernel_recovery_result import RecoveredResultSpec, build_recovered_result
         from codey.workspace.revision import WorkspaceIdentity
 
         ident = WorkspaceIdentity.trusted_pair(2, LEGIT_FP)
-        proof = TrustedWorkspaceProof(identity=ident, source="bump_state")
+        proof = _trusted_workspace_proof(ident, "bump_state")
         spec = RecoveredResultSpec(call=_call(), model_text="edited", audit={"changed": True}, trusted_workspace=proof)
         result = build_recovered_result(spec)
         rev, fp = _trusted_workspace_from_result(result)
@@ -80,17 +80,17 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
 
     def test_unverified_proof_rejected(self) -> None:
         from codey.operations.kernel_errors import RecoveryFailed
-        from codey.operations.kernel_provenance import TrustedWorkspaceProof
+        from codey.operations.kernel_provenance import _trusted_workspace_proof
         from codey.operations.kernel_recovery_result import RecoveredResultSpec, build_recovered_result
         from codey.workspace.revision import WorkspaceIdentity
 
         # Untrusted identity (0,"") must not attach even with a source.
-        bad = TrustedWorkspaceProof(identity=WorkspaceIdentity(), source="bump_state")
+        bad = _trusted_workspace_proof(WorkspaceIdentity(), "bump_state")
         with self.assertRaises(RecoveryFailed):
             build_recovered_result(RecoveredResultSpec(call=_call(), audit={}, trusted_workspace=bad))
         # Missing source must not attach even with trusted identity.
         legit = WorkspaceIdentity.trusted_pair(2, LEGIT_FP)
-        no_source = TrustedWorkspaceProof(identity=legit, source="")
+        no_source = _trusted_workspace_proof(legit, "")
         with self.assertRaises(RecoveryFailed):
             build_recovered_result(RecoveredResultSpec(call=_call(), audit={}, trusted_workspace=no_source))
 

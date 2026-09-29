@@ -23,6 +23,7 @@ No entry derives trust from display audit or event metadata.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -72,7 +73,7 @@ def sanitize_recovery_audit(audit: object) -> dict:
 
     if audit is None:
         return {}
-    if not isinstance(audit, dict):
+    if not isinstance(audit, Mapping):
         raise RecoveryFailed(f"recovered audit must be a mapping, got {type(audit).__name__}")
     try:
         source = dict(audit)
@@ -87,7 +88,7 @@ def _strict_display_mapping(value: object, *, field: str) -> dict:
     """Strict display mapping: None/missing -> {}, non-mapping -> fail."""
     if value is None:
         return {}
-    if not isinstance(value, dict):
+    if not isinstance(value, Mapping):
         raise RecoveryFailed(f"recovered {field} must be a mapping, got {type(value).__name__}")
     try:
         return dict(value)
@@ -96,17 +97,23 @@ def _strict_display_mapping(value: object, *, field: str) -> dict:
 
 
 def _strict_model_text(value: object) -> str:
-    try:
-        return str(value or "")
-    except Exception as exc:
-        raise RecoveryFailed(f"recovered model_text unreadable: {exc}") from exc
+    if value is None:
+        return ""
+    if type(value) is not str:
+        raise RecoveryFailed(
+            f"recovered model_text must be a string, got {type(value).__name__}"
+        )
+    return value
 
 
 def _strict_truncated(value: object) -> bool:
-    try:
-        return bool(value)
-    except Exception as exc:
-        raise RecoveryFailed(f"recovered truncated unreadable: {exc}") from exc
+    if value is None:
+        return False
+    if type(value) is not bool:
+        raise RecoveryFailed(
+            f"recovered truncated must be a boolean, got {type(value).__name__}"
+        )
+    return value
 
 
 def build_recovered_result(spec: RecoveredResultSpec) -> ToolResult:
@@ -261,17 +268,17 @@ def spec_from_frame_row(item: Any) -> RecoveredResultSpec:
 def spec_from_memory_result(stored: ToolResult, call: ToolCall) -> RecoveredResultSpec:
     """Adapter for in-memory settled results (side-channel copy only)."""
     from codey.operations.kernel_provenance import (
-        TrustedWorkspaceProof,
         _is_trusted_identity,
         _kernel_workspace_identity_of,
+        _trusted_workspace_proof,
     )
 
     try:
         identity = _kernel_workspace_identity_of(stored)
-    except Exception:
-        identity = None
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered workspace provenance unreadable: {exc}") from exc
     proof = (
-        TrustedWorkspaceProof(identity=identity, source="in_memory_kernel_result")
+        _trusted_workspace_proof(identity, "in_memory_kernel_result")
         if identity is not None and _is_trusted_identity(identity)
         else None
     )
@@ -316,11 +323,11 @@ def spec_from_persisted_record(
     require_provenance: bool = False,
 ) -> RecoveredResultSpec:
     """Adapter for persisted ``executed`` records (verified identity only)."""
-    from codey.operations.kernel_provenance import TrustedWorkspaceProof, _is_trusted_identity
+    from codey.operations.kernel_provenance import _is_trusted_identity, _trusted_workspace_proof
 
     proof = None
     if verified_identity is not None and _is_trusted_identity(verified_identity):
-        proof = TrustedWorkspaceProof(identity=verified_identity, source="persisted_revision_store")
+        proof = _trusted_workspace_proof(verified_identity, "persisted_revision_store")
     try:
         excerpt = str(record.get("excerpt", "") or "") if isinstance(record, dict) else ""
     except Exception as exc:

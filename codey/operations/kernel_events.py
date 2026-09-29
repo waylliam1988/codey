@@ -6,7 +6,6 @@ These helpers format and emit only; they never decide, send, or execute.
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Callable
 from typing import Any
 
@@ -82,26 +81,24 @@ def _emit_tool_results(
         record = session.executed.get(identity, {})
         ok = bool(record.get("ok", False))
         # Strict exit projection: only real ints pass. A present-but-invalid
-        # audit exit (bool/str/float) is omitted, never coerced to 0. The
-        # verification fallback is strict as well.
+        # audit/receipt exits (bool/str/float) are omitted, never coerced to 0.
         exit_code = None
         try:
             from codey.utils.refs import strict_exit_code as _strict_exit
         except Exception:
             _strict_exit = None  # type: ignore[assignment]
-        if isinstance(result.audit, dict) and result.audit.get("exit_code") is not None:
+        record_exit = record.get("exit_code")
+        if record_exit is not None:
+            try:
+                exit_code = _strict_exit(record_exit) if _strict_exit is not None else None
+            except Exception:
+                exit_code = None
+        if exit_code is None and isinstance(result.audit, dict) and result.audit.get("exit_code") is not None:
             try:
                 raw_exit = result.audit.get("exit_code")
                 exit_code = _strict_exit(raw_exit) if _strict_exit is not None else None
             except Exception:
                 exit_code = None
-        if result.call.name == "run" and session.verifications:
-            try:
-                fallback_raw = session.verifications[-1].get("exit_code")
-                fallback = _strict_exit(fallback_raw) if _strict_exit is not None else None
-            except Exception:
-                fallback = None
-            exit_code = exit_code if exit_code is not None else fallback
         display = str(result.model_text or "")
         if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"}:
             display = next(
@@ -122,41 +119,36 @@ def _emit_tool_results(
         canonical_name = str(getattr(result.call, "name", "") or "").strip().lower()
         display_call = _event_call(session, result.call)
         event = RunEvent.tool_finished(turn, display_call, outcome, index)
-        try:
-            if isinstance(getattr(event, "metadata", None), dict):
-                if canonical_name:
-                    event.metadata["tool_name"] = canonical_name
-                # Only the kernel side-channel attached by
-                # _with_trusted_workspace_state may be carried. Raw audit
-                # workspace keys are executor-forgeable and never trusted;
-                # the no-store path never sets the side-channel so it never
-                # emits trusted state and hooks must bump. Metadata keys are
-                # display/logging only; the authoritative proof travels in
-                # the event side-channel read by hooks via ``event_proof``.
-                if canonical_name == "edit" and ok and changed:
-                    try:
-                        from codey.operations.kernel_provenance import (
-                            TrustedWorkspaceProof,
-                            _kernel_workspace_identity_of,
-                            attach_proof_to_event,
-                        )
+        if isinstance(getattr(event, "metadata", None), dict):
+            if canonical_name:
+                event.metadata["tool_name"] = canonical_name
+            # Only the kernel side-channel attached by
+            # _with_trusted_workspace_state may be carried. Raw audit
+            # workspace keys are executor-forgeable and never trusted;
+            # the no-store path never sets the side-channel so it never
+            # emits trusted state and hooks must bump. Metadata keys are
+            # display/logging only; the authoritative proof travels in
+            # the event side-channel read by hooks via ``event_proof``.
+            if canonical_name == "edit" and ok and changed:
+                from codey.operations.kernel_errors import RecoveryFailed
+                from codey.operations.kernel_provenance import (
+                    _kernel_workspace_identity_of,
+                    _trusted_workspace_proof,
+                    attach_proof_to_event,
+                )
 
-                        kernel_identity = _kernel_workspace_identity_of(result)
-                        trusted = kernel_identity is not None
-                    except Exception:
-                        kernel_identity = None
-                        trusted = False
-                    if trusted:
-                        with contextlib.suppress(Exception):
-                            event.metadata["workspace_revision"] = int(kernel_identity.revision)
-                            event.metadata["workspace_fingerprint"] = str(kernel_identity.fingerprint)
-                        with contextlib.suppress(Exception):
-                            attach_proof_to_event(
-                                event,
-                                TrustedWorkspaceProof(
-                                    identity=kernel_identity, source="event_side_channel"
-                                ),
-                            )
-        except Exception:
-            pass
+                try:
+                    kernel_identity = _kernel_workspace_identity_of(result)
+                except Exception as exc:
+                    raise RecoveryFailed(f"event proof provenance read failed: {exc}") from exc
+                if kernel_identity is not None:
+                    try:
+                        event.metadata["workspace_revision"] = int(kernel_identity.revision)
+                        event.metadata["workspace_fingerprint"] = str(kernel_identity.fingerprint)
+                        attach_proof_to_event(
+                            event,
+                            _trusted_workspace_proof(kernel_identity, "event_side_channel"),
+                        )
+                    except Exception as exc:
+                        raise RecoveryFailed(f"event proof attach failed: {exc}") from exc
         on_event(event)

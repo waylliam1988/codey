@@ -275,6 +275,7 @@ def run(request: AgentRequest) -> RunResult:
         stagnant_turns=request.stagnant_turns,
         delivered=delivered,
         intent_sink=intent_sink,
+        workspace_revision_store=request.workspace_revision_store,
         on_event=request.on_event,
         on_shell_request=request.on_shell_request,
         propagate_provider_failure=True,

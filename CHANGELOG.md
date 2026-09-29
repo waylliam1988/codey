@@ -2,6 +2,30 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Kernel recovery and settlement hardening (no release)
+
+- P1 effect-local exit projection: tool events read `exit_code` from the
+  current durable effect receipt or result audit only; a prior verification
+  can never leak into a later `run` event.
+- P1 provenance failures fail closed: event proof reads/attachment and
+  in-memory recovery provenance reads stop delivery instead of downgrading to
+  an untrusted result; guarded replay settlement failures propagate instead
+  of leaving pending intents open.
+- P2 durable writer wiring: project writer requests now carry the shared
+  `WorkspaceRevisionStore`, so normal edit execution uses the durable bump
+  path and preserves workspace provenance.
+- P2 strict recovery payloads accept `Mapping` values, while wrong
+  `model_text`/`truncated` types raise `RecoveryFailed`; executor workspace
+  keys remain display-only. Removed an unused recovery exception alias and a
+  redundant exception tuple.
+- TDD locks: eight new accurately named test modules plus focused locks for
+  provenance-read failure, settlement failure propagation, and unused-alias
+  removal. No compatibility fallback was added.
+- Verification: `ruff`, `compileall`, and `git diff --check` clean. Full
+  `python -m pytest -q -p no:cacheprovider`:
+  `5022 passed, 32 skipped, 1474 subtests passed in 345.70s (0:05:45)`.
+  Zero failures. No release.
+
 ## Unreleased - Trust-boundary closure: event proof, frame safe-only, typed disposition (no release)
 
 - P1 event metadata forgery closed: `hooks._adopt_kernel_workspace_state`

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Mapping
 
 from codey.operations.kernel_provenance import _EXECUTOR_STRIPPED_AUDIT_KEYS
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -125,18 +126,21 @@ def build_recovered_tool_result(
     """
     from codey.operations.kernel_errors import RecoveryFailed
 
+
     if audit is None:
         audit_dict: dict = {}
-    elif not isinstance(audit, dict):
+    elif not isinstance(audit, Mapping):
         raise RecoveryFailed(f"recovered audit must be a mapping, got {type(audit).__name__}")
     else:
         try:
             audit_dict = dict(audit)
         except Exception as exc:
             raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
+    for key in _EXECUTOR_STRIPPED_AUDIT_KEYS:
+        audit_dict.pop(key, None)
     if presentation is None:
         presentation_dict: dict = {}
-    elif not isinstance(presentation, dict):
+    elif not isinstance(presentation, Mapping):
         raise RecoveryFailed(
             f"recovered presentation must be a mapping, got {type(presentation).__name__}"
         )
@@ -147,7 +151,7 @@ def build_recovered_tool_result(
             raise RecoveryFailed(f"recovered presentation unreadable: {exc}") from exc
     if canonical is None:
         canonical_dict: dict = {}
-    elif not isinstance(canonical, dict):
+    elif not isinstance(canonical, Mapping):
         raise RecoveryFailed(
             f"recovered canonical must be a mapping, got {type(canonical).__name__}"
         )
@@ -156,14 +160,22 @@ def build_recovered_tool_result(
             canonical_dict = dict(canonical)
         except Exception as exc:
             raise RecoveryFailed(f"recovered canonical unreadable: {exc}") from exc
-    try:
-        text = str(model_text or "")
-    except Exception as exc:
-        raise RecoveryFailed(f"recovered model_text unreadable: {exc}") from exc
-    try:
-        truncated_flag = bool(truncated)
-    except Exception as exc:
-        raise RecoveryFailed(f"recovered truncated unreadable: {exc}") from exc
+    if model_text is None:
+        text = ""
+    elif type(model_text) is not str:
+        raise RecoveryFailed(
+            f"recovered model_text must be a string, got {type(model_text).__name__}"
+        )
+    else:
+        text = model_text
+    if truncated is None:
+        truncated_flag = False
+    elif type(truncated) is not bool:
+        raise RecoveryFailed(
+            f"recovered truncated must be a boolean, got {type(truncated).__name__}"
+        )
+    else:
+        truncated_flag = truncated
     try:
         return ToolResult(
             call=call,
@@ -179,11 +191,6 @@ def build_recovered_tool_result(
 
 def _error_result(call: ToolCall, message: str) -> ToolResult:
     return ToolResult(call=call, model_text=f"ERROR: {message}")
-
-
-def _recovery_failed_result(call: ToolCall, message: str) -> ToolResult:
-    """Explicit recovery error that aborts batches and never looks like success."""
-    return ToolResult(call=call, model_text=f"ERROR: recovery failed: {message}")
 
 
 def _call_args_digest(call: ToolCall) -> str:

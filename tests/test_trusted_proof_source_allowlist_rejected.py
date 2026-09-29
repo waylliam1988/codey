@@ -24,7 +24,7 @@ def _call(name="read_file"):
 class TrustedProofSourceAllowlistTests(unittest.TestCase):
     def test_forged_identity_payload_is_rejected(self) -> None:
         from codey.operations.kernel_errors import RecoveryFailed
-        from codey.operations.kernel_provenance import TrustedWorkspaceProof, attach_trusted_workspace
+        from codey.operations.kernel_provenance import _trusted_workspace_proof, attach_trusted_workspace
         from codey.runtime.core.models import ToolResult
 
         class Forged:
@@ -40,11 +40,11 @@ class TrustedProofSourceAllowlistTests(unittest.TestCase):
 
         result = ToolResult(call=_call(), model_text="content")
         with self.assertRaises(RecoveryFailed):
-            attach_trusted_workspace(result, TrustedWorkspaceProof(identity=Forged(), source="bump_state"))
+            attach_trusted_workspace(result, _trusted_workspace_proof(Forged(), "bump_state"))
 
     def test_unknown_proof_source_is_rejected(self) -> None:
         from codey.operations.kernel_errors import RecoveryFailed
-        from codey.operations.kernel_provenance import TrustedWorkspaceProof, attach_trusted_workspace
+        from codey.operations.kernel_provenance import _trusted_workspace_proof, attach_trusted_workspace
         from codey.runtime.core.models import ToolResult
         from codey.workspace.revision import WorkspaceIdentity
 
@@ -52,7 +52,7 @@ class TrustedProofSourceAllowlistTests(unittest.TestCase):
         result = ToolResult(call=_call(), model_text="content")
         with self.assertRaises(RecoveryFailed):
             attach_trusted_workspace(
-                result, TrustedWorkspaceProof(identity=legit, source="attacker_source")
+                result, _trusted_workspace_proof(legit, "attacker_source")
             )
 
     def test_persisted_frame_payload_requires_durable_verification(self) -> None:

@@ -8,6 +8,7 @@ Locks P2 silent downgrade removal:
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 
 def _call():
@@ -61,6 +62,19 @@ class RecoveryStrictConversionTests(unittest.TestCase):
         # __post_init__ projection as a dict? Force a bad attribute instead.
         object.__setattr__(stored, "presentation", "bad-string")
         with self.assertRaises(RecoveryFailed):
+            spec_from_memory_result(stored, call)
+
+    def test_memory_result_provenance_read_failure_raises(self) -> None:
+        from codey.operations.kernel_errors import RecoveryFailed
+        from codey.operations.kernel_recovery_result import spec_from_memory_result
+        from codey.runtime.core.models import ToolCall, ToolResult
+
+        call = ToolCall(name="edit", args={"path": "a.py"}, call_id="c1")
+        stored = ToolResult(call=call, model_text="edited", audit={"changed": True})
+        with mock.patch(
+            "codey.operations.kernel_provenance._kernel_workspace_identity_of",
+            side_effect=RuntimeError("provenance channel unavailable"),
+        ), self.assertRaises(RecoveryFailed):
             spec_from_memory_result(stored, call)
 
     def test_missing_fields_use_defaults(self) -> None:

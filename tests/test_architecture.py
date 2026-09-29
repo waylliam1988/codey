@@ -2215,7 +2215,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/inbox.py": 1200,
             # PLR split 2026-09-26: 2780 lines after per-action split.
             "ghost/work_queue.py": 2840,
-            "operations/project_completion_flow.py": 1750,
             # Unified single-loop convergence 2026-09-28: batch precheck,
             # real workspace identity, fail-closed controller, web contract
             # resend, done-receipt failure, cross-provider text recovery,

@@ -645,11 +645,9 @@ def _guarded_slot_result(
     it replays without re-executing (settlement reconciliation). Only when
     no receipt exists does a pending unsafe intent block execution.
     """
-    from codey.operations.kernel_errors import RecoveryFailed as _RecoveryFailed
     from codey.operations.kernel_protocol import _policy_allows
     from codey.operations.kernel_result import _error_result
 
-    _ = _RecoveryFailed
     try:
         replayed_slot = replay_slot_typed(
             session, identity, call, name, active_turn,

@@ -90,6 +90,7 @@ class AgentRequest:
     run_id: str = ""
     effect_scope: str = ""
     runtime_mutations: RuntimeMutationLine | None = None
+    workspace_revision_store: object | None = None
     tool_result_delivery: ToolResultDeliveryStore | None = None
     managed_outputs: ManagedOutputStore | None = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()

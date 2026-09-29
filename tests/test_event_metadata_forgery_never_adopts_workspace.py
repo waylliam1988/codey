@@ -58,7 +58,7 @@ class EventMetadataForgeryNeverAdoptsTests(unittest.TestCase):
         self.assertFalse(adopted)
 
     def test_kernel_side_channel_proof_adopts(self) -> None:
-        from codey.operations.kernel_provenance import TrustedWorkspaceProof, attach_proof_to_event
+        from codey.operations.kernel_provenance import _trusted_workspace_proof, attach_proof_to_event
         from codey.operations.task_phases.hooks import _adopt_kernel_workspace_state
         from codey.workspace.revision import WorkspaceIdentity
 
@@ -66,7 +66,7 @@ class EventMetadataForgeryNeverAdoptsTests(unittest.TestCase):
         event = _forged_edit_event()
         # Real kernel path: side-channel proof beside metadata, not metadata ints.
         identity = WorkspaceIdentity.trusted_pair(7, LEGIT_FP)
-        proof = TrustedWorkspaceProof(identity=identity, source="event_side_channel")
+        proof = _trusted_workspace_proof(identity, "event_side_channel")
         attach_proof_to_event(event, proof)
         self.assertTrue(_adopt_kernel_workspace_state(work, event))
         self.assertEqual(int(work.workspace_revision), 7)

@@ -2,6 +2,26 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Kernel 恢复与结算加固（未发布）
+
+- P1 退出码按 effect 隔离：tool event 只读取当前 durable receipt 或当前
+  result audit 的 `exit_code`，上一轮 verification 不会泄漏到后续 `run`。
+- P1 provenance 故障 fail-closed：event proof 读取/附加失败、内存恢复
+  provenance 读取失败都会停止交付，不降级成不可信结果；guarded replay
+  的结算失败直接上抛，不留下 pending intent 继续执行。
+- P2 writer durable 接线：project writer request 传递共享
+  `WorkspaceRevisionStore`，正常 edit 使用 durable bump 并保留 workspace
+  provenance。
+- P2 恢复 payload 严格转换：接受 `Mapping`，但错误的 `model_text`/
+  `truncated` 类型抛 `RecoveryFailed`；executor workspace keys 仍仅展示。
+  删除无用 recovery 异常别名与冗余异常元组。
+- TDD 锁定：新增 8 个准确命名测试模块，并补充 provenance 读取失败、结算
+  失败传播、无用别名清理的专门锁。未新增兼容 fallback。
+- 验证：`ruff`、`compileall`、`git diff --check` 全洁。全量
+  `python -m pytest -q -p no:cacheprovider`：
+  `5022 passed, 32 skipped, 1474 subtests passed in 345.70s (0:05:45)`，
+  零失败。未发布。
+
 ## Unreleased - 信任边界关闭：event proof、frame 仅安全重放、typed disposition（未发布）
 
 - P1 event metadata 伪造关闭：`hooks` 不再从 `RunEvent.metadata` 推导可信

@@ -12,6 +12,16 @@ from pathlib import Path
 
 
 class RecoveryErrorBuildersUnifiedTests(unittest.TestCase):
+    def test_guarded_slot_has_no_unused_recovery_error_alias(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        path = root / "codey" / "operations" / "kernel_recovery.py"
+        source = path.read_text(encoding="utf-8")
+        self.assertNotIn(
+            "from codey.operations.kernel_errors import RecoveryFailed as _RecoveryFailed",
+            source,
+        )
+        self.assertNotIn("_ = _RecoveryFailed", source)
+
     def test_replay_uses_unified_builders(self) -> None:
         root = Path(__file__).resolve().parents[1]
         path = root / "codey" / "operations" / "kernel_recovery.py"
