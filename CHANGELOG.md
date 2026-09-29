@@ -10,7 +10,8 @@
   for executable JSON.
 - Added architecture locks preventing concrete provider adapters from being
   imported by kernel modules, plus deterministic Codey/Pi local A/B harness
-  helpers and accurately named regression tests.
+  helpers and accurately named regression tests. Detailed r1-r7 findings are
+  recorded in `tests/manual/REAL_LOCAL_AB_REPORT.md`.
 - Pytest now excludes ignored manual benchmark results so fixture `test_*.py`
   files cannot contaminate collection.
 - Verification: `ruff`, `compileall`, and `git diff --check` clean. Full

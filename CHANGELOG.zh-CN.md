@@ -8,7 +8,8 @@
   标准 `AssistantTurn`/`ProviderToolCall`；provider 专属模型模板会被拒绝，
   不再从中挖掘可执行 JSON。
 - 新增架构锁，禁止 kernel 模块导入具体 provider adapter；补充准确命名的
-  Codey/Pi 实机 A/B harness 辅助测试与协议回归测试。
+  Codey/Pi 实机 A/B harness 辅助测试与协议回归测试。r1-r7 详细结论见
+  `tests/manual/REAL_LOCAL_AB_REPORT.md`。
 - pytest 排除被忽略的手工 benchmark 结果目录，避免其中的 `test_*.py` fixture
   污染测试收集。
 - 验证：`ruff`、`compileall`、`git diff --check` 全洁。全量
