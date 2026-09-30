@@ -1,5 +1,58 @@
 # Codey Test Report
 
+## Verification identity, strict-Research ledger, work-queue split, honest A/B (2026-09-30)
+
+Scope: close the completion-gate and work-queue gaps found in review of
+`19fad3a` (missing/stale verification identity, evidence re-stamping,
+strict-Research ledger fallback, lossy queue replay wrapper, dishonest
+A/B variables). Red-first: 6 new files failed before their fixes and pass
+after; `test_context_delta_ab.py` and `test_coldstart_export_cleanup.py`
+were migrated to the new owners. No code was modified after the final
+full run; only this report was written after that run.
+
+### Behavior and test evidence
+
+| Boundary | Locked behavior | Regression files |
+| --- | --- | --- |
+| Verification identity | Missing/malformed/stale (revision, fingerprint) never completes; exact-`int` revisions with valid equal fingerprints proceed; projection preserves command/cwd/version without re-stamping | `test_completion_verification_identity_exact.py` |
+| Strict Research | Missing/unreadable ledger blocks (`research_ledger_missing`); evidence outside opened sources blocks; ordinary source tasks keep ledger-free behaviour | `test_strict_research_requires_ledger.py` |
+| Work-queue events | Observed events replay into item lists; transitions validate/apply; stale leases cannot complete; events leaf never imports the Store | `test_work_queue_events_owns_replay.py` |
+| Work-queue sources | Conversions own explicit signatures; Store delegates; sources leaf never imports the Store | `test_work_queue_sources_own_conversions.py` |
+| Work-queue ownership | Model/events/sources own their definitions; Store keeps locks/I/O/mutation/selection and re-exports without duplicate internals | `test_ghost_work_queue_ownership.py` |
+| Session window A/B | Continued vs fresh-handoff differ in prompt handoff text and `new_chat` count; warmup identical; both run the real kernel read-only and close the provider | `test_context_delta_session_window_vs_handoff.py`, `test_manual_ab_fake_provider_smoke.py` |
+| Project-map A/B | Baseline sends no map; current sends the production map and the marker reaches the real sent prompts | `test_large_project_ab.py` |
+| Proof wording | Gate is the sole combiner entry for the final task proof; check providers never reference it | `test_completion_checks_ownership.py` |
+| Stress oracle | Completed implies proof, bound verification, and ledger-contained citations over test-side facts | `tests/stress/test_completion_truthful_oracle.py` |
+
+### Actual runs
+
+- Targeted completion regression: **38 passed**.
+- Targeted work-queue regression (queue, ownership, transitions, control,
+  sleep, post-turn, research-interest): **149 passed, 6 subtests passed**.
+- Targeted kernel/A/B/stress regression: **78 passed**.
+- First full run in this round: **3 failed, 6052 passed, 10 skipped,
+  1483 subtests passed in 383.92s**. Failures were stale old-arm A/B tests
+  (`delta`/`contract-delta`/`followup_request`, all removed) and a
+  `_common`-helper call-site assertion pointing at the pre-split Store;
+  both migrated to the new owners and re-verified with targeted runs.
+  Migration also exposed one real bug (scope-deletion matcher calling the
+  wrong scope helper), fixed and locked by the existing suite.
+- Final full command: `python -m pytest tests -q -p no:cacheprovider`
+  **6054 passed, 10 skipped, 1483 subtests passed in 364.48s (0:06:04)**.
+- Final prechecks: `python -m ruff check codey tests tools`,
+  `python -m compileall -q codey tests tools`, `git diff --check`: passed.
+
+### Limits and follow-ups
+
+- `ghost/work_queue.py` shrank from 2422 to ~1240 lines; events/sources
+  own their implementations and the Store delegates. Re-export aliases in
+  `work_queue.py` remain only for existing test call sites.
+- The 10 skips are Windows/symlink privilege/POSIX-contract limitations.
+  No live web-model/native API benchmark was run.
+- Static import-graph acyclicity and bounded state-sequence exploration
+  from the review remain future work; the stress oracle now carries the
+  completion-truthfulness invariant.
+
 ## Kernel dependency direction, dead entry removal, and check ownership (2026-09-30)
 
 Scope: based on `9136441`; 6 static dependency cycles, dead
@@ -21,7 +74,7 @@ updated after that run.
 | Grant vocabulary | `policies/capabilities.py` owns `KNOWN_TASK_GRANTS`; policy and registry share it with no fallback | `test_task_grants_capabilities_single_owner.py` |
 | Gate hygiene | Workspace-less verification cannot complete; unreadable `required_checks` blocks; no hardcoded completion limit | `test_completion_gate_fail_closed_hygiene.py` |
 | Audit tools | `agents/project_audit_tools.py` owns scanning with no provider/operations deps; advisor consumes it directly | `test_project_audit_tools_ownership.py`, `test_consensus_audit_split.py` |
-| Completion checks | Project/research check providers own rows; gate is the sole proof minter with one `evaluate` entry | `test_completion_checks_ownership.py` |
+| Completion checks | Project/research check providers own rows; gate is the sole combiner entry for the final proof with one `evaluate` entry | `test_completion_checks_ownership.py` |
 | Work queue | `ghost/work_queue_model.py` owns items and field rules; events/sources leaves are pure converters | `test_ghost_work_queue_ownership.py`, `test_work_queue_transition_split.py` |
 
 Red-first: the 12 new files above all failed before their fixes and pass
@@ -49,11 +102,10 @@ identity; not every migrated assertion is claimed as a new red-first test.
 
 ### Limits and follow-ups
 
-- `ghost/work_queue_events.py` and `ghost/work_queue_sources.py` exist as pure
-  leaves with stable public entries; the Store still reuses its internal
-  projection/transition copies for persistence. Full Store delegation (removing
-  the duplicated internals) is the next small step and must keep the 83
-  work-queue tests green.
+- `ghost/work_queue_events.py` and `ghost/work_queue_sources.py` existed as
+  pure leaves with stable public entries; full Store delegation (removing the
+  duplicated internals) is done in the follow-up round at the top of this
+  report and keeps the work-queue suites green.
 - The 10 skips are Windows/symlink privilege/POSIX-contract limitations.
   No live web-model/native API benchmark was run.
 

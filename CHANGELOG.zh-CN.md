@@ -2,6 +2,38 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 验证身份、严格 Research 账本、工作队列拆分与诚实 A/B（未发布）
+
+- TDD 红色锁定 6 个新文件（先失败、后通过）：
+  `test_completion_verification_identity_exact`（缺失/过期/畸形身份永不
+  放行；投影保留命令/cwd/版本）、
+  `test_strict_research_requires_ledger`（无账本永不完成）、
+  `test_work_queue_events_owns_replay`（观察事件重放为工作项；转换生效；
+  不导入 Store）、
+  `test_work_queue_sources_own_conversions`（显式签名；Store 委托；不导入
+  Store）、
+  `test_context_delta_session_window_vs_handoff`（continued 与 fresh-handoff
+  的 prompt/会话/关闭契约）、
+  `tests/stress/test_completion_truthful_oracle`（完成蕴含证明、绑定验证
+  与账本内引用）。
+- P1 验证身份：统一使用严格 `_workspace_identity_equal`（精确 `int`
+  版本、合法且相等的指纹），直接检查与证据投影共用；`_append_session_check`
+  原样复制命令/cwd/版本/指纹，按完整身份去重，不重盖版本、不绕过写入接口；
+  `record_verification` 只保存精确 `int` 工作区版本。
+- P1 严格 Research：缺失/不可读账本返回明确的 `research_ledger_missing`
+  失败，不再退回 opened/evidence/标题弱检查；普通联网任务保持无账本行为。
+- P2 工作队列：`work_queue_events.py` 拥有重放/校验/应用，
+  `work_queue_sources.py` 以显式签名拥有全部来源转换；Store 只保留
+  锁/I/O/变更/选择并委托两者，删除重复实现、`dict` 返回的重放包装、
+  `replay_work_events` 别名与重复 `_research_proof_ref`。迁移中被现有用例
+  发现的一处 scope 删除匹配错误已修复。
+- P2 A/B 诚实性：`context_delta_ab` 改为比较同窗继续与带事实 handoff 的新
+  窗（`ARMS = ("continued", "fresh-handoff")`），删除 `contract-delta`
+  的手工 codec 分组；`large_project_ab` 断言地图标记出现在真实发送 prompt 中。
+- 表述：gate 是最终任务完成证明的唯一组合入口（检查方不引用最终证明）；
+  工作队列文档描述已完成的委托关系。
+- 未 release、未打 tag、未改版本号。
+
 ## Unreleased - 内核依赖方向、死入口清理与检查所有权（未发布）
 
 - TDD 红色锁定 12 个新文件（先失败、后通过）：

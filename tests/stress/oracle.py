@@ -15,6 +15,8 @@ raises AssertionError with a replayable description on violation:
 8. no_new_operations_on_restart -- operation ids are stable across restart.
 9. ghost_stable_across_restart -- ghost rows are identical before/after restart.
 10. model_matches_durable -- scheduler memory agrees with durable reads.
+11. completion_truthful -- completed implies proof, bound verification
+    identity, and ledger-contained strict-Research citations.
 """
 
 from __future__ import annotations
@@ -109,6 +111,46 @@ class InvariantChecker:
                     "completion_has_proof",
                     self._prefix(f"completed {operation_id!r} has no durable proof"),
                 )
+
+    def check_completion_truthful(self, view: dict) -> None:
+        """Completed implies proof requirements match actual durable facts.
+
+        The view carries test-side facts read from the real log, workspace,
+        and ledger -- never the verdict's own claims. Verification must bind
+        the current (revision, fingerprint) pair exactly; strict Research
+        must cite only opened sources from a valid ledger with a valid
+        report.
+        """
+        if not view.get("completed"):
+            return
+        if not view.get("proof_exists"):
+            _fail("completion_truthful", self._prefix("completed without a durable proof"))
+        if not view.get("required_checks_passed", True):
+            _fail("completion_truthful", self._prefix("completed with failing required checks"))
+        if view.get("verification_required"):
+            if not view.get("verification_identity_valid"):
+                _fail("completion_truthful", self._prefix("verification identity is not valid"))
+            if view.get("verification_revision") != view.get("workspace_revision"):
+                _fail(
+                    "completion_truthful",
+                    self._prefix(
+                        f"stale verification revision "
+                        f"{view.get('verification_revision')!r} != "
+                        f"workspace {view.get('workspace_revision')!r}"
+                    ),
+                )
+            if view.get("verification_fingerprint") != view.get("workspace_fingerprint"):
+                _fail("completion_truthful", self._prefix("verification fingerprint mismatch"))
+        if view.get("strict_research"):
+            if not view.get("ledger_valid"):
+                _fail("completion_truthful", self._prefix("strict Research without a valid ledger"))
+            opened = set(view.get("opened_sources", ()))
+            if not set(view.get("cited_sources", ())) <= opened:
+                _fail("completion_truthful", self._prefix("cited sources escape opened sources"))
+            if not set(view.get("cited_evidence_sources", ())) <= opened:
+                _fail("completion_truthful", self._prefix("cited evidence escapes opened sources"))
+            if not view.get("report_valid"):
+                _fail("completion_truthful", self._prefix("strict-Research report is invalid"))
 
     def check_no_new_operations_on_restart(
         self, before: list[str], after: list[str]

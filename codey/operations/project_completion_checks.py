@@ -17,6 +17,28 @@ from codey.completion.contract import (
     CompletionCheck,
     completion_check,
 )
+from codey.runtime.observe.execution_evidence import CheckEvidence
+from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
+
+
+def _workspace_identity_equal(ver_rev: object, ver_fp: object, cur_rev: object, cur_fp: object) -> bool:
+    """One strict workspace identity rule for every verification path.
+
+    Both revisions must be exact ``int`` (``bool`` rejected) with a valid
+    workspace value and equal; both fingerprints must be valid and equal.
+    Missing or malformed identity never matches.
+    """
+    if type(ver_rev) is not int or type(cur_rev) is not int:
+        return False
+    if not valid_workspace_revision(ver_rev) or not valid_workspace_revision(cur_rev):
+        return False
+    if int(ver_rev) != int(cur_rev):
+        return False
+    ver_fp_text = str(ver_fp or "")
+    cur_fp_text = str(cur_fp or "")
+    if not valid_workspace_fingerprint(ver_fp_text) or not valid_workspace_fingerprint(cur_fp_text):
+        return False
+    return ver_fp_text == cur_fp_text
 
 
 def _task_requires_modification(session: Any) -> bool:
@@ -30,28 +52,13 @@ def _task_requires_modification(session: Any) -> bool:
 def _verification_identity_matches(item: dict[str, Any], sess_fp: str, sess_rev: int) -> bool:
     """Exit-0 verification passes only with matching file identity.
 
-    Both sides must carry a fingerprint; missing or mismatched identity
-    never passes. Tasks that need no verification return not_applicable
-    upstream instead of relying on this helper.
+    Both sides must carry a complete (revision, fingerprint) pair; missing
+    or mismatched identity never passes. Tasks that need no verification
+    return not_applicable upstream instead of relying on this helper.
     """
-    ver_fp = str(item.get("workspace_fingerprint", "") or "")
-    ver_rev = item.get("workspace_revision")
-    if not ver_fp or not sess_fp:
-        return False
-    try:
-        from codey.workspace.revision import valid_workspace_fingerprint as _valid_fp
-    except Exception:
-        _valid_fp = None  # type: ignore[assignment]
-    if _valid_fp is not None and (not _valid_fp(ver_fp) or not _valid_fp(sess_fp)):
-        return False
-    if ver_fp != sess_fp:
-        return False
-    try:
-        if ver_rev is not None and sess_rev and int(ver_rev) != int(sess_rev):
-            return False
-    except (TypeError, ValueError):
-        return False
-    return True
+    return _workspace_identity_equal(
+        item.get("workspace_revision"), item.get("workspace_fingerprint"), sess_rev, sess_fp,
+    )
 
 
 def _refresh_completion_workspace(session: Any, context: Any) -> None:
@@ -216,62 +223,60 @@ def _verification_exit_code(latest: Any) -> int | None:
 def _evidence_workspace_identity(evidence: Any) -> tuple[int, str, bool]:
     rev = getattr(evidence, "workspace_revision", 0)
     fp = str(getattr(evidence, "workspace_fingerprint", "") or "")
-    try:
-        from codey.workspace.revision import valid_workspace_fingerprint
-    except Exception:
-        valid_workspace_fingerprint = None  # type: ignore[assignment]
-    if not fp:
-        return rev, fp, False
-    if valid_workspace_fingerprint is not None and not valid_workspace_fingerprint(fp):
+    if type(rev) is not int or not valid_workspace_revision(rev):
+        return 0, fp, False
+    if not valid_workspace_fingerprint(fp):
         return rev, fp, False
     return rev, fp, True
 
 
 def _session_identity_matches(session: Any, latest: Any, rev: int, fp: str) -> bool:
+    """Session projection needs the same strict identity as direct checks."""
+    if not _workspace_identity_equal(
+        latest.get("workspace_revision"), latest.get("workspace_fingerprint"), rev, fp,
+    ):
+        return False
     try:
-        from codey.workspace.revision import valid_workspace_fingerprint
-    except Exception:
-        valid_workspace_fingerprint = None  # type: ignore[assignment]
-    ver_fp = str(latest.get("workspace_fingerprint", "") or "")
-    if ver_fp:
-        if valid_workspace_fingerprint is not None:
-            return bool(valid_workspace_fingerprint(ver_fp)) and ver_fp == fp
-        return ver_fp == fp
-    try:
+        sess_rev = getattr(session, "workspace_revision", 0)
         sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
-        sess_rev = int(getattr(session, "workspace_revision", 0) or 0)
     except Exception:
         return False
-    if sess_fp and sess_fp != fp:
-        return False
-    if sess_rev and int(rev or 0) and sess_rev != int(rev or 0):
-        return False
-    return bool(sess_fp or ver_fp)
+    return _workspace_identity_equal(sess_rev, sess_fp, rev, fp)
 
 
-def _append_session_check(evidence: Any, command: str, exit_code: int, rev: int, fp: str) -> Any:
-    try:
-        from codey.runtime.observe.execution_evidence import CheckEvidence
-    except Exception:
+def _append_session_check(evidence: Any, row: dict[str, Any]) -> Any:
+    """Copy one verified session fact into evidence without re-stamping it.
+
+    Preserves the original command, cwd, exit code, revision, and
+    fingerprint; deduplicates on the full identity so the same command in
+    a different directory never overwrites its sibling.
+    """
+    command = str(row.get("command", "") or "").strip()[:500]
+    cwd = str(row.get("cwd", ".") or ".").strip()[:240] or "."
+    exit_code = row.get("exit_code")
+    if type(exit_code) is not int:
         return evidence
-    item = CheckEvidence(command, ".", exit_code=exit_code, workspace_revision=rev, workspace_fingerprint=fp)
-    try:
-        existing = list(getattr(evidence, "checks_after_edit", []) or [])
-    except Exception:
+    ver_rev = row.get("workspace_revision")
+    ver_fp = str(row.get("workspace_fingerprint", "") or "")
+    if type(ver_rev) is not int or not valid_workspace_revision(ver_rev):
         return evidence
-    for row in existing:
-        try:
-            if str(getattr(row, "command", "") or "") == command:
-                return evidence
-        except Exception:
-            continue
-    import contextlib as _contextlib2
-
-    try:
-        evidence._append_check(evidence.checks_after_edit, item)
-    except Exception:
-        with _contextlib2.suppress(Exception):
-            evidence.checks_after_edit.append(item)
+    if not valid_workspace_fingerprint(ver_fp):
+        return evidence
+    if not command:
+        return evidence
+    item = CheckEvidence(
+        command, cwd, exit_code=exit_code,
+        workspace_revision=ver_rev, workspace_fingerprint=ver_fp,
+    )
+    for existing in list(getattr(evidence, "checks_after_edit", []) or []):
+        if (
+            str(getattr(existing, "command", "") or "") == item.command
+            and str(getattr(existing, "cwd", "") or "") == item.cwd
+            and getattr(existing, "workspace_revision", 0) == item.workspace_revision
+            and str(getattr(existing, "workspace_fingerprint", "") or "") == item.workspace_fingerprint
+        ):
+            return evidence
+    evidence._append_check(evidence.checks_after_edit, item)
     return evidence
 
 
@@ -305,7 +310,7 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
         return evidence
     if not _session_identity_matches(session, latest, rev, fp):
         return evidence
-    return _append_session_check(evidence, command, exit_code, rev, fp)
+    return _append_session_check(evidence, latest)
 
 
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:

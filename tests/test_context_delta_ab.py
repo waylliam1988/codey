@@ -9,31 +9,21 @@ from codey.toolchain.runtime import ToolOutcome
 from tests.manual import context_delta_ab
 
 
-def test_followup_arms_change_only_context_delivery() -> None:
+def test_followup_arms_change_only_session_window_and_handoff() -> None:
     conversation = ConversationContext()
 
-    delta = context_delta_ab.followup_run_kwargs("delta", conversation)
-    full = context_delta_ab.followup_run_kwargs("full", conversation)
+    continued = context_delta_ab.followup_run_kwargs("continued", conversation)
+    fresh = context_delta_ab.followup_run_kwargs("fresh-handoff", conversation)
 
-    assert delta == {"fresh_chat": False, "conversation": conversation}
-    assert full == {"fresh_chat": False, "conversation": None}
+    assert continued == {"fresh_chat": False, "conversation": conversation, "handoff": ""}
+    assert fresh["fresh_chat"] is True
+    assert fresh["conversation"] is conversation
+    assert isinstance(fresh["handoff"], str)
 
 
 def test_unknown_followup_arm_is_rejected() -> None:
     with pytest.raises(ValueError, match="unknown arm"):
         context_delta_ab.followup_run_kwargs("other", ConversationContext())
-
-
-def test_contract_delta_keeps_tool_contract_without_project_snapshot() -> None:
-    task = "Explain the follow-up"
-
-    prompt = context_delta_ab.followup_request("contract-delta", task)
-
-    assert "careful local coding agent" in prompt
-    assert "Project Map" in prompt
-    assert "previously supplied" in prompt
-    assert task in prompt
-    assert "Initial listing:" not in prompt
 
 
 def test_stage_metrics_counts_information_repeated_from_warmup() -> None:

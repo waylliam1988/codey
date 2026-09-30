@@ -16,9 +16,11 @@ class FakeProvider:
     def __init__(self, replies: list[str]) -> None:
         self._replies = list(replies)
         self.prompts: list[str] = []
+        self.new_chat_calls = 0
         self.closed = False
 
     def new_chat(self) -> None:
+        self.new_chat_calls += 1
         return None
 
     def send(self, prompt: str, timeout: float | None = None) -> str:
@@ -82,6 +84,7 @@ def test_task_lens_ab_readonly_arm_runs_real_kernel(tmp_path) -> None:
 def test_context_delta_ab_arms_share_warmup_and_differ_followup(tmp_path) -> None:
     from tests.manual import context_delta_ab as ab
 
+    assert tuple(ab.ARMS) == ("continued", "fresh-handoff")
     project = tmp_path / "ctx"
     project.mkdir(parents=True, exist_ok=True)
     (project / "a.txt").write_text("hello", encoding="utf-8")
@@ -92,15 +95,27 @@ def test_context_delta_ab_arms_share_warmup_and_differ_followup(tmp_path) -> Non
         followup_task="Summarize a.txt again. Do not modify files.",
         expected=(),
     )
-    for arm in ("full", "delta"):
+    rows: dict[str, dict] = {}
+    fakes: dict[str, FakeProvider] = {}
+    for arm in ab.ARMS:
         fake = FakeProvider(
             [
                 '{"tool": "done", "args": {"summary": "warmup done"}}',
                 '{"tool": "done", "args": {"summary": "followup done"}}',
             ]
         )
+        fakes[arm] = fake
         with mock.patch.object(ab, "connect_provider", return_value=fake):
-            row = ab.run_arm(case, arm, "fake", 0, 2)
+            rows[arm] = ab.run_arm(case, arm, "fake", 0, 2)
+    for arm, row in rows.items():
         assert row["eligible"] is True, row
         assert row["warmup_stop_reason"] == "done", row
         assert row["followup_stop_reason"] == "done", row
+        assert row["experiment"] == "session_window_with_factual_handoff", row
+        assert fakes[arm].closed is True, arm
+    assert fakes["continued"].prompts[0] == fakes["fresh-handoff"].prompts[0]
+    assert fakes["continued"].new_chat_calls == 1, "continued reuses the warmup window"
+    assert fakes["fresh-handoff"].new_chat_calls == 2, "fresh-handoff opens a new chat"
+    assert "Factual handoff" not in fakes["continued"].prompts[-1]
+    assert "Factual handoff" in fakes["fresh-handoff"].prompts[-1]
+    assert (project / "a.txt").read_text(encoding="utf-8") == "hello"

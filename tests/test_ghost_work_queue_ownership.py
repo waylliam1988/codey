@@ -15,18 +15,70 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _imports_of(path) -> set[str]:
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+    return imports
+
+
+def _top_level_defs(path) -> set[str]:
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
+
+
 def test_work_queue_split_modules_exist() -> None:
     for name in ("work_queue_model", "work_queue_events", "work_queue_sources"):
         assert (ROOT / "codey/ghost" / f"{name}.py").exists(), name
     from codey.ghost import work_queue_events, work_queue_model, work_queue_sources
 
     assert hasattr(work_queue_model, "GhostWorkItem")
-    assert callable(getattr(work_queue_events, "items_from_events", None)) or callable(
-        getattr(work_queue_events, "replay_work_events", None)
-    )
-    assert callable(getattr(work_queue_sources, "items_from_continuity", None)) or hasattr(
-        work_queue_sources, "items_from_continuity"
-    )
+    assert callable(getattr(work_queue_events, "items_from_events", None))
+    assert not hasattr(work_queue_events, "replay_work_events")
+    assert callable(getattr(work_queue_sources, "items_from_continuity", None))
+    assert callable(getattr(work_queue_sources, "new_item", None))
+
+
+def test_split_leaves_do_not_import_the_store() -> None:
+    for name in ("work_queue_model", "work_queue_events", "work_queue_sources"):
+        imports = _imports_of(ROOT / "codey/ghost" / f"{name}.py")
+        assert "codey.ghost.work_queue" not in imports, name
+
+
+def test_store_owns_no_replay_or_source_definition() -> None:
+    defs = _top_level_defs(ROOT / "codey/ghost/work_queue.py")
+    for name in (
+        "_items_from_events",
+        "_snapshot_items",
+        "_valid_work_event",
+        "_valid_work_transition",
+        "_apply_transition_event",
+        "_merge_items",
+        "_bounded_items",
+        "_new_item",
+        "_items_from_continuity",
+        "_items_from_research_interest_candidates",
+        "_items_from_work_checkpoint",
+        "_items_from_run_projection",
+        "_items_from_terminal_event",
+        "_research_proof_ref",
+    ):
+        assert name not in defs, name
+    text = (ROOT / "codey/ghost/work_queue.py").read_text(encoding="utf-8-sig")
+    assert "work_queue_events" in text
+    assert "work_queue_sources" in text
 
 
 def test_model_leaf_has_no_store_or_lock_dependency() -> None:

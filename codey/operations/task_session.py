@@ -214,8 +214,6 @@ class TaskSession:
             rev = int(revision)
         except (TypeError, ValueError):
             return
-        import contextlib as _contextlib
-
         row: dict[str, Any] = {"command": str(command or "")[:240], "cwd": str(cwd or ".")[:240],
                                "revision": rev, "passed": passed}
         if exit_code is not None:
@@ -227,9 +225,8 @@ class TaskSession:
                 code = None
             if code is not None:
                 row["exit_code"] = code
-        if workspace_revision is not None:
-            with _contextlib.suppress(TypeError, ValueError):
-                row["workspace_revision"] = int(workspace_revision)
+        if type(workspace_revision) is int:
+            row["workspace_revision"] = workspace_revision
         if workspace_fingerprint is not None:
             row["workspace_fingerprint"] = str(workspace_fingerprint or "")[:120]
         self.verifications.append(row)

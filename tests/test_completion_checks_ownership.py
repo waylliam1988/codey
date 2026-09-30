@@ -1,10 +1,13 @@
-"""Completion checks have dedicated owners; the gate stays the sole proof owner.
+"""Completion checks have dedicated owners; the gate combines the final proof.
 
 - ``operations.project_completion_checks`` owns project/edit/verification
   and engine evidence checks.
 - ``operations.research_completion_checks`` owns source/ledger/report checks.
 - ``operations.completion_gate`` owns the final contract/proof combination
-  and is the only module that mints a completion proof.
+  and is the sole combiner entry for the final task completion proof:
+  check providers never mint or reference the final proof object. The
+  project path reuses the coding engine's internal evaluation as one
+  evidence input; only the gate combines it into the final proof.
 """
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ def test_check_provider_modules_exist() -> None:
     assert callable(getattr(research_completion_checks, "strict_research_checks", None))
 
 
-def test_gate_is_sole_proof_minter() -> None:
+def test_gate_is_sole_final_proof_combiner() -> None:
     import ast
 
     gate_text = (ROOT / "codey/operations/completion_gate.py").read_text(encoding="utf-8-sig")

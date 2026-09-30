@@ -209,6 +209,11 @@ class GhostCommonHelperTests(unittest.TestCase):
                 "def _valid_nonnegative_int_payload",
                 "def _reverse_text_sort_key",
             ],
+            "codey/ghost/work_queue_events.py": [
+                "def _event_ts",
+                "def _valid_nonnegative_int_payload",
+                "def _reverse_text_sort_key",
+            ],
             "codey/ghost/continuity.py": ["def _reverse_text_sort_key"],
             "codey/ghost/directive.py": ["def _reverse_text_sort_key"],
         }
@@ -220,13 +225,15 @@ class GhostCommonHelperTests(unittest.TestCase):
     def test_call_sites_use_common_helpers(self) -> None:
         text_affinity = (REPO_ROOT / "codey/ghost/affinity.py").read_text(encoding="utf-8")
         text_queue = (REPO_ROOT / "codey/ghost/work_queue.py").read_text(encoding="utf-8")
+        text_queue_events = (REPO_ROOT / "codey/ghost/work_queue_events.py").read_text(encoding="utf-8")
         text_continuity = (REPO_ROOT / "codey/ghost/continuity.py").read_text(encoding="utf-8")
         text_directive = (REPO_ROOT / "codey/ghost/directive.py").read_text(encoding="utf-8")
         self.assertIn("_common.event_ts", text_affinity)
         self.assertIn("_common.valid_nonnegative_int_payload", text_affinity)
-        self.assertIn("_common.event_ts", text_queue)
-        self.assertIn("_common.valid_nonnegative_int_payload", text_queue)
-        self.assertIn("_common.reverse_text_sort_key", text_queue)
+        self.assertIn("_common.find_work_item_by_id", text_queue)
+        self.assertIn("_common.event_ts", text_queue_events)
+        self.assertIn("_common.valid_nonnegative_int_payload", text_queue_events)
+        self.assertIn("_common.reverse_text_sort_key", text_queue_events)
         self.assertIn("_common.reverse_text_sort_key", text_continuity)
         self.assertIn("_common.reverse_text_sort_key", text_directive)
 

@@ -1,9 +1,12 @@
-"""Manual read-only A/B for repeated full context versus a delta follow-up.
+"""Manual read-only A/B for continued versus fresh-handoff follow-ups.
 
-The first stage establishes project context in one web-model conversation. The
-second stage either repeats Codey's complete project intro (``full``) or uses
-the existing short same-conversation follow-up (``delta``). Mutating tools are
-disabled, and results are written to the system temporary directory by default.
+The first stage establishes project context in one provider conversation.
+The second stage either continues the same conversation window
+(``continued``) or opens a fresh chat carrying the factual handoff
+(``fresh-handoff``). Both arms resend the same production project map;
+the experiment variable is the session window plus handoff text, not a
+full-versus-delta token saving. Mutating tools are disabled, and results
+are written to the system temporary directory by default.
 """
 
 # ruff: noqa: E402 - direct script execution must add the repository root first.
@@ -29,11 +32,12 @@ from codey.agents.handoff import ConversationContext
 from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.operations.project_adapter import run
-from codey.protocols.json_codec import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider
 from codey.toolchain.runtime import ToolOutcome
 from tests.manual.project_task_context import render_production_project_map
+
+ARMS = ("continued", "fresh-handoff")
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-context-delta-ab.json"
 
@@ -99,27 +103,20 @@ def cases(stockalarm: Path) -> dict[str, Case]:
 
 
 def followup_run_kwargs(arm: str, conversation: ConversationContext) -> dict[str, object]:
-    """Return benchmark-only wiring without changing Agent behavior."""
-    if arm in {"delta", "contract-delta"}:
-        return {"fresh_chat": False, "conversation": conversation}
-    if arm == "full":
-        # No local conversation object makes Agent render its complete project intro,
-        # while fresh_chat=False preserves the already-open remote web conversation.
-        return {"fresh_chat": False, "conversation": None}
-    raise ValueError(f"unknown arm: {arm}")
+    """Return the follow-up wiring for one experiment arm.
 
-
-def followup_request(arm: str, task: str) -> str:
-    if arm == "contract-delta":
-        return (
-            f"{JsonToolCodec().system_prompt()}\n\n"
-            "The previously supplied project root, project instructions, Project Map, "
-            "and initial listing are unchanged. Reuse them without requesting the same "
-            "information again.\n\n"
-            f"Current user request:\n{task}"
-        )
-    if arm in {"full", "delta"}:
-        return task
+    ``continued`` reuses the same conversation window with no handoff text;
+    ``fresh-handoff`` opens a new chat carrying the factual handoff. Both
+    arms resend the same project map through the real kernel.
+    """
+    if arm == "continued":
+        return {"fresh_chat": False, "conversation": conversation, "handoff": ""}
+    if arm == "fresh-handoff":
+        return {
+            "fresh_chat": True,
+            "conversation": conversation,
+            "handoff": conversation.prepare_handoff(),
+        }
     raise ValueError(f"unknown arm: {arm}")
 
 
@@ -244,7 +241,7 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
             AgentRequest(
                 provider=provider,
                 project=case.project,
-                task=followup_request(arm, case.followup_task),
+                task=case.followup_task,
                 max_turns=max_turns,
                 on_event=followup_events.append,
                 provider_id=provider_id,
@@ -252,6 +249,7 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
                 tool_fns=tool_fns,
                 fresh_chat=bool(followup_kwargs.get("fresh_chat", False)),
                 conversation=followup_kwargs.get("conversation"),  # type: ignore[arg-type]
+                handoff=str(followup_kwargs.get("handoff", "") or ""),
             )
         )
         followup_prompts = provider.prompts[sends_before:]
@@ -261,6 +259,7 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
         return {
             "case": case.name,
             "arm": arm,
+            "experiment": "session_window_with_factual_handoff",
             "provider": provider_id,
             "ok": (
                 warmup.stop_reason == "done"
@@ -299,7 +298,7 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", required=True)
-    parser.add_argument("--arm", choices=("full", "delta", "contract-delta"), required=True)
+    parser.add_argument("--arm", choices=ARMS, required=True)
     parser.add_argument("--provider", default="deepseek")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--max-turns", type=int, default=16)

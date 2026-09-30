@@ -23,33 +23,55 @@ def test_large_project_benchmark_mutations_are_hard_disabled() -> None:
     assert "read-only" in outcome.model_text
 
 
+class _RecordingProvider:
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+        self.closed = False
+
+    def new_chat(self) -> None:
+        return None
+
+    def send(self, prompt: str, timeout: float | None = None) -> str:
+        self.prompts.append(prompt or "")
+        return '{"tool": "done", "args": {"summary": "ok"}}'
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def test_large_project_run_arm_sends_expected_project_map() -> None:
     import tempfile
     from pathlib import Path
 
+    from codey.agents.request import AgentRequest
+
     with tempfile.TemporaryDirectory() as td:
         project = Path(td)
+        (project / "a.py").write_text("x = 1\n", encoding="utf-8")
         case = large_project_ab.Case(name="c", project=project, task="t", expected=())
-        for arm, expect_empty in (("baseline", True), ("current", False)):
-            with mock.patch.object(
-                large_project_ab, "connect_provider", side_effect=AssertionError("no real provider")
-            ):
-                pass
-            # Capture the AgentRequest by patching run() instead of connecting.
+        seen: dict[str, str] = {}
+        for arm in ("baseline", "current"):
+            fake = _RecordingProvider()
+            requests: list[AgentRequest] = []
+            real_run = large_project_ab.run
             with (
-                mock.patch.object(large_project_ab, "connect_provider") as connect,
-                mock.patch.object(large_project_ab, "run") as run,
+                mock.patch.object(large_project_ab, "connect_provider", return_value=fake),
+                mock.patch.object(large_project_ab, "run", wraps=real_run) as run,
             ):
-                fake_raw = mock.Mock()
-                fake_raw.name = "fake"
-                fake_raw.send.return_value = '{"tool": "done", "args": {"summary": "ok"}}'
-                connect.return_value = fake_raw
-                run.return_value = mock.Mock(
-                    stop_reason="done", changed=False, turns=1, summary="ok"
-                )
-                large_project_ab.run_arm(case, arm, "fake", 0, 2)
-                request = run.call_args.args[0]
-                if expect_empty:
-                    assert request.project_map == ""
-                else:
-                    assert isinstance(request.project_map, str)
+                row = large_project_ab.run_arm(case, arm, "fake", 0, 2)
+                requests.append(run.call_args.args[0])
+            assert row["stop_reason"] == "done", row
+            assert fake.closed is True, arm
+            request = requests[0]
+            seen[arm] = request.project_map
+            if arm == "baseline":
+                assert request.project_map == ""
+                assert all("Project Map" not in prompt for prompt in fake.prompts), arm
+            else:
+                assert "Project Map" in request.project_map, request.project_map
+                assert "a.py" in request.project_map, request.project_map
+                assert any("Project Map" in prompt for prompt in fake.prompts), arm
+                assert any("a.py" in prompt for prompt in fake.prompts), arm
+        assert seen["baseline"] != seen["current"]

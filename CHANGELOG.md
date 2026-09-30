@@ -2,6 +2,46 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Verification identity, strict-Research ledger, work-queue split, honest A/B (no release)
+
+- TDD red-first locks (6 new files, all failed before, pass after):
+  `test_completion_verification_identity_exact` (missing/stale/malformed
+  identity never completes; projection preserves command/cwd/version),
+  `test_strict_research_requires_ledger` (no ledger never completes),
+  `test_work_queue_events_owns_replay` (observed events replay to items;
+  transitions apply; no Store import),
+  `test_work_queue_sources_own_conversions` (explicit signatures; Store
+  delegates; no Store import),
+  `test_context_delta_session_window_vs_handoff` (continued vs
+  fresh-handoff prompt/chat/close contract),
+  `tests/stress/test_completion_truthful_oracle` (completed implies proof,
+  bound verification, ledger-contained citations).
+- P1 verification identity: one strict `_workspace_identity_equal` rule
+  (exact `int` revisions, valid equal fingerprints) shared by direct
+  checks and evidence projection; `_append_session_check` copies the
+  original command/cwd/revision/fingerprint with full-identity dedup and
+  no re-stamping or direct-list fallback; `record_verification` stores
+  only exact-`int` workspace revisions.
+- P1 strict Research: missing/unreadable ledgers return explicit
+  `research_ledger_missing` failures instead of the weak
+  opened/evidence/headers fallback; ordinary source tasks keep their
+  ledger-free behaviour.
+- P2 work queue: `work_queue_events.py` owns replay/validation/apply and
+  `work_queue_sources.py` owns all source converters with explicit
+  signatures; the Store delegates to both, keeps only locks/I/O/mutation
+ /selection, and drops the duplicated internals, the `dict`-typed replay
+  wrapper, the `replay_work_events` alias, and the duplicate
+  `_research_proof_ref`. Fixed a scope-deletion matcher bug found by the
+  existing suite during migration.
+- P2 A/B honesty: `context_delta_ab` now compares continued windows vs
+  fresh windows with factual handoff (`ARMS = ("continued",
+  "fresh-handoff")`); the `contract-delta` JsonToolCodec arm is deleted.
+  `large_project_ab` asserts the map marker inside the real sent prompts.
+- Wording: the gate is the sole combiner entry for the final task
+  completion proof (check providers never reference it); work-queue docs
+  describe the completed delegation.
+- No release, tag, or version bump.
+
 ## Unreleased - Kernel dependency direction, dead entry removal, and check ownership (no release)
 
 - TDD red-first locks (12 new files, all failed before, pass after):

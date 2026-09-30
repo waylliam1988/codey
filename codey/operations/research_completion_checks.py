@@ -35,42 +35,33 @@ def source_requirement_checks(session: Any, context: Any = None) -> list[Complet
     return [row] if row is not None else []
 
 
+def _missing_ledger_rows() -> list[CompletionCheck]:
+    """Strict Research without a ledger is blocked, never downgraded."""
+    rows: list[CompletionCheck] = []
+    for check_id, reason in (
+        ("research_ledger", "research_ledger_missing"),
+        ("research_sources_opened", "research_ledger_missing"),
+        ("research_evidence_saved", "research_ledger_missing"),
+        ("research_report_sections", "research_ledger_missing"),
+    ):
+        row = completion_check(check_id, CHECK_FAIL, reason)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
 def strict_research_checks(session: Any, done_text: str, context: Any = None) -> list[CompletionCheck]:
-    """严格 Research 专属：证据归档、报告与研究质量（普通任务不调用）。"""
+    """严格 Research 专属：证据归档、报告与研究质量（普通任务不调用）。
+
+    Strict Research always requires a valid evidence ledger. A missing
+    ledger blocks instead of falling back to weak session/text checks.
+    """
     policy = getattr(session, "policy", None)
     if not bool(getattr(policy, "strict_research", False)):
         return []
-    if context is not None:
-        real = _ledger_checks(session, done_text, context)
-        if real is not None:
-            return real
-    opened = set(getattr(session, "opened_sources", set()) or set())
-    evidence = list(getattr(session, "evidence", []) or [])
-    rows: list[CompletionCheck] = []
-    row = completion_check(
-        "research_sources_opened",
-        CHECK_PASS if opened else CHECK_NOT_RUN,
-        "" if opened else "research_source_not_opened",
-    )
-    if row is not None:
-        rows.append(row)
-    row = completion_check(
-        "research_evidence_saved",
-        CHECK_PASS if evidence else CHECK_NOT_RUN,
-        "" if evidence else "research_evidence_missing",
-    )
-    if row is not None:
-        rows.append(row)
-    text = str(done_text or "")
-    has_sections = "结论" in text and "来源" in text
-    row = completion_check(
-        "research_report_sections",
-        CHECK_PASS if has_sections else CHECK_FAIL,
-        "" if has_sections else "research_report_incomplete",
-    )
-    if row is not None:
-        rows.append(row)
-    return rows
+    if context is None:
+        return _missing_ledger_rows()
+    return _ledger_checks(session, done_text, context)
 
 
 def _ledger_source_only(session: Any, context: Any) -> list[CompletionCheck] | None:
@@ -91,11 +82,11 @@ def _ledger_source_only(session: Any, context: Any) -> list[CompletionCheck] | N
     return [row] if row is not None else []
 
 
-def _ledger_checks(session: Any, done_text: str, context: Any) -> list[CompletionCheck] | None:
+def _ledger_checks(session: Any, done_text: str, context: Any) -> list[CompletionCheck]:
     get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
     ledger = get("research_ledger")
     if ledger is None:
-        return None
+        return _missing_ledger_rows()
     rows: list[CompletionCheck] = []
     try:
         finals = set(ledger.final_url_set())
@@ -206,7 +197,12 @@ def _ledger_citable_urls(ledger: Any, finals: set[str]) -> list[str]:
     return urls
 
 def finalize_research_text(session: Any, text: str, context: Any) -> str:
-    """Check and publish the same evidence-compiled answer, as the old runner did."""
+    """Check and publish the same evidence-compiled answer, as the old runner did.
+
+    A missing strict ledger never finalizes: the ledger checks already
+    block completion, and inventing a report without evidence would hide
+    that dependency.
+    """
     if not getattr(getattr(session, "policy", None), "strict_research", False):
         return text
     get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
