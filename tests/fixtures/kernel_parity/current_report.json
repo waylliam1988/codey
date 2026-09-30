@@ -1,7 +1,7 @@
 {
   "legacy_commit": "958bcb485bf05d0ae8232763681d1df5ecee1d34",
-  "case_count": 675,
-  "parity_count": 576,
+  "case_count": 682,
+  "parity_count": 583,
   "intentional": [
     {
       "id": "protocol/coding/coding_writer/json/read_files/extra-key",

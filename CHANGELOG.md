@@ -5,8 +5,8 @@
 ## Unreleased - Deterministic kernel parity and missing behavior restoration (no release)
 
 - Added a pinned, isolated pre-unification oracle for commit `958bcb4`: AST/source
-  fingerprints, removed-module/request-field boundary ownership, and 675 fixed
-  protocol/coding/research cases. The gate reports 576 equal cases and 99 exact
+  fingerprints, removed-module/request-field boundary ownership, and 682 fixed
+  protocol/coding/research cases. The gate reports 583 equal cases and 99 exact
   reviewed differences (91 intentional denials, 8 explicit changes), with zero
   unclassified differences. See `docs/kernel_parity.zh-CN.md`.
 - Restored bounded text `read_files`/`parallel`, omitted list-directory defaults,
@@ -26,8 +26,11 @@
   unless the request explicitly forbids it. Unknown provider templates, implicit
   durable provider identity and overflow rollover remain denied.
 - Deterministic regressions were reproduced before production fixes, then passed.
-  Verification: ruff, compileall, JavaScript syntax, diff and collection checks clean.
-  Full pytest: 5813 passed, 29 skipped, 1471 subtests passed in 359.08s (0:05:59).
+  The parity probe now rejects exhausted reply scripts instead of synthesizing
+  `done`, restores `NATIVE_TOOLS` after each case, and covers directory/search/
+  references/paged-read and read/write precondition loops. Verification: ruff,
+  compileall, JavaScript syntax, diff and collection checks clean. Full pytest:
+  5821 passed, 32 skipped, 1471 subtests passed in 352.76s (0:05:52).
 - No version bump, release or release tag.
 
 ## Unreleased - Local provider text codec for unified kernel (no release)

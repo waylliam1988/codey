@@ -7,10 +7,10 @@
   and frozen actual legacy results. Ordinary pytest needs no legacy checkout.
 - Inventory: 323 legacy / 346 current Python modules; all 12 removed modules and
   all 40 legacy AgentRequest fields have explicit ownership/dispositions.
-- Fixed matrix: 675 cases (639 protocol, 26 coding loops, 10 research loops).
+- Fixed matrix: 682 cases (639 protocol, 33 coding loops, 10 research loops).
   Actual files/operations, conversation snapshots, native receipts and persisted
   note type/title/body/sources/open_questions are compared.
-  `576 PASS / 91 INTENTIONAL_DENY / 8 INTENTIONAL_CHANGE / 0 MISSING`.
+  `583 PASS / 91 INTENTIONAL_DENY / 8 INTENTIONAL_CHANGE / 0 MISSING`.
   Every reviewed difference locks exact before/after plus reason, tests and
   CHANGELOG evidence; stale/unknown exceptions fail.
 - TDD: failures were observed before fixes for missing read-only batches/default
@@ -24,11 +24,12 @@
   expanded Research-content/kernel check `804 passed`, and final completion/
   Research consumers `69 passed`. These are staged runs, not disjoint test counts.
 - Final pre-checks: `ruff check .`, `compileall codey tests tools`, all JS
-  `node --check`, and `git diff --check` clean; `5842 tests collected`.
+  `node --check`, and `git diff --check` clean; `5853 tests collected` after
+  adding the parity cases and environment-scope locks.
   Independent legacy replay and current parity CLI finished with zero failures.
 - One final full run, after production edits and pre-checks:
   `python -m pytest -q -p no:cacheprovider`:
-  **5813 passed, 29 skipped, 1471 subtests passed in 359.08s (0:05:59).**
+  **5821 passed, 32 skipped, 1471 subtests passed in 352.76s (0:05:52).**
 - Scope/limitations and reviewed analysis:
   `docs/kernel_parity.zh-CN.md`; machine-readable surface/boundary report:
   `tests/fixtures/kernel_parity/current_report.json`.

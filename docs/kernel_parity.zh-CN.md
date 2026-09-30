@@ -31,7 +31,7 @@ provider、网络和验证子进程使用固定输入；解析器、生产循环
 
 ## 场景范围与结果
 
-675 个固定场景：639 个协议场景、26 个 coding 实际循环、10 个 research 实际循环。
+682 个固定场景：639 个协议场景、33 个 coding 实际循环、10 个 research 实际循环。
 协议输入从旧工具定义生成，逐一覆盖示例、别名、required 参数遗漏、每个声明参数的固定单字段变体、额外字段、
 JSON/native、权限 profile、围栏/散文/未知模板、工具数边界、缺 call_id 与混入 done。
 生成规则也是测试：遗漏旧工具、别名或参数会导致冻结矩阵检查失败。
@@ -42,7 +42,7 @@ Research 比较 search/fetch、打开来源、evidence 数以及知识笔记的 
 
 | 裁决 | 数量 |
 | --- | ---: |
-| PASS：与旧版相同 | 576 |
+| PASS：与旧版相同 | 583 |
 | INTENTIONAL_DENY：有意收紧 | 91 |
 | INTENTIONAL_CHANGE：明确协议扩展或旧缺陷纠正 | 8 |
 | MISSING / 未分类差异 | 0 |
@@ -132,6 +132,6 @@ Hybrid、持久恢复、effect settlement、repair_context 实际送达、provid
 
 ## 最终验证
 
-全量 `python -m pytest -q -p no:cacheprovider`：`5813 passed, 29 skipped, 1471 subtests passed in 359.08s (0:05:59)`。零失败。
-预检查：ruff、compileall、JavaScript 语法、diff 与 5842 项测试收集均通过。
+全量 `python -m pytest -q -p no:cacheprovider`：`5821 passed, 32 skipped, 1471 subtests passed in 352.76s (0:05:52)`。零失败。
+预检查：ruff、compileall、JavaScript 语法、diff 与 5853 项测试收集均通过。
 正式文档在全量 pytest 完成后更新；未修改版本号、未 release。

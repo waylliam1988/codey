@@ -5,7 +5,7 @@
 ## Unreleased - 确定性 Kernel parity 与功能缺口补齐（未发布）
 
 - 固定统一前 `958bcb4` 为独立 oracle：枚举 AST/源码指纹、旧模块与 request
-  字段边界，以及 675 个协议/Coding/Research 场景。576 个行为一致，99 个精确
+  字段边界，以及 682 个协议/Coding/Research 场景。583 个行为一致，99 个精确
   审核差异（91 个有意拒绝、8 个明确变更），未分类差异为 0。方法与裁决见
   `docs/kernel_parity.zh-CN.md`。
 - 补回有界文本 `read_files / parallel`、默认目录、文本去重、AAA/ABAB 循环防呆、
@@ -19,8 +19,10 @@
   明确变更包括 Research 共享 JSON 语法/8-call native 上限、实际取消 turn 计数及
   native 回执闭合。项目改动仍要求新鲜相关验证，用户明确禁止验证除外；
   未知 provider 模板、隐式 durable provider 身份和 overflow rollover 继续拒绝。
-- 按 TDD 先复现失败，再修改与回测。ruff、compileall、JavaScript 语法、diff
-  与收集检查通过。全量 pytest：5813 passed, 29 skipped, 1471 subtests passed in 359.08s (0:05:59).
+- 按 TDD 先复现失败，再修改与回测。parity probe 禁止回复耗尽后隐式合成
+  `done`，并恢复 `NATIVE_TOOLS` 环境，避免测试污染后续 native 套件；新增目录、搜索、
+  引用、分页读取和读写前置条件场景。ruff、compileall、JavaScript 语法、diff
+  与收集检查通过。全量 pytest：5821 passed, 32 skipped, 1471 subtests passed in 352.76s (0:05:52)。
 - 未修改版本号，未 release，未创建 release tag。
 
 ## Unreleased - 统一 Kernel 的本地 provider 文本 codec（未发布）

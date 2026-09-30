@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import dataclasses
 import hashlib
 import json
@@ -15,6 +16,19 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+
+
+@contextlib.contextmanager
+def native_tools_mode(enabled):
+    previous = os.environ.get("NATIVE_TOOLS")
+    os.environ["NATIVE_TOOLS"] = "1" if enabled else "0"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("NATIVE_TOOLS", None)
+        else:
+            os.environ["NATIVE_TOOLS"] = previous
 
 
 def inventory(root):
@@ -129,7 +143,9 @@ class ScriptedProvider:
         self.prompts.append(text)
         if self.case.get("send_failure"):
             raise RuntimeError("fixed send failure")
-        reply = next(self.replies, '{"tool":"done","args":{"summary":"finished"}}')
+        reply = next(self.replies, None)
+        if reply is None:
+            raise RuntimeError(f"parity provider script exhausted: {self.case['id']}")
         if self.case.get("cancel_after_send"):
             self.stop_flag.set()
         return reply
@@ -201,21 +217,21 @@ def coding_loop(case, legacy):
                 operations.append({"tool": "candidate_loader", "args": [], "kwargs": {}})
                 return candidates
             kwargs["verification_candidate_loader"] = load
-        os.environ["NATIVE_TOOLS"] = "1" if case.get("native") else "0"
         result = None
         error = ""
-        try:
-            result = run(AgentRequest(
-                provider=provider, project=root, task=case.get("task", "Inspect the project"),
-                max_turns=case.get("max_turns", 5), stagnant_turns=case.get("stagnant_turns", 2),
-                provider_id="local" if case.get("native") else "",
-                on_event=events.append, stop_flag=flag, tool_fns=tool_fns, conversation=conversation,
-                fresh_chat=case.get("fresh_chat", True), strict_fresh_chat=case.get("strict_fresh", False),
-                permission_profile=case.get("profile", "coding_writer"), handoff=case.get("handoff", ""),
-                **kwargs,
-            ))
-        except Exception as exc:
-            error = type(exc).__name__
+        with native_tools_mode(case.get("native")):
+            try:
+                result = run(AgentRequest(
+                    provider=provider, project=root, task=case.get("task", "Inspect the project"),
+                    max_turns=case.get("max_turns", 5), stagnant_turns=case.get("stagnant_turns", 2),
+                    provider_id="local" if case.get("native") else "",
+                    on_event=events.append, stop_flag=flag, tool_fns=tool_fns, conversation=conversation,
+                    fresh_chat=case.get("fresh_chat", True), strict_fresh_chat=case.get("strict_fresh", False),
+                    permission_profile=case.get("profile", "coding_writer"), handoff=case.get("handoff", ""),
+                    **kwargs,
+                ))
+            except Exception as exc:
+                error = type(exc).__name__
         snapshot = conversation.snapshot if conversation else None
         return {"result": {key: getattr(result, key) for key in (
                     "stop_reason", "turns", "checks_passed", "checks_ran", "changed")} if result else None,
@@ -250,27 +266,27 @@ def research_loop(case, legacy):
     provider = ScriptedProvider(dict(case, replies=replies))
     flag = threading.Event()
     provider.stop_flag = flag
-    os.environ["NATIVE_TOOLS"] = "1" if case.get("native") else "0"
     with tempfile.TemporaryDirectory(prefix="codey-parity-research-") as td:
         store = KnowledgeStore(Path(td) / "knowledge")
         try:
-            if legacy:
-                from codey.research.runner import ResearchRunner
+            with native_tools_mode(case.get("native")):
+                if legacy:
+                    from codey.research.runner import ResearchRunner
 
-                runner = ResearchRunner(provider, Search(), store, max_turns=case.get("max_turns", 6),
-                                        controller_enabled=case.get("controller", True), session_id="s", project="")
-                list(runner.run("How is helium obtained?"))
-                result = runner.result
-                tools = runner.tools
-            else:
-                from codey.operations.research_iteration import run_research_iteration
+                    runner = ResearchRunner(provider, Search(), store, max_turns=case.get("max_turns", 6),
+                                            controller_enabled=case.get("controller", True), session_id="s", project="")
+                    list(runner.run("How is helium obtained?"))
+                    result = runner.result
+                    tools = runner.tools
+                else:
+                    from codey.operations.research_iteration import run_research_iteration
 
-                iteration = run_research_iteration(SimpleNamespace(knowledge_store=store), provider=provider,
-                    session_id="s", project="", task="How is helium obtained?", max_turns=case.get("max_turns", 6),
-                    on_event=lambda _e: None, stop_flag=flag, provider_id="local", run_id="", chat_handoff="",
-                    trace_recorder=None, search=Search(), controller_enabled=case.get("controller", True))
-                result = iteration.result
-                tools = iteration.tools
+                    iteration = run_research_iteration(SimpleNamespace(knowledge_store=store), provider=provider,
+                        session_id="s", project="", task="How is helium obtained?", max_turns=case.get("max_turns", 6),
+                        on_event=lambda _e: None, stop_flag=flag, provider_id="local", run_id="", chat_handoff="",
+                        trace_recorder=None, search=Search(), controller_enabled=case.get("controller", True))
+                    result = iteration.result
+                    tools = iteration.tools
             # Exclude generated ids and timestamps, retain note contents and
             # source/evidence facts. A note disappearing is never normalized away.
             notes = [store.read_note(key) for key in tools.created_ids]

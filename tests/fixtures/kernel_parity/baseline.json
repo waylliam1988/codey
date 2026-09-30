@@ -57433,6 +57433,9 @@
       "boundary": "coding_loop",
       "replies": [
         "{\"tool\": \"edit\", \"args\": {\"path\": \"new.py\", \"content\": \"z = 4\\n\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}",
         "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
       ]
     },
@@ -57510,6 +57513,7 @@
         "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}",
         "{\"tool\": \"edit\", \"args\": {\"path\": \"a.py\", \"old_string\": \"x = 1\", \"new_string\": \"x = 3\"}}",
         "{\"tool\": \"run\", \"args\": {\"command\": \"python -m pytest -q\", \"path\": \".\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}",
         "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
       ],
       "exit_code": 1
@@ -57527,6 +57531,67 @@
       "boundary": "coding_loop",
       "replies": [
         "{\"tool\": \"read_file\", \"args\": {\"path\": \"../outside.py\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
+      ]
+    },
+    {
+      "id": "loop/list-directory",
+      "boundary": "coding_loop",
+      "replies": [
+        "{\"tool\": \"list_dir\", \"args\": {\"path\": \".\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
+      ]
+    },
+    {
+      "id": "loop/search-files",
+      "boundary": "coding_loop",
+      "replies": [
+        "{\"tool\": \"grep\", \"args\": {\"query\": \"x\", \"path\": \".\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
+      ]
+    },
+    {
+      "id": "loop/find-references",
+      "boundary": "coding_loop",
+      "replies": [
+        "{\"tool\": \"find_references\", \"args\": {\"symbol\": \"x\", \"path\": \".\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
+      ]
+    },
+    {
+      "id": "loop/read-file-page",
+      "boundary": "coding_loop",
+      "replies": [
+        "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\", \"offset\": 1, \"limit\": 1}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
+      ]
+    },
+    {
+      "id": "loop/failed-read-does-not-unlock-edit",
+      "boundary": "coding_loop",
+      "replies": [
+        "{\"tool\": \"read_file\", \"args\": {\"path\": \"missing.py\"}}",
+        "{\"tool\": \"edit\", \"args\": {\"path\": \"a.py\", \"old_string\": \"x = 1\", \"new_string\": \"x = 3\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
+      ]
+    },
+    {
+      "id": "loop/partial-read-does-not-unlock-overwrite",
+      "boundary": "coding_loop",
+      "replies": [
+        "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\", \"offset\": 1, \"limit\": 1}}",
+        "{\"tool\": \"edit\", \"args\": {\"path\": \"a.py\", \"content\": \"changed\\n\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
+      ],
+      "files": {
+        "a.py": "x = 1\ny = 2\n"
+      }
+    },
+    {
+      "id": "loop/shell-without-approval",
+      "boundary": "coding_loop",
+      "replies": [
+        "{\"tool\": \"shell\", \"args\": {\"command\": \"echo hi\"}}",
         "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
       ]
     },
@@ -57659,6 +57724,7 @@
       "boundary": "coding_loop",
       "replies": [
         "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}",
         "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
       ],
       "native": true
@@ -57667,7 +57733,8 @@
       "id": "loop/native-budget",
       "boundary": "coding_loop",
       "replies": [
-        "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"
+        "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"finished\"}}"
       ],
       "native": true,
       "max_turns": 1
@@ -57782,6 +57849,7 @@
         "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
         "{\"tool\": \"open_url\", \"args\": {\"url\": \"https://example.com/helium\"}}",
         "{\"tool\": \"knowledge_write\", \"args\": {\"type\": \"fact\", \"title\": \"Helium production\", \"body\": \"Helium is separated from natural gas streams.\", \"sources\": [\"https://example.com/helium\"], \"evidence\": [{\"claim\": \"Helium production\", \"source_url\": \"https://example.com/helium\", \"excerpt\": \"Helium is separated from natural gas streams.\", \"stance\": \"supports\"}]}}",
+        "{\"tool\": \"done\", \"args\": {\"answer\": \"## 结论\\n- Helium supply depends on gas processing. [1]\\n\\n## 关键证据\\n- [1] The opened source says helium is separated from natural gas streams.\\n\\n## 反证与限制\\n- 未找到强反证；需要持续追踪新供应数据。\\n\\n## 来源质量\\n- [1] secondary · web · fresh · example.com\\n\\n## 搜索覆盖\\n- query: helium production\\n- opened: Helium article\\n- skipped: none representative\\n\\n## 来源\\n[1] Helium article - https://example.com/helium\"}}",
         "{\"tool\": \"done\", \"args\": {\"answer\": \"## 结论\\n- Helium supply depends on gas processing. [1]\\n\\n## 关键证据\\n- [1] The opened source says helium is separated from natural gas streams.\\n\\n## 反证与限制\\n- 未找到强反证；需要持续追踪新供应数据。\\n\\n## 来源质量\\n- [1] secondary · web · fresh · example.com\\n\\n## 搜索覆盖\\n- query: helium production\\n- opened: Helium article\\n- skipped: none representative\\n\\n## 来源\\n[1] Helium article - https://example.com/helium\"}}"
       ],
       "current_replies": [
@@ -57789,6 +57857,7 @@
         "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
         "{\"tool\": \"open_url\", \"args\": {\"url\": \"https://example.com/helium\"}}",
         "{\"tool\": \"knowledge_write\", \"args\": {\"type\": \"fact\", \"title\": \"Helium production\", \"body\": \"Helium is separated from natural gas streams.\", \"sources\": [\"https://example.com/helium\"], \"evidence\": [{\"claim\": \"Helium production\", \"source_url\": \"https://example.com/helium\", \"excerpt\": \"Helium is separated from natural gas streams.\", \"stance\": \"supports\"}]}}",
+        "{\"tool\": \"done\", \"args\": {\"summary\": \"## 结论\\n- Helium supply depends on gas processing. [1]\\n\\n## 关键证据\\n- [1] The opened source says helium is separated from natural gas streams.\\n\\n## 反证与限制\\n- 未找到强反证；需要持续追踪新供应数据。\\n\\n## 来源质量\\n- [1] secondary · web · fresh · example.com\\n\\n## 搜索覆盖\\n- query: helium production\\n- opened: Helium article\\n- skipped: none representative\\n\\n## 来源\\n[1] Helium article - https://example.com/helium\"}}",
         "{\"tool\": \"done\", \"args\": {\"summary\": \"## 结论\\n- Helium supply depends on gas processing. [1]\\n\\n## 关键证据\\n- [1] The opened source says helium is separated from natural gas streams.\\n\\n## 反证与限制\\n- 未找到强反证；需要持续追踪新供应数据。\\n\\n## 来源质量\\n- [1] secondary · web · fresh · example.com\\n\\n## 搜索覆盖\\n- query: helium production\\n- opened: Helium article\\n- skipped: none representative\\n\\n## 来源\\n[1] Helium article - https://example.com/helium\"}}"
       ],
       "native": true
@@ -58122,6 +58191,75 @@
       },
       "snapshot": null
     },
+    "loop/failed-read-does-not-unlock-edit": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "missing.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "no_progress",
+        "turns": 2
+      },
+      "snapshot": null
+    },
+    "loop/find-references": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            ".",
+            "x"
+          ],
+          "kwargs": {},
+          "tool": "find_references"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 2
+      },
+      "snapshot": null
+    },
     "loop/fresh-failure": {
       "error": "",
       "files": {
@@ -58213,6 +58351,40 @@
         "checks_passed": false,
         "checks_ran": false,
         "stop_reason": "protocol",
+        "turns": 2
+      },
+      "snapshot": null
+    },
+    "loop/list-directory": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
         "turns": 2
       },
       "snapshot": null
@@ -58325,6 +58497,42 @@
         "checks_ran": false,
         "stop_reason": "done",
         "turns": 2
+      },
+      "snapshot": null
+    },
+    "loop/partial-read-does-not-unlock-overwrite": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\ny = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {
+            "limit": 1,
+            "offset": 1
+          },
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 3
       },
       "snapshot": null
     },
@@ -58556,6 +58764,43 @@
       },
       "snapshot": null
     },
+    "loop/read-file-page": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {
+            "limit": 1,
+            "offset": 1
+          },
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 2
+      },
+      "snapshot": null
+    },
     "loop/readonly-denies-edit": {
       "error": "",
       "files": {
@@ -58653,6 +58898,68 @@
           ],
           "kwargs": {},
           "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 2
+      },
+      "snapshot": null
+    },
+    "loop/search-files": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            ".",
+            "x"
+          ],
+          "kwargs": {},
+          "tool": "search_files"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 2
+      },
+      "snapshot": null
+    },
+    "loop/shell-without-approval": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
         }
       ],
       "receipt_ids": [],

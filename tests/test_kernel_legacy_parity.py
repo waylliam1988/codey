@@ -86,3 +86,38 @@ def test_baseline_export_rejects_extra_source_outside_the_pinned_git_tree(monkey
         stdout="100644 blob abc\tcodey/a.py\n" if command[1] == "ls-tree" else blob))
     with pytest.raises(RuntimeError, match="source file set"):
         runner.export_baseline(tmp_path, tmp_path / "baseline.json")
+
+
+def test_coding_parity_scripts_never_synthesize_done_after_replies_exhausted():
+    from tests.support import kernel_parity_probe
+
+    for case in BASELINE["cases"]:
+        if case["boundary"] == "coding_loop":
+            kernel_parity_probe.coding_loop(case, legacy=False)
+
+
+def test_research_parity_scripts_never_synthesize_done_after_replies_exhausted():
+    from tests.support import kernel_parity_probe
+
+    for case in BASELINE["cases"]:
+        if case["boundary"] == "research_loop":
+            kernel_parity_probe.research_loop(case, legacy=False)
+
+
+def test_parity_provider_rejects_exhausted_script_instead_of_synthesizing_done():
+    from tests.support.kernel_parity_probe import ScriptedProvider
+
+    provider = ScriptedProvider({"id": "test/exhausted", "replies": []})
+    with pytest.raises(RuntimeError, match="script exhausted"):
+        provider.send("prompt")
+
+
+def test_parity_probe_restores_native_tools_environment_after_native_case(monkeypatch):
+    import os
+
+    from tests.support import kernel_parity_probe
+
+    monkeypatch.setenv("NATIVE_TOOLS", "sentinel")
+    case = next(row for row in BASELINE["cases"] if row["id"] == "loop/native-read-done")
+    kernel_parity_probe.coding_loop(case, legacy=False)
+    assert os.environ["NATIVE_TOOLS"] == "sentinel"

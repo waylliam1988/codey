@@ -91,16 +91,25 @@ def loop_cases():
     run = json_call("run", command="python -m pytest -q", path=".")
     cases = [
         ("read-done", [read, done], {}),
-        ("create-done", [create, done], {}),
+        ("create-done", [create, done, done, done, done], {}),
         ("read-edit-check-done", [read, edit, run, done], {}),
         ("read-edit-no-check", [read, edit, done, run, done], {}),
         ("verification-forbidden", [read, edit, done], {"task": "Change x; do not run tests"}),
         ("verification-requested", [read, edit, done, run, done], {"task": "Change x and run tests"}),
         ("trusted-candidate", [read, edit, done, run, done], {"candidates": True}),
         ("candidate-loader", [read, edit, done, run, done], {"candidate_loader": True}),
-        ("failed-check", [read, edit, run, done], {"exit_code": 1}),
+        ("failed-check", [read, edit, run, done, done], {"exit_code": 1}),
         ("read-before-edit", [edit, done], {}),
         ("path-traversal", [json_call("read_file", path="../outside.py"), done], {}),
+        ("list-directory", [json_call("list_dir", path="."), done], {}),
+        ("search-files", [json_call("grep", query="x", path="."), done], {}),
+        ("find-references", [json_call("find_references", symbol="x", path="."), done], {}),
+        ("read-file-page", [json_call("read_file", path="a.py", offset=1, limit=1), done], {}),
+        ("failed-read-does-not-unlock-edit", [json_call("read_file", path="missing.py"), edit, done], {}),
+        ("partial-read-does-not-unlock-overwrite", [json_call("read_file", path="a.py", offset=1, limit=1),
+                                                    json_call("edit", path="a.py", content="changed\n"), done],
+         {"files": {"a.py": "x = 1\ny = 2\n"}}),
+        ("shell-without-approval", [json_call("shell", command="echo hi"), done], {}),
         ("repeat-information", [read] * 6, {"max_turns": 6}),
         ("invalid-stop", ["no tools"] * 6, {"max_turns": 6}),
         ("readonly-denies-edit", [create, done], {"profile": "planning_readonly"}),
@@ -115,8 +124,8 @@ def loop_cases():
         ("provider-failure", [read], {"send_failure": True}),
         ("pre-cancelled", [read], {"pre_cancelled": True}),
         ("cancel-after-send", [create, done], {"cancel_after_send": True}),
-        ("native-read-done", [read, done], {"native": True}),
-        ("native-budget", [read], {"native": True, "max_turns": 1}),
+        ("native-read-done", [read, done, done], {"native": True}),
+        ("native-budget", [read, done], {"native": True, "max_turns": 1}),
     ]
     return [{"id": f"loop/{name}", "boundary": "coding_loop", "replies": replies, **opts}
             for name, replies, opts in cases]
@@ -155,7 +164,9 @@ def research_cases():
                                                          query="natural gas"), note, done], {"max_turns": 7, "controller": False}),
         ("search-only-budget", [recall, search], {"max_turns": 2}),
         ("knowledge-read-budget", [json_call("knowledge_read", id="missing")], {"max_turns": 1}),
-        ("native-evidence-synthesis", [recall, search, opened, note, done], {"native": True}),
+        # Native providers receive one follow-up turn after each tool result;
+        # keep the explicit terminal reply rather than relying on probe fallback.
+        ("native-evidence-synthesis", [recall, search, opened, note, done, done], {"native": True}),
         ("controller-source-references", [recall, search, json_call("open_result", result_id="r1"),
                                            json.dumps(source_note), done], {}),
         ("controller-reopen-source", [recall, search, json_call("open_result", result_id="r1"),
