@@ -12,19 +12,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
-TASK_POLICY_VERSION = 1
+from codey.policies.capabilities import KNOWN_TASK_GRANTS
 
-KNOWN_TASK_GRANTS = frozenset({
-    "project.read",
-    "project.write",
-    "project.verify",
-    "shell.approval",
-    "web.read",
-    "knowledge.read",
-    "knowledge.write",
-    "knowledge.link",
-    "control",
-})
+TASK_POLICY_VERSION = 1
 
 # 工具授权唯一来源为 ToolSpec（toolchain.tool_spec.spec_for_tool().grant），
 # 此处不再维护重复名单，避免漂移。

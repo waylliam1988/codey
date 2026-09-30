@@ -11,11 +11,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from codey.ghost.work_queue import (
-    GhostWorkItem,
-    is_strict_work_continuation,
-    proof_refs_from_task_event,
-)
+from codey.ghost.work_queue import is_strict_work_continuation, proof_refs_from_task_event
+from codey.ghost.work_queue_model import GhostWorkItem
 from codey.knowledge.research_interest import (
     apply_research_affinity_hints,
     build_research_interest_candidates,

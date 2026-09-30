@@ -4910,7 +4910,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(consensus_service, "run_research_advisors", None),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
@@ -5036,7 +5036,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
                 mock.patch.dict(
                     sys.modules,
@@ -5169,7 +5169,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(consensus_service, "run_research_advisors", None),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):

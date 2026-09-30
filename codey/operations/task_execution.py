@@ -34,7 +34,7 @@ def build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | N
         return None
     search_factory = getattr(deps, "search_factory", None)
     if search_factory is None:
-        from codey.operations.research_flow import default_research_search_provider
+        from codey.research.search_factory import default_research_search_provider
 
         search_factory = default_research_search_provider
     search = search_factory()

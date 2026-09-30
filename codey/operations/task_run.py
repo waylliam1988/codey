@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 from codey.app.sibling_probe import bind_provider_handlers
-from codey.ghost.work_queue import GhostWorkItem
+from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import release_work_item, run_ghost_post_turn
 from codey.operations.recovery import recover_effects_for_resume

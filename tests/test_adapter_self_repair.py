@@ -40,7 +40,8 @@ from codey.repairs.policy import (
     validate_candidate,
 )
 from codey.repairs.sandbox import create_repair_sandbox
-from codey.repairs.self_repair import SelfRepairJob, SelfRepairSupervisor
+from codey.repairs.self_repair import SelfRepairSupervisor
+from codey.repairs.self_repair_job import SelfRepairJob
 from codey.repairs.self_repair_worker import _run_worker_job, run_self_repair_worker
 from codey.runtime.core.run_result import RunResult
 

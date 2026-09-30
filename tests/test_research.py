@@ -994,14 +994,14 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
     def test_research_flow_default_explicitly_reuses_research_browser(self) -> None:
-        from codey.operations import research_flow
+        from codey.research import search_factory
 
         base_provider = mock.Mock()
         with mock.patch(
-            "codey.operations.research_flow.BrowserSearchProvider",
+            "codey.research.search_factory.BrowserSearchProvider",
             return_value=base_provider,
         ) as browser_cls:
-            provider = research_flow.default_research_search_provider()
+            provider = search_factory.default_research_search_provider()
 
         browser_cls.assert_called_once_with(isolated=False)
         self.assertIs(provider.base_provider, base_provider)

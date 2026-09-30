@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
-from codey.ghost.work_queue import GhostWorkItem
+from codey.ghost.work_queue_model import GhostWorkItem
 from codey.knowledge.research_interest import (
     build_research_interest_candidates,
     candidate_to_topic_hint,
@@ -15,9 +15,7 @@ from codey.operations.research_iteration import run_research_iteration as _run_i
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState
 from codey.policies.permissions import allows_context_source, profile_for_name
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS
-from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.evidence_ledger import EvidenceLedgerWriteResult
 from codey.research.pipeline import (
@@ -78,10 +76,6 @@ def record_research_plan_trace(
     sink = FailOpenPromptTrace(trace)
     sink.call("record_research_plan", payload)
     sink.call("flush")
-
-
-def default_research_search_provider() -> ConnectorAwareSearchProvider:
-    return ConnectorAwareSearchProvider(BrowserSearchProvider(isolated=False))
 
 
 def research_queue_item_title(item: GhostWorkItem | None) -> str:
@@ -490,7 +484,6 @@ __all__ = [
     "ResearchFlowDeps",
     "build_research_context",
     "build_research_topic_continuity",
-    "default_research_search_provider",
     "deps_prior_claim_refs",
     "prior_claim_refs",
     "record_evidence_ledger_write",

@@ -9,7 +9,7 @@ from typing import Any
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.agents.request import RecoveredToolOutcome
 from codey.agents.shell_approval import ShellApprovalRequest
-from codey.ghost.work_queue import GhostWorkItem
+from codey.ghost.work_queue_model import GhostWorkItem
 from codey.providers.diagnostics import ProviderFailure
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore

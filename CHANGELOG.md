@@ -2,6 +2,53 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Kernel dependency direction, dead entry removal, and check ownership (no release)
+
+- TDD red-first locks (12 new files, all failed before, pass after):
+  `test_kernel_dependency_direction`,
+  `test_manual_project_adapter_entry_contract`,
+  `test_agent_request_no_dead_fields`,
+  `test_research_search_factory_ownership`,
+  `test_tool_replay_trust_single_owner`,
+  `test_provider_reply_normalization_ownership`,
+  `test_task_grants_capabilities_single_owner`,
+  `test_completion_gate_fail_closed_hygiene`,
+  `test_project_audit_tools_ownership`,
+  `test_completion_checks_ownership`,
+  `test_ghost_work_queue_ownership`,
+  `test_manual_ab_fake_provider_smoke`.
+- Eliminated 6 static dependency cycles without timing tricks:
+  execution resources no longer import the research flow
+  (`codey/research/search_factory.py` owns the default search provider);
+  recovery results no longer import recovery orchestration
+  (`tool_requires_trusted_recovery` lives in `tool_spec`);
+  provider wrappers own reply normalization (`kernel_transport` delegates);
+  task grants live in `codey/policies/capabilities.py` with no import fallback;
+  local availability moved to `local_config` (discovery is a leaf);
+  self-repair jobs live in `self_repair_job.py` (supervisor/worker share the leaf).
+- Removed dead entries: `AgentRequest.codec` and
+  `AgentRequest.tool_result_delivery` (storage itself stays for recovery and
+  delivery); manual A/B scripts now call `run(request)` with `AgentRequest`
+  and prove it with fake-provider smoke tests. The experiment variable is the
+  project map / conversation wiring, never a codec.
+- Split by responsibility, gate stays sole proof owner:
+  `agents/project_audit_tools.py` owns audit scanning (no provider/operations
+  deps), `operations/project_audit_advisor.py` owns prompts and budgets;
+  `project_completion_checks.py` / `research_completion_checks.py` own checks,
+  `completion_gate.py` only combines into one proof;
+  `ghost/work_queue_model.py` owns items and field rules (Store imports it).
+  Events/sources leaves exist as pure converters; Store delegation continues.
+- Fail-closed hygiene: workspace-less verification no longer passes; unreadable
+  `required_checks` blocks instead of meaning "no requirements";
+  `MAX_COMPLETION_CHECKS` imported once at top with no hardcoded fallback.
+  Affected unit tests now establish real workspace identity.
+- Verification: `ruff check codey tests` clean. Final full pytest:
+  **6019 passed, 10 skipped, 1483 subtests passed in 547.35s**.
+  First full run in this round had 18 failures (moved private helpers, stale
+  patch targets, workspace-less expectations); all fixed and re-verified.
+  See `TEST_REPORT.md` for scope and the failed-first-run record.
+- No release, tag, or version bump.
+
 ## Unreleased - Cold-start kernel authority, lossless receipts, and lifecycle closure (no release)
 
 - Project writers, Research iterations, and read-only audit advisors use the

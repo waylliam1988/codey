@@ -2,6 +2,12 @@
 
 This is not collected by pytest. It disables every mutating Agent runtime
 entry point and writes its JSON results outside the repositories by default.
+
+Both arms run the same unified kernel via ``project_adapter.run(request)``.
+The experiment variable is the project context: ``baseline`` sends no
+project map, ``current`` sends the production project map. There is no
+codec grouping: the kernel protocol is fixed and ``AgentRequest`` carries
+no codec field.
 """
 
 # ruff: noqa: E402 - direct script execution must add the repository root first.
@@ -23,17 +29,15 @@ if str(ROOT) not in sys.path:
 
 import contextlib
 
+from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.operations.project_adapter import run
-from codey.protocols.json_codec import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider
-from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.toolchain.runtime import ToolOutcome
 from tests.manual.project_task_context import render_production_project_map
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-large-project-ab.json"
-NAVIGATION_TOOLS = ("find_references",)
 
 with contextlib.suppress(AttributeError, OSError):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
@@ -67,30 +71,6 @@ class CountingProvider:
         self.seconds += time.monotonic() - started
         self.reply_chars += len(reply or "")
         return reply
-
-
-def baseline_prompt() -> str:
-    """Render the pre-navigation contract without maintaining a second prompt."""
-    prompt = JsonToolCodec().system_prompt()
-    for name in NAVIGATION_TOOLS:
-        spec = TOOL_DEFINITION_BY_NAME[name]
-        examples = "\n".join(f"  {example}" for example in spec.examples)
-        prompt = prompt.replace(f"{examples}\n    {spec.description}\n\n", "")
-    prompt = prompt.replace(
-        "    old_string. Use read_file with line offsets before editing.\n",
-        "",
-    )
-    prompt = prompt.replace(
-        "  - find_references output is lexical reference hints only, not semantic\n"
-        "    resolution or a complete call graph. Use read_file before editing.\n",
-        "",
-    )
-    return prompt
-
-
-class BaselineCodec(JsonToolCodec):
-    def system_prompt(self) -> str:
-        return baseline_prompt()
 
 
 def cases(stockalarm: Path) -> dict[str, Case]:
@@ -137,6 +117,8 @@ def run_arm(
     port: int,
     max_turns: int,
 ) -> dict[str, object]:
+    if arm not in {"baseline", "current"}:
+        raise ValueError(f"unknown arm: {arm}")
     tool_fns = AgentToolFns(
         write_file=_read_only_error,
         edit_file=_read_only_error,
@@ -149,14 +131,14 @@ def run_arm(
     try:
         raw = connect_provider(provider_id, port=port)
         provider = CountingProvider(raw)
-        result = run(
-            provider,
-            case.project,
-            case.task,
-            codec=BaselineCodec() if arm == "baseline" else JsonToolCodec(),
+        request = AgentRequest(
+            provider=provider,
+            project=case.project,
+            task=case.task,
             max_turns=max_turns,
             on_event=events.append,
             fresh_chat=True,
+            provider_id=provider_id,
             project_map=(
                 ""
                 if arm == "baseline"
@@ -164,6 +146,7 @@ def run_arm(
             ),
             tool_fns=tool_fns,
         )
+        result = run(request)
         tool_events = [
             event for event in events
             if event.kind == "tool" and event.call is not None and event.outcome is not None

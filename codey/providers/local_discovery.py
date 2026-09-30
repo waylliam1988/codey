@@ -137,32 +137,6 @@ def detect_local_endpoints(*, api_key: str = "", timeout: float = DETECT_TIMEOUT
     ]
 
 
-def local_endpoint_available() -> bool:
-    """Share the single target decision with connect(): one address, one key.
-
-    Reachable /models alone is not enough: the effective target must also
-    yield a usable model and a valid budget, exactly as connect() requires.
-    """
-    from codey.providers.local_config import load_local_config as _load_config
-    from codey.providers.local_config import resolve_effective_local_config as _effective
-    from codey.providers.local_config import select_local_target as _select_target
-
-    config = _load_config()
-    selection = _select_target(config)
-    endpoint = resolve_local_endpoint(
-        base_url=selection.base_url,
-        model=selection.model,
-        api_key=selection.api_key,
-    )
-    if endpoint is None:
-        return False
-    try:
-        effective = _effective(config, selection, endpoint)
-    except ValueError:
-        return False
-    return bool(effective.model)
-
-
 def resolve_local_endpoint(*, base_url: str = "", model: str = "", api_key: str = "") -> LocalEndpoint | None:
     """Probe one explicit address, or auto-discover only when none is set.
 
@@ -203,7 +177,6 @@ __all__ = [
     "LocalEndpointProbe",
     "detect_local_endpoint_probes",
     "detect_local_endpoints",
-    "local_endpoint_available",
     "probe_local_endpoint",
     "probe_local_endpoint_detail",
     "resolve_local_endpoint",

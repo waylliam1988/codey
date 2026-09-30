@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from codey.agents import consensus
+from codey.agents import project_audit_tools as audit_tools
 
 
 def _make_root(files: dict[str, str | bytes]) -> tempfile.TemporaryDirectory[str]:
@@ -29,9 +29,9 @@ def _make_root(files: dict[str, str | bytes]) -> tempfile.TemporaryDirectory[str
 def test_resolve_start_ok_and_missing() -> None:
     with _make_root({"a.py": "x\n"}) as td:
         root = Path(td)
-        start, error = consensus._audit_search_resolve_start(root, ".")
+        start, error = audit_tools._audit_search_resolve_start(root, ".")
         assert error is None and start is not None
-        _, error2 = consensus._audit_search_resolve_start(root, "nope.py")
+        _, error2 = audit_tools._audit_search_resolve_start(root, "nope.py")
         assert error2 is not None
         assert "path not found" in error2.model_text
 
@@ -39,9 +39,9 @@ def test_resolve_start_ok_and_missing() -> None:
 def test_resolve_start_blocks_excluded_and_secret() -> None:
     with _make_root({"a.py": "x\n"}) as td:
         root = Path(td)
-        _, err1 = consensus._audit_search_resolve_start(root, "node_modules/pkg")
+        _, err1 = audit_tools._audit_search_resolve_start(root, "node_modules/pkg")
         assert err1 is not None
-        _, err2 = consensus._audit_search_resolve_start(root, ".env")
+        _, err2 = audit_tools._audit_search_resolve_start(root, ".env")
         assert err2 is not None
 
 
@@ -49,17 +49,17 @@ def test_scan_one_file_ok_oversized_byte_and_unreadable() -> None:
     with _make_root({"a.py": "hello\n"}) as td:
         root = Path(td)
         path = root / "a.py"
-        text, new_br, over, byte_hit = consensus._audit_search_scan_one_file(path, 0)
+        text, new_br, over, byte_hit = audit_tools._audit_search_scan_one_file(path, 0)
         assert text == "hello\n" and new_br == path.stat().st_size
         assert not over and not byte_hit
-        with mock.patch("codey.agents.consensus.SEARCH_MAX_FILE_BYTES", 2):
-            t2, br2, over2, _ = consensus._audit_search_scan_one_file(path, 0)
+        with mock.patch("codey.agents.project_audit_tools.SEARCH_MAX_FILE_BYTES", 2):
+            t2, br2, over2, _ = audit_tools._audit_search_scan_one_file(path, 0)
             assert t2 is None and over2 and br2 == 0
-        with mock.patch("codey.agents.consensus.SEARCH_MAX_SCAN_BYTES", 1):
-            t3, br3, _, byte3 = consensus._audit_search_scan_one_file(path, 0)
+        with mock.patch("codey.agents.project_audit_tools.SEARCH_MAX_SCAN_BYTES", 1):
+            t3, br3, _, byte3 = audit_tools._audit_search_scan_one_file(path, 0)
             assert t3 is None and byte3 and br3 == 0
         missing = root / "gone.py"
-        t4, br4, over4, byte4 = consensus._audit_search_scan_one_file(missing, 7)
+        t4, br4, over4, byte4 = audit_tools._audit_search_scan_one_file(missing, 7)
         assert t4 is None and br4 == 7 and not over4 and not byte4
 
 
@@ -70,7 +70,7 @@ def test_scan_one_file_decode_failure_preserves_bytes_read() -> None:
         root = Path(td)
         bad = root / "bad.py"
         size = bad.stat().st_size
-        text, new_br, over, byte_hit = consensus._audit_search_scan_one_file(bad, 100)
+        text, new_br, over, byte_hit = audit_tools._audit_search_scan_one_file(bad, 100)
         assert text is None and not over and not byte_hit
         assert new_br == 100 + size
 
@@ -80,28 +80,28 @@ def test_collect_file_matches_case_and_truncation() -> None:
         root = Path(td)
         path = root / "a.py"
         matches: list[str] = []
-        limited = consensus._audit_search_collect_file_matches(
+        limited = audit_tools._audit_search_collect_file_matches(
             path, root, "HeLLo world\nsecond\n", "hello", matches, 80
         )
         assert not limited and matches == ["a.py:1: HeLLo world"]
         long_line = "x" * 300
         m2: list[str] = []
-        consensus._audit_search_collect_file_matches(
+        audit_tools._audit_search_collect_file_matches(
             path, root, long_line + "\n", "x", m2, 80
         )
         assert len(m2[0]) <= len("a.py:1: ") + 240
         assert m2[0].endswith("...")
         m3: list[str] = []
-        limited3 = consensus._audit_search_collect_file_matches(
+        limited3 = audit_tools._audit_search_collect_file_matches(
             path, root, "m\nm\nm\n", "m", m3, 2
         )
         assert limited3 and len(m3) == 2
 
 
 def test_append_and_build_outcome_footers() -> None:
-    budget = consensus._audit_scan_budget()
+    budget = audit_tools._audit_scan_budget()
     matches: list[str] = []
-    consensus._audit_search_append_limit_notes(
+    audit_tools._audit_search_append_limit_notes(
         matches,
         max_results=80,
         result_limited=False,
@@ -110,7 +110,7 @@ def test_append_and_build_outcome_footers() -> None:
         budget=budget,
     )
     assert matches == ["(no literal matches; regex is not supported)"]
-    out = consensus._audit_search_build_outcome(
+    out = audit_tools._audit_search_build_outcome(
         matches,
         result_limited=False,
         oversized_files=0,
@@ -123,12 +123,12 @@ def test_append_and_build_outcome_footers() -> None:
 def test_search_files_end_to_end_basic_and_limits() -> None:
     with _make_root({"a.py": "marker one\n", "b.py": "nothing\n"}) as td:
         root = Path(td)
-        out = consensus._audit_search_files(root, ".", "marker")
+        out = audit_tools._audit_search_files(root, ".", "marker")
         assert "a.py:1: marker one" in out.model_text
         assert not out.truncated
-        empty = consensus._audit_search_files(root, ".", "   ")
+        empty = audit_tools._audit_search_files(root, ".", "   ")
         assert not empty.ok
-        limited = consensus._audit_search_files(root, ".", "marker", max_results=1)
+        limited = audit_tools._audit_search_files(root, ".", "marker", max_results=1)
         assert limited.truncated
         assert "truncated after 1 matches" in limited.model_text
 
@@ -136,16 +136,16 @@ def test_search_files_end_to_end_basic_and_limits() -> None:
 def test_search_files_skips_secret_and_reports_budgets() -> None:
     with _make_root({".env": "SUPER_SECRET=1\n", "a.py": "safe\n"}) as td:
         root = Path(td)
-        out = consensus._audit_search_files(root, ".", "SUPER_SECRET")
+        out = audit_tools._audit_search_files(root, ".", "SUPER_SECRET")
         assert "(no literal matches" in out.model_text
         assert "SUPER_SECRET=1" not in out.model_text
     with _make_root({"a.py": "marker\n", "b.py": "marker\n"}) as td:
         root = Path(td)
-        with mock.patch("codey.agents.consensus.SEARCH_MAX_FILE_BYTES", 2):
-            o2 = consensus._audit_search_files(root, ".", "marker")
+        with mock.patch("codey.agents.project_audit_tools.SEARCH_MAX_FILE_BYTES", 2):
+            o2 = audit_tools._audit_search_files(root, ".", "marker")
             assert "oversized" in o2.model_text and o2.truncated
-        with mock.patch("codey.agents.consensus.SEARCH_MAX_SCAN_BYTES", 1):
-            o3 = consensus._audit_search_files(root, ".", "marker")
+        with mock.patch("codey.agents.project_audit_tools.SEARCH_MAX_SCAN_BYTES", 1):
+            o3 = audit_tools._audit_search_files(root, ".", "marker")
             assert "read budget" in o3.model_text and o3.truncated
 
 
@@ -157,8 +157,8 @@ def test_search_files_resolve_contract_never_raises() -> None:
     with _make_root({"a.py": "marker\n"}) as td:
         root = Path(td)
         with mock.patch.object(
-            consensus, "_audit_search_resolve_start", return_value=(None, None)
+            audit_tools, "_audit_search_resolve_start", return_value=(None, None)
         ):
-            out = consensus._audit_search_files(root, ".", "marker")
+            out = audit_tools._audit_search_files(root, ".", "marker")
             assert not out.ok
             assert "ERROR:" in out.model_text

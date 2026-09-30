@@ -324,7 +324,6 @@ def run_self_test() -> bool:
             session_id=session_id,
             run_id=run_id,
             runtime_mutations=mutations,
-            tool_result_delivery=delivery_store,
             recovered_tool_outcomes=recovered_outcomes,
             recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
         )
@@ -438,7 +437,6 @@ def run_same_run_self_test() -> bool:
                 session_id=session_id,
                 run_id=run_id,
                 runtime_mutations=mutations,
-                tool_result_delivery=delivery_store,
                 recovered_tool_outcomes=recovered_outcomes,
                 recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
             )
@@ -532,7 +530,6 @@ def _run_live_resume_case(
                 session_id=session_id,
                 run_id=run_id,
                 runtime_mutations=mutations,
-                tool_result_delivery=delivery_store,
             ))
         except _InjectedCrash:
             crashed = True
@@ -588,7 +585,6 @@ def _run_live_resume_case(
             session_id=session_id,
             run_id=run_id,
             runtime_mutations=mutations,
-            tool_result_delivery=delivery_store,
             recovered_tool_outcomes=recovered_outcomes,
             recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
         ))

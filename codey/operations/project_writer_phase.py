@@ -135,7 +135,6 @@ def _run_one_writer_attempt(
         session_id=ctx.request.session_id,
         run_id=ctx.frame.run_id,
         effect_scope=f"writer:{ctx.writer_attempt_index}",
-        tool_result_delivery=ctx.deps.runtime.tool_result_delivery,
         runtime_mutations=ctx.deps.runtime.mutations,
         workspace_revision_store=workspace_revision_store,
         workspace_ignored_paths=ctx.configured_ignored_paths,

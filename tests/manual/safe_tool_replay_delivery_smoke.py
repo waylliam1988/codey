@@ -190,7 +190,6 @@ def run_self_test() -> int:
             run_id=run_id,
             permission_profile="coding_writer",
             runtime_mutations=mutations,
-            tool_result_delivery=delivery,
             recovered_tool_outcomes=recovery.recovered_tool_outcomes,
             recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
         )
@@ -265,7 +264,6 @@ def run_same_run_self_test() -> int:
             run_id=run_id,
             permission_profile="coding_writer",
             runtime_mutations=mutations,
-            tool_result_delivery=delivery,
         )
         result = run_agent_loop(request)
         assert result.stop_reason == "done", f"Expected done, got {result.stop_reason!r}"

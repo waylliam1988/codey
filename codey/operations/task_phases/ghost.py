@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
-from codey.ghost.work_queue import GhostWorkItem
+from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.ghost_post_turn import (
     GhostTaskPolicyDeps,
     maybe_claim_work_item,

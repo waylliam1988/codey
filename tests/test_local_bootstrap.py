@@ -207,7 +207,7 @@ def test_empty_models_and_bad_budget_are_not_available(monkeypatch) -> None:
             return _json.dumps({"data": []}).encode("utf-8")
 
     monkeypatch.setattr(discovery.urllib.request, "urlopen", lambda *a, **k: EmptyModelsResponse())
-    assert discovery.local_endpoint_available() is False
+    assert canonical.local_endpoint_available() is False
     payload = canonical.local_bootstrap_payload()
     assert payload["connected"] is False
     assert payload["error"] != ""
@@ -225,7 +225,7 @@ def test_empty_models_and_bad_budget_are_not_available(monkeypatch) -> None:
 
     monkeypatch.setattr(discovery.urllib.request, "urlopen", lambda *a, **k: OneModelResponse())
     monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", "1")
-    assert discovery.local_endpoint_available() is False
+    assert canonical.local_endpoint_available() is False
     bad = canonical.local_bootstrap_payload()
     assert bad["connected"] is False
     assert bad["context_error"] != ""

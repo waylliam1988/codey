@@ -26,7 +26,7 @@ def test_audit_parent_without_project_read_never_scans_or_sends(tmp_path):
     from codey.policies.task_policy import TaskPolicy
 
     provider = _AuditProvider([])
-    with patch("codey.operations.project_audit_advisor._audit_visible_entries") as scan:
+    with patch("codey.operations.project_audit_advisor.visible_entries") as scan:
         assert run_project_audit_advisor(provider, tmp_path, "audit",
                                         parent_policy=TaskPolicy(grants=frozenset({"control"}))) == ""
     scan.assert_not_called()
@@ -34,8 +34,7 @@ def test_audit_parent_without_project_read_never_scans_or_sends(tmp_path):
 
 
 def test_audit_send_respects_remaining_time_budget(tmp_path):
-    from codey.agents.consensus import PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT
-    from codey.operations.project_audit_advisor import run_project_audit_advisor
+    from codey.operations.project_audit_advisor import PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT, run_project_audit_advisor
 
     deadlines = []
 

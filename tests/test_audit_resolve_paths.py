@@ -17,7 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.agents import consensus
+from codey.agents import project_audit_tools as audit_tools
 
 
 def _try_dir_symlink(link: Path, target: Path) -> bool:
@@ -42,7 +42,7 @@ class AuditSymlinkedRootTests(unittest.TestCase):
             link = Path(td) / "linkroot"
             if not _try_dir_symlink(link, real):
                 self.skipTest("symlink creation unavailable")
-            out = consensus._audit_search_files(link, ".", "marker")
+            out = audit_tools._audit_search_files(link, ".", "marker")
             self.assertIn("a.py:1: marker one", out.model_text)
 
     def test_visible_entries_through_symlinked_root_lists_files(self) -> None:
@@ -51,7 +51,7 @@ class AuditSymlinkedRootTests(unittest.TestCase):
             link = Path(td) / "linkroot"
             if not _try_dir_symlink(link, real):
                 self.skipTest("symlink creation unavailable")
-            out = consensus._audit_visible_entries(link, ".")
+            out = audit_tools.visible_entries(link, ".")
             self.assertIn("a.py", out.model_text)
 
     def test_read_file_through_symlinked_root_reads(self) -> None:
@@ -60,7 +60,7 @@ class AuditSymlinkedRootTests(unittest.TestCase):
             link = Path(td) / "linkroot"
             if not _try_dir_symlink(link, real):
                 self.skipTest("symlink creation unavailable")
-            out = consensus._audit_read_file(link, "a.py")
+            out = audit_tools._audit_read_file(link, "a.py")
             self.assertTrue(out.ok)
             self.assertIn("marker one", out.model_text)
 

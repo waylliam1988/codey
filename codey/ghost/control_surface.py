@@ -22,7 +22,8 @@ from codey.ghost.schema import (
 )
 from codey.ghost.sleep import GhostSleepStore
 from codey.ghost.typed_fields import render_typed_field
-from codey.ghost.work_queue import GhostWorkItem, GhostWorkQueueStore
+from codey.ghost.work_queue import GhostWorkQueueStore
+from codey.ghost.work_queue_model import GhostWorkItem
 
 CONTROL_SURFACE_SCHEMA_VERSION = 1
 MAX_SUMMARY_ITEMS = 20

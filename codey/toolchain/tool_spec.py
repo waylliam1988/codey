@@ -285,10 +285,8 @@ def register_custom_tool(
     if not canonical or canonical in tool_specs():
         return False
     grant_text = str(grant or "").strip().lower()
-    try:
-        from codey.policies.task_policy import KNOWN_TASK_GRANTS
-    except Exception:
-        KNOWN_TASK_GRANTS = frozenset({"control"})
+    from codey.policies.capabilities import KNOWN_TASK_GRANTS
+
     if grant_text not in KNOWN_TASK_GRANTS:
         return False
     def valid_schema(schema: object) -> bool:
@@ -340,6 +338,22 @@ def spec_for_tool(name: object) -> ToolSpec | None:
     if not canonical:
         return None
     return tool_specs().get(canonical)
+
+
+def tool_requires_trusted_recovery(name: object) -> bool:
+    """True when replay without verified provenance must fail closed.
+
+    Unknown tools, empty names, registry errors, and any replay class other
+    than ``safe`` all require trusted recovery. Safe reads (project reads,
+    web/knowledge reads) may use the safe-replay path.
+    """
+    try:
+        spec = spec_for_tool(name)
+    except Exception:
+        return True
+    if spec is None:
+        return True
+    return str(getattr(spec, "replay_class", "unsafe") or "unsafe").strip().lower() != "safe"
 
 
 def _policy_allows(policy: Any, grant: str) -> bool:
@@ -893,6 +907,7 @@ __all__ = [
     "register_custom_executor",
     "register_custom_tool",
     "spec_for_tool",
+    "tool_requires_trusted_recovery",
     "tool_specs",
     "unregister_custom_tool",
     "validate_args_against_spec",

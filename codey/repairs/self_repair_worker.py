@@ -21,7 +21,7 @@ from codey.providers import flow as provider_flow
 from codey.providers.diagnostics import sanitize_failure_facts
 from codey.providers.registry import PROVIDER_TYPES, PROVIDER_WORKER_PORT_OFFSETS
 from codey.repairs.adapter_repair import AdapterRepairResult, run_adapter_repair, run_worker_canary
-from codey.repairs.self_repair import SelfRepairJob
+from codey.repairs.self_repair_job import SelfRepairJob
 from codey.runtime.core import cancellation
 
 DEFAULT_REPAIR_TIMEOUT = 900.0

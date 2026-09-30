@@ -94,13 +94,13 @@ def _coding_context_for_session(session: TaskSession) -> str:
     try:
         if not session.policy.allows("project.read"):
             return ""
-        from codey.operations.completion_gate import _coding_checks
+        from codey.operations.project_completion_checks import project_completion_checks
         from codey.operations.project_verification import refresh_verification_candidates
         from codey.workspace.coding_context import CodingContext, render_coding_context
 
         refresh_verification_candidates(session)
         fresh = any(row.check_id == "relevant_verification" and row.status == "pass"
-                    for row in _coding_checks(session))
+                    for row in project_completion_checks(session))
         return render_coding_context(
             CodingContext(
                 read_files=tuple(sorted(getattr(session, "read_files", set()) or set())),

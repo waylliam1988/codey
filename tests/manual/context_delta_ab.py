@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 import contextlib
 
 from codey.agents.handoff import ConversationContext
+from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.operations.project_adapter import run
 from codey.protocols.json_codec import JsonToolCodec
@@ -205,16 +206,18 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
         project_map = render_production_project_map(case.project, task=case.warmup_task)
         warmup_events = []
         warmup = run(
-            provider,
-            case.project,
-            case.warmup_task,
-            max_turns=max_turns,
-            on_event=warmup_events.append,
-            fresh_chat=True,
-            conversation=conversation,
-            provider_id=provider_id,
-            project_map=project_map,
-            tool_fns=tool_fns,
+            AgentRequest(
+                provider=provider,
+                project=case.project,
+                task=case.warmup_task,
+                max_turns=max_turns,
+                on_event=warmup_events.append,
+                fresh_chat=True,
+                conversation=conversation,
+                provider_id=provider_id,
+                project_map=project_map,
+                tool_fns=tool_fns,
+            )
         )
         if warmup.stop_reason != "done" or warmup.changed:
             return {
@@ -236,16 +239,20 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
         seconds_before = provider.seconds
         replies_before = provider.reply_chars
         followup_events = []
+        followup_kwargs = followup_run_kwargs(arm, conversation)
         followup = run(
-            provider,
-            case.project,
-            followup_request(arm, case.followup_task),
-            max_turns=max_turns,
-            on_event=followup_events.append,
-            provider_id=provider_id,
-            project_map=project_map,
-            tool_fns=tool_fns,
-            **followup_run_kwargs(arm, conversation),
+            AgentRequest(
+                provider=provider,
+                project=case.project,
+                task=followup_request(arm, case.followup_task),
+                max_turns=max_turns,
+                on_event=followup_events.append,
+                provider_id=provider_id,
+                project_map=project_map,
+                tool_fns=tool_fns,
+                fresh_chat=bool(followup_kwargs.get("fresh_chat", False)),
+                conversation=followup_kwargs.get("conversation"),  # type: ignore[arg-type]
+            )
         )
         followup_prompts = provider.prompts[sends_before:]
         expected_hits = [

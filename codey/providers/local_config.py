@@ -546,6 +546,30 @@ def assemble_bootstrap_payload(
     }
 
 
+def local_endpoint_available() -> bool:
+    """Share the single target decision with connect(): one address, one key.
+
+    Reachable /models alone is not enough: the effective target must also
+    yield a usable model and a valid budget, exactly as connect() requires.
+    """
+    from codey.providers import local_discovery as discovery
+
+    config = load_local_config()
+    selection = select_local_target(config)
+    endpoint = discovery.resolve_local_endpoint(
+        base_url=selection.base_url,
+        model=selection.model,
+        api_key=selection.api_key,
+    )
+    if endpoint is None:
+        return False
+    try:
+        effective = resolve_effective_local_config(config, selection, endpoint)
+    except ValueError:
+        return False
+    return bool(effective.model)
+
+
 def local_bootstrap_payload() -> dict:
     """UI status: connection, models, native mode, context, presets."""
     config = load_local_config()
@@ -621,6 +645,7 @@ __all__ = [
     "context_budget_for_window",
     "load_local_config",
     "local_bootstrap_payload",
+    "local_endpoint_available",
     "parse_local_config_update",
     "parse_native_tools_mode",
     "resolve_effective_local_config",

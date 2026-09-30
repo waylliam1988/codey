@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from codey.operations.task_run import TaskRunDeps
 
-from codey.ghost.work_queue import GhostWorkItem
+from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.auto_loop import (
     AutoRunDeps,
     is_auto_request,
@@ -40,7 +40,6 @@ from codey.operations.project_completion_flow import run_project_mode
 from codey.operations.provider_preflight import connect_provider_with_preflight
 from codey.operations.research_flow import (
     ResearchFlowDeps,
-    default_research_search_provider,
     record_evidence_ledger_write,
     research_queue_item_title,
     run_research_mode,
@@ -51,6 +50,7 @@ from codey.operations.review_flow import ReviewFlowDeps, run_review_mode
 from codey.operations.task_entry import run_task_mode
 from codey.operations.task_state import TaskState
 from codey.providers.capabilities import rank_providers
+from codey.research.search_factory import default_research_search_provider
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.task.kind import startup_failover_mode, trace_mode
 from codey.task.model import TaskSubmission

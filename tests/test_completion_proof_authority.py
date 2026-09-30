@@ -174,5 +174,5 @@ def test_project_receipt_projects_final_verification_without_rechecking_workspac
 
     session = SimpleNamespace(edited_files={"app.py": 1})
     proof = SimpleNamespace(checks=(completion_check("relevant_verification", "pass"),))
-    with mock.patch("codey.operations.completion_gate._coding_checks", side_effect=AssertionError("duplicate gate")):
+    with mock.patch("codey.operations.project_completion_checks.project_completion_checks", side_effect=AssertionError("duplicate gate")):
         assert _session_checks_passed(session, proof)

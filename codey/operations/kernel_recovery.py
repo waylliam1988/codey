@@ -40,7 +40,6 @@ __all__ = [
     "_is_recovery_error_text",
     "_is_recovery_failed_text",
     "_is_recovery_mismatch_text",
-    "_is_unsafe_tool",
     "_recovery_failed_result",
     "_recovery_mismatch_result",
     "_same_effect_call",
@@ -115,19 +114,6 @@ def apply_recovery_first(
         raise
     except Exception as exc:
         raise RecoveryFailed(f"recovery delivery failed: {exc}") from exc
-
-
-def _is_unsafe_tool(name: str) -> bool:
-    """True when a replay without full provenance must fail closed."""
-    try:
-        from codey.toolchain.tool_spec import spec_for_tool
-
-        spec = spec_for_tool(str(name or "").strip().lower())
-    except Exception:
-        return True
-    if spec is None:
-        return True
-    return str(getattr(spec, "replay_class", "unsafe") or "unsafe").strip().lower() != "safe"
 
 
 def _same_effect_call(stored_name: str, stored_digest: str, call: ToolCall) -> bool:
@@ -310,12 +296,15 @@ def replay_slot_typed(
             disposition="MISMATCH",
             result=_recovery_mismatch_result(call, stored_name, stored_digest or "unknown-args"),
         )
-    if was_ok and _is_unsafe_tool(name):
-        return _replay_persisted_unsafe_slot(
-            record, call, name, call_id,
-            project_path=project_path, revision_store=revision_store,
-            ignored_paths=ignored_paths, recovery_ctx=ctx,
-        )
+    if was_ok:
+        from codey.toolchain.tool_spec import tool_requires_trusted_recovery
+
+        if tool_requires_trusted_recovery(name):
+            return _replay_persisted_unsafe_slot(
+                record, call, name, call_id,
+                project_path=project_path, revision_store=revision_store,
+                ignored_paths=ignored_paths, recovery_ctx=ctx,
+            )
     # Safe success replays the excerpt verbatim (even when it starts with an
     # error-like prefix: disposition stays RECOVERED, never FAILED). Prior
     # failures replay as errors but still count as RECOVERED receipts.

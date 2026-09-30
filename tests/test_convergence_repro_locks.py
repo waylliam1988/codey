@@ -55,7 +55,7 @@ class BatchMismatchTests(unittest.TestCase):
 
 class FakeFingerprintTests(unittest.TestCase):
     def test_no_synthesized_fingerprint(self) -> None:
-        from codey.operations.completion_gate import _evidence_with_session_facts
+        from codey.operations.project_completion_checks import _evidence_with_session_facts
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.observe.execution_evidence import ExecutionEvidence

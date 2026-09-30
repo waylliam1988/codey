@@ -127,7 +127,7 @@ def test_task_entry_research_builds_default_search_provider(tmp_path) -> None:
         search_factory=None,
     )
     search = object()
-    with patch("codey.operations.research_flow.default_research_search_provider", return_value=search):
+    with patch("codey.research.search_factory.default_research_search_provider", return_value=search):
         tools = build_research_tools(deps, session_id="s", project="")
     assert tools is not None
     assert tools.search is search

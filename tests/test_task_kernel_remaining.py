@@ -212,6 +212,7 @@ class WebOnlyLoopTests(unittest.TestCase):
             return ToolResult(call=call, model_text="1 passed", audit={"exit_code": 0})
 
         session = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=12)
+        session.set_workspace_state(1, "sha256:" + "a" * 64)
         outcome = run_task_kernel(
             session,
             provider=provider,
@@ -298,15 +299,22 @@ class CompletionGateTests(unittest.TestCase):
             task_kind="hybrid",
         )
         session = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=8)
+        session.set_workspace_state(2, "sha256:" + "a" * 64)
         session.record_search("q")
         session.record_open("https://example.com/docs")
         session.record_evidence("https://example.com/docs", "login excerpt")
         session.record_edit("app.py", revision=2)
-        session.record_verification("pytest -q", revision=1, passed=False, exit_code=1)
+        session.record_verification(
+            "pytest -q", revision=1, passed=False, exit_code=1,
+            workspace_revision=2, workspace_fingerprint="sha256:" + "a" * 64,
+        )
         stale = evaluate(session, "fixed")
         self.assertFalse(stale.complete)
 
-        session.record_verification("pytest -q", revision=2, passed=True, exit_code=0)
+        session.record_verification(
+            "pytest -q", revision=2, passed=True, exit_code=0,
+            workspace_revision=2, workspace_fingerprint="sha256:" + "a" * 64,
+        )
         fresh = evaluate(session, "fixed and verified")
         self.assertTrue(fresh.complete)
         self.assertIsNotNone(fresh.proof)
@@ -367,6 +375,7 @@ class HybridAndPlanningTests(unittest.TestCase):
             return fn
 
         session = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=12)
+        session.set_workspace_state(1, "sha256:" + "a" * 64)
         outcome = run_task_kernel(
             session,
             provider=FakeWeb(),

@@ -2,6 +2,47 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 内核依赖方向、死入口清理与检查所有权（未发布）
+
+- TDD 红色锁定 12 个新文件（先失败、后通过）：
+  `test_kernel_dependency_direction`、
+  `test_manual_project_adapter_entry_contract`、
+  `test_agent_request_no_dead_fields`、
+  `test_research_search_factory_ownership`、
+  `test_tool_replay_trust_single_owner`、
+  `test_provider_reply_normalization_ownership`、
+  `test_task_grants_capabilities_single_owner`、
+  `test_completion_gate_fail_closed_hygiene`、
+  `test_project_audit_tools_ownership`、
+  `test_completion_checks_ownership`、
+  `test_ghost_work_queue_ownership`、
+  `test_manual_ab_fake_provider_smoke`。
+- 消除 6 组静态依赖环，不靠导入时机维持：
+  执行资源不再导入 research 流程（默认搜索工厂归
+  `codey/research/search_factory.py`）；恢复结果不再导入恢复调度
+  （`tool_requires_trusted_recovery` 归 `tool_spec`）；包装器拥有回复归一，
+  传输层只做委托；授权词表归 `codey/policies/capabilities.py`，无导入异常
+  回退；本地可用性判定归 `local_config`，发现层为叶子；自修复任务模型归
+  `self_repair_job.py`，调度与 worker 共享叶子。
+- 删除死入口：`AgentRequest.codec` 与 `AgentRequest.tool_result_delivery`
+  （存储实现仍保留给恢复与交付系统）；手工 A/B 统一改为
+  `run(request)` + `AgentRequest`，并用 fake-provider 冒烟测试锁定真实执行。
+  实验变量是 project map / 会话接线，不再是 codec。
+- 按职责拆分，gate 仍是唯一证明所有者：
+  `agents/project_audit_tools.py` 拥有审计扫描（无 provider/operations 依赖），
+  `operations/project_audit_advisor.py` 拥有提示词与预算；
+  `project_completion_checks.py` / `research_completion_checks.py` 拥有检查，
+  `completion_gate.py` 只做最终组合；`ghost/work_queue_model.py` 拥有工作项
+  与字段规则（Store 导入它）。事件/来源叶为纯转换器，Store 委托继续收敛。
+- 失败关闭卫生：无工作区身份的验证不再放行；`required_checks` 读取异常
+  直接阻塞而非视为无要求；`MAX_COMPLETION_CHECKS` 只在顶部导入一次，无硬编码
+  回退。受影响单测已改为建立真实工作区身份。
+- 验证：`ruff check codey tests` 通过。最终全量 pytest
+  **6019 passed、10 skipped、1483 subtests passed，547.35s**。
+  本轮首轮全量 18 失败（私有函数搬迁、旧 patch 点、工作区缺身份期望），已全部
+  修复并复验。范围与首轮失败记录见 TEST_REPORT.md。
+- 未 release、未打 tag、未改版本号。
+
 ## Unreleased - 冷启动内核授权、完整收据与生命周期收口（未发布）
 
 - 编程、Research 和只读审计顾问使用共同任务工具循环；删除旧 agent 执行

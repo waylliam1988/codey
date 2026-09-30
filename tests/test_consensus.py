@@ -650,7 +650,7 @@ class ConsensusTests(unittest.TestCase):
             Path(root, "a.py").write_text("pass\n", encoding="utf-8")
             Path(root, "b.py").write_text("pass\n", encoding="utf-8")
             Path(root, "c.py").write_text("late_marker\n", encoding="utf-8")
-            with mock.patch("codey.agents.consensus.PROJECT_AUDIT_MAX_SCAN_FILES", 2):
+            with mock.patch("codey.agents.project_audit_tools.PROJECT_AUDIT_MAX_SCAN_FILES", 2):
                 report = project_audit_advisor.run_project_audit_advisor(
                     advisor,
                     td,
@@ -715,7 +715,7 @@ class ConsensusTests(unittest.TestCase):
             Path(root, "a.py").write_text("pass\n", encoding="utf-8")
             Path(root, "b.py").write_text("pass\n", encoding="utf-8")
             Path(root, "c.py").write_text("late_marker()\n", encoding="utf-8")
-            with mock.patch("codey.agents.consensus.PROJECT_AUDIT_MAX_SCAN_FILES", 2):
+            with mock.patch("codey.agents.project_audit_tools.PROJECT_AUDIT_MAX_SCAN_FILES", 2):
                 report = project_audit_advisor.run_project_audit_advisor(
                     advisor,
                     td,

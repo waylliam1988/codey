@@ -31,9 +31,9 @@ if str(ROOT) not in sys.path:
 
 import contextlib
 
+from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.operations.project_adapter import run as run_agent
-from codey.protocols.json_codec import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.toolchain.runtime import ToolOutcome, list_directory
@@ -679,15 +679,17 @@ def run_readonly_arm(
         provider = CountingProvider(raw)
         provider_controls.begin_task_context(f"task-lens-ab-readonly:{provider_id}:{case.name}:{arm}")
         result = run_agent(
-            provider,
-            root,
-            _readonly_task(case),
-            codec=JsonToolCodec(),
-            max_turns=max_turns,
-            on_event=events.append,
-            fresh_chat=True,
-            project_map=_map_for_arm(root, case.task, arm=arm),
-            tool_fns=tool_fns,
+            AgentRequest(
+                provider=provider,
+                project=root,
+                task=_readonly_task(case),
+                max_turns=max_turns,
+                on_event=events.append,
+                fresh_chat=True,
+                provider_id=provider_id,
+                project_map=_map_for_arm(root, case.task, arm=arm),
+                tool_fns=tool_fns,
+            )
         )
         tool_events = [
             event

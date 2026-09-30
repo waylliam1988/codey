@@ -1,8 +1,10 @@
-"""Live provider A/B probe for Tool Argument Repair.
+"""Live provider probe for Tool Argument Repair.
 
 Runs the production coding agent loop against a real provider on tiny temporary
-projects. The baseline arm uses a 0.5.2-shaped strict codec; the candidate arm
-uses the current 0.5.3 JsonToolCodec.
+projects using the unified kernel. The strict-codec comparison lives only in
+``--self-test`` (direct codec parsing); live arms both run the current kernel
+and verify its argument repair end to end. ``AgentRequest`` carries no codec
+field.
 """
 
 from __future__ import annotations
@@ -198,13 +200,11 @@ def _run_agent_case(
             provider_initial=provider_id,
         )
         events: list[str] = []
-        codec = Baseline052Codec() if arm == "baseline" else JsonToolCodec()
         try:
             result = _agent_kernel_request(AgentRequest(
                 provider=provider,
                 project=root,
                 task=case.task,
-                codec=codec,
                 max_turns=max_turns,
                 fresh_chat=fresh_chat,
                 provider_id=provider_id,

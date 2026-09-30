@@ -278,9 +278,9 @@ def spec_from_frame_row(item: Any) -> RecoveredResultSpec:
         raise RecoveryFailed(f"malformed turn/index: {exc}") from exc
     call_obj = _call_from_row_call(call)
     try:
-        from codey.operations.kernel_recovery import _is_unsafe_tool
+        from codey.toolchain.tool_spec import tool_requires_trusted_recovery
 
-        if _is_unsafe_tool(str(getattr(call_obj, "name", "") or "")):
+        if tool_requires_trusted_recovery(str(getattr(call_obj, "name", "") or "")):
             raise RecoveryFailed(
                 f"frame recovery forbids unsafe tool: {getattr(call_obj, 'name', '?')}"
             )

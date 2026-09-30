@@ -8,7 +8,6 @@ from unittest.mock import Mock, patch
 
 from codey.agents.request import AgentRequest
 from codey.operations.recovery import recover_effects_for_resume
-from codey.protocols import JsonToolCodec
 from codey.runs.details import load_run_details
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_state import (
@@ -2173,12 +2172,10 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             provider_id="mock_provider",
             project=self.project_dir,
             task="finish after recovery",
-            codec=JsonToolCodec(),
             fresh_chat=False,
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            tool_result_delivery=self.delivery,
             recovered_tool_outcomes=recovery.recovered_tool_outcomes,
             recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
         ))

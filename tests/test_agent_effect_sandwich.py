@@ -139,7 +139,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            tool_result_delivery=self.delivery,
             tool_fns=AgentToolFns(
                 read_file=lambda *a, **kw: ToolOutcome("file text", True),
                 edit_file=lambda *a, **kw: ToolOutcome("edited", True, changed=True),
@@ -1167,7 +1166,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            tool_result_delivery=self.delivery,
             recovered_tool_outcomes=(recovered_outcome,),
         )
 
@@ -1201,7 +1199,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            tool_result_delivery=self.delivery,
             recovered_tool_outcomes=(recovered_outcome,),
         )
 

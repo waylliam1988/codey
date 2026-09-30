@@ -12,7 +12,6 @@ from codey.agents.handoff import ConversationContext
 from codey.agents.shell_approval import ShellApprovalRequest
 from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
-from codey.protocols import ProtocolCodec
 from codey.providers.base import ChatProvider
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent, print_run_event
@@ -20,7 +19,6 @@ from codey.toolchain.runtime import ToolOutcome
 
 if TYPE_CHECKING:
     from codey.runs.trace import RunTraceRecorder
-    from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
 
@@ -60,7 +58,6 @@ class AgentRequest:
     provider: ChatProvider
     project: Path
     task: str
-    codec: ProtocolCodec | None = None
     max_turns: int = DEFAULT_MAX_TURNS
     stagnant_turns: int = DEFAULT_STAGNANT_TURNS
     on_event: Callable[[RunEvent], None] = print_run_event
@@ -97,7 +94,6 @@ class AgentRequest:
     runtime_mutations: RuntimeMutationLine | None = None
     workspace_revision_store: object | None = None
     workspace_ignored_paths: tuple[str, ...] = ()
-    tool_result_delivery: ToolResultDeliveryStore | None = None
     managed_outputs: ManagedOutputStore | None = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     recovered_tool_result_batch_id: str = ""

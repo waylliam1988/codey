@@ -1,5 +1,62 @@
 # Codey Test Report
 
+## Kernel dependency direction, dead entry removal, and check ownership (2026-09-30)
+
+Scope: based on `9136441`; 6 static dependency cycles, dead
+`AgentRequest` fields, stale manual `run()` calls, oversized
+`consensus`/`completion_gate`/`work_queue`, and fail-closed hygiene.
+No code was modified after the final full run; only documentation was
+updated after that run.
+
+### Behavior and test evidence
+
+| Boundary | Locked behavior | Regression files |
+| --- | --- | --- |
+| Dependency direction | `agents` never imports `operations`; execution/resources, recovery results, wrappers, tool registry, local discovery, and self-repair worker each have a single direction | `test_kernel_dependency_direction.py` |
+| Manual entry | Manual A/B scripts call `run(request)` once with `AgentRequest`; fake-provider smoke proves real-kernel execution and provider close | `test_manual_project_adapter_entry_contract.py`, `test_manual_ab_fake_provider_smoke.py` |
+| Dead entries | `AgentRequest` has no `codec` / `tool_result_delivery`; no writer passes them and no production code reads them | `test_agent_request_no_dead_fields.py` |
+| Search factory | Default search provider lives in `research/search_factory.py` (operations leaf) and builds a connector-aware provider | `test_research_search_factory_ownership.py` |
+| Replay trust | `tool_requires_trusted_recovery` in `tool_spec` is fail-closed; both recovery modules share it; unsafe frame replay raises | `test_tool_replay_trust_single_owner.py` |
+| Reply normalization | `provider_session` owns normalization; transport delegates; declared hooks run once; forged `__getattr__` and cycles fail closed | `test_provider_reply_normalization_ownership.py` |
+| Grant vocabulary | `policies/capabilities.py` owns `KNOWN_TASK_GRANTS`; policy and registry share it with no fallback | `test_task_grants_capabilities_single_owner.py` |
+| Gate hygiene | Workspace-less verification cannot complete; unreadable `required_checks` blocks; no hardcoded completion limit | `test_completion_gate_fail_closed_hygiene.py` |
+| Audit tools | `agents/project_audit_tools.py` owns scanning with no provider/operations deps; advisor consumes it directly | `test_project_audit_tools_ownership.py`, `test_consensus_audit_split.py` |
+| Completion checks | Project/research check providers own rows; gate is the sole proof minter with one `evaluate` entry | `test_completion_checks_ownership.py` |
+| Work queue | `ghost/work_queue_model.py` owns items and field rules; events/sources leaves are pure converters | `test_ghost_work_queue_ownership.py`, `test_work_queue_transition_split.py` |
+
+Red-first: the 12 new files above all failed before their fixes and pass
+after. Existing moved-helper tests (`test_consensus_audit_split`,
+`test_large_project_ab`, `test_task_kernel_remaining`, `test_server`
+research patches) were migrated to the new owners and real workspace
+identity; not every migrated assertion is claimed as a new red-first test.
+
+### Actual runs
+
+- Targeted ownership/contract regression before full testing: **47 passed**.
+- Affected-area regression (consensus, completion, work queue, entry, research):
+  **181 passed**.
+- First full run in this round: **18 failed, 6000 passed, 10 skipped,
+  1483 subtests passed in 574.77s**. Failures were moved private helpers
+  (`consensus.*` → `project_audit_tools`), stale `research_flow`
+  patch targets, removed `large_project_ab` codec helpers, a BOM introduced
+  by intermediate file writes, and workspace-less verification expectations
+  in `test_completion_*` / `test_task_kernel_remaining.py`. All fixed and
+  re-verified with targeted runs.
+- Final full command: `python -m pytest tests -q`
+  **6019 passed, 10 skipped, 1483 subtests passed in 547.35s (0:09:07)**.
+- Final prechecks: `python -m ruff check codey tests`,
+  `python -m compileall -q codey tests`, `git diff --check`: passed.
+
+### Limits and follow-ups
+
+- `ghost/work_queue_events.py` and `ghost/work_queue_sources.py` exist as pure
+  leaves with stable public entries; the Store still reuses its internal
+  projection/transition copies for persistence. Full Store delegation (removing
+  the duplicated internals) is the next small step and must keep the 83
+  work-queue tests green.
+- The 10 skips are Windows/symlink privilege/POSIX-contract limitations.
+  No live web-model/native API benchmark was run.
+
 ## Cold-start kernel convergence and review closure (2026-09-30)
 
 Scope: the unstaged refactor based on `3ca86a1`, its production callers,

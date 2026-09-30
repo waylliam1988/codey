@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from codey.operations import completion_gate as gate
 from codey.policies.task_policy import TaskPolicy
 
+_VALID_FP = "sha256:" + "a" * 64
+
 
 def _session(policy: TaskPolicy, **kw) -> SimpleNamespace:
     base = dict(
@@ -46,7 +48,17 @@ def test_opened_source_with_edit_and_verify_completes_ordinary_task() -> None:
         policy,
         opened_sources={"https://example.com/a"},
         edited_files={"a.py": 1},
-        verifications=[{"command": "pytest", "cwd": ".", "revision": 1, "passed": True, "exit_code": 0}],
+        verifications=[{
+            "command": "pytest",
+            "cwd": ".",
+            "revision": 1,
+            "passed": True,
+            "exit_code": 0,
+            "workspace_revision": 1,
+            "workspace_fingerprint": _VALID_FP,
+        }],
+        workspace_fingerprint=_VALID_FP,
+        workspace_revision=1,
     )
     verdict = gate.evaluate(sess, "done summary", context=None)
     assert verdict.complete, f"普通任务已打开来源+修改+验证通过应完成，实际 followup={verdict.followup} proof={verdict.proof}"

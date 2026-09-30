@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
 
 from codey.providers.diagnostics import (
@@ -13,12 +13,12 @@ from codey.providers.diagnostics import (
     FAILURE_READINESS_STALE,
     FAILURE_RESPONSE_MISSING,
     ProviderFailure,
-    sanitize_failure_facts,
 )
 from codey.providers.ids import normalize_provider_id
 from codey.providers.supervisor import STATE_OPEN, ProviderHealth
 from codey.repairs.adapter_repair import AdapterRepairResult
 from codey.repairs.journal import RepairJournal
+from codey.repairs.self_repair_job import SelfRepairJob
 
 STRUCTURAL_FAILURES = {
     FAILURE_CONTROL_MISSING,
@@ -26,19 +26,6 @@ STRUCTURAL_FAILURES = {
     FAILURE_READINESS_STALE,
 }
 REPAIR_COOLDOWN_SECONDS = 15 * 60
-
-
-@dataclass(frozen=True)
-class SelfRepairJob:
-    provider_id: str
-    failure_kind: str
-    failure_stage: str = ""
-    enqueued_at: float = 0.0
-    next_retry_at: float = 0.0
-    failure_facts: dict[str, object] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "failure_facts", sanitize_failure_facts(self.failure_facts))
 
 
 class SelfRepairSupervisor:

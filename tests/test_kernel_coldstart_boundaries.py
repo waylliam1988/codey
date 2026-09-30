@@ -48,7 +48,7 @@ def test_explicit_source_executor_does_not_use_project_only_guard():
 
 
 def test_false_verification_flag_cannot_be_overridden_by_exit_zero():
-    from codey.operations.completion_gate import _fresh_verification_verdict
+    from codey.operations.project_completion_checks import _fresh_verification_verdict
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset()))
     row = {"revision":1, "exit_code":0, "passed":False, "command":"pytest", "cwd":"."}

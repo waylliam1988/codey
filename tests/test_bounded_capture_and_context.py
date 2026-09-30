@@ -227,7 +227,7 @@ class ReaderErrorTests(unittest.TestCase):
 
     def test_worker_maps_read_error_distinctly(self) -> None:
         from codey.repairs import self_repair_worker as worker
-        from codey.repairs.self_repair import SelfRepairJob
+        from codey.repairs.self_repair_job import SelfRepairJob
 
         job = SelfRepairJob(
             provider_id="deepseek", failure_kind="k", failure_stage="s",
@@ -246,7 +246,7 @@ class ReaderErrorTests(unittest.TestCase):
 
     def test_worker_maps_drain_timeout_distinctly(self) -> None:
         from codey.repairs import self_repair_worker as worker
-        from codey.repairs.self_repair import SelfRepairJob
+        from codey.repairs.self_repair_job import SelfRepairJob
 
         job = SelfRepairJob(
             provider_id="deepseek", failure_kind="k", failure_stage="s",
@@ -450,7 +450,7 @@ class TruncationPropagationTests(unittest.TestCase):
 
     def test_worker_truncated_output_is_not_parsed(self) -> None:
         from codey.repairs import self_repair_worker as worker
-        from codey.repairs.self_repair import SelfRepairJob
+        from codey.repairs.self_repair_job import SelfRepairJob
         from codey.runtime.core.cancellation import CapturedProcess
 
         job = SelfRepairJob(

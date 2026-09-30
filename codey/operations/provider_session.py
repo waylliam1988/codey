@@ -20,6 +20,26 @@ def reply_text_for_accounting(reply: Any) -> str:
     }, ensure_ascii=False, default=str)
 
 
+def _explicit_reply_normalizer(provider: Any) -> Any:
+    """Find an explicitly declared provider hook without triggering ``__getattr__``."""
+    try:
+        instance_attributes = vars(provider)
+    except TypeError:
+        instance_attributes = {}
+    if "normalize_reply" in instance_attributes:
+        return instance_attributes["normalize_reply"]
+    for provider_type in type(provider).__mro__:
+        if "normalize_reply" in provider_type.__dict__:
+            return getattr(provider, "normalize_reply", None)
+    return None
+
+
+def normalize_provider_reply(provider: Any, reply: Any) -> Any:
+    """Apply only a declared hook, including through explicit kernel wrappers."""
+    normalize = _explicit_reply_normalizer(provider)
+    return normalize(reply) if callable(normalize) else reply
+
+
 class ProviderAdapter:
     def __init__(self, provider: Any) -> None:
         self.provider = provider
@@ -34,8 +54,6 @@ class ProviderAdapter:
         return self._send("send", *args, **kwargs)
 
     def normalize_reply(self, reply: Any) -> Any:
-        from codey.operations.kernel_transport import normalize_provider_reply
-
         return normalize_provider_reply(self.provider, reply)
 
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:

@@ -40,7 +40,7 @@ __all__ = [
     "warm_provider_tabs",
 ]
 from codey.providers.ids import normalize_provider_id
-from codey.providers.local_discovery import local_endpoint_available
+from codey.providers.local_config import local_endpoint_available
 from codey.providers.local_openai import LocalOpenAIProvider
 from codey.providers.web_provider import (
     DeepSeekWebProvider,
