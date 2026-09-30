@@ -225,15 +225,18 @@ def test_mode_selection_trace_replaces_router() -> None:
 
 def test_evaluate_tool_call_policy_has_no_dead_turn_params() -> None:
     import inspect
+    import pathlib
 
     from codey.agents import tool_execution as te
 
     params = inspect.signature(te.evaluate_tool_call_policy).parameters
     assert "turn" not in params
     assert "tool_index" not in params
-    # intent builder still owns turn/tool_index (outer loop keeps them)
-    intent_params = inspect.signature(te.build_tool_call_intent).parameters
-    assert "turn" in intent_params and "tool_index" in intent_params
+    # 新内核以 TurnSnapshot/turn_effect_id 拥有 turn 身份；生产循环不得再依赖旧 intent 构造
+    from codey.operations import task_loop as tl
+
+    src = pathlib.Path(tl.__file__).read_text(encoding="utf-8")
+    assert "build_tool_call_intent" not in src
 
 
 def test_run_headless_task_has_no_emit_jsonl() -> None:

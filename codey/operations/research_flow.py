@@ -380,6 +380,7 @@ def run_research_pipeline(
         initial_summary: str = "",
         max_context_chars: int = 8000,
         should_stop=None,
+        parent_policy=None,
     ):
         nonlocal followup_index
         followup_index += 1
@@ -398,6 +399,7 @@ def run_research_pipeline(
             round_index=followup_index,
             runtime_mutations=deps.runtime_mutations,
             on_event=hooks.on_event,
+            parent_policy=parent_policy if parent_policy is not None else getattr(frame, "entry_policy", None),
         )
 
     recorder = getattr(deps.state, "record_research_changes", None)
@@ -419,6 +421,7 @@ def run_research_pipeline(
         config=ResearchPipelineConfig(),
         ledger_event_sink=lambda result: ledger_sink(hooks, result),
         research_changes_sink=changes_sink,
+        policy=getattr(frame, "entry_policy", None),
     )
     return pipeline.run()
 

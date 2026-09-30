@@ -26,36 +26,8 @@ KNOWN_TASK_GRANTS = frozenset({
     "control",
 })
 
-# Canonical tool name -> required grant. Coding names use the model-visible
-# names from toolchain definitions; research controller aliases map to the
-# same web/knowledge grants as the tools they lower to.
-CODING_TOOL_GRANTS: dict[str, str] = {
-    "list_dir": "project.read",
-    "read_file": "project.read",
-    "read_files": "project.read",
-    "grep": "project.read",
-    "find_references": "project.read",
-    "parallel": "project.read",
-    "edit": "project.write",
-    "run": "project.verify",
-    "shell": "shell.approval",
-    "done": "control",
-}
-
-RESEARCH_TOOL_GRANTS: dict[str, str] = {
-    "web_search": "web.read",
-    "open_url": "web.read",
-    "source_search": "web.read",
-    "open_result": "web.read",
-    "reopen_source": "web.read",
-    "open_hit": "web.read",
-    "knowledge_search": "knowledge.read",
-    "knowledge_read": "knowledge.read",
-    "knowledge_write": "knowledge.write",
-    "knowledge_link": "knowledge.link",
-    "done": "control",
-}
-
+# 工具授权唯一来源为 ToolSpec（toolchain.tool_spec.spec_for_tool().grant），
+# 此处不再维护重复名单，避免漂移。
 STRICT_RESEARCH_REQUIRED_CHECKS = (
     "research_sources_opened",
     "research_evidence_saved",
@@ -249,31 +221,14 @@ def build_task_policy(
     )
 
 
-def visible_research_tools(
-    policy: TaskPolicy | None,
-    controller_allowed: tuple[str, ...] | list[str] | None,
-) -> tuple[str, ...]:
-    """Intersection of policy grants and controller state for research tools.
+def _grant_for_tool_name(name: str) -> str:
+    try:
+        from codey.toolchain.tool_spec import spec_for_tool as _spec_for
 
-    The controller may only narrow research tools; it never widens policy and
-    never governs project tools; project visibility comes from the shared
-    per-turn ToolSpec snapshot.
-    """
-    if policy is None:
-        return ()
-    allowed = {str(name or "").strip().lower() for name in (controller_allowed or ())}
-    visible: list[str] = []
-    for name in ("web_search", "open_url", "source_search", "knowledge_search", "knowledge_read",
-                 "knowledge_write", "knowledge_link", "done"):
-        grant = RESEARCH_TOOL_GRANTS.get(name, "")
-        if grant and policy.allows(grant) and (not allowed or name in allowed or _alias_allowed(name, allowed)):
-            visible.append(name)
-    # Controller aliases lower to open_url; expose the alias the model must use
-    # when the underlying web.read grant and controller state allow it.
-    for alias in ("open_result", "reopen_source", "open_hit"):
-        if alias in allowed and policy.allows("web.read") and alias not in visible:
-            visible.append(alias)
-    return tuple(visible)
+        spec = _spec_for(name)
+        return str(getattr(spec, "grant", "") or "") if spec is not None else ""
+    except Exception:
+        return ""
 
 
 def _alias_allowed(canonical: str, allowed: set[str]) -> bool:
@@ -326,14 +281,11 @@ def apply_auto_plan(policy: object, plan_text: object) -> object:
 
 
 __all__ = [
-    "CODING_TOOL_GRANTS",
     "KNOWN_TASK_GRANTS",
-    "RESEARCH_TOOL_GRANTS",
     "STRICT_RESEARCH_REQUIRED_CHECKS",
     "TASK_POLICY_VERSION",
     "TaskPolicy",
     "apply_auto_plan",
     "build_task_policy",
     "policy_for_dispatch",
-    "visible_research_tools",
 ]

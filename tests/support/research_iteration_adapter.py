@@ -89,7 +89,7 @@ class ResearchToolOutcome(_BaseOutcome):  # type: ignore[valid-type,misc]
 
 
 class ResearchIteration:
-    """Test-only generator adapter around the shared research entry."""
+    """Test-only thin adapter: input/output shape only, behavior via production."""
 
     def __init__(
         self,
@@ -99,13 +99,9 @@ class ResearchIteration:
         *,
         max_turns: int = 8,
         codec: Any | None = None,
-        should_stop: Any | None = None,
-        diagnostics: Any | None = None,
         session_id: str = "",
         project: str = "",
         chat_handoff: str = "",
-        review_advisors: Any | None = None,
-        permission_profile: str = "research",
         trace_recorder: Any = None,
         run_id: str = "",
         tools: Any | None = None,
@@ -115,18 +111,16 @@ class ResearchIteration:
         managed_outputs: Any = None,
         **_ignored: Any,
     ) -> None:
+        # 薄适配：形状兼容旧调用（含 codec 探针字段），行为一律走生产
+        # ToolSpec 校验 + ResearchTools 执行，不维护第二份转换/重试/修复提示。
         self.provider = provider
         self.search = search
         self.store = store
         self.max_turns = max(1, int(max_turns or 8))
         self.codec = codec
-        self.should_stop = should_stop or (lambda: False)
-        self.diagnostics = diagnostics
         self.session_id = str(session_id or "")
         self.project = str(project or "")
         self.chat_handoff = str(chat_handoff or "")
-        self.review_advisors = review_advisors
-        self.permission_profile = str(permission_profile or "research")
         self.trace_recorder = trace_recorder
         self.run_id = str(run_id or "research-run")
         self.iteration_context = str(iteration_context or "")
@@ -166,6 +160,12 @@ class ResearchIteration:
         name = str(getattr(call, "name", "") or "").strip().lower()
         args = dict(getattr(call, "args", {}) or {})
         try:
+            # 生产校验优先：形状由 ToolSpec 唯一决定，无旧参数转换与换签名重试
+            from codey.toolchain.tool_spec import validate_args_against_spec as _spec_validate
+
+            spec_error = _spec_validate(name, args)
+            if spec_error:
+                return ResearchToolOutcome(model_text=f"ERROR: {spec_error}", ok=False)
             if name == "web_search":
                 text = tools.web_search(first_text_arg(args, "query"))
                 return ResearchToolOutcome(model_text=text, ok=not str(text or "").startswith("ERROR:"))
@@ -196,27 +196,10 @@ class ResearchIteration:
                     presentation=presentation,
                 )
             if name in {"knowledge_search", "knowledge_read", "knowledge_write", "knowledge_link", "source_search"}:
-                if name == "source_search" and "query" not in args:
-                    return ResearchToolOutcome(
-                        model_text="ERROR: source_search missing required arg 'query'", ok=False
-                    )
-                coerced_args = dict(args)
-                from codey.research.tool_contract import validate_tool_args
-
-                validated = validate_tool_args(name, dict(args))
-                if getattr(validated, "ok", False):
-                    coerced_args = dict(getattr(validated, "args", {}) or {})
-                else:
-                    return ResearchToolOutcome(
-                        model_text=f"ERROR: {getattr(validated, 'error', '') or f'{name} args invalid'}",
-                        ok=False,
-                    )
                 fn = getattr(tools, name, None)
                 if callable(fn):
-                    try:
-                        text = fn(**coerced_args) if coerced_args else fn()
-                    except TypeError:
-                        text = fn(coerced_args) if coerced_args else fn()
+                    # 生产签名：knowledge_write 取整包 dict，其余按 kwargs
+                    text = fn(args) if name == "knowledge_write" else (fn(**args) if args else fn())
                     text_str = str(text or "")
                     blocked = text_str.startswith(("NEEDS_OPEN:", "SKIPPED:"))
                     changed = name in {"knowledge_write", "knowledge_link"} and not text_str.startswith("ERROR:") and not blocked

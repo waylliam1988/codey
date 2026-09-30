@@ -56,9 +56,23 @@ class PlanExecutor:
         self.config = config or ResearchPipelineConfig()
         self.should_stop = should_stop or (lambda: False)
 
-    def execute(self, plan: ResearchPlan, tools: ResearchTools) -> PlanExecutionResult:
-        runtime = clone_research_tools(tools)
+    def execute(
+        self, plan: ResearchPlan, tools: ResearchTools, *, policy: object | None = None,
+    ) -> PlanExecutionResult:
         baseline_urls = _collect_baseline_urls(tools)
+        if policy is not None and not _policy_allows(policy, "web.read"):
+            return PlanExecutionResult(
+                queries_executed=(),
+                opened_sources=(),
+                previews=(),
+                fresh_source_urls=(),
+                fresh_source_count=0,
+                baseline_source_urls=tuple(sorted(baseline_urls)),
+                skipped_count=0,
+                stop_reason="policy_denied",
+                errors=("policy denied web.read for research plan execution",),
+            )
+        runtime = clone_research_tools(tools)
         state = _PlanExecutionState(
             queries=[],
             opened=[],
@@ -278,6 +292,16 @@ def _source_preview(query: str, source: dict, body: str, limit: int) -> str:
 
 def _safe_error(value: object) -> str:
     return clip(" ".join(str(value or "").split()), 180)
+
+
+def _policy_allows(policy: object, grant: str) -> bool:
+    allows = getattr(policy, "allows", None)
+    if not callable(allows):
+        return False
+    try:
+        return bool(allows(grant))
+    except Exception:
+        return False
 
 
 __all__ = [

@@ -100,7 +100,14 @@ class KernelEffectSink:
         audit = getattr(result, "audit", {}) if result is not None else {}
         managed = audit.get("managed_output", {}) if isinstance(audit, dict) else {}
         result_ref = str(managed.get("handle") or managed.get("path") or "")[:160] if isinstance(managed, dict) else ""
-        excerpt = str(getattr(result, "model_text", "") or "")[:500] if result is not None else ""
+        full_text = str(getattr(result, "model_text", "") or "") if result is not None else ""
+        excerpt = full_text[:500]
+        bounded_text = full_text[:8000]
+        resolved_exit: int | None = None
+        if isinstance(exit_code, int) and type(exit_code) is int:
+            resolved_exit = exit_code
+        elif isinstance(audit, dict) and type(audit.get("exit_code")) is int:
+            resolved_exit = audit.get("exit_code")
         self.mutations.settle_tool_effect(
             self.session_id, self.run_id,
             RuntimeEffectSettlement(
@@ -111,6 +118,8 @@ class KernelEffectSink:
                 replay_class=self._replay_classes.get(identity, ReplayClass.UNSAFE),
                 result_excerpt=excerpt,
                 result_ref=result_ref,
+                result_text=bounded_text,
+                exit_code=resolved_exit,
             ),
         )
 

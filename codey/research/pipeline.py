@@ -57,6 +57,7 @@ class EvidenceFollowupRunner(Protocol):
         initial_summary: str = "",
         max_context_chars: int = 8000,
         should_stop: Callable[[], bool] | None = None,
+        parent_policy: object | None = None,
     ) -> EvidenceFollowupResult:
         ...
 
@@ -116,6 +117,7 @@ class ResearchPipeline:
         config: ResearchPipelineConfig | None = None,
         ledger_event_sink: Callable[[EvidenceLedgerWriteResult], None] | None = None,
         research_changes_sink: Callable[..., None] | None = None,
+        policy: object | None = None,
     ) -> None:
         self.context = context
         self.run_iteration = run_iteration
@@ -125,6 +127,8 @@ class ResearchPipeline:
         self.config = config or ResearchPipelineConfig()
         self.ledger_event_sink = ledger_event_sink
         self.research_changes_sink = research_changes_sink
+        # 原任务授权：补研究与合成均不得超越此边界
+        self.policy = policy
 
     def run(self) -> ResearchPipelineResult:
         search = self.search_factory()
@@ -198,6 +202,34 @@ class ResearchPipeline:
                 with contextlib.suppress(Exception):
                     close()
 
+    def _execute_plan(self, executor: PlanExecutor, plan: ResearchPlan, staged_tools: ResearchTools) -> PlanExecutionResult:
+        try:
+            return executor.execute(plan, staged_tools, policy=self.policy)
+        except TypeError as exc:
+            if "policy" not in str(exc):
+                raise
+            return executor.execute(plan, staged_tools)
+
+    def _run_followup(self, staged_tools: ResearchTools, plan: ResearchPlan,
+                      material: PlanExecutionResult, best: ResearchRunResult) -> EvidenceFollowupResult:
+        assert self.evidence_followup_runner is not None
+        try:
+            return self.evidence_followup_runner(
+                tools=staged_tools, plan=plan, material=material,
+                question=self.context.question, initial_summary=best.summary,
+                max_context_chars=self.config.max_followup_context_chars,
+                should_stop=self.context.should_stop, parent_policy=self.policy,
+            )
+        except TypeError as exc:
+            if "parent_policy" not in str(exc):
+                raise
+            return self.evidence_followup_runner(
+                tools=staged_tools, plan=plan, material=material,
+                question=self.context.question, initial_summary=best.summary,
+                max_context_chars=self.config.max_followup_context_chars,
+                should_stop=self.context.should_stop,
+            )
+
     def _drive_followup(
         self,
         *,
@@ -245,7 +277,7 @@ class ResearchPipeline:
                 should_stop=self.context.should_stop,
             )
             try:
-                material = executor.execute(plan, staged_tools)
+                material = self._execute_plan(executor, plan, staged_tools)
             except cancellation.TaskCancelled:
                 raise
             except Exception:
@@ -257,15 +289,7 @@ class ResearchPipeline:
             if not material.has_new_material:
                 break
             try:
-                followup_result = self.evidence_followup_runner(
-                    tools=staged_tools,
-                    plan=plan,
-                    material=material,
-                    question=self.context.question,
-                    initial_summary=best.summary,
-                    max_context_chars=self.config.max_followup_context_chars,
-                    should_stop=self.context.should_stop,
-                )
+                followup_result = self._run_followup(staged_tools, plan, material, best)
             except cancellation.TaskCancelled:
                 raise
             except Exception:

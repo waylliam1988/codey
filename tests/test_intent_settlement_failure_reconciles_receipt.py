@@ -43,7 +43,7 @@ class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
             def has_unsettled(self, _identity: str) -> bool:
                 return True
 
-            def settle(self, _identity: str, _ok: bool) -> None:
+            def settle(self, _identity: str, _ok: bool, *, result=None, exit_code=None) -> None:
                 raise AssertionError("must not settle during guard check")
 
             def begin_turn(self, _items, **_kwargs) -> None:
@@ -95,7 +95,7 @@ class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
             def begin_turn(self, _items, **_kwargs) -> None:
                 pass
 
-            def settle(self, _identity: str, _ok: bool) -> None:
+            def settle(self, _identity: str, _ok: bool, *, result=None, exit_code=None) -> None:
                 self.settle_calls += 1
                 raise RuntimeError("intent store boom")
 
@@ -126,7 +126,7 @@ class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
             def begin_turn(self, _items, **_kwargs) -> None:
                 pass
 
-            def settle(self, _identity: str, _ok: bool) -> None:
+            def settle(self, _identity: str, _ok: bool, *, result=None, exit_code=None) -> None:
                 pass
 
         results = execute_turn(

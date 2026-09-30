@@ -2428,7 +2428,9 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertFalse(outcome.ok)
         self.assertEqual(search.queries, [])
-        self.assertEqual(outcome.model_text, "ERROR: web_search needs a non-empty query")
+        # 薄适配经生产 ToolSpec 校验：缺规范 query 参数即拒绝（不调用搜索适配器）
+        self.assertIn("ERROR: web_search", outcome.model_text)
+        self.assertIn("query", outcome.model_text)
 
     def test_source_search_requires_canonical_query_arg(self) -> None:
         url = "https://example.com/helium"

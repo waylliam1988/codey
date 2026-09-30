@@ -462,11 +462,28 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
         return [row] if row is not None else []
 
 
-def _research_checks(session: Any, done_text: str, context: Any = None) -> list[CompletionCheck]:
+def source_requirement_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
+    """普通联网任务的来源要求：只检查任务要求的来源是否实际打开。"""
     policy = getattr(session, "policy", None)
-    strict = bool(getattr(policy, "strict_research", False))
-    source_required = bool(getattr(policy, "sources_open_required", False))
-    if not strict and not source_required:
+    if not bool(getattr(policy, "sources_open_required", False)):
+        return []
+    if context is not None:
+        single = _ledger_source_only(session, context)
+        if single is not None:
+            return single
+    opened = set(getattr(session, "opened_sources", set()) or set())
+    row = completion_check(
+        "research_sources_opened",
+        CHECK_PASS if opened else CHECK_NOT_RUN,
+        "" if opened else "research_source_not_opened",
+    )
+    return [row] if row is not None else []
+
+
+def strict_research_checks(session: Any, done_text: str, context: Any = None) -> list[CompletionCheck]:
+    """严格 Research 专属：证据归档、报告与研究质量（普通任务不调用）。"""
+    policy = getattr(session, "policy", None)
+    if not bool(getattr(policy, "strict_research", False)):
         return []
     if context is not None:
         real = _ledger_checks(session, done_text, context)
@@ -499,6 +516,43 @@ def _research_checks(session: Any, done_text: str, context: Any = None) -> list[
     if row is not None:
         rows.append(row)
     return rows
+
+
+def _research_checks(session: Any, done_text: str, context: Any = None) -> list[CompletionCheck]:
+    rows: list[CompletionCheck] = []
+    rows.extend(source_requirement_checks(session, context))
+    rows.extend(strict_research_checks(session, done_text, context))
+    # 去重：同一 check_id 保留首次（调用方还会再去重）
+    seen: set[str] = set()
+    deduped: list[CompletionCheck] = []
+    for row in rows:
+        try:
+            cid = str(getattr(row, "check_id", "") or "")
+        except Exception:
+            continue
+        if cid in seen:
+            continue
+        seen.add(cid)
+        deduped.append(row)
+    return deduped
+
+
+def _ledger_source_only(session: Any, context: Any) -> list[CompletionCheck] | None:
+    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    ledger = get("research_ledger")
+    if ledger is None:
+        return None
+    try:
+        finals = set(ledger.final_url_set())
+    except Exception as exc:
+        row = completion_check("research_ledger", CHECK_FAIL, f"ledger_error:{type(exc).__name__}")
+        return [row] if row is not None else []
+    row = completion_check(
+        "research_sources_opened",
+        CHECK_PASS if finals else CHECK_NOT_RUN,
+        "" if finals else "research_source_not_opened",
+    )
+    return [row] if row is not None else []
 
 
 def _ledger_checks(session: Any, done_text: str, context: Any) -> list[CompletionCheck] | None:
@@ -596,6 +650,37 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
         if row is not None:
             rows.append(row)
     return rows
+
+
+def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
+    """最终收据绑定的实际任务引用：run 身份 + 结果引用（refs only）。"""
+    refs: list[str] = []
+    try:
+        get = (lambda k: context.get(k)) if isinstance(context, dict) else (lambda k: getattr(context, k, None)) if context is not None else (lambda k: None)
+        run_id = str(get("run_id") or "")[:80] if context is not None else ""
+        if run_id:
+            refs.append(f"run:{run_id}")
+    except Exception:
+        pass
+    try:
+        edited = dict(getattr(session, "edited_files", {}) or {})
+        for path in sorted(str(k)[:120] for k in edited)[:8]:
+            refs.append(f"edit:{path}")
+    except Exception:
+        pass
+    try:
+        for url in sorted(str(u)[:160] for u in (getattr(session, "opened_sources", set()) or set()))[:8]:
+            refs.append(f"source:{url}")
+    except Exception:
+        pass
+    try:
+        verifs = list(getattr(session, "verifications", ()) or [])[-4:]
+        for item in verifs:
+            if isinstance(item, dict):
+                refs.append(f"verify:{str(item.get('command', '') or '')[:80]}:{item.get('exit_code', '?')}")
+    except Exception:
+        pass
+    return tuple(refs[:12])
 
 
 def _ledger_citable_urls(ledger: Any, finals: set[str]) -> list[str]:
@@ -738,13 +823,7 @@ def _finalize_research_text(session: Any, text: str, context: Any) -> str:
     return finalized.text.strip()
 
 
-def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
-    text = str(done_text or "").strip()
-    text = _finalize_research_text(session, text, context)
-    checks: list[CompletionCheck] = []
-    checks.extend(_coding_checks(session, context))
-    checks.extend(_research_checks(session, text, context))
-    profile = _session_profile(session)
+def _collect_provider_checks(session: Any, profile: str, checks: list[CompletionCheck]) -> None:
     for key, (provider, profiles) in list(_PROVIDERS.items()):
         if profiles is not None and profile not in profiles:
             continue
@@ -763,6 +842,9 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
         for row in produced:
             if isinstance(row, CompletionCheck):
                 checks.append(row)
+
+
+def _dedupe_checks(checks: list[CompletionCheck]) -> list[CompletionCheck]:
     seen: set[tuple[str, str]] = set()
     deduped: list[CompletionCheck] = []
     for row in checks:
@@ -771,15 +853,49 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
             continue
         seen.add(key)
         deduped.append(row)
+    return deduped
+
+
+def _contract_subject(session: Any, profile: str, context: Any) -> str:
+    run_id = ""
+    task_ref = ""
+    try:
+        get = (lambda k: context.get(k)) if isinstance(context, dict) else (lambda k: getattr(context, k, None))
+        run_id = str(get("run_id") or "")[:80]
+        task_ref = str(get("task") or get("question") or getattr(session, "task_text", "") or "")[:120]
+    except Exception:
+        pass
+    if run_id:
+        return f"run:{run_id}:task:{profile or 'task'}"
+    if task_ref:
+        try:
+            from codey.utils.refs import digest_text as _digest
+
+            return f"task:{profile or 'task'}:{_digest(task_ref)[:16]}"
+        except Exception:
+            return f"task:{profile or 'task'}"
+    return f"task:{profile or 'task'}"
+
+
+def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
+    text = str(done_text or "").strip()
+    text = _finalize_research_text(session, text, context)
+    checks: list[CompletionCheck] = []
+    checks.extend(_coding_checks(session, context))
+    checks.extend(_research_checks(session, text, context))
+    profile = _session_profile(session)
+    _collect_provider_checks(session, profile, checks)
+    deduped = _dedupe_checks(checks)
     # Task-declared required checks gate before the contract: the task entry
     # must prove its own checks ran, not just any globally registered check.
     required_block = _required_checks_verdict(session, deduped)
     if required_block is not None:
         return required_block
     domain = _domain_for_session(session)
-    subject = f"task:{profile or 'task'}"
+    subject = _contract_subject(session, profile, context)
+    evidence_refs = _proof_evidence_refs(session, context)
     try:
-        contract = build_completion_contract(domain=domain, subject_ref=subject, checks=deduped)
+        contract = build_completion_contract(domain=domain, subject_ref=subject, checks=deduped, evidence_refs=evidence_refs)
     except Exception as exc:
         return GateVerdict(
             complete=False,
@@ -823,5 +939,7 @@ __all__ = [
     "evaluate",
     "make_check",
     "register_completion_check_provider",
+    "source_requirement_checks",
+    "strict_research_checks",
     "unregister_completion_check_provider",
 ]

@@ -326,6 +326,14 @@ def run_entry_kernel(
             "mode": kind,
             "receipt": {"display": {"summary": reason[:2000]}},
         })
+    # 统一生命周期：fresh_chat 时开启新会话（与 chat/research 同一入口语义）
+    try:
+        if bool(getattr(frame, "fresh_chat", False)) and frame.provider is not None:
+            new_chat = getattr(frame.provider, "new_chat", None)
+            if callable(new_chat):
+                new_chat()
+    except Exception:
+        pass
     active_provider, intent_sink, stop_flag = _entry_provider_sink(frame, deps, kind)
     try:
         ignored = tuple(getattr(getattr(config_result, "config", None), "ignored_paths", ()) or ())
@@ -390,13 +398,38 @@ def run_entry_kernel(
         frame.entry_research_tools = research_tools
     except Exception:
         pass
+    # 统一生命周期收口：同一会话视图内记录本轮交换，供后续复核与审计
+    import contextlib as _contextlib
+
+    with _contextlib.suppress(Exception):
+        frame.conversation.begin_window(frame.provider_id, kind, frame.project_text)
+    with _contextlib.suppress(Exception):
+        from dataclasses import replace as _replace2
+
+        summary_text = str(result.summary or "")
+        frame.conversation.record_exchange(
+            execution_task(request),
+            summary_text,
+            _replace2(
+                frame.conversation.snapshot,
+                mode=kind,
+                goal=request.task,
+                project=frame.project_text,
+                provider_id=frame.provider_id,
+                blocker="" if result.stop_reason == "done" else summary_text,
+                latest_user=request.task,
+                latest_reply=summary_text,
+                summary=summary_text,
+            ),
+        )
     summary = str(result.summary or "")
     receipt = {"display": {"summary": summary[:2000]}}
     proof = getattr(result, "proof", None)
     if proof is not None:
         to_payload = getattr(proof, "to_payload", None)
         if callable(to_payload):
-            receipt["completion_proof"] = to_payload()
+            with _contextlib.suppress(Exception):
+                receipt["completion_proof"] = to_payload()
     return ModeOutcome({
         "type": "task_done",
         "run_id": frame.run_id,

@@ -769,7 +769,7 @@ def test_kernel_records_intent_before_project_tool_execution(tmp_path) -> None:
         def has_unsettled(self, _identity):
             return False
 
-        def settle(self, _identity, _ok):
+        def settle(self, _identity, _ok, *, result=None, exit_code=None):
             observed.append("settle")
 
     class Provider:

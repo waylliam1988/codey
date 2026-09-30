@@ -2,6 +2,63 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Close Research auth bypass, settled recovery, and frozen snapshots (no release)
+
+- TDD red-first locks (8 new files, all failed before, pass after):
+  `test_research_system_actions_require_task_policy`,
+  `test_recovery_delivers_settled_result`,
+  `test_completion_source_vs_strict_research`,
+  `test_turn_snapshot_no_global_cache`,
+  `test_tool_spec_generic_validation`,
+  `test_native_termination_closes_all_ids`,
+  `test_native_done_full_kernel_receipt`,
+  `test_entry_auth_tightening`.
+- P1 authorization: `PlanExecutor.execute(..., policy)` denies `web.read`-less
+  tasks without touching the search adapter; `_persist_synthesis(..., policy)`
+  denies `knowledge.write`-less tasks with an explicit denial event and
+  `knowledge.link`-gated linking; `run_evidence_followup(..., parent_policy)`
+  inherits only `parent ∩ {control, knowledge.write}`; `ResearchPipeline`
+  carries the parent policy into plan execution and follow-up.
+- P1 recovery: `RuntimeEffectSettlement` persists `exit_code` and bounded
+  `result_text` (8000) alongside excerpt/ref; `KernelEffectSink.settle`
+  records both; `rebuild_settled_tool_result`/`_rebuilt_settled_outcome`
+  redeliver settled originals without re-execution; pending-only safe reads
+  settle once as new observations; old empty settlements fall back to one
+  whitelisted replay without duplicate settlement.
+- P1 completion: split `source_requirement_checks` (ordinary web tasks, only
+  `research_sources_opened`) from `strict_research_checks` (strict only,
+  evidence/report/quality); ordinary open+edit+verify now completes.
+- P2 snapshots: deleted `_SNAPSHOT_TOOL_NAMES`; `TurnSnapshot` carries
+  `policy` plus deep-frozen `frozen_specs` (nested included); native schemas
+  rebuilt from the same frozen definitions; `normalize_turn(reply, snapshot)`
+  validates against the frozen map; registry changes take effect next turn;
+  `task_loop` threads one snapshot through send/parse/execute.
+- P2 schemas: generic validation strictly follows declared schemas; edit
+  `search/replace` aliases confined to `edit`; custom tools reject numeric
+  strings/bools, enforce `minimum`/`maximum`/`enum`, and reject unsupported
+  constraints at registration (`maximum` now enforced, not ignored).
+- P2 native: all termination paths share `_close_native_protocol_terminal`
+  (threshold answers the current id first); `ShellApprovalRequest` carries
+  `call_id` + `provider_id`; unified sink protocol (no `inspect.signature`
+  fallback); deleted duplicate `CODING/RESEARCH_TOOL_GRANTS` in favor of
+  `ToolSpec.grant`.
+- Entry: `derive_entry_auth` no longer treats broad `查一下` as web grant;
+  negation scoped to the same clause; `allow_web` grants capability without
+  forcing `sources_open_required`; explicit read-only tasks never set
+  `project_changes_required`; explicit `sources_open_required` flag honored.
+- Proof/lifecycle: completion subject binds the real `run_id` plus
+  edit/source/verify refs (distinct runs never share a proof id);
+  `run_entry_kernel` performs `new_chat` + `begin_window`/`record_exchange`
+  on the shared session; planning forwards entry policy/capabilities.
+- Tests/hygiene: real-kernel `done` receipt closes `followup-1` without
+  execution; AB prompt arms verified via captured provider prompts and
+  snapshot tool scope (fixed `_record_model_failure` masking); support
+  adapter thinned to shape-only with production validation/execution;
+  `build_tool_call_intent` no longer protected as production shape.
+- Final verification: `ruff check codey tests`, `git diff --check` clean;
+  full pytest **5879 passed, 10 skipped, 1471 subtests passed in 364.92s
+  (0:06:04)**. No release or version bump.
+
 ## Unreleased - Unified entry authorization and durable task proof (no release)
 
 - Unified task entry authorization and completion requirements across project,

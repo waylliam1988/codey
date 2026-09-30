@@ -40,15 +40,22 @@ class ShellApprovalRequest:
     cwd: str
     command: str
     deferred_calls: tuple[DeferredToolCall, ...] = ()
+    call_id: str = ""
+    provider_id: str = ""
 
     def to_payload(self) -> dict[str, object]:
         deferred = tuple(self.deferred_calls[:MAX_DEFERRED_TOOL_CALLS])
-        return {
+        payload: dict[str, object] = {
             "cwd": _bounded_text(self.cwd or ".", MAX_DEFERRED_TEXT_CHARS),
             **shell_command_payload(self.command),
             "deferred_tool_count": len(self.deferred_calls),
             "deferred_tool_calls": [item.to_payload() for item in deferred],
         }
+        if str(self.call_id or "").strip():
+            payload["call_id"] = str(self.call_id or "").strip()[:80]
+        if str(self.provider_id or "").strip():
+            payload["provider_id"] = str(self.provider_id or "").strip()[:80]
+        return payload
 
 
 def deferred_tool_call_from_call(call: ToolCall, *, tool_index: int) -> DeferredToolCall:

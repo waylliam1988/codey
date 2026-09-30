@@ -201,6 +201,10 @@ def _try_replay_safe_tool(
         status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
         error_code = str(outcome.error_code or ("" if outcome.ok else "error"))[:80]
         if settle:
+            # 新读取作为新的观察结算（含完整有界结果与退出码），不冒充旧结果
+            full = str(getattr(outcome, "model_text", "") or "")
+            exit_code = getattr(outcome, "exit_code", None)
+            exit_code = exit_code if type(exit_code) is int else None
             mutations.settle_tool_effect(
                 session_id,
                 run_id,
@@ -215,6 +219,9 @@ def _try_replay_safe_tool(
                     replay_class=ReplayClass.SAFE,
                     replay_count=1,
                     replayed_from_effect_id=candidate.effect_id,
+                    result_excerpt=full[:500],
+                    result_text=full[:8000],
+                    exit_code=exit_code,
                 ),
             )
         return RecoveredToolOutcome(
@@ -235,6 +242,88 @@ def _try_replay_safe_tool(
             getattr(getattr(candidate, "call", None), "name", ""),
             type(exc).__name__[:40],
         )
+        return None
+
+
+def rebuild_settled_tool_result(projection: Any, call: Any) -> Any | None:
+    """从已结算原结果重建 ToolResult，不重新执行（原收据优先）。
+
+    短结果用有界完整 result_text；长结果用受管引用（当前回退到 excerpt）。
+    返回 None 表示无法重建（调用者 fail-closed）。
+    """
+    try:
+        from codey.runtime.core.models import ToolResult as _ToolResult
+    except Exception:
+        return None
+    try:
+        st = getattr(projection, "settlement", None)
+        if st is None:
+            return None
+        text = str(getattr(st, "result_text", "") or getattr(st, "result_excerpt", "") or "")
+        if not text and getattr(st, "result_ref", ""):
+            text = str(getattr(st, "result_excerpt", "") or "")
+        audit: dict[str, object] = {}
+        exit_code = getattr(st, "exit_code", None)
+        if type(exit_code) is int:
+            audit["exit_code"] = exit_code
+        ref = str(getattr(st, "result_ref", "") or "")
+        if ref:
+            audit["managed_output"] = {"handle": ref}
+        status = str(getattr(st, "status", "") or "")
+        if status != SETTLEMENT_STATUS_OK:
+            # 原失败如实交付为错误，不冒充成功
+            return _ToolResult(call=call, model_text=text or f"ERROR: {getattr(st, 'error_code', '') or 'tool_error'}", audit=audit)
+        return _ToolResult(call=call, model_text=text, audit=audit)
+    except Exception:
+        return None
+
+
+def _settlement_has_reconstructable_result(st: Any) -> bool:
+    try:
+        text = str(getattr(st, "result_text", "") or getattr(st, "result_excerpt", "") or "")
+        ref = str(getattr(st, "result_ref", "") or "")
+        return bool(text.strip() or ref.strip())
+    except Exception:
+        return False
+
+
+def _rebuilt_settled_outcome(
+    projection: Any, candidate: Any,
+) -> RecoveredToolOutcome | None:
+    """已结算：直接交付原结果，不重新读文件/执行。
+
+    旧结算（无 result_text/excerpt/ref）无法重建时返回 None，调用者回退到
+    白名单安全重读一次（新观察，不冒充旧结果）。
+    """
+    try:
+        from codey.toolchain.runtime import ToolOutcome as _Outcome
+    except Exception:
+        return None
+    try:
+        st = getattr(projection, "settlement", None)
+        if st is None or not _settlement_has_reconstructable_result(st):
+            return None
+        text = str(getattr(st, "result_text", "") or getattr(st, "result_excerpt", "") or "")
+        if not text and getattr(st, "result_ref", ""):
+            text = str(getattr(st, "result_excerpt", "") or "")
+        exit_code = getattr(st, "exit_code", None)
+        exit_code = exit_code if type(exit_code) is int else None
+        ok = str(getattr(st, "status", "") or "") == SETTLEMENT_STATUS_OK
+        audit: dict[str, object] = {}
+        if exit_code is not None:
+            audit["exit_code"] = exit_code
+        ref = str(getattr(st, "result_ref", "") or "")
+        if ref:
+            audit["managed_output"] = {"handle": ref}
+        outcome = _Outcome(text, ok, audit=audit, exit_code=exit_code)
+        return RecoveredToolOutcome(
+            call=candidate.call,
+            outcome=outcome,
+            turn=candidate.turn,
+            tool_index=candidate.tool_index,
+            effect_id=candidate.effect_id,
+        )
+    except Exception:
         return None
 
 
@@ -274,6 +363,20 @@ def _replay_safe_tools_for_action(
         if projection is None:
             return ResumeRecoveryResult(ok=False)
         candidate = candidate_from_intent(projection.intent)
+        was_settled = bool(projection.is_settled)
+        if was_settled:
+            # 已结算原结果优先：直接交付，不重新执行（新读取不得冒充旧结果）。
+            # 旧结算无可重建结果时回退到白名单安全重读一次（新观察，不重复结算）。
+            recovered = _rebuilt_settled_outcome(projection, candidate)
+            if recovered is not None:
+                # 已结算不再重复 settle（幂等），仅记录交付恢复
+                recovered_outcomes.append(recovered)
+                recovered_effect_ids.append(effect_id)
+                if recovered.call.name == "read":
+                    read_count += 1
+                else:
+                    lookup_count += 1
+                continue
         recovered = _try_replay_safe_tool(
             mutations,
             candidate,
@@ -282,7 +385,7 @@ def _replay_safe_tools_for_action(
             project_path=project_path,
             profile_name=profile_name,
             tool_fns=DEFAULT_TOOL_FNS,
-            settle=projection.is_pending,
+            settle=not was_settled,
         )
         if recovered is None:
             return ResumeRecoveryResult(ok=False)
@@ -490,6 +593,7 @@ def rebuilt_policy_from_log(
 __all__ = [
     "ResumeRecoveryResult",
     "delivered_from_frame",
+    "rebuild_settled_tool_result",
     "rebuilt_policy_from_log",
     "record_entry_policy",
     "recover_effects_for_resume",

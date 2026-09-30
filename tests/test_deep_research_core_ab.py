@@ -30,6 +30,59 @@ def test_deep_research_ab_prompt_arms_are_isolated() -> None:
     assert plan.calls
     assert plan.calls[0].name == "source_search"
 
+    # 分组必须实际送达模型：捕获 provider 记录的真实 prompt，而非仅 codec 文本
+    with tempfile.TemporaryDirectory() as td:
+        store = KnowledgeStore(Path(td))
+        try:
+            from tests.manual.deep_research_core_ab import FixtureSearchProvider, ProbeResearchIteration
+
+            case = ab.CASES[0]
+
+            class _CaptureProvider:
+                name = "capture"
+                location = ""
+
+                def __init__(self):
+                    self.sent: list[str] = []
+
+                def new_chat(self, timeout=None):
+                    return None
+
+                def send(self, message, timeout=None):
+                    self.sent.append(str(message or ""))
+                    return '{"tool":"done","args":{"summary":"## 结论\\n done \\n\\n## 来源\\n[1] x - https://example.com"}}'
+
+                def close(self):
+                    return None
+
+            for arm, must_contain, must_not_contain in (
+                ("baseline", None, "Deep Research Core experimental guidance"),
+                ("deep_core", "Deep Research Core experimental guidance", None),
+            ):
+                cap = _CaptureProvider()
+                probe = ProbeResearchIteration(
+                    cap, FixtureSearchProvider(case), store,
+                    arm=arm,
+                    max_turns=1,
+                )
+                list(probe.run(case.question))
+                first_prompt = probe.sent_messages[0] if probe.sent_messages else ""
+                if must_contain is not None:
+                    assert must_contain in first_prompt, f"{arm} 分组指导未实际送达模型"
+                if must_not_contain is not None:
+                    assert must_not_contain not in first_prompt, f"{arm} 不应包含 deep_core 指导"
+            # 工具范围经实际快照策略配置：同一 research 策略下可见工具一致，不由 codec 控制
+            from codey.operations.kernel_protocol import build_turn_snapshot
+            from codey.operations.task_session import TaskSession
+            from codey.policies.task_policy import TaskPolicy
+
+            policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link"}))
+            sess = TaskSession(policy=policy, task_kind="research", project="", max_turns=2, task_text="q")
+            snap = build_turn_snapshot(sess, native=False)
+            assert "web_search" in snap.tool_names
+        finally:
+            store.close()
+
 
 def test_deep_research_ab_profile_defaults_keep_live_probe_small() -> None:
     cheap_cases = ab._selected_cases([], profile="cheap")

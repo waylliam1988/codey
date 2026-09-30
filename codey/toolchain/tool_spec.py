@@ -153,6 +153,79 @@ def _all_specs() -> dict[str, ToolSpec]:
     return specs
 
 
+def _allowed_schema_keys(kind: str) -> set[str]:
+    if kind in {"integer", "number"}:
+        return {"type", "minimum", "maximum", "enum"}
+    if kind == "string":
+        return {"type", "enum"}
+    if kind == "array":
+        return {"type", "items", "enum"}
+    if kind == "object":
+        return {"type", "properties", "required", "additionalProperties", "enum"}
+    if kind == "boolean":
+        return {"type", "enum"}
+    return {"type"}
+
+
+def _valid_schema_bounds(kind: str, schema: dict) -> bool:
+    for bound_key in ("minimum", "maximum"):
+        if bound_key not in schema:
+            continue
+        if kind not in {"integer", "number"}:
+            return False
+        bound = schema[bound_key]
+        if isinstance(bound, bool) or not isinstance(bound, (int, float)):
+            return False
+        try:
+            import math as _math
+            if isinstance(bound, float) and not _math.isfinite(bound):
+                return False
+        except Exception:
+            return False
+    if "minimum" in schema and "maximum" in schema:
+        try:
+            if float(schema["minimum"]) > float(schema["maximum"]):
+                return False
+        except Exception:
+            return False
+    return True
+
+
+def _valid_schema_nested(kind: str, schema: dict) -> bool:
+    if kind == "array" and "items" in schema:
+        return _valid_custom_schema(schema["items"])
+    if kind != "object":
+        return True
+    props = schema.get("properties", {})
+    if "properties" in schema:
+        if not isinstance(props, dict):
+            return False
+        for _ps in props.values():
+            if not _valid_custom_schema(_ps):
+                return False
+    if "required" in schema and not isinstance(schema["required"], list):
+        return False
+    return not (
+        "additionalProperties" in schema
+        and not isinstance(schema["additionalProperties"], bool)
+    )
+
+
+def _valid_custom_schema(schema: object) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    kind = schema.get("type")
+    if kind not in {"string", "integer", "number", "boolean", "object", "array"}:
+        return False
+    if any(key not in _allowed_schema_keys(str(kind)) for key in schema):
+        return False
+    if not _valid_schema_bounds(str(kind), schema):
+        return False
+    if "enum" in schema and not isinstance(schema["enum"], list):
+        return False
+    return _valid_schema_nested(str(kind), schema)
+
+
 _SPECS: dict[str, ToolSpec] | None = None
 
 
@@ -185,21 +258,7 @@ def register_custom_tool(
     if grant_text not in KNOWN_TASK_GRANTS:
         return False
     def valid_schema(schema: object) -> bool:
-        if not isinstance(schema, dict):
-            return False
-        kind = schema.get("type")
-        if kind not in {"string", "integer", "number", "boolean", "object", "array"}:
-            return False
-        if kind == "array" and "items" in schema and not valid_schema(schema["items"]):
-            return False
-        return not (
-            "minimum" in schema
-            and (
-                kind not in {"integer", "number"}
-                or isinstance(schema["minimum"], bool)
-                or not isinstance(schema["minimum"], (int, float))
-            )
-        )
+        return _valid_custom_schema(schema)
     for parameter_name, schema in parameters:
         if not str(parameter_name or "").strip() or not valid_schema(schema):
             return False
@@ -367,19 +426,38 @@ def _spec_type_error(spec_name: str, key: str, want: str, got: object) -> str:
     return f"{spec_name} arg '{key}' must be {want} (got {got_name})"
 
 
-def _spec_want_and_minimum(schema: object) -> tuple[str, int | None]:
-    want, minimum = "", None
+def _spec_want_and_bounds(schema: object) -> tuple[str, int | float | None, int | float | None]:
+    want: str = ""
+    minimum: int | float | None = None
+    maximum: int | float | None = None
     try:
         if isinstance(schema, dict):
             want = str(schema.get("type", "") or "").strip().lower()
             if "minimum" in schema:
-                try:
-                    minimum = int(schema.get("minimum"))  # type: ignore[arg-type]
-                except Exception:
+                raw_min = schema.get("minimum")
+                if isinstance(raw_min, bool):
                     minimum = None
+                elif isinstance(raw_min, (int, float)):
+                    minimum = raw_min
+            if "maximum" in schema:
+                raw_max = schema.get("maximum")
+                if isinstance(raw_max, bool):
+                    maximum = None
+                elif isinstance(raw_max, (int, float)):
+                    maximum = raw_max
     except Exception:
-        want, minimum = "", None
-    return want, minimum
+        want, minimum, maximum = "", None, None
+    return want, minimum, maximum
+
+
+def _spec_want_and_minimum(schema: object) -> tuple[str, int | None]:
+    want, minimum, _maximum = _spec_want_and_bounds(schema)
+    if isinstance(minimum, float):
+        try:
+            minimum = int(minimum)
+        except Exception:
+            minimum = None
+    return want, minimum  # type: ignore[return-value]
 
 
 def _check_string_value(spec_name: str, key: str, value: Any) -> str:
@@ -388,7 +466,10 @@ def _check_string_value(spec_name: str, key: str, value: Any) -> str:
     return ""
 
 
-def _check_integer_value(spec_name: str, key: str, value: Any, minimum: int | None) -> str:
+def _check_integer_value(
+    spec_name: str, key: str, value: Any, minimum: int | float | None,
+    maximum: int | float | None = None, *, strict: bool = False,
+) -> str:
     if isinstance(value, bool):
         return _spec_type_error(spec_name, key, "integer", value)
     if isinstance(value, int):
@@ -403,6 +484,8 @@ def _check_integer_value(spec_name: str, key: str, value: Any, minimum: int | No
         except Exception:
             return _spec_type_error(spec_name, key, "integer", value)
     elif isinstance(value, str):
+        if strict:
+            return _spec_type_error(spec_name, key, "integer", value)
         text = value.strip()
         if not text or not text.isascii():
             return _spec_type_error(spec_name, key, "integer", value)
@@ -414,14 +497,28 @@ def _check_integer_value(spec_name: str, key: str, value: Any, minimum: int | No
         return _spec_type_error(spec_name, key, "integer", value)
     if minimum is not None:
         try:
-            if int(parsed) < int(minimum):
+            if float(parsed) < float(minimum):
                 return f"{spec_name} arg '{key}' must be >= {minimum}"
+        except Exception:
+            pass
+    if maximum is not None:
+        try:
+            if float(parsed) > float(maximum):
+                return f"{spec_name} arg '{key}' must be <= {maximum}"
         except Exception:
             pass
     return ""
 
 
-def _check_number_value(spec_name: str, key: str, value: Any) -> str:
+def _check_integer_value_strict(spec_name: str, key: str, value: Any, schema: object) -> str:
+    _, minimum, maximum = _spec_want_and_bounds(schema)
+    return _check_integer_value(spec_name, key, value, minimum, maximum, strict=True)
+
+
+def _check_number_value(
+    spec_name: str, key: str, value: Any, schema: object = None, *, strict: bool = False,
+) -> str:
+    _, minimum, maximum = _spec_want_and_bounds(schema) if isinstance(schema, dict) else ("number", None, None)
     if isinstance(value, bool):
         return _spec_type_error(spec_name, key, "number", value)
     if isinstance(value, (int, float)):
@@ -432,8 +529,18 @@ def _check_number_value(spec_name: str, key: str, value: Any) -> str:
                 return _spec_type_error(spec_name, key, "number", value)
         except Exception:
             return _spec_type_error(spec_name, key, "number", value)
+        try:
+            number = float(value)
+            if minimum is not None and number < float(minimum):
+                return f"{spec_name} arg '{key}' must be >= {minimum}"
+            if maximum is not None and number > float(maximum):
+                return f"{spec_name} arg '{key}' must be <= {maximum}"
+        except Exception:
+            pass
         return ""
     if isinstance(value, str):
+        if strict:
+            return _spec_type_error(spec_name, key, "number", value)
         text = value.strip()
         if not text:
             return _spec_type_error(spec_name, key, "number", value)
@@ -477,15 +584,23 @@ def _check_object_value(spec_name: str, key: str, schema: object, value: Any) ->
         required = schema.get("required", ())
         if isinstance(required, list):
             for required_key in required:
-                aliases = {"old_string": "search", "new_string": "replace"}
-                if required_key not in value and aliases.get(str(required_key)) not in value:
+                # 通用层不混入 edit 别名：仅 edit 自身的规范化入口可处理别名，
+                # 且处理后必须再次验证。此处严格按声明检查。
+                if str(spec_name or "").strip().lower() == "edit":
+                    aliases = {"old_string": "search", "new_string": "replace"}
+                    if required_key not in value and aliases.get(str(required_key)) not in value:
+                        return f"{spec_name} arg '{key}' missing required property '{required_key}'"
+                elif required_key not in value:
                     return f"{spec_name} arg '{key}' missing required property '{required_key}'"
         properties = schema.get("properties", {})
         if isinstance(properties, dict):
             for child_key, child_value in value.items():
-                canonical_child_key = {"search": "old_string", "replace": "new_string"}.get(
-                    str(child_key), str(child_key)
-                )
+                if str(spec_name or "").strip().lower() == "edit":
+                    canonical_child_key = {"search": "old_string", "replace": "new_string"}.get(
+                        str(child_key), str(child_key)
+                    )
+                else:
+                    canonical_child_key = str(child_key)
                 child_schema = properties.get(canonical_child_key)
                 if child_schema is None:
                     if schema.get("additionalProperties", True) is False:
@@ -498,8 +613,8 @@ def _check_object_value(spec_name: str, key: str, schema: object, value: Any) ->
 
 
 def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, value: Any) -> str:
-    """Full JSON-schema type check for one declared arg."""
-    want, minimum = _spec_want_and_minimum(schema)
+    """声明 schema 子集的类型检查（非 Full JSON-schema）。"""
+    want, minimum, maximum = _spec_want_and_bounds(schema)
     if not want:
         return ""
     if isinstance(schema, dict) and "enum" in schema:
@@ -509,15 +624,84 @@ def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, v
     if want == "string":
         return _check_string_value(spec_name, key, value)
     if want == "integer":
-        return _check_integer_value(spec_name, key, value, minimum)
+        return _check_integer_value(spec_name, key, value, minimum, maximum)
     if want == "number":
-        return _check_number_value(spec_name, key, value)
+        return _check_number_value(spec_name, key, value, schema)
     if want == "boolean":
         return _check_boolean_value(spec_name, key, value)
     if want == "array":
         return _check_array_value(spec_name, key, schema, value)
     if want == "object":
         return _check_object_value(spec_name, key, schema, value)
+    return ""
+
+
+def _strict_enum_error(spec_name: str, key: str, schema: object, value: Any) -> str:
+    if isinstance(schema, dict) and "enum" in schema:
+        enum = schema.get("enum")
+        if isinstance(enum, list) and value not in enum:
+            return f"{spec_name} arg '{key}' must be one of {enum!r}"
+    return ""
+
+
+def _strict_array_items(spec_name: str, key: str, schema: object, value: Any) -> str:
+    if not isinstance(value, list):
+        return _spec_type_error(spec_name, key, "array", value)
+    if not isinstance(schema, dict) or schema.get("items") is None:
+        return ""
+    for index, item in enumerate(value):
+        error = _strict_check_value_against_schema(spec_name, f"{key}[{index}]", schema["items"], item)
+        if error:
+            return error
+    return ""
+
+
+def _strict_object_props(spec_name: str, key: str, schema: object, value: Any) -> str:
+    if not isinstance(value, dict):
+        return _spec_type_error(spec_name, key, "object", value)
+    if not isinstance(schema, dict):
+        return ""
+    required = schema.get("required", ())
+    if isinstance(required, list):
+        for required_key in required:
+            if required_key not in value:
+                return f"{spec_name} arg '{key}' missing required property '{required_key}'"
+    properties = schema.get("properties", {})
+    if isinstance(properties, dict):
+        for child_key, child_value in value.items():
+            child_schema = properties.get(str(child_key))
+            if child_schema is None:
+                if schema.get("additionalProperties", True) is False:
+                    return f"{spec_name} arg '{key}' unexpected property '{child_key}'"
+                continue
+            error = _strict_check_value_against_schema(spec_name, f"{key}.{child_key}", child_schema, child_value)
+            if error:
+                return error
+    return ""
+
+
+def _strict_check_value_against_schema(spec_name: str, key: str, schema: object, value: Any) -> str:
+    """自定义工具的严格检查：类型必须与 schema 相符，无隐式转换，无别名。"""
+    want, minimum, maximum = _spec_want_and_bounds(schema)
+    if not want:
+        return ""
+    enum_error = _strict_enum_error(spec_name, key, schema, value)
+    if enum_error:
+        return enum_error
+    if want == "string":
+        return _check_string_value(spec_name, key, value)
+    if want == "integer":
+        return _check_integer_value(spec_name, key, value, minimum, maximum, strict=True)
+    if want == "number":
+        if isinstance(value, str):
+            return _spec_type_error(spec_name, key, "number", value)
+        return _check_number_value(spec_name, key, value, schema, strict=True)
+    if want == "boolean":
+        return _check_boolean_value(spec_name, key, value)
+    if want == "array":
+        return _strict_array_items(spec_name, key, schema, value)
+    if want == "object":
+        return _strict_object_props(spec_name, key, schema, value)
     return ""
 
 
@@ -653,6 +837,16 @@ def _validate_no_extra(spec: Any, declared: dict[str, object], is_builtin: bool,
 
 
 def _validate_types(spec: Any, declared: dict[str, object], is_builtin: bool, args: dict[str, Any]) -> str:
+    if not is_builtin:
+        for key, value in args.items():
+            skey = str(key)
+            schema = declared.get(skey)
+            if schema is None:
+                continue
+            error = _strict_check_value_against_schema(spec.name, skey, schema, value)
+            if error:
+                return error
+        return ""
     _alias_to_canonical = {
         "cwd": "path", "pattern": "query", "name": "symbol", "cmd": "command",
         "source_id": "url",
@@ -676,6 +870,22 @@ def _validate_types(spec: Any, declared: dict[str, object], is_builtin: bool, ar
         if error:
             return error
     return ""
+
+
+def validate_args_with_spec(spec: Any, args: dict[str, Any]) -> str:
+    """用给定冻结 spec 校验（快照本轮定义，不读 live 注册表）。"""
+    if spec is None:
+        return "unknown tool"
+    if not isinstance(args, dict):
+        return f"{getattr(spec, 'name', '?')} args must be an object"
+    declared, _, is_builtin = _declared_map(spec)
+    error = _validate_required_presence(spec, declared, is_builtin, args)
+    if error:
+        return error
+    error = _validate_no_extra(spec, declared, is_builtin, args)
+    if error:
+        return error
+    return _validate_types(spec, declared, is_builtin, args)
 
 
 def json_contract_text(policy: Any, *, controller_allowed: Any = None) -> str:
@@ -749,6 +959,7 @@ __all__ = [
     "tool_specs",
     "unregister_custom_tool",
     "validate_args_against_spec",
+    "validate_args_with_spec",
     "visible_tool_names",
     "visible_tool_names_for_snapshot",
 ]

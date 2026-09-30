@@ -24,17 +24,17 @@ class TurnSnapshot:
 
     Built once at round start; any build failure raises and the kernel
     terminates the turn as controller_failure (fail-closed), never a stale
-    fallback list. Carries the allowed tools plus both protocols' contracts
-    for the round.
+    fallback list. Carries the allowed tools, frozen tool definitions plus
+    both protocols' contracts for the round. The snapshot object贯穿发送、
+    解析与执行：注册表变化下一轮生效，本轮解析与执行共用同一冻结定义。
     """
 
     allowed: tuple[str, ...] | None
     contract_text: str
     native_tools: tuple[dict[str, Any], ...]
     tool_names: tuple[str, ...] = ()
-
-
-_SNAPSHOT_TOOL_NAMES: dict[tuple[int, tuple[str, ...]], tuple[object, tuple[str, ...]]] = {}
+    policy: Any = None
+    frozen_specs: tuple[Any, ...] = ()
 
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
@@ -73,6 +73,31 @@ def _native_tools_for_policy(policy: Any, controller_allowed: Any = None) -> lis
     return list(native_tools_for_snapshot(policy, controller_allowed))
 
 
+def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[Any, ...]:
+    """Deep-freeze本轮工具定义（含嵌套 schema），注册表变化下一轮生效。
+
+    调用方已算好本轮可见名单，此处不再重复调用 visible（避免每轮多次
+    计数，保证快照失败测试的“一次构建两次底层调用”语义）。
+    """
+    import copy as _copy
+
+    try:
+        from codey.toolchain.tool_spec import tool_specs as _all_specs
+    except Exception as exc:
+        raise RuntimeError(f"tool snapshot unavailable: {exc}") from exc
+    specs = _all_specs()
+    frozen: list[Any] = []
+    for name in names:
+        spec = specs.get(name)
+        if spec is None:
+            continue
+        try:
+            frozen.append(_copy.deepcopy(spec))
+        except Exception as exc:
+            raise RuntimeError(f"tool snapshot freeze failed for {name}: {exc}") from exc
+    return tuple(frozen)
+
+
 def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     """Build the round's authoritative snapshot; raises on failure."""
     # Fail closed: a snapshot computation failure never encodes as None
@@ -86,14 +111,39 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
     names = tuple(visible_tool_names_for_snapshot(session.policy, allowed))
-    snapshot = TurnSnapshot(
+    frozen = _frozen_specs_for_names(names)
+    # native schemas 必须与同一冻结定义同源，避免 schema 与校验漂移
+    if native:
+        try:
+            from codey.toolchain.tool_spec import _schema_for_spec as _schema_fn
+            rebuilt = []
+            by_name = {getattr(s, "name", ""): s for s in frozen}
+            for name in names:
+                if name in {"parallel", "read_files"}:
+                    continue
+                spec = by_name.get(name)
+                if spec is None:
+                    continue
+                rebuilt.append({
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": getattr(spec, "description", "") or getattr(spec, "json_example", ""),
+                        "parameters": _schema_fn(spec),
+                    },
+                })
+            rebuilt.sort(key=lambda item: str(((item.get("function") or {}).get("name")) or ""))
+            native_now = rebuilt
+        except Exception:
+            pass
+    return TurnSnapshot(
         allowed=allowed,
         contract_text=str(contract_now or ""),
         native_tools=tuple(native_now),
         tool_names=names,
+        policy=session.policy,
+        frozen_specs=frozen,
     )
-    _SNAPSHOT_TOOL_NAMES[(id(session.policy), tuple(allowed or ()))] = (session.policy, names)
-    return snapshot
 
 
 _CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS or {})
@@ -294,63 +344,86 @@ def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, 
     return {key: value for key, value in result.args.items() if key in args}, ""
 
 
-def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
+def _frozen_map(snapshot: Any | None) -> dict[str, Any] | None:
+    if snapshot is None:
+        return None
+    try:
+        frozen = getattr(snapshot, "frozen_specs", ()) or ()
+    except Exception:
+        return None
+    mapping: dict[str, Any] = {}
+    for spec in frozen:
+        try:
+            mapping[str(getattr(spec, "name", "") or "").strip().lower()] = spec
+        except Exception:
+            continue
+    return mapping or None
+
+
+def _lookup_spec(name: str, frozen_specs: dict[str, Any] | None) -> tuple[Any, str]:
+    try:
+        if frozen_specs is not None:
+            spec = frozen_specs.get(name)
+            return spec, (spec.executor if spec is not None else "")
+        from codey.toolchain.tool_spec import spec_for_tool as _spec_for
+
+        spec = _spec_for(name)
+        return spec, (spec.executor if spec is not None else "")
+    except Exception:
+        return None, ""
+
+
+def _spec_error_for(name: str, args: dict[str, Any], spec: Any, frozen_specs: dict[str, Any] | None) -> str:
+    payload = args if isinstance(args, dict) else {}
+    try:
+        if frozen_specs is not None:
+            from codey.toolchain.tool_spec import validate_args_with_spec as _frozen_validate
+
+            return _frozen_validate(spec, payload) or ""
+        from codey.toolchain.tool_spec import validate_args_against_spec as _live_validate
+
+        return _live_validate(name, payload) or ""
+    except Exception as exc:
+        detail = str(exc).strip()[:200] or type(exc).__name__
+        return f"{name} args invalid: spec validator failed ({detail})"
+
+
+def _validate_tool_args(
+    tool: str, args: dict[str, Any], *, frozen_specs: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], str]:
     name = _canonical_name(tool) or str(tool or "").strip().lower()
     # ToolSpec is the single authoritative definition: required-arg presence
     # is decided here so JSON/native schemas and validation cannot drift.
     # Project/research legacy validators are additional type-repair constraints
     # only; third-task (custom) tools pass on the generic spec alone.
-    try:
-        from codey.toolchain.tool_spec import spec_for_tool as _spec_for
-        from codey.toolchain.tool_spec import validate_args_against_spec
-    except Exception:
-        _spec_for = None  # type: ignore[assignment]
-        validate_args_against_spec = None  # type: ignore[assignment]
-    executor = ""
-    spec = None
-    if _spec_for is not None:
+    spec, executor = _lookup_spec(name, frozen_specs)
+    if spec is None:
+        return {}, f"unknown tool: {tool or '?'}"
+    spec_error = _spec_error_for(name, args if isinstance(args, dict) else {}, spec, frozen_specs)
+    if spec_error:
+        return {}, spec_error
+    if name == "done":
+        # ``done`` is a control tool with no runtime executor. Its
+        # canonical ToolSpec validation above is the complete contract.
+        summary = str(args.get("summary") or "")
         try:
-            spec = _spec_for(name)
-            executor = spec.executor if spec is not None else ""
-        except Exception:
-            executor = ""
-            spec = None
-        if spec is None:
-            return {}, f"unknown tool: {tool or '?'}"
-        if validate_args_against_spec is not None:
-            try:
-                spec_error = validate_args_against_spec(name, args if isinstance(args, dict) else {})
-            except Exception as exc:
-                # Fail closed: a broken validator never means "accept".
-                detail = str(exc).strip()[:200] or type(exc).__name__
-                return {}, f"{name} args invalid: spec validator failed ({detail})"
-            if spec_error:
-                return {}, spec_error
-        else:
-            # Spec validator unavailable: fail closed, never accept.
-            return {}, f"{name} args invalid: spec validator unavailable"
-        if name == "done":
-            # ``done`` is a control tool with no runtime executor. Its
-            # canonical ToolSpec validation above is the complete contract.
-            summary = str(args.get("summary") or "")
-            try:
-                nested = json.loads(summary)
-            except (ValueError, TypeError):
-                nested = None
-            if isinstance(nested, dict) and (nested.get("tool") or nested.get("name")):
-                return {}, "done summary must be the final user-facing answer, not another tool call"
-            from codey.research.tool_contract import validate_tool_args
+            nested = json.loads(summary)
+        except (ValueError, TypeError):
+            nested = None
+        if isinstance(nested, dict) and (nested.get("tool") or nested.get("name")):
+            return {}, "done summary must be the final user-facing answer, not another tool call"
+        from codey.research.tool_contract import validate_tool_args
 
-            validated_done = validate_tool_args("done", args)
-            return (dict(validated_done.args), "") if validated_done.ok else ({}, validated_done.error)
-        # Custom/third-task tools: generic spec validation is sufficient.
-        # They run via injected executors; no legacy coding/research repair.
-        if executor not in {"project", "source", "knowledge"}:
-            # Controller aliases always lower via research validation.
-            is_alias = name in set(_ALIAS_ARGS or {})
-            if is_alias or (name == "source_search" and isinstance(args, dict) and "source_id" in args):
-                return _validate_research_args(name, args if isinstance(args, dict) else {})
-            return dict(args) if isinstance(args, dict) else {}, ""
+        validated_done = validate_tool_args("done", args)
+        return (dict(validated_done.args), "") if validated_done.ok else ({}, validated_done.error)
+    # Custom/third-task tools: generic spec validation is sufficient.
+    # They run via injected executors; no legacy coding/research repair.
+    if executor not in {"project", "source", "knowledge"}:
+        # Controller aliases always lower via research validation.
+        is_alias = name in set(_ALIAS_ARGS or {})
+        if is_alias or (name == "source_search" and isinstance(args, dict) and "source_id" in args):
+            return _validate_research_args(name, args if isinstance(args, dict) else {})
+        return dict(args) if isinstance(args, dict) else {}, ""
     if name in _CONTROLLER_ALIASES or (isinstance(args, dict) and name == "source_search" and "source_id" in args):
         return _validate_research_args(name, args)
     if executor == "project":
@@ -427,6 +500,7 @@ def _plan_from_tool_objects(
     policy: Any,
     controller_allowed: set[str] | None,
     snapshot_names: tuple[str, ...] | None = None,
+    frozen_specs: dict[str, Any] | None = None,
 ) -> ToolPlan:
     items, batch_error = _lower_text_batches(items)
     if batch_error:
@@ -452,7 +526,7 @@ def _plan_from_tool_objects(
                 return _disallowed_plan(tool)
             if not _controller_allows("done", controller_allowed):
                 return _disallowed_plan(tool, controller=True)
-            validated, error = _validate_tool_args(tool, args)
+            validated, error = _validate_tool_args(tool, args, frozen_specs=frozen_specs)
             if error:
                 return _invalid_plan(error, tool=tool)
             text = str(validated.get("summary") or "").strip()
@@ -461,7 +535,7 @@ def _plan_from_tool_objects(
             return _disallowed_plan(tool)
         if not _controller_allows(tool, controller_allowed):
             return _disallowed_plan(tool, controller=True)
-        validated, error = _validate_tool_args(tool, args)
+        validated, error = _validate_tool_args(tool, args, frozen_specs=frozen_specs)
         if error:
             return _invalid_plan(error, tool=tool)
         if not call_id:
@@ -479,15 +553,23 @@ def _plan_from_tool_objects(
 def normalize_turn(
     reply: str | object,
     *,
-    policy: Any,
+    policy: Any = None,
     controller_allowed: tuple[str, ...] | list[str] | set[str] | None = None,
     snapshot_names: tuple[str, ...] | None = None,
+    snapshot: TurnSnapshot | None = None,
 ) -> ToolPlan:
-    allowed = None if controller_allowed is None else {str(n or "").strip().lower() for n in controller_allowed}
-    if snapshot_names is None:
-        stored = _SNAPSHOT_TOOL_NAMES.get((id(policy), tuple(controller_allowed or ())))
-        if stored is not None and stored[0] is policy:
-            snapshot_names = stored[1]
+    frozen: dict[str, Any] | None = None
+    if snapshot is not None:
+        try:
+            policy = getattr(snapshot, "policy", None) if policy is None else policy
+            allowed_raw = getattr(snapshot, "allowed", None)
+            allowed = None if allowed_raw is None else {str(n or "").strip().lower() for n in allowed_raw}
+            snapshot_names = tuple(getattr(snapshot, "tool_names", ()) or ())
+            frozen = _frozen_map(snapshot)
+        except Exception:
+            frozen = None
+    else:
+        allowed = None if controller_allowed is None else {str(n or "").strip().lower() for n in controller_allowed}
     tool_calls = getattr(reply, "tool_calls", None) if not isinstance(reply, str) else None
     if isinstance(reply, str) or tool_calls is None:
         text = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or "")
@@ -511,7 +593,7 @@ def normalize_turn(
                 f"send at most {MAX_NATIVE_CALLS_PER_TURN}",
                 kind="too_many_tools",
             )
-        return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed, snapshot_names=snapshot_names)
+        return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed, snapshot_names=snapshot_names, frozen_specs=frozen)
     calls = list(tool_calls or ())
     if len(calls) > MAX_NATIVE_CALLS_PER_TURN:
         return _invalid_plan(
@@ -532,7 +614,7 @@ def normalize_turn(
         return _invalid_plan("done must be the only call in a turn", tool="done", kind="too_many_tools")
     if not calls:
         text = str(getattr(reply, "text", "") or "")
-        return normalize_turn(text, policy=policy, controller_allowed=controller_allowed)
+        return normalize_turn(text, policy=policy, controller_allowed=controller_allowed, snapshot=snapshot)
     items = []
     for item in calls:
         name = str(getattr(item, "name", "") or "").strip().lower()
@@ -541,7 +623,7 @@ def normalize_turn(
         if not isinstance(args, dict):
             return _invalid_plan(f"{name} args must be an object", tool=name)
         items.append((name, dict(args), call_id))
-    return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed, snapshot_names=snapshot_names)
+    return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed, snapshot_names=snapshot_names, frozen_specs=frozen)
 
 
 __all__ = [

@@ -17,6 +17,20 @@ from codey.runtime.core.models import ToolCall
 from codey.utils.refs import clip
 
 
+def _subset_followup_policy(parent: Any | None) -> TaskPolicy:
+    """Follow-up 权限恒为父任务子集，绝不自行加入 knowledge.write。"""
+    if parent is None:
+        return TaskPolicy(grants=frozenset({"control", "knowledge.write"}))
+    try:
+        parent_grants = set(getattr(parent, "grants", frozenset()) or frozenset())
+    except Exception:
+        parent_grants = set()
+    grants = (parent_grants & {"control", "knowledge.write"}) | {"control"}
+    # control 恒保留；knowledge.write 仅当父任务拥有时继承
+    grants.discard("")
+    return TaskPolicy(grants=frozenset(g for g in grants if g in {"control", "knowledge.write"}))
+
+
 def run_evidence_followup(
     *,
     provider: Any,
@@ -33,6 +47,7 @@ def run_evidence_followup(
     round_index: int = 1,
     runtime_mutations: Any = None,
     on_event: Any = None,
+    parent_policy: Any | None = None,
 ) -> EvidenceFollowupResult:
     fresh_urls = tuple(getattr(material, "fresh_source_urls", ()) or ())
     if should_stop is not None and should_stop():
@@ -62,7 +77,7 @@ def run_evidence_followup(
             return str(result)
 
         session = TaskSession(
-            policy=TaskPolicy(grants=frozenset({"control", "knowledge.write"})),
+            policy=_subset_followup_policy(parent_policy),
             task_kind="evidence_followup", max_turns=1, task_text=prompt,
         )
         active_provider = provider

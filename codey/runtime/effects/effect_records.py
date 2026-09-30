@@ -110,8 +110,12 @@ _SETTLEMENT_PAYLOAD_KEYS = frozenset({
     "replayed_from_effect_id",
     "result_excerpt",
     "result_ref",
+    "result_text",
+    "exit_code",
     "created_at",
 })
+
+MAX_RESULT_TEXT_CHARS = 8000
 
 class RuntimeEffectError(Exception):
     """Base error for runtime effect violations."""
@@ -352,6 +356,8 @@ class RuntimeEffectSettlement:
     schema_version: int = SCHEMA_VERSION
     result_excerpt: str = ""
     result_ref: str = ""
+    result_text: str = ""
+    exit_code: int | None = None
 
     def __post_init__(self) -> None:
         if type(self.schema_version) is not int or self.schema_version != SCHEMA_VERSION:
@@ -367,6 +373,9 @@ class RuntimeEffectSettlement:
         _require_bounded_str(self.replayed_from_effect_id, "replayed_from_effect_id", MAX_EFFECT_ID_CHARS, allow_empty=True)
         _require_bounded_str(self.result_excerpt, "result_excerpt", 500, allow_empty=True)
         _require_bounded_str(self.result_ref, "result_ref", MAX_REF_CHARS, allow_empty=True)
+        _require_bounded_str(self.result_text, "result_text", MAX_RESULT_TEXT_CHARS, allow_empty=True)
+        if self.exit_code is not None and type(self.exit_code) is not int:
+            raise RuntimeEffectError("exit_code must be an integer or None")
         if self.replayed_from_effect_id and self.replayed_from_effect_id != self.effect_id:
             raise RuntimeEffectError(
                 f"replayed_from_effect_id '{self.replayed_from_effect_id}' must match effect_id '{self.effect_id}'"
@@ -404,6 +413,10 @@ class RuntimeEffectSettlement:
             payload["result_excerpt"] = self.result_excerpt
         if self.result_ref:
             payload["result_ref"] = self.result_ref
+        if self.result_text:
+            payload["result_text"] = self.result_text
+        if self.exit_code is not None:
+            payload["exit_code"] = self.exit_code
         return payload
 
     @classmethod
@@ -428,6 +441,11 @@ class RuntimeEffectSettlement:
         )
         result_excerpt = _require_bounded_str(payload.get("result_excerpt") or "", "result_excerpt", 500, allow_empty=True)
         result_ref = _require_bounded_str(payload.get("result_ref") or "", "result_ref", MAX_REF_CHARS, allow_empty=True)
+        result_text = _require_bounded_str(payload.get("result_text") or "", "result_text", MAX_RESULT_TEXT_CHARS, allow_empty=True)
+        raw_exit = payload.get("exit_code")
+        if raw_exit is not None and type(raw_exit) is not int:
+            raise RuntimeEffectError("exit_code must be an integer or None")
+        exit_code = raw_exit if type(raw_exit) is int else None
 
         return cls(
             effect_id=effect_id,
@@ -444,6 +462,8 @@ class RuntimeEffectSettlement:
             replayed_from_effect_id=replayed_from_effect_id,
             result_excerpt=result_excerpt,
             result_ref=result_ref,
+            result_text=result_text,
+            exit_code=exit_code,
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_SETTLEMENT,
             schema_version=SCHEMA_VERSION,
@@ -572,6 +592,8 @@ def prepare_settlement(
             and existing.replayed_from_effect_id == settlement.replayed_from_effect_id
             and existing.result_excerpt == settlement.result_excerpt
             and existing.result_ref == settlement.result_ref
+            and existing.result_text == settlement.result_text
+            and existing.exit_code == settlement.exit_code
         ):
             return existing
         raise RuntimeEffectError(f"effect already settled: {settlement.effect_id}")
@@ -590,6 +612,8 @@ def prepare_settlement(
         replayed_from_effect_id=settlement.replayed_from_effect_id,
         result_excerpt=settlement.result_excerpt,
         result_ref=settlement.result_ref,
+        result_text=settlement.result_text,
+        exit_code=settlement.exit_code,
         created_at=settlement.created_at or _now(),
     )
 
@@ -691,6 +715,8 @@ def effects_from_entries(
                     and existing.replayed_from_effect_id == new_settlement.replayed_from_effect_id
                     and existing.result_excerpt == new_settlement.result_excerpt
                     and existing.result_ref == new_settlement.result_ref
+                    and existing.result_text == new_settlement.result_text
+                    and existing.exit_code == new_settlement.exit_code
                 ):
                     continue
                 raise RuntimeEffectError(f"conflicting duplicate settlement in session log: {effect_id}")

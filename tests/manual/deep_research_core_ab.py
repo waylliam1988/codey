@@ -549,16 +549,18 @@ class ProbeResearchIteration(ResearchIteration):
             raise
         except Exception as exc:
             if self.trace is not None:
-                self.trace.record({
-                    "event": "send_error",
-                    "provider": self.provider_id,
-                    "case": self.case_name,
-                    "arm": self.arm,
-                    "send_index": len(self.sent_messages),
-                    "error": f"{type(exc).__name__}: {exc}",
-                    "message_preview": _clip(message, 800),
-                })
-            self._record_model_failure("send", exc)
+                import contextlib as _suppress
+
+                with _suppress.suppress(Exception):
+                    self.trace.record({
+                        "event": "send_error",
+                        "provider": self.provider_id,
+                        "case": self.case_name,
+                        "arm": self.arm,
+                        "send_index": len(self.sent_messages),
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "message_preview": _clip(message, 800),
+                    })
             raise
 
     def _dispatch(self, call, turn: int = 0, tool_index: int = 0):
@@ -570,8 +572,35 @@ class ProbeResearchIteration(ResearchIteration):
             ))
         return super()._dispatch(call, turn, tool_index)
 
+    def _arm_prompt_extension(self) -> str:
+        """实验分组必须实际送达模型：经真实 provider adapter 发送，不由被忽略的 codec 控制。"""
+        try:
+            codec = getattr(self, "codec", None)
+            if codec is not None and hasattr(codec, "system_prompt"):
+                full = str(codec.system_prompt() or "")
+                # baseline 即基础，其余 arm 的增量即分组扩展
+                base = str(ProbeJsonToolCodec("baseline").system_prompt() or "")
+                if self.arm != "baseline" and full.startswith(base):
+                    ext = full[len(base):].strip()
+                    if ext:
+                        return ext
+                elif self.arm != "baseline":
+                    return full.strip()
+        except Exception:
+            pass
+        if self.arm == "deep_core":
+            try:
+                return str(_DEEP_CORE_APPENDIX or "").strip()
+            except Exception:
+                return ""
+        return ""
+
     def run(self, question: str):
-        """Drive the production kernel while retaining probe-only telemetry."""
+        """Drive the production kernel while retaining probe-only telemetry.
+
+        分组隔离经实际发送的 prompt 与工具 schema 断言（见 test 文件），
+        工具范围经实际快照策略配置，不由 codec 控制。
+        """
 
         outer = self
 
@@ -597,6 +626,8 @@ class ProbeResearchIteration(ResearchIteration):
             "managed_outputs": None,
             "runtime_mutations": None,
         })()
+        arm_ext = self._arm_prompt_extension()
+        arm_context = "\n\n".join(x for x in (str(getattr(self, "iteration_context", "") or ""), arm_ext) if x)
         iteration = run_research_iteration(
             deps,
             provider=ProbeProvider(),
@@ -612,6 +643,7 @@ class ProbeResearchIteration(ResearchIteration):
             trace_recorder=self.trace,
             search=self.search,
             tools=self.tools,
+            iteration_context=arm_context,
         )
         self.tools = iteration.tools
         self._last_result = iteration.result

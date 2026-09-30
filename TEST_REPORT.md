@@ -1,5 +1,30 @@
 # Codey Test Report
 
+## Close Research auth bypass, settled recovery, and frozen snapshots (2026-09-30)
+
+- TDD red-first (8 new files, failed before, pass after):
+  `test_research_system_actions_require_task_policy` (4),
+  `test_recovery_delivers_settled_result` (2),
+  `test_completion_source_vs_strict_research` (3),
+  `test_turn_snapshot_no_global_cache` (4),
+  `test_tool_spec_generic_validation` (4),
+  `test_native_termination_closes_all_ids` (2),
+  `test_native_done_full_kernel_receipt` (1),
+  `test_entry_auth_tightening` (4). Names reflect the locked behavior.
+- Production fixes: Research plan/synthesis/follow-up honor the parent
+  `TaskSession` policy (no self-granted `knowledge.write`); settlements carry
+  `exit_code` + bounded `result_text` and recovery redelivers originals;
+  ordinary source checks split from strict Research; snapshots frozen per turn
+  with no global cache; generic schemas strict with `maximum` enforced;
+  native termination unified with approval `call_id`; entry auth tightened;
+  proofs bound to real `run_id`.
+- Prechecks: `python -m ruff check codey tests` clean,
+  `git diff --check` clean, targeted subsets green before the full run.
+- Final full run after all fixes:
+  `python -m pytest tests -q -p no:cacheprovider --tb=line`:
+  **5879 passed, 10 skipped, 1471 subtests passed in 364.92s (0:06:04)**.
+- No release, version bump, or release tag was made.
+
 ## Unified entry authorization, durable recovery, and frozen tool snapshots (2026-09-30)
 
 - TDD regressions were reproduced before fixes for route-based authorization

@@ -258,22 +258,13 @@ def execute_turn(
         with _contextlib.suppress(Exception):
             session._memory_results[identity] = result
         if intent_sink is not None:
-            settle_fn = intent_sink.settle
-            try:
-                import inspect
-
-                accepts_result = "result" in inspect.signature(settle_fn).parameters
-            except (TypeError, ValueError):
-                accepts_result = False
-            if accepts_result:
-                settle_fn(
-                    identity,
-                    ok if type(ok) is bool else False,
-                    result=result,
-                    exit_code=exit_code if isinstance(exit_code, int) else None,
-                )
-            else:
-                settle_fn(identity, ok if type(ok) is bool else False)
+            # 统一 sink 协议：生产 sink 一律接收 result/exit_code，无旧签名回退
+            intent_sink.settle(
+                identity,
+                ok if type(ok) is bool else False,
+                result=result,
+                exit_code=exit_code if isinstance(exit_code, int) else None,
+            )
 
     def reconcile_intent_only(identity: str, ok: bool) -> None:
         # Already-durable replay: never rewrite ``session.executed``, only
@@ -281,7 +272,7 @@ def execute_turn(
         # a second unsafe execution.
         if intent_sink is None:
             return
-        intent_sink.settle(identity, ok if type(ok) is bool else False)
+        intent_sink.settle(identity, ok if type(ok) is bool else False, result=None, exit_code=None)
 
     delegate = _build_delegate(
         session,

@@ -11,9 +11,23 @@ from codey.research.run_result import ResearchRunResult
 
 
 def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
-                       project: str, on_event: Callable[[object], None], open_questions: Any = ()) -> str:
+                       project: str, on_event: Callable[[object], None], open_questions: Any = (),
+                       policy: Any = None) -> str:
     if not summary or getattr(tools, "store", None) is None or getattr(tools, "changes", None) is None:
         return ""
+    if policy is not None:
+        allows = getattr(policy, "allows", None)
+        try:
+            permitted = bool(allows("knowledge.write")) if callable(allows) else False
+        except Exception:
+            permitted = False
+        if not permitted:
+            try:
+                from codey.runtime.observe.events import RunEvent as _DeniedEvent
+                on_event(_DeniedEvent.info("synthesis denied by task policy", names="policy_denied"))
+            except Exception:
+                pass
+            return ""
     from codey.knowledge.note import KnowledgeNote, clean_open_questions
     from codey.research.synthesis import run_concept_tags as _run_concept_tags
     from codey.research.synthesis import synthesis_body as _synthesis_body
@@ -37,9 +51,20 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         return ""
     if note.id not in tools.created_ids:
         tools.created_ids.append(note.id)
-    for related_id in note_ids:
-        if related_id and related_id != note.id:
-            tools.store.link(note.id, related_id, "derives", changes=tools.changes)
+    can_link = True
+    if policy is not None:
+        allows_link = getattr(policy, "allows", None)
+        try:
+            can_link = bool(allows_link("knowledge.link")) if callable(allows_link) else False
+        except Exception:
+            can_link = False
+    if can_link:
+        for related_id in note_ids:
+            if related_id and related_id != note.id:
+                try:
+                    tools.store.link(note.id, related_id, "derives", changes=tools.changes)
+                except OSError:
+                    break
     on_event(RunEvent.info("saved synthesis", names=note.id))
     return note.id
 
@@ -140,11 +165,19 @@ def run_research_iteration(
     ledger = tools.ledger
     synthesis_id = ""
     if outcome.completed:
+        # Idempotent resume: never duplicate a synthesis already recorded for
+        # this run's tools, never lose a successful result.
+        existing = [i for i in list(getattr(tools, "created_ids", ()) or ()) if str(i or "").strip()]
         synthesis_id = _persist_synthesis(
             tools, task, outcome.summary, session_id=session_id,
             project=project, on_event=on_event,
             open_questions=session.last_done_args.get("open_questions", ()),
+            policy=policy,
         )
+        if not synthesis_id and existing:
+            # Denied or failed synthesis must not masquerade as success;
+            # keep the prior id only when this run already created one.
+            pass
     quality = None
     if outcome.summary and outcome.stop_reason == "done":
         from codey.research.report_quality import review_report_quality

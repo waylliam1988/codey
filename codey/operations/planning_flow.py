@@ -85,6 +85,11 @@ def run_planning_readonly_mode(
             )
         except Exception:
             experiences = ""
+    try:
+        from codey.operations.task_entry import build_task_policy_for_entry as _build_policy
+        entry_policy = _build_policy(request, "planning")
+    except Exception:
+        entry_policy = getattr(frame, "entry_policy", None)
     result = deps.agent_run(AgentRequest(
         provider=frame.provider,
         project=Path(project),
@@ -108,6 +113,8 @@ def run_planning_readonly_mode(
         ghost_experiences=str(experiences or ""),
         permission_profile="planning_readonly",
         trace_recorder=frame.trace,
+        requested_capabilities=tuple(getattr(request, "requested_capabilities", ()) or ()),
+        task_policy=entry_policy,
     ))
     state.set_provider_session(
         frame.provider_id,

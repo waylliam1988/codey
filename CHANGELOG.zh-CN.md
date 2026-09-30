@@ -2,6 +2,30 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 堵住 Research 越权、恢复原收据与冻结快照（未发布）
+
+- TDD 红色锁定 8 个新文件（先失败、后通过）：Research 系统动作授权、
+  恢复交付原结算、普通来源与严格 Research 分离、快照无全局缓存、
+  通用 schema 严格校验、原生终止收口、native done 真实内核收口、入口授权收紧。
+- P1 授权：PlanExecutor 按 policy 无 web.read 即拒绝且不触搜索适配器；
+  合成笔记无 knowledge.write 即拒绝并明示，link 需 knowledge.link；
+  follow-up 仅继承父任务子集，永不自建 knowledge.write；Pipeline 贯通父策略。
+- P1 恢复：settlement 持久化 exit_code 与有界完整 result_text；
+  已结算原结果直接交付不再重读；仅白名单未结算读取可执行一次新观察；
+  旧空结算回退重读且不重复结算。
+- P1 完成：普通联网仅查来源已打开，严格 Research 才查证据/报告/质量；
+  打开+修改+验证通过的普通任务可完成。
+- P2 快照：删除全局缓存；TurnSnapshot 冻结策略与嵌套 schema；
+  native schema 同源重建；normalize 直接用快照；注册表变化下一轮生效。
+- P2 校验：通用层去 edit 别名；自定义工具拒数字字符串，强制 maximum；
+  注册时拒不支持约束。P2 原生：阈值先答当前 id；审批带 call id；
+  统一 sink 协议；删除重复授权表，以 ToolSpec 为准。
+- 入口：删宽泛“查一下”授权；否定仅同分句生效；allow_web 给能力不强制打开；
+  明确只读不置必须修改。证明绑定真实 run_id；entry kernel 统一会话生命周期；
+  planning 透传策略。AB 分组经真实发送断言；support 适配器薄化。
+- 最终验证：ruff、diff-check 通过；全量 pytest **5879 passed、10 skipped、
+  1471 subtests passed，364.92s**。未发布、未改版本号。
+
 ## Unreleased - 统一入口授权与持久化任务证明（未发布）
 
 - 统一 project、research 和 headless 的任务入口授权与完成要求；模型路由
