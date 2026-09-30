@@ -19,7 +19,7 @@ from codey.policies.action import (
     evaluate_action,
 )
 from codey.runtime.core import cancellation
-from codey.storage.atomic_io import write_text_atomic
+from codey.storage.atomic_io import write_bytes_atomic
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import session_key, write_json_atomic
 from codey.toolchain import runtime as tool_runtime
@@ -86,7 +86,7 @@ class ManagedOutputStore:
                 handle = f"{HANDLE_PREFIX}{len(existing) + 1:04d}_{digest[:12]}"
                 path = self.path_for(session_id, run_id, handle)
                 metadata_path = self.metadata_path_for(session_id, run_id, handle)
-                write_text_atomic(path, stored_text)
+                write_bytes_atomic(path, stored_text.encode("utf-8"))
                 write_json_atomic(
                     metadata_path,
                     {
@@ -125,6 +125,49 @@ class ManagedOutputStore:
 
     def metadata_path_for(self, session_id: str, run_id: str, handle: str) -> Path:
         return self._handle_path(session_id, run_id, handle, ".json")
+
+    def read_tool_output(self, session_id: str, run_id: str, handle: str) -> tuple[str, dict[str, object]]:
+        """Read and verify a managed receipt; fail-closed on any problem.
+
+        Returns (text, metadata). Raises ValueError/OSError when the handle
+        is malformed, the receipt/metadata is missing, or the stored bytes
+        do not match the recorded sha256. Recovery callers map any exception
+        to an explicit recovery failure (never silent truncation).
+        """
+        import json as _json
+
+        safe_handle = _safe_handle(handle)
+        text_path = self._handle_path(session_id, run_id, safe_handle, ".txt")
+        metadata_path = self._handle_path(session_id, run_id, safe_handle, ".json")
+        try:
+            with metadata_path.open("rb") as stream:
+                metadata_bytes = stream.read(MAX_METADATA_BYTES + 1)
+            if len(metadata_bytes) > MAX_METADATA_BYTES:
+                raise ValueError("managed receipt metadata exceeds size limit")
+            metadata_raw = metadata_bytes.decode("utf-8")
+        except OSError as exc:
+            raise OSError(f"managed receipt metadata missing for {safe_handle}: {exc}") from exc
+        try:
+            metadata = _json.loads(metadata_raw)
+        except ValueError as exc:
+            raise ValueError(f"managed receipt metadata unreadable for {safe_handle}: {exc}") from exc
+        if not isinstance(metadata, dict) or metadata.get("handle") != safe_handle:
+            raise ValueError(f"managed receipt metadata mismatch for {safe_handle}")
+        expected_sha = str(metadata.get("sha256") or "")
+        if not _is_sha256_hex(expected_sha):
+            raise ValueError(f"managed receipt metadata sha invalid for {safe_handle}")
+        try:
+            with text_path.open("rb") as stream:
+                stored_bytes = stream.read(MAX_MANAGED_OUTPUT_BYTES + 1)
+            if len(stored_bytes) > MAX_MANAGED_OUTPUT_BYTES:
+                raise ValueError("managed receipt exceeds size limit")
+            stored_text = stored_bytes.decode("utf-8")
+        except OSError as exc:
+            raise OSError(f"managed receipt missing for {safe_handle}: {exc}") from exc
+        actual_sha = hashlib.sha256(stored_text.encode("utf-8")).hexdigest()
+        if actual_sha != expected_sha:
+            raise ValueError(f"managed receipt content mismatch for {safe_handle}")
+        return stored_text, {str(k): v for k, v in metadata.items()}
 
     def _run_dir(self, session_id: str, run_id: str) -> Path:
         root = self.root.resolve()
@@ -239,6 +282,10 @@ def _safe_handle(value: object) -> str:
     if not re.fullmatch(r"out_[A-Za-z0-9_.-]{1,80}", text):
         raise ValueError("invalid managed output handle")
     return text
+
+
+def _is_sha256_hex(value: str) -> bool:
+    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
 
 
 def _cap_utf8_text(text: object, max_bytes: int) -> tuple[str, int, int, bool]:

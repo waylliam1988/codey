@@ -155,6 +155,7 @@ def _submit_task(
     intent: str = "auto",
     *,
     abort_if_stopped: bool = False,
+    **kwargs: object,
 ) -> str | None:
     return task_submit.submit_task(
         session_id,
@@ -166,6 +167,7 @@ def _submit_task(
         intent,
         get_state=get_state,
         abort_if_stopped=abort_if_stopped,
+        **kwargs,  # type: ignore[arg-type]
     )
 
 
@@ -180,6 +182,7 @@ def _submit_task_after_slot_release(
     *,
     previous_run_id: str = "",
     timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
+    **kwargs: object,
 ) -> str | None:
     return task_submit.submit_task_after_slot_release(
         session_id,
@@ -192,6 +195,7 @@ def _submit_task_after_slot_release(
         get_state=get_state,
         previous_run_id=previous_run_id,
         timeout=timeout,
+        **kwargs,  # type: ignore[arg-type]
     )
 
 

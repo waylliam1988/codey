@@ -11,6 +11,7 @@ from typing import Any
 
 from codey.agents.shell_approval import (
     ShellApprovalRequest,
+    build_shell_approval_pending,
     shell_command_payload,
     shell_command_text,
 )
@@ -164,48 +165,27 @@ def build_hooks(
     def on_shell_request(approval: ShellApprovalRequest) -> None:
         if not project:
             return
-        cwd_rel = approval.cwd or "."
         command = shell_command_text(approval.command)
         command_fields = shell_command_payload(command)
         risk = classify_shell_risk(command)
         approval_id = "shell_" + uuid.uuid4().hex[:12]
-        deferred_tool_calls = [item.to_payload() for item in approval.deferred_calls]
         provider_label = current_provider_id() if current_provider_id is not None else ""
-        pending = {
-            "id": approval_id,
-            "session_id": session_id,
-            "project": project,
-            "cwd": cwd_rel or ".",
-            "command": command,
-            "command_preview": command_fields["command"],
-            "command_sha256": command_fields["command_sha256"],
-            "command_chars": command_fields["command_chars"],
-            "command_truncated": command_fields["command_truncated"],
-            "risk_label": risk.label,
-            "risk_title": risk.title,
-            "risk_detail": risk.detail,
-            "post_approval_instructions": risk.post_approval_instructions,
-            "max_turns": max_turns,
-            "provider": provider_label,
-            "continue_after": True,
-            "run_id": run_id,
-            "deferred_tool_count": len(approval.deferred_calls),
-            "deferred_tool_calls": deferred_tool_calls,
-        }
-        pending["ui_event"] = {
-            "type": "shell_request",
-            "run_id": run_id,
-            "session_id": session_id,
-            "id": approval_id,
-            "project": project,
-            "cwd": pending["cwd"],
-            **command_fields,
-            "risk_label": risk.label,
-            "risk_title": risk.title,
-            "risk_detail": risk.detail,
-            "deferred_tool_count": len(approval.deferred_calls),
-            "deferred_tool_calls": deferred_tool_calls,
-        }
+        # pending 形状唯一归属 build_shell_approval_pending：原生调用身份
+        #（call id、provider 会话、turn/tool_index）完整持久化。
+        pending = build_shell_approval_pending(
+            approval=approval,
+            approval_id=approval_id,
+            session_id=session_id,
+            run_id=run_id,
+            project=project,
+            max_turns=max_turns,
+            provider_label=provider_label,
+            command_fields=dict(command_fields),
+            risk_label=risk.label,
+            risk_title=risk.title,
+            risk_detail=risk.detail,
+            post_approval_instructions=risk.post_approval_instructions,
+        )
         state.add_pending_shell_approval(approval_id, pending)
         state.emit(pending["ui_event"])
 

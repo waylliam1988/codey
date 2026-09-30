@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.research_iteration import run_research_iteration
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
 from codey.research.report_quality import review_report_quality
@@ -35,12 +36,7 @@ from codey.research.source_search import bounded_limit, render_results, search_p
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import Control, ToolPlan
-from tests.support.research_iteration_adapter import (
-    ResearchIteration,
-    ResearchToolOutcome,
-    first_text_arg,
-    run_research_iteration,
-)
+from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
 from tests.support.research_protocol import JsonToolCodec
 
@@ -477,6 +473,17 @@ def _fixture_document_header(document: SourceDocument) -> str:
     return "\n".join(str(line or "").strip() for line in lines if str(line or "").strip())
 
 
+def _arm_controller_denied(arm: str) -> tuple[str, ...]:
+    """Per-arm real tool narrowing through the shared snapshot controller.
+
+    baseline 缺 source_search：同一快照进入提示、schema、解析与执行，
+    第三轮也不会向模型展示它；其余 arm 保持状态机默认范围。
+    """
+    if str(arm or "") == "baseline":
+        return ("source_search",)
+    return ()
+
+
 class ProbeResearchIteration(ResearchIteration):
     def __init__(
         self,
@@ -563,15 +570,6 @@ class ProbeResearchIteration(ResearchIteration):
                     })
             raise
 
-    def _dispatch(self, call, turn: int = 0, tool_index: int = 0):
-        if call.name == "source_search":
-            return ResearchToolOutcome(self.tools.source_search(
-                str(call.args.get("url") or ""),
-                first_text_arg(call.args, "query"),
-                _as_int(call.args.get("limit"), 6),
-            ))
-        return super()._dispatch(call, turn, tool_index)
-
     def _arm_prompt_extension(self) -> str:
         """实验分组必须实际送达模型：经真实 provider adapter 发送，不由被忽略的 codec 控制。"""
         try:
@@ -644,6 +642,7 @@ class ProbeResearchIteration(ResearchIteration):
             search=self.search,
             tools=self.tools,
             iteration_context=arm_context,
+            controller_denied=_arm_controller_denied(self.arm),
         )
         self.tools = iteration.tools
         self._last_result = iteration.result

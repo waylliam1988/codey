@@ -36,19 +36,21 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
         return sink, log
 
     def test_second_settlement_with_different_status_raises(self) -> None:
+        from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.effects.effect_records import RuntimeEffectError
 
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             sink, _log = self._sink(tmp, "sess-durable-1", "run-durable-1")
             identity = "run-durable-1:task#1#0"
+            result = ToolResult(ToolCall("read_file", {"path": "a.py"}, "c1"), "hello")
             # First settlement ok=True commits.
-            sink.settle(identity, True)
+            sink.settle(identity, True, result=result)
             # Identical retry is idempotent (no raise).
-            sink.settle(identity, True)
+            sink.settle(identity, True, result=result)
             # Opposite status must fail closed.
             with self.assertRaises(RuntimeEffectError) as cm:
-                sink.settle(identity, False)
+                sink.settle(identity, False, result=result)
             self.assertIn("already settled", str(cm.exception))
 
     def test_execute_turn_with_durable_sink_settles_once(self) -> None:

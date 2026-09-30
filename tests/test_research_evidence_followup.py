@@ -16,6 +16,15 @@ from codey.research.query_planner import QueryCandidate, ResearchPlan
 from codey.research.tools import ResearchTools
 
 
+def _allow_parent():
+    # follow-up 内核行为测试：显式传入允许写的父策略（旧 None 默认即授写）。
+    from codey.policies.task_policy import TaskPolicy
+
+    return TaskPolicy(grants=frozenset({
+        "control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link",
+    }))
+
+
 class _MockProvider:
     def __init__(self, reply: str) -> None:
         self.reply = reply
@@ -248,6 +257,7 @@ def test_run_evidence_followup_rejects_multiple_tool_calls() -> None:
                 plan=plan,
                 material=material,
                 question="Question?",
+                parent_policy=_allow_parent(),
             )
             # Shared kernel path: malformed multi-call JSON never writes
             # evidence; it stays blocked as no_evidence_extracted (fail closed).
@@ -288,6 +298,7 @@ def test_run_evidence_followup_rejects_missing_tool_field() -> None:
                 plan=plan,
                 material=material,
                 question="Question?",
+                parent_policy=_allow_parent(),
             )
             assert result.ok is False
             assert result.stop_reason == "no_evidence_extracted"
@@ -325,6 +336,7 @@ def test_run_evidence_followup_rejects_missing_args_field() -> None:
                 plan=plan,
                 material=material,
                 question="Question?",
+                parent_policy=_allow_parent(),
             )
             assert result.ok is False
             assert result.stop_reason == "no_evidence_extracted"
@@ -362,6 +374,7 @@ def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
                 plan=plan,
                 material=material,
                 question="Question?",
+                parent_policy=_allow_parent(),
             )
             # Kernel path denies web_search via policy (control+knowledge.write
             # only); forbidden-tool behavior is locked in Controller tests.
@@ -400,6 +413,7 @@ def test_run_evidence_followup_classifies_no_relevant_done_as_noop() -> None:
                 plan=plan,
                 material=material,
                 question="Question?",
+                parent_policy=_allow_parent(),
             )
 
             assert result.ok is False
@@ -438,6 +452,7 @@ def test_run_evidence_followup_classifies_done_without_evidence_as_noop() -> Non
                 plan=plan,
                 material=material,
                 question="Question?",
+                parent_policy=_allow_parent(),
             )
 
             assert result.ok is False
@@ -501,6 +516,7 @@ def test_run_evidence_followup_extracts_evidence_with_provider() -> None:
                 plan=plan,
                 material=material,
                 question="What is the fresh fact?",
+                parent_policy=_allow_parent(),
             )
 
             assert result.ok is True
@@ -581,6 +597,7 @@ def test_run_evidence_followup_repairs_invalid_knowledge_write_schema_once() -> 
                 plan=plan,
                 material=material,
                 question="What is the fresh fact?",
+                parent_policy=_allow_parent(),
             )
 
             assert result.ok is True
@@ -623,6 +640,7 @@ def test_run_evidence_followup_reports_invalid_knowledge_write_args_after_failed
                 plan=plan,
                 material=material,
                 question="Question?",
+                parent_policy=_allow_parent(),
             )
 
             assert result.ok is False

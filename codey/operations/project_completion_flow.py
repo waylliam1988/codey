@@ -189,6 +189,7 @@ def _prepare_new_project_context(ctx: ProjectRun) -> None:
                 context=context,
             )
             reports = ctx.deps.agent.run_project_audit(
+                parent_policy=ctx.frame.entry_policy,
                 project=ctx.project,
                 selected_provider=ctx.frame.provider,
                 selected_provider_id=ctx.frame.provider_id,
@@ -280,6 +281,7 @@ def _build_project_done_event(ctx: ProjectRun) -> dict:
         research_payload = _research_payload(
             ctx.research_result, pipeline_result=ctx.research_pipeline_result,
         )
+    receipt_payload = ctx.receipt.to_dict()
     return task_done_event(
         run_id=ctx.frame.run_id,
         session_id=ctx.request.session_id,
@@ -291,7 +293,7 @@ def _build_project_done_event(ctx: ProjectRun) -> dict:
         mode="hybrid" if ctx.research_result is not None else "agent",
         work=ctx.work,
         changed=ctx.task_changed,
-        receipt=ctx.receipt.to_dict(),
+        receipt=receipt_payload,
         changes=changes_payload,
         research=research_payload,
     )
@@ -357,11 +359,16 @@ def run_project_mode(
         research_result=research_result,
         research_pipeline_result=research_pipeline_result,
     )
-    _prepare_project_context(ctx)
-    run_writer_phase(ctx)
-    run_review_phase(ctx)
-    enforce_completion(ctx)
-    return _finalize_project(ctx)
+    from codey.operations.task_execution import close_research_tools
+
+    try:
+        _prepare_project_context(ctx)
+        run_writer_phase(ctx)
+        run_review_phase(ctx)
+        enforce_completion(ctx)
+        return _finalize_project(ctx)
+    finally:
+        close_research_tools(ctx.research_tools)
 
 
 def record_project_memory(

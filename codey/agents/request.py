@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from codey.agents.handoff import ConversationContext
 from codey.agents.shell_approval import ShellApprovalRequest
@@ -47,6 +47,12 @@ class RecoveredToolOutcome:
     # unverified until a durable check turns it into TrustedWorkspaceProof).
     # Display ``outcome.audit`` workspace keys never confer trust.
     workspace_identity: object | None = None
+    # Only recovery's verified adapter can supply this kernel capability.
+    workspace_proof: object | None = None
+    # True only for settled-result redelivery (原结果重发，未重新执行）：
+    # any tool (including run/edit) may be redelivered from its durable
+    # receipt. False means safe-replay rows, which stay safe-tools-only.
+    redelivered: bool = False
 
 
 @dataclass(frozen=True)
@@ -61,7 +67,6 @@ class AgentRequest:
     on_shell_request: Callable[[ShellApprovalRequest], None] | None = None
     stop_flag: Event | None = None
     fresh_chat: bool = True
-    strict_fresh_chat: bool = False
     change_tracker: ChangeTracker | None = None
     conversation: ConversationContext | None = None
     provider_id: str = ""
@@ -91,6 +96,7 @@ class AgentRequest:
     effect_scope: str = ""
     runtime_mutations: RuntimeMutationLine | None = None
     workspace_revision_store: object | None = None
+    workspace_ignored_paths: tuple[str, ...] = ()
     tool_result_delivery: ToolResultDeliveryStore | None = None
     managed_outputs: ManagedOutputStore | None = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
@@ -100,6 +106,8 @@ class AgentRequest:
     project_changes_required: bool = False
     strict_research: bool = False
     task_policy: object | None = None
+    task_session: Any | None = None
+    completion_context: dict[str, Any] | None = None
 
 
 __all__ = [

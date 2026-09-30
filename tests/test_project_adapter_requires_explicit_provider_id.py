@@ -29,6 +29,9 @@ class ProjectAdapterRequiresExplicitProviderIdTests(unittest.TestCase):
                 del prompt, timeout
                 return '{"tool": "done", "args": {"summary": "ok"}}'
 
+            def new_chat(self) -> None:
+                return None
+
             def close(self) -> None:
                 return None
 
@@ -64,6 +67,9 @@ class ProjectAdapterRequiresExplicitProviderIdTests(unittest.TestCase):
             def send(self, prompt: str, timeout=None) -> str:
                 del prompt, timeout
                 return '{"tool": "done", "args": {"summary": "ok"}}'
+
+            def new_chat(self) -> None:
+                return None
 
             def close(self) -> None:
                 return None

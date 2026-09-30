@@ -608,7 +608,10 @@ def test_measured_net_empty_diff_keeps_reverted_runs_out_of_scope() -> None:
         assert event["stop_reason"] == "done"
         assert "[Completion blocked:" not in str(event["summary"])
         manifest = _trace_payload(state)
-        assert manifest["completion_proofs"] == []
+        assert manifest["completion_proofs"][-1]["satisfied"] is True
+    assert manifest["completion_proofs"][-1]["checks"] == [
+        {"check_id": "relevant_verification", "status": "not_applicable"},
+    ]
 
 
 def test_docs_only_change_keeps_limited_done() -> None:

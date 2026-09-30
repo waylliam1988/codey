@@ -19,6 +19,7 @@ from codey.runtime.core import cancellation
 from codey.runtime.core.operation_reducer import (
     ACTION_CONTINUE,
     ACTION_FAIL_INVARIANT,
+    ACTION_REDELIVER_SETTLED_BATCH,
     ACTION_REPLAY_SAFE_TOOL_BATCH,
     ACTION_SETTLE_PROVIDER_UNKNOWN,
     ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
@@ -60,6 +61,7 @@ def recover_effects_for_resume(
     run_id: str,
     project: str,
     task_kind: str,
+    ignored_paths: tuple[str, ...] = (),
 ) -> ResumeRecoveryResult:
     effects_store = _runtime_effect_store(deps)
     delivery_store = _tool_result_delivery_store(deps)
@@ -113,6 +115,24 @@ def recover_effects_for_resume(
             run_id=run_id,
             project_path=project_path,
             profile_name=profile_name,
+            managed_store=_managed_output_store(deps),
+            workspace_store=getattr(deps, "workspace_revisions", None),
+            ignored_paths=ignored_paths,
+        )
+
+    if action.kind == ACTION_REDELIVER_SETTLED_BATCH:
+        # 已结算重发：重建原结果交付，不调用执行器，不依赖 ReplayClass.SAFE。
+        return _redeliver_settled_batch_for_action(
+            action,
+            all_projections,
+            delivery_store=delivery_store,
+            mutations=mutations,
+            session_id=session_id,
+            run_id=run_id,
+            project_path=Path(project) if project else None,
+            managed_store=_managed_output_store(deps),
+            workspace_store=getattr(deps, "workspace_revisions", None),
+            ignored_paths=ignored_paths,
         )
 
     if action.kind == ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS:
@@ -153,6 +173,14 @@ def _tool_result_delivery_store(deps: Any) -> Any:
     return getattr(state, "tool_result_delivery", None)
 
 
+def _managed_output_store(deps: Any) -> Any:
+    store = getattr(deps, "managed_outputs", None)
+    if store is not None:
+        return store
+    state = getattr(deps, "state", None)
+    return getattr(state, "managed_outputs", None)
+
+
 def _writer_project_path(project: str, task_kind: str) -> Path | None:
     if task_kind not in {"project", "hybrid"} or not project:
         return None
@@ -170,6 +198,7 @@ def _try_replay_safe_tool(
     profile_name: str,
     tool_fns: Any,
     settle: bool = True,
+    managed_store: Any = None,
 ) -> RecoveredToolOutcome | None:
     if candidate is None or project_path is None:
         logger.warning(
@@ -202,9 +231,19 @@ def _try_replay_safe_tool(
         error_code = str(outcome.error_code or ("" if outcome.ok else "error"))[:80]
         if settle:
             # 新读取作为新的观察结算（含完整有界结果与退出码），不冒充旧结果
-            full = str(getattr(outcome, "model_text", "") or "")
-            exit_code = getattr(outcome, "exit_code", None)
-            exit_code = exit_code if type(exit_code) is int else None
+            from codey.operations.kernel_receipts import result_receipt_fields
+            from codey.runtime.core.models import ToolResult
+
+            exit_code = outcome.exit_code if type(outcome.exit_code) is int else None
+            result = ToolResult(
+                call=candidate.call, model_text=outcome.model_text,
+                audit=outcome.audit, canonical=outcome.canonical,
+                presentation=outcome.presentation, truncated=outcome.truncated,
+            )
+            fields = result_receipt_fields(
+                result, store=managed_store, session_id=session_id,
+                run_id=run_id, effect_id=candidate.effect_id,
+            )
             mutations.settle_tool_effect(
                 session_id,
                 run_id,
@@ -219,8 +258,7 @@ def _try_replay_safe_tool(
                     replay_class=ReplayClass.SAFE,
                     replay_count=1,
                     replayed_from_effect_id=candidate.effect_id,
-                    result_excerpt=full[:500],
-                    result_text=full[:8000],
+                    **fields,
                     exit_code=exit_code,
                 ),
             )
@@ -245,86 +283,148 @@ def _try_replay_safe_tool(
         return None
 
 
-def rebuild_settled_tool_result(projection: Any, call: Any) -> Any | None:
-    """从已结算原结果重建 ToolResult，不重新执行（原收据优先）。
+def rebuild_settled_tool_result(
+    projection: Any, call: Any = None, *,
+    managed_store: Any = None, session_id: str = "", run_id: str = "",
+    project_path: Any = None, workspace_store: Any = None, ignored_paths: tuple[str, ...] = (),
+) -> Any | None:
+    """Restore the original observation; unavailable receipts fail closed."""
+    from codey.operations.kernel_receipts import restore_result_receipt
 
-    短结果用有界完整 result_text；长结果用受管引用（当前回退到 excerpt）。
-    返回 None 表示无法重建（调用者 fail-closed）。
-    """
     try:
-        from codey.runtime.core.models import ToolResult as _ToolResult
-    except Exception:
-        return None
-    try:
-        st = getattr(projection, "settlement", None)
-        if st is None:
+        result = restore_result_receipt(
+            projection, store=managed_store, session_id=session_id, run_id=run_id,
+            project_path=project_path, workspace_store=workspace_store, ignored_paths=ignored_paths,
+        )
+        if call is not None and call != result.call:
             return None
-        text = str(getattr(st, "result_text", "") or getattr(st, "result_excerpt", "") or "")
-        if not text and getattr(st, "result_ref", ""):
-            text = str(getattr(st, "result_excerpt", "") or "")
-        audit: dict[str, object] = {}
-        exit_code = getattr(st, "exit_code", None)
-        if type(exit_code) is int:
-            audit["exit_code"] = exit_code
-        ref = str(getattr(st, "result_ref", "") or "")
-        if ref:
-            audit["managed_output"] = {"handle": ref}
-        status = str(getattr(st, "status", "") or "")
-        if status != SETTLEMENT_STATUS_OK:
-            # 原失败如实交付为错误，不冒充成功
-            return _ToolResult(call=call, model_text=text or f"ERROR: {getattr(st, 'error_code', '') or 'tool_error'}", audit=audit)
-        return _ToolResult(call=call, model_text=text, audit=audit)
-    except Exception:
+        return result
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
 
 
-def _settlement_has_reconstructable_result(st: Any) -> bool:
-    try:
-        text = str(getattr(st, "result_text", "") or getattr(st, "result_excerpt", "") or "")
-        ref = str(getattr(st, "result_ref", "") or "")
-        return bool(text.strip() or ref.strip())
-    except Exception:
-        return False
-
-
-def _rebuilt_settled_outcome(
-    projection: Any, candidate: Any,
+def _redelivered_outcome(
+    projection: Any,
+    rebuilt: Any,
+    *,
+    turn: int,
+    tool_index: int,
+    effect_id: str,
 ) -> RecoveredToolOutcome | None:
-    """已结算：直接交付原结果，不重新读文件/执行。
-
-    旧结算（无 result_text/excerpt/ref）无法重建时返回 None，调用者回退到
-    白名单安全重读一次（新观察，不冒充旧结果）。
-    """
+    """Convert one rebuilt ToolResult into a redelivery row (no re-execution)."""
     try:
         from codey.toolchain.runtime import ToolOutcome as _Outcome
     except Exception:
         return None
     try:
         st = getattr(projection, "settlement", None)
-        if st is None or not _settlement_has_reconstructable_result(st):
-            return None
-        text = str(getattr(st, "result_text", "") or getattr(st, "result_excerpt", "") or "")
-        if not text and getattr(st, "result_ref", ""):
-            text = str(getattr(st, "result_excerpt", "") or "")
+        ok = str(getattr(st, "status", "") or "") == SETTLEMENT_STATUS_OK
+        audit = dict(getattr(rebuilt, "audit", {}) or {})
         exit_code = getattr(st, "exit_code", None)
         exit_code = exit_code if type(exit_code) is int else None
-        ok = str(getattr(st, "status", "") or "") == SETTLEMENT_STATUS_OK
-        audit: dict[str, object] = {}
-        if exit_code is not None:
-            audit["exit_code"] = exit_code
-        ref = str(getattr(st, "result_ref", "") or "")
-        if ref:
-            audit["managed_output"] = {"handle": ref}
-        outcome = _Outcome(text, ok, audit=audit, exit_code=exit_code)
+        outcome = _Outcome(
+            str(getattr(rebuilt, "model_text", "") or ""),
+            ok,
+            audit=audit,
+            canonical=rebuilt.canonical,
+            presentation=rebuilt.presentation,
+            exit_code=exit_code,
+            truncated=bool(getattr(rebuilt, "truncated", False)),
+        )
+        from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _trusted_workspace_proof
+
+        identity = _kernel_workspace_identity_of(rebuilt)
         return RecoveredToolOutcome(
-            call=candidate.call,
+            call=rebuilt.call,
+            workspace_proof=_trusted_workspace_proof(identity, "in_memory_kernel_result") if identity is not None else None,
             outcome=outcome,
-            turn=candidate.turn,
-            tool_index=candidate.tool_index,
-            effect_id=candidate.effect_id,
+            turn=turn,
+            tool_index=tool_index,
+            effect_id=effect_id,
+            redelivered=True,
         )
     except Exception:
         return None
+
+
+def _redeliver_settled_batch_for_action(
+    action: RuntimeAction,
+    projections: tuple[RuntimeEffectProjection, ...],
+    *,
+    delivery_store: Any,
+    mutations: RuntimeMutationLine,
+    session_id: str,
+    run_id: str,
+    project_path: Any = None,
+    managed_store: Any = None,
+    workspace_store: Any = None,
+    ignored_paths: tuple[str, ...] = (),
+) -> ResumeRecoveryResult:
+    """重发整批已结算结果：逐个重建原结果，不调用执行器。
+
+    任一收据不可重建（缺失/损坏/无 store 可验）即整体 fail-closed，
+    绝不回退到重新执行危险工具。
+    """
+    if action.kind != ACTION_REDELIVER_SETTLED_BATCH or delivery_store is None:
+        return ResumeRecoveryResult(ok=False)
+    try:
+        batches = delivery_store.load_batches(session_id, run_id)
+    except Exception:
+        return ResumeRecoveryResult(ok=False)
+    batch = next(
+        (item for item in batches if item.intent.batch_id == action.delivery_batch_id),
+        None,
+    )
+    if batch is None or batch.is_delivered or batch.is_recovered or batch.is_abandoned:
+        return ResumeRecoveryResult(ok=False)
+    if batch.active_attempts:
+        return ResumeRecoveryResult(ok=False)
+    recovered_outcomes: list[RecoveredToolOutcome] = []
+    recovered_effect_ids: list[str] = []
+    read_count = 0
+    lookup_count = 0
+    for effect_id in tuple(batch.intent.tool_refs):
+        projection = _projection_for_effect(projections, effect_id)
+        if projection is None or not projection.is_settled:
+            return ResumeRecoveryResult(ok=False)
+        rebuilt = rebuild_settled_tool_result(
+            projection, managed_store=managed_store,
+            session_id=session_id, run_id=run_id,
+            project_path=project_path, workspace_store=workspace_store, ignored_paths=ignored_paths,
+        )
+        if rebuilt is None:
+            return ResumeRecoveryResult(ok=False)
+        row = _redelivered_outcome(
+            projection, rebuilt,
+            turn=int(projection.intent.turn),
+            tool_index=int(projection.intent.tool_index),
+            effect_id=effect_id,
+        )
+        if row is None:
+            return ResumeRecoveryResult(ok=False)
+        recovered_outcomes.append(row)
+        recovered_effect_ids.append(effect_id)
+        if row.call.name == "read":
+            read_count += 1
+        else:
+            lookup_count += 1
+    recovered_outcomes.sort(key=lambda rec: (rec.turn, rec.tool_index))
+    try:
+        mutations.record_delivery_recovered(
+            session_id,
+            run_id,
+            batch_id=action.delivery_batch_id,
+            recovered_effect_ids=tuple(recovered_effect_ids),
+            recovered_reads=read_count,
+            recovered_lookups=lookup_count,
+        )
+    except Exception:
+        return ResumeRecoveryResult(ok=False)
+    return ResumeRecoveryResult(
+        ok=True,
+        recovered_tool_outcomes=tuple(recovered_outcomes),
+        recovered_tool_result_batch_id=action.delivery_batch_id,
+    )
 
 
 def _replay_safe_tools_for_action(
@@ -337,6 +437,9 @@ def _replay_safe_tools_for_action(
     run_id: str,
     project_path: Path | None,
     profile_name: str,
+    managed_store: Any = None,
+    workspace_store: Any = None,
+    ignored_paths: tuple[str, ...] = (),
 ) -> ResumeRecoveryResult:
     recovered_outcomes: list[RecoveredToolOutcome] = []
     recovered_effect_ids: list[str] = []
@@ -366,17 +469,30 @@ def _replay_safe_tools_for_action(
         was_settled = bool(projection.is_settled)
         if was_settled:
             # 已结算原结果优先：直接交付，不重新执行（新读取不得冒充旧结果）。
-            # 旧结算无可重建结果时回退到白名单安全重读一次（新观察，不重复结算）。
-            recovered = _rebuilt_settled_outcome(projection, candidate)
-            if recovered is not None:
-                # 已结算不再重复 settle（幂等），仅记录交付恢复
-                recovered_outcomes.append(recovered)
-                recovered_effect_ids.append(effect_id)
-                if recovered.call.name == "read":
-                    read_count += 1
-                else:
-                    lookup_count += 1
-                continue
+            # 不再用安全重放候选重建；不可重建则整体失败，不回退重读。
+            rebuilt = rebuild_settled_tool_result(
+                projection, managed_store=managed_store,
+                session_id=session_id, run_id=run_id,
+                project_path=project_path, workspace_store=workspace_store, ignored_paths=ignored_paths,
+            )
+            if rebuilt is None:
+                return ResumeRecoveryResult(ok=False)
+            # 已结算不再重复 settle（幂等），仅记录交付恢复
+            recovered = _redelivered_outcome(
+                projection, rebuilt,
+                turn=int(projection.intent.turn),
+                tool_index=int(projection.intent.tool_index),
+                effect_id=effect_id,
+            )
+            if recovered is None:
+                return ResumeRecoveryResult(ok=False)
+            recovered_outcomes.append(recovered)
+            recovered_effect_ids.append(effect_id)
+            if recovered.call.name == "read":
+                read_count += 1
+            else:
+                lookup_count += 1
+            continue
         recovered = _try_replay_safe_tool(
             mutations,
             candidate,
@@ -386,6 +502,7 @@ def _replay_safe_tools_for_action(
             profile_name=profile_name,
             tool_fns=DEFAULT_TOOL_FNS,
             settle=not was_settled,
+            managed_store=managed_store,
         )
         if recovered is None:
             return ResumeRecoveryResult(ok=False)
@@ -458,13 +575,14 @@ def _settle_interrupted(
 
 
 def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any]:
-    """Rebuild durable delivery map from recovered frame rows (safe only).
+    """Rebuild durable delivery map from recovered frame rows.
 
     Identity is run+turn+index, never tool name+args. Every row goes through
     the single ``build_recovered_result`` protocol with strict turn/index
-    (exact non-negative ints, no bool, no duplicates). Frame recovery is
-    safe-replay only and carries no trusted provenance. Malformed,
-    duplicate, or unsafe rows raise ``RecoveryFailed``.
+    (exact non-negative ints, no bool, no duplicates). Settled redelivery
+    rows (``redelivered=True``) rebuild the original receipt for any tool;
+    safe-replay rows stay safe-tools-only and carry no trusted provenance.
+    Malformed, duplicate, or unsafe replay rows raise ``RecoveryFailed``.
     """
     from codey.operations.kernel_errors import RecoveryFailed
 
@@ -472,7 +590,7 @@ def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any
         from codey.operations.kernel_recovery_result import (
             _strict_slot_index,
             build_recovered_result,
-            spec_from_frame_row,
+            spec_for_recovered_row,
         )
         from codey.operations.task_session import turn_effect_id
     except Exception as exc:
@@ -491,7 +609,7 @@ def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any
             if (turn, index) in seen:
                 raise RecoveryFailed(f"duplicate recovered slot: turn={turn} index={index}")
             seen.add((turn, index))
-            spec = spec_from_frame_row(item)
+            spec = spec_for_recovered_row(item)
             rebuilt = build_recovered_result(spec)
             identity_ref = f"{frame.run_id}:{effect_scope}" if effect_scope else frame.run_id
             identity = turn_effect_id(identity_ref, turn, index)

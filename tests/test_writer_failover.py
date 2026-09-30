@@ -167,7 +167,6 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         self.assertEqual(h.switched, [])
         self.assertIn(("record_success", "p1"), h.log)
         spec = h.specs[0]
-        self.assertTrue(spec.strict_fresh_chat)
         self.assertFalse(spec.fresh_chat)
         self.assertEqual(spec.handoff, "H")
         self.assertEqual(spec.checkpoint.prompt, "init")
@@ -189,7 +188,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         self.assertEqual(runner.provider_id, "p2")
         self.assertEqual(h.refreshed, 1)
         spec = h.specs[0]
-        self.assertTrue(spec.strict_fresh_chat)
+        self.assertTrue(spec.fresh_chat)
         self.assertTrue(spec.fresh_chat)
         self.assertEqual(spec.checkpoint, h.view)
         # An initial reconnect keeps the incoming handoff (unlike a mid-attempt drop).

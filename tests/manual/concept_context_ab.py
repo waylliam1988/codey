@@ -495,7 +495,6 @@ class ProbeResearchIteration(ResearchIteration):
                     "send_index": len(self.sent_messages),
                     "error": f"{type(exc).__name__}: {exc}",
                 })
-            self._record_model_failure("send", exc)
             raise
 
 

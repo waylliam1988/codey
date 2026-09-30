@@ -99,7 +99,6 @@ def _run_one_writer_attempt(
         on_shell_request=ctx.hooks.on_shell_request,
         stop_flag=ctx.state.run_registry.stop_flag,
         fresh_chat=spec.fresh_chat,
-        strict_fresh_chat=spec.strict_fresh_chat,
         change_tracker=ctx.tracker,
         conversation=ctx.frame.conversation,
         provider_id=spec.provider_id,
@@ -139,17 +138,37 @@ def _run_one_writer_attempt(
         tool_result_delivery=ctx.deps.runtime.tool_result_delivery,
         runtime_mutations=ctx.deps.runtime.mutations,
         workspace_revision_store=workspace_revision_store,
+        workspace_ignored_paths=ctx.configured_ignored_paths,
         managed_outputs=ctx.deps.persistence.managed_outputs,
         recovered_tool_outcomes=recovered_outcomes,
         recovered_tool_result_batch_id=recovered_batch_id,
         requested_capabilities=ctx.request.requested_capabilities,
         strict_research=bool(getattr(ctx.request, "strict_research", False) is True),
         task_policy=getattr(ctx.frame, "entry_policy", None),
+        task_session=ctx.task_session,
+        completion_context={
+            "execution_evidence": ctx.work.evidence,
+            "analysis_run_payloads": ctx.work.analysis_run_payloads,
+            "verification_forbidden": ctx.verification_forbidden,
+        },
         project_changes_required=bool(getattr(ctx.request, "project_changes_required", False) is True),
-        research_tools=_build_research_tools(ctx.deps.persistence, session_id=ctx.request.session_id,
-                                             project=ctx.frame.project_text)
-        if "web.read" in ctx.request.requested_capabilities else None,
+        research_tools=_writer_research_tools(ctx),
     ))
+
+
+def _writer_research_tools(ctx: ProjectRun) -> Any:
+    """Reuse one authorized source adapter across writer repair attempts."""
+    from codey.operations.task_entry import build_task_policy_for_entry
+
+    policy = ctx.frame.entry_policy or build_task_policy_for_entry(ctx.request, "project")
+    if not any(policy.allows(grant) for grant in ("web.read", "knowledge.read", "knowledge.write", "knowledge.link")):
+        return None
+    tools = getattr(ctx, "research_tools", None)
+    if tools is None:
+        tools = _build_research_tools(ctx.deps.persistence, session_id=ctx.request.session_id,
+                                      project=ctx.frame.project_text)
+        ctx.research_tools = tools
+    return tools
 
 
 def _select_next_writer(ctx: ProjectRun, excluded: set[str]) -> str | None:
@@ -367,6 +386,8 @@ def _run_writer_phase(ctx: ProjectRun) -> None:
         and not ctx.result.checks_ran
         and ctx.work.evidence.has_successful_checks
     )
+    # 共同 gate 证明随 writer 结果保留：外层只持久化与展示，不再另造。
+    ctx.task_session = ctx.result.facts
     if ctx.inherited_green:
         ctx.result = replace(ctx.result, checks_passed=True)
     checkpoint_changed = bool(

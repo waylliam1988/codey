@@ -71,12 +71,14 @@ def test_project_delegate_rejects_string_false_outcome_ok() -> None:
 
 
 def test_research_outcome_rejects_string_false_ok() -> None:
-    from tests.support.research_iteration_adapter import ResearchToolOutcome
+    # 生产严格性门：恢复行 ok 必须为严格布尔，非布尔直接失败关闭。
+    from types import SimpleNamespace
 
-    result = ResearchToolOutcome(model_text="failed", ok="false")  # type: ignore[arg-type]
+    from codey.operations.kernel_errors import RecoveryFailed
+    from codey.operations.kernel_recovery_result import frame_outcome_ok
 
-    assert result.ok is False
-    assert result.status == "error"
+    with __import__("pytest").raises(RecoveryFailed):
+        frame_outcome_ok(SimpleNamespace(outcome=SimpleNamespace(ok="false")))
 
 
 def test_explicit_edit_string_false_changed_fails_closed_without_workspace_bump(tmp_path) -> None:

@@ -10,6 +10,14 @@ from codey.research.pipeline import ResearchPipeline
 from tests.app_state import make_app_state
 
 
+def _allow_policy():
+    from codey.policies.task_policy import TaskPolicy
+
+    return TaskPolicy(grants=frozenset({
+        "control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link",
+    }))
+
+
 class ResearchChangesSessionTests(unittest.TestCase):
     def test_pipeline_sink_receives_explicit_session_id(self) -> None:
         received: list[tuple] = []
@@ -18,6 +26,7 @@ class ResearchChangesSessionTests(unittest.TestCase):
             context=SimpleNamespace(run_id="run-1", session_id="session-9"),
             run_iteration=mock.Mock(),
             search_factory=lambda: None,
+            policy=_allow_policy(),
             research_changes_sink=(
                 lambda run_id, changes, session_id="": received.append(
                     (run_id, changes, session_id)

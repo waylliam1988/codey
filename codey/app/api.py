@@ -396,6 +396,7 @@ class EntryAuth:
     strict_research: bool = False
     project_changes_required: bool = False
     sources_open_required: bool = False
+    denied_capabilities: tuple[str, ...] = ()
 
 
 _WEB_TASK_MARKERS = (
@@ -499,11 +500,18 @@ def derive_entry_auth(body: dict | None, *, project: str | None = None) -> Entry
     else:
         # “可以”不等于“必须”：仅任务文本明确需要来源时才必须打开
         sources_required = bool(web_via_task_text and intent in {"auto", "project", "hybrid"})
+    denied: set[str] = set()
+    if intent in {"project", "hybrid", "auto"} and _explicit_readonly_task(task):
+        # 明确只读：取消“必须修改”，同时落实“禁止修改”。project_changes_required
+        # 只表示完成要求，写权限由 denied_capabilities 独立否决。
+        denied.update({"project.write", "shell.approval"})
+    requested = {item for item in requested if item not in denied}
     return EntryAuth(
         requested_capabilities=tuple(sorted(requested)),
         strict_research=strict,
         sources_open_required=sources_required,
         project_changes_required=requires,
+        denied_capabilities=tuple(sorted(denied)),
     )
 
 
@@ -559,6 +567,7 @@ def run_submit_response(
             strict_research=entry_auth.strict_research,
             sources_open_required=entry_auth.sources_open_required,
             project_changes_required=entry_auth.project_changes_required,
+            denied_capabilities=entry_auth.denied_capabilities,
         )
     except BrowserWorkerBusy:
         return 503, {"error": "browser worker busy", "hint": "retry"}
@@ -605,6 +614,12 @@ def shell_approval_response(
             return 404, {"error": "approval not found"}
         pending.pop("_approval_generation", None)
         session_id = pending["session_id"]
+        denied_result = {
+            "ok": False,
+            "status": "denied",
+            "output": "Denied by user.",
+            "exit_code": None,
+        }
         event = {
             "type": "shell_result",
             "run_id": pending.get("run_id") or "",
@@ -617,7 +632,32 @@ def shell_approval_response(
             "exit_code": None,
         }
         ctx.record_shell_result(event)
-        return 200, {"ok": True, "approved": False, "event": event}
+        # 拒绝同样回答原调用并继续任务（模型据此改道，不再悬挂 native 链）。
+        continued = False
+        project = str(pending.get("project") or "").strip()
+        max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
+        if bool(pending.get("continue_after")) and not ctx.run_registry.stop_flag.is_set():
+            shell_row = shell_service.shell_result_row(pending, denied_result, approved=False)
+            shell_payload = shell_service.shell_result_payload(shell_row)
+            continuation_plan = shell_service.build_shell_approval_continuation_plan(
+                pending=pending,
+                result=denied_result,
+                active_run=ctx.current_run(),
+                shell_results=(shell_payload,) if shell_payload else (),
+            )
+            continuation_run = submit_task_after_slot_release(
+                session_id,
+                project or None,
+                continuation_plan.continuation,
+                max_turns,
+                True,
+                continuation_plan.provider_id,
+                "project",
+                previous_run_id=str(pending.get("run_id") or ""),
+                initial_shell_results=tuple(continuation_plan.shell_results or ()),
+            )
+            continued = continuation_run is not None
+        return 200, {"ok": True, "approved": False, "continued": continued, "event": event}
 
     # Approved path: atomic claim (pop + generation + stop + cwd) under one
     # lock hold, then ticket-only execution with a spawn gate before Popen.
@@ -663,10 +703,15 @@ def shell_approval_response(
         if ctx.run_registry.stop_flag.is_set():
             continuation_stopped = True
         else:
+            # 结构化回答原 native 调用：continuation 运行以 turn-0 初始行
+            # 首发该结果（同会话 native 优先，异会话文本兜底）。
+            shell_row = shell_service.shell_result_row(pending, result, approved=True)
+            shell_payload = shell_service.shell_result_payload(shell_row)
             continuation_plan = shell_service.build_shell_approval_continuation_plan(
                 pending=pending,
                 result=result,
                 active_run=ctx.current_run(),
+                shell_results=(shell_payload,) if shell_payload else (),
             )
             continuation_run = submit_task_after_slot_release(
                 session_id,
@@ -677,6 +722,7 @@ def shell_approval_response(
                 continuation_plan.provider_id,
                 "project",
                 previous_run_id=str(pending.get("run_id") or ""),
+                initial_shell_results=tuple(continuation_plan.shell_results or ()),
             )
             continued = continuation_run is not None
             continuation_stopped = not continued and ctx.run_registry.stop_flag.is_set()

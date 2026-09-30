@@ -54,10 +54,10 @@ class EvidenceFollowupRunner(Protocol):
         plan: ResearchPlan,
         material: PlanExecutionResult,
         question: str,
+        parent_policy: object,
         initial_summary: str = "",
         max_context_chars: int = 8000,
         should_stop: Callable[[], bool] | None = None,
-        parent_policy: object | None = None,
     ) -> EvidenceFollowupResult:
         ...
 
@@ -117,7 +117,7 @@ class ResearchPipeline:
         config: ResearchPipelineConfig | None = None,
         ledger_event_sink: Callable[[EvidenceLedgerWriteResult], None] | None = None,
         research_changes_sink: Callable[..., None] | None = None,
-        policy: object | None = None,
+        policy: object,
     ) -> None:
         self.context = context
         self.run_iteration = run_iteration
@@ -203,32 +203,19 @@ class ResearchPipeline:
                     close()
 
     def _execute_plan(self, executor: PlanExecutor, plan: ResearchPlan, staged_tools: ResearchTools) -> PlanExecutionResult:
-        try:
-            return executor.execute(plan, staged_tools, policy=self.policy)
-        except TypeError as exc:
-            if "policy" not in str(exc):
-                raise
-            return executor.execute(plan, staged_tools)
+        # 无策略重试已删除：回调先产生效果再抛 TypeError 时，向上传播，
+        # 绝不去掉父策略再调一次（否则同一效果执行两次）。
+        return executor.execute(plan, staged_tools, policy=self.policy)
 
     def _run_followup(self, staged_tools: ResearchTools, plan: ResearchPlan,
                       material: PlanExecutionResult, best: ResearchRunResult) -> EvidenceFollowupResult:
         assert self.evidence_followup_runner is not None
-        try:
-            return self.evidence_followup_runner(
-                tools=staged_tools, plan=plan, material=material,
-                question=self.context.question, initial_summary=best.summary,
-                max_context_chars=self.config.max_followup_context_chars,
-                should_stop=self.context.should_stop, parent_policy=self.policy,
-            )
-        except TypeError as exc:
-            if "parent_policy" not in str(exc):
-                raise
-            return self.evidence_followup_runner(
-                tools=staged_tools, plan=plan, material=material,
-                question=self.context.question, initial_summary=best.summary,
-                max_context_chars=self.config.max_followup_context_chars,
-                should_stop=self.context.should_stop,
-            )
+        return self.evidence_followup_runner(
+            tools=staged_tools, plan=plan, material=material,
+            question=self.context.question, initial_summary=best.summary,
+            max_context_chars=self.config.max_followup_context_chars,
+            should_stop=self.context.should_stop, parent_policy=self.policy,
+        )
 
     def _drive_followup(
         self,

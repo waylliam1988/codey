@@ -2,47 +2,18 @@
 
 The project workflow still owns review, repair and provider failover. This
 adapter replaces only its model/tool turn loop, preserving its public
-``AgentRequest`` and ``RunResult`` boundary during migration.
+``AgentRequest`` and ``RunResult`` boundary for project callers.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
 from codey.agents.request import AgentRequest
+from codey.operations.provider_session import ConversationProvider
 from codey.runtime.core.run_result import RunResult
-
-
-class _ConversationProvider:
-    def __init__(self, provider: Any, conversation: Any) -> None:
-        self.provider = provider
-        self.conversation = conversation
-
-    def __getattr__(self, name: str) -> Any:
-        value = getattr(self.provider, name)
-        if name in {"send_turn", "send_tool_results"} and callable(value):
-            return lambda *args, **kwargs: self._send(name, *args, **kwargs)
-        return value
-
-    def send(self, *args: Any, **kwargs: Any) -> Any:
-        return self._send("send", *args, **kwargs)
-
-    def normalize_reply(self, reply: Any) -> Any:
-        from codey.operations.kernel_transport import normalize_provider_reply
-
-        return normalize_provider_reply(self.provider, reply)
-
-    def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        reply = getattr(self.provider, name)(*args, **kwargs)
-        prompt = str(args[0]) if name in {"send", "send_turn"} and args else json.dumps(
-            args[0] if args else (), ensure_ascii=False, default=str,
-        )
-        answer = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or reply)
-        self.conversation.record_exchange(prompt, answer)
-        return reply
 
 
 def _project_context(request: AgentRequest) -> str:
@@ -94,12 +65,11 @@ def _project_context(request: AgentRequest) -> str:
     return f"{rendered.text}\n\n{candidate_text}" if candidate_text else rendered.text
 
 
-def _session_checks_passed(session: Any) -> bool:
+def _session_checks_passed(session: Any, proof: Any = None) -> bool:
     """Project only an exact boolean verification result into the receipt."""
     if getattr(session, "edited_files", None):
-        from codey.operations.completion_gate import _coding_checks
-
-        return any(row.status == "pass" for row in _coding_checks(session))
+        return any(row.check_id == "relevant_verification" and row.status == "pass"
+                   for row in getattr(proof, "checks", ()))
     verifications = getattr(session, "verifications", ()) or ()
     if not verifications:
         return False
@@ -110,10 +80,10 @@ def _session_checks_passed(session: Any) -> bool:
 def _recovered_result_for_row(row: Any) -> Any:
     """Thin adapter: row -> unified spec -> single builder (no local trust)."""
     from codey.operations.kernel_errors import RecoveryFailed
-    from codey.operations.kernel_recovery_result import build_recovered_result, spec_from_frame_row
+    from codey.operations.kernel_recovery_result import build_recovered_result, spec_for_recovered_row
 
     try:
-        spec = spec_from_frame_row(row)
+        spec = spec_for_recovered_row(row)
         return build_recovered_result(spec)
     except RecoveryFailed:
         raise
@@ -124,22 +94,8 @@ def _recovered_result_for_row(row: Any) -> Any:
 def _open_fresh_chat(request: AgentRequest) -> bool:
     if not request.fresh_chat:
         return False
-    from codey.runtime.core import cancellation
-    from codey.runtime.observe.events import RunEvent
-
-    try:
-        request.provider.new_chat()
-        return True
-    except cancellation.TaskCancelled:
-        raise
-    except Exception as exc:
-        if request.strict_fresh_chat:
-            raise
-        if request.on_event is not None:
-            request.on_event(RunEvent.status(
-                f"[agent] could not open new chat: {exc}; reusing current tab"
-            ))
-        return False
+    request.provider.new_chat()
+    return True
 
 
 def _task_kind_and_policy(request: AgentRequest) -> tuple[str, Any]:
@@ -191,10 +147,11 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
             request.runtime_mutations, session_id=request.session_id,
             run_id=request.run_id, provider_id=request.provider_id,
             recovered_batch_id=request.recovered_tool_result_batch_id,
+            managed_outputs=request.managed_outputs,
         )
         provider = KernelRecordedProvider(provider, intent_sink)
     if request.conversation is not None:
-        provider = _ConversationProvider(provider, request.conversation)
+        provider = ConversationProvider(provider, request.conversation)
     return provider, intent_sink
 
 
@@ -202,8 +159,15 @@ def run(request: AgentRequest) -> RunResult:
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession, turn_effect_id
 
-    if request.permission_profile == "coding_writer":
+    task_kind, policy = _task_kind_and_policy(request)
+    _require_write_permission(task_kind, policy, request)
+    if request.task_session is not None and request.task_session.policy != policy:
+        raise ValueError("project continuation cannot replace task authorization")
+    provider, intent_sink = _wrap_provider_with_sink(request, request.provider)
+    if policy.allows("project.write"):
         request.project.mkdir(parents=True, exist_ok=True)
+    elif not request.project.is_dir():
+        raise RuntimeError("associated project directory does not exist")
     opened_fresh_chat = _open_fresh_chat(request)
     if request.conversation is not None and opened_fresh_chat:
         # Display-only label via the centralized helper; durable paths
@@ -214,20 +178,24 @@ def run(request: AgentRequest) -> RunResult:
             display_provider_name(request.provider_id, request.provider),
             "project", str(request.project),
         )
-    task_kind, policy = _task_kind_and_policy(request)
-    _require_write_permission(task_kind, policy, request)
-    session = TaskSession(
-        policy=policy,
-        task_kind=task_kind,
-        project=str(request.project),
-        max_turns=request.max_turns,
-        task_text=request.task,
-        handoff=request.handoff,
-        project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
-        coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
-        verification_candidates=request.verification_candidates,
-        verification_candidate_loader=request.verification_candidate_loader,
-    )
+    session = request.task_session
+    if session is None:
+        session = TaskSession(
+            policy=policy,
+            task_kind=task_kind,
+            project=str(request.project),
+            max_turns=request.max_turns,
+            task_text=request.task,
+            handoff=request.handoff,
+            project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
+            coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
+            verification_candidates=request.verification_candidates,
+            verification_candidate_loader=request.verification_candidate_loader,
+        )
+    session.max_turns = request.max_turns
+    session.handoff = request.handoff
+    session.verification_candidates = request.verification_candidates
+    session.verification_candidate_loader = request.verification_candidate_loader
     from codey.agents.verification_driver import forbids_verification
 
     session.verification_forbidden = forbids_verification(request.task)
@@ -282,7 +250,6 @@ def run(request: AgentRequest) -> RunResult:
         for row in recovered_sorted:
             initial_results.append(delivered[turn_effect_id(
                 f"{request.run_id or 'adhoc'}:{effect_scope}", row.turn, row.tool_index)])
-    provider, intent_sink = _wrap_provider_with_sink(request, request.provider)
     outcome = run_task_kernel(
         session,
         provider=provider,
@@ -303,19 +270,30 @@ def run(request: AgentRequest) -> RunResult:
         delivered=delivered,
         intent_sink=intent_sink,
         workspace_revision_store=request.workspace_revision_store,
+        workspace_ignored_paths=request.workspace_ignored_paths,
+        trace_recorder=request.trace_recorder,
         on_event=request.on_event,
         on_shell_request=request.on_shell_request,
         propagate_provider_failure=True,
         start_turn=resume_start,
         initial_results=initial_results or None,
+        completion_context={
+            **(request.completion_context or {}),
+            "run_id": request.run_id,
+            "task": request.task,
+            "question": request.task,
+            "project": str(request.project),
+        },
     )
     result = RunResult(
         summary=outcome.summary,
         stop_reason=outcome.stop_reason,
         turns=outcome.turns,
-        checks_passed=_session_checks_passed(session),
+        checks_passed=_session_checks_passed(session, outcome.proof),
         changed=bool(session.edited_files),
         checks_ran=bool(session.verifications),
+        proof=outcome.proof,
+        facts=session,
     )
     if request.conversation is not None:
         from codey.agents.handoff import ConversationSnapshot

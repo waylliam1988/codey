@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from codey.operations.provider_session import ProviderAdapter
 from codey.runtime.core.models import ToolCall
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
@@ -41,7 +42,8 @@ class KernelEffectSink:
 
     def __init__(self, mutations: Any, *, session_id: str, run_id: str,
                  provider_id: str, phase: str = "writer",
-                 recovered_batch_id: str = "") -> None:
+                 recovered_batch_id: str = "",
+                 managed_outputs: Any = None) -> None:
         self.mutations = mutations
         self.session_id = session_id
         self.run_id = run_id
@@ -49,19 +51,20 @@ class KernelEffectSink:
         self.phase = phase
         self.delivery_batch_id = recovered_batch_id
         self.send_index = 0
+        self.managed_outputs = managed_outputs
         store = RuntimeEffectStore(mutations.session_log)
         previous = store.load_effects(session_id, run_id)
         self._replay_classes = {row.intent.effect_id: row.intent.replay_class for row in previous}
         self._old_pending = {row.intent.effect_id for row in previous if row.is_pending}
 
-    def begin_turn(self, items: list[tuple[str, ToolCall, int]], *, turn: int) -> None:
+    def begin_turn(self, items: list[tuple[str, ToolCall, int]], *, turn: int, specs: Any = None) -> None:
         intents: list[RuntimeEffectIntent] = []
         batch_items: list[DeliveryBatchItem] = []
         for identity, call, index in items:
             if identity in self._old_pending:
                 continue
             name = _runtime_name(str(call.name or ""))
-            spec = spec_for_tool(str(call.name or ""))
+            spec = specs.get(call.name) if specs is not None else spec_for_tool(str(call.name or ""))
             replay_class = (spec.replay_class if spec is not None
                             else tool_replay_policy(name).replay_class)
             replay_args = replay_args_for_tool_call(ToolCall(name, dict(call.args or {})))
@@ -71,7 +74,7 @@ class KernelEffectSink:
                 session_id=self.session_id, run_id=self.run_id,
                 phase=self.phase, turn=turn, tool_index=index,
                 tool_name=name, tool_id=f"{turn}:{index}",
-                display_ref=str(call.args.get("path") or call.args.get("url") or ".")[:100],
+                call_id=str(getattr(call, "call_id", "") or ""),
                 args_digest=compute_args_digest(call.args), replay_class=replay_class,
                 replay_args=replay_args,
             ))
@@ -97,12 +100,15 @@ class KernelEffectSink:
         return identity in self._old_pending
 
     def settle(self, identity: str, ok: bool, *, result: Any = None, exit_code: int | None = None) -> None:
-        audit = getattr(result, "audit", {}) if result is not None else {}
-        managed = audit.get("managed_output", {}) if isinstance(audit, dict) else {}
-        result_ref = str(managed.get("handle") or managed.get("path") or "")[:160] if isinstance(managed, dict) else ""
-        full_text = str(getattr(result, "model_text", "") or "") if result is not None else ""
-        excerpt = full_text[:500]
-        bounded_text = full_text[:8000]
+        from codey.operations.kernel_receipts import result_receipt_fields
+
+        if result is None:
+            raise ValueError("tool settlement requires the original result receipt")
+        audit = getattr(result, "audit", {})
+        fields = result_receipt_fields(
+            result, store=self.managed_outputs, session_id=self.session_id,
+            run_id=self.run_id, effect_id=identity,
+        )
         resolved_exit: int | None = None
         if isinstance(exit_code, int) and type(exit_code) is int:
             resolved_exit = exit_code
@@ -116,34 +122,17 @@ class KernelEffectSink:
                 status=SETTLEMENT_STATUS_OK if ok else SETTLEMENT_STATUS_ERROR,
                 error_code="" if ok else "tool_error",
                 replay_class=self._replay_classes.get(identity, ReplayClass.UNSAFE),
-                result_excerpt=excerpt,
-                result_ref=result_ref,
-                result_text=bounded_text,
+                **fields,
                 exit_code=resolved_exit,
             ),
         )
 
-
-class KernelRecordedProvider:
+class KernelRecordedProvider(ProviderAdapter):
     """Record provider sends and link result delivery to the preceding tool batch."""
 
     def __init__(self, provider: Any, sink: KernelEffectSink) -> None:
-        self.provider = provider
+        super().__init__(provider)
         self.sink = sink
-
-    def __getattr__(self, name: str) -> Any:
-        value = getattr(self.provider, name)
-        if name in {"send_turn", "send_tool_results"} and callable(value):
-            return lambda *args, **kwargs: self._send(name, *args, **kwargs)
-        return value
-
-    def send(self, *args: Any, **kwargs: Any) -> Any:
-        return self._send("send", *args, **kwargs)
-
-    def normalize_reply(self, reply: Any) -> Any:
-        from codey.operations.kernel_transport import normalize_provider_reply
-
-        return normalize_provider_reply(self.provider, reply)
 
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
         sink = self.sink

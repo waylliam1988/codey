@@ -100,7 +100,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
             )
 
         settle.assert_not_called()
-        reconcile.assert_called_once_with("effect", ok=False)
+        reconcile.assert_called_once_with("effect", ok=False, result=guarded)
 
     def test_recovery_exception_missing_ok_does_not_treat_receipt_as_successful_intent(self) -> None:
         from types import SimpleNamespace
@@ -135,7 +135,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
             )
 
         settle.assert_not_called()
-        reconcile.assert_called_once_with("effect", ok=False)
+        reconcile.assert_called_once_with("effect", ok=False, result=guarded)
 
     def test_task_session_does_not_serialize_string_false_verification_as_success(self) -> None:
         from codey.operations.task_session import TaskSession

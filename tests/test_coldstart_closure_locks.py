@@ -312,6 +312,8 @@ class ToolSpecValidationTests(unittest.TestCase):
 class SnapshotFailClosedTests(unittest.TestCase):
     def test_snapshot_build_failure_does_not_fallback(self) -> None:
         """Snapshot import failure must terminate the turn, not show stale tools."""
+        from types import SimpleNamespace
+
         from codey.operations import kernel_prompt, kernel_protocol
         from codey.policies.task_policy import TaskPolicy
 
@@ -330,8 +332,12 @@ class SnapshotFailClosedTests(unittest.TestCase):
             # it must raise/fail-closed so the kernel terminates the turn.
             with self.assertRaises(RuntimeError, msg="snapshot failure must not fallback"):
                 kernel_prompt._snapshot_names(policy, ("web_search",))
+            # The single snapshot entry builds JSON + native from the same
+            # frozen source; any failure raises instead of stale fallback.
             with self.assertRaises(RuntimeError, msg="native snapshot failure must not fallback"):
-                kernel_protocol._native_tools_for_policy(policy, ("web_search",))
+                kernel_protocol.build_turn_snapshot(
+                    SimpleNamespace(policy=policy), native=True,
+                )
         finally:
             spec_mod.visible_tool_names_for_snapshot = orig  # type: ignore[assignment]
 

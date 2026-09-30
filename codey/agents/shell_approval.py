@@ -11,7 +11,16 @@ from codey.runtime.core.models import ToolCall
 MAX_DEFERRED_TOOL_CALLS = 8
 MAX_DEFERRED_TEXT_CHARS = 240
 MAX_APPROVAL_COMMAND_CHARS = 1_000
+# 原生协议调用身份原样保留：与持久化 effect 记录同一上界，永不截断。
+MAX_SHELL_CALL_ID_CHARS = 256
 TRUNCATED_COMMAND_MARKER = "\n[truncated; command_sha256={digest}]"
+
+
+def valid_shell_call_id(value: object) -> bool:
+    """True when a shell call id may be used verbatim (never truncated)."""
+    if not isinstance(value, str):
+        return False
+    return bool(value.strip()) and len(value) <= MAX_SHELL_CALL_ID_CHARS
 
 
 @dataclass(frozen=True)
@@ -42,6 +51,8 @@ class ShellApprovalRequest:
     deferred_calls: tuple[DeferredToolCall, ...] = ()
     call_id: str = ""
     provider_id: str = ""
+    turn: int = 0
+    tool_index: int = 0
 
     def to_payload(self) -> dict[str, object]:
         deferred = tuple(self.deferred_calls[:MAX_DEFERRED_TOOL_CALLS])
@@ -51,10 +62,18 @@ class ShellApprovalRequest:
             "deferred_tool_count": len(self.deferred_calls),
             "deferred_tool_calls": [item.to_payload() for item in deferred],
         }
-        if str(self.call_id or "").strip():
-            payload["call_id"] = str(self.call_id or "").strip()[:80]
+        # 原生调用身份原样保留：合法才带，不合法或超限直接省略，
+        # 绝不截断成另一个 id。
+        if valid_shell_call_id(self.call_id):
+            payload["call_id"] = self.call_id
+        elif str(self.call_id or "").strip():
+            payload["call_id_invalid"] = True
         if str(self.provider_id or "").strip():
-            payload["provider_id"] = str(self.provider_id or "").strip()[:80]
+            payload["provider_id"] = _bounded_text(self.provider_id, MAX_DEFERRED_TEXT_CHARS)
+        if type(self.turn) is int and self.turn >= 0:
+            payload["turn"] = self.turn
+        if type(self.tool_index) is int and self.tool_index >= 0:
+            payload["tool_index"] = self.tool_index
         return payload
 
 
@@ -67,6 +86,83 @@ def deferred_tool_call_from_call(call: ToolCall, *, tool_index: int) -> Deferred
         path=path,
         command=command,
     )
+
+
+def build_shell_approval_pending(
+    *,
+    approval: ShellApprovalRequest,
+    approval_id: str,
+    session_id: str,
+    run_id: str,
+    project: str,
+    max_turns: int,
+    provider_label: str,
+    command_fields: dict[str, object] | None = None,
+    risk_label: str = "generic",
+    risk_title: str = "",
+    risk_detail: str = "",
+    post_approval_instructions: str = "",
+) -> dict[str, object]:
+    """Build the persisted approval record; the single owner of its shape.
+
+    原生调用身份（call id、provider 会话、turn/tool_index）完整持久化，
+    批准/拒绝/取消后凭此回答原调用。call id 合法才原样保存，否则省略
+    并标记 invalid（绝不截断使用）。
+    """
+    cwd_rel = approval.cwd or "."
+    fields = dict(command_fields) if isinstance(command_fields, dict) else dict(
+        shell_command_payload(approval.command)
+    )
+    deferred_tool_calls = [item.to_payload() for item in approval.deferred_calls]
+    pending: dict[str, object] = {
+        "id": approval_id,
+        "session_id": session_id,
+        "project": project,
+        "cwd": cwd_rel or ".",
+        "command": shell_command_text(approval.command),
+        "command_preview": fields.get("command"),
+        "command_sha256": fields.get("command_sha256"),
+        "command_chars": fields.get("command_chars"),
+        "command_truncated": fields.get("command_truncated"),
+        "risk_label": risk_label,
+        "risk_title": risk_title,
+        "risk_detail": risk_detail,
+        "post_approval_instructions": post_approval_instructions,
+        "max_turns": max_turns,
+        "provider": provider_label,
+        "continue_after": True,
+        "run_id": run_id,
+        "deferred_tool_count": len(approval.deferred_calls),
+        "deferred_tool_calls": deferred_tool_calls,
+    }
+    if valid_shell_call_id(approval.call_id):
+        pending["call_id"] = approval.call_id
+    elif str(approval.call_id or "").strip():
+        pending["call_id_invalid"] = True
+    if str(approval.provider_id or "").strip():
+        pending["provider_id"] = str(approval.provider_id).strip()
+    if type(approval.turn) is int and approval.turn >= 0:
+        pending["turn"] = approval.turn
+    if type(approval.tool_index) is int and approval.tool_index >= 0:
+        pending["tool_index"] = approval.tool_index
+    pending["ui_event"] = {
+        "type": "shell_request",
+        "run_id": run_id,
+        "session_id": session_id,
+        "id": approval_id,
+        "project": project,
+        "cwd": pending["cwd"],
+        **{k: v for k, v in fields.items() if k in {
+            "command", "command_sha256", "command_chars", "command_truncated"}},
+        "risk_label": risk_label,
+        "risk_title": risk_title,
+        "risk_detail": risk_detail,
+        "deferred_tool_count": len(approval.deferred_calls),
+        "deferred_tool_calls": deferred_tool_calls,
+    }
+    if "call_id" in pending:
+        pending["ui_event"]["call_id"] = pending["call_id"]
+    return pending
 
 
 def render_deferred_tool_calls(rows: Sequence[Mapping[str, object]]) -> str:
@@ -283,10 +379,13 @@ def _nonnegative_int(value: object) -> int:
 __all__ = [
     "DeferredToolCall",
     "MAX_APPROVAL_COMMAND_CHARS",
+    "MAX_SHELL_CALL_ID_CHARS",
     "ShellApprovalRequest",
+    "build_shell_approval_pending",
     "deferred_tool_call_from_call",
     "render_deferred_tool_calls",
     "shell_command_event_fields",
     "shell_command_payload",
     "shell_command_text",
+    "valid_shell_call_id",
 ]

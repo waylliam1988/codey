@@ -1,19 +1,21 @@
-"""Legacy research adapter for tests and manual benchmark probes.
+"""Test fixture for research iteration tests and manual benchmark probes.
 
-Production code enters research through ``run_research_iteration``.  This
-adapter keeps the old generator-shaped surface available to migration tests
-without making that compatibility surface part of the production package.
+Production code enters research through ``run_research_iteration``. This
+module keeps only fixture concerns: input/output shapes, fake providers,
+tool fixtures, and result capture. Tool behavior tests call the real
+tool adapters (``ResearchTools``) or the shared kernel (``execute_turn``)
+directly; protocol/state tests use ``normalize_turn`` with a real snapshot.
+It never implements dispatch, validation, status shaping, or repair prompts
+for production behavior (repair-prompt TEXT helper below stays for golden
+protocol-text tests only).
 """
 
 from __future__ import annotations
 
-import contextlib
 from types import SimpleNamespace
 from typing import Any
 
 from codey.operations.research_iteration import run_research_iteration
-from codey.research.text_args import first_text_arg
-from codey.toolchain.runtime import ToolOutcome as _BaseOutcome
 
 
 def render_research_repair_prompt(codec: Any, plan: Any, state: Any | None = None) -> str:
@@ -46,48 +48,6 @@ def render_research_repair_prompt(codec: Any, plan: Any, state: Any | None = Non
     return "\n".join(lines)
 
 
-class ResearchToolOutcome(_BaseOutcome):  # type: ignore[valid-type,misc]
-    """Compatibility projection used by legacy research tests."""
-
-    def __init__(self, model_text: str = "", ok: bool = True, **kwargs: Any) -> None:
-        text = str(model_text or "")
-        exact_ok = ok if type(ok) is bool else False
-        status = str(kwargs.get("status", "") or "")
-        if not status:
-            if text.startswith(("SKIPPED:", "NEEDS_OPEN:")):
-                status = "needs_action"
-            elif text.startswith("ERROR:"):
-                status = "error"
-            else:
-                status = "ok" if exact_ok else "error"
-        try:
-            super().__init__(
-                model_text=text,
-                ok=exact_ok,
-                canonical=dict(kwargs.get("canonical", {}) or {}),
-                presentation=dict(kwargs.get("presentation", {}) or {}),
-                audit=dict(kwargs.get("audit", {}) or {}),
-                error_code=str(kwargs.get("error_code", "") or ""),
-                exit_code=kwargs.get("exit_code"),
-                changed=bool(kwargs.get("changed", False)),
-                truncated=bool(kwargs.get("truncated", False)),
-            )
-        except Exception:
-            self.model_text = text
-            self.ok = exact_ok
-            self.changed = bool(kwargs.get("changed", False))
-            self.truncated = bool(kwargs.get("truncated", False))
-            self.presentation = dict(kwargs.get("presentation", {}) or {})
-            self.audit = dict(kwargs.get("audit", {}) or {})
-            self.canonical = dict(kwargs.get("canonical", {}) or {})
-        with contextlib.suppress(Exception):
-            self.status = status
-        for key, value in kwargs.items():
-            with contextlib.suppress(Exception):
-                if not hasattr(self, key):
-                    setattr(self, key, value)
-
-
 class ResearchIteration:
     """Test-only thin adapter: input/output shape only, behavior via production."""
 
@@ -109,7 +69,6 @@ class ResearchIteration:
         topic_continuity_context: str = "",
         topic_continuity_payload: Any | None = None,
         managed_outputs: Any = None,
-        **_ignored: Any,
     ) -> None:
         # 薄适配：形状兼容旧调用（含 codec 探针字段），行为一律走生产
         # ToolSpec 校验 + ResearchTools 执行，不维护第二份转换/重试/修复提示。
@@ -135,93 +94,32 @@ class ResearchIteration:
         self.changes = getattr(self.tools, "changes", None)
 
     def _build_tools(self) -> Any | None:
-        try:
-            from codey.knowledge.changes import KnowledgeChanges
-            from codey.research.tools import ResearchTools
+        from codey.knowledge.changes import KnowledgeChanges
+        from codey.research.tools import ResearchTools
 
-            return ResearchTools(
-                search=self.search,
-                store=self.store,
-                changes=KnowledgeChanges(root=getattr(self.store, "root", ".")),
-                session_id=self.session_id,
-                project=self.project,
-            )
-        except Exception:
-            return None
-
-    def _ensure_tools(self) -> Any:
-        if self.tools is None:
-            self.tools = self._build_tools()
-        return self.tools
-
-    def _dispatch(self, call: Any, turn: int = 0, tool_index: int = 0) -> Any:
-        del turn, tool_index
-        tools = self._ensure_tools()
-        name = str(getattr(call, "name", "") or "").strip().lower()
-        args = dict(getattr(call, "args", {}) or {})
-        try:
-            # 生产校验优先：形状由 ToolSpec 唯一决定，无旧参数转换与换签名重试
-            from codey.toolchain.tool_spec import validate_args_against_spec as _spec_validate
-
-            spec_error = _spec_validate(name, args)
-            if spec_error:
-                return ResearchToolOutcome(model_text=f"ERROR: {spec_error}", ok=False)
-            if name == "web_search":
-                text = tools.web_search(first_text_arg(args, "query"))
-                return ResearchToolOutcome(model_text=text, ok=not str(text or "").startswith("ERROR:"))
-            if name == "open_url":
-                opened = tools.open_url(
-                    str(args.get("url") or ""),
-                    offset=args.get("offset", 0),
-                    limit=args.get("limit", 6000),
-                    pages=str(args.get("pages") or ""),
-                )
-                from codey.research.tools import ResearchToolOutput
-
-                if not isinstance(opened, ResearchToolOutput):
-                    raise TypeError("ResearchTools.open_url must return ResearchToolOutput")
-                text = str(getattr(opened, "model_text", opened) or "")
-                title = next(
-                    (line.removeprefix("Title: ") for line in text.splitlines() if line.startswith("Title: ")),
-                    "",
-                )
-                presentation: dict[str, object] = {
-                    "result": title or (text.splitlines()[0][:500] if text else "")
-                }
-                if text.startswith("SKIPPED:"):
-                    presentation["status"] = "needs_action"
-                return ResearchToolOutcome(
-                    model_text=text,
-                    ok=not text.startswith("ERROR:"),
-                    presentation=presentation,
-                )
-            if name in {"knowledge_search", "knowledge_read", "knowledge_write", "knowledge_link", "source_search"}:
-                fn = getattr(tools, name, None)
-                if callable(fn):
-                    # 生产签名：knowledge_write 取整包 dict，其余按 kwargs
-                    text = fn(args) if name == "knowledge_write" else (fn(**args) if args else fn())
-                    text_str = str(text or "")
-                    blocked = text_str.startswith(("NEEDS_OPEN:", "SKIPPED:"))
-                    changed = name in {"knowledge_write", "knowledge_link"} and not text_str.startswith("ERROR:") and not blocked
-                    return ResearchToolOutcome(
-                        model_text=text_str,
-                        ok=not text_str.startswith("ERROR:"),
-                        changed=changed,
-                        presentation={"status": "needs_action"} if blocked else {},
-                    )
-        except TypeError:
-            raise
-        except Exception as exc:
-            return ResearchToolOutcome(model_text=f"ERROR: {exc}")
-        return ResearchToolOutcome(model_text=f"ERROR: unknown research tool {name or '?'}")
+        return ResearchTools(
+            search=self.search, store=self.store,
+            changes=KnowledgeChanges(root=self.store.root),
+            session_id=self.session_id, project=self.project,
+        )
 
     def _intro(self, question: str) -> str:
-        return "\n".join(x for x in (str(question or ""), self.topic_continuity_context) if x)
+        return str(question or "")
 
     def _send_provider(self, message: str) -> str:
         return str(self.provider.send(message))
 
     def run(self, question: str) -> Any:
+        from codey.operations.provider_session import ProviderAdapter
+
+        outer = self
+
+        class ProbeProvider(ProviderAdapter):
+            def send(self, text: str, **kwargs: Any) -> str:
+                return outer._send_provider(text)
+
+        intro = self._intro(question)
+        extension = intro.removeprefix(str(question)).strip()
         deps = SimpleNamespace(
             knowledge_store=self.store,
             managed_outputs=self.managed_outputs,
@@ -230,7 +128,7 @@ class ResearchIteration:
         tools = self.tools or self._build_tools()
         iteration = run_research_iteration(
             deps,
-            provider=self.provider,
+            provider=ProbeProvider(self.provider),
             session_id=self.session_id or "research-session",
             project=self.project,
             task=str(question or ""),
@@ -241,9 +139,9 @@ class ResearchIteration:
             run_id=self.run_id,
             chat_handoff=self.chat_handoff,
             trace_recorder=self.trace_recorder,
-            search=self.search if callable(self.search) else (lambda: ""),
+            search=self.search,
             tools=tools,
-            iteration_context=self.iteration_context,
+            iteration_context="\n\n".join(x for x in (self.iteration_context, extension) if x),
             topic_continuity_context=self.topic_continuity_context,
             topic_continuity_payload=self.topic_continuity_payload,
         )
@@ -259,13 +157,10 @@ class ResearchIteration:
 
     @result.setter
     def result(self, value: Any) -> None:
-        with contextlib.suppress(Exception):
-            self._last_result = value
+        self._last_result = value
 
 
 __all__ = [
     "ResearchIteration",
-    "ResearchToolOutcome",
-    "first_text_arg",
     "render_research_repair_prompt",
 ]

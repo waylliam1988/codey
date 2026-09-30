@@ -9,51 +9,47 @@ state, never from substring matching or model-supplied parameters.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
 from codey.runtime.core.models import ToolCall, ToolResult
 
 
-def build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | None:
-    """Research execution adapter: real search + store + ledger tools.
+def close_research_tools(tools: Any) -> None:
+    """Release an owned search session without masking the task outcome."""
+    close = getattr(getattr(tools, "search", None), "close", None)
+    if callable(close):
+        with contextlib.suppress(Exception):
+            close()
 
-    Moved here from the old task entry so the entry stays orchestration-only;
-    executors live with execution. Returns None when Research is unconfigured.
-    """
+
+def build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | None:
+    """Build the execution resources; configuration errors propagate to entry."""
+    from codey.knowledge.changes import KnowledgeChanges
+    from codey.research.tools import ResearchTools
+
     knowledge_store = getattr(deps, "knowledge_store", None)
     if knowledge_store is None:
         return None
     search_factory = getattr(deps, "search_factory", None)
-    if not callable(search_factory):
-        try:
-            from codey.operations.research_flow import default_research_search_provider
-        except Exception:
-            return None
+    if search_factory is None:
+        from codey.operations.research_flow import default_research_search_provider
+
         search_factory = default_research_search_provider
+    search = search_factory()
     try:
-        search = search_factory()
-    except Exception:
-        return None
-    try:
-        from codey.knowledge.changes import KnowledgeChanges
-
-        changes = KnowledgeChanges(root=getattr(knowledge_store, "root", "."))
-    except Exception:
-        return None
-    try:
-        from codey.research.tools import ResearchTools
-
         return ResearchTools(
-            search=search,
-            store=knowledge_store,
-            changes=changes,
-            diagnostics=None,
-            session_id=session_id,
-            project=project,
+            search=search, store=knowledge_store,
+            changes=KnowledgeChanges(root=knowledge_store.root),
+            diagnostics=None, session_id=session_id, project=project,
         )
-    except Exception:
-        return None
+    except BaseException:
+        close = getattr(search, "close", None)
+        if callable(close):
+            with contextlib.suppress(Exception):
+                close()
+        raise
 
 
 def effective_project_profile(permission_profile: object) -> str:
@@ -104,6 +100,8 @@ class ExecutionDelegate:
         managed_outputs: Any = None,
         session_id: str = "",
         run_id: str = "",
+        frozen_specs: dict[str, Any] | None = None,
+        custom_executors: dict[str, Any] | None = None,
     ) -> None:
         self.session = session
         self.project_path = Path(str(project_path)).expanduser() if project_path else None
@@ -117,6 +115,9 @@ class ExecutionDelegate:
         self.managed_outputs = managed_outputs
         self.session_id = session_id
         self.run_id = run_id
+        # 本轮冻结绑定：非 None 时解析/执行不再查询实时注册表。
+        self._frozen_specs = frozen_specs
+        self._custom_executors = custom_executors
         if self.tool_fns is None and self.project_path is not None:
             try:
                 from codey.agents.tools import DEFAULT_TOOL_FNS
@@ -124,16 +125,34 @@ class ExecutionDelegate:
                 DEFAULT_TOOL_FNS = None  # type: ignore[assignment]
             self.tool_fns = DEFAULT_TOOL_FNS
 
-    def handles(self, name: str) -> bool:
+    def _resolve_spec(self, name: str) -> Any:
         lowered = str(name or "").strip().lower()
+        if self._frozen_specs is not None:
+            return self._frozen_specs.get(lowered)
         try:
-            from codey.toolchain.tool_spec import custom_executor_for, spec_for_tool
+            from codey.toolchain.tool_spec import spec_for_tool
         except Exception:
-            return False
+            return None
         try:
-            spec = spec_for_tool(lowered)
+            return spec_for_tool(lowered)
         except Exception:
-            return False
+            return None
+
+    def _resolve_custom_executor(self, name: str) -> Any:
+        lowered = str(name or "").strip().lower()
+        if self._custom_executors is not None:
+            return self._custom_executors.get(lowered)
+        try:
+            from codey.toolchain.tool_spec import custom_executor_for
+        except Exception:
+            return None
+        try:
+            return custom_executor_for(lowered)
+        except Exception:
+            return None
+
+    def handles(self, name: str) -> bool:
+        spec = self._resolve_spec(name)
         if spec is None:
             return False
         if spec.executor == "project":
@@ -141,7 +160,7 @@ class ExecutionDelegate:
         if spec.executor in {"source", "knowledge"}:
             return self.research_tools is not None
         try:
-            if custom_executor_for(lowered) is not None:
+            if self._resolve_custom_executor(str(name or "")) is not None:
                 return True
         except Exception:
             pass
@@ -151,46 +170,51 @@ class ExecutionDelegate:
                 tool_index: int = 0) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
         name = str(call.name or "").strip().lower()
         try:
-            from codey.toolchain.tool_spec import custom_executor_for, spec_for_tool
-            spec = spec_for_tool(name)
+            spec = self._resolve_spec(name)
             executor = spec.executor if spec is not None else ""
         except Exception:
             executor = ""
-            custom_executor_for = None  # type: ignore[assignment]
         if executor == "project":
             return self._execute_project(call)
         if executor in {"source", "knowledge"}:
             return self._execute_research(call, turn=turn, tool_index=tool_index)
-        # Third-task tools run via the generic ToolSpec executor registry.
-        if custom_executor_for is not None:
+        # Third-task tools run via the frozen turn binding when present,
+        # otherwise the live registry.
+        try:
+            fn = self._resolve_custom_executor(name)
+        except Exception:
+            fn = None
+        if callable(fn):
             try:
-                fn = custom_executor_for(name)
+                produced = fn(call)
+            except Exception as exc:
+                result = ToolResult(call=call, model_text=f"ERROR: {exc or 'tool failed'}")
+                return result, False, "", [], None
+            if isinstance(produced, ToolResult):
+                result = produced
+            elif isinstance(produced, str):
+                result = ToolResult(call=call, model_text=produced)
+            else:
+                result = ToolResult(call=call, model_text=str(produced))
+            from codey.operations.kernel_result import result_ok as _ok
+            try:
+                ok = bool(_ok(name, result))
             except Exception:
-                fn = None
-            if callable(fn):
-                try:
-                    produced = fn(call)
-                except Exception as exc:
-                    result = ToolResult(call=call, model_text=f"ERROR: {exc or 'tool failed'}")
-                    return result, False, "", [], None
-                if isinstance(produced, ToolResult):
-                    result = produced
-                elif isinstance(produced, str):
-                    result = ToolResult(call=call, model_text=produced)
-                else:
-                    result = ToolResult(call=call, model_text=str(produced))
-                from codey.operations.kernel_result import result_ok as _ok
-                try:
-                    ok = bool(_ok(name, result))
-                except Exception:
-                    ok = not str(result.model_text or "").startswith("ERROR:")
-                return result, ok, "", [], None
+                ok = not str(result.model_text or "").startswith("ERROR:")
+            return result, ok, "", [], None
         result = ToolResult(call=call, model_text=f"ERROR: no production executor for {name or '?'}")
         return result, False, "", [], None
 
     def _policy_check(self, call: ToolCall) -> tuple[bool, str, bool]:
         """Returns (denied, message, approval_required) via the coding guards."""
 
+        spec = self._resolve_spec(call.name)
+        if spec is None:
+            return True, "tool definition unavailable", False
+        if not self.session.policy.allows(spec.grant):
+            return True, f"task policy denied {call.name}", False
+        if spec.executor != "project":
+            return False, "", False
         if self.project_path is None:
             return True, "no associated project", False
         try:
@@ -501,4 +525,4 @@ class ExecutionDelegate:
         return evidence
 
 
-__all__ = ["ExecutionDelegate", "build_research_tools"]
+__all__ = ["ExecutionDelegate", "build_research_tools", "close_research_tools"]

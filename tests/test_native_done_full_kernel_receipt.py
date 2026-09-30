@@ -33,18 +33,27 @@ class _SeqNativeProvider:
         return SimpleNamespace(tool_calls=())
 
 
-def test_done_receipt_closes_followup_via_real_kernel() -> None:
+def test_done_receipt_closes_followup_via_real_kernel(tmp_path) -> None:
     from unittest import mock
 
     from codey.operations.task_loop import run_task_kernel
 
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
     provider = _SeqNativeProvider()
-    sess2 = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), task_kind="chat",
-                        project="", max_turns=4, task_text="q")
+    executed: list[str] = []
+    # 后续工具有权限也有执行器：收口必须保证执行次数为 0（而不靠无权限挡掉）
+    sess2 = TaskSession(
+        policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
+        task_kind="project", project=str(tmp_path), max_turns=4, task_text="q",
+    )
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
-        out = run_task_kernel(sess2, provider=provider, run_id="r-done", effect_scope="task",
-                              provider_id="test", user_task="q")
+        out = run_task_kernel(
+            sess2, provider=provider, run_id="r-done", effect_scope="task",
+            provider_id="test", user_task="q", project_path=tmp_path,
+            executors={"read_file": lambda call: executed.append(call.name) or "x"},
+        )
     flat = [i for batch in provider.answered for i in batch]
     assert "done-1" in flat, f"done id 未被回答: {provider.answered}"
     assert "followup-1" in flat, f"后续调用未被收口关闭: {provider.answered}"
+    assert executed == [], f"已完成任务的后续调用不得执行：{executed}"
     assert out.completed

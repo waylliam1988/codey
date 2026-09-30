@@ -17,6 +17,7 @@ from typing import Any
 
 from codey.operations.kernel_errors import EffectSettlementFailed, RecoveryFailed
 from codey.operations.kernel_facts import record_facts_for_result
+from codey.operations.kernel_protocol import _validate_tool_args, frozen_custom_executor_map, frozen_spec_map
 from codey.operations.kernel_provenance import (
     _kernel_workspace_identity_of,
     _with_trusted_workspace_state,
@@ -56,6 +57,8 @@ def _build_delegate(
     session_id: str = "",
     run_id: str = "",
     permission_profile: str = "coding_writer",
+    frozen_specs: Any = None,
+    custom_executors: Any = None,
 ) -> Any:
     """Build the production delegate; fail closed when a project needs one."""
     try:
@@ -75,6 +78,8 @@ def _build_delegate(
             session_id=session_id,
             run_id=run_ref(run_id),
             permission_profile=permission_profile,
+            frozen_specs=dict(frozen_specs) if frozen_specs is not None else None,
+            custom_executors=dict(custom_executors) if custom_executors is not None else None,
         )
     except Exception as exc:
         if project_path is not None:
@@ -185,7 +190,8 @@ def _run_via_delegate_or_fn(
         else:
             result = ToolResult(call=call, model_text=str(produced))
         result, ok = _normalize_explicit_result(name, result)
-        return result, ok, "", [], None, True
+        exit_code = strict_exit_code_or_none(result.audit.get("exit_code")) if name == "run" else None
+        return result, ok, "", [], exit_code, True
     if delegate is not None and delegate.handles(name):
         result, ok, opened, evidence, exit_code = delegate.execute(
             call,
@@ -221,13 +227,27 @@ def execute_turn(
     workspace_ignored_paths: Any = (),
     workspace_revision_store: Any = None,
     stop_flag: Any = None,
+    snapshot: Any = None,
 ) -> list[ToolResult]:
     """Execute one turn; identity is run+turn+index with durable delivery first.
 
     The per-turn snapshot (policy ∩ controller) is enforced here as well as
     in parsing: research tools respect the controller, project tools never do.
+    When ``snapshot`` is threaded (production), tool definitions and
+    third-task executor bindings resolve from the frozen turn capture —
+    never the live registry. Without it (unit injection) live lookup stays.
     """
 
+    frozen_specs = frozen_spec_map(snapshot)
+    if snapshot is not None:
+        if session.policy != snapshot.policy:
+            return [_error_result(call, "turn policy differs from the captured authorization") for call in calls]
+        for call in calls:
+            if call.name not in snapshot.tool_names:
+                return [_error_result(item, f"tool not available in the captured turn: {call.name}") for item in calls]
+            _args, error = _validate_tool_args(call.name, call.args, frozen_specs=frozen_specs)
+            if error:
+                return [_error_result(item, error) for item in calls]
     runnable = dict(executors or {})
     active_turn, base_index, run_ref_str, identity_ref, delivered_map, ignores, recovery_ctx = (
         _turn_setup(
@@ -266,13 +286,13 @@ def execute_turn(
                 exit_code=exit_code if isinstance(exit_code, int) else None,
             )
 
-    def reconcile_intent_only(identity: str, ok: bool) -> None:
+    def reconcile_intent_only(identity: str, ok: bool, result: ToolResult) -> None:
         # Already-durable replay: never rewrite ``session.executed``, only
         # the intent settlement so a prior ``settle`` outage cannot cause
         # a second unsafe execution.
         if intent_sink is None:
             return
-        intent_sink.settle(identity, ok if type(ok) is bool else False, result=None, exit_code=None)
+        intent_sink.settle(identity, ok if type(ok) is bool else False, result=result, exit_code=None)
 
     delegate = _build_delegate(
         session,
@@ -284,13 +304,16 @@ def execute_turn(
         session_id,
         run_ref_str,
         permission_profile,
+        frozen_specs=frozen_specs,
+        custom_executors=frozen_custom_executor_map(snapshot),
     )
-    _begin_pending_intents(intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index)
+    _begin_pending_intents(intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index,
+                           frozen_specs=frozen_specs)
     return _execute_slots(
         session, calls, runnable, delegate, identity_ref, active_turn, base_index,
         delivered_map, intent_sink, controller_allowed, project_path,
         workspace_ignored_paths, ignores, recovery_ctx, workspace_revision_store,
-        execution_evidence, settle, reconcile_intent_only, stop_flag,
+        execution_evidence, settle, reconcile_intent_only, stop_flag, frozen_specs,
     )
 
 
@@ -345,6 +368,7 @@ def _precheck_abort(
 def _begin_pending_intents(
     intent_sink: Any, calls: list[ToolCall], session: TaskSession,
     delivered_map: dict[str, ToolResult], identity_ref: str, active_turn: int, base_index: int,
+    *, frozen_specs: Any = None,
 ) -> None:
     if intent_sink is None or not calls:
         return
@@ -355,7 +379,7 @@ def _begin_pending_intents(
         and turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset) not in session.executed
     ]
     if pending_items:
-        intent_sink.begin_turn(pending_items, turn=active_turn)
+        intent_sink.begin_turn(pending_items, turn=active_turn, specs=frozen_specs)
 
 
 def _settle_delivered_slot(
@@ -404,7 +428,7 @@ def _reconcile_guarded_slot(
                 prior_ok = raw_ok if type(raw_ok) is bool else False
             except Exception:
                 prior_ok = False
-            reconcile_intent_only(identity, ok=prior_ok)
+            reconcile_intent_only(identity, ok=prior_ok, result=guarded)
         return
     if slot.disposition == "NO_MATCH":
         settle(identity, call, guarded, ok=False)
@@ -415,7 +439,8 @@ def _reconcile_guarded_slot(
             orig_ok = raw_ok if type(raw_ok) is bool else False
         except Exception:
             orig_ok = False
-        reconcile_intent_only(identity, ok=orig_ok)
+        assert slot.result is not None
+        reconcile_intent_only(identity, ok=orig_ok, result=slot.result)
 
 
 def _execute_slots(
@@ -424,7 +449,7 @@ def _execute_slots(
     intent_sink: Any, controller_allowed: Any, project_path: Any,
     workspace_ignored_paths: Any, ignores: tuple[str, ...], recovery_ctx: RecoveryContext,
     workspace_revision_store: Any, execution_evidence: Any, settle: Any,
-    reconcile_intent_only: Any, stop_flag: Any,
+    reconcile_intent_only: Any, stop_flag: Any, frozen_specs: Any,
 ) -> list[ToolResult]:
     results: list[ToolResult] = []
     workspace_unconfirmed = False
@@ -446,6 +471,7 @@ def _execute_slots(
             session, identity, call, name, active_turn, intent_sink, controller_allowed,
             project_path=project_path, revision_store=workspace_revision_store,
             ignored_paths=ignores, recovery_ctx=recovery_ctx,
+            frozen_specs=frozen_specs,
         )
         if guarded is not None:
             # Fresh guard errors settle inside the helper; already-durable
@@ -466,6 +492,14 @@ def _execute_slots(
             delegate, runnable, session, call, name, active_turn=active_turn,
             tool_index=base_index + offset, project_path=project_path,
         )
+        from codey.workspace.revision import WorkspaceIdentity
+
+        if name == "run" and exit_code is not None and WorkspaceIdentity.trusted_pair(
+            session.workspace_revision, session.workspace_fingerprint,
+        ).trusted:
+            result = _with_trusted_workspace_state(
+                result, revision=session.workspace_revision, fingerprint=session.workspace_fingerprint,
+            )
         # Single settlement per effect: edits defer settlement until the
         # authoritative bump decides the final result.
         edit_done = _settle_edit_with_workspace_bump(

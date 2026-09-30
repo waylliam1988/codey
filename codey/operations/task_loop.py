@@ -28,6 +28,7 @@ from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
+from codey.toolchain.tool_spec import thaw_schema_value
 
 if TYPE_CHECKING:  # Annotations only; the loop never re-exports TaskSession.
     from codey.operations.task_session import TaskSession
@@ -54,6 +55,10 @@ def _is_native_provider(provider: Any, *, provider_id: object = "") -> bool:
 def _provider_failure(exc: Exception, turns_used: int, *, propagate: bool) -> KernelResult:
     if propagate:
         raise exc
+    from codey.runtime.core.cancellation import TaskCancelled
+
+    if isinstance(exc, TaskCancelled):
+        return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
     # Preserve the error type for invariant diagnostics: a bare str(exc)
     # would hide whether the fault was a settle invariant, a digest outage,
     # or a genuine provider transport error.
@@ -127,6 +132,8 @@ def _approval_stop(
                 deferred_calls=deferred,
                 call_id=str(getattr(call, "call_id", "") or ""),
                 provider_id=str(provider_id or ""),
+                turn=int(turn),
+                tool_index=int(index),
             )
         )
         return KernelResult(False, "shell command requires approval", turn, "approval")
@@ -165,23 +172,7 @@ def _snapshot_for_turn_state(
         native=native,
         tool_names=snapshot.tool_names,
     )
-    return snapshot.allowed, snapshot.contract_text, list(snapshot.native_tools), prompt_now, snapshot
-
-
-def _close_native_protocol_terminal(
-    provider: Any, reply: Any, native: bool, native_tools: Any, error: str,
-) -> KernelResult | None:
-    """统一原生终止收口：先回答当前 id，再结束（所有终止路径共用）。"""
-    if not native or isinstance(reply, str):
-        return None
-    try:
-        from codey.operations import kernel_transport as _t
-        _t.repair_native_dangling(provider, reply, native, native_tools, error)
-    except Exception as exc:
-        return KernelResult(
-            completed=False, summary=f"provider failed: {exc}", turns=0, stop_reason="provider_failure",
-        )
-    return None
+    return snapshot.allowed, snapshot.contract_text, [thaw_schema_value(row) for row in snapshot.native_tools], prompt_now, snapshot
 
 
 def _kernel_handle_protocol(
@@ -200,15 +191,19 @@ def _kernel_handle_protocol(
         return None
     invalid_turns += 1
     if stagnant_turns is not None and invalid_turns >= max(1, int(stagnant_turns)):
-        # 阈值退出同样先收口当前 id，再结束（与成功/取消/审批同一收口）
-        failure = _close_native_protocol_terminal(
-            provider, reply, native, native_tools, str(getattr(plan, "protocol_error", "") or "protocol error"),
-        )
-        if failure is not None:
-            failure = KernelResult(
-                completed=False, summary=str(failure.summary or ""), turns=turn, stop_reason="provider_failure",
-            )
-            return failure
+        # 阈值终止走同一有界关闭：回答当前 id 及后续新调用，不执行工具。
+        # 关闭失败必须反馈 provider failure。
+        if native and not isinstance(reply, str):
+            try:
+                _transport.close_native_reply(
+                    provider, reply, native_tools,
+                    str(getattr(plan, "protocol_error", "") or "protocol error"),
+                )
+            except Exception as exc:
+                return KernelResult(
+                    completed=False, summary=f"provider failed: {exc}",
+                    turns=turn, stop_reason="provider_failure",
+                )
         return KernelResult(
             False, f"stopped after {invalid_turns} invalid tool requests: {plan.protocol_error}", turn, "protocol"
         )
@@ -340,6 +335,12 @@ def _kernel_startup(
     )
 
 
+def _completion_context_with_ignores(context: Any, ignored_paths: Any) -> Any:
+    if context is None or isinstance(context, dict):
+        return {**(context or {}), "workspace_ignored_paths": tuple(ignored_paths or ())}
+    return context
+
+
 def run_task_kernel(
     session: TaskSession,
     *,
@@ -370,7 +371,9 @@ def run_task_kernel(
     provider_session_changed: bool = False,
     workspace_ignored_paths: Any = (),
     workspace_revision_store: Any = None,
+    trace_recorder: Any = None,
 ) -> KernelResult:
+    completion_context = _completion_context_with_ignores(completion_context, workspace_ignored_paths)
     try:
         (
             runnable,
@@ -467,6 +470,10 @@ def run_task_kernel(
             return cancelled
         _events._emit_turn_event(on_event, turn, reply)
         plan = _normalize_turn(reply, snapshot=turn_snapshot)
+        from codey.operations.kernel_trace import record_turn
+
+        record_turn(trace_recorder, phase=session.task_kind, turn=turn,
+                    snapshot=turn_snapshot, plan=plan, native=native)
         protocol_action = _kernel_handle_protocol(
             plan,
             provider,
@@ -519,6 +526,7 @@ def run_task_kernel(
             delivered_map, intent_sink, controller, _outer_evidence,
             workspace_ignored_paths, workspace_revision_store,
             turns_used, propagate_provider_failure, stop_flag,
+            snapshot=turn_snapshot,
         )
         if isinstance(results_or_failure, KernelResult):
             return results_or_failure
@@ -617,6 +625,7 @@ def _call_execute_turn(
     delivered_map: Any, intent_sink: Any, controller: Any, outer_evidence: Any,
     workspace_ignored_paths: Any, workspace_revision_store: Any,
     turns_used: int, propagate_provider_failure: bool, stop_flag: Any = None,
+    snapshot: Any = None,
 ) -> Any:
     """Run one execution turn; faults fail closed as provider_failure."""
     try:
@@ -630,7 +639,7 @@ def _call_execute_turn(
             controller_allowed=controller, execution_evidence=outer_evidence,
             workspace_ignored_paths=workspace_ignored_paths,
             workspace_revision_store=workspace_revision_store,
-            stop_flag=stop_flag,
+            stop_flag=stop_flag, snapshot=snapshot,
         )
     except Exception as exc:
         # Fail closed: an execution-layer fault (e.g. durable settle) never

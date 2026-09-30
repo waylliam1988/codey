@@ -103,7 +103,13 @@ def run_research_mode(
     request = frame.request
     if frame.provider is None:
         raise RuntimeError("provider is not connected")
-    pipeline = run_pipeline or run_research_pipeline
+    from codey.operations.provider_session import ConversationProvider
+
+    frame.provider = ConversationProvider(
+        frame.provider, frame.conversation,
+        fresh_window=(frame.provider_id, "research", frame.project_text),
+    )
+    pipeline = run_pipeline or (lambda *args, **kwargs: run_research_pipeline(deps, *args, **kwargs))
     pipeline_result = pipeline(
         frame,
         hooks,
@@ -115,14 +121,7 @@ def run_research_mode(
         frame.provider_id,
         None if result.stop_reason == "stopped" else request.session_id,
     )
-    frame.conversation.begin_window(
-        frame.provider_id,
-        "research",
-        frame.project_text,
-    )
-    frame.conversation.record_exchange(
-        request.task,
-        result.summary,
+    frame.conversation.update_snapshot(
         replace(
             frame.conversation.snapshot,
             mode="research",
@@ -461,6 +460,14 @@ def research_payload(result: Any, *, pipeline_result: Any | None = None) -> dict
         "counterpoints": result.counterpoints,
         "quality_warnings": result.quality_warnings,
     }
+    # 共同 gate 的权威证明随投影保留，不得丢弃后另造。
+    try:
+        proof = getattr(result, "completion_proof", None)
+        to_payload = getattr(proof, "to_payload", None)
+        if callable(to_payload):
+            payload["completion_proof"] = to_payload()
+    except Exception:
+        pass
     if pipeline_result is not None:
         to_payload = getattr(pipeline_result, "to_payload", None)
         metadata = to_payload() if callable(to_payload) else {}

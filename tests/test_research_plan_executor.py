@@ -6,10 +6,18 @@ from unittest import mock
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
+from codey.policies.task_policy import TaskPolicy
 from codey.research.context import ResearchPipelineConfig
 from codey.research.plan_executor import PlanExecutor
 from codey.research.query_planner import QueryCandidate, ResearchPlan
 from codey.research.tools import ResearchTools
+
+
+def _allow_policy() -> TaskPolicy:
+    # 执行器 mechanics 测试：显式传入允许联网的父策略（生产恒有 entry policy）。
+    return TaskPolicy(grants=frozenset({
+        "control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link",
+    }))
 
 
 def _allow_http_url(url: str, *args, **kwargs) -> str | None:
@@ -101,7 +109,7 @@ def test_plan_executor_bounds_queries_sources_and_url_guard() -> None:
                         max_total_sources=2,
                         max_source_preview_chars=120,
                     )
-                ).execute(plan, tools)
+                ).execute(plan, tools, policy=_allow_policy())
 
             assert result.queries_executed == ("alpha evidence", "beta evidence")
             assert len(result.opened_sources) == 2
@@ -181,7 +189,7 @@ def test_plan_executor_stops_before_search_when_total_source_budget_is_full() ->
                         max_sources_per_query=2,
                         max_total_sources=2,
                     )
-                ).execute(plan, tools)
+                ).execute(plan, tools, policy=_allow_policy())
 
             assert result.stop_reason == "max_sources"
             assert result.queries_executed == ("alpha evidence",)
@@ -225,7 +233,7 @@ def test_plan_executor_bounds_malformed_plan_limits() -> None:
                         max_sources_per_query=1,
                         max_total_sources=1,
                     )
-                ).execute(plan, tools)
+                ).execute(plan, tools, policy=_allow_policy())
 
             assert result.queries_executed == ("alpha evidence",)
             assert result.fresh_source_urls == ("https://example.com/alpha",)
@@ -267,7 +275,7 @@ def test_plan_executor_skips_baseline_urls_and_reports_no_new_material() -> None
                         max_sources_per_query=2,
                         max_total_sources=2,
                     )
-                ).execute(plan, tools)
+                ).execute(plan, tools, policy=_allow_policy())
 
             assert result.queries_executed == ("alpha evidence",)
             assert result.fresh_source_urls == ()
@@ -337,7 +345,7 @@ def test_plan_executor_skips_root_landing_pages_before_opening() -> None:
                         max_sources_per_query=2,
                         max_total_sources=2,
                     )
-                ).execute(plan, tools)
+                ).execute(plan, tools, policy=_allow_policy())
 
             assert backend.fetch_calls == ["https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"]
             assert result.fresh_source_urls == ("https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/",)
@@ -401,7 +409,7 @@ def test_plan_executor_does_not_count_redirect_to_root_landing_page_as_fresh_mat
                         max_sources_per_query=1,
                         max_total_sources=1,
                     )
-                ).execute(plan, tools)
+                ).execute(plan, tools, policy=_allow_policy())
 
             assert backend.fetch_calls == ["https://example.com/article"]
             assert result.fresh_source_urls == ()
@@ -472,7 +480,7 @@ def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
                         max_sources_per_query=4,
                         max_total_sources=4,
                     )
-                ).execute(plan, tools)
+                ).execute(plan, tools, policy=_allow_policy())
 
             assert result.fresh_source_urls == ("https://example.com/target",)
             assert result.fresh_source_count == 1

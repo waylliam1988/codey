@@ -145,7 +145,7 @@ class FreshMaterialPlanExecutor:
         self.config = config
         self.should_stop = should_stop
 
-    def execute(self, plan: ResearchPlan, tools: ResearchTools) -> PlanExecutionResult:
+    def execute(self, plan: ResearchPlan, tools: ResearchTools, *, policy: object) -> PlanExecutionResult:
         runtime = clone_research_tools(tools)
         baseline_opened = _opened_url_set(runtime)
         queries: list[str] = []
@@ -351,6 +351,7 @@ def run_case(
             plan,
             material,
             question: str,
+            parent_policy: object,
             initial_summary: str = "",
             max_context_chars: int = 8000,
             should_stop=None,
@@ -362,6 +363,7 @@ def run_case(
                 plan=plan,
                 material=material,
                 question=question,
+                parent_policy=parent_policy,
                 initial_summary=initial_summary,
                 max_context_chars=max_context_chars,
                 should_stop=should_stop,
@@ -397,6 +399,7 @@ def run_case(
                 evidence_followup_runner=run_followup,
                 evidence_ledgers=evidence_ledgers,
                 config=_config_for_arm(arm),
+                policy=_ab_parent_policy(),
             )
             materials: list[PlanExecutionResult] = []
             pipeline_result = _run_pipeline_with_ab_experiment(
@@ -496,6 +499,15 @@ def run_case(
             store.close()
 
 
+def _ab_parent_policy():
+    """A/B 手工探针的父策略：允许联网读写（生产恒有 entry policy）。"""
+    from codey.policies.task_policy import TaskPolicy
+
+    return TaskPolicy(grants=frozenset({
+        "control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link",
+    }))
+
+
 def _config_for_arm(arm: str) -> ResearchPipelineConfig:
     if arm == "baseline":
         return ResearchPipelineConfig(enabled=False, max_followup_rounds=0)
@@ -528,8 +540,8 @@ def _run_pipeline_with_ab_experiment(
                 should_stop=should_stop or (lambda: False),
             )
 
-        def execute(self, plan: ResearchPlan, tools: ResearchTools) -> PlanExecutionResult:
-            material = super().execute(plan, tools)
+        def execute(self, plan: ResearchPlan, tools: ResearchTools, *, policy: object) -> PlanExecutionResult:
+            material = super().execute(plan, tools, policy=policy)
             if materials is not None:
                 materials.append(material)
             return material
@@ -987,6 +999,7 @@ def _self_test() -> None:
                         max_sources=2,
                     ),
                     tools,
+                    policy=_ab_parent_policy(),
                 )
             assert material_result.fresh_source_urls == ("https://source-b.test/widget-storage-update",)
             assert material_result.fresh_source_count == 1
@@ -1059,6 +1072,7 @@ def _self_test() -> None:
                     stop_reason="opened_sources",
                 ),
                 question=CASES["widget_noop"].question,
+                parent_policy=_ab_parent_policy(),
             )
             assert replay.ok is True
             assert replay.stop_reason == "written"

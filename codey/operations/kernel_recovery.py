@@ -506,12 +506,12 @@ def _batch_recovery_failed_results(calls: list[ToolCall], message: str) -> list[
     return results
 
 
-def _skip_unsettled(intent_sink: Any, identity: str, name: str) -> bool:
+def _skip_unsettled(intent_sink: Any, identity: str, name: str, frozen_specs: Any = None) -> bool:
     if intent_sink is None:
         return False
     from codey.toolchain.tool_spec import spec_for_tool
 
-    spec = spec_for_tool(name)
+    spec = frozen_specs.get(name) if frozen_specs is not None else spec_for_tool(name)
     return bool(intent_sink.has_unsettled(identity)) and (spec is None or spec.replay_class != "safe")
 
 
@@ -528,6 +528,7 @@ def _guarded_slot_result(
     revision_store: Any = None,
     ignored_paths: Any = (),
     recovery_ctx: RecoveryContext | None = None,
+    frozen_specs: dict[str, Any] | None = None,
 ) -> ToolResult | None:
     """Policy/controller/replay guards; None means proceed to real execution.
 
@@ -548,9 +549,9 @@ def _guarded_slot_result(
         return _recovery_failed_result(call, f"replay check failed: {exc}")
     if replayed_slot.disposition != "NO_MATCH":
         return replayed_slot.result
-    if _skip_unsettled(intent_sink, identity, name):
+    if _skip_unsettled(intent_sink, identity, name, frozen_specs):
         return _error_result(call, f"interrupted {name} not re-executed; see prior intent")
-    if not _policy_allows(session.policy, name):
+    if not _policy_allows(session.policy, name, frozen_specs):
         return _error_result(call, f"disallowed tool for this task policy: {name or '?'}")
     if controller_allowed is not None:
         try:

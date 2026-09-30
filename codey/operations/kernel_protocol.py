@@ -27,6 +27,9 @@ class TurnSnapshot:
     fallback list. Carries the allowed tools, frozen tool definitions plus
     both protocols' contracts for the round. The snapshot object贯穿发送、
     解析与执行：注册表变化下一轮生效，本轮解析与执行共用同一冻结定义。
+    ``frozen_specs`` are nested-immutable (mapping proxies inside); the
+    ``custom_executors`` table freezes third-task bindings so a mid-turn
+    registry swap cannot reroute this turn's execution.
     """
 
     allowed: tuple[str, ...] | None
@@ -35,53 +38,58 @@ class TurnSnapshot:
     tool_names: tuple[str, ...] = ()
     policy: Any = None
     frozen_specs: tuple[Any, ...] = ()
+    custom_executors: tuple[tuple[str, Any], ...] = ()
 
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
     policy = getattr(session, "policy", None)
-    if not bool(getattr(policy, "strict_research", False)):
-        return None
-    results = dict(getattr(session, "search_results", {}) or {})
-    opened = set(getattr(session, "opened_sources", set()) or set())
-    evidence = list(getattr(session, "evidence", []) or [])
-    if not results and not opened:
-        return ("knowledge_search", "knowledge_read", "web_search", "done")
-    if not opened:
-        return ("knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "done")
-    if not evidence:
-        return (
-            "knowledge_search",
-            "knowledge_read",
-            "web_search",
-            "open_url",
-            "open_result",
-            "reopen_source",
-            "open_hit",
-            "source_search",
-            "knowledge_write",
-            "done",
-        )
-    return None
-
-
-def _native_tools_for_policy(policy: Any, controller_allowed: Any = None) -> list[dict[str, Any]]:
-    """Native schemas for one turn's snapshot; fail-closed like the names."""
     try:
-        from codey.toolchain.tool_spec import native_tools_for_snapshot
-    except Exception as exc:
-        raise RuntimeError(f"native tool snapshot unavailable: {exc}") from exc
-    return list(native_tools_for_snapshot(policy, controller_allowed))
+        denied = {str(n or "").strip().lower() for n in (getattr(session, "controller_denied", ()) or ())
+                  if str(n or "").strip()}
+    except Exception:
+        denied = set()
+    if not bool(getattr(policy, "strict_research", False)):
+        base: tuple[str, ...] | None = None
+    else:
+        results = dict(getattr(session, "search_results", {}) or {})
+        opened = set(getattr(session, "opened_sources", set()) or set())
+        evidence = list(getattr(session, "evidence", []) or [])
+        if not results and not opened:
+            base = ("knowledge_search", "knowledge_read", "web_search", "done")
+        elif not opened:
+            base = ("knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "done")
+        elif not evidence:
+            base = (
+                "knowledge_search",
+                "knowledge_read",
+                "web_search",
+                "open_url",
+                "open_result",
+                "reopen_source",
+                "open_hit",
+                "source_search",
+                "knowledge_write",
+                "done",
+            )
+        else:
+            base = None
+    if not denied:
+        return base
+    if base is None:
+        # 否决表存在时 unlimited 即不可用：按策略可见全集减去否决，
+        # 收窄仍经同一快照进入提示、schema、解析与执行。
+        from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
+
+        base = tuple(visible_tool_names_for_snapshot(policy, None))
+    return tuple(name for name in base if name not in denied)
 
 
 def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[Any, ...]:
-    """Deep-freeze本轮工具定义（含嵌套 schema），注册表变化下一轮生效。
-
-    调用方已算好本轮可见名单，此处不再重复调用 visible（避免每轮多次
-    计数，保证快照失败测试的“一次构建两次底层调用”语义）。
-    """
+    """Capture immutable definitions for exactly the advertised names."""
     import copy as _copy
 
     try:
+        from codey.toolchain.tool_spec import freeze_spec_parameters as _freeze
         from codey.toolchain.tool_spec import tool_specs as _all_specs
     except Exception as exc:
         raise RuntimeError(f"tool snapshot unavailable: {exc}") from exc
@@ -92,10 +100,48 @@ def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[Any, ...]:
         if spec is None:
             continue
         try:
-            frozen.append(_copy.deepcopy(spec))
+            copied = _copy.deepcopy(spec)
+        except Exception as exc:
+            raise RuntimeError(f"tool snapshot freeze failed for {name}: {exc}") from exc
+        try:
+            frozen.append(_freeze(copied))
         except Exception as exc:
             raise RuntimeError(f"tool snapshot freeze failed for {name}: {exc}") from exc
     return tuple(frozen)
+
+
+def _frozen_custom_executors(names: tuple[str, ...]) -> tuple[tuple[str, Any], ...]:
+    """Freeze third-task executor bindings for this turn (same source)."""
+    try:
+        from codey.toolchain.tool_spec import custom_executor_for as _fn_for
+    except Exception as exc:
+        raise RuntimeError(f"tool snapshot executors unavailable: {exc}") from exc
+    bindings: list[tuple[str, Any]] = []
+    for name in names:
+        try:
+            fn = _fn_for(name)
+        except Exception as exc:
+            raise RuntimeError(f"tool snapshot executor freeze failed for {name}: {exc}") from exc
+        bindings.append((name, fn))
+    return tuple(bindings)
+
+
+def frozen_spec_map(snapshot: TurnSnapshot | None) -> dict[str, Any] | None:
+    if snapshot is None:
+        return None
+    mapping = {spec.name: spec for spec in snapshot.frozen_specs}
+    if set(mapping) != set(snapshot.tool_names):
+        raise ValueError("incomplete tool snapshot definitions")
+    return mapping
+
+
+def frozen_custom_executor_map(snapshot: TurnSnapshot | None) -> dict[str, Any] | None:
+    if snapshot is None:
+        return None
+    mapping = dict(snapshot.custom_executors)
+    if set(mapping) != set(snapshot.tool_names):
+        raise ValueError("incomplete tool snapshot executor bindings")
+    return mapping
 
 
 def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
@@ -104,15 +150,17 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     # (unlimited). Callers must treat the exception as a per-turn config
     # error and stop.
     allowed = controller_allowed_for_session(session)
-    from codey.toolchain.tool_spec import json_contract_text as _contract
-
-    contract_now = _contract(session.policy, controller_allowed=allowed) if _contract is not None else ""
-    native_now = _native_tools_for_policy(session.policy, allowed) if native else []
-    from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
+    from codey.toolchain.tool_spec import _freeze_schema_value, visible_tool_names_for_snapshot
 
     names = tuple(visible_tool_names_for_snapshot(session.policy, allowed))
     frozen = _frozen_specs_for_names(names)
-    # native schemas 必须与同一冻结定义同源，避免 schema 与校验漂移
+    frozen_by_name = {str(getattr(s, "name", "") or ""): s for s in frozen}
+    from codey.toolchain.tool_spec import json_contract_text as _contract
+
+    # JSON 与 native 契约同源：都从同一冻结定义生成，不再查实时注册表。
+    contract_now = _contract(session.policy, controller_allowed=allowed,
+                             specs=frozen_by_name) if _contract is not None else ""
+    native_now: list[dict[str, Any]] = []
     if native:
         try:
             from codey.toolchain.tool_spec import _schema_for_spec as _schema_fn
@@ -134,15 +182,18 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
                 })
             rebuilt.sort(key=lambda item: str(((item.get("function") or {}).get("name")) or ""))
             native_now = rebuilt
-        except Exception:
-            pass
+        except Exception as exc:
+            # 构建失败即停本轮：绝不回退到实时注册表的旧 schema。
+            raise RuntimeError(f"native tool snapshot rebuild failed: {exc}") from exc
+    executors = _frozen_custom_executors(names)
     return TurnSnapshot(
         allowed=allowed,
         contract_text=str(contract_now or ""),
-        native_tools=tuple(native_now),
+        native_tools=tuple(_freeze_schema_value(row) for row in native_now),
         tool_names=names,
         policy=session.policy,
         frozen_specs=frozen,
+        custom_executors=executors,
     )
 
 
@@ -201,12 +252,14 @@ def _controller_allows(tool: str, allowed: set[str] | None) -> bool:
     return name in allowed
 
 
-def _policy_allows(policy: Any, tool: str) -> bool:
+def _policy_allows(policy: Any, tool: str, frozen_specs: dict[str, Any] | None = None) -> bool:
     allows = getattr(policy, "allows", None)
     if not callable(allows):
         return False
     try:
-        return bool(allows(_grant_for_tool(tool)))
+        spec = frozen_specs.get(tool) if frozen_specs is not None else None
+        grant = spec.grant if spec is not None else "" if frozen_specs is not None else _grant_for_tool(tool)
+        return bool(grant and allows(grant))
     except Exception:
         return False
 
@@ -344,22 +397,6 @@ def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, 
     return {key: value for key, value in result.args.items() if key in args}, ""
 
 
-def _frozen_map(snapshot: Any | None) -> dict[str, Any] | None:
-    if snapshot is None:
-        return None
-    try:
-        frozen = getattr(snapshot, "frozen_specs", ()) or ()
-    except Exception:
-        return None
-    mapping: dict[str, Any] = {}
-    for spec in frozen:
-        try:
-            mapping[str(getattr(spec, "name", "") or "").strip().lower()] = spec
-        except Exception:
-            continue
-    return mapping or None
-
-
 def _lookup_spec(name: str, frozen_specs: dict[str, Any] | None) -> tuple[Any, str]:
     try:
         if frozen_specs is not None:
@@ -430,15 +467,6 @@ def _validate_tool_args(
         return _validate_coding_args(name, args)
     if executor in {"source", "knowledge"}:
         return _validate_research_args(name, args)
-    # Fallback when the spec helper is unavailable (import failure): keep the
-    # legacy split so validation still fails closed, never open.
-    if name in _CONTROLLER_ALIASES:
-        return _validate_research_args(name, args)
-    # Spec exists but executor unknown (e.g. custom registered while legacy
-    # helpers failed to import): generic pass-through on required-args only.
-    if spec is not None:
-        return dict(args) if isinstance(args, dict) else {}, ""
-    return {}, f"unknown tool: {tool or '?'}"
 
 
 def _expand_text_batch(tool: str, args: dict[str, Any]) -> tuple[list[tuple[str, dict[str, Any], str]], str]:
@@ -522,7 +550,7 @@ def _plan_from_tool_objects(
         if tool == "done":
             if len(items) != 1:
                 return _invalid_plan("done must be the only call in a turn", tool=tool, kind="too_many_tools")
-            if not _policy_allows(policy, "done"):
+            if not _policy_allows(policy, "done", frozen_specs):
                 return _disallowed_plan(tool)
             if not _controller_allows("done", controller_allowed):
                 return _disallowed_plan(tool, controller=True)
@@ -531,7 +559,7 @@ def _plan_from_tool_objects(
                 return _invalid_plan(error, tool=tool)
             text = str(validated.get("summary") or "").strip()
             return ToolPlan(calls=[], control=Control(kind="done", body=text), control_args=validated)
-        if not _policy_allows(policy, tool):
+        if not _policy_allows(policy, tool, frozen_specs):
             return _disallowed_plan(tool)
         if not _controller_allows(tool, controller_allowed):
             return _disallowed_plan(tool, controller=True)
@@ -561,13 +589,15 @@ def normalize_turn(
     frozen: dict[str, Any] | None = None
     if snapshot is not None:
         try:
-            policy = getattr(snapshot, "policy", None) if policy is None else policy
+            if policy is not None and policy != snapshot.policy:
+                return _invalid_plan("turn policy differs from the captured authorization")
+            policy = snapshot.policy
             allowed_raw = getattr(snapshot, "allowed", None)
             allowed = None if allowed_raw is None else {str(n or "").strip().lower() for n in allowed_raw}
             snapshot_names = tuple(getattr(snapshot, "tool_names", ()) or ())
-            frozen = _frozen_map(snapshot)
-        except Exception:
-            frozen = None
+            frozen = frozen_spec_map(snapshot)
+        except Exception as exc:
+            return _invalid_plan(f"invalid tool snapshot: {exc}")
     else:
         allowed = None if controller_allowed is None else {str(n or "").strip().lower() for n in controller_allowed}
     tool_calls = getattr(reply, "tool_calls", None) if not isinstance(reply, str) else None
@@ -606,7 +636,9 @@ def normalize_turn(
             "native tool call without an id cannot be answered: " + ", ".join(missing),
             kind="invalid_args",
         )
-    ids = [str(getattr(call, "id", "") or "") for call in calls]
+    ids = [getattr(call, "id", "") for call in calls]
+    if any(not isinstance(value, str) or not value.strip() or len(value) > 256 for value in ids):
+        return _invalid_plan("native tool call ids must be nonempty strings of at most 256 characters", kind="invalid_args")
     if len(ids) != len(set(ids)):
         return _invalid_plan("duplicate native tool call ids cannot be answered unambiguously", kind="invalid_args")
     names = [str(getattr(c, "name", "") or "").strip().lower() for c in calls]
@@ -631,5 +663,7 @@ __all__ = [
     "TurnSnapshot",
     "build_turn_snapshot",
     "controller_allowed_for_session",
+    "frozen_custom_executor_map",
+    "frozen_spec_map",
     "normalize_turn",
 ]

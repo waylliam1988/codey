@@ -74,34 +74,11 @@ def _session_profile(session: Any) -> str:
 
 
 def _task_requires_modification(session: Any) -> bool:
-    """Explicit entry requirement; never keyword-guessed.
-
-    The task entry sets ``project_changes_required`` (and/or a
-    ``project_changes_required`` required_check). Write permission alone
-    never implies modification, so read-only tasks like
-    "检查 bug，不要修改任何文件" stay completable without edits.
-    """
-    try:
-        if bool(getattr(session, "project_changes_required", False) is True):
-            try:
-                kind = str(getattr(session, "task_kind", "") or "").strip().lower()
-            except Exception:
-                kind = ""
-            return kind in {"project", "hybrid"}
-    except Exception:
-        pass
-    try:
-        policy = getattr(session, "policy", None)
-        required = tuple(getattr(policy, "required_checks", ()) or ())
-        if "project_changes_required" in {str(r or "").strip() for r in required}:
-            try:
-                kind = str(getattr(session, "task_kind", "") or "").strip().lower()
-            except Exception:
-                kind = ""
-            return kind in {"project", "hybrid"}
-    except Exception:
-        pass
-    return False
+    """An explicit goal requirement applies independently of task profile."""
+    if getattr(session, "project_changes_required", False) is True:
+        return True
+    policy = getattr(session, "policy", None)
+    return "project_changes_required" in tuple(getattr(policy, "required_checks", ()) or ())
 
 
 def _verification_identity_matches(item: dict[str, Any], sess_fp: str, sess_rev: int) -> bool:
@@ -132,6 +109,7 @@ def _verification_identity_matches(item: dict[str, Any], sess_fp: str, sess_rev:
 
 
 def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
+    _refresh_completion_workspace(session, context)
     if context is not None:
         real = _engine_checks(session, context)
         if real is not None:
@@ -169,6 +147,26 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     return [row] if row is not None else []
 
 
+def _refresh_completion_workspace(session: Any, context: Any) -> None:
+    """Compare verification with files observed at the completion boundary."""
+    from pathlib import Path
+
+    from codey.workspace.revision import workspace_fingerprint
+
+    get = context.get if isinstance(context, dict) else lambda key: getattr(context, key, None)
+    # Post-review evaluation already refreshed the operation's evidence.
+    if get("project_evaluation") is not None or not session.edited_files:
+        return
+    root = getattr(session, "project", "") or get("project")
+    if not root or not Path(root).is_dir():
+        return
+    fingerprint = workspace_fingerprint(root, ignored_paths=get("workspace_ignored_paths") or ())
+    session.set_workspace_state(session.workspace_revision, fingerprint)
+    evidence = get("execution_evidence")
+    if evidence is not None:
+        evidence.set_workspace_state(session.workspace_revision, fingerprint)
+
+
 def _fresh_verification_verdict(
     session: Any,
     verifications: list[Any],
@@ -199,6 +197,7 @@ def _fresh_verification_verdict(
             code = None
         valid = (
             code is not None
+            and item.get("passed") is not False
             and _session_check_covers_candidate(session, item, scope)
             and _verification_identity_matches(item, session_fingerprint, session_revision)
         )
@@ -404,6 +403,10 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
 
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
     get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    provided = get("project_evaluation")
+    if provided is not None:
+        proof = provided.decision.proof
+        return list(proof.checks) if proof is not None else None
     evidence = get("execution_evidence")
     if evidence is None:
         return None
@@ -653,7 +656,11 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
 
 
 def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
-    """最终收据绑定的实际任务引用：run 身份 + 结果引用（refs only）。"""
+    """最终收据绑定的实际任务引用：run 身份 + 结果收据引用（refs only）。
+
+    edit 引用携带工作区 revision，verification 引用携带 workspace 身份，
+    唯一指向实际执行；描述标签（edit:路径）不再单独作为完成证据。
+    """
     refs: list[str] = []
     try:
         get = (lambda k: context.get(k)) if isinstance(context, dict) else (lambda k: getattr(context, k, None)) if context is not None else (lambda k: None)
@@ -664,8 +671,15 @@ def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
         pass
     try:
         edited = dict(getattr(session, "edited_files", {}) or {})
-        for path in sorted(str(k)[:120] for k in edited)[:8]:
-            refs.append(f"edit:{path}")
+        for path, rev in sorted(
+            ((str(k)[:120], v) for k, v in edited.items()),
+            key=lambda row: row[0],
+        )[:8]:
+            try:
+                rev_num = int(rev)
+            except (TypeError, ValueError):
+                rev_num = -1
+            refs.append(f"edit:{path}@rev{rev_num}" if rev_num >= 0 else f"edit:{path}")
     except Exception:
         pass
     try:
@@ -677,7 +691,19 @@ def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
         verifs = list(getattr(session, "verifications", ()) or [])[-4:]
         for item in verifs:
             if isinstance(item, dict):
-                refs.append(f"verify:{str(item.get('command', '') or '')[:80]}:{item.get('exit_code', '?')}")
+                command = str(item.get("command", "") or "")[:80]
+                exit_code = item.get("exit_code", "?")
+                ws_rev = item.get("workspace_revision")
+                ws_fp = str(item.get("workspace_fingerprint") or "")
+                identity = ""
+                try:
+                    if ws_rev is not None and int(ws_rev) >= 0:
+                        identity = f"@ws{int(ws_rev)}"
+                except (TypeError, ValueError):
+                    identity = ""
+                if not identity and ws_fp:
+                    identity = f"@{ws_fp[:24]}"
+                refs.append(f"verify:{command}{identity}:{exit_code}")
     except Exception:
         pass
     return tuple(refs[:12])
@@ -857,23 +883,14 @@ def _dedupe_checks(checks: list[CompletionCheck]) -> list[CompletionCheck]:
 
 
 def _contract_subject(session: Any, profile: str, context: Any) -> str:
-    run_id = ""
-    task_ref = ""
     try:
         get = (lambda k: context.get(k)) if isinstance(context, dict) else (lambda k: getattr(context, k, None))
         run_id = str(get("run_id") or "")[:80]
-        task_ref = str(get("task") or get("question") or getattr(session, "task_text", "") or "")[:120]
     except Exception:
-        pass
+        run_id = ""
     if run_id:
         return f"run:{run_id}:task:{profile or 'task'}"
-    if task_ref:
-        try:
-            from codey.utils.refs import digest_text as _digest
-
-            return f"task:{profile or 'task'}:{_digest(task_ref)[:16]}"
-        except Exception:
-            return f"task:{profile or 'task'}"
+    # 无 run 身份即无唯一定位：只保留 profile，不再用任务文本摘要伪造身份。
     return f"task:{profile or 'task'}"
 
 
@@ -894,8 +911,18 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     domain = _domain_for_session(session)
     subject = _contract_subject(session, profile, context)
     evidence_refs = _proof_evidence_refs(session, context)
+    get = context.get if isinstance(context, dict) else lambda key: getattr(context, key, None)
+    coding_evaluation = get("project_evaluation")
+    coding_proof = coding_evaluation.decision.proof if coding_evaluation is not None else None
+    refs = {
+        key: getattr(coding_proof, key, ())
+        for key in ("limitation_refs", "finding_refs", "analysis_run_refs",
+                    "artifact_refs", "external_refs", "diagnostic_refs")
+    }
+    if coding_proof is not None:
+        evidence_refs = (*coding_proof.evidence_refs, *evidence_refs)
     try:
-        contract = build_completion_contract(domain=domain, subject_ref=subject, checks=deduped, evidence_refs=evidence_refs)
+        contract = build_completion_contract(domain=domain, subject_ref=subject, checks=deduped, evidence_refs=evidence_refs, **refs)
     except Exception as exc:
         return GateVerdict(
             complete=False,

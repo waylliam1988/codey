@@ -57,6 +57,27 @@ from codey.task.model import TaskSubmission
 from codey.workspace.config import ProjectConfigLoadResult, preferred_provider_for
 
 
+def _previous_run_policy(deps: Any, request: Any, frame: Any) -> Any | None:
+    """Approval continuations require the original persisted authorization."""
+    previous = str(getattr(request, "previous_run_id", "") or "")
+    if not previous:
+        return None
+    try:
+        from codey.policies.task_policy import TaskPolicy
+        from codey.runtime.core.operation_state import operation_state_from_entries
+
+        session_log = deps.runtime_mutations.session_log
+        state = operation_state_from_entries(
+            session_log.entries(request.session_id),
+            session_id=request.session_id, run_id=previous,
+        )
+        if state is None or not isinstance(state.task_policy, dict):
+            raise ValueError("missing original task policy")
+        return TaskPolicy.from_payload(state.task_policy)
+    except (AttributeError, OSError, TypeError, ValueError) as exc:
+        raise RuntimeError("original task authorization unavailable for approval continuation") from exc
+
+
 def connect_and_build_frame(
     deps: TaskRunDeps,
     state: TaskState,
@@ -163,6 +184,7 @@ def _planning_deps(deps: TaskRunDeps) -> PlanningFlowDeps:
         agent_run=deps.agent_run,
         project_facts=deps.project_facts,
         knowledge_store=deps.knowledge_store,
+        search_factory=deps.search_factory,
         review_log_lines=deps.review_log_lines,
         ghost_directive=lambda **kwargs: ghost_directive(deps.state, **kwargs),
         ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
@@ -219,6 +241,11 @@ def dispatch_run_mode(
     request = getattr(frame, "request", None)
     if request is not None:
         frame.entry_policy = build_task_policy_for_entry(request, task_kind)
+        # 审批 continuation 继续沿用原运行的持久化策略（同一任务会话、
+        # 同一授权快照）；原策略缺失时终止 continuation。
+        reused = _previous_run_policy(deps, request, frame)
+        if reused is not None:
+            frame.entry_policy = reused
     # Single task entry: project/research/hybrid/readonly share one
     # run_task_mode (same TaskSession/tool loop); ResearchPipeline and project
     # review stay as strategy phases scheduled there. Chat/review/auto keep

@@ -226,7 +226,7 @@ def coding_loop(case, legacy):
                     max_turns=case.get("max_turns", 5), stagnant_turns=case.get("stagnant_turns", 2),
                     provider_id="local" if case.get("native") else "",
                     on_event=events.append, stop_flag=flag, tool_fns=tool_fns, conversation=conversation,
-                    fresh_chat=case.get("fresh_chat", True), strict_fresh_chat=case.get("strict_fresh", False),
+                    fresh_chat=case.get("fresh_chat", True),
                     permission_profile=case.get("profile", "coding_writer"), handoff=case.get("handoff", ""),
                     **kwargs,
                 ))
@@ -283,7 +283,7 @@ def research_loop(case, legacy):
 
                     iteration = run_research_iteration(SimpleNamespace(knowledge_store=store), provider=provider,
                         session_id="s", project="", task="How is helium obtained?", max_turns=case.get("max_turns", 6),
-                        on_event=lambda _e: None, stop_flag=flag, provider_id="local", run_id="", chat_handoff="",
+                        on_event=lambda _e: None, stop_flag=flag, provider_id="local", run_id=case["id"], chat_handoff="",
                         trace_recorder=None, search=Search())
                     result = iteration.result
                     tools = iteration.tools

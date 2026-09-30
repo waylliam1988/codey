@@ -12,6 +12,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from codey.agents.shell_approval import render_deferred_tool_calls
 from codey.app.run_registry import RunSnapshot
@@ -29,6 +30,94 @@ from codey.workspace.setup_context import safe_setup_context
 class ShellApprovalContinuationPlan:
     continuation: str
     provider_id: str
+    # 回答原 native 调用的结构化结果（可序列化字典）；continuation 运行
+    # 以 turn-0 初始结果首发它们（同会话 native 优先，异会话文本兜底）。
+    shell_results: tuple[dict[str, object], ...] = ()
+
+
+def shell_result_content(*, command: str, result: dict, approved: bool) -> str:
+    """Structure the shell outcome text answered to the original call."""
+    from codey.agents.shell_approval import shell_command_text
+
+    output = str(result.get("output") or result.get("error") or "(no output)")
+    exit_code = result.get("exit_code")
+    if approved:
+        head = (
+            f"Shell result (approved and executed): {shell_command_text(command)}\n"
+            f"Exit code: {exit_code}\nOutput:\n{output}"
+        )
+    else:
+        head = (
+            f"Shell result (NOT executed, denied by user): {shell_command_text(command)}\n"
+            f"Output:\n{output}"
+        )
+    if bool(result.get("truncated")):
+        head += "\n[output truncated; inspect narrower output if needed]"
+    return head
+
+
+def shell_result_row(pending: dict, result: dict, *, approved: bool) -> Any:
+    """Build the turn-0 redelivery row answering the original shell call.
+
+    原 call id 无有效值时返回 None（调用方仅走文本 continuation）。
+    行标记 redelivered：重发已裁决结果，不重新执行命令。
+    """
+    from codey.agents.request import RecoveredToolOutcome
+    from codey.agents.shell_approval import valid_shell_call_id
+    from codey.runtime.core.models import ToolCall
+    from codey.toolchain.runtime import ToolOutcome
+
+    call_id = pending.get("call_id", "")
+    if not valid_shell_call_id(call_id):
+        return None
+    command = str(pending.get("command") or "")
+    cwd = str(pending.get("cwd") or ".")
+    text = shell_result_content(command=command, result=result, approved=approved)
+    exit_code = result.get("exit_code")
+    exit_code = exit_code if type(exit_code) is int else None
+    ok = approved and result.get("ok") is True and result.get("status") != "denied"
+    if not approved:
+        ok = False
+    call = ToolCall(
+        name="shell",
+        args={"command": command, "path": cwd},
+        call_id=call_id,
+    )
+    outcome = ToolOutcome(
+        text, ok,
+        audit={"exit_code": exit_code} if exit_code is not None else {},
+        error_code="" if ok else str(result.get("status") or "denied" if not approved else "shell_error"),
+        exit_code=exit_code,
+    )
+    return RecoveredToolOutcome(
+        call=call,
+        outcome=outcome,
+        turn=0,
+        tool_index=0,
+        effect_id="",
+        redelivered=True,
+    )
+
+
+def shell_result_payload(row: Any) -> dict[str, object] | None:
+    """Serialize one shell result row for cross-boundary submission."""
+    if row is None:
+        return None
+    try:
+        call = getattr(row, "call", None)
+        outcome = getattr(row, "outcome", None)
+        return {
+            "call_id": str(getattr(call, "call_id", "") or ""),
+            "command": str((getattr(call, "args", {}) or {}).get("command") or ""),
+            "cwd": str((getattr(call, "args", {}) or {}).get("path") or "."),
+            "model_text": str(getattr(outcome, "model_text", "") or ""),
+            "ok": bool(getattr(outcome, "ok", False)),
+            "exit_code": getattr(outcome, "exit_code", None),
+            "error_code": str(getattr(outcome, "error_code", "") or ""),
+            "truncated": bool(getattr(outcome, "truncated", False)),
+        }
+    except Exception:
+        return None
 
 
 @dataclass(frozen=True)
@@ -383,6 +472,7 @@ def build_shell_approval_continuation_plan(
     pending: dict,
     result: dict,
     active_run: RunSnapshot | None = None,
+    shell_results: tuple[dict[str, object], ...] = (),
 ) -> ShellApprovalContinuationPlan:
     setup_context = shell_continuation_setup_context(pending)
     followup_hints = shell_followup_hints(
@@ -414,6 +504,7 @@ def build_shell_approval_continuation_plan(
     return ShellApprovalContinuationPlan(
         continuation=continuation,
         provider_id=provider_id,
+        shell_results=tuple(shell_results or ()),
     )
 
 
@@ -468,4 +559,7 @@ __all__ = [
     "shell_continuation_setup_context",
     "shell_followup_hints",
     "shell_followup_verification_candidates",
+    "shell_result_content",
+    "shell_result_payload",
+    "shell_result_row",
 ]

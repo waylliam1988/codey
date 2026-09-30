@@ -28,6 +28,8 @@ class ResearchRunResult:
     advisor_count: int = 0
     research_record: Any | None = None
     max_turns_used: int = 14
+    # 共同 gate 的权威证明：投影与外层不得丢弃后另造。
+    completion_proof: Any | None = None
 
     @property
     def receipt(self) -> str:

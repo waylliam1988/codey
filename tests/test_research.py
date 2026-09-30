@@ -12,7 +12,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.agents.consensus import ConsensusAdvice
 from codey.automation import browser_worker
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
@@ -29,7 +28,6 @@ from codey.research.provenance import provenance_problem
 from codey.research.report_quality import review_report_quality
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.source_rendering import UNTRUSTED_SOURCE_END, UNTRUSTED_SOURCE_START
-from codey.research.tool_contract import research_tool_contract_hash
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -37,13 +35,53 @@ from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from tests.support.research_controller import (
     OpenTarget,
     ResearchControlState,
-    controller_action_contract_hash,
     controller_system_prompt,
     format_controller_results,
     render_control_block,
 )
 from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import JsonToolCodec
+
+
+def _research_policy():
+    """Fixture research policy: full read/write grants for tool tests."""
+    from codey.policies.task_policy import TaskPolicy
+
+    return TaskPolicy(grants=frozenset({
+        "control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link",
+    }))
+
+
+def _execute_research_call(tools, call):
+    """当前生产执行入口：同一 execute_turn（内存会话，无持久化）。"""
+    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.task_session import TaskSession
+
+    session = TaskSession(
+        policy=_research_policy(), task_kind="research", max_turns=2, task_text="q",
+    )
+    results = execute_turn(
+        session, [call], research_tools=tools, run_id="r-tool-test", turn=1,
+    )
+    assert len(results) == 1
+    return results[0]
+
+
+def _validate_research_call(call):
+    """当前生产校验入口：同一 snapshot 的 normalize_turn。"""
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.task_session import TaskSession
+
+    session = TaskSession(
+        policy=_research_policy(), task_kind="research", max_turns=2, task_text="q",
+    )
+    snapshot = build_turn_snapshot(session)
+    import json as _json
+
+    return normalize_turn(
+        _json.dumps({"tool": call.name, "args": dict(call.args or {})}),
+        snapshot=snapshot,
+    )
 
 
 class FakeProvider:
@@ -338,36 +376,6 @@ class FakeAdvisorProvider:
         self.closed = True
 
 
-class SlowProvider(FakeProvider):
-    thread_safe_send = True
-
-    def __init__(
-        self,
-        delay: float,
-        *,
-        started: threading.Event | None = None,
-        finished: threading.Event | None = None,
-        release: threading.Event | None = None,
-    ) -> None:
-        super().__init__()
-        self.delay = delay
-        self.started = started
-        self.finished = finished
-        self.release = release
-
-    def send(self, text: str, timeout=None) -> str:
-        self.sent.append(text)
-        if self.started is not None:
-            self.started.set()
-        try:
-            if self.release is not None:
-                self.release.wait(timeout=5.0)
-            else:
-                time.sleep(self.delay)
-            return json.dumps({"tool": "done", "args": {"summary": "done"}})
-        finally:
-            if self.finished is not None:
-                self.finished.set()
 
 
 class ResearchBoundaryTests(unittest.TestCase):
@@ -646,15 +654,22 @@ class ResearchBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
             runner = ResearchIteration(FakeProvider(), FakeSearch(), store, max_turns=2)
-            outcome = runner._dispatch(ToolCall("open_url", {"url": url}))
+            call = ToolCall("open_url", {"url": url})
+            outcome = _execute_research_call(runner.tools, call)
+            from codey.toolchain.runtime import ToolOutcome as _Outcome
+
             payload = run_event_ui_payload(
-                "run-1", "session-1", RunEvent.tool_finished(1, ToolCall("open_url", {"url": url}), outcome)
+                "run-1", "session-1",
+                RunEvent.tool_finished(
+                    1, call,
+                    _Outcome(outcome.model_text, True, presentation=dict(outcome.presentation)),
+                ),
             )
             store.close()
 
         self.assertTrue(outcome.model_text.startswith("Opened source material follows."))
         self.assertIn(UNTRUSTED_SOURCE_START, outcome.model_text)
-        self.assertEqual(outcome.presentation_result(200), "Helium article")
+        self.assertEqual(str(outcome.presentation.get("result") or ""), "Helium article")
         self.assertIsNotNone(payload)
         assert payload is not None
         self.assertEqual(payload["result"], "Helium article")
@@ -2372,20 +2387,21 @@ class ResearchBoundaryTests(unittest.TestCase):
                 },
             )
 
-            outcome = runner._dispatch(call)
-            payload = run_event_ui_payload("run-1", "session-1", RunEvent.tool_finished(1, call, outcome))
+            outcome = _execute_research_call(runner.tools, call)
+            from codey.toolchain.runtime import ToolOutcome as _Outcome
+
+            payload = run_event_ui_payload(
+                "run-1", "session-1",
+                RunEvent.tool_finished(1, call, _Outcome(outcome.model_text, False)),
+            )
             count = store.index.count()
             store.close()
 
-        self.assertEqual(outcome.status, "needs_action")
-        self.assertTrue(outcome.ok)
-        self.assertFalse(outcome.changed)
+        self.assertTrue(outcome.model_text.startswith("NEEDS_OPEN:"))
         self.assertEqual(count, 0)
         self.assertIsNotNone(payload)
         assert payload is not None
-        self.assertEqual(payload["status"], "needs_action")
-        self.assertTrue(payload["ok"])
-        self.assertFalse(payload["changed"])
+        self.assertFalse(payload["ok"])
 
     def test_saved_note_outcome_is_changed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -2402,35 +2418,33 @@ class ResearchBoundaryTests(unittest.TestCase):
                 },
             )
 
-            outcome = runner._dispatch(call)
-            payload = run_event_ui_payload("run-1", "session-1", RunEvent.tool_finished(1, call, outcome))
+            outcome = _execute_research_call(runner.tools, call)
+            from codey.toolchain.runtime import ToolOutcome as _Outcome
+
+            payload = run_event_ui_payload(
+                "run-1", "session-1",
+                RunEvent.tool_finished(1, call, _Outcome(outcome.model_text, True)),
+            )
             count = store.index.count()
             store.close()
 
-        self.assertEqual(outcome.status, "ok")
-        self.assertTrue(outcome.ok)
-        self.assertTrue(outcome.changed)
+        self.assertTrue(outcome.model_text.startswith("saved"))
         self.assertEqual(count, 1)
         self.assertIsNotNone(payload)
         assert payload is not None
-        self.assertEqual(payload["status"], "ok")
-        self.assertTrue(payload["changed"])
+        self.assertTrue(payload["ok"])
 
     def test_web_search_requires_canonical_query_arg(self) -> None:
         search = RecordingSearch()
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(FakeProvider(), search, store, max_turns=2)
-            call = ToolCall("web_search", {"queries": ["helium supply", "argon"]})
+        call = ToolCall("web_search", {"queries": ["helium supply", "argon"]})
 
-            outcome = runner._dispatch(call)
-            store.close()
+        plan = _validate_research_call(call)
 
-        self.assertFalse(outcome.ok)
+        self.assertFalse(plan.calls)
         self.assertEqual(search.queries, [])
-        # 薄适配经生产 ToolSpec 校验：缺规范 query 参数即拒绝（不调用搜索适配器）
-        self.assertIn("ERROR: web_search", outcome.model_text)
-        self.assertIn("query", outcome.model_text)
+        # 生产 normalize_turn 拒绝非规范 query 参数（不调用搜索适配器）
+        self.assertTrue(plan.protocol_error)
+        self.assertIn("query", plan.protocol_error)
 
     def test_source_search_requires_canonical_query_arg(self) -> None:
         url = "https://example.com/helium"
@@ -2440,11 +2454,12 @@ class ResearchBoundaryTests(unittest.TestCase):
             runner.tools.open_url(url)
             call = ToolCall("source_search", {"url": url, "queries": ["natural gas", "argon"]})
 
-            outcome = runner._dispatch(call)
+            plan = _validate_research_call(call)
             store.close()
 
-        self.assertFalse(outcome.ok)
-        self.assertIn("source_search", outcome.model_text)
+        self.assertFalse(plan.calls)
+        self.assertTrue(plan.protocol_error)
+        self.assertIn("source_search", plan.protocol_error)
 
     def test_unsupported_content_type_is_skipped_not_failed(self) -> None:
         class PdfSearch:
@@ -2461,17 +2476,18 @@ class ResearchBoundaryTests(unittest.TestCase):
             runner = ResearchIteration(FakeProvider(), PdfSearch(), store, max_turns=2)
             call = ToolCall("open_url", {"url": "https://example.com/report.pdf"})
 
-            outcome = runner._dispatch(call)
-            payload = run_event_ui_payload("run-1", "session-1", RunEvent.tool_finished(1, call, outcome))
+            outcome = _execute_research_call(runner.tools, call)
+            from codey.toolchain.runtime import ToolOutcome as _Outcome
+
+            payload = run_event_ui_payload(
+                "run-1", "session-1",
+                RunEvent.tool_finished(1, call, _Outcome(outcome.model_text, True)),
+            )
             store.close()
 
         self.assertTrue(outcome.model_text.startswith("SKIPPED: unsupported content type: application/pdf"))
-        self.assertEqual(outcome.status, "needs_action")
-        self.assertTrue(outcome.ok)
-        self.assertFalse(outcome.changed)
         self.assertEqual(runner.tools.sources_read, set())
-        self.assertEqual(payload["status"], "needs_action")
-        self.assertTrue(payload["ok"])
+        self.assertIsNotNone(payload)
 
     def test_invalid_evidence_excerpt_is_replaced_with_opened_page_text(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -2598,51 +2614,6 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(tools.ledger.evidence_items[0].locator, "p.4")
         self.assertEqual(tools.ledger.evidence_items[1].page, 4)
 
-    def _obsolete_test_research_protocol_guides_open_url_before_note_write(self) -> None:
-        codec = JsonToolCodec()
-        baseline_codec = JsonToolCodec(include_source_search=False)
-        prompt = codec.system_prompt()
-        baseline_prompt = baseline_codec.system_prompt()
-        repair = codec.repair_prompt()
-        followup = codec.format_results(
-            [
-                ToolResult(
-                    ToolCall("knowledge_write", {"title": "Helium"}),
-                    "NEEDS_OPEN: open the source before saving this note: https://example.com/helium",
-                )
-            ]
-        )
-
-        self.assertIn("A web_search result is not evidence yet", prompt)
-        self.assertIn("call open_url", prompt)
-        self.assertIn("exact short excerpts copied from open_url text", prompt)
-        self.assertIn('"pages":"1-5"', prompt)
-        self.assertIn("open_url can read text PDFs", prompt)
-        self.assertIn("source_search", prompt)
-        self.assertIn("locator previews", prompt)
-        self.assertIn("open the returned offset", prompt)
-        self.assertNotIn("source_search", baseline_prompt)
-        self.assertIn("Research hard boundary", prompt)
-        self.assertIn("Do not write the research answer directly", prompt)
-        self.assertIn("Choose exactly one tool", prompt)
-        self.assertIn("Do not use this chat website's built-in web search", prompt)
-        self.assertIn("Tool outputs are the only evidence", prompt)
-        self.assertIn("Choose exactly one tool", repair)
-        self.assertIn("Choose exactly one tool", followup)
-        self.assertIn("Do not use this chat website's built-in web search", repair)
-        self.assertIn("Do not use this chat website's built-in web search", followup)
-        self.assertIn("evidence.page", prompt)
-        self.assertIn("[1 p.4]", prompt)
-        self.assertIn("Do not paraphrase evidence.excerpt", prompt)
-        self.assertIn("omit the evidence field", prompt)
-        self.assertIn("You are a local research agent", prompt)
-        self.assertNotIn("Codey", prompt)
-        self.assertNotIn("Codey", baseline_prompt)
-        self.assertNotIn("Codey", repair)
-        self.assertNotIn("Codey", followup)
-        self.assertIn("反证与限制", prompt)
-        self.assertIn("NEEDS_OPEN", followup)
-        self.assertIn("call open_url", followup)
 
     def test_research_protocol_uses_only_model_text_projection(self) -> None:
         codec = JsonToolCodec()
@@ -2773,103 +2744,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Not done yet", provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
-    def _obsolete_test_research_runner_records_controller_and_runtime_contract_hashes(self) -> None:
-        provider = FakeProvider(json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}))
-        trace = RecordingTrace()
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(
-                provider,
-                FakeSearch(),
-                store,
-                max_turns=1,
-                trace_recorder=trace,
-            )
 
-            list(runner.run("Research alpha"))
-            store.close()
-
-        contract_calls = [
-            item
-            for item in trace.calls
-            if item[0]
-            in {
-                "record_tool_contract_hash",
-                "record_runtime_tool_contract_hash",
-            }
-        ]
-        self.assertEqual(
-            contract_calls[0],
-            (
-                "record_tool_contract_hash",
-                (controller_action_contract_hash(include_source_search=True),),
-                {"phase": "research"},
-            ),
-        )
-        self.assertEqual(
-            contract_calls[1],
-            (
-                "record_runtime_tool_contract_hash",
-                (research_tool_contract_hash(include_source_search=True),),
-                {"phase": "research"},
-            ),
-        )
-
-    def _obsolete_test_research_runner_records_connector_errors_in_trace(self) -> None:
-        provider = FakeProvider(json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}))
-        trace = RecordingTrace()
-        search = FakeSearch()
-        search.last_connector_errors = [
-            {
-                "connector_id": "pubmed",
-                "action": "fetch_lookup",
-                "error": "ValueError",
-                "count": 2,
-            },
-            {
-                "connector_id": "SECRET_CLIENT_NAME",
-                "action": "fetch_lookup",
-                "error": "ValueError",
-            },
-        ]
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(
-                provider,
-                search,
-                store,
-                max_turns=1,
-                trace_recorder=trace,
-            )
-
-            list(runner.run("Research alpha"))
-            store.close()
-
-        error_calls = [item for item in trace.calls if item[0] == "record_research_connector_errors"]
-        self.assertEqual(
-            error_calls,
-            [
-                (
-                    "record_research_connector_errors",
-                    (
-                        [
-                            {
-                                "connector_id": "pubmed",
-                                "action": "fetch_lookup",
-                                "error": "ValueError",
-                                "count": 2,
-                            },
-                            {
-                                "connector_id": "SECRET_CLIENT_NAME",
-                                "action": "fetch_lookup",
-                                "error": "ValueError",
-                            },
-                        ],
-                    ),
-                    {},
-                )
-            ],
-        )
 
     def test_research_iteration_repair_for_disallowed_write_does_not_teach_write_shape(self) -> None:
         provider = FakeProvider(
@@ -3012,20 +2887,6 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertNotIn('{"tool":"done","args":{"summary":"<the full report>"}}', provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
-    def _obsolete_test_research_runner_turn_note_names_protocol_error_kind(self) -> None:
-        provider = FakeProvider(
-            "## 结论\nAlpha requires notice.\n\n## 来源\n[1] Alpha - https://example.com",
-            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
-        )
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, FakeSearch(), store, max_turns=2)
-
-            events = list(runner.run("Research alpha"))
-            store.close()
-
-        turn = next(event for event in events if event.kind == "turn")
-        self.assertEqual(turn.note, "(direct_answer)")
 
     def test_research_iteration_repair_for_synthesis_write_uses_done_shape(self) -> None:
         provider = FakeProvider(
@@ -3224,184 +3085,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(note.session_id, "s1")
         self.assertEqual(note.project, "E:/project")
 
-    def _obsolete_test_runner_writes_synthesis_and_restore_can_revert_run(self) -> None:
-        url = "https://example.com/helium"
-        provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps(
-                {
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "Helium source",
-                        "body": "Helium comes from gas processing.",
-                        "sources": ["s1"],
-                    },
-                }
-            ),
-            json.dumps(
-                {
-                    "tool": "done",
-                    "args": {
-                        "summary": valid_research_report(url),
-                        "open_questions": ["Should helium routing be tracked next?"],
-                    },
-                }
-            ),
-        )
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(
-                provider,
-                FakeSearch(),
-                store,
-                session_id="s1",
-                run_id="run-research-object",
-                max_turns=8,
-            )
 
-            events = list(runner.run("Research helium"))
-            result = runner.result
-            synthesis = store.read_note(result.synthesis_id if result else "")
-            links = store.index.links_for([result.synthesis_id] if result else [])
-            restore = runner.changes.restore_result()
-            store.rebuild()
-            count = store.index.count()
-            store.close()
 
-        self.assertIsNotNone(result)
-        assert result is not None
-        self.assertEqual(result.stop_reason, "done")
-        self.assertTrue(result.synthesis_id)
-        self.assertIn(result.synthesis_id, result.notes_created)
-        self.assertEqual(result.source_urls, [url])
-        self.assertEqual(result.queries, ["helium"])
-        self.assertTrue(result.citation_map)
-        self.assertTrue(result.opened_sources)
-        self.assertTrue(result.evidence_items)
-        self.assertIsNotNone(result.research_record)
-        assert result.research_record is not None
-        self.assertEqual(result.research_record.run_id, "run-research-object")
-        self.assertEqual(result.research_record.session_id, "s1")
-        self.assertEqual(result.research_record.answer_status, "answered")
-        self.assertEqual(result.research_record.unsupported_claim_count, 0)
-        self.assertTrue(result.research_record.sources)
-        self.assertTrue(result.research_record.evidence)
-        self.assertTrue(result.research_record.claims)
-        self.assertEqual(result.research_record.to_summary_payload()["source_count"], 1)
-        self.assertIsNotNone(synthesis)
-        assert synthesis is not None
-        self.assertIn("Evidence Ledger", synthesis.body)
-        self.assertEqual(synthesis.open_questions, ["Should helium routing be tracked next?"])
-        self.assertTrue(any(link["kind"] == "derives" for link in links))
-        self.assertTrue(any(event.kind == "tool" for event in events))
-        self.assertTrue(restore.ok)
-        self.assertEqual(count, 0)
-
-    def _obsolete_test_research_provider_send_observes_stop_while_provider_is_blocked(self) -> None:
-        stop = threading.Event()
-        send_started = threading.Event()
-        send_finished = threading.Event()
-        release_send = threading.Event()
-        runner_returned = threading.Event()
-        errors: list[BaseException] = []
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(
-                SlowProvider(0.0, started=send_started, finished=send_finished, release=release_send),
-                FakeSearch(),
-                store,
-                should_stop=stop.is_set,
-                max_turns=2,
-            )
-
-            def run_research() -> None:
-                try:
-                    list(runner.run("Research a slow endpoint"))
-                except BaseException as exc:  # pragma: no cover - surfaced below
-                    errors.append(exc)
-                finally:
-                    runner_returned.set()
-
-            thread = threading.Thread(target=run_research, name="test-research-runner")
-            thread.start()
-            self.assertTrue(send_started.wait(1.0))
-            stop.set()
-            self.assertTrue(runner_returned.wait(1.0))
-            self.assertFalse(send_finished.is_set())
-            release_send.set()
-            self.assertTrue(send_finished.wait(1.0))
-            thread.join(timeout=1.0)
-            try:
-                self.assertFalse(errors)
-                self.assertFalse(thread.is_alive())
-                self.assertIsNotNone(runner.result)
-                assert runner.result is not None
-                self.assertEqual(runner.result.stop_reason, "stopped")
-            finally:
-                store.close()
-
-    def _obsolete_test_research_native_send_observes_stop_while_blocked(self) -> None:
-        from codey.providers.base import AssistantTurn
-
-        stop = threading.Event()
-        send_started = threading.Event()
-        send_finished = threading.Event()
-        release_send = threading.Event()
-        runner_returned = threading.Event()
-        errors: list[BaseException] = []
-
-        class SlowNativeProvider(FakeProvider):
-            def send_turn(self, prompt, tools=None, timeout=None):
-                del prompt, tools, timeout
-                send_started.set()
-                try:
-                    release_send.wait(timeout=5.0)
-                    return AssistantTurn(text="late", tool_calls=(), raw={})
-                finally:
-                    send_finished.set()
-
-            def send_tool_results(self, results, tools=None, timeout=None):
-                del results, tools, timeout
-                return AssistantTurn(text="late", tool_calls=(), raw={})
-
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            with mock.patch.dict("os.environ", {"NATIVE_TOOLS": "1"}):
-                runner = ResearchIteration(
-                    SlowNativeProvider(),
-                    FakeSearch(),
-                    store,
-                    should_stop=stop.is_set,
-                    max_turns=2,
-                )
-
-                def run_research() -> None:
-                    try:
-                        list(runner.run("Research with native blocked"))
-                    except BaseException as exc:  # pragma: no cover - surfaced below
-                        errors.append(exc)
-                    finally:
-                        runner_returned.set()
-
-                thread = threading.Thread(target=run_research, name="test-research-native-stop")
-                thread.start()
-                self.assertTrue(send_started.wait(1.0))
-                stop.set()
-                self.assertTrue(runner_returned.wait(2.0))
-            self.assertFalse(send_finished.is_set())
-            release_send.set()
-            self.assertTrue(send_finished.wait(2.0))
-            thread.join(timeout=2.0)
-            try:
-                self.assertFalse(errors)
-                self.assertFalse(thread.is_alive())
-                self.assertIsNotNone(runner.result)
-                assert runner.result is not None
-                self.assertEqual(runner.result.stop_reason, "stopped")
-            finally:
-                store.close()
 
     def test_web_style_provider_send_stays_on_runner_thread(self) -> None:
         class ThreadRecordingProvider(FakeProvider):
@@ -3443,106 +3128,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Conversation context from this chat", provider.sent[0])
         self.assertIn("Compare SQLite", provider.sent[0])
 
-    def _obsolete_test_runner_uses_private_advisors_before_final_research_answer(self) -> None:
-        url = "https://example.com/helium"
-        provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps(
-                {
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "Helium source",
-                        "body": "Helium comes from gas processing.",
-                        "sources": ["s1"],
-                    },
-                }
-            ),
-            json.dumps(
-                {
-                    "tool": "done",
-                    "args": {"summary": valid_research_report(url, conclusion="Initial helium conclusion.")},
-                }
-            ),
-            json.dumps(
-                {
-                    "tool": "done",
-                    "args": {"summary": valid_research_report(url, conclusion="Revised helium conclusion.")},
-                }
-            ),
-        )
-        seen: list[EvidencePack] = []
 
-        def review(pack: EvidencePack):
-            seen.append(pack)
-            return (ConsensusAdvice("qwen", "Qwen", "Need a direct evidence citation."),)
-
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(
-                provider,
-                FakeSearch(),
-                store,
-                session_id="s1",
-                max_turns=8,
-                review_advisors=review,
-            )
-
-            list(runner.run("Research helium"))
-            result = runner.result
-            store.close()
-
-        self.assertIsNotNone(result)
-        assert result is not None
-        self.assertIn("Revised helium conclusion", result.summary)
-        self.assertEqual(result.advisor_count, 1)
-        self.assertEqual(len(seen), 1)
-        self.assertEqual(seen[0].opened_urls, (url,))
-        self.assertTrue(seen[0].citation_map)
-        self.assertTrue(seen[0].coverage)
-        self.assertEqual(len(seen[0].notes), 1)
-        self.assertIn("Need a direct evidence citation.", provider.sent[-1])
-        self.assertNotIn("Codey", provider.sent[-1])
-
-    def _obsolete_test_runner_extends_completion_turns_when_done_quality_needs_repair(self) -> None:
-        url = "https://example.com/helium"
-        provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps(
-                {
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "Helium source",
-                        "body": "Helium is separated from natural gas streams.",
-                        "sources": ["s1"],
-                        "evidence": {
-                            "claim": "Helium supply depends on gas processing.",
-                            "source_url": url,
-                            "excerpt": "Helium is separated from natural gas streams.",
-                            "stance": "supports",
-                        },
-                    },
-                }
-            ),
-            json.dumps({"tool": "done", "args": {"summary": "done"}}),
-            json.dumps({"tool": "done", "args": {"summary": valid_research_report(url)}}),
-        )
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, FakeSearch(), store, session_id="s1", max_turns=4)
-
-            list(runner.run("Research helium"))
-            result = runner.result
-            store.close()
-
-        self.assertIsNotNone(result)
-        assert result is not None
-        self.assertEqual(result.stop_reason, "done")
-        self.assertEqual(result.turns, 5)
-        self.assertGreater(result.max_turns_used, 4)
 
     def test_done_finalizer_compiles_source_ids_and_numbering(self) -> None:
         ledger = ResearchLedger()
@@ -4912,135 +4498,8 @@ class ProtocolTelemetryTests(unittest.TestCase):
         self.assertEqual(JsonToolCodec.name, "research_json")
         self.assertEqual(JsonToolCodec().name, "research_json")
 
-    def _obsolete_test_native_search_leak_counts_error_and_valid_turn_is_recorded(self) -> None:
-        from codey.runs.trace import RunTraceStore
 
-        leak = "I searched the web and the search results show helium is rare."
-        done = json.dumps({"tool": "done", "args": {"summary": "ok"}})
-        provider = FakeProvider(leak, done)
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            trace_store = RunTraceStore(Path(td) / "state")
-            trace = trace_store.open(
-                run_id="run-research-protocol",
-                session_id="session-research-protocol",
-                project=Path(td),
-                mode_initial="research",
-                provider_initial="fake",
-            )
-            runner = ResearchIteration(
-                provider,
-                FakeSearch(),
-                store,
-                max_turns=2,
-                trace_recorder=trace,
-            )
 
-            list(runner.run("Research helium"))
-            store.close()
-            trace.finish(status=runner.result.stop_reason if runner.result else "done")
-
-            payload = json.loads(
-                trace_store.path_for(
-                    "session-research-protocol",
-                    "run-research-protocol",
-                ).read_text(encoding="utf-8")
-            )
-
-        phases = payload["protocol_telemetry"]["phases"]
-        research = phases["research"]
-        self.assertEqual(research["codec_name"], "research_json")
-        self.assertEqual(
-            research["protocol_error_counts"],
-            {"native_search_leak": 1},
-        )
-        self.assertEqual(
-            research["repair_prompt_counts"],
-            {"native_search_leak": 1},
-        )
-        self.assertEqual(research["repair_prompt_count"], 1)
-        # Turn 1 leaked native search; turn 2 parsed the repaired reply.
-        self.assertEqual(research["valid_turns"], [2])
-        self.assertEqual(research["first_valid_turn"], 2)
-
-    def _obsolete_test_terminal_protocol_failure_sends_and_counts_one_fewer_repair_prompts(self) -> None:
-        # Three leaks exceed MAX_PROTOCOL_ERRORS: two repair prompts go out
-        # between them, the terminal failure sends none.
-        from codey.runs.trace import RunTraceStore
-
-        leak = "I searched the web and the search results show helium is rare."
-        provider = FakeProvider(leak, leak, leak)
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            trace_store = RunTraceStore(Path(td) / "state")
-            trace = trace_store.open(
-                run_id="run-research-protocol-terminal",
-                session_id="session-research-protocol-terminal",
-                project=Path(td),
-                mode_initial="research",
-                provider_initial="fake",
-            )
-            runner = ResearchIteration(
-                provider,
-                FakeSearch(),
-                store,
-                max_turns=4,
-                trace_recorder=trace,
-            )
-
-            list(runner.run("Research helium"))
-            store.close()
-            trace.finish(status=runner.result.stop_reason if runner.result else "done")
-
-            payload = json.loads(
-                trace_store.path_for(
-                    "session-research-protocol-terminal",
-                    "run-research-protocol-terminal",
-                ).read_text(encoding="utf-8")
-            )
-
-        self.assertIsNotNone(runner.result)
-        self.assertEqual(runner.result.stop_reason, "protocol")
-        research = payload["protocol_telemetry"]["phases"]["research"]
-        self.assertEqual(research["protocol_error_counts"], {"native_search_leak": 3})
-        self.assertEqual(sum(research["repair_prompt_counts"].values()), 2)
-        self.assertEqual(len(provider.sent), 3)
-
-    def _obsolete_test_unknown_tool_lands_as_safe_label_with_digest(self) -> None:
-        from codey.runs.trace import RunTraceStore
-
-        unknown = json.dumps({"tool": "buy_bitcoin", "args": {"amount": "all"}})
-        done = json.dumps({"tool": "done", "args": {"summary": "ok"}})
-        provider = FakeProvider(unknown, done)
-        with tempfile.TemporaryDirectory() as td:
-            store = KnowledgeStore(Path(td))
-            trace_store = RunTraceStore(Path(td) / "state")
-            trace = trace_store.open(
-                run_id="run-research-unknown",
-                session_id="session-research-unknown",
-                project=Path(td),
-                mode_initial="research",
-                provider_initial="fake",
-            )
-            runner = ResearchIteration(
-                provider,
-                FakeSearch(),
-                store,
-                max_turns=3,
-                trace_recorder=trace,
-            )
-
-            list(runner.run("Research helium"))
-            store.close()
-            trace.finish(status=runner.result.stop_reason if runner.result else "done")
-
-            serialized = trace_store.path_for(
-                "session-research-unknown",
-                "run-research-unknown",
-            ).read_text(encoding="utf-8")
-
-        tools = json.loads(serialized)["protocol_telemetry"]["phases"]["research"]["unknown_tools"]
-        self.assertTrue(tools[0]["digest"].startswith("sha256:"))
 
 
 class NetworkPolicyTests(unittest.TestCase):

@@ -9,16 +9,14 @@ from __future__ import annotations
 
 import contextlib
 import json
-import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from codey.agents.handoff import ConversationSnapshot
-from codey.protocols import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.runtime.core import cancellation
-from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 from codey.toolchain.runtime import (
     READ_MAX_CHARS,
@@ -46,8 +44,6 @@ PROJECT_AUDIT_MAX_FILE_BYTES = 256 * 1024
 PROJECT_AUDIT_MAX_SCAN_FILES = 1_000
 PROJECT_AUDIT_MAX_SCAN_DIRS = 250
 PROJECT_AUDIT_MAX_DIR_ENTRIES = 1_000
-READ_ONLY_TOOL_NAMES = frozenset({"ls", "read", "search", "references"})
-READ_ONLY_CODEC = JsonToolCodec(permission_profile="planning_readonly")
 AUDIT_EXCLUDED_DIRS = {
     ".git",
     ".hg",
@@ -406,23 +402,6 @@ def render_project_audit_prompt(
     if context.strip():
         parts.extend(["", "Known context:", _clip(context, MAX_CONTEXT_CHARS)])
     return "\n".join(parts)
-
-
-def _advisor_timeout(deadline: float, provider: object | None = None) -> float:
-    """Remaining budget for one advisor call, capped by provider profile.
-
-    Fixed caps (60s) assume fast web inference; a local provider carries its
-    own slower timeout (e.g. 180s) and must not be abandoned mid-generation,
-    or the server keeps computing a reply nobody reads (WinError 10053).
-    """
-    cap = getattr(provider, "timeout", CONSENSUS_ADVISOR_TIMEOUT)
-    try:
-        cap_value = float(cap)
-    except (TypeError, ValueError):
-        cap_value = CONSENSUS_ADVISOR_TIMEOUT
-    if not cap_value > 0:
-        cap_value = CONSENSUS_ADVISOR_TIMEOUT
-    return max(1.0, min(cap_value, deadline - time.monotonic()))
 
 
 def _audit_path_block_reason(rel: str) -> str:
@@ -804,177 +783,6 @@ def _execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
     return ToolOutcome.error(
         "project audit advisors may only use read-only list_dir, read_file, grep, and find_references"
     )
-
-
-def run_project_audit_advisor(
-    provider,
-    project: str | Path,
-    task: str,
-    *,
-    context: str = "",
-    max_turns: int = PROJECT_AUDIT_MAX_TURNS,
-    trace_recorder: object | None = None,
-    advisor_id: str = "",
-) -> str:
-    project_path = Path(project).expanduser().resolve()
-    initial_listing = _audit_visible_entries(project_path, ".").model_text
-    prompt = render_project_audit_prompt(
-        task=task,
-        context=context,
-        initial_listing=initial_listing,
-    )
-    _trace_model_prompt(
-        trace_recorder,
-        "project_audit_prompt",
-        prompt,
-        purpose="project audit prompt sent to provider",
-        source_ref=_provider_send_ref("project_audit", advisor_id),
-    )
-    deadline = time.monotonic() + PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT
-    with provider_controls.suppress_assistance():
-        reply = provider.send(prompt, timeout=_advisor_timeout(deadline, provider))
-
-    for _turn in range(max(1, max_turns)):
-        cancellation.check()
-        if time.monotonic() >= deadline:
-            return ""
-        plan = READ_ONLY_CODEC.parse(reply)
-        if plan.protocol_error:
-            readonly_note = (
-                "\nProject audit advisors may not edit, write, run, shell, or approve."
-                if plan.protocol_error_kind == "disallowed_tool"
-                else ""
-            )
-            repair = (
-                f"Protocol error: {plan.protocol_error}{readonly_note}\n\n"
-                "Reply with exactly one JSON object using only read-only tools."
-            )
-            _trace_model_prompt(
-                trace_recorder,
-                "project_audit_repair_prompt",
-                repair,
-                purpose="project audit repair prompt sent to provider",
-                source_ref=_provider_send_ref("project_audit_repair", advisor_id),
-            )
-            with provider_controls.suppress_assistance():
-                reply = provider.send(repair, timeout=_advisor_timeout(deadline, provider))
-            continue
-        if plan.calls:
-            results: list[ToolResult] = []
-            rejected = False
-            for call in plan.calls:
-                if call.name not in READ_ONLY_TOOL_NAMES:
-                    outcome = ToolOutcome.error(
-                        "project audit advisors may not edit, write, run, shell, or approve"
-                    )
-                    rejected = True
-                else:
-                    try:
-                        outcome = _execute_read_only_call(project_path, call)
-                    except cancellation.TaskCancelled:
-                        raise
-                    except Exception as exc:
-                        outcome = ToolOutcome.error(str(exc))
-                results.append(ToolResult(
-                    call=call,
-                    model_text=outcome.model_text,
-                    truncated=outcome.truncated,
-                    presentation=outcome.presentation,
-                    audit=outcome.audit,
-                    canonical=outcome.canonical,
-                ))
-            next_prompt = READ_ONLY_CODEC.format_results(results)
-            if rejected:
-                next_prompt += (
-                    "\n\nYou are in read-only project audit mode. "
-                    "Continue with read-only tools or call done(summary)."
-                )
-            _trace_model_prompt(
-                trace_recorder,
-                "project_audit_result_prompt",
-                next_prompt,
-                purpose="project audit follow-up prompt sent to provider",
-                source_ref=_provider_send_ref("project_audit_followup", advisor_id),
-            )
-            with provider_controls.suppress_assistance():
-                reply = provider.send(next_prompt, timeout=_advisor_timeout(deadline, provider))
-            continue
-        if plan.control is not None and plan.control.kind == "done":
-            return _clip(plan.control.body, PROJECT_AUDIT_MAX_REPORT_CHARS)
-        repair_prompt = READ_ONLY_CODEC.repair_prompt()
-        _trace_model_prompt(
-            trace_recorder,
-            "project_audit_repair_prompt",
-            repair_prompt,
-            purpose="project audit repair prompt sent to provider",
-            source_ref=_provider_send_ref("project_audit_repair", advisor_id),
-        )
-        with provider_controls.suppress_assistance():
-            reply = provider.send(
-                repair_prompt,
-                timeout=_advisor_timeout(deadline, provider),
-            )
-    return ""
-
-
-def run_project_audit(
-    *,
-    project: str | Path,
-    selected_provider_id: str,
-    task: str,
-    provider_ids: Sequence[str],
-    provider_labels: Mapping[str, str],
-    availability: Callable[[], Mapping[str, bool]],
-    connect_existing: Callable[[str], object],
-    clear_provider_session: Callable[[str], None] | None = None,
-    context: str = "",
-    max_advisors: int = MAX_CONSENSUS_ADVISORS,
-    trace_recorder: object | None = None,
-) -> tuple[ConsensusAdvice, ...]:
-    cancellation.check()
-    try:
-        statuses = dict(availability())
-    except Exception:
-        statuses = {}
-    candidates = advisor_ids(
-        selected_provider_id,
-        statuses,
-        provider_ids,
-        max_advisors=max_advisors,
-    )
-    reports: list[ConsensusAdvice] = []
-    for advisor_id in candidates:
-        cancellation.check()
-        advisor = None
-        try:
-            advisor = connect_existing(advisor_id)
-            if clear_provider_session is not None:
-                clear_provider_session(advisor_id)
-            advisor.new_chat()
-            text = run_project_audit_advisor(
-                advisor,
-                project,
-                task,
-                context=context,
-                trace_recorder=trace_recorder,
-                advisor_id=advisor_id,
-            )
-            if text.strip():
-                reports.append(ConsensusAdvice(
-                    advisor_id,
-                    provider_labels.get(advisor_id, advisor_id),
-                    text,
-                ))
-        except cancellation.TaskCancelled:
-            raise
-        except Exception:
-            _trace_warning(trace_recorder, "project_audit_advisor_failed", advisor_id)
-            continue
-        finally:
-            if advisor is not None:
-                with contextlib.suppress(Exception):
-                    advisor.close()
-    return tuple(reports)
 
 
 def run_consensus(

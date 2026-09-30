@@ -21,6 +21,9 @@ class _P:
         del prompt, timeout
         return '{"tool": "done", "args": {"summary": "ok"}}'
 
+    def new_chat(self) -> None:
+        return None
+
     def close(self) -> None:
         return None
 

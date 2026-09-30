@@ -182,6 +182,8 @@ def _review_cycle_phase(ctx: ProjectRun) -> None:
     ctx.task_changed = ctx.review_cycle.task_changed
     ctx.task_changes = ctx.review_cycle.changes
     ctx.task_changes_dirty = ctx.review_cycle.changes_dirty
+    if ctx.result.facts is not None:
+        ctx.task_session = ctx.result.facts
     if ctx.task_changes is None or ctx.task_changes_dirty:
         ctx.task_changes = ctx.deps.verification.collect_changes(ctx.project, ctx.tracker)
     collected_changed = change_state(ctx.task_changes)

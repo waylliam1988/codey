@@ -4444,5 +4444,61 @@
       ],
       "stop_reason": "done"
     }
+  },
+  "loop/fresh-failure": {
+    "status": "INTENTIONAL_CHANGE",
+    "reason": "Cold-start fresh-chat failure stops before sending or executing tools; the old fallback reused the previous conversation. All fresh-chat requests now use this strict lifecycle contract.",
+    "tests": [
+      "tests/test_kernel_coldstart_boundaries.py",
+      "tests/test_kernel_parity_regressions.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 2
+      },
+      "snapshot": null
+    },
+    "after": {
+      "error": "RuntimeError",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [],
+      "receipt_ids": [],
+      "result": null,
+      "snapshot": null
+    }
   }
 }

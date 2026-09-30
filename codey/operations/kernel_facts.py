@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from codey.operations.kernel_protocol import _CONTROLLER_ALIASES
-from codey.operations.kernel_provenance import _session_workspace_identity
+from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _session_workspace_identity
 from codey.operations.kernel_result import strict_exit_code_or_none
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -16,13 +16,14 @@ __all__ = [
 
 
 def _record_run_verification(
-    session: TaskSession, args: dict[str, Any], exit_code: int | None, sess_rev: int, sess_fp: str
+    session: TaskSession, args: dict[str, Any], exit_code: int | None, sess_rev: int, sess_fp: str,
+    *, ok: bool,
 ) -> None:
     latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
     code = strict_exit_code_or_none(exit_code)
     if code is None:
         return
-    passed = code == 0
+    passed = ok is True and code == 0
     session.record_verification(
         str(args.get("command", "") or ""),
         latest,
@@ -101,7 +102,13 @@ def record_facts_for_result(
         ):
             effective_exit = strict_exit_code_or_none(result.audit.get("exit_code"))
         if effective_exit is not None:
-            _record_run_verification(session, args, effective_exit, sess_rev, sess_fp)
+            identity = _kernel_workspace_identity_of(result)
+            if identity is not None:
+                sess_rev, sess_fp = identity.revision, identity.fingerprint
+            elif session.project:
+                # A recovered observation cannot borrow the resumed version.
+                sess_rev, sess_fp = 0, ""
+            _record_run_verification(session, args, effective_exit, sess_rev, sess_fp, ok=ok)
             if text:
                 session.transcript_notes.append(f"run: {text[:500]}")
             return

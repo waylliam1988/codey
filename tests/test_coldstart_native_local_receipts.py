@@ -30,7 +30,9 @@ def test_native_codec_system_prompt_is_native_only() -> None:
     # Native contract is function-call wording, not JSON-object wording.
     import json as _json
 
-    text = _json.dumps([dict(t) for t in snapshot.native_tools])
+    from codey.toolchain.tool_spec import thaw_schema_value
+
+    text = _json.dumps([thaw_schema_value(t) for t in snapshot.native_tools])
     assert "function" in text.lower()
 
 

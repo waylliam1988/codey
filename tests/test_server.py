@@ -27,6 +27,7 @@ from codey.completion.verification_policy import VerificationCandidate
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.project_completion_flow import project_has_user_files
+from codey.policies.task_policy import TaskPolicy
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
 from codey.providers import profile_doctor
@@ -1528,7 +1529,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         submit.assert_called_once_with(
             "default", None, "hello", 500, True, "deepseek", "research",
             requested_capabilities=(), strict_research=True, sources_open_required=False,
-            project_changes_required=False,
+            project_changes_required=False, denied_capabilities=(),
         )
 
         self.assertEqual(
@@ -1553,7 +1554,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         submit.assert_called_once_with(
             "default", td, "review diff", app_api.DEFAULT_MAX_TURNS, False, "deepseek", "review",
             requested_capabilities=(), strict_research=False, sources_open_required=False,
-            project_changes_required=False,
+            project_changes_required=False, denied_capabilities=(),
         )
 
         busy_status, busy_payload = app_api.run_submit_response({"task": "hello"}, mock.Mock(return_value=None))
@@ -2229,7 +2230,7 @@ class ConsensusConnectionTests(unittest.TestCase):
                 project=td,
                 selected_provider=selected,
                 selected_provider_id="deepseek",
-                task="Review this project",
+                task="Review this project", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual([report.text for report in reports], ["audit report"])
@@ -4396,7 +4397,8 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["provider"], "qwen")
-        self.assertEqual(task_done["receipt"]["display"]["summary"], "No files changed · checks passed")
+        # A mocked writer boolean is not a recorded verification result.
+        self.assertEqual(task_done["receipt"]["display"]["summary"], "No files changed")
         self.assertEqual(state.run_registry.provider_id(), "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_request.change_tracker)
@@ -6282,7 +6284,7 @@ class SessionThreadingTests(unittest.TestCase):
         sibling_repair = agent_run.call_args_list[2].args[0]
         self.assertFalse(first_repair.fresh_chat)
         self.assertTrue(sibling_repair.fresh_chat)
-        self.assertTrue(sibling_repair.strict_fresh_chat)
+        self.assertTrue(sibling_repair.fresh_chat)
         self.assertEqual(sibling_repair.provider_id, "stepfun")
         self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
         self.assertEqual(state.run_registry.last_terminal_event()["summary"], "fixed by sibling")

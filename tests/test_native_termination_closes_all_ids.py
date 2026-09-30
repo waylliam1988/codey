@@ -57,8 +57,7 @@ def test_shell_approval_carries_native_call_id() -> None:
                              run_id="r1", intent_sink=None, policy=policy)
         assert res is not None and res.stop_reason == "approval"
         req = seen[0]
+        # 精确身份：原 call id 原样保留（不得截断），provider 与轮次一并携带
+        assert getattr(req, "call_id", "") == "shell-1"
         payload = req.to_payload() if hasattr(req, "to_payload") else {}
-        # 审批票据必须保留原生调用身份
-        text = str(payload) + str(getattr(req, "__dict__", ""))
-        assert "shell-1" in text or "call_id" in text.lower() or hasattr(req, "call_id"), \
-            f"审批请求未携带原生 call id: {payload}"
+        assert payload.get("call_id") == "shell-1"

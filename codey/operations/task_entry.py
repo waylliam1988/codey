@@ -10,6 +10,7 @@ their own sessions. All production tool calls converge in
 from __future__ import annotations
 
 import contextlib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,34 @@ from codey.operations.result import ModeOutcome
 from codey.task.model import TaskSubmission, execution_task
 
 _TASK_KINDS = frozenset({"project", "research", "hybrid", "planning", "planning_readonly", "readonly"})
+
+
+@dataclass(frozen=True)
+class FreshSessionOutcome:
+    ok: bool
+    error: str = ""
+
+
+def _open_fresh_session(
+    conversation: Any, provider: Any, *, provider_id: str, kind: str, project: str = "",
+) -> FreshSessionOutcome:
+    """Open a fresh provider session; reset the window only on success.
+
+    重置失败一律返回失败（调用方停止并报 provider failure），绝不吞掉
+    异常后继续向旧会话发送；非成功路径绝不触碰原窗口与累计预算。
+    """
+    try:
+        new_chat = getattr(provider, "new_chat", None)
+        if not callable(new_chat):
+            return FreshSessionOutcome(ok=False, error="provider has no new chat session")
+        new_chat()
+    except Exception as exc:
+        return FreshSessionOutcome(ok=False, error=f"new chat failed: {exc}")
+    try:
+        conversation.begin_window(provider_id, kind, project)
+    except Exception as exc:
+        return FreshSessionOutcome(ok=False, error=f"conversation reset failed: {exc}")
+    return FreshSessionOutcome(ok=True)
 
 
 def _task_kind(task_kind: object) -> str:
@@ -36,14 +65,9 @@ def build_task_policy_for_entry(request: Any, task_kind: object) -> Any:
 
 
 def _build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | None:
-    try:
-        from codey.operations.task_execution import build_research_tools
-    except Exception:
-        return None
-    try:
-        return build_research_tools(deps, session_id=session_id, project=project)
-    except Exception:
-        return None
+    from codey.operations.task_execution import build_research_tools
+
+    return build_research_tools(deps, session_id=session_id, project=project)
 
 
 def _create_entry_session(frame: RunFrame, work: RunWork, policy: Any, kind: str) -> Any:
@@ -83,7 +107,13 @@ def _entry_policy_with_recovery(frame: RunFrame, deps: Any, kind: str) -> Any:
 
     mutations = getattr(deps, "runtime_mutations", None)
     session_log = getattr(mutations, "session_log", None) if mutations is not None else None
-    incoming = build_task_policy_for_entry(request, kind)
+    incoming = getattr(frame, "entry_policy", None)
+    if incoming is None:
+        incoming = build_task_policy_for_entry(request, kind)
+    if getattr(request, "previous_run_id", ""):
+        if getattr(frame, "entry_policy", None) is None:
+            raise RuntimeError("original task authorization unavailable for approval continuation")
+        return incoming
     recovered = bool(getattr(frame, "recovered_tool_outcomes", ()) or ())
     if not recovered:
         return incoming
@@ -161,8 +191,10 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
         except Exception:
             DEFAULT_TOOL_FNS = None  # type: ignore[assignment]
         tool_fns = DEFAULT_TOOL_FNS
-    research_tools = _build_research_tools(
-        deps, session_id=request.session_id, project=frame.project_text)
+    research_tools = None
+    if any(policy.allows(grant) for grant in ("web.read", "knowledge.read", "knowledge.write", "knowledge.link")):
+        research_tools = _build_research_tools(
+            deps, session_id=request.session_id, project=frame.project_text)
     return project_path, tool_fns, research_tools
 
 
@@ -273,14 +305,30 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
             provider_id=frame.provider_id,
             phase="research" if kind == "research" else "writer",
             recovered_batch_id=str(getattr(frame, "recovered_tool_result_batch_id", "") or ""),
+            managed_outputs=getattr(deps, "managed_outputs", None),
         )
         active_provider = KernelRecordedProvider(active_provider, intent_sink)
+    if getattr(frame, "conversation", None) is not None:
+        from codey.operations.provider_session import ConversationProvider
+
+        active_provider = ConversationProvider(active_provider, frame.conversation)
     stop_flag = getattr(getattr(deps, "state", None), "run_registry", None)
     stop_flag = getattr(stop_flag, "stop_flag", None)
     return active_provider, intent_sink, stop_flag
 
 
-def run_entry_kernel(
+def run_entry_kernel(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: Any,
+                     *, task_kind: str = "", config_result: Any = None) -> ModeOutcome:
+    from codey.operations.task_execution import close_research_tools
+
+    try:
+        return _run_entry_kernel(frame, work, hooks, deps,
+                                 task_kind=task_kind, config_result=config_result)
+    finally:
+        close_research_tools(getattr(frame, "entry_research_tools", None))
+
+
+def _run_entry_kernel(
     frame: RunFrame,
     work: RunWork,
     hooks: RunHooks,
@@ -308,6 +356,7 @@ def run_entry_kernel(
         session_id=request.session_id, run_id=frame.run_id, policy=policy,
     )
     project_path, tool_fns, research_tools = _entry_executors(frame, deps, policy)
+    frame.entry_research_tools = research_tools
     try:
         delivered, _, resume_start, initial_results = _entry_recovery(frame, session)
     except Exception as exc:
@@ -326,14 +375,40 @@ def run_entry_kernel(
             "mode": kind,
             "receipt": {"display": {"summary": reason[:2000]}},
         })
-    # 统一生命周期：fresh_chat 时开启新会话（与 chat/research 同一入口语义）
-    try:
-        if bool(getattr(frame, "fresh_chat", False)) and frame.provider is not None:
-            new_chat = getattr(frame.provider, "new_chat", None)
-            if callable(new_chat):
-                new_chat()
-    except Exception:
-        pass
+    # 会话生命周期：仅 fresh_chat 且 new_chat 成功后才开启新窗口（首发之前）；
+    # 重置失败立即停止并报 provider failure，不向旧会话发送；继续会话时
+    # 保留原窗口与累计预算。
+    if bool(getattr(frame, "fresh_chat", False)):
+        if frame.provider is None:
+            return ModeOutcome({
+                "type": "task_done",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "summary": "provider failed [Exception]: provider is not connected",
+                "stop_reason": "provider_failure",
+                "turns": 0,
+                "max_turns": request.max_turns,
+                "provider": frame.provider_id,
+                "mode": kind,
+                "receipt": {"display": {"summary": "provider is not connected"}},
+            })
+        fresh = _open_fresh_session(
+            frame.conversation, frame.provider,
+            provider_id=frame.provider_id, kind=kind, project=frame.project_text,
+        )
+        if not fresh.ok:
+            return ModeOutcome({
+                "type": "task_done",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "summary": f"provider failed [Exception]: {fresh.error}",
+                "stop_reason": "provider_failure",
+                "turns": 0,
+                "max_turns": request.max_turns,
+                "provider": frame.provider_id,
+                "mode": kind,
+                "receipt": {"display": {"summary": fresh.error[:2000]}},
+            })
     active_provider, intent_sink, stop_flag = _entry_provider_sink(frame, deps, kind)
     try:
         ignored = tuple(getattr(getattr(config_result, "config", None), "ignored_paths", ()) or ())
@@ -373,6 +448,7 @@ def run_entry_kernel(
             provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
             workspace_ignored_paths=ignored,
             workspace_revision_store=getattr(deps, "workspace_revisions", None),
+            trace_recorder=getattr(frame, "trace", None),
         )
     except Exception as exc:
         from codey.operations.kernel_errors import RecoveryFailed
@@ -398,30 +474,27 @@ def run_entry_kernel(
         frame.entry_research_tools = research_tools
     except Exception:
         pass
-    # 统一生命周期收口：同一会话视图内记录本轮交换，供后续复核与审计
+    # 生命周期收口：只更新同一会话视图的快照，不再无条件 begin_window
+    #（继续会话保留原窗口与累计预算）。各轮 token 已由 provider 适配器
+    # 逐轮记账，最终只更新任务摘要。
     import contextlib as _contextlib
 
-    with _contextlib.suppress(Exception):
-        frame.conversation.begin_window(frame.provider_id, kind, frame.project_text)
     with _contextlib.suppress(Exception):
         from dataclasses import replace as _replace2
 
         summary_text = str(result.summary or "")
-        frame.conversation.record_exchange(
-            execution_task(request),
-            summary_text,
-            _replace2(
-                frame.conversation.snapshot,
-                mode=kind,
-                goal=request.task,
-                project=frame.project_text,
-                provider_id=frame.provider_id,
-                blocker="" if result.stop_reason == "done" else summary_text,
-                latest_user=request.task,
-                latest_reply=summary_text,
-                summary=summary_text,
-            ),
+        snapshot = _replace2(
+            frame.conversation.snapshot,
+            mode=kind,
+            goal=request.task,
+            project=frame.project_text,
+            provider_id=frame.provider_id,
+            blocker="" if result.stop_reason == "done" else summary_text,
+            latest_user=request.task,
+            latest_reply=summary_text,
+            summary=summary_text,
         )
+        frame.conversation.update_snapshot(snapshot)
     summary = str(result.summary or "")
     receipt = {"display": {"summary": summary[:2000]}}
     proof = getattr(result, "proof", None)

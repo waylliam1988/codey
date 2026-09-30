@@ -72,9 +72,16 @@ def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
     raises instead of silently falling back to web: continuing on the wrong
     protocol would mis-deliver native call ids.
     """
+    from codey.operations.provider_session import ProviderAdapter
     from codey.providers.native_tools import supports_native_tools
 
-    probe = getattr(provider, "provider", provider)
+    probe = provider
+    seen: set[int] = set()
+    while isinstance(probe, ProviderAdapter):
+        if id(probe) in seen:
+            raise ValueError("cyclic provider adapter chain")
+        seen.add(id(probe))
+        probe = probe.provider
     return bool(supports_native_tools(probe, str(provider_id or "")))
 
 

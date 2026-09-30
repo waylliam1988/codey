@@ -441,6 +441,7 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
         run_id=setup.run_id,
         project=setup.project or "",
         task_kind=setup.baseline_task_kind,
+        ignored_paths=tuple(setup.project_config_result.config.ignored_paths),
     )
     if not recovery.ok:
         return None, _fail_early_run(
@@ -454,11 +455,60 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
             setup.request = replace(setup.request, continue_task=True)
             setup.continue_task = True
         setup.recovered_resume = True
+    shell_rows = _shell_redelivery_rows(getattr(setup.request, "initial_shell_results", ()))
+    if shell_rows:
+        # 审批 continuation：已裁决 shell 结果作为 turn-0 初始行，首发回答
+        # 原 native 调用（同会话 native 优先，异会话文本兜底）。
+        if not setup.continue_task:
+            setup.request = replace(setup.request, continue_task=True)
+            setup.continue_task = True
+        setup.recovered_resume = True
     return _PhaseWork(
         work=work,
-        recovered_tool_outcomes=recovery.recovered_tool_outcomes,
+        recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes) + shell_rows,
         recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
     ), None
+
+
+def _shell_redelivery_rows(payloads: Any) -> tuple:
+    """Rebuild shell decisions without coercing outcomes or changing identities."""
+    from codey.agents.request import RecoveredToolOutcome
+    from codey.agents.shell_approval import MAX_DEFERRED_TOOL_CALLS, valid_shell_call_id
+    from codey.operations.kernel_errors import RecoveryFailed
+    from codey.runtime.core.models import ToolCall
+    from codey.toolchain.runtime import ToolOutcome
+
+    if not isinstance(payloads, (tuple, list)) or len(payloads) > MAX_DEFERRED_TOOL_CALLS:
+        raise RecoveryFailed("shell results must be a bounded sequence")
+    rows = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(payloads):
+        if not isinstance(item, dict) or not valid_shell_call_id(item.get("call_id")):
+            raise RecoveryFailed("shell result must carry its original call id")
+        call_id = item["call_id"]
+        if call_id in seen_ids:
+            raise RecoveryFailed("duplicate shell result call id")
+        seen_ids.add(call_id)
+        if any(not isinstance(item.get(key, ""), str)
+               for key in ("command", "cwd", "model_text", "error_code")):
+            raise RecoveryFailed("shell result text fields must be strings")
+        ok, truncated, exit_code = item.get("ok"), item.get("truncated", False), item.get("exit_code")
+        if type(ok) is not bool or type(truncated) is not bool:
+            raise RecoveryFailed("shell result ok and truncated must be booleans")
+        if exit_code is not None and type(exit_code) is not int:
+            raise RecoveryFailed("shell result exit_code must be an integer")
+        outcome = ToolOutcome(
+            item.get("model_text", ""), ok,
+            audit={"exit_code": exit_code} if exit_code is not None else {},
+            error_code=item.get("error_code", "") or ("" if ok else "shell_error"),
+            exit_code=exit_code, truncated=truncated,
+        )
+        rows.append(RecoveredToolOutcome(
+            call=ToolCall(name="shell", args={"command": item.get("command", ""),
+                                              "path": item.get("cwd", ".")}, call_id=call_id),
+            outcome=outcome, turn=0, tool_index=index, effect_id="", redelivered=True,
+        ))
+    return tuple(rows)
 
 
 def _route_ghost_work(

@@ -21,13 +21,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from codey.policies.task_policy import TaskPolicy
+
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey.agents.consensus import run_project_audit_advisor
 from codey.app import provider_services, sibling_probe
 from codey.app import server as codey_server
 from codey.app import task_submit as task_submit
+from codey.operations.project_audit_advisor import run_project_audit_advisor
 from codey.policies.limits import REVIEW_TIMEOUT
 from codey.providers import controls as provider_controls
 from codey.providers.registry import (
@@ -486,7 +488,7 @@ def run_project_audit_matrix(project: Path, recorder: FlowRecorder) -> list[dict
                 advisor,
                 project,
                 PROJECT_AUDIT_TASK,
-                context="Snake project smoke after initial implementation.",
+                context="Snake project smoke after initial implementation.", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
             item = {
                 "provider": provider_id,

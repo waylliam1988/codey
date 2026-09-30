@@ -377,6 +377,8 @@ class ProjectRun:
     decision: Any = None
     integrity: EditIntegrityObservation | None = None
     proof: Any = None
+    task_session: Any = None
+    research_tools: Any = None
     blocked_reason: str = ""
     repaired_once: bool = False
     writer_attempt_index: int = 0

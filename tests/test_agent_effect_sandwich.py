@@ -5,7 +5,6 @@ from __future__ import annotations
 import tempfile
 import threading
 import unittest
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -14,14 +13,8 @@ from unittest.mock import MagicMock, Mock, patch
 from codey.agents.request import AgentRequest
 from codey.agents.state import AgentLoopSession, RunResult
 from codey.agents.tool_execution import (
-    TurnState,
-    build_tool_call_intent,
-    emit_tool_started_after_intent,
-    evaluate_tool_call_policy,
-    execute_tool_call,
+    evaluate_tool_call_policy_for,
     policy_denied,
-    record_tool_outcome,
-    settle_tool_call_effect,
 )
 from codey.agents.tools import AgentToolFns
 from codey.app import server
@@ -56,7 +49,6 @@ from codey.runtime.effects.tool_result_delivery import (
 )
 from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_log import RuntimeSessionLog
-from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
@@ -90,6 +82,9 @@ class MockProvider:
         self.reply = reply
         self.fail = fail
         self.send_history: list[str] = []
+
+    def new_chat(self) -> None:
+        self.send_history.clear()
 
     @property
     def name(self) -> str:
@@ -156,39 +151,18 @@ class AgentEffectSandwichTests(unittest.TestCase):
             ),
         ))
 
-    def _commit_tool_batch(
-        self,
-        intent: RuntimeEffectIntent,
-        *,
-        turn: int,
-        tool_index: int,
-        tool_name: str,
-        replay_class: str,
-    ) -> str:
-        batch_id = new_batch_id(self.run_id, turn)
-        items = (
-            DeliveryBatchItem(
-                tool_index=tool_index,
-                tool_name=tool_name,
-                ref=intent.effect_id,
-                replay_class=replay_class,
-                is_denied=False,
-            ),
+    def _begin_sink_turn(self, call: ToolCall, *, turn: int, tool_index: int) -> str:
+        """生产入口：经 KernelEffectSink 提交本轮意图（含交付 envelope）。"""
+        from codey.operations.task_effects import KernelEffectSink
+        from codey.operations.task_session import turn_effect_id
+
+        effect_id = turn_effect_id(self.run_id, turn, tool_index)
+        sink = KernelEffectSink(
+            self.line, session_id=self.session_id, run_id=self.run_id,
+            provider_id="mock_provider",
         )
-        self.line.begin_tool_batch(
-            self.session_id,
-            self.run_id,
-            intents=(intent,),
-            delivery_intent=DeliveryBatchIntent(
-                batch_id=batch_id,
-                session_id=self.session_id,
-                run_id=self.run_id,
-                turn=turn,
-                items=items,
-                batch_digest=compute_batch_digest(items),
-            ),
-        )
-        return batch_id
+        sink.begin_turn([(effect_id, call, tool_index)], turn=turn)
+        return effect_id
 
     def _deps(self) -> SimpleNamespace:
         return SimpleNamespace(
@@ -203,19 +177,14 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
     def test_unknown_tool_is_policy_denied_and_recorded(self) -> None:
-        decisions: list[object] = []
-
-        class Trace:
-            def record_policy_decision(self, decision: object) -> None:
-                decisions.append(decision)
-
-        session = self._create_session(MockProvider())
-        session.trace = FailOpenPromptTrace(Trace())
         call = ToolCall("bash", {"command": "echo unsafe", "path": "."})
 
-        policy_decision, replay_decision = evaluate_tool_call_policy(
-            session,
+        policy_decision, replay_decision = evaluate_tool_call_policy_for(
             call,
+            project=self.project_dir,
+            permission_profile="coding_writer",
+            approval_available=False,
+            phase="writer",
         )
 
         self.assertIsNotNone(policy_decision)
@@ -223,7 +192,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertTrue(policy_denied(policy_decision))
         self.assertEqual(policy_decision.reason_code, "unknown_action")
         self.assertEqual(policy_decision.kind, "unknown_tool")
-        self.assertEqual(len(decisions), 1)
         self.assertEqual(getattr(replay_decision, "reason", ""), "policy_denied")
 
     def test_provider_send_intent_and_settlement_on_success(self) -> None:
@@ -266,35 +234,14 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.sent_state, "maybe_sent")
 
     def test_tool_call_effect_sandwich_sequence(self) -> None:
-        provider = MockProvider()
-        session = self._create_session(provider)
-        events: list[str] = []
-        session.request = replace(session.request, on_event=lambda event: events.append(event.kind))
+        # 当前三明治：KernelEffectSink 提交意图 → 真实执行 → 结算 → 交付恢复。
+        from codey.agents.tool_execution import execute_information_tool_call
+        from codey.operations.task_effects import KernelEffectSink
+        from codey.runtime.core.models import ToolResult
 
+        session = self._create_session(MockProvider())
         call = ToolCall(name="read", args={"path": "foo.py"})
-        policy_decision, replay_decision = evaluate_tool_call_policy(
-            session,
-            call,
-        )
-        self.assertFalse(policy_denied(policy_decision))
-
-        # 1. Build intent, then commit it with the delivery envelope as one mutation.
-        intent = build_tool_call_intent(
-            session,
-            call,
-            turn=1,
-            tool_index=0,
-            replay_decision=replay_decision,
-        )
-        assert intent is not None
-        effect_id = intent.effect_id
-        self._commit_tool_batch(
-            intent,
-            turn=1,
-            tool_index=0,
-            tool_name="read",
-            replay_class="safe",
-        )
+        effect_id = self._begin_sink_turn(call, turn=1, tool_index=0)
         self.assertTrue(bool(effect_id))
 
         # Pending should now have 1 effect
@@ -302,32 +249,20 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0].intent.tool_name, "read")
 
-        # 2. Emit tool started
-        emit_tool_started_after_intent(session, call, turn=1, tool_index=0)
-        self.assertIn("tool_start", events)
-
-        # 3. Execute tool
-        outcome = execute_tool_call(session, call, turn=1, tool_index=0)
+        # Execute the real tool (production information-tool path)
+        outcome = execute_information_tool_call(
+            self.project_dir, session.request.tool_fns, call,
+        )
         self.assertTrue(outcome.ok)
 
-        # 4. Record tool outcome first
-        turn_state = TurnState()
-        record_tool_outcome(
-            session,
-            turn_state,
-            turn=1,
-            call=call,
-            outcome=outcome,
-            tool_index=0,
+        # Settle through the production sink
+        sink = KernelEffectSink(
+            self.line, session_id=self.session_id, run_id=self.run_id,
+            provider_id="mock_provider",
         )
-        self.assertEqual(len(turn_state.results), 1)
-
-        # 5. Settle after outcome
-        settle_tool_call_effect(
-            session,
-            effect_id,
-            outcome=outcome,
-            replay_decision=replay_decision,
+        sink.settle(
+            effect_id, True,
+            result=ToolResult(call=call, model_text=outcome.model_text),
         )
 
         # Verify no pending effects
@@ -338,24 +273,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
     def test_resume_recovery_failure_fails_closed(self) -> None:
         # If reducer-selected recovery needs the effect ledger and it cannot load,
         # recovery fails closed.
-        session = self._create_session(MockProvider())
         call = ToolCall(name="read", args={"path": "foo.py"})
-        _, replay_decision = evaluate_tool_call_policy(session, call)
-        intent = build_tool_call_intent(
-            session,
-            call,
-            turn=1,
-            tool_index=0,
-            replay_decision=replay_decision,
-        )
-        assert intent is not None
-        self._commit_tool_batch(
-            intent,
-            turn=1,
-            tool_index=0,
-            tool_name="read",
-            replay_class="safe",
-        )
+        self._begin_sink_turn(call, turn=1, tool_index=0)
         broken_store = MagicMock()
         broken_store.load_effects.side_effect = RuntimeError("disk corrupt")
 
@@ -937,49 +856,21 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertTrue(details.available)
 
     def test_tool_call_intent_persists_canonical_replay_args_for_safe_tools(self) -> None:
-        session = self._create_session(MockProvider())
-
-        # 1. Safe tool intent (read)
+        # 1. Safe tool intent (read) + unsafe tool intent (edit) via the sink
         call_read = ToolCall(name="read", args={"path": "foo.py", "offset": 5})
-        _, replay_read = evaluate_tool_call_policy(session, call_read)
         call_edit = ToolCall(name="edit", args={"path": "foo.py", "content": "hello"})
-        _, replay_edit = evaluate_tool_call_policy(session, call_edit)
-        intent_read = build_tool_call_intent(
-            session,
-            call_read,
-            turn=1,
-            tool_index=0,
-            replay_decision=replay_read,
+        from codey.operations.task_effects import KernelEffectSink
+
+        sink = KernelEffectSink(
+            self.line, session_id=self.session_id, run_id=self.run_id,
+            provider_id="mock_provider",
         )
-        intent_edit = build_tool_call_intent(
-            session,
-            call_edit,
-            turn=1,
-            tool_index=1,
-            replay_decision=replay_edit,
-        )
-        assert intent_read is not None
-        assert intent_edit is not None
-        items = (
-            DeliveryBatchItem(0, "read", intent_read.effect_id, "safe", False),
-            DeliveryBatchItem(1, "edit", intent_edit.effect_id, "unsafe", False),
-        )
-        self.line.begin_tool_batch(
-            self.session_id,
-            self.run_id,
-            intents=(intent_read, intent_edit),
-            delivery_intent=DeliveryBatchIntent(
-                batch_id=new_batch_id(self.run_id, 1),
-                session_id=self.session_id,
-                run_id=self.run_id,
-                turn=1,
-                items=items,
-                batch_digest=compute_batch_digest(items),
-            ),
-        )
+        eff_read = "eff-sink-read"
+        eff_edit = "eff-sink-edit"
+        sink.begin_turn([(eff_read, call_read, 0), (eff_edit, call_edit, 1)], turn=1)
         loaded = self.effects.load_effects(self.session_id, self.run_id)
-        proj_read = next(p for p in loaded if p.intent.effect_id == intent_read.effect_id)
-        proj_edit = next(p for p in loaded if p.intent.effect_id == intent_edit.effect_id)
+        proj_read = next(p for p in loaded if p.intent.effect_id == eff_read)
+        proj_edit = next(p for p in loaded if p.intent.effect_id == eff_edit)
         self.assertEqual(proj_read.intent.replay_args, {"path": "foo.py", "offset": 5})
         self.assertIsNone(proj_edit.intent.replay_args)
 
@@ -989,25 +880,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         test_file.write_text("file content to read", encoding="utf-8")
 
         # Record a pending read intent (simulating crash before settlement)
-        session = self._create_session(MockProvider())
         call_read = ToolCall(name="read", args={"path": "target.txt"})
-        _, replay_read = evaluate_tool_call_policy(session, call_read)
-        intent = build_tool_call_intent(
-            session,
-            call_read,
-            turn=1,
-            tool_index=0,
-            replay_decision=replay_read,
-        )
-        assert intent is not None
-        eff_read = intent.effect_id
-        self._commit_tool_batch(
-            intent,
-            turn=1,
-            tool_index=0,
-            tool_name="read",
-            replay_class="safe",
-        )
+        eff_read = self._begin_sink_turn(call_read, turn=1, tool_index=0)
 
         # Resume recovery
         recovery = recover_effects_for_resume(
@@ -1040,24 +914,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         test_file = self.project_dir / "target.txt"
         test_file.write_text("file content to read", encoding="utf-8")
 
-        session = self._create_session(MockProvider())
         call_read = ToolCall(name="read", args={"path": "target.txt"})
-        _, replay_read = evaluate_tool_call_policy(session, call_read)
-        intent = build_tool_call_intent(
-            session,
-            call_read,
-            turn=1,
-            tool_index=0,
-            replay_decision=replay_read,
-        )
-        assert intent is not None
-        self._commit_tool_batch(
-            intent,
-            turn=1,
-            tool_index=0,
-            tool_name="read",
-            replay_class="safe",
-        )
+        self._begin_sink_turn(call_read, turn=1, tool_index=0)
         seen_profiles: list[str] = []
 
         def fake_profile(task_kind: str, *, phase: str = "") -> SimpleNamespace:
@@ -1247,25 +1105,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         test_file = self.project_dir / "target.txt"
         test_file.write_text("file content to read", encoding="utf-8")
 
-        session = self._create_session(MockProvider())
         call_read = ToolCall(name="read", args={"path": "target.txt"})
-        _, replay_read = evaluate_tool_call_policy(session, call_read)
-        intent = build_tool_call_intent(
-            session,
-            call_read,
-            turn=1,
-            tool_index=0,
-            replay_decision=replay_read,
-        )
-        assert intent is not None
-        eff_read = intent.effect_id
-        self._commit_tool_batch(
-            intent,
-            turn=1,
-            tool_index=0,
-            tool_name="read",
-            replay_class="safe",
-        )
+        eff_read = self._begin_sink_turn(call_read, turn=1, tool_index=0)
         stop = threading.Event()
         stop.set()
 
@@ -1283,25 +1124,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(pending[0].intent.effect_id, eff_read)
 
     def test_resume_synthesizes_interrupted_for_pending_unsafe_tool(self) -> None:
-        session = self._create_session(MockProvider())
         call_edit = ToolCall(name="edit", args={"path": "foo.py", "content": "bar"})
-        _, replay_edit = evaluate_tool_call_policy(session, call_edit)
-        intent = build_tool_call_intent(
-            session,
-            call_edit,
-            turn=1,
-            tool_index=0,
-            replay_decision=replay_edit,
-        )
-        assert intent is not None
-        eff_edit = intent.effect_id
-        self._commit_tool_batch(
-            intent,
-            turn=1,
-            tool_index=0,
-            tool_name="edit",
-            replay_class="unsafe",
-        )
+        eff_edit = self._begin_sink_turn(call_edit, turn=1, tool_index=0)
 
         recovery = recover_effects_for_resume(
             self._deps(),

@@ -177,7 +177,6 @@ class AutoFreshChatOwnershipTests(unittest.TestCase):
                 task="fix",
                 on_event=lambda _e: None,
                 fresh_chat=True,
-                strict_fresh_chat=True,
                 permission_profile="coding_writer",
                 provider_id="local",
                 max_turns=1,

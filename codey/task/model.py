@@ -39,6 +39,13 @@ class TaskSubmission:
     # tasks keep False even when the policy still grants project.write.
     project_changes_required: bool = False
     sources_open_required: bool = False
+    # Entry-generated explicit denials (e.g.明确只读 → project.write/shell.approval).
+    # build_task_policy() 统一扣除，model_hint 与 requested 永远不能加回。
+    denied_capabilities: tuple[str, ...] = ()
+    # Shell approval continuation: previous run id (原策略复用）与已裁决的
+    # shell 结果（turn-0 初始行，首发回答原 native 调用）。
+    previous_run_id: str = ""
+    initial_shell_results: tuple[dict[str, object], ...] = ()
 
 
 def derive_project_changes_required(

@@ -2,6 +2,34 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 冷启动内核授权、完整收据与生命周期收口（未发布）
+
+- 编程、Research 和只读审计顾问使用共同任务工具循环；删除旧 agent 执行
+  入口及顾问独立解析/执行循环。编程修复轮次复用来源执行资源，由所属 flow
+  在结束或异常时清理资源。
+- Engine 的本地检查与任务要求组合成一份最终完成证明；回执直接投影该证明，
+  不重复扫描工作区。完成时检查外部文件变化，恢复的验证只在文件版本匹配时
+  获得可信身份；畸形 Engine 证明明确拒绝。
+- 持久收据完整保存原模型文本、call id、exit code、截断标记、canonical、
+  presentation 和 audit；长结果使用受管输出与固定摘要，Windows CRLF 字节
+  可原样恢复。缺失或冲突收据不再静默重建或回退重读。
+- 本轮快照深冻 schema、授权、执行器绑定与 replay class；解析和执行都在
+  产生 effect 前检查同一快照，native schema 仅在发送时转为普通 JSON。
+  严格校验拒绝错误类型、未知约束、数值越界及畸形授权字段。
+- 审批续跑沿用原授权；规划、审计和补证据策略只收窄父任务，不丢显式拒绝
+  或完成要求。无效持久身份在开会话/建项目之前拒绝；shell call id 原样传递。
+- 共同 provider 适配器按实际轮次记账，保留归一化 hook，穿透多层包装判断
+  协议，传递剩余发送超时，记录真实轮次与话题追踪。新会话失败明确停止，
+  协作取消正确结束任务。
+- 删除 pytest 不收集的旧测试方法及死夹具；测试适配器不再吞掉未知参数。
+  恢复测试使用真实 kernel 和持久执行计数，混合任务测试实际写文件并绑定
+  验证版本，保留失败、停止、越权和重复结算断言。
+- 验证：parity **682 场景 / 566 一致 / 116 明确差异 / 0 失败**；ruff、
+  compileall、diff-check 通过。最终全量 pytest **5952 passed、29 skipped、
+  1471 subtests passed，363.89s**。首轮失败记录与验证范围见 TEST_REPORT.md
+  及 `docs/kernel_convergence_review.zh-CN.md`。
+- 未 release、未打 tag、未改版本号。
+
 ## Unreleased - 堵住 Research 越权、恢复原收据与冻结快照（未发布）
 
 - TDD 红色锁定 8 个新文件（先失败、后通过）：Research 系统动作授权、

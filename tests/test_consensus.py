@@ -8,6 +8,8 @@ from unittest import mock
 
 from codey.agents import consensus
 from codey.agents.handoff import ConversationSnapshot
+from codey.operations import project_audit_advisor
+from codey.policies.task_policy import TaskPolicy
 from codey.runs.trace import RunTraceStore
 
 
@@ -60,19 +62,28 @@ class TraceRecorder:
 
 
 class ConsensusTests(unittest.TestCase):
-    def test_read_only_codec_does_not_offer_writer_tools(self) -> None:
-        prompt = consensus.READ_ONLY_CODEC.system_prompt()
+    def test_read_only_kernel_contract_does_not_offer_writer_tools(self) -> None:
+        # 统一内核的只读契约取代旧顾问 codec：同一快照 gate read-only 工具。
+        from types import SimpleNamespace
 
-        self.assertIn('{"tool":"read_file"', prompt)
-        self.assertNotIn('{"tool":"edit"', prompt)
-        self.assertNotIn('{"tool":"run"', prompt)
-        self.assertNotIn('{"tool":"shell"', prompt)
-        self.assertEqual(
-            consensus.READ_ONLY_CODEC.parse(
-                '{"tool":"edit","args":{"path":"app.py","content":"x"}}'
-            ).protocol_error_kind,
-            "disallowed_tool",
+        from codey.policies.task_policy import build_task_policy
+        from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
+
+        policy = build_task_policy(
+            SimpleNamespace(
+                project="E:\\probe",
+                requested_capabilities=(),
+                strict_research=False,
+                sources_open_required=False,
+                project_changes_required=False,
+            ),
+            task_kind="readonly",
         )
+        names = visible_tool_names_for_snapshot(policy, None)
+        self.assertIn("read_file", names)
+        self.assertNotIn("edit", names)
+        self.assertNotIn("run", names)
+        self.assertNotIn("shell", names)
 
     def test_advisor_ids_use_available_models_without_trigger_words(self) -> None:
         ids = consensus.advisor_ids(
@@ -164,24 +175,24 @@ class ConsensusTests(unittest.TestCase):
             [consensus.CONSENSUS_AGGREGATE_TIMEOUT] * 2,
         )
 
-    def test_advisor_deadline_cap_respects_provider_profile(self) -> None:
-        import time as _time
+    def test_advisor_deadline_replaced_by_bounded_kernel_turns(self) -> None:
+        """旧逐调用超时由统一内核的 turn 上界 + stop 传播替代：永不 done 的
+        顾问在 max_turns 内结束并返回空报告（有界，不悬挂）。"""
+        advisor = FakeProvider([
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+        ] * 10)
 
-        provider = FakeProvider()
-        provider.timeout = 180.0
-        remaining = consensus._advisor_timeout(_time.monotonic() + 1000.0, provider)
-        self.assertEqual(remaining, 180.0)
-        tight = consensus._advisor_timeout(_time.monotonic() + 5.0, provider)
-        self.assertLessEqual(tight, 5.0)
-        self.assertGreaterEqual(tight, 1.0)
-        fallback = consensus._advisor_timeout(_time.monotonic() + 1000.0, object())
-        self.assertEqual(fallback, consensus.CONSENSUS_ADVISOR_TIMEOUT)
-        broken = FakeProvider()
-        broken.timeout = "soon"  # type: ignore[assignment]
-        self.assertEqual(
-            consensus._advisor_timeout(_time.monotonic() + 1000.0, broken),
-            consensus.CONSENSUS_ADVISOR_TIMEOUT,
-        )
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, "app.py").write_text("safe\n", encoding="utf-8")
+            report = project_audit_advisor.run_project_audit_advisor(
+                advisor,
+                td,
+                "Review this project for bugs",
+                max_turns=1, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+            )
+
+        self.assertEqual(report, "")
+        self.assertLessEqual(len(advisor.sent), 2)
 
     def test_run_consensus_returns_none_when_no_advisor_is_available(self) -> None:
         selected = FakeProvider(["should not send"])
@@ -318,15 +329,18 @@ class ConsensusTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             Path(td, "app.py").write_text("print('hello')\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 provider,
                 td,
                 "Review this project for bugs",
-                trace_recorder=trace,
+                trace_recorder=trace, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertIn("audit report", report)
-        self.assertEqual([item["name"] for item in trace.sections], ["project_audit_prompt"])
+        self.assertEqual(
+            [item["name"] for item in trace.sections],
+            ["project_audit_prompt", "project_audit_result"],
+        )
         self.assertTrue(trace.sections[0]["model_visible"])
 
     def test_project_audit_records_distinct_advisor_source_refs(self) -> None:
@@ -348,7 +362,7 @@ class ConsensusTests(unittest.TestCase):
                 provider_initial="deepseek",
             )
 
-            reports = consensus.run_project_audit(
+            reports = project_audit_advisor.run_project_audit(
                 project=project,
                 selected_provider_id="deepseek",
                 task="Review this project for bugs",
@@ -356,7 +370,7 @@ class ConsensusTests(unittest.TestCase):
                 provider_labels={"qwen": "Qwen", "glm": "GLM"},
                 availability=lambda: {"qwen": True, "glm": True},
                 connect_existing=lambda provider_id: providers[provider_id],
-                trace_recorder=trace,
+                trace_recorder=trace, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
             trace.finish(status="done")
             payload = json.loads(
@@ -469,15 +483,15 @@ class ConsensusTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             Path(td, "app.py").write_text("print('hello')\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertIn("no concrete bug", report)
         self.assertEqual(len(advisor.sent), 2)
-        self.assertIn("[tool_result tool=read_file path=app.py]", advisor.sent[1])
+        self.assertIn("[result: read_file]", advisor.sent[1])
         self.assertIn("print('hello')", advisor.sent[1])
 
     def test_project_audit_advisor_can_find_references(self) -> None:
@@ -496,14 +510,14 @@ class ConsensusTests(unittest.TestCase):
                 "application = create_app()\n",
                 encoding="utf-8",
             )
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertIn("one caller", report)
-        self.assertIn("[tool_result tool=find_references path=.]", advisor.sent[1])
+        self.assertIn("[result: find_references]", advisor.sent[1])
         self.assertIn("definition app.py:1", advisor.sent[1])
         self.assertIn("call server.py:2", advisor.sent[1])
         self.assertIn("lexical scan, not semantic resolution", advisor.sent[1])
@@ -523,13 +537,13 @@ class ConsensusTests(unittest.TestCase):
                 "# padding\n" * 60_000 + "create_app()\n",
                 encoding="utf-8",
             )
-            consensus.run_project_audit_advisor(
+            project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
-        self.assertIn("[tool_result tool=find_references path=.]", advisor.sent[1])
+        self.assertIn("[result: find_references]", advisor.sent[1])
         self.assertIn("definition app.py:1", advisor.sent[1])
         self.assertNotIn("Scan coverage:", advisor.sent[1])
         self.assertNotIn("truncated=true", advisor.sent[1])
@@ -544,16 +558,18 @@ class ConsensusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td, "app.py")
             path.write_text("safe\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
             content = path.read_text(encoding="utf-8")
 
         self.assertEqual(report, "review only")
         self.assertEqual(content, "safe\n")
-        self.assertIn("may not edit", advisor.sent[1])
+        # 统一快照拒绝写调用（不再是旧 codec 的自有文案）
+        self.assertIn("edit", advisor.sent[1])
+        self.assertIn("not allowed", advisor.sent[1])
 
     def test_project_audit_blocks_secret_files(self) -> None:
         advisor = FakeProvider([
@@ -565,10 +581,10 @@ class ConsensusTests(unittest.TestCase):
             Path(td, ".env").write_text("SUPER_SECRET=orange\n", encoding="utf-8")
             Path(td, "credentials.json").write_text('{"token":"CREDENTIAL_MARKER"}\n', encoding="utf-8")
             Path(td, "app.py").write_text("print('safe')\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "no secrets read")
@@ -588,10 +604,10 @@ class ConsensusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             Path(td, "prod.env").write_text("ENV_SECRET_MARKER=orange\n", encoding="utf-8")
             Path(td, "app.py").write_text("print('safe')\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "env file was not read")
@@ -612,10 +628,10 @@ class ConsensusTests(unittest.TestCase):
             pkg.mkdir(parents=True)
             Path(pkg, "index.js").write_text("SECRET_MARKER()\n", encoding="utf-8")
             Path(td, "app.py").write_text("def safe():\n    pass\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "secret references were not shared")
@@ -635,10 +651,10 @@ class ConsensusTests(unittest.TestCase):
             Path(root, "b.py").write_text("pass\n", encoding="utf-8")
             Path(root, "c.py").write_text("late_marker\n", encoding="utf-8")
             with mock.patch("codey.agents.consensus.PROJECT_AUDIT_MAX_SCAN_FILES", 2):
-                report = consensus.run_project_audit_advisor(
+                report = project_audit_advisor.run_project_audit_advisor(
                     advisor,
                     td,
-                    "Review this project for bugs",
+                    "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
                 )
 
         self.assertEqual(report, "audit search stayed bounded")
@@ -657,10 +673,10 @@ class ConsensusTests(unittest.TestCase):
             root = Path(td) / "build"
             root.mkdir()
             Path(root, "app.py").write_text("late_marker\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 root,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "audit searched root")
@@ -678,10 +694,10 @@ class ConsensusTests(unittest.TestCase):
                 "# padding\n" * 30_000 + "LARGE_SEARCH_MARKER = True\n",
                 encoding="utf-8",
             )
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "large source stayed bounded")
@@ -700,10 +716,10 @@ class ConsensusTests(unittest.TestCase):
             Path(root, "b.py").write_text("pass\n", encoding="utf-8")
             Path(root, "c.py").write_text("late_marker()\n", encoding="utf-8")
             with mock.patch("codey.agents.consensus.PROJECT_AUDIT_MAX_SCAN_FILES", 2):
-                report = consensus.run_project_audit_advisor(
+                report = project_audit_advisor.run_project_audit_advisor(
                     advisor,
                     td,
-                    "Review this project for bugs",
+                    "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
                 )
 
         self.assertEqual(report, "audit references stayed bounded")
@@ -723,10 +739,10 @@ class ConsensusTests(unittest.TestCase):
             pkg.mkdir(parents=True)
             Path(pkg, "index.js").write_text("const LEAKED_NODE_MODULE = true;\n", encoding="utf-8")
             Path(td, "app.py").write_text("print('safe')\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "excluded directory was not read")
@@ -749,10 +765,10 @@ class ConsensusTests(unittest.TestCase):
                 link.symlink_to(target)
             except OSError as exc:
                 self.skipTest(f"file symlink unavailable: {exc}")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "symlink was not read")
@@ -770,10 +786,10 @@ class ConsensusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             Path(td, ".env").write_text("SUPER_SECRET=orange\n", encoding="utf-8")
             Path(td, "app.py").write_text("print('safe')\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs",
+                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "secret search produced no result")
@@ -787,11 +803,11 @@ class ConsensusTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             Path(td, "app.py").write_text("print('safe')\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
+            report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
                 "Review this project for bugs",
-                max_turns=1,
+                max_turns=1, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "")
@@ -803,14 +819,14 @@ class ConsensusTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             Path(td, "app.py").write_text("print('hello')\n", encoding="utf-8")
-            reports = consensus.run_project_audit(
+            reports = project_audit_advisor.run_project_audit(
                 project=td,
                 selected_provider_id="deepseek",
                 task="Review this project",
                 provider_ids=("deepseek", "qwen", "glm"),
                 provider_labels={"qwen": "Qwen", "glm": "GLM"},
                 availability=lambda: {"qwen": True, "glm": True},
-                connect_existing=lambda provider_id: providers[provider_id],
+                connect_existing=lambda provider_id: providers[provider_id], parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual([report.text for report in reports], ["qwen report", "glm report"])
@@ -824,14 +840,14 @@ class ConsensusTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             Path(td, "app.py").write_text("print('hello')\n", encoding="utf-8")
-            reports = consensus.run_project_audit(
+            reports = project_audit_advisor.run_project_audit(
                 project=td,
                 selected_provider_id="deepseek",
                 task="Review this project",
                 provider_ids=("deepseek", "qwen", "glm"),
                 provider_labels={"qwen": "Qwen", "glm": "GLM"},
                 availability=lambda: {"qwen": True, "glm": True},
-                connect_existing=lambda provider_id: providers[provider_id],
+                connect_existing=lambda provider_id: providers[provider_id], parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual([report.text for report in reports], ["glm report"])

@@ -223,20 +223,41 @@ def test_mode_selection_trace_replaces_router() -> None:
 
 # --- Phase 2: dead-param / dedup / hierarchy locks (must FAIL before fix) ---
 
-def test_evaluate_tool_call_policy_has_no_dead_turn_params() -> None:
-    import inspect
+def test_old_agent_execution_entries_are_deleted() -> None:
     import pathlib
 
     from codey.agents import tool_execution as te
 
-    params = inspect.signature(te.evaluate_tool_call_policy).parameters
-    assert "turn" not in params
-    assert "tool_index" not in params
-    # 新内核以 TurnSnapshot/turn_effect_id 拥有 turn 身份；生产循环不得再依赖旧 intent 构造
-    from codey.operations import task_loop as tl
-
-    src = pathlib.Path(tl.__file__).read_text(encoding="utf-8")
-    assert "build_tool_call_intent" not in src
+    # 旧执行入口已删除：生产循环只经 KernelEffectSink/execute_turn/settlement。
+    for name in (
+        "build_tool_call_intent",
+        "settle_tool_call_effect",
+        "execute_tool_call",
+        "evaluate_tool_call_policy",
+        "emit_tool_started_after_intent",
+        "record_tool_outcome",
+        "request_shell_approval",
+        "tool_result_from_outcome",
+        "policy_error_outcome",
+        "tool_error_outcome",
+        "TurnState",
+        "ToolResultDeliveryItem",
+    ):
+        assert not hasattr(te, name), f"旧执行入口必须删除：{name}"
+    # 源码级确认：旧链条无生产调用者（测试/手工脚本已迁移到当前链）。
+    root = pathlib.Path(te.__file__).resolve().parent.parent.parent
+    for rel in ("codey/agents/tool_execution.py", "codey/operations/task_loop.py"):
+        src = (root / rel).read_text(encoding="utf-8")
+        for name in ("build_tool_call_intent", "settle_tool_call_effect", "record_tool_outcome"):
+            assert name not in src, f"{rel} 不得再引用旧执行链：{name}"
+    # 保留的具体工具实现仍在
+    for name in (
+        "evaluate_tool_call_policy_for",
+        "execute_information_tool_call",
+        "read_before_edit_outcome",
+        "maybe_externalize_large_tool_output",
+    ):
+        assert hasattr(te, name), f"具体工具实现必须保留：{name}"
 
 
 def test_run_headless_task_has_no_emit_jsonl() -> None:
@@ -389,9 +410,9 @@ def test_atomic_write_has_no_local_wrappers() -> None:
     assert "def _atomic_write_text" not in store_src
     assert "def _write_text_atomic" not in managed_src
     assert "from codey.storage.atomic_io import write_text_atomic" in store_src
-    assert "from codey.storage.atomic_io import write_text_atomic" in managed_src
+    assert "from codey.storage.atomic_io import write_bytes_atomic" in managed_src
     assert "write_text_atomic(path" in store_src
-    assert "write_text_atomic(path" in managed_src
+    assert "write_bytes_atomic(path" in managed_src
 
 
 def test_web_provider_has_no_intermediate_base() -> None:

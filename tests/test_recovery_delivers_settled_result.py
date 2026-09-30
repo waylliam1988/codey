@@ -1,4 +1,9 @@
-"""恢复必须交付原结算结果，而非重新执行产生新观察。"""
+"""恢复必须交付原结算结果，而非重新执行产生新观察。
+
+已结算重发的生产链覆盖在 tests/test_settled_delivery_recovery.py
+（真实日志重启 → recover_effects_for_resume → 原结果交付）；
+本文件保留结算收据字段的单元锁定。
+"""
 from __future__ import annotations
 
 import tempfile
@@ -42,39 +47,3 @@ def test_settle_persists_exit_code_and_full_bounded_result() -> None:
         # 短结果必须保存完整有界结果（不只是 500 截断的展示）
         full = payload.get("result_text", payload.get("result_excerpt", ""))
         assert "original observation" in str(full)
-
-
-def test_settled_read_is_redelivered_not_reread() -> None:
-    """已结算的读取在恢复时直接交付原结果，不重新读文件。"""
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-        tmp = Path(td)
-        proj = tmp / "proj"
-        proj.mkdir()
-        (proj / "a.py").write_text("original observation", encoding="utf-8")
-        from codey.runtime.core.models import ToolCall, ToolResult
-        sink, log, _ = _new_sink(tmp, "s2", "r2")
-        call = ToolCall(name="read_file", args={"path": "a.py"})
-        from codey.operations.task_session import turn_effect_id
-        eff = turn_effect_id("r2:task", 1, 0)
-        sink.begin_turn([(eff, call, 0)], turn=1)
-        sink.settle(eff, True, result=ToolResult(call=call, model_text="original observation"), exit_code=0)
-        # 文件变化
-        (proj / "a.py").write_text("changed after original execution", encoding="utf-8")
-        from codey.runtime.effects.effect_records import RuntimeEffectStore
-        store = RuntimeEffectStore(log)
-        projs = store.load_effects("s2", "r2")
-        settled = [p for p in projs if p.is_settled]
-        assert settled, "需要已结算投影"
-        st = settled[0].settlement
-        assert st is not None
-        # settlement 必须可重建原结果
-        full = getattr(st, "result_text", "") or st.result_excerpt
-        assert "original observation" in str(full)
-        content_now = (proj / "a.py").read_text(encoding="utf-8")
-        assert content_now == "changed after original execution"
-        assert str(full) != content_now
-        # 恢复消费链：从 settlement 重建 ToolResult，必须等于原结果而非当前文件
-        from codey.operations.recovery import rebuild_settled_tool_result
-        rebuilt = rebuild_settled_tool_result(settled[0], call)
-        assert rebuilt is not None
-        assert "original observation" in str(getattr(rebuilt, "model_text", ""))

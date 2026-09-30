@@ -9,7 +9,14 @@ from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.run_result import ResearchRunResult
 from codey.research.topic_continuity import project_topic_continuity
 from codey.workspace.context_epoch import context_epoch_id
-from tests.support.research_iteration_adapter import ResearchIteration
+
+
+def _continuity_allow_policy():
+    from codey.policies.task_policy import TaskPolicy
+
+    return TaskPolicy(grants=frozenset({
+        "control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link",
+    }))
 
 
 class _SectionRecorder:
@@ -82,35 +89,10 @@ class _FakeProvider:
         return "{}"
 
 
-class _RecordingRunner(ResearchIteration):
-    """Exposes the last assembled intro for byte-level assertions."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        self.last_intro = ""
-        super().__init__(*args, **kwargs)
-
-    def _intro(self, question: str) -> str:
-        self.last_intro = super()._intro(question)
-        return self.last_intro
 
 
-def _runner(trace, *, topic_continuity_context: str = "") -> _RecordingRunner:
-    store = KnowledgeStore(Path(tempfile.mkdtemp()) / "knowledge")
-    return _RecordingRunner(
-        _FakeProvider(),
-        _NullSearch(),
-        store,
-        session_id="s-continuity",
-        trace_recorder=trace,
-        topic_continuity_context=topic_continuity_context,
-    )
 
 
-def _send(runner: _RecordingRunner, *, controller_block: str = "") -> str:
-    """Drive one real provider turn; the block mimics the controller append."""
-    outbound = runner.last_intro + controller_block
-    runner._send_provider(outbound)
-    return outbound
 
 
 def _stub_result() -> ResearchRunResult:
@@ -125,10 +107,8 @@ def _stub_result() -> ResearchRunResult:
 def test_continuity_appears_in_prompt_via_new_entry() -> None:
     """Continuity via the new single entry (migrated from old _intro)."""
     import tempfile
-    from pathlib import Path
     from types import SimpleNamespace
 
-    from codey.knowledge.store import KnowledgeStore
     from codey.operations.research_iteration import run_research_iteration
 
     class _CaptureProvider:
@@ -149,6 +129,7 @@ def test_continuity_appears_in_prompt_via_new_entry() -> None:
     projection = project_topic_continuity(
         interest_hints=[{"ref": "research_interest:ric_x", "question": "Does the 2026 finding still hold?"}],
     )
+    trace = _SectionRecorder()
     with tempfile.TemporaryDirectory() as td:
         store = KnowledgeStore(Path(td) / "knowledge")
         provider = _CaptureProvider(['{"tool":"done","args":{"summary":"done"}}'])
@@ -162,13 +143,17 @@ def test_continuity_appears_in_prompt_via_new_entry() -> None:
             deps, provider=provider, session_id="s", project="",
             task="Research question about continuity", max_turns=1,
             on_event=lambda _e: None, stop_flag=None, provider_id="local",
-            run_id="r", chat_handoff="", trace_recorder=None,
+            run_id="r", chat_handoff="", trace_recorder=trace,
             search=lambda: "", topic_continuity_context=projection.prompt_text,
+            topic_continuity_payload=projection.to_payload(),
         )
         store.close()
     assert provider.sent
     assert "Does the 2026 finding still hold?" in provider.sent[0]
     assert "Research question about continuity" in provider.sent[0]
+    rows = [row for row in trace.calls if row[0] == "record_research_topic_continuity"]
+    assert len(rows) == 1
+    assert rows[0][2]["epoch_id"] == context_epoch_id(provider.sent[0])
 
 
 def test_pipeline_forwards_continuity_payload_without_pre_recording() -> None:
@@ -213,6 +198,7 @@ def test_pipeline_forwards_continuity_payload_without_pre_recording() -> None:
         context=context,
         run_iteration=run_iteration,
         search_factory=_NullSearch,
+        policy=_continuity_allow_policy(),
     ).run()
 
     assert output.final_result is not None
@@ -242,6 +228,7 @@ def test_pipeline_skips_trace_row_when_nothing_admitted() -> None:
         context=context,
         run_iteration=run_iteration,
         search_factory=_NullSearch,
+        policy=_continuity_allow_policy(),
     ).run()
 
     assert output.planner_stop_reason == "proof_review_missing"

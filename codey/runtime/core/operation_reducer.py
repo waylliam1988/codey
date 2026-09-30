@@ -35,6 +35,7 @@ from codey.runtime.log.session_view import SessionView, pending_for
 ACTION_CONTINUE = "continue_operation"
 ACTION_FAIL_INVARIANT = "fail_invariant"
 ACTION_REPLAY_SAFE_TOOL_BATCH = "replay_safe_tool_batch"
+ACTION_REDELIVER_SETTLED_BATCH = "redeliver_settled_batch"
 ACTION_SETTLE_PROVIDER_UNKNOWN = "settle_provider_unknown"
 ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS = "synthesize_interrupted_effects"
 ACTION_TERMINAL = "terminal"
@@ -173,6 +174,17 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
                 delivery_batch_id=pending.delivery_batch_id,
                 driver=state.driver,
             )
+        if _batch_fully_settled(batch, effects):
+            # 已结算结果的重发优先于重放：有原结果就不重新执行，
+            # 不调用执行器，不依赖 ReplayClass.SAFE（与未结算工具的
+            # 执行恢复严格分离）。
+            return RuntimeAction(
+                ACTION_REDELIVER_SETTLED_BATCH,
+                leaf=state.leaf,
+                effect_ids=batch.intent.tool_refs,
+                delivery_batch_id=batch.intent.batch_id,
+                driver=state.driver,
+            )
         if batch.can_recover_before_provider_send:
             return RuntimeAction(
                 ACTION_REPLAY_SAFE_TOOL_BATCH,
@@ -226,10 +238,30 @@ def _safe_tool_projection(projection: RuntimeEffectProjection) -> bool:
     )
 
 
+def _batch_fully_settled(
+    batch: DeliveryBatchProjection,
+    effects: tuple[RuntimeEffectProjection, ...],
+) -> bool:
+    """True when every batch effect carries a settlement receipt.
+
+    纯状态判断：收据内容是否可重建由恢复层校验（fail-closed），reducer
+    只决定“重发”动作，不触及执行器。
+    """
+    if not batch.intent.tool_refs:
+        return False
+    by_id = {effect.intent.effect_id: effect for effect in effects}
+    for effect_id in batch.intent.tool_refs:
+        projection = by_id.get(effect_id)
+        if projection is None or projection.settlement is None:
+            return False
+    return True
+
+
 __all__ = [
     "ACTION_CONTINUE",
     "ACTION_FAIL_INVARIANT",
     "ACTION_REPLAY_SAFE_TOOL_BATCH",
+    "ACTION_REDELIVER_SETTLED_BATCH",
     "ACTION_SETTLE_PROVIDER_UNKNOWN",
     "ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS",
     "ACTION_TERMINAL",

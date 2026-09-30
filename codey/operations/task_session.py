@@ -36,6 +36,9 @@ def _validate_restored_receipts(
             raise RecoveryFailed("session executed ok must be a boolean")
         if "exit_code" in row and row["exit_code"] is not None and type(row["exit_code"]) is not int:
             raise RecoveryFailed("session executed exit_code must be an integer")
+        call_id = row.get("call_id", "")
+        if not isinstance(call_id, str) or len(call_id) > 256:
+            raise RecoveryFailed("session executed call_id must be a bounded string")
         executed[str(identity)] = dict(row)
     return verifications, executed
 
@@ -110,6 +113,11 @@ class TaskSession:
     max_turns: int = 8
     task_text: str = ""
     handoff: str = ""
+    # Explicit per-session controller deny-list (e.g. experiment arms):
+    # subtracted from the state-derived allow-list every turn, so the
+    # narrowed scope flows through the SAME snapshot into prompt, schemas,
+    # parsing, and execution. Empty means state-derived only.
+    controller_denied: tuple[str, ...] = ()
     # Explicit completion requirement from the task entry; never inferred
     # from keywords or write permission. Read-only tasks keep False even
     # when the policy still grants project.write for other reasons.
@@ -248,6 +256,8 @@ class TaskSession:
         return "\n".join(parts)
 
     def to_payload(self) -> dict[str, Any]:
+        from codey.operations.kernel_errors import RecoveryFailed
+
         try:
             policy_payload = self.policy.to_payload() if hasattr(self.policy, "to_payload") else {}
         except Exception:
@@ -258,9 +268,12 @@ class TaskSession:
         for key, record in (self.executed or {}).items():
             if not isinstance(record, dict):
                 continue
+            call_id = record.get("call_id", "")
+            if not isinstance(call_id, str) or len(call_id) > 256:
+                raise RecoveryFailed("session executed call_id must be a bounded string")
             row: dict[str, Any] = {
                 "name": str(record.get("name", "") or "")[:80],
-                "call_id": str(record.get("call_id", "") or "")[:80],
+                "call_id": call_id,
                 "excerpt": str(record.get("excerpt", "") or "")[:500],
                 "args_digest": str(record.get("args_digest", "") or "")[:80],
             }
@@ -343,6 +356,9 @@ class TaskSession:
             "turn": int(self.turn or 0),
             "executed": executed_refs,
             "policy": policy_payload,
+            "controller_denied": sorted(
+                {str(n or "").strip().lower() for n in (self.controller_denied or ()) if str(n or "").strip()}
+            )[:16],
         }
 
     @staticmethod
@@ -380,6 +396,13 @@ class TaskSession:
 
         session.task_text = restore("task_text", lambda: str(data.get("task_text", "") or "")[:2000])
         session.handoff = restore("handoff", lambda: str(data.get("handoff", "") or "")[:2000])
+        session.controller_denied = restore(
+            "controller_denied",
+            lambda: tuple(sorted(
+                {str(n or "").strip().lower() for n in (data.get("controller_denied", ()) or ())
+                 if str(n or "").strip()}
+            )[:16]),
+        )
         session.project_changes_required = restore(
             "project_changes_required", lambda: data.get("project_changes_required", False) is True
         )

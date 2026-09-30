@@ -15,12 +15,20 @@ class KernelProgress:
         self.idle = 0
 
     def observe(self, results, session) -> bool:
-        """Stop only after unchanged observations; successful mutations reset it."""
+        """Stop only after unchanged observations; successful mutations reset it.
+
+        Progress accounting never crashes the loop: a telemetry fault for one
+        result counts as no-progress for that result (safe direction: the
+        task may stop earlier, never spins forever).
+        """
         progress = False
         epoch = max([0, *session.edited_files.values()])
         for result in results:
             call = result.call
-            record = attempt_record(call, result, turn=session.turn, edit_epoch=epoch)
+            try:
+                record = attempt_record(call, result, turn=session.turn, edit_epoch=epoch)
+            except Exception:
+                continue
             self.attempts.append(record)
             changed = result.audit.get("changed") is True
             key = seen_info_key(call.name, str(call.args.get("path") or call.args.get("url") or

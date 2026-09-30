@@ -99,48 +99,30 @@ def test_shell_cycle_stops() -> None:
 
 
 def test_runaway_record_failure_is_visible(tmp_path: Path) -> None:
+    # 进度记账失败不得打断循环：当前链经 KernelProgress.observe 容错，
+    # 故障结果计为无进展（安全方向：可能早停，绝不空转，更不崩溃）。
     from unittest import mock
 
-    from codey.agents.request import AgentRequest
-    from codey.agents.tool_execution import TurnState, record_tool_outcome
-    from codey.agents.tools import AgentToolFns
-    from codey.toolchain.runtime import ToolOutcome
-    from tests.support.kernel_harness import build_kernel_fixture
+    from codey.operations.kernel_progress import KernelProgress
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.core.models import ToolCall, ToolResult
 
-    events: list[object] = []
-
-    class DoneProvider:
-        name = "local"
-
-        def new_chat(self, timeout=None) -> None:
-            return None
-
-        def close(self) -> None:
-            return None
-
-    def read_file(root: Path, rel: str, **kwargs: object) -> ToolOutcome:
-        return ToolOutcome("hello", True)
-
-    request = AgentRequest(
-        provider=DoneProvider(),  # type: ignore[arg-type]
-        project=tmp_path,
-        task="read app",
-        on_event=events.append,
-        tool_fns=AgentToolFns(read_file=read_file),  # type: ignore[arg-type]
-        provider_id="local",
-        max_turns=1,
+    session = TaskSession(
+        policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
+        task_kind="project", project=str(tmp_path), max_turns=4,
     )
-    session = build_kernel_fixture(request)
-    turn_state = TurnState()
+    progress = KernelProgress(stagnant_turns=4)
+    result = ToolResult(
+        call=ToolCall(name="read", args={"path": "app.py"}, call_id="c1"),
+        model_text="hello",
+    )
     with mock.patch(
-        "codey.agents.runaway_guard.attempt_record", side_effect=RuntimeError("boom"),
+        "codey.operations.kernel_progress.attempt_record", side_effect=RuntimeError("boom"),
     ):
-        record_tool_outcome(
-            session, turn_state, turn=1,
-            call=ToolCall(name="read", args={"path": "app.py"}, call_id="c1"),
-            outcome=ToolOutcome("hello", True), tool_index=0, ref="1:0",
-        )
-    assert any("runaway record failed" in str(getattr(e, "text", e)) for e in events)
+        stopped = progress.observe([result], session)
+    assert stopped is False
+    assert list(progress.attempts) == []
 
 
 def test_runaway_guard_failure_is_visible(tmp_path: Path) -> None:

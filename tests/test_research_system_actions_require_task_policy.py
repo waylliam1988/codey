@@ -77,7 +77,7 @@ def test_control_only_synthesis_must_not_write_note() -> None:
     events: list[object] = []
     note_id = _persist_synthesis(
         tools, "question", "summary text", session_id="s-policy",
-        project="", on_event=events.append, policy=policy,
+        project="", run_id="run-deny-syn", on_event=events.append, policy=policy,
     )
     assert note_id == ""
     assert list(tools.created_ids) == []
@@ -100,7 +100,7 @@ def test_webread_without_knowledge_write_reads_but_saves_no_note() -> None:
     events: list[object] = []
     note_id = _persist_synthesis(
         tools, "q", "summary", session_id="s", project="",
-        on_event=events.append, policy=policy,
+        run_id="run-webread-syn", on_event=events.append, policy=policy,
     )
     assert note_id == ""
 

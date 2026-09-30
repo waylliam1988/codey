@@ -63,7 +63,6 @@ class WriterAttempt:
     provider: ChatProvider
     remaining_turns: int
     fresh_chat: bool
-    strict_fresh_chat: bool
     handoff: str
     checkpoint: CheckpointView
 
@@ -135,7 +134,6 @@ class WriterFailoverRunner:
                 provider=self.provider,
                 remaining_turns=max(1, turn_budget - turns_used),
                 fresh_chat=cur_fresh,
-                strict_fresh_chat=True,
                 handoff=cur_handoff,
                 checkpoint=cur_checkpoint,
             )

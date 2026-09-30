@@ -9,6 +9,14 @@ from unittest.mock import patch
 import pytest
 
 
+def _cutover_parent_policy():
+    from codey.policies.task_policy import TaskPolicy
+
+    return TaskPolicy(grants=frozenset({
+        "control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link",
+    }))
+
+
 @pytest.mark.parametrize("project, expected", [("E:/codey", "project"), (None, "chat")])
 def test_opt_in_task_kind_reaches_shared_kernel(project: str | None, expected: str) -> None:
     from codey.operations.result import ModeOutcome
@@ -459,7 +467,7 @@ def test_planning_adapter_exposes_only_read_capabilities(tmp_path) -> None:
     assert '"tool":"shell"' not in prompts[0]
 
 
-def test_web_chat_refresh_failure_keeps_allowed_existing_tab(tmp_path) -> None:
+def test_web_chat_refresh_failure_stops_before_sending_to_existing_tab(tmp_path) -> None:
     from codey.agents.request import AgentRequest
     from codey.operations.project_adapter import run
 
@@ -470,13 +478,15 @@ def test_web_chat_refresh_failure_keeps_allowed_existing_tab(tmp_path) -> None:
             raise RuntimeError("browser tab unavailable")
 
         def send(self, _prompt, timeout=None):
-            return '{"tool":"done","args":{"summary":"continued"}}'
+            raise AssertionError("failed fresh chat must not reuse the current tab")
 
-    result = run(AgentRequest(
-        provider=Provider(), project=tmp_path, task="continue", max_turns=1,
-        fresh_chat=True, strict_fresh_chat=False, on_event=lambda _event: None,
-    ))
-    assert result.stop_reason == "done"
+    import pytest
+
+    with pytest.raises(RuntimeError, match="browser tab unavailable"):
+        run(AgentRequest(
+            provider=Provider(), project=tmp_path, task="continue", max_turns=1,
+            fresh_chat=True, on_event=lambda _event: None,
+        ))
 
 
 def test_shared_writer_updates_conversation_window_usage(tmp_path) -> None:
@@ -720,7 +730,7 @@ def test_shell_approval_records_turn_intent_before_notifying_user(tmp_path) -> N
     order: list[str] = []
 
     class Sink:
-        def begin_turn(self, items, *, turn):
+        def begin_turn(self, items, *, turn, specs=None):
             assert turn == 1 and items[0][1].name == "shell"
             order.append("intent")
 
@@ -763,7 +773,7 @@ def test_kernel_records_intent_before_project_tool_execution(tmp_path) -> None:
     observed: list[str] = []
 
     class Sink:
-        def begin_turn(self, _items, *, turn):
+        def begin_turn(self, _items, *, turn, specs=None):
             observed.append(f"begin:{turn}")
 
         def has_unsettled(self, _identity):
@@ -794,7 +804,7 @@ def test_failed_intent_commit_prevents_tool_execution(tmp_path) -> None:
     session = TaskSession(policy=policy, task_kind="project", project=str(tmp_path))
 
     class Sink:
-        def begin_turn(self, _items, *, turn):
+        def begin_turn(self, _items, *, turn, specs=None):
             raise RuntimeError("journal unavailable")
 
     with pytest.raises(RuntimeError, match="journal unavailable"):
@@ -1050,6 +1060,7 @@ def test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard() ->
         plan=SimpleNamespace(plan_ref="p1"),
         material=PlanExecutionResult(fresh_source_urls=(url,), previews=("fact",)),
         question="x", run_id="r", session_id="s", round_index=1,
+        parent_policy=_cutover_parent_policy(),
     )
     assert result.has_new_evidence
     assert len(writes) == 1

@@ -222,7 +222,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             self.assertEqual(agent_run.call_count, 2)
             resumed_request = captured["request"]
             self.assertTrue(resumed_request.fresh_chat)
-            self.assertTrue(resumed_request.strict_fresh_chat)
+            self.assertTrue(resumed_request.fresh_chat)
             self.assertIn("Local execution checkpoint", resumed_request.work_checkpoint)
             self.assertIn("app.py", resumed_request.work_checkpoint)
             self.assertEqual(resumed_request.verification_changed_files, ("app.py",))
@@ -279,7 +279,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             )
             request = agent_run.call_args.args[0]
             self.assertEqual(request.provider_id, "stepfun")
-            self.assertTrue(request.strict_fresh_chat)
+            self.assertTrue(request.fresh_chat)
             self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_first_rescue_failure_continues_to_second_sibling(self) -> None:

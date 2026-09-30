@@ -815,11 +815,13 @@ def test_forget_conversation_deletes_session_run_traces() -> None:
         assert not path.exists()
 
 
-def _run_project_task(state: server.AppContext, project: Path, session_id: str, task: str, changes: dict) -> dict:
+def _run_project_task(state: server.AppContext, project: Path, session_id: str, task: str,
+                      changes: dict, *, agent_result: RunResult | None = None) -> dict:
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
         runner = _runner(
             state,
             collect_changes=mock.Mock(return_value=changes),
+            agent_run=mock.Mock(return_value=agent_result) if agent_result is not None else None,
         )
         run_task_submission(runner,
             TaskSubmission(
@@ -915,7 +917,7 @@ def test_docs_only_done_run_completes_with_limitations() -> None:
         ]
 
 
-def test_unchanged_or_interrupted_runs_record_no_completion_proofs() -> None:
+def test_unchanged_done_run_records_one_not_applicable_completion_proof() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td) / "project"
         project.mkdir()
@@ -929,4 +931,21 @@ def test_unchanged_or_interrupted_runs_record_no_completion_proofs() -> None:
             {"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"},
         )
 
+        proofs = payload["completion_proofs"]
+        assert len(proofs) == 1
+        assert proofs[0]["satisfied"] is True
+        assert proofs[0]["checks"] == [{"check_id": "relevant_verification", "status": "not_applicable"}]
+
+
+def test_interrupted_run_never_records_completion_proof() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        project = Path(td) / "project"
+        project.mkdir()
+        state = server.AppContext(Path(td) / "state")
+        payload = _run_project_task(
+            state, project, "interrupted-proof", "Answer a question",
+            {"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"},
+            agent_result=RunResult("Stopped", "stopped", 1),
+        )
+        assert state.run_registry.last_terminal_event()["stop_reason"] == "stopped"
         assert payload["completion_proofs"] == []

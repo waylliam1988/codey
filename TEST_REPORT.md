@@ -1,5 +1,84 @@
 # Codey Test Report
 
+## Cold-start kernel convergence and review closure (2026-09-30)
+
+Scope: the unstaged refactor based on `3ca86a1`, its production callers,
+recovery/approval/completion boundaries, and affected fixtures/manual probes.
+Production code was frozen before the final full run; only documentation was
+updated after that run.
+
+### Behavior and test evidence
+
+| Boundary | Locked behavior | Regression files |
+| --- | --- | --- |
+| Authorization | Explicit denials survive entry, approval resume, auto narrowing, audit, planning, and evidence follow-up | `test_approval_authorization_recovery.py`, `test_entry_auth_denied_capabilities.py`, `test_planning_flow_wiring.py`, `test_research_system_action_policy_closure.py` |
+| Turn capture | Frozen schema/grants/executor/replay bindings; mismatches and unavailable/invalid calls rejected before effects | `test_turn_snapshot_binding.py`, `test_kernel_execution_snapshot_guards.py` |
+| Results and recovery | Original text/metadata/ids restored; CRLF bytes and digests pinned; missing/tampered artifacts fail; no repeated command execution | `test_kernel_receipt_integrity.py`, `test_settled_delivery_recovery.py`, `test_recovery_delivers_settled_result.py` |
+| Completion | One final proof; source and strict-Research requirements remain separate; current file version required for verification | `test_completion_proof_authority.py`, `test_recovered_verification_versions.py`, `test_review_repro_lock.py` |
+| Native approval | Exact original id survives persistence/delivery; malformed shell outcomes are rejected | `test_shell_approval_native_identity.py`, `test_native_protocol_termination.py` |
+| Lifecycle | Fresh chat failure stops; invalid durable identity precedes side effects; actual exchange accounting, cancellation, and trace capture | `test_kernel_coldstart_boundaries.py`, `test_conversation_lifecycle.py`, `test_kernel_observation.py`, `test_project_audit_advisor_kernel.py` |
+| Terminal receipt | Unchanged done tasks have one N/A proof; interrupted tasks have no completion proof; malformed internal proofs fail closed | `test_task_entry_run_trace.py`, `test_task_entry_operation_state.py` |
+
+Red-first failures were observed for authorization widening, mutable/mismatched
+turn snapshots, numeric-bound bypass, loss of original receipts and file-version
+proof, ID rewriting, malformed shell outcomes, missing actual trace/cancellation
+handling, and nested-wrapper protocol selection before their fixes.
+Additional fixture/lifecycle assertions were strengthened during integration
+review; not every added assertion is claimed as a red-first implementation test.
+
+### Test hygiene and parity
+
+- Deleted 12 `_obsolete_test...` methods that pytest never collected, plus dead
+  topic-continuity helpers. No active failing tests were skipped or marked xfail.
+- Test-only Research adapter no longer ignores arbitrary keyword arguments;
+  send probes use the actual production path. Recovery checks run the real
+  kernel and preserve a disk execution counter across log reopening.
+- Migrated incomplete fake receipts to typed `ToolResult` and fake providers
+  to the required `new_chat` contract. Native transport tests thaw deep-frozen
+  schemas rather than relying on shallow `dict` conversion.
+- Mixed-task regression reads a real file, opens a source, writes a real file,
+  verifies its contents, and requires a satisfied version-bound proof.
+- Pinned legacy oracle unchanged. Parity: **682 cases / 566 equal / 116
+  intentional / 0 failures** (`107 INTENTIONAL_DENY`, `9 INTENTIONAL_CHANGE`).
+  The additional exact delta is `loop/fresh-failure`: new-chat failure stops
+  before tools or sends instead of reusing the previous conversation.
+- Current parity report and source inventory regenerated with
+  `python tools/kernel_parity.py --report tests/fixtures/kernel_parity/current_report.json`.
+
+### Actual runs
+
+- Expanded focused regression before full testing: **1671 passed, 2 skipped,
+  376 subtests passed in 95.89s**.
+- First full run: **11 failed, 5938 passed, 29 skipped, 1471 subtests passed
+  in 402.98s**. Failures exposed incomplete old fixtures, provider-id validation
+  order, auto-planning authorization narrowing, malformed internal proof
+  handling, and stale expectations for unchanged-task proofs/interleaving.
+- Closing integration regression after fixes: **120 passed, 6 subtests passed
+  in 22.44s**. Existing unsafe-verdict and settlement-conflict assertions remain.
+- Final full command:
+  `python -m pytest tests -q -p no:cacheprovider -ra --tb=short`
+  **5952 passed, 29 skipped, 1471 subtests passed in 363.89s (0:06:03)**.
+- Final prechecks: `python -m ruff check codey tests tools`,
+  `python -m compileall -q codey tests tools`, `git diff --check`: passed.
+
+### Limits and architecture assessment
+
+- The 29 skips are Windows/symlink privilege/POSIX-contract limitations and
+  one opt-in real-browser test. No live web-model/native API benchmark was run.
+- This is finite offline behavior evidence, not a proof of zero remaining bugs
+  or a measurement of live UI latency/model quality.
+- The common model tool loop, turn authority, and final proof are more cohesive.
+  Relative to `3ca86a1`, production source adds 1847 tracked lines plus 468 lines
+  in four new modules and removes 1289 lines: **net +1026 production lines**.
+  This includes the user's unstaged work; it is not a claim that all refactoring
+  reduced total size. Removed duplicate loops coexist with additional receipt,
+  authorization, lifecycle, and integrity checks.
+- Reusing source resources and projecting an existing proof remove redundant
+  work; no quantitative CPU/memory/latency improvement is asserted.
+- Detailed reviewed call chain and invariants:
+  `docs/kernel_convergence_review.zh-CN.md`.
+- No release, version bump, or release tag.
+
 ## Close Research auth bypass, settled recovery, and frozen snapshots (2026-09-30)
 
 - TDD red-first (8 new files, failed before, pass after):

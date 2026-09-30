@@ -103,7 +103,11 @@ def candidate_from_intent(
     except Exception:
         return None
 
-    call = ToolCall(name=intent.tool_name, args=validated_args)
+    call = ToolCall(
+        name=intent.tool_name,
+        args=validated_args,
+        call_id=str(getattr(intent, "call_id", "") or ""),
+    )
     return SafeToolReplayCandidate(
         effect_id=intent.effect_id,
         call=call,

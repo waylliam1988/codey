@@ -2178,7 +2178,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if size > 1000:
                 over_limit[path.relative_to(ROOT / "codey").as_posix()] = size
         baseline = {
-            "agents/consensus.py",
             "ghost/affinity.py",
             "ghost/continuity.py",
             "ghost/hebbian.py",
@@ -2209,8 +2208,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # would never alarm.
         self.assertEqual(baseline - set(over_limit), set())
         ceiling = {
-            # C901 split 2026-09-26: 1141 lines after audit-search split.
-            "agents/consensus.py": 1200,
             "ghost/affinity.py": 2750,
             "ghost/continuity.py": 1350,
             "ghost/hebbian.py": 1300,

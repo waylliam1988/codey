@@ -160,8 +160,15 @@ def test_synthesis_persists_bounded_open_questions(tmp_path):
     store = KnowledgeStore(tmp_path / "knowledge")
     try:
         tools = ResearchTools(search=SimpleNamespace(), store=store, changes=KnowledgeChanges(root=store.root))
-        sid = _persist_synthesis(tools, "question", "report", session_id="s", project="", on_event=lambda _e: None,
-                                 open_questions=[f"question {i}" for i in range(6)])
+        from codey.policies.task_policy import TaskPolicy
+
+        policy = TaskPolicy(grants=frozenset({
+            "control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link",
+        }))
+        sid = _persist_synthesis(tools, "question", "report", session_id="s", project="", run_id="run-parity-syn",
+                                 on_event=lambda _e: None,
+                                 open_questions=[f"question {i}" for i in range(6)],
+                                 policy=policy)
         assert store.read_note(sid).open_questions == [f"question {i}" for i in range(4)]
     finally:
         store.close()
@@ -223,7 +230,7 @@ def test_run_result_never_reports_an_earlier_green_after_a_later_edit():
 @pytest.mark.parametrize("wrappers", ["conversation", "recorded", "both"])
 def test_explicit_provider_normalizer_survives_production_wrappers(wrappers):
     from codey.operations.kernel_transport import call_provider_send
-    from codey.operations.project_adapter import _ConversationProvider
+    from codey.operations.provider_session import ConversationProvider
     from codey.operations.task_effects import KernelRecordedProvider
     from codey.providers.local_response_codec import normalize_local_reply
 
@@ -242,7 +249,7 @@ def test_explicit_provider_normalizer_survives_production_wrappers(wrappers):
     if wrappers in {"recorded", "both"}:
         provider = KernelRecordedProvider(provider, sink)
     if wrappers in {"conversation", "both"}:
-        provider = _ConversationProvider(provider, SimpleNamespace(record_exchange=lambda *_a: None))
+        provider = ConversationProvider(provider, SimpleNamespace(record_exchange=lambda *_a: None))
     reply = call_provider_send(provider, "read")
     assert isinstance(reply, AssistantTurn)
     assert reply.tool_calls[0].arguments == {"path": "a.py"}

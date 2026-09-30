@@ -40,6 +40,9 @@ def run_task(
     strict_research: bool = False,
     sources_open_required: bool = False,
     project_changes_required: bool = False,
+    denied_capabilities: tuple[str, ...] = (),
+    previous_run_id: str = "",
+    initial_shell_results: tuple[dict[str, object], ...] = (),
     *,
     get_state: Callable[[], TaskState],
     review_policy: str | None = None,
@@ -110,6 +113,9 @@ def run_task(
                 strict_research=bool(strict_research),
                 sources_open_required=bool(sources_open_required),
                 project_changes_required=bool(project_changes_required),
+                denied_capabilities=tuple(denied_capabilities or ()),
+                previous_run_id=str(previous_run_id or ""),
+                initial_shell_results=tuple(initial_shell_results or ()),
             )
         )
     finally:
@@ -131,6 +137,9 @@ def submit_task(
     strict_research: bool = False,
     sources_open_required: bool = False,
     project_changes_required: bool = False,
+    denied_capabilities: tuple[str, ...] = (),
+    previous_run_id: str = "",
+    initial_shell_results: tuple[dict[str, object], ...] = (),
     *,
     get_state: Callable[[], TaskState],
     abort_if_stopped: bool = False,
@@ -165,6 +174,9 @@ def submit_task(
             strict_research=bool(strict_research),
             sources_open_required=bool(sources_open_required),
             project_changes_required=bool(project_changes_required),
+            denied_capabilities=tuple(denied_capabilities or ()),
+            previous_run_id=str(previous_run_id or ""),
+            initial_shell_results=tuple(initial_shell_results or ()),
             get_state=lambda: state,
             review_policy=review_policy,
         )
@@ -190,6 +202,7 @@ def submit_task_after_slot_release(
     get_state: Callable[[], TaskState],
     previous_run_id: str = "",
     timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
+    initial_shell_results: tuple[dict[str, object], ...] = (),
 ) -> str | None:
     deadline = time.monotonic() + max(0.0, timeout)
     while True:
@@ -212,6 +225,8 @@ def submit_task_after_slot_release(
             intent,
             get_state=get_state,
             abort_if_stopped=True,
+            previous_run_id=previous_run_id,
+            initial_shell_results=tuple(initial_shell_results or ()),
         )
         if run_id is not None:
             return run_id

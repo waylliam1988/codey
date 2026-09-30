@@ -26,6 +26,15 @@ from codey.research.run_result import ResearchRunResult
 from codey.research.tools import ResearchTools
 
 
+def _allow_policy():
+    # 管线 mechanics 测试：显式传入允许读写的父策略（生产恒有 entry policy）。
+    from codey.policies.task_policy import TaskPolicy
+
+    return TaskPolicy(grants=frozenset({
+        "control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link",
+    }))
+
+
 class _TraceRecorder:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple, dict]] = []
@@ -307,13 +316,14 @@ def test_pipeline_skips_followup_when_proof_is_ok_and_appends_ledger_once() -> N
         try:
             pipeline_module.review_research_proof = fake_review
             pipeline_module.build_research_plan = fake_plan
-            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: (_ for _ in ()).throw(
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools, **kwargs: (_ for _ in ()).throw(
                 AssertionError("follow-up search should not run when proof is already ok")
             )
             pipeline = ResearchPipeline(
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                policy=_allow_policy(),
                 evidence_ledgers=evidence_ledgers,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
                 ledger_event_sink=lambda item: events.append(("ledger", item)),
@@ -378,13 +388,14 @@ def test_pipeline_reports_missing_proof_review_without_followup() -> None:
 
         original_execute = pipeline_module.PlanExecutor.execute
         try:
-            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: (_ for _ in ()).throw(
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools, **kwargs: (_ for _ in ()).throw(
                 AssertionError("follow-up search should not run without a proof review")
             )
             pipeline = ResearchPipeline(
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                policy=_allow_policy(),
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
             )
             output = pipeline.run()
@@ -494,14 +505,14 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
             stop_reason="opened_sources",
         )
 
-        def fake_execute(self, plan, tools):
-            del plan, tools
+        def fake_execute(self, plan, tools, **kwargs):
+            del plan, tools, kwargs
             return followup_material
 
         from codey.research.evidence_rules import EvidenceFollowupResult
 
-        def fake_followup_runner(*, tools, plan, material, question, initial_summary="", max_context_chars=8000, should_stop=None):
-            del tools, plan, material, question, initial_summary, max_context_chars, should_stop
+        def fake_followup_runner(*, tools, plan, material, question, parent_policy=None, initial_summary="", max_context_chars=8000, should_stop=None):
+            del tools, plan, material, question, parent_policy, initial_summary, max_context_chars, should_stop
             return EvidenceFollowupResult(
                 ok=True,
                 new_evidence_count=1,
@@ -536,6 +547,7 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                policy=_allow_policy(),
                 evidence_followup_runner=fake_followup_runner,
                 evidence_ledgers=evidence_ledgers,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
@@ -660,13 +672,14 @@ def test_pipeline_staging_isolates_rejected_followup_side_effects() -> None:
         try:
             pipeline_module.review_research_proof = fake_review
             pipeline_module.build_research_plan = fake_plan
-            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: material
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools, **kwargs: material
             # Candidate is explicitly rejected
             followup_selection_module.selects_candidate = lambda cand, cr, best, br: False
             pipeline = ResearchPipeline(
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                policy=_allow_policy(),
                 evidence_followup_runner=fake_followup_runner,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
             )
@@ -782,13 +795,14 @@ def test_pipeline_staging_commits_accepted_followup_side_effects() -> None:
         try:
             pipeline_module.review_research_proof = fake_review
             pipeline_module.build_research_plan = fake_plan
-            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: material
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools, **kwargs: material
             # Candidate is accepted
             followup_selection_module.selects_candidate = lambda cand, cr, best, br: True
             pipeline = ResearchPipeline(
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                policy=_allow_policy(),
                 evidence_followup_runner=fake_followup_runner,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
             )
@@ -899,11 +913,12 @@ def test_pipeline_keeps_initial_result_when_followup_iteration_raises() -> None:
         try:
             pipeline_module.review_research_proof = fake_review
             pipeline_module.build_research_plan = fake_plan
-            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: followup_material
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools, **kwargs: followup_material
             pipeline = ResearchPipeline(
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                policy=_allow_policy(),
                 evidence_followup_runner=raising_followup,
                 evidence_ledgers=evidence_ledgers,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
@@ -1171,7 +1186,7 @@ def test_pipeline_retains_best_when_staging_commit_fails() -> None:
         try:
             pipeline_module.review_research_proof = fake_review
             pipeline_module.build_research_plan = fake_plan
-            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: material
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools, **kwargs: material
             followup_selection_module.selects_candidate = lambda cand, cr, best, br: True
             # Simulate commit failure in target tools
             initial_tools.commit_staged = lambda staged: (_ for _ in ()).throw(OSError("Disk full during note commit"))
@@ -1179,6 +1194,7 @@ def test_pipeline_retains_best_when_staging_commit_fails() -> None:
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                policy=_allow_policy(),
                 evidence_followup_runner=fake_followup_runner,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
             )
@@ -1518,7 +1534,7 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
         def runner(*, task, max_turns, chat_handoff, search, tools=None, iteration_context="", topic_continuity_context="", topic_continuity_payload=None):
             return ResearchIterationRun(result=initial_result, tools=tools)
 
-        def evidence_runner(*, tools, plan, material, question, initial_summary="", max_context_chars=8000, should_stop=None):
+        def evidence_runner(*, tools, plan, material, question, parent_policy=None, initial_summary="", max_context_chars=8000, should_stop=None):
             return EvidenceFollowupResult(
                 ok=True,
                 new_evidence_count=2,
@@ -1529,6 +1545,7 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
             context=context,
             run_iteration=lambda **kwargs: runner(**kwargs, tools=tools),
             search_factory=lambda: None,
+            policy=_allow_policy(),
             evidence_followup_runner=evidence_runner,
             evidence_ledgers=ledgers,
         )
@@ -1578,7 +1595,7 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
         )
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("codey.research.pipeline.PlanExecutor.execute", lambda self, plan, staged_tools: mock_executor(plan, staged_tools))
+            mp.setattr("codey.research.pipeline.PlanExecutor.execute", lambda self, plan, staged_tools, **kwargs: mock_executor(plan, staged_tools))
             pipeline_result = pipeline.run()
 
         # Followup was attempted but rejected
@@ -1659,6 +1676,7 @@ def test_pipeline_projects_final_review_findings_and_gaps_to_trace_only() -> Non
             context=context,
             run_iteration=run_iteration,
             search_factory=lambda: search,
+            policy=_allow_policy(),
             config=ResearchPipelineConfig(enabled=True, max_followup_rounds=0),
         )
         output = pipeline.run()
@@ -1775,6 +1793,7 @@ def test_pipeline_surfaces_ledger_append_raise_as_write_failed() -> None:
                     context=context,
                     run_iteration=run_iteration,
                     search_factory=lambda: search,
+                    policy=_allow_policy(),
                     evidence_ledgers=evidence_ledgers,
                     config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
                     ledger_event_sink=lambda item: events.append(("ledger", item)),

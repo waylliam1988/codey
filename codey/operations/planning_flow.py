@@ -27,10 +27,33 @@ class PlanningFlowDeps:
     agent_run: Callable
     project_facts: ProjectFactsStore | None = None
     knowledge_store: Any = None
+    search_factory: Callable[[], Any] | None = None
     review_log_lines: int = 80
     ghost_directive: Callable[..., Any] | None = None
     ghost_continuity: Callable[..., Any] | None = None
     ghost_experiences: Callable[..., Any] | None = None
+
+
+def _planning_entry_policy(frame: RunFrame, request: Any) -> Any:
+    """Require a read-only policy before constructing execution resources."""
+    from codey.operations.task_entry import build_task_policy_for_entry
+
+    policy = frame.entry_policy
+    if policy is None:
+        policy = build_task_policy_for_entry(request, "planning")
+    readonly_grants = policy.grants & {"control", "project.read", "web.read", "knowledge.read"}
+    if readonly_grants != policy.grants:
+        policy = replace(policy, grants=frozenset(readonly_grants), source=policy.source + ";planning_readonly")
+    return policy
+
+
+def _planning_research_tools(deps: PlanningFlowDeps, policy: Any, *, session_id: str, project: str) -> Any | None:
+    """Construct source resources only when the resolved policy permits them."""
+    from codey.operations.task_execution import build_research_tools
+
+    if not policy.allows("web.read") and not policy.allows("knowledge.read"):
+        return None
+    return build_research_tools(deps, session_id=session_id, project=project)
 
 
 def run_planning_readonly_mode(
@@ -85,37 +108,53 @@ def run_planning_readonly_mode(
             )
         except Exception:
             experiences = ""
+    entry_policy = _planning_entry_policy(frame, request)
+    # 共同任务准备：策略一次确定、run 身份、授权资源、恢复行全部传入，
+    # planning 只收窄写权限并提供规划上下文。
+    from codey.operations.task_execution import close_research_tools
+
+    research_tools = _planning_research_tools(
+        deps, entry_policy, session_id=request.session_id, project=project,
+    )
     try:
-        from codey.operations.task_entry import build_task_policy_for_entry as _build_policy
-        entry_policy = _build_policy(request, "planning")
-    except Exception:
-        entry_policy = getattr(frame, "entry_policy", None)
-    result = deps.agent_run(AgentRequest(
-        provider=frame.provider,
-        project=Path(project),
-        task=execution_task(request),
-        max_turns=request.max_turns,
-        on_event=lambda event: record_planning_event(deps, frame, work, event),
-        on_shell_request=None,
-        stop_flag=state.run_registry.stop_flag,
-        fresh_chat=frame.fresh_chat,
-        strict_fresh_chat=True,
-        change_tracker=None,
-        conversation=frame.conversation,
-        provider_id=frame.provider_id,
-        handoff=frame.handoff,
-        project_facts=project_context.verified_facts,
-        research_context=project_context.research_context,
-        project_map=project_context.project_map,
-        project_config_warnings=project_context.project_config_warnings,
-        ghost_directive=ghost_directive.text,
-        ghost_continuity=ghost_continuity.text,
-        ghost_experiences=str(experiences or ""),
-        permission_profile="planning_readonly",
-        trace_recorder=frame.trace,
-        requested_capabilities=tuple(getattr(request, "requested_capabilities", ()) or ()),
-        task_policy=entry_policy,
-    ))
+        result = deps.agent_run(AgentRequest(
+            provider=frame.provider,
+            project=Path(project),
+            task=execution_task(request),
+            max_turns=request.max_turns,
+            on_event=lambda event: record_planning_event(deps, frame, work, event),
+            on_shell_request=None,
+            stop_flag=state.run_registry.stop_flag,
+            fresh_chat=frame.fresh_chat,
+            change_tracker=None,
+            conversation=frame.conversation,
+            provider_id=frame.provider_id,
+            handoff=frame.handoff,
+            project_facts=project_context.verified_facts,
+            research_context=project_context.research_context,
+            project_map=project_context.project_map,
+            project_config_warnings=project_context.project_config_warnings,
+            ghost_directive=ghost_directive.text,
+            ghost_continuity=ghost_continuity.text,
+            ghost_experiences=str(experiences or ""),
+            permission_profile="planning_readonly",
+            trace_recorder=frame.trace,
+            session_id=request.session_id,
+            run_id=frame.run_id,
+            effect_scope="planning:1",
+            runtime_mutations=getattr(state, "runtime_mutations", None),
+            workspace_revision_store=getattr(state, "workspace_revisions", None),
+            managed_outputs=getattr(state, "managed_outputs", None),
+            recovered_tool_outcomes=tuple(getattr(frame, "recovered_tool_outcomes", ()) or ()),
+            recovered_tool_result_batch_id=str(getattr(frame, "recovered_tool_result_batch_id", "") or ""),
+            requested_capabilities=tuple(getattr(request, "requested_capabilities", ()) or ()),
+            strict_research=bool(getattr(request, "strict_research", False) is True),
+            project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
+            task_policy=entry_policy,
+            research_tools=research_tools,
+        ))
+    finally:
+        close_research_tools(research_tools)
     state.set_provider_session(
         frame.provider_id,
         None if result.stop_reason == "stopped" else request.session_id,

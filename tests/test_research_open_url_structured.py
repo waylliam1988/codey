@@ -76,30 +76,6 @@ def test_receipt_externalize_keeps_window_only_for_model() -> None:
     assert outcome.truncated is True
 
 
-def test_runner_open_url_fail_closed_on_string() -> None:
-    import pytest
-
-    from codey.runtime.core.models import ToolCall
-    from tests.support.research_iteration_adapter import ResearchIteration
-
-    class _Search:
-        last_connector_errors: list = []
-
-    class _Provider:
-        name = "test"
-
-        def new_chat(self, timeout=None) -> None:
-            return None
-
-    with tempfile.TemporaryDirectory() as td:
-        store = KnowledgeStore(Path(td))
-        runner = ResearchIteration(_Provider(), _Search(), store, session_id="s", run_id="r")
-        runner.tools.open_url = lambda *a, **k: "legacy string"  # type: ignore[method-assign]
-        with pytest.raises(TypeError, match="must return ResearchToolOutput"):
-            runner._dispatch(ToolCall("open_url", {"url": "https://example.com"}), 1, 0)
-        store.close()
-
-
 def test_receipt_override_skips_head_tail_clip() -> None:
     from types import SimpleNamespace as _NS
 

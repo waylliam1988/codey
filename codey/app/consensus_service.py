@@ -21,10 +21,10 @@ from codey.agents.consensus import (
 from codey.agents.consensus import (
     run_consensus as run_consensus_core,
 )
-from codey.agents.consensus import (
+from codey.app import provider_services as providers
+from codey.operations.project_audit_advisor import (
     run_project_audit as run_project_audit_core,
 )
-from codey.app import provider_services as providers
 from codey.operations.task_state import TaskState
 from codey.providers.catalog import PROVIDER_LABELS
 
@@ -82,6 +82,7 @@ def run_consensus(
 def run_project_audit(
     ctx: TaskState,
     *,
+    parent_policy,
     project: str | Path,
     selected_provider=None,
     selected_provider_id: str,
@@ -90,6 +91,7 @@ def run_project_audit(
     trace_recorder: object | None = None,
 ) -> tuple[ConsensusAdvice, ...]:
     return run_project_audit_core(
+        parent_policy=parent_policy,
         project=project,
         selected_provider_id=selected_provider_id,
         task=task,

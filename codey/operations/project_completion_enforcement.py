@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 from codey.agents.protocol import task_forbids_verification
-from codey.completion.edit_integrity import EditIntegrityObservation
 from codey.completion.engine import CompletionEngine
 from codey.completion.repair_context import (
     project_repair_context,
@@ -66,7 +65,7 @@ def _completion_evidence(
     scope_files: tuple[str, ...],
     check: object,
     stop: str,
-) -> tuple[object, EditIntegrityObservation]:
+) -> object:
     assert ctx.completion_engine is not None
     evidence = ctx.completion_engine.evaluate(
         run_id=ctx.frame.run_id,
@@ -82,17 +81,21 @@ def _completion_evidence(
         checkpoint_green=ctx.checkpoint_green,
         verification_forbidden=ctx.verification_forbidden,
     )
-    return evidence.decision, evidence.integrity
+    return evidence
+
+
+def _validate_completion_proof(proof: object) -> None:
+    if proof is not None and type(getattr(proof, "satisfied", None)) is not bool:
+        raise ProjectRuntimeMutationError(
+            "runtime mutation failed while committing record_completion_proof: "
+            "proof_satisfied must be a bool"
+        )
 
 
 def _commit_operation_proof(ctx: ProjectRun, proof: object) -> None:
     if proof is None:
         return
-    if not isinstance(getattr(proof, "satisfied", None), bool):
-        raise ProjectRuntimeMutationError(
-            "runtime mutation failed while committing record_completion_proof: "
-            "proof_satisfied must be a bool"
-        )
+    _validate_completion_proof(proof)
     _commit_runtime_operation(
         ctx,
         "record_completion_proof",
@@ -113,7 +116,7 @@ def _record_completion_evidence(ctx: ProjectRun) -> None:
             ctx.project,
             ignored_paths=ctx.configured_ignored_paths,
         )
-    ctx.decision, ctx.integrity = _completion_evidence(
+    evaluation = _completion_evidence(
         ctx,
         changes=ctx.task_changes,
         changed=ctx.task_changed,
@@ -121,7 +124,31 @@ def _record_completion_evidence(ctx: ProjectRun) -> None:
         check=ctx.selected_check,
         stop=ctx.result.stop_reason,
     )
-    ctx.proof = ctx.decision.proof
+    _validate_completion_proof(evaluation.decision.proof)
+    ctx.decision, ctx.integrity = evaluation.decision, evaluation.integrity
+    if ctx.task_session is None:
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import build_task_policy
+
+        # Project facts can also be projected from the operation's local
+        # evidence (e.g. resumed checkpoints); no model claims enter here.
+        ctx.task_session = TaskSession(
+            policy=build_task_policy(ctx.request, task_kind="project"),
+            task_kind="project", task_text=ctx.request.task, project=str(ctx.project),
+        )
+    ctx.proof = None
+    if ctx.result.stop_reason == "done":
+        from codey.operations.completion_gate import evaluate
+
+        verdict = evaluate(ctx.task_session, ctx.result.summary, context={
+            "run_id": ctx.frame.run_id, "task": ctx.request.task,
+            "project": str(ctx.project), "project_evaluation": evaluation,
+        })
+        ctx.proof = verdict.proof
+        if verdict.proof is None:
+            ctx.blocked_reason = "unobserved"
+        ctx.decision = replace(ctx.decision, proof=ctx.proof)
+    ctx.result = replace(ctx.result, proof=ctx.proof, facts=ctx.task_session)
     record_completion_proof_trace(ctx.frame.trace, ctx.proof)
     record_edit_integrity_trace(ctx.frame.trace, ctx.integrity)
     _commit_operation_proof(ctx, ctx.proof)
@@ -302,6 +329,7 @@ def _apply_repair_result(ctx: ProjectRun, repair_result: RunResult) -> None:
             checks_passed=False,
             changed=ctx.result.changed or repair_result.changed,
             checks_ran=ctx.result.checks_ran or repair_result.checks_ran,
+            facts=repair_result.facts or ctx.task_session,
         )
         _record_completion_evidence(ctx)
     else:

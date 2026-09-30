@@ -8,14 +8,16 @@ All recovery entries funnel through ``build_recovered_result``; all
 recovery errors funnel through ``build_recovery_error_result`` /
 ``build_recovery_mismatch_result`` (no scattered ``ToolResult(...)``):
 
-- ``recovery.delivered_from_frame`` (safe replay only)
+- ``recovery.delivered_from_frame`` (safe replay + settled redelivery)
 - ``task_entry._entry_recovery``
 - ``project_adapter._recovered_result_for_row`` (safe replay only)
 - ``kernel_recovery`` replay/delivered slots
 
-Frame recovery is safe-replay only: ``edit``/``run``/``shell`` rows raise
-``RecoveryFailed`` instead of building an unprovenanced success. Frame
-sibling ``workspace_revision``/``workspace_fingerprint`` fields and raw
+Frame recovery is safe-replay only, except for settled redelivery rows
+(``RecoveredToolOutcome.redelivered=True``): ``edit``/``run``/``shell``
+replay rows raise ``RecoveryFailed`` instead of building an unprovenanced
+success, while redelivery rows rebuild the verified original receipt
+without re-execution. Frame sibling ``workspace_revision``/``workspace_fingerprint`` fields and raw
 ``workspace_identity`` payloads never become trusted; only verified
 adapters (bump, durable store, in-memory side-channel copy) create proofs.
 No entry derives trust from display audit or event metadata.
@@ -36,8 +38,10 @@ __all__ = [
     "build_recovery_error_result",
     "build_recovery_mismatch_result",
     "sanitize_recovery_audit",
+    "spec_for_recovered_row",
     "spec_from_delivered_result",
     "spec_from_frame_row",
+    "spec_from_settled_redelivery_row",
     "frame_outcome_ok",
     "frame_outcome_exit_code",
     "spec_from_memory_result",
@@ -294,6 +298,57 @@ def spec_from_frame_row(item: Any) -> RecoveredResultSpec:
         truncated=truncated,
         trusted_workspace=None,
     )
+
+
+def spec_from_settled_redelivery_row(item: Any) -> RecoveredResultSpec:
+    """Adapter for settled-result redelivery rows (any tool, no re-execution).
+
+    Redelivery rows carry the original settled receipt (verified at recovery
+    time, including the managed-output handle when present). They are never
+    re-executed, so the safe-replay unsafe-tool ban does not apply. Like all
+    frame rows they carry no trusted workspace provenance.
+    """
+    call = getattr(item, "call", None)
+    outcome = getattr(item, "outcome", None)
+    if call is None or outcome is None:
+        raise RecoveryFailed("recovered row missing call/outcome")
+    frame_outcome_ok(item)
+    frame_outcome_exit_code(item)
+    try:
+        _strict_slot_index(getattr(item, "turn", None), field="turn")
+        _strict_slot_index(getattr(item, "tool_index", None), field="tool_index")
+    except RecoveryFailed:
+        raise
+    except Exception as exc:
+        raise RecoveryFailed(f"malformed turn/index: {exc}") from exc
+    call_obj = _call_from_row_call(call)
+    if not str(getattr(call_obj, "name", "") or "").strip():
+        raise RecoveryFailed("recovered row missing tool name")
+    audit_dict, presentation, canonical, truncated, model_text = _row_text_fields(outcome)
+    return RecoveredResultSpec(
+        call=call_obj,
+        model_text=model_text,
+        audit=audit_dict,
+        presentation=presentation,
+        canonical=canonical,
+        truncated=truncated,
+        trusted_workspace=getattr(item, "workspace_proof", None),
+    )
+
+
+def spec_for_recovered_row(item: Any) -> RecoveredResultSpec:
+    """Dispatch one recovered row to its single spec builder.
+
+    Settled redelivery (``redelivered=True``) rebuilds the original receipt
+    for any tool; all other rows stay on the safe-replay-only path.
+    """
+    try:
+        redelivered = bool(getattr(item, "redelivered", False))
+    except Exception as exc:
+        raise RecoveryFailed(f"recovered row unreadable: {exc}") from exc
+    if redelivered:
+        return spec_from_settled_redelivery_row(item)
+    return spec_from_frame_row(item)
 
 
 def spec_from_memory_result(stored: ToolResult, call: ToolCall) -> RecoveredResultSpec:

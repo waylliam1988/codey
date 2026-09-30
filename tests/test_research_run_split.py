@@ -97,10 +97,13 @@ def test_plan_executor_limits_and_finalize() -> None:
 
 
 def test_pipeline_drive_followup_missing_tools() -> None:
+    from codey.policies.task_policy import TaskPolicy
+
     pipeline = ResearchPipeline(
         context=mock.MagicMock(),
         run_iteration=mock.MagicMock(),
         search_factory=lambda: mock.MagicMock(),
+        policy=TaskPolicy(grants=frozenset({"control"})),
     )
     plan = ResearchPlan(
         plan_ref="research_plan:" + "b" * 16,

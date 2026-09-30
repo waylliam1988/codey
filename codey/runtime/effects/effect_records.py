@@ -65,8 +65,10 @@ SENT_STATES = frozenset({
 MAX_EFFECT_ID_CHARS = 128
 MAX_TEXT_CHARS = 120
 MAX_REF_CHARS = 160
+MAX_CALL_ID_CHARS = 256
 MAX_ERROR_CODE_CHARS = 80
 MAX_ARGS_DIGEST_CHARS = 64
+MAX_RESULT_SHA_CHARS = 64
 
 _INTENT_PAYLOAD_KEYS = frozenset({
     "schema_version",
@@ -85,6 +87,7 @@ _INTENT_PAYLOAD_KEYS = frozenset({
     "tool_index",
     "tool_name",
     "tool_id",
+    "call_id",
     "args_digest",
     "display_ref",
     "replay_class",
@@ -111,6 +114,12 @@ _SETTLEMENT_PAYLOAD_KEYS = frozenset({
     "result_excerpt",
     "result_ref",
     "result_text",
+    "result_payload",
+    "result_payload_sha256",
+    "result_len",
+    "result_truncated",
+    "result_sha256",
+    "call_id",
     "exit_code",
     "created_at",
 })
@@ -222,6 +231,8 @@ class RuntimeEffectIntent:
     tool_index: int = 0
     tool_name: str = ""
     tool_id: str = ""
+    # 原生协议调用身份，原样保留（永不截断成另一个 id；超限由写入方拒绝）。
+    call_id: str = ""
     args_digest: str = ""
     display_ref: str = ""
     replay_class: str = ReplayClass.UNSAFE
@@ -242,6 +253,7 @@ class RuntimeEffectIntent:
         _require_bounded_str(self.provider_id, "provider_id", MAX_TEXT_CHARS, allow_empty=True)
         _require_bounded_str(self.tool_name, "tool_name", MAX_TEXT_CHARS, allow_empty=True)
         _require_bounded_str(self.tool_id, "tool_id", MAX_TEXT_CHARS, allow_empty=True)
+        _require_bounded_str(self.call_id, "call_id", MAX_CALL_ID_CHARS, allow_empty=True)
         _require_bounded_str(self.args_digest, "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True)
         _require_bounded_str(self.display_ref, "display_ref", MAX_TEXT_CHARS, allow_empty=True)
         _require_bounded_str(self.created_at, "created_at", MAX_TEXT_CHARS, allow_empty=True)
@@ -288,6 +300,8 @@ class RuntimeEffectIntent:
             "replay_class": self.replay_class,
             "created_at": self.created_at,
         }
+        if self.call_id:
+            payload["call_id"] = self.call_id
         if self.replay_args is not None:
             payload["replay_args"] = dict(self.replay_args)
         return payload
@@ -327,6 +341,7 @@ class RuntimeEffectIntent:
             tool_index=_require_nonnegative_int(payload.get("tool_index"), "tool_index"),
             tool_name=tool_name,
             tool_id=_require_bounded_str(payload.get("tool_id") or "", "tool_id", MAX_TEXT_CHARS, allow_empty=True),
+            call_id=_require_bounded_str(payload.get("call_id") or "", "call_id", MAX_CALL_ID_CHARS, allow_empty=True),
             args_digest=_require_bounded_str(payload.get("args_digest") or "", "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True),
             display_ref=_require_bounded_str(payload.get("display_ref") or "", "display_ref", MAX_TEXT_CHARS, allow_empty=True),
             replay_class=replay_class,
@@ -357,6 +372,15 @@ class RuntimeEffectSettlement:
     result_excerpt: str = ""
     result_ref: str = ""
     result_text: str = ""
+    result_payload: str = ""
+    result_payload_sha256: str = ""
+    # 完整结果收据：原结果字符长度、是否截断、全文 sha256、原生 call id。
+    # result_text 仍以 8000 字符为界；超界结果必须经受管引用恢复全量，
+    # result_truncated 诚实标记，绝不静默截断。
+    result_len: int = 0
+    result_truncated: bool = False
+    result_sha256: str = ""
+    call_id: str = ""
     exit_code: int | None = None
 
     def __post_init__(self) -> None:
@@ -370,10 +394,19 @@ class RuntimeEffectSettlement:
         _require_bounded_str(self.error_code, "error_code", MAX_ERROR_CODE_CHARS, allow_empty=True)
         _require_bounded_str(self.created_at, "created_at", MAX_TEXT_CHARS, allow_empty=True)
         _require_nonnegative_int(self.replay_count, "replay_count")
+        _require_nonnegative_int(self.result_len, "result_len")
+        if type(self.result_truncated) is not bool:
+            raise RuntimeEffectError("result_truncated must be a boolean")
+        _require_bounded_str(self.result_sha256, "result_sha256", MAX_RESULT_SHA_CHARS, allow_empty=True)
+        _require_bounded_str(self.call_id, "call_id", MAX_CALL_ID_CHARS, allow_empty=True)
         _require_bounded_str(self.replayed_from_effect_id, "replayed_from_effect_id", MAX_EFFECT_ID_CHARS, allow_empty=True)
         _require_bounded_str(self.result_excerpt, "result_excerpt", 500, allow_empty=True)
         _require_bounded_str(self.result_ref, "result_ref", MAX_REF_CHARS, allow_empty=True)
         _require_bounded_str(self.result_text, "result_text", MAX_RESULT_TEXT_CHARS, allow_empty=True)
+        _require_bounded_str(self.result_payload, "result_payload", MAX_RESULT_TEXT_CHARS, allow_empty=True)
+        for digest in (self.result_sha256, self.result_payload_sha256):
+            if digest and (len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)):
+                raise RuntimeEffectError("invalid result digest")
         if self.exit_code is not None and type(self.exit_code) is not int:
             raise RuntimeEffectError("exit_code must be an integer or None")
         if self.replayed_from_effect_id and self.replayed_from_effect_id != self.effect_id:
@@ -415,6 +448,18 @@ class RuntimeEffectSettlement:
             payload["result_ref"] = self.result_ref
         if self.result_text:
             payload["result_text"] = self.result_text
+        if self.result_payload:
+            payload["result_payload"] = self.result_payload
+        if self.result_payload_sha256:
+            payload["result_payload_sha256"] = self.result_payload_sha256
+        if self.result_len:
+            payload["result_len"] = self.result_len
+        if self.result_truncated:
+            payload["result_truncated"] = self.result_truncated
+        if self.result_sha256:
+            payload["result_sha256"] = self.result_sha256
+        if self.call_id:
+            payload["call_id"] = self.call_id
         if self.exit_code is not None:
             payload["exit_code"] = self.exit_code
         return payload
@@ -442,6 +487,21 @@ class RuntimeEffectSettlement:
         result_excerpt = _require_bounded_str(payload.get("result_excerpt") or "", "result_excerpt", 500, allow_empty=True)
         result_ref = _require_bounded_str(payload.get("result_ref") or "", "result_ref", MAX_REF_CHARS, allow_empty=True)
         result_text = _require_bounded_str(payload.get("result_text") or "", "result_text", MAX_RESULT_TEXT_CHARS, allow_empty=True)
+        result_len = payload.get("result_len", 0)
+        if result_len is None:
+            result_len = 0
+        result_len = _require_nonnegative_int(result_len, "result_len")
+        raw_truncated = payload.get("result_truncated", False)
+        if raw_truncated is None:
+            raw_truncated = False
+        if type(raw_truncated) is not bool:
+            raise RuntimeEffectError("result_truncated must be a boolean")
+        result_sha256 = _require_bounded_str(
+            payload.get("result_sha256") or "", "result_sha256", MAX_RESULT_SHA_CHARS, allow_empty=True,
+        )
+        call_id = _require_bounded_str(
+            payload.get("call_id") or "", "call_id", MAX_CALL_ID_CHARS, allow_empty=True,
+        )
         raw_exit = payload.get("exit_code")
         if raw_exit is not None and type(raw_exit) is not int:
             raise RuntimeEffectError("exit_code must be an integer or None")
@@ -463,6 +523,12 @@ class RuntimeEffectSettlement:
             result_excerpt=result_excerpt,
             result_ref=result_ref,
             result_text=result_text,
+            result_payload=payload.get("result_payload", ""),
+            result_payload_sha256=payload.get("result_payload_sha256", ""),
+            result_len=result_len,
+            result_truncated=raw_truncated,
+            result_sha256=result_sha256,
+            call_id=call_id,
             exit_code=exit_code,
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_SETTLEMENT,
@@ -532,6 +598,7 @@ def prepare_intent(
         tool_index=intent.tool_index,
         tool_name=intent.tool_name,
         tool_id=intent.tool_id,
+        call_id=intent.call_id,
         args_digest=intent.args_digest,
         display_ref=intent.display_ref,
         replay_class=intent.replay_class,
@@ -581,6 +648,10 @@ def prepare_settlement(
         raise RuntimeEffectError(
             f"settlement category '{settlement.effect_category}' does not match intent category '{matching.intent.effect_category}'"
         )
+    if settlement.call_id and settlement.call_id != matching.intent.call_id:
+        raise RuntimeEffectError("settlement call_id differs from intent")
+    # An omitted id inherits the persisted intent identity.
+    effective_call_id = settlement.call_id or matching.intent.call_id
     if matching.settlement is not None:
         existing = matching.settlement
         if (
@@ -593,6 +664,12 @@ def prepare_settlement(
             and existing.result_excerpt == settlement.result_excerpt
             and existing.result_ref == settlement.result_ref
             and existing.result_text == settlement.result_text
+            and existing.result_payload == settlement.result_payload
+            and existing.result_payload_sha256 == settlement.result_payload_sha256
+            and existing.result_len == settlement.result_len
+            and existing.result_truncated == settlement.result_truncated
+            and existing.result_sha256 == settlement.result_sha256
+            and existing.call_id == effective_call_id
             and existing.exit_code == settlement.exit_code
         ):
             return existing
@@ -613,6 +690,12 @@ def prepare_settlement(
         result_excerpt=settlement.result_excerpt,
         result_ref=settlement.result_ref,
         result_text=settlement.result_text,
+        result_payload=settlement.result_payload,
+        result_payload_sha256=settlement.result_payload_sha256,
+        result_len=settlement.result_len,
+        result_truncated=settlement.result_truncated,
+        result_sha256=settlement.result_sha256,
+        call_id=effective_call_id,
         exit_code=settlement.exit_code,
         created_at=settlement.created_at or _now(),
     )
@@ -716,6 +799,12 @@ def effects_from_entries(
                     and existing.result_excerpt == new_settlement.result_excerpt
                     and existing.result_ref == new_settlement.result_ref
                     and existing.result_text == new_settlement.result_text
+                    and existing.result_payload == new_settlement.result_payload
+                    and existing.result_payload_sha256 == new_settlement.result_payload_sha256
+                    and existing.result_len == new_settlement.result_len
+                    and existing.result_truncated == new_settlement.result_truncated
+                    and existing.result_sha256 == new_settlement.result_sha256
+                    and existing.call_id == new_settlement.call_id
                     and existing.exit_code == new_settlement.exit_code
                 ):
                     continue

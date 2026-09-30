@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -11,10 +10,8 @@ from codey.agents.protocol import (
     edit_blocks_from_call,
     edit_has_content,
 )
-from codey.agents.shell_approval import DeferredToolCall, ShellApprovalRequest
-from codey.agents.state import AgentLoopSession, emit
+from codey.agents.state import AgentLoopSession
 from codey.agents.verification_driver import (
-    mark_policy_denied_run,
     record_edit_change,
     record_run_attempt,
 )
@@ -25,13 +22,11 @@ from codey.policies.action import (
     ActionSubject,
     evaluate_action,
 )
-from codey.runtime.core.models import ToolCall, ToolResult
-from codey.runtime.observe.events import RunEvent
+from codey.runtime.core.models import ToolCall
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,
     call_arg,
-    render_tool_activity,
 )
 from codey.toolchain.runtime import ToolOutcome, safe_join
 
@@ -133,26 +128,6 @@ def maybe_externalize_large_tool_output(
     )
 
 
-@dataclass(frozen=True)
-class ToolResultDeliveryItem:
-    turn: int
-    tool_index: int
-    tool_name: str
-    ref: str = ""
-    effect_id: str = ""
-    replay_class: str = "unsafe"
-    is_denied: bool = False
-
-
-@dataclass
-class TurnState:
-    results: list[ToolResult] = field(default_factory=list)
-    delivery_items: list[ToolResultDeliveryItem] = field(default_factory=list)
-    made_progress: bool = False
-    delivery_batch_id: str = ""
-    delivery_batch_digest: str = ""
-
-
 def action_subject_for_call(
     call: ToolCall,
     *,
@@ -221,161 +196,12 @@ def evaluate_tool_call_policy_for(
     return policy_decision, replay_decision
 
 
-def evaluate_tool_call_policy(
-    session: AgentLoopSession,
-    call: ToolCall,
-) -> tuple[ActionPolicyDecision | None, Any]:
-    policy_decision, replay_decision = evaluate_tool_call_policy_for(
-        call,
-        project=session.config.project,
-        permission_profile=session.config.profile.name,
-        phase="writer",
-        approval_available=bool(session.request.on_shell_request),
-    )
-    if policy_decision is not None:
-        session.trace.call("record_policy_decision", policy_decision)
-    return policy_decision, replay_decision
-
-
-def build_tool_call_intent(
-    session: AgentLoopSession,
-    call: ToolCall,
-    *,
-    turn: int,
-    tool_index: int,
-    replay_decision: Any,
-) -> Any | None:
-    if session.request.runtime_mutations is None or not session.request.session_id or not session.request.run_id:
-        return None
-    from codey.runtime.effects.effect_records import (
-        EFFECT_CATEGORY_TOOL_CALL,
-        RuntimeEffectIntent,
-        compute_args_digest,
-        new_effect_id,
-    )
-    from codey.runtime.effects.replay_policy import ReplayClass, is_replayable_safe_tool
-    from codey.runtime.effects.safe_tool_replay import replay_args_for_tool_call
-
-    effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, session.request.run_id)
-    display_ref = call_arg(call, "path", ".") if call.name != "run" else call_arg(call, "command", "")
-    replay_class = getattr(replay_decision, "replay_class", "unsafe")
-    replay_args = (
-        replay_args_for_tool_call(call)
-        if replay_class == ReplayClass.SAFE and is_replayable_safe_tool(call.name)
-        else None
-    )
-    intent = RuntimeEffectIntent(
-        effect_id=effect_id,
-        effect_category=EFFECT_CATEGORY_TOOL_CALL,
-        session_id=session.request.session_id,
-        run_id=session.request.run_id,
-        phase="writer",
-        turn=turn,
-        tool_index=tool_index,
-        tool_name=call.name,
-        tool_id=f"{turn}:{tool_index}",
-        display_ref=display_ref[:100],
-        args_digest=compute_args_digest(call.args),
-        replay_class=replay_class,
-        replay_args=replay_args,
-    )
-    return intent
-
-
-def settle_tool_call_effect(
-    session: AgentLoopSession,
-    effect_id: str,
-    *,
-    outcome: ToolOutcome,
-    replay_decision: Any,
-) -> None:
-    mutations = session.request.runtime_mutations
-    if mutations is None or not effect_id or not session.request.session_id or not session.request.run_id:
-        return
-    from codey.runtime.effects.effect_records import (
-        EFFECT_CATEGORY_TOOL_CALL,
-        SETTLEMENT_STATUS_ERROR,
-        SETTLEMENT_STATUS_OK,
-        RuntimeEffectSettlement,
-    )
-    status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
-    error_code = str(outcome.error_code or ("" if outcome.ok else "error"))
-    replay_class = getattr(replay_decision, "replay_class", "unsafe")
-    settlement = RuntimeEffectSettlement(
-        effect_id=effect_id,
-        effect_category=EFFECT_CATEGORY_TOOL_CALL,
-        session_id=session.request.session_id,
-        run_id=session.request.run_id,
-        status=status,
-        error_code=error_code[:80],
-        replay_class=replay_class,
-    )
-    mutations.settle_tool_effect(session.request.session_id, session.request.run_id, settlement)
-
-
-def emit_tool_started_after_intent(
-    session: AgentLoopSession,
-    call: ToolCall,
-    *,
-    turn: int,
-    tool_index: int,
-) -> None:
-    if call.name != "shell":
-        emit(
-            session,
-            RunEvent.tool_started(
-                turn,
-                call,
-                render_tool_activity(call),
-                index=tool_index,
-            ),
-        )
-
-
 def policy_denied(decision: ActionPolicyDecision | None) -> bool:
     return decision is not None and decision.decision == DECISION_DENY
 
 
 def policy_asks_user(decision: ActionPolicyDecision | None) -> bool:
     return decision is not None and decision.decision == DECISION_ASK_USER
-
-
-def policy_error_outcome(decision: ActionPolicyDecision) -> ToolOutcome:
-    message = decision.display or "action denied by policy"
-    text = message if message.startswith("ERROR:") else f"ERROR: {message}"
-    return ToolOutcome(
-        text,
-        False,
-        presentation={"status": "error", "result": text.removeprefix("ERROR: ")[:200]},
-        audit={"error_code": "policy_denied", "policy_decision": decision.to_audit_payload()},
-        error_code="policy_denied",
-    )
-
-
-def tool_error_outcome(exc: BaseException) -> ToolOutcome:
-    return ToolOutcome.error(str(exc))
-
-
-def request_shell_approval(
-    session: AgentLoopSession,
-    *,
-    path: str,
-    command: str,
-    policy_decision: ActionPolicyDecision | None,
-    deferred_calls: tuple[DeferredToolCall, ...] = (),
-) -> None:
-    if policy_asks_user(policy_decision) and session.request.on_shell_request:
-        session.request.on_shell_request(ShellApprovalRequest(
-            cwd=path,
-            command=command,
-            deferred_calls=deferred_calls,
-        ))
-    emit(
-        session,
-        RunEvent.status(
-            f"[agent] shell approval requested: {command}"
-        ),
-    )
 
 
 def read_before_edit_outcome(
@@ -393,75 +219,6 @@ def read_before_edit_outcome(
             f"read_file required before editing existing file: {canonical}"
         )
     return None
-
-
-def tool_result_from_outcome(call: ToolCall, outcome: ToolOutcome) -> ToolResult:
-    return ToolResult(
-        call=call,
-        model_text=outcome.model_text,
-        truncated=outcome.truncated,
-        presentation=outcome.presentation,
-        audit=outcome.audit,
-        canonical=outcome.canonical,
-    )
-
-
-def record_tool_outcome(
-    session: AgentLoopSession,
-    turn_state: TurnState,
-    *,
-    turn: int,
-    call: ToolCall,
-    outcome: ToolOutcome,
-    tool_index: int,
-    ref: str = "",
-    effect_id: str = "",
-    replay_class: str = "unsafe",
-    is_denied: bool = False,
-) -> None:
-    outcome = maybe_externalize_large_tool_output(session, call, outcome, turn=turn, tool_index=tool_index)
-    path = call_arg(call, "path", ".")
-    model_text = outcome.model_text
-    emit(session, RunEvent.tool_finished(turn, call, outcome, index=tool_index))
-    turn_state.results.append(tool_result_from_outcome(call, outcome))
-    turn_state.delivery_items.append(
-        ToolResultDeliveryItem(
-            turn=turn,
-            tool_index=tool_index,
-            tool_name=call.name,
-            ref=ref or effect_id or f"item:{turn}:{tool_index}:{call.name}",
-            effect_id=effect_id,
-            replay_class=replay_class,
-            is_denied=is_denied,
-        )
-    )
-    if call.name == "read" and outcome.ok:
-        canonical = canonical_project_path(session.config.project, path)
-        session.progress.read_file_paths.add(canonical)
-        session.progress.known_file_paths.add(canonical)
-    if call.name == "edit" and outcome.ok and outcome.changed:
-        turn_state.made_progress = True
-    produced_information = outcome.ok or outcome.exit_code is not None
-    if call.name in INFORMATION_TOOL_NAMES and produced_information:
-        from codey.agents.state import seen_info_key
-
-        sig = seen_info_key(call.name, path, model_text)
-        if sig not in session.stagnation.seen_info:
-            session.stagnation.seen_info.add(sig)
-            turn_state.made_progress = True
-    try:
-        from codey.agents.runaway_guard import attempt_record
-
-        session.stagnation.attempts.append(
-            attempt_record(
-                call,
-                tool_result_from_outcome(call, outcome),
-                turn=turn,
-                edit_epoch=session.verification.edit_epoch,
-            )
-        )
-    except Exception as exc:
-        emit(session, RunEvent.status(f"[agent] runaway record failed: {exc}"))
 
 
 def execute_edit_call(session: AgentLoopSession, call: ToolCall) -> ToolOutcome:
@@ -570,44 +327,17 @@ def execute_information_tool_call(
     return ToolOutcome.error(f"unsupported information tool {call.name} (path={path})")
 
 
-def execute_tool_call(
-    session: AgentLoopSession,
-    call: ToolCall,
-    *,
-    turn: int,
-    tool_index: int,
-) -> ToolOutcome:
-    if call.name == "edit":
-        return execute_edit_call(session, call)
-    if call.name in ("read", "ls", "search", "references"):
-        return execute_information_tool_call(session.config.project, session.config.tool_fns, call)
-    if call.name == "run":
-        return execute_run_call(session, call, turn=turn, tool_index=tool_index)
-    path = call_arg(call, "path", ".")
-    return ToolOutcome.error(f"malformed tool call {call.name} (path={path})")
-
-
 __all__ = [
     "INFORMATION_TOOL_NAMES",
     "SUPPORTED_TOOL_NAMES",
-    "ToolResultDeliveryItem",
-    "TurnState",
+    "action_subject_for_call",
     "call_arg",
-    "emit_tool_started_after_intent",
-    "evaluate_tool_call_policy",
     "evaluate_tool_call_policy_for",
     "execute_edit_call",
     "execute_information_tool_call",
     "execute_run_call",
-    "execute_tool_call",
-    "mark_policy_denied_run",
+    "maybe_externalize_large_tool_output",
     "policy_asks_user",
     "policy_denied",
-    "policy_error_outcome",
-    "build_tool_call_intent",
-    "record_tool_outcome",
-    "request_shell_approval",
-    "settle_tool_call_effect",
-    "tool_error_outcome",
-    "tool_result_from_outcome",
+    "read_before_edit_outcome",
 ]

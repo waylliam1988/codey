@@ -28,10 +28,6 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.agents.request import AgentRequest
-from codey.agents.tool_execution import (
-    build_tool_call_intent,
-    evaluate_tool_call_policy,
-)
 from codey.agents.tools import DEFAULT_TOOL_FNS, AgentToolFns
 from codey.operations.project_adapter import run as run_agent_loop
 from codey.operations.recovery import recover_effects_for_resume
@@ -42,13 +38,7 @@ from codey.runtime.effects.effect_records import (
     SETTLEMENT_STATUS_OK,
     RuntimeEffectStore,
 )
-from codey.runtime.effects.tool_result_delivery import (
-    DeliveryBatchIntent,
-    DeliveryBatchItem,
-    ToolResultDeliveryStore,
-    compute_batch_digest,
-    new_batch_id,
-)
+from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
@@ -160,50 +150,6 @@ def _write_resume_fixture(project_dir: Path) -> None:
     )
 
 
-def _prepare_tool_intent(
-    mutations: RuntimeMutationLine,
-    *,
-    session_id: str,
-    run_id: str,
-    project_dir: Path,
-    call: ToolCall,
-    turn: int,
-    tool_index: int,
-) -> tuple[Any, Any]:
-    from types import SimpleNamespace
-
-    mock_session = Mock()
-    request = SimpleNamespace(
-        runtime_mutations=mutations,
-        session_id=session_id,
-        run_id=run_id,
-        project=project_dir,
-        on_shell_request=None,
-        managed_outputs=None,
-        change_tracker=None,
-    )
-    mock_session.request = request
-    mock_session.config = SimpleNamespace(
-        project=project_dir,
-        profile=SimpleNamespace(name="coding_writer"),
-    )
-    mock_session.trace = Mock()
-
-    _, replay_decision = evaluate_tool_call_policy(
-        mock_session,
-        call,
-    )
-    intent = build_tool_call_intent(
-        mock_session,
-        call,
-        turn=turn,
-        tool_index=tool_index,
-        replay_decision=replay_decision,
-    )
-    assert intent is not None
-    return intent, replay_decision
-
-
 def _record_pending_tool_batch(
     mutations: RuntimeMutationLine,
     *,
@@ -212,44 +158,20 @@ def _record_pending_tool_batch(
     project_dir: Path,
     calls: tuple[ToolCall, ...],
 ) -> tuple[str, ...]:
-    intents = []
-    items = []
-    for tool_index, call in enumerate(calls):
-        intent, replay_decision = _prepare_tool_intent(
-            mutations,
-            session_id=session_id,
-            run_id=run_id,
-            project_dir=project_dir,
-            call=call,
-            turn=1,
-            tool_index=tool_index,
-        )
-        replay_class = getattr(replay_decision, "replay_class", "unsafe")
-        intents.append(intent)
-        items.append(
-            DeliveryBatchItem(
-                tool_index=tool_index,
-                tool_name=call.name,
-                ref=intent.effect_id,
-                replay_class=str(replay_class),
-                is_denied=False,
-            )
-        )
-    batch_items = tuple(items)
-    mutations.begin_tool_batch(
-        session_id,
-        run_id,
-        intents=tuple(intents),
-        delivery_intent=DeliveryBatchIntent(
-            batch_id=new_batch_id(run_id, 1),
-            session_id=session_id,
-            run_id=run_id,
-            turn=1,
-            items=batch_items,
-            batch_digest=compute_batch_digest(batch_items),
-        ),
+    """生产入口：经 KernelEffectSink 提交待恢复的本轮意图（含交付 envelope）。"""
+    from codey.operations.task_effects import KernelEffectSink
+    from codey.operations.task_session import turn_effect_id
+
+    sink = KernelEffectSink(
+        mutations, session_id=session_id, run_id=run_id,
+        provider_id="smoke",
     )
-    return tuple(intent.effect_id for intent in intents)
+    items = [
+        (turn_effect_id(run_id, 1, tool_index), call, tool_index)
+        for tool_index, call in enumerate(calls)
+    ]
+    sink.begin_turn(items, turn=1)
+    return tuple(effect_id for effect_id, _call, _index in items)
 
 
 def _record_pending_read_batch(
@@ -604,7 +526,6 @@ def _run_live_resume_case(
                 ),
                 max_turns=max_turns,
                 fresh_chat=True,
-                strict_fresh_chat=True,
                 provider_id=provider_id,
                 on_event=lambda event: stage1_events.append(event),
                 tool_fns=_crashing_tool_fns(),

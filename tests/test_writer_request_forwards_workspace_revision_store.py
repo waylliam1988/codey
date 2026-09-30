@@ -10,6 +10,7 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
     def test_writer_attempt_forwards_workspace_revision_store(self) -> None:
         from codey.agents.writer_failover import CheckpointView, WriterAttempt
         from codey.operations import project_writer_phase
+        from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.run_result import RunResult
 
         captured = []
@@ -29,6 +30,7 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
             run_id="run-1",
             trace=None,
             project_text="project",
+            entry_policy=TaskPolicy(grants=frozenset({"control", "project.write", "project.verify"})),
         )
         ctx = SimpleNamespace(
             writer_attempt_index=0,
@@ -41,6 +43,10 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
             project_context=SimpleNamespace(research_context="", project_config_warnings=""),
             project_map="",
             repair_projection=None,
+            task_session=None,
+            work=SimpleNamespace(evidence=None, analysis_run_payloads=[]),
+            verification_forbidden=False,
+            configured_ignored_paths=("generated",),
             tracker=None,
             verification_candidates=(),
             hooks=SimpleNamespace(on_shell_request=lambda _approval: None),
@@ -51,7 +57,6 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
             provider=object(),
             remaining_turns=1,
             fresh_chat=False,
-            strict_fresh_chat=False,
             handoff="",
             checkpoint=CheckpointView(),
         )
@@ -62,6 +67,7 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
             project_writer_phase._run_one_writer_attempt(ctx, spec, lambda _turn: None)
 
         self.assertEqual(captured[0].workspace_revision_store, store)
+        self.assertEqual(captured[0].workspace_ignored_paths, ("generated",))
 
     def test_coding_writer_without_workspace_revision_store_fails_before_agent_run(self) -> None:
         from codey.agents.writer_failover import CheckpointView, WriterAttempt
@@ -104,7 +110,6 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
             provider=object(),
             remaining_turns=1,
             fresh_chat=False,
-            strict_fresh_chat=False,
             handoff="",
             checkpoint=CheckpointView(),
         )

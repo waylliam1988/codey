@@ -67,38 +67,50 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolResult
     from codey.task.model import TaskSubmission
-    sub = TaskSubmission("s", str(tmp_path), "task", 6, False, "deepseek",
-                         requested_capabilities=("web.read",))
+    from codey.workspace.revision import WorkspaceRevisionStore
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "file.py").write_text("x = 1\n")
+    sub = TaskSubmission("s", str(project), "task", 6, False, "deepseek",
+                         requested_capabilities=("web.read",), sources_open_required=True)
     policy = build_task_policy(sub, task_kind="hybrid", strict_research=False)
-    session = TaskSession(policy=policy, task_kind="hybrid", project=str(tmp_path), max_turns=6)
+    session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=6)
     replies = iter([
         '{"tool":"web_search","args":{"query":"docs"}}',
-        '{"tool":"read_file","args":{"path":"file.txt"}}',
-        '{"tool":"edit","args":{"path":"new.txt","content":"hi"}}',
-        '{"tool":"run","args":{"path":".","command":"echo ok"}}',
+        '{"tool":"read_file","args":{"path":"file.py"}}',
+        '{"tool":"open_url","args":{"url":"https://example.com/docs"}}',
+        '{"tool":"edit","args":{"path":"new.py","content":"x = 2"}}',
+        '{"tool":"run","args":{"path":".","command":"python -m pytest"}}',
         '{"tool":"done","args":{"summary":"finished with interleaved tools"}}',
     ])
+
     class Provider:
         def send(self, prompt, timeout=None):
             return next(replies)
-    def _ok(text, exit_code=None):
-        def _fn(call):
-            audit = {"exit_code": exit_code} if exit_code is not None else {}
-            return ToolResult(call=call, model_text=text, audit=audit)
-        return _fn
+
+    def edit(call):
+        (project / call.args["path"]).write_text(call.args["content"])
+        return ToolResult(call, "edited new.py", audit={"changed": True})
+
+    def verify(call):
+        assert (project / "new.py").read_text() == "x = 2"
+        return ToolResult(call, "1 passed", audit={"exit_code": 0})
+
     executors = {
-        "web_search": _ok("1. Docs\n   https://example.com/docs"),
-        "read_file": _ok("local content"),
-        "edit": _ok("edited new.txt"),
-        "run": _ok("1 passed", exit_code=0),
+        "web_search": lambda call: ToolResult(call, "1. Docs\n   https://example.com/docs"),
+        "open_url": lambda call: ToolResult(call, "Official documentation"),
+        "read_file": lambda call: ToolResult(call, (project / call.args["path"]).read_text()),
+        "edit": edit, "run": verify,
     }
-    result = run_task_kernel(session, provider=Provider(), executors=executors,
+    result = run_task_kernel(session, provider=Provider(), executors=executors, project_path=project,
+                             workspace_revision_store=WorkspaceRevisionStore(tmp_path / "state"),
                              run_id="r-interleave", effect_scope="hybrid")
     assert result.stop_reason == "done", result
-    assert session.searches, "web_search should have run in same session"
-    assert session.read_files or session.edited_files, "project tools should have run in same session"
-    assert session.edited_files, "edit should have run in same session"
-    assert session.verifications, "run should have run in same session"
+    assert session.searches
+    assert session.read_files and session.opened_sources
+    assert session.edited_files and session.verifications
+    assert result.proof.satisfied is True
 
 
 def test_issue3_unified_completion_uses_session_facts_with_evidence():

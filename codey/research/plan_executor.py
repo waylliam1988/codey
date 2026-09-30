@@ -57,10 +57,19 @@ class PlanExecutor:
         self.should_stop = should_stop or (lambda: False)
 
     def execute(
-        self, plan: ResearchPlan, tools: ResearchTools, *, policy: object | None = None,
+        self, plan: ResearchPlan, tools: ResearchTools, *, policy: object,
     ) -> PlanExecutionResult:
+        """Execute one deterministic plan under the parent task policy.
+
+        ``policy`` is required: a missing or non-allowing policy denies the
+        whole plan (fail-closed). System searches/opens are read-only and
+        stay inside this deterministic episode — they never mint kernel tool
+        intents (single episode ownership: only the model tool loop drives
+        the durable intent/delivery machine), but every action rechecks the
+        same parent grant before running.
+        """
         baseline_urls = _collect_baseline_urls(tools)
-        if policy is not None and not _policy_allows(policy, "web.read"):
+        if not _policy_allows(policy, "web.read"):
             return PlanExecutionResult(
                 queries_executed=(),
                 opened_sources=(),
@@ -96,6 +105,10 @@ class PlanExecutor:
             if not query:
                 state.skipped += 1
                 continue
+            if not _policy_allows(policy, "web.read"):
+                state.stop_reason = "policy_denied"
+                state.errors.append("policy denied web.read for research plan execution")
+                break
             before_searches = len(runtime.ledger.searches)
             result = runtime.web_search(query)
             state.queries.append(query)
@@ -107,7 +120,7 @@ class PlanExecutor:
             if search is None:
                 state.stop_reason = "no_results"
                 continue
-            self._drain_search_hits(runtime, search, query, state, total_limit, per_query_limit)
+            self._drain_search_hits(runtime, search, query, state, total_limit, per_query_limit, policy=policy)
 
             if state.stop_reason in {"max_sources", "stopped"}:
                 break
@@ -169,6 +182,8 @@ class PlanExecutor:
         state: _PlanExecutionState,
         total_limit: int,
         per_query_limit: int,
+        *,
+        policy: object,
     ) -> None:
         opened_for_query = 0
         for hit in search.results:
@@ -198,6 +213,10 @@ class PlanExecutor:
             if reason:
                 state.skipped += 1
                 state.errors.append(_safe_error(reason))
+                continue
+            if not _policy_allows(policy, "web.read"):
+                state.skipped += 1
+                state.errors.append("policy denied web.read for source open")
                 continue
             before_opened = set(runtime.ledger.final_url_set())
             try:

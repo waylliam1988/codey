@@ -2,6 +2,43 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start kernel authority, lossless receipts, and lifecycle closure (no release)
+
+- Project writers, Research iterations, and read-only audit advisors use the
+  shared task tool loop. Removed obsolete agent execution entry points and the
+  advisor's separate parsing/execution loop; source adapters are reused across
+  writer repair attempts and closed by their owning flow.
+- One final completion proof combines local Engine checks and task requirements.
+  Receipts project that proof without repeating workspace scans. Completion
+  rechecks files changed outside the loop, restored verification is trusted only
+  for a matching workspace version, and malformed Engine proofs fail closed.
+- Durable results preserve the original model text, call id, exit code,
+  truncation, canonical data, presentation, and audit metadata. Large receipts
+  use managed storage with pinned digests; Windows CRLF bytes survive restart.
+  Missing or conflicting receipts fail instead of silently recreating results.
+- Turn snapshots deeply freeze schemas, grants, executor bindings, and replay
+  classes. Parsing and execution enforce the captured snapshot before effects;
+  native schemas are thawed only for transport. Strict validation rejects
+  malformed types, unsupported constraints, and overflowing numeric bounds.
+- Approval continuations reuse their original authorization. Planning and
+  follow-up policies narrow their parents without losing explicit denials or
+  completion requirements. Invalid durable identities fail before opening a
+  chat or creating a project; shell results preserve native call ids verbatim.
+- Shared provider adapters account for actual exchanges in both protocols,
+  preserve normalization hooks, detect capabilities through nested wrappers,
+  propagate episode timeouts, and record actual turn/topic traces. Fresh-chat
+  failures stop explicitly; cooperative cancellation stops the task.
+- Removed uncollected obsolete test methods and dead fixture helpers. The test
+  adapter no longer swallows unknown options; recovery tests execute the real
+  kernel and check a persistent execution counter, and mixed-task tests mutate
+  real files and bind verification to their version.
+- Verification: parity **682 cases / 566 equal / 116 intentional / 0 failures**;
+  `ruff check codey tests tools`, `compileall`, and `git diff --check` passed.
+  Final full pytest: **5952 passed, 29 skipped, 1471 subtests passed in 363.89s**.
+  See `TEST_REPORT.md` and `docs/kernel_convergence_review.zh-CN.md` for scope,
+  the first failed full run, and platform/live-provider limitations.
+- No release, tag, or version bump.
+
 ## Unreleased - Close Research auth bypass, settled recovery, and frozen snapshots (no release)
 
 - TDD red-first locks (8 new files, all failed before, pass after):

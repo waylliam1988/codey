@@ -26,6 +26,7 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     RuntimeEffectStore,
+    compute_args_digest,
     new_effect_id,
 )
 from codey.runtime.effects.replay_policy import ReplayClass
@@ -993,6 +994,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             tool_name=tool_name,
             replay_class=replay_class,
             replay_args=replay_args,
+            args_digest=compute_args_digest(replay_args or {}),
         )
 
     def _tool_settlement(
@@ -1001,15 +1003,21 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         *,
         replay_class: str = ReplayClass.SAFE,
         status: str = SETTLEMENT_STATUS_OK,
+        result_text: str = "",
     ) -> RuntimeEffectSettlement:
+        from codey.operations.kernel_receipts import result_receipt_fields
+        from codey.runtime.core.models import ToolCall, ToolResult
+
+        intent = next(p.intent for p in RuntimeEffectStore(self.log).load_effects(
+            self.session_id, self.run_id) if p.intent.effect_id == effect_id)
+        result = ToolResult(ToolCall(intent.tool_name, dict(intent.replay_args or {}), call_id=intent.call_id),
+                            result_text)
         return RuntimeEffectSettlement(
-            effect_id=effect_id,
-            effect_category=EFFECT_CATEGORY_TOOL_CALL,
-            session_id=self.session_id,
-            run_id=self.run_id,
-            status=status,
-            sent_state="settled",
-            replay_class=replay_class,
+            effect_id=effect_id, effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id, run_id=self.run_id, status=status,
+            sent_state="settled", replay_class=replay_class,
+            **result_receipt_fields(result, store=None, session_id=self.session_id,
+                                    run_id=self.run_id, effect_id=effect_id),
         )
 
     def _provider_intent(
@@ -1283,8 +1291,10 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.line.settle_tool_effect(
             self.session_id,
             self.run_id,
-            self._tool_settlement(eff_read),
+            self._tool_settlement(eff_read, result_text="settled read observation"),
         )
+        # 结算后文件变化：恢复必须交付原结算结果，不得重读冒充
+        (self.project_dir / "target.py").write_text("changed after settle\n", encoding="utf-8")
 
         # Perform recovery
         recovery = recover_effects_for_resume(
@@ -1305,12 +1315,14 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(r0.tool_index, 0)
         self.assertEqual(r0.effect_id, eff_read)
         self.assertTrue(r0.outcome.ok)
-        self.assertIn("print('hello')", r0.outcome.model_text)
+        self.assertEqual(r0.outcome.model_text, "settled read observation")
+        self.assertTrue(r0.redelivered)
 
         self.assertEqual(r1.call.name, "search")
         self.assertEqual(r1.tool_index, 1)
         self.assertEqual(r1.effect_id, eff_search)
         self.assertTrue(r1.outcome.ok)
+        self.assertFalse(r1.redelivered)
 
         # Verify delivery store has recovered fact
         batches = self.delivery.load_batches(self.session_id, self.run_id)
@@ -1746,7 +1758,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.line.settle_tool_effect(
             self.session_id,
             self.run_id,
-            self._tool_settlement(eff_old),
+            self._tool_settlement(eff_old, result_text="old turn observation"),
         )
         provider_old = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, self.run_id)
         self.line.begin_provider_effect(
@@ -1795,7 +1807,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.line.settle_tool_effect(
             self.session_id,
             self.run_id,
-            self._tool_settlement(eff_new),
+            self._tool_settlement(eff_new, result_text="new turn observation"),
         )
 
         # The derived pending batch must be the current turn's batch, not
@@ -1820,6 +1832,11 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             [outcome.effect_id for outcome in recovery.recovered_tool_outcomes],
             [eff_new],
         )
+        self.assertEqual(
+            recovery.recovered_tool_outcomes[0].outcome.model_text,
+            "new turn observation",
+        )
+        self.assertTrue(recovery.recovered_tool_outcomes[0].redelivered)
 
     def test_same_turn_failover_fresh_batch_replays_in_recovery(self) -> None:
         # Same turn: the first batch gets a provider send attempt that
@@ -1849,7 +1866,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.line.settle_tool_effect(
             self.session_id,
             self.run_id,
-            self._tool_settlement(eff),
+            self._tool_settlement(eff, result_text="settled failover observation"),
         )
         provider_old = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, self.run_id)
         self.line.begin_provider_effect(
@@ -1897,6 +1914,12 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             [outcome.effect_id for outcome in recovery.recovered_tool_outcomes],
             [eff],
         )
+        # 同轮 failover 重发原结算结果，不重新执行
+        self.assertEqual(
+            recovery.recovered_tool_outcomes[0].outcome.model_text,
+            "settled failover observation",
+        )
+        self.assertTrue(recovery.recovered_tool_outcomes[0].redelivered)
         fresh = next(
             batch
             for batch in self.delivery.load_batches(self.session_id, self.run_id)

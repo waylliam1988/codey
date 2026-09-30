@@ -4,6 +4,19 @@
 这份报告把旧版行为变成固定输入、独立 oracle、精确差异和持续回归。
 它覆盖下列已枚举边界；有限场景不能证明任意模型输出、浏览器 DOM 或未来功能都无遗漏。
 
+## 最新复核结果（2026-09-30，冷启动收口）
+
+最终全量：**5952 passed、29 skipped、1471 subtests passed，363.89s**。
+当前固定矩阵仍为 682 场景：**566 一致、107 有意收紧、9 明确变更、0 未分类失败**。
+116 条差异均保留精确 before/after；本轮新增 `loop/fresh-failure`，明确新会话
+创建失败时停止，禁止向旧会话继续发送。旧 oracle 未改写。
+
+当前源码清单：旧 323、新 350 个 Python 模块，旧版独有 12 个、新版独有 39 个。
+原始审计批次的数字保留在下方作为历史记录，当前数字以
+`tests/fixtures/kernel_parity/current_report.json` 为准。
+首轮全量失败与修复记录见 `TEST_REPORT.md`；调用链和复核范围见
+[kernel_convergence_review.zh-CN.md](kernel_convergence_review.zh-CN.md)。
+
 ## 方法与边界
 
 | 层 | 可执行产物 | 失败条件 |
@@ -19,7 +32,7 @@ provider、网络和验证子进程使用固定输入；解析器、生产循环
 普通 CI 使用已冻结的旧结果，不要求下载旧源码，也不把旧循环接回产品。
 重新导出只更新旧 oracle，绝不从新版结果生成期望。
 
-清单有旧 323、新 346 个 Python 模块：旧版独有 12 个、新版独有 35 个。
+原始审计批次清单有旧 323、新 346 个 Python 模块：旧版独有 12 个、新版独有 35 个。
 声明增删是审查索引，不等于功能增删；CLI 报告列出模块和声明 diff。
 `boundaries.json` 为 12 个消失模块以及全部 40 个旧 AgentRequest 字段记录去向。
 
@@ -41,6 +54,8 @@ Research 比较 search/fetch、打开来源、evidence 数以及知识笔记的�
 type/title/body/tags/sources/aliases/relations/open_questions/confidence/status/session_id/project/valid_until。
 只去掉 UUID、时间戳和语义等价的已声明可选默认值；不会去掉笔记正文或真实文件变化。
 
+最初审计批次的裁决（历史）：
+
 | 裁决 | 数量 |
 | --- | ---: |
 | PASS：与旧版相同 | 583 |
@@ -49,7 +64,7 @@ type/title/body/tags/sources/aliases/relations/open_questions/confidence/status/
 | MISSING / 未分类差异 | 0 |
 
 `INTENTIONAL_CHANGE` 单独标记，避免把接受更多规范输入误称为“拒绝”。
-所有 99 个例外都锁定具体 case 的完整 before/after，而非工具名、路径或失败种类的宽泛白名单。
+最初批次的 99 个例外都锁定具体 case 的完整 before/after，而非工具名、路径或失败种类的宽泛白名单。
 
 | 差异依据 | 场景数 | 具体规则 |
 | --- | ---: | --- |
