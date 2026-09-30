@@ -292,9 +292,14 @@ def research_loop(case, legacy):
             notes = [store.read_note(key) for key in tools.created_ids]
             return {"operations": operations, "stop_reason": result.stop_reason,
                     "source_urls": sorted(tools.sources_read), "evidence_count": len(tools.ledger.evidence_items),
-                    "notes": [{"type": note.type, "title": note.title, "body": note.body,
-                               "sources": note.sources, "open_questions": note.open_questions}
-                              for note in notes if note is not None]}
+                    "notes": [{
+                        "type": note.type, "title": note.title, "body": note.body,
+                        "tags": list(note.tags), "sources": list(note.sources),
+                        "aliases": list(note.aliases), "relations": [dict(row) for row in note.relations],
+                        "open_questions": list(note.open_questions), "confidence": note.confidence,
+                        "status": note.status, "session_id": note.session_id, "project": note.project,
+                        "valid_until": note.valid_until,
+                    } for note in notes if note is not None]}
         finally:
             store.close()
 

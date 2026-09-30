@@ -28,9 +28,11 @@
 - Deterministic regressions were reproduced before production fixes, then passed.
   The parity probe now rejects exhausted reply scripts instead of synthesizing
   `done`, restores `NATIVE_TOOLS` after each case, and covers directory/search/
-  references/paged-read and read/write precondition loops. Verification: ruff,
-  compileall, JavaScript syntax, diff and collection checks clean. Full pytest:
-  5821 passed, 32 skipped, 1471 subtests passed in 352.76s (0:05:52).
+  references/paged-read and read/write precondition loops. Research parity now
+  compares all stable note metadata, including tags, aliases, relations,
+  confidence, status and provenance fields. Verification: ruff, compileall,
+  JavaScript syntax, diff and collection checks clean. Full pytest: 5822 passed,
+  32 skipped, 1471 subtests passed in 357.78s (0:05:57).
 - No version bump, release or release tag.
 
 ## Unreleased - Local provider text codec for unified kernel (no release)

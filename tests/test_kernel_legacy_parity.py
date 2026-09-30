@@ -121,3 +121,15 @@ def test_parity_probe_restores_native_tools_environment_after_native_case(monkey
     case = next(row for row in BASELINE["cases"] if row["id"] == "loop/native-read-done")
     kernel_parity_probe.coding_loop(case, legacy=False)
     assert os.environ["NATIVE_TOOLS"] == "sentinel"
+
+
+def test_research_parity_observes_all_stable_note_metadata():
+    from tests.support import kernel_parity_probe
+
+    case = next(row for row in BASELINE["cases"] if row["id"] == "research/evidence-synthesis")
+    observation = kernel_parity_probe.research_loop(case, legacy=False)
+    note = observation["notes"][0]
+    assert set(note) == {
+        "type", "title", "body", "tags", "sources", "aliases", "relations",
+        "open_questions", "confidence", "status", "session_id", "project", "valid_until",
+    }

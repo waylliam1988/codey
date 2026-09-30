@@ -65752,22 +65752,41 @@
       "evidence_count": 1,
       "notes": [
         {
+          "aliases": [],
           "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [],
           "title": "Helium production",
-          "type": "fact"
+          "type": "fact",
+          "valid_until": null
         },
         {
+          "aliases": [],
           "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
           "title": "How is helium obtained?",
-          "type": "synthesis"
+          "type": "synthesis",
+          "valid_until": null
         }
       ],
       "operations": [
@@ -65789,22 +65808,41 @@
       "evidence_count": 1,
       "notes": [
         {
+          "aliases": [],
           "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [],
           "title": "Helium production",
-          "type": "fact"
+          "type": "fact",
+          "valid_until": null
         },
         {
+          "aliases": [],
           "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
           "title": "How is helium obtained?",
-          "type": "synthesis"
+          "type": "synthesis",
+          "valid_until": null
         }
       ],
       "operations": [
@@ -65830,22 +65868,41 @@
       "evidence_count": 1,
       "notes": [
         {
+          "aliases": [],
           "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [],
           "title": "Helium production",
-          "type": "fact"
+          "type": "fact",
+          "valid_until": null
         },
         {
+          "aliases": [],
           "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
           "title": "How is helium obtained?",
-          "type": "synthesis"
+          "type": "synthesis",
+          "valid_until": null
         }
       ],
       "operations": [
@@ -65867,22 +65924,41 @@
       "evidence_count": 1,
       "notes": [
         {
+          "aliases": [],
           "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [],
           "title": "Helium production",
-          "type": "fact"
+          "type": "fact",
+          "valid_until": null
         },
         {
+          "aliases": [],
           "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
           "title": "How is helium obtained?",
-          "type": "synthesis"
+          "type": "synthesis",
+          "valid_until": null
         }
       ],
       "operations": [
@@ -65911,22 +65987,41 @@
       "evidence_count": 1,
       "notes": [
         {
+          "aliases": [],
           "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [],
           "title": "Helium production",
-          "type": "fact"
+          "type": "fact",
+          "valid_until": null
         },
         {
+          "aliases": [],
           "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
           "title": "How is helium obtained?",
-          "type": "synthesis"
+          "type": "synthesis",
+          "valid_until": null
         }
       ],
       "operations": [
@@ -65960,22 +66055,41 @@
       "evidence_count": 1,
       "notes": [
         {
+          "aliases": [],
           "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [],
           "title": "Helium production",
-          "type": "fact"
+          "type": "fact",
+          "valid_until": null
         },
         {
+          "aliases": [],
           "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
           "title": "How is helium obtained?",
-          "type": "synthesis"
+          "type": "synthesis",
+          "valid_until": null
         }
       ],
       "operations": [
@@ -65997,22 +66111,41 @@
       "evidence_count": 1,
       "notes": [
         {
+          "aliases": [],
           "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [],
           "title": "Helium production",
-          "type": "fact"
+          "type": "fact",
+          "valid_until": null
         },
         {
+          "aliases": [],
           "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
           "title": "How is helium obtained?",
-          "type": "synthesis"
+          "type": "synthesis",
+          "valid_until": null
         }
       ],
       "operations": [
@@ -66034,24 +66167,43 @@
       "evidence_count": 1,
       "notes": [
         {
+          "aliases": [],
           "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
           "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [],
           "title": "Helium production",
-          "type": "fact"
+          "type": "fact",
+          "valid_until": null
         },
         {
+          "aliases": [],
           "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
           "open_questions": [
             "Other helium sources?"
           ],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
           "sources": [
             "https://example.com/helium"
           ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
           "title": "How is helium obtained?",
-          "type": "synthesis"
+          "type": "synthesis",
+          "valid_until": null
         }
       ],
       "operations": [

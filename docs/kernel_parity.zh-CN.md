@@ -37,7 +37,8 @@ JSON/native、权限 profile、围栏/散文/未知模板、工具数边界、�
 生成规则也是测试：遗漏旧工具、别名或参数会导致冻结矩阵检查失败。
 
 Coding 比较真实文件、实际工具操作、结果标志、turn 数、fresh chat、handoff、conversation snapshot 和 native receipt ID。
-Research 比较 search/fetch、打开来源、evidence 数以及知识笔记的 type/title/body/sources/open_questions。
+Research 比较 search/fetch、打开来源、evidence 数以及知识笔记的稳定 metadata：
+type/title/body/tags/sources/aliases/relations/open_questions/confidence/status/session_id/project/valid_until。
 只去掉 UUID、时间戳和语义等价的已声明可选默认值；不会去掉笔记正文或真实文件变化。
 
 | 裁决 | 数量 |
@@ -132,6 +133,6 @@ Hybrid、持久恢复、effect settlement、repair_context 实际送达、provid
 
 ## 最终验证
 
-全量 `python -m pytest -q -p no:cacheprovider`：`5821 passed, 32 skipped, 1471 subtests passed in 352.76s (0:05:52)`。零失败。
-预检查：ruff、compileall、JavaScript 语法、diff 与 5853 项测试收集均通过。
+全量 `python -m pytest -q -p no:cacheprovider`：`5822 passed, 32 skipped, 1471 subtests passed in 357.78s (0:05:57)`。零失败。
+预检查：ruff、compileall、JavaScript 语法、diff 与 5854 项测试收集均通过。
 正式文档在全量 pytest 完成后更新；未修改版本号、未 release。

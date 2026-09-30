@@ -21,8 +21,10 @@
   未知 provider 模板、隐式 durable provider 身份和 overflow rollover 继续拒绝。
 - 按 TDD 先复现失败，再修改与回测。parity probe 禁止回复耗尽后隐式合成
   `done`，并恢复 `NATIVE_TOOLS` 环境，避免测试污染后续 native 套件；新增目录、搜索、
-  引用、分页读取和读写前置条件场景。ruff、compileall、JavaScript 语法、diff
-  与收集检查通过。全量 pytest：5821 passed, 32 skipped, 1471 subtests passed in 352.76s (0:05:52)。
+  引用、分页读取和读写前置条件场景。Research parity 现在比较全部稳定 note
+  metadata，包括 tags、aliases、relations、confidence、status 和 provenance 字段。
+  ruff、compileall、JavaScript 语法、diff 与收集检查通过。全量 pytest：5822 passed,
+  32 skipped, 1471 subtests passed in 357.78s (0:05:57)。
 - 未修改版本号，未 release，未创建 release tag。
 
 ## Unreleased - 统一 Kernel 的本地 provider 文本 codec（未发布）
