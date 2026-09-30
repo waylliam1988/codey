@@ -108,6 +108,8 @@ _SETTLEMENT_PAYLOAD_KEYS = frozenset({
     "replay_class",
     "replay_count",
     "replayed_from_effect_id",
+    "result_excerpt",
+    "result_ref",
     "created_at",
 })
 
@@ -348,6 +350,8 @@ class RuntimeEffectSettlement:
     created_at: str = ""
     record_kind: str = RECORD_KIND_SETTLEMENT
     schema_version: int = SCHEMA_VERSION
+    result_excerpt: str = ""
+    result_ref: str = ""
 
     def __post_init__(self) -> None:
         if type(self.schema_version) is not int or self.schema_version != SCHEMA_VERSION:
@@ -361,6 +365,8 @@ class RuntimeEffectSettlement:
         _require_bounded_str(self.created_at, "created_at", MAX_TEXT_CHARS, allow_empty=True)
         _require_nonnegative_int(self.replay_count, "replay_count")
         _require_bounded_str(self.replayed_from_effect_id, "replayed_from_effect_id", MAX_EFFECT_ID_CHARS, allow_empty=True)
+        _require_bounded_str(self.result_excerpt, "result_excerpt", 500, allow_empty=True)
+        _require_bounded_str(self.result_ref, "result_ref", MAX_REF_CHARS, allow_empty=True)
         if self.replayed_from_effect_id and self.replayed_from_effect_id != self.effect_id:
             raise RuntimeEffectError(
                 f"replayed_from_effect_id '{self.replayed_from_effect_id}' must match effect_id '{self.effect_id}'"
@@ -394,6 +400,10 @@ class RuntimeEffectSettlement:
             payload["replay_count"] = self.replay_count
         if self.replayed_from_effect_id:
             payload["replayed_from_effect_id"] = self.replayed_from_effect_id
+        if self.result_excerpt:
+            payload["result_excerpt"] = self.result_excerpt
+        if self.result_ref:
+            payload["result_ref"] = self.result_ref
         return payload
 
     @classmethod
@@ -416,6 +426,8 @@ class RuntimeEffectSettlement:
             MAX_EFFECT_ID_CHARS,
             allow_empty=True,
         )
+        result_excerpt = _require_bounded_str(payload.get("result_excerpt") or "", "result_excerpt", 500, allow_empty=True)
+        result_ref = _require_bounded_str(payload.get("result_ref") or "", "result_ref", MAX_REF_CHARS, allow_empty=True)
 
         return cls(
             effect_id=effect_id,
@@ -430,6 +442,8 @@ class RuntimeEffectSettlement:
             replay_class=_require_enum_str(payload.get("replay_class"), "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE)),
             replay_count=replay_count,
             replayed_from_effect_id=replayed_from_effect_id,
+            result_excerpt=result_excerpt,
+            result_ref=result_ref,
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_SETTLEMENT,
             schema_version=SCHEMA_VERSION,
@@ -556,6 +570,8 @@ def prepare_settlement(
             and existing.replay_class == settlement.replay_class
             and existing.replay_count == settlement.replay_count
             and existing.replayed_from_effect_id == settlement.replayed_from_effect_id
+            and existing.result_excerpt == settlement.result_excerpt
+            and existing.result_ref == settlement.result_ref
         ):
             return existing
         raise RuntimeEffectError(f"effect already settled: {settlement.effect_id}")
@@ -572,6 +588,8 @@ def prepare_settlement(
         replay_class=matching.intent.replay_class,
         replay_count=settlement.replay_count,
         replayed_from_effect_id=settlement.replayed_from_effect_id,
+        result_excerpt=settlement.result_excerpt,
+        result_ref=settlement.result_ref,
         created_at=settlement.created_at or _now(),
     )
 
@@ -671,6 +689,8 @@ def effects_from_entries(
                     and existing.replay_class == new_settlement.replay_class
                     and existing.replay_count == new_settlement.replay_count
                     and existing.replayed_from_effect_id == new_settlement.replayed_from_effect_id
+                    and existing.result_excerpt == new_settlement.result_excerpt
+                    and existing.result_ref == new_settlement.result_ref
                 ):
                     continue
                 raise RuntimeEffectError(f"conflicting duplicate settlement in session log: {effect_id}")

@@ -79,8 +79,8 @@ def test_receipt_externalize_keeps_window_only_for_model() -> None:
 def test_runner_open_url_fail_closed_on_string() -> None:
     import pytest
 
-    from codey.operations.research_iteration import ResearchIteration
     from codey.runtime.core.models import ToolCall
+    from tests.support.research_iteration_adapter import ResearchIteration
 
     class _Search:
         last_connector_errors: list = []

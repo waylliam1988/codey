@@ -44,6 +44,7 @@ class KernelResult:
     summary: str
     turns: int
     stop_reason: str
+    proof: Any | None = None
 
 
 def _is_native_provider(provider: Any, *, provider_id: object = "") -> bool:
@@ -159,6 +160,7 @@ def _snapshot_for_turn_state(
         context_text=context_text,
         controller_allowed=snapshot.allowed,
         native=native,
+        tool_names=snapshot.tool_names,
     )
     return snapshot.allowed, snapshot.contract_text, list(snapshot.native_tools), prompt_now
 
@@ -704,29 +706,20 @@ def _handle_done_reply(
         # delivery instead of claiming completion.
         if native and not isinstance(reply, str):
             try:
-                ids = [str(getattr(c, "id", "") or "") for c in (getattr(reply, "tool_calls", ()) or [])]
-                ids = [i for i in ids if i]
-                if ids:
-                    try:
-                        _transport.call_provider_send_results(
-                            provider,
-                            [
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": i,
-                                    "content": f"done accepted: {session.last_done_text[:500]}",
-                                }
-                                for i in ids
-                            ],
-                            native_tools,
-                        )
-                    except Exception as exc:
-                        return KernelResult(
-                            completed=False,
-                            summary=f"provider failed delivering done receipt: {exc}",
-                            turns=int(session.turn or 0),
-                            stop_reason="provider_failure",
-                        )
+                followup = _transport._take_answered_reply(
+                    provider,
+                    reply,
+                    native=True,
+                    native_tools=native_tools,
+                    followup=f"OK: done accepted: {session.last_done_text[:500]}",
+                )
+                if followup is not None and not isinstance(followup, str):
+                    _transport.close_native_reply(
+                        provider,
+                        followup,
+                        native_tools,
+                        "task already completed; tool call was not executed",
+                    )
             except Exception as exc:
                 return KernelResult(
                     completed=False,
@@ -735,7 +728,8 @@ def _handle_done_reply(
                     stop_reason="provider_failure",
                 )
         return KernelResult(
-            completed=True, summary=session.last_done_text, turns=int(session.turn or 0), stop_reason="done"
+            completed=True, summary=session.last_done_text, turns=int(session.turn or 0), stop_reason="done",
+            proof=getattr(verdict, "proof", None),
         )
     try:
         pending = _transport._take_answered_reply(provider, reply, native, native_tools, verdict.followup)

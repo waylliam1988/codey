@@ -34,12 +34,12 @@ from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.concepts import SupportRef, _missing_suggestions
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_iteration import ResearchIteration
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.source_document import SourceDocument
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
+from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import JsonToolCodec
 
 ARMS = ("baseline", "concept")
@@ -426,7 +426,6 @@ class ProbeResearchIteration(ResearchIteration):
             max_turns=max_turns,
             codec=ProbeJsonToolCodec(),
             session_id=probe_session_id(arm),
-            controller_enabled=False,
         )
         self.arm = arm
         self.provider_id = provider_id

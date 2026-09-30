@@ -3616,5 +3616,833 @@
       },
       "snapshot": null
     }
+  },
+  "protocol/coding/coding_writer/json/read_files/paths-numeric-text": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "2"
+          },
+          "id": "",
+          "name": "read_file"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/coding/planning_readonly/json/read_files/paths-numeric-text": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "2"
+          },
+          "id": "",
+          "name": "read_file"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/aliases-empty": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "aliases": [],
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/aliases-numeric-text": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "aliases": [
+              "2"
+            ],
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/evidence-object": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {}
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/evidence-empty": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/open_questions-empty": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "open_questions": [],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/open_questions-numeric-text": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "open_questions": [
+              "2"
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/relations-object": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {}
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/relations-empty": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/sources-empty": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/sources-numeric-text": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "2"
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/tags-empty": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/tags-numeric-text": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "2"
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/coding/coding_writer/json/repair/read_files": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "a.py"
+          },
+          "id": "",
+          "name": "read_file"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "research/source-hit": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "The shared research executor reopens an explicit source-search hit through the common open_url path, so the deterministic fixture records the second bounded fetch.",
+    "tests": [
+      "tests/test_kernel_parity_regressions.py",
+      "tests/test_kernel_protocol_validator_failclosed.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "evidence_count": 1,
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [],
+          "title": "Helium production",
+          "type": "fact",
+          "valid_until": null
+        },
+        {
+          "aliases": [],
+          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "after": {
+      "evidence_count": 1,
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [],
+          "title": "Helium production",
+          "type": "fact",
+          "valid_until": null
+        },
+        {
+          "aliases": [],
+          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    }
   }
 }

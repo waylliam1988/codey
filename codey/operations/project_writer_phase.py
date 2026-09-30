@@ -143,6 +143,9 @@ def _run_one_writer_attempt(
         recovered_tool_outcomes=recovered_outcomes,
         recovered_tool_result_batch_id=recovered_batch_id,
         requested_capabilities=ctx.request.requested_capabilities,
+        strict_research=bool(getattr(ctx.request, "strict_research", False) is True),
+        task_policy=getattr(ctx.frame, "entry_policy", None),
+        project_changes_required=bool(getattr(ctx.request, "project_changes_required", False) is True),
         research_tools=_build_research_tools(ctx.deps.persistence, session_id=ctx.request.session_id,
                                              project=ctx.frame.project_text)
         if "web.read" in ctx.request.requested_capabilities else None,

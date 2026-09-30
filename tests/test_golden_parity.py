@@ -74,10 +74,10 @@ class GoldenParityTests(unittest.TestCase):
                 shutil.rmtree(td, ignore_errors=True)
 
     def test_research_repair_prompt_golden(self) -> None:
-        from codey.operations.research_iteration import render_research_repair_prompt
         from codey.research.tool_contract import PROTOCOL_DISALLOWED_TOOL
         from codey.runtime.core.models import ToolPlan
         from tests.support.research_controller import ResearchController, ResearchControlState
+        from tests.support.research_iteration_adapter import render_research_repair_prompt
         from tests.support.research_protocol import JsonToolCodec as ResearchCodec
 
         state = ResearchControlState(

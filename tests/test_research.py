@@ -16,7 +16,6 @@ from codey.agents.consensus import ConsensusAdvice
 from codey.automation import browser_worker
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_iteration import ResearchIteration
 from codey.policies.network import check_fetch_url
 from codey.research import browser_search
 from codey.research.advisors import EvidencePack, render_research_advisor_prompt, run_research_advisors
@@ -43,6 +42,7 @@ from tests.support.research_controller import (
     format_controller_results,
     render_control_block,
 )
+from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import JsonToolCodec
 
 
@@ -2986,7 +2986,6 @@ class ResearchBoundaryTests(unittest.TestCase):
                 FakeSearch(),
                 store,
                 max_turns=1,
-                controller_enabled=False,
             )
 
             list(runner.run("Research alpha"))
@@ -4195,12 +4194,12 @@ class ResearchBoundaryTests(unittest.TestCase):
                         "title": "Helium supply",
                         "body": "Helium supply depends on gas processing.",
                         "sources": ["https://example.com/helium"],
-                        "evidence": {
+                        "evidence": [{
                             "claim": "Helium supply depends on gas processing.",
                             "source_url": "https://example.com/helium",
                             "excerpt": "Helium is separated from natural gas streams.",
                             "stance": "supports",
-                        },
+                        }],
                     },
                 }
             ),
@@ -4932,7 +4931,6 @@ class ProtocolTelemetryTests(unittest.TestCase):
                 FakeSearch(),
                 store,
                 max_turns=2,
-                controller_enabled=False,
                 trace_recorder=trace,
             )
 
@@ -4985,7 +4983,6 @@ class ProtocolTelemetryTests(unittest.TestCase):
                 FakeSearch(),
                 store,
                 max_turns=4,
-                controller_enabled=False,
                 trace_recorder=trace,
             )
 
@@ -5028,7 +5025,6 @@ class ProtocolTelemetryTests(unittest.TestCase):
                 FakeSearch(),
                 store,
                 max_turns=3,
-                controller_enabled=False,
                 trace_recorder=trace,
             )
 

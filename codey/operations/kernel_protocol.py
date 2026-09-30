@@ -31,6 +31,10 @@ class TurnSnapshot:
     allowed: tuple[str, ...] | None
     contract_text: str
     native_tools: tuple[dict[str, Any], ...]
+    tool_names: tuple[str, ...] = ()
+
+
+_SNAPSHOT_TOOL_NAMES: dict[tuple[int, tuple[str, ...]], tuple[object, tuple[str, ...]]] = {}
 
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
@@ -79,11 +83,17 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
 
     contract_now = _contract(session.policy, controller_allowed=allowed) if _contract is not None else ""
     native_now = _native_tools_for_policy(session.policy, allowed) if native else []
-    return TurnSnapshot(
+    from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
+
+    names = tuple(visible_tool_names_for_snapshot(session.policy, allowed))
+    snapshot = TurnSnapshot(
         allowed=allowed,
         contract_text=str(contract_now or ""),
         native_tools=tuple(native_now),
+        tool_names=names,
     )
+    _SNAPSHOT_TOOL_NAMES[(id(session.policy), tuple(allowed or ()))] = (session.policy, names)
+    return snapshot
 
 
 _CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS or {})
@@ -416,16 +426,25 @@ def _plan_from_tool_objects(
     *,
     policy: Any,
     controller_allowed: set[str] | None,
+    snapshot_names: tuple[str, ...] | None = None,
 ) -> ToolPlan:
     items, batch_error = _lower_text_batches(items)
     if batch_error:
         return _invalid_plan(batch_error)
+    if sum(1 for raw_tool, _args, _call_id in items if _canonical_name(raw_tool) == "shell") and len(items) != 1:
+        return _invalid_plan("shell must be the only tool call in a turn", kind="mixed_shell_batch", tool="shell")
     calls: list[ToolCall] = []
     text_keys: set[str] = set()
     for raw_tool, args, call_id in items:
         tool = _canonical_name(raw_tool)
         if not tool:
             return _invalid_plan(f"unknown tool: {raw_tool or '?'}", kind="unknown_tool", tool=str(raw_tool or ""))
+        if snapshot_names is not None and tool not in snapshot_names:
+            return _invalid_plan(
+                f"{tool} is not allowed by the current controller state (not in the turn snapshot: {tool})",
+                kind="snapshot_tool_mismatch",
+                tool=tool,
+            )
         if tool == "done":
             if len(items) != 1:
                 return _invalid_plan("done must be the only call in a turn", tool=tool, kind="too_many_tools")
@@ -462,8 +481,13 @@ def normalize_turn(
     *,
     policy: Any,
     controller_allowed: tuple[str, ...] | list[str] | set[str] | None = None,
+    snapshot_names: tuple[str, ...] | None = None,
 ) -> ToolPlan:
     allowed = None if controller_allowed is None else {str(n or "").strip().lower() for n in controller_allowed}
+    if snapshot_names is None:
+        stored = _SNAPSHOT_TOOL_NAMES.get((id(policy), tuple(controller_allowed or ())))
+        if stored is not None and stored[0] is policy:
+            snapshot_names = stored[1]
     tool_calls = getattr(reply, "tool_calls", None) if not isinstance(reply, str) else None
     if isinstance(reply, str) or tool_calls is None:
         text = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or "")
@@ -487,7 +511,7 @@ def normalize_turn(
                 f"send at most {MAX_NATIVE_CALLS_PER_TURN}",
                 kind="too_many_tools",
             )
-        return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed)
+        return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed, snapshot_names=snapshot_names)
     calls = list(tool_calls or ())
     if len(calls) > MAX_NATIVE_CALLS_PER_TURN:
         return _invalid_plan(
@@ -517,7 +541,7 @@ def normalize_turn(
         if not isinstance(args, dict):
             return _invalid_plan(f"{name} args must be an object", tool=name)
         items.append((name, dict(args), call_id))
-    return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed)
+    return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed, snapshot_names=snapshot_names)
 
 
 __all__ = [

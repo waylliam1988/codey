@@ -58,8 +58,6 @@ def _build_delegate(
     permission_profile: str = "coding_writer",
 ) -> Any:
     """Build the production delegate; fail closed when a project needs one."""
-    if project_path is None and research_tools is None:
-        return None
     try:
         from codey.operations.task_execution import ExecutionDelegate
     except Exception as exc:
@@ -260,7 +258,22 @@ def execute_turn(
         with _contextlib.suppress(Exception):
             session._memory_results[identity] = result
         if intent_sink is not None:
-            intent_sink.settle(identity, ok if type(ok) is bool else False)
+            settle_fn = intent_sink.settle
+            try:
+                import inspect
+
+                accepts_result = "result" in inspect.signature(settle_fn).parameters
+            except (TypeError, ValueError):
+                accepts_result = False
+            if accepts_result:
+                settle_fn(
+                    identity,
+                    ok if type(ok) is bool else False,
+                    result=result,
+                    exit_code=exit_code if isinstance(exit_code, int) else None,
+                )
+            else:
+                settle_fn(identity, ok if type(ok) is bool else False)
 
     def reconcile_intent_only(identity: str, ok: bool) -> None:
         # Already-durable replay: never rewrite ``session.executed``, only

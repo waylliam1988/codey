@@ -21,6 +21,7 @@ from codey.runtime.effects.effect_records import (
     new_effect_id,
 )
 from codey.runtime.effects.replay_policy import ReplayClass, tool_replay_policy
+from codey.runtime.effects.safe_tool_replay import replay_args_for_tool_call
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
@@ -63,6 +64,7 @@ class KernelEffectSink:
             spec = spec_for_tool(str(call.name or ""))
             replay_class = (spec.replay_class if spec is not None
                             else tool_replay_policy(name).replay_class)
+            replay_args = replay_args_for_tool_call(ToolCall(name, dict(call.args or {})))
             self._replay_classes[identity] = replay_class
             intents.append(RuntimeEffectIntent(
                 effect_id=identity, effect_category=EFFECT_CATEGORY_TOOL_CALL,
@@ -71,6 +73,7 @@ class KernelEffectSink:
                 tool_name=name, tool_id=f"{turn}:{index}",
                 display_ref=str(call.args.get("path") or call.args.get("url") or ".")[:100],
                 args_digest=compute_args_digest(call.args), replay_class=replay_class,
+                replay_args=replay_args,
             ))
             batch_items.append(DeliveryBatchItem(
                 tool_index=index, tool_name=name, ref=identity,
@@ -93,7 +96,11 @@ class KernelEffectSink:
     def has_unsettled(self, identity: str) -> bool:
         return identity in self._old_pending
 
-    def settle(self, identity: str, ok: bool) -> None:
+    def settle(self, identity: str, ok: bool, *, result: Any = None, exit_code: int | None = None) -> None:
+        audit = getattr(result, "audit", {}) if result is not None else {}
+        managed = audit.get("managed_output", {}) if isinstance(audit, dict) else {}
+        result_ref = str(managed.get("handle") or managed.get("path") or "")[:160] if isinstance(managed, dict) else ""
+        excerpt = str(getattr(result, "model_text", "") or "")[:500] if result is not None else ""
         self.mutations.settle_tool_effect(
             self.session_id, self.run_id,
             RuntimeEffectSettlement(
@@ -102,6 +109,8 @@ class KernelEffectSink:
                 status=SETTLEMENT_STATUS_OK if ok else SETTLEMENT_STATUS_ERROR,
                 error_code="" if ok else "tool_error",
                 replay_class=self._replay_classes.get(identity, ReplayClass.UNSAFE),
+                result_excerpt=excerpt,
+                result_ref=result_ref,
             ),
         )
 

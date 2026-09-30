@@ -98,6 +98,8 @@ class AgentRequest:
     requested_capabilities: tuple[str, ...] = ()
     research_tools: object | None = None
     project_changes_required: bool = False
+    strict_research: bool = False
+    task_policy: object | None = None
 
 
 __all__ = [

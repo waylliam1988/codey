@@ -284,7 +284,7 @@ def research_loop(case, legacy):
                     iteration = run_research_iteration(SimpleNamespace(knowledge_store=store), provider=provider,
                         session_id="s", project="", task="How is helium obtained?", max_turns=case.get("max_turns", 6),
                         on_event=lambda _e: None, stop_flag=flag, provider_id="local", run_id="", chat_handoff="",
-                        trace_recorder=None, search=Search(), controller_enabled=case.get("controller", True))
+                        trace_recorder=None, search=Search())
                     result = iteration.result
                     tools = iteration.tools
             # Exclude generated ids and timestamps, retain note contents and

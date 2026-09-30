@@ -1,5 +1,38 @@
 # Codey Test Report
 
+## Unified entry authorization, durable recovery, and frozen tool snapshots (2026-09-30)
+
+- TDD regressions were reproduced before fixes for route-based authorization
+  widening, unsafe replay arguments, stale verification wins, native done
+  receipt closure, mixed shell batches, custom tools without a project,
+  mutable turn snapshots, and missing user-requested source-read gates.
+- The shared task entry now carries authorization and completion requirements
+  explicitly; model routing cannot add grants. Runtime effect intents persist
+  safe replay arguments and bounded result references. Verification selects the
+  latest command/cwd/revision result. Native done receipts close follow-up call
+  ids, shell batches are singleton-only, recursive ToolSpec schemas are
+  validated, and the per-turn tool snapshot is enforced during normalization.
+- Headless project runs accept an explicit must-change requirement instead of
+  inferring it from an empty project path. Research execution uses the shared
+  kernel without the old `controller_enabled` branch. The production
+  `ResearchIteration` facade, `ResearchToolOutcome`, and unused repair prompt
+  were removed after `test_coldstart_research_iteration_facade_removed.py`
+  failed against the old module. Existing iterator-shaped research tests and
+  manual probes now use `tests/support/research_iteration_adapter.py`.
+  Legacy strict-argument and shared-executor differences are recorded with
+  exact before/after payloads in
+  `tests/fixtures/kernel_parity/intentional_deltas.json`.
+- A project-wide scan found no production import or definition of the removed
+  facade and no production `controller_enabled` reference. The source connector
+  probe's obsolete module patch point was moved to `report_quality`.
+- Parity: `682 cases`, `567` equal, `115` intentional, `0` unclassified
+  failures. The parity report is `tests/fixtures/kernel_parity/current_report.json`.
+- Final prechecks: `ruff check codey tests tools`, `python -m compileall -q
+  codey tests tools`, `git diff --check`, and parity CLI all passed.
+- Final full run after all production and test migrations:
+  `python -m pytest`: **5833 passed, 32 skipped in 364.45s (0:06:04)**.
+- No release, version bump, or release tag was made.
+
 ## Deterministic pre-unification parity and restoration (2026-09-30)
 
 - Oracle: independent extraction of `958bcb485bf05d0ae8232763681d1df5ecee1d34`,

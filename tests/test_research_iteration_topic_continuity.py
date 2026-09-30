@@ -4,12 +4,12 @@ import tempfile
 from pathlib import Path
 
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_iteration import ResearchIteration
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.run_result import ResearchRunResult
 from codey.research.topic_continuity import project_topic_continuity
 from codey.workspace.context_epoch import context_epoch_id
+from tests.support.research_iteration_adapter import ResearchIteration
 
 
 class _SectionRecorder:

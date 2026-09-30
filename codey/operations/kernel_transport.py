@@ -128,9 +128,12 @@ def _take_answered_reply(
     ids = list(dict.fromkeys(i for i in ids if i))
     if not ids:
         return None
+    content = str(followup or "")
+    if not content.startswith("OK:"):
+        content = f"ERROR: {content}"
     return call_provider_send_results(
         provider,
-        [{"role": "tool", "tool_call_id": i, "content": f"ERROR: {followup}"} for i in ids],
+        [{"role": "tool", "tool_call_id": i, "content": content} for i in ids],
         native_tools,
     )
 

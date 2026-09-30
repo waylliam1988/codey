@@ -27,7 +27,6 @@ import contextlib
 
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.evidence_followup import run_evidence_followup
-from codey.operations.research_iteration import ResearchIteration
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
@@ -53,6 +52,7 @@ from tests.manual.ab_harness_common import (
 )
 from tests.manual.ab_journal import ABJournalIdentityMismatch, TranscriptReplayCache
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
+from tests.support.research_iteration_adapter import ResearchIteration
 
 PROBE = "research_forced_followup_gap_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

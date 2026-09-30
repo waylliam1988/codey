@@ -1,5 +1,20 @@
 # Codey 自举能力证明
 
+## 2026-09-30 统一任务生命周期最终证明
+
+本轮在修改前先用准确命名的 TDD 回归测试锁定入口授权、持久恢复、工具快照、
+原生终止回执、shell 批次、验证状态和无项目工具执行问题；修复后完成针对性回测。
+
+- parity oracle：`682 cases / 567 equal / 115 intentional / 0 failures`。
+- 静态与结构检查：`ruff check codey tests tools`、`compileall`、`git diff --check` 全部通过。
+- 最终全量：`python -m pytest`，**5833 passed, 32 skipped in 364.45s (0:06:04)**。
+- 统一入口传递用户授权和完成要求；模型路由不能扩大权限；runtime effect、验证结果、
+  工具快照和 native done 回执均有持久化或可验证的确定性证据。
+- 生产 Research 只保留共享 kernel 入口；旧迭代器 facade、outcome 和 repair prompt
+  在红测锁定后迁入 `tests/support/`。全项目扫描未发现生产侧旧入口或
+  `controller_enabled` 残留，手工 source connector 的旧 patch 点也已迁移。
+- 未 release、未改版本号、未创建 release tag。
+
 日期：2026-06-28  
 环境：Windows / Edge CDP `127.0.0.1:9222` / 本地仓库 `E:\codey`
 

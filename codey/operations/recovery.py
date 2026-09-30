@@ -422,11 +422,17 @@ def record_entry_policy(
         return
     try:
         payload = policy.to_payload() if hasattr(policy, "to_payload") else {}
-    except Exception:
-        return
+    except Exception as exc:
+        raise RuntimeError(f"task policy serialization failed: {exc}") from exc
     setter = getattr(mutations, "set_task_policy", None)
-    if callable(setter):
-        setter(session_id, run_id, policy=payload)
+    if not callable(setter):
+        # Lightweight callers without the durable runtime are not a recovery
+        # boundary. The real RuntimeMutationLine always exposes this setter;
+        # when it does, failures propagate to prevent an unrecorded policy.
+        if not hasattr(mutations, "session_log"):
+            return
+        raise RuntimeError("task policy persistence is unavailable")
+    setter(session_id, run_id, policy=payload)
 
 
 def rebuilt_policy_from_log(

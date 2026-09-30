@@ -452,7 +452,8 @@ class TaskEntryOwnershipTests(unittest.TestCase):
             self.assertNotIn("codey.research.controller", text, relative)
             self.assertNotIn("codey.research.protocols", text, relative)
             self.assertTrue(
-                "ResearchIteration" in text or "tests.support.research_protocol" in text,
+                "tests.support.research_iteration_adapter" in text
+                or "tests.support.research_protocol" in text,
                 relative,
             )
 

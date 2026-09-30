@@ -101,6 +101,7 @@ class TaskPolicy:
     required_checks: tuple[str, ...] = ()
     source: str = ""
     version: int = TASK_POLICY_VERSION
+    sources_open_required: bool = False
 
     def allows(self, grant: object) -> bool:
         return _normalize_grant(grant) in set(self.grants or frozenset())
@@ -109,6 +110,7 @@ class TaskPolicy:
         return {
             "grants": sorted(self.grants or frozenset()),
             "strict_research": bool(self.strict_research),
+            "sources_open_required": bool(self.sources_open_required),
             "required_checks": list(self.required_checks or ()),
             "source": str(self.source or ""),
             "version": int(self.version or TASK_POLICY_VERSION),
@@ -141,6 +143,7 @@ class TaskPolicy:
         # Never silently truncate: preserve all so the completion gate can
         # report an explicit over-limit error (contract max is 12).
         strict = payload.get("strict_research") is True
+        sources_open_required = payload.get("sources_open_required") is True
         source = str(payload.get("source") or "")
         try:
             version = int(payload.get("version") or TASK_POLICY_VERSION)
@@ -149,6 +152,7 @@ class TaskPolicy:
         return TaskPolicy(
             grants=frozenset(grants),
             strict_research=strict,
+            sources_open_required=sources_open_required,
             required_checks=tuple(checks),
             source=source[:240] if source else "recovered",
             version=version if version >= 1 else TASK_POLICY_VERSION,
@@ -165,6 +169,7 @@ def build_task_policy(
     kind = _normalize_kind(task_kind)
     # The Research button is user intent; model_hint is never consulted here.
     strict = bool(strict_research is True) or bool(getattr(submission, "strict_research", False) is True)
+    sources_open_required = bool(getattr(submission, "sources_open_required", False) is True)
     has_project = _has_project(submission)
     requested = _requested_grants(submission)
 
@@ -231,12 +236,13 @@ def build_task_policy(
     if "control" not in grants:
         grants.add("control")
 
-    required_checks = STRICT_RESEARCH_REQUIRED_CHECKS if strict else ()
+    required_checks = STRICT_RESEARCH_REQUIRED_CHECKS if strict else (("research_sources_opened",) if sources_open_required else ())
     requested_text = ",".join(sorted(requested)) if requested else "-"
     source = f"kind:{kind or 'project'};project:{'yes' if has_project else 'no'};requested:{requested_text};strict:{'yes' if strict else 'no'}"
     return TaskPolicy(
         grants=frozenset(grants),
         strict_research=strict,
+        sources_open_required=sources_open_required,
         required_checks=tuple(required_checks),
         source=source,
         version=TASK_POLICY_VERSION,
@@ -310,6 +316,7 @@ def apply_auto_plan(policy: object, plan_text: object) -> object:
         return TaskPolicy(
             grants=frozenset(grants),
             strict_research=bool(getattr(policy, "strict_research", False)),
+            sources_open_required=bool(getattr(policy, "sources_open_required", False)),
             required_checks=tuple(getattr(policy, "required_checks", ()) or ()),
             source=str(getattr(policy, "source", "") or "") + ";auto_narrowed",
             version=int(getattr(policy, "version", 1) or 1),

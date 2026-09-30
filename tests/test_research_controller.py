@@ -4,7 +4,6 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from codey.operations.research_iteration import render_research_repair_prompt
 from codey.research.ledger import ResearchLedger
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tool_contract import PROTOCOL_NO_JSON
@@ -18,6 +17,7 @@ from tests.support.research_controller import (
     format_controller_results,
     render_control_block,
 )
+from tests.support.research_iteration_adapter import render_research_repair_prompt
 from tests.support.research_protocol import JsonToolCodec
 
 

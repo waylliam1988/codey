@@ -1,8 +1,13 @@
 {
   "legacy_commit": "958bcb485bf05d0ae8232763681d1df5ecee1d34",
   "case_count": 682,
-  "parity_count": 583,
+  "parity_count": 567,
   "intentional": [
+    {
+      "id": "protocol/coding/coding_writer/json/read_files/paths-numeric-text",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
     {
       "id": "protocol/coding/coding_writer/json/read_files/extra-key",
       "status": "INTENTIONAL_DENY",
@@ -67,6 +72,11 @@
       "id": "protocol/coding/coding_writer/json/envelope/done-answer",
       "status": "INTENTIONAL_DENY",
       "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/read_files/paths-numeric-text",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
     },
     {
       "id": "protocol/coding/planning_readonly/json/read_files/extra-key",
@@ -269,6 +279,26 @@
       "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
     },
     {
+      "id": "protocol/research/research/json/knowledge_write/aliases-empty",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/aliases-numeric-text",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/evidence-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/evidence-empty",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
       "id": "protocol/research/research/json/knowledge_write/id-null",
       "status": "INTENTIONAL_DENY",
       "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
@@ -287,6 +317,26 @@
       "id": "protocol/research/research/json/knowledge_write/id-number",
       "status": "INTENTIONAL_DENY",
       "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/open_questions-empty",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/open_questions-numeric-text",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/relations-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/relations-empty",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
     },
     {
       "id": "protocol/research/research/json/knowledge_write/retrieved_at-null",
@@ -309,6 +359,16 @@
       "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
     },
     {
+      "id": "protocol/research/research/json/knowledge_write/sources-empty",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/sources-numeric-text",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
       "id": "protocol/research/research/json/knowledge_write/status-null",
       "status": "INTENTIONAL_DENY",
       "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
@@ -327,6 +387,16 @@
       "id": "protocol/research/research/json/knowledge_write/status-number",
       "status": "INTENTIONAL_DENY",
       "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/tags-empty",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/tags-numeric-text",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
     },
     {
       "id": "protocol/research/research/json/knowledge_write/valid_until-null",
@@ -469,6 +539,11 @@
       "reason": "The unified native batch bound is eight explicit unique call ids, instead of the legacy research-only bound of four."
     },
     {
+      "id": "protocol/coding/coding_writer/json/repair/read_files",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The unified ToolSpec schema now rejects legacy coercions and malformed optional values at the protocol boundary; strict parameter validation is intentional."
+    },
+    {
       "id": "loop/create-done",
       "status": "INTENTIONAL_DENY",
       "reason": "A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored."
@@ -497,6 +572,11 @@
       "id": "loop/native-budget",
       "status": "INTENTIONAL_CHANGE",
       "reason": "Done and final-budget native calls now receive closing receipts; old dangling ids are not reproduced."
+    },
+    {
+      "id": "research/source-hit",
+      "status": "INTENTIONAL_DENY",
+      "reason": "The shared research executor reopens an explicit source-search hit through the common open_url path, so the deterministic fixture records the second bounded fetch."
     }
   ],
   "failures": [],
@@ -825,6 +905,7 @@
     ],
     "added_declarations": [
       "codey/app/api.py:Assign:_KNOWN_ENTRY_GRANTS",
+      "codey/app/api.py:Assign:_WEB_NEGATION_MARKERS",
       "codey/app/api.py:Assign:_WEB_TASK_MARKERS",
       "codey/app/api.py:ClassDef:EntryAuth",
       "codey/app/api.py:FunctionDef:derive_entry_auth",
@@ -844,6 +925,7 @@
       "codey/operations/completion_gate.py:FunctionDef:_evidence_with_session_facts",
       "codey/operations/completion_gate.py:FunctionDef:_evidence_workspace_identity",
       "codey/operations/completion_gate.py:FunctionDef:_finalize_research_text",
+      "codey/operations/completion_gate.py:FunctionDef:_fresh_verification_verdict",
       "codey/operations/completion_gate.py:FunctionDef:_ledger_checks",
       "codey/operations/completion_gate.py:FunctionDef:_ledger_citable_urls",
       "codey/operations/completion_gate.py:FunctionDef:_required_checks_verdict",
@@ -908,6 +990,7 @@
       "codey/operations/kernel_prompt.py:FunctionDef:kernel_prompt_for_session",
       "codey/operations/kernel_protocol.py:Assign:MAX_NATIVE_CALLS_PER_TURN",
       "codey/operations/kernel_protocol.py:Assign:_CONTROLLER_ALIASES",
+      "codey/operations/kernel_protocol.py:Assign:_SNAPSHOT_TOOL_NAMES",
       "codey/operations/kernel_protocol.py:Assign:__all__",
       "codey/operations/kernel_protocol.py:ClassDef:TurnSnapshot",
       "codey/operations/kernel_protocol.py:FunctionDef:_canonical_name",
@@ -1100,10 +1183,7 @@
       "codey/operations/recovery.py:FunctionDef:rebuilt_policy_from_log",
       "codey/operations/recovery.py:FunctionDef:record_entry_policy",
       "codey/operations/research_iteration.py:Assign:__all__",
-      "codey/operations/research_iteration.py:ClassDef:ResearchIteration",
-      "codey/operations/research_iteration.py:ClassDef:ResearchToolOutcome",
       "codey/operations/research_iteration.py:FunctionDef:_persist_synthesis",
-      "codey/operations/research_iteration.py:FunctionDef:render_research_repair_prompt",
       "codey/operations/research_iteration.py:FunctionDef:run_research_iteration",
       "codey/operations/task_effects.py:Assign:__all__",
       "codey/operations/task_effects.py:ClassDef:KernelEffectSink",

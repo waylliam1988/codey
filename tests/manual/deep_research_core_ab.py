@@ -26,7 +26,6 @@ if str(ROOT) not in sys.path:
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_iteration import ResearchIteration, ResearchToolOutcome, first_text_arg
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
 from codey.research.report_quality import review_report_quality
@@ -36,6 +35,12 @@ from codey.research.source_search import bounded_limit, render_results, search_p
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import Control, ToolPlan
+from tests.support.research_iteration_adapter import (
+    ResearchIteration,
+    ResearchToolOutcome,
+    first_text_arg,
+    run_research_iteration,
+)
 from tests.support.research_protocol import MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
 from tests.support.research_protocol import JsonToolCodec
 
@@ -493,7 +498,6 @@ class ProbeResearchIteration(ResearchIteration):
             max_turns=max_turns,
             codec=ProbeJsonToolCodec(arm),
             session_id=f"deep-research-ab-{arm}",
-            controller_enabled=False,
         )
         self.arm = arm
         self.send_timeout = max(1.0, float(send_timeout))
@@ -565,6 +569,53 @@ class ProbeResearchIteration(ResearchIteration):
                 _as_int(call.args.get("limit"), 6),
             ))
         return super()._dispatch(call, turn, tool_index)
+
+    def run(self, question: str):
+        """Drive the production kernel while retaining probe-only telemetry."""
+
+        outer = self
+
+        class ProbeProvider:
+            name = getattr(outer.provider, "name", "probe")
+            location = getattr(outer.provider, "location", "")
+
+            def new_chat(self, timeout=None):
+                return outer.provider.new_chat(timeout=timeout)
+
+            def send(self, message, timeout=None):
+                del timeout
+                return outer._send_provider(str(message))
+
+            def close(self):
+                close = getattr(outer.provider, "close", None)
+                if callable(close):
+                    return close()
+                return None
+
+        deps = type("ProbeDeps", (), {
+            "knowledge_store": self.store,
+            "managed_outputs": None,
+            "runtime_mutations": None,
+        })()
+        iteration = run_research_iteration(
+            deps,
+            provider=ProbeProvider(),
+            session_id=self.session_id,
+            project="",
+            task=str(question or ""),
+            max_turns=self.max_turns,
+            on_event=lambda event: None,
+            stop_flag=None,
+            provider_id=self.provider_id or "local",
+            run_id=self.run_id,
+            chat_handoff="",
+            trace_recorder=self.trace,
+            search=self.search,
+            tools=self.tools,
+        )
+        self.tools = iteration.tools
+        self._last_result = iteration.result
+        yield iteration.result
 
 
 class TimedProvider:

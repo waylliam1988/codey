@@ -76,7 +76,6 @@ RESEARCH_EXPORTS = {
     "ResearchPipeline",
     "ResearchPipelineResult",
     "ResearchRunResult",
-    "ResearchIteration",
     "ResearchTools",
     "finalize_done_answer",
     "merge_evidence_patch",

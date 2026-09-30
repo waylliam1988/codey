@@ -38,6 +38,7 @@ class TaskSubmission:
     # gate never infers this from keywords or write permission; read-only
     # tasks keep False even when the policy still grants project.write.
     project_changes_required: bool = False
+    sources_open_required: bool = False
 
 
 def derive_project_changes_required(

@@ -1,8 +1,8 @@
 """Live A/B probe for the 0.4.4 bounded Research planner.
 
 The baseline arm runs the production ResearchPipeline with follow-up disabled.
-The planner arm enables one bounded follow-up round. Both arms use the same
-production ResearchIteration and deterministic fixture search provider, while the
+The planner arm enables one bounded follow-up round. Both arms use the shared
+research entry through a test-only adapter and deterministic fixture search provider, while the
 web-model provider is live. Progress is written atomically after each row, and
 an optional durable observation journal (`<stem>.trace/`) records every
 provider send/reply pair as hash-chained JSONL events with digest-only
@@ -29,7 +29,6 @@ import codey.research.followup_selection as followup_selection
 import codey.research.pipeline as pipeline_module
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.evidence_followup import run_evidence_followup
-from codey.operations.research_iteration import ResearchIteration
 from codey.protocols.json_scanner import extract_json_objects
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
@@ -66,6 +65,7 @@ from tests.manual.ab_journal import (
     ABJournalWriter,
 )
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
+from tests.support.research_iteration_adapter import ResearchIteration
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")

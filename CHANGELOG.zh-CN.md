@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 统一入口授权与持久化任务证明（未发布）
+
+- 统一 project、research 和 headless 的任务入口授权与完成要求；模型路由
+  不能扩大授权。Headless 只有在入口明确要求时才要求项目产生修改。
+- runtime effect 持久化安全 replay 参数和有界工具结果引用；验证状态按命令、
+  目录和 revision 取最新结果；原生 done 回执会闭合后续 call id；混合 shell
+  批次拒绝；每轮 ToolSpec 快照冻结；补齐递归 schema 验证和无项目 custom tool 执行。
+- 共享 Research 入口删除生产侧 `controller_enabled` 分支、`ResearchIteration`
+  facade、`ResearchToolOutcome` 和无用 repair prompt。旧迭代器形态的迁移测试与
+  手工基准改用测试侧适配器。严格参数和共享执行器差异以精确 before/after 记录
+  在 intentional parity fixture 中。
+- 最终验证：parity `682 cases / 0 failures`；全量 pytest **5833 passed,
+  32 skipped，364.45s**。未发布、未改版本号。
+
 ## Unreleased - 确定性 Kernel parity 与功能缺口补齐（未发布）
 
 - 固定统一前 `958bcb4` 为独立 oracle：枚举 AST/源码指纹、旧模块与 request

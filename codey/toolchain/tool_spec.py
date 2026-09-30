@@ -9,6 +9,7 @@ are denied, never passed as ``control``.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -183,13 +184,42 @@ def register_custom_tool(
         KNOWN_TASK_GRANTS = frozenset({"control"})
     if grant_text not in KNOWN_TASK_GRANTS:
         return False
+    def valid_schema(schema: object) -> bool:
+        if not isinstance(schema, dict):
+            return False
+        kind = schema.get("type")
+        if kind not in {"string", "integer", "number", "boolean", "object", "array"}:
+            return False
+        if kind == "array" and "items" in schema and not valid_schema(schema["items"]):
+            return False
+        return not (
+            "minimum" in schema
+            and (
+                kind not in {"integer", "number"}
+                or isinstance(schema["minimum"], bool)
+                or not isinstance(schema["minimum"], (int, float))
+            )
+        )
+    for parameter_name, schema in parameters:
+        if not str(parameter_name or "").strip() or not valid_schema(schema):
+            return False
+    if any(not str(item or "").strip() for item in required):
+        return False
+    example_args = {
+        str(key): ([] if isinstance(schema, dict) and schema.get("type") == "array" else
+                   {} if isinstance(schema, dict) and schema.get("type") == "object" else
+                   0 if isinstance(schema, dict) and schema.get("type") in {"integer", "number"} else
+                   False if isinstance(schema, dict) and schema.get("type") == "boolean" else "")
+        for key, schema in parameters if str(key) in set(required)
+    }
+    example = json.dumps({"tool": canonical, "args": example_args}, ensure_ascii=False)
     tool_specs()[canonical] = ToolSpec(
         name=canonical,
         aliases=(),
         grant=grant_text,
         parameters=tuple(parameters),
         required=tuple(required),
-        json_example=f'{{"tool":"{canonical}","args":{{}}}}',
+        json_example=example,
         description=str(description or ""),
         executor=str(executor or "custom"),
         replay_class="unsafe",
@@ -428,16 +458,42 @@ def _check_boolean_value(spec_name: str, key: str, value: Any) -> str:
     return ""
 
 
-def _check_array_value(spec_name: str, key: str, value: Any) -> str:
-    # Legacy repair coerces dict/singleton and string to list; allow through.
-    if isinstance(value, (list, tuple, dict, str)):
+def _check_array_value(spec_name: str, key: str, schema: object, value: Any) -> str:
+    if not isinstance(value, list):
+        return _spec_type_error(spec_name, key, "array", value)
+    if not isinstance(schema, dict) or schema.get("items") is None:
         return ""
-    return _spec_type_error(spec_name, key, "array", value)
+    for index, item in enumerate(value):
+        error = _check_spec_value_against_schema(spec_name, f"{key}[{index}]", schema["items"], item)
+        if error:
+            return error
+    return ""
 
 
-def _check_object_value(spec_name: str, key: str, value: Any) -> str:
+def _check_object_value(spec_name: str, key: str, schema: object, value: Any) -> str:
     if not isinstance(value, dict):
         return _spec_type_error(spec_name, key, "object", value)
+    if isinstance(schema, dict):
+        required = schema.get("required", ())
+        if isinstance(required, list):
+            for required_key in required:
+                aliases = {"old_string": "search", "new_string": "replace"}
+                if required_key not in value and aliases.get(str(required_key)) not in value:
+                    return f"{spec_name} arg '{key}' missing required property '{required_key}'"
+        properties = schema.get("properties", {})
+        if isinstance(properties, dict):
+            for child_key, child_value in value.items():
+                canonical_child_key = {"search": "old_string", "replace": "new_string"}.get(
+                    str(child_key), str(child_key)
+                )
+                child_schema = properties.get(canonical_child_key)
+                if child_schema is None:
+                    if schema.get("additionalProperties", True) is False:
+                        return f"{spec_name} arg '{key}' unexpected property '{child_key}'"
+                    continue
+                error = _check_spec_value_against_schema(spec_name, f"{key}.{child_key}", child_schema, child_value)
+                if error:
+                    return error
     return ""
 
 
@@ -446,6 +502,10 @@ def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, v
     want, minimum = _spec_want_and_minimum(schema)
     if not want:
         return ""
+    if isinstance(schema, dict) and "enum" in schema:
+        enum = schema.get("enum")
+        if isinstance(enum, list) and value not in enum:
+            return f"{spec_name} arg '{key}' must be one of {enum!r}"
     if want == "string":
         return _check_string_value(spec_name, key, value)
     if want == "integer":
@@ -455,9 +515,9 @@ def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, v
     if want == "boolean":
         return _check_boolean_value(spec_name, key, value)
     if want == "array":
-        return _check_array_value(spec_name, key, value)
+        return _check_array_value(spec_name, key, schema, value)
     if want == "object":
-        return _check_object_value(spec_name, key, value)
+        return _check_object_value(spec_name, key, schema, value)
     return ""
 
 

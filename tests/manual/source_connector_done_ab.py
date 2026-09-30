@@ -29,8 +29,6 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.knowledge.store import KnowledgeStore
-from codey.operations import research_iteration as runner_module
-from codey.operations.research_iteration import ResearchIteration
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research import report_quality as report_quality_module
@@ -55,6 +53,7 @@ from tests.manual.research_scorers.source_finalizer_scoring import (
     rate_rows,
     score_source_finalizer_row,
 )
+from tests.support.research_iteration_adapter import ResearchIteration
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
@@ -97,12 +96,12 @@ def _patched_quality_review(enabled: bool):
     if not enabled:
         yield
         return
-    original = runner_module.review_report_quality
-    runner_module.review_report_quality = _batched_quality_review(original)
+    original = report_quality_module.review_report_quality
+    report_quality_module.review_report_quality = _batched_quality_review(original)
     try:
         yield
     finally:
-        runner_module.review_report_quality = original
+        report_quality_module.review_report_quality = original
 
 
 def _batched_quality_review(original: Callable[..., Any]) -> Callable[..., Any]:

@@ -178,6 +178,7 @@ def run_research_iteration(
     topic_continuity_context: str = "",
     topic_continuity_payload: dict[str, object] | None = None,
     requested_capabilities: tuple[str, ...] = (),
+    task_policy: Any = None,
 ) -> ResearchIterationRun:
     return _run_iteration_impl(
         deps,
@@ -189,6 +190,7 @@ def run_research_iteration(
         topic_continuity_context=topic_continuity_context,
         topic_continuity_payload=topic_continuity_payload,
         requested_capabilities=requested_capabilities,
+        task_policy=task_policy,
     )
 
 
@@ -364,6 +366,7 @@ def run_research_pipeline(
             topic_continuity_context=topic_continuity_context,
             topic_continuity_payload=topic_continuity_payload,
             requested_capabilities=request.requested_capabilities,
+            task_policy=getattr(frame, "entry_policy", None),
         )
 
     followup_index = 0

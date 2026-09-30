@@ -13,11 +13,11 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_iteration import ResearchIteration
 from codey.research.context import ResearchPipelineConfig
 from codey.research.pipeline import ResearchPipeline
 from codey.research.plan_executor import PlanExecutor, _PlanExecutionState
 from codey.research.query_planner import QueryCandidate, ResearchPlan
+from tests.support.research_iteration_adapter import ResearchIteration
 
 
 class _Provider:
@@ -51,7 +51,7 @@ class _Search:
 def _runner() -> tuple[ResearchIteration, KnowledgeStore, tempfile.TemporaryDirectory]:
     td = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
     store = KnowledgeStore(Path(td.name) / "knowledge")
-    runner = ResearchIteration(_Provider(), _Search(), store, max_turns=2, controller_enabled=False)
+    runner = ResearchIteration(_Provider(), _Search(), store, max_turns=2)
     return runner, store, td
 
 

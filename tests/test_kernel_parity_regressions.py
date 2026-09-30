@@ -1,6 +1,7 @@
 """Red-first locks for concrete omissions found by independent legacy replay."""
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -317,5 +318,8 @@ def test_research_synthesis_finalizes_claim_support_before_persisting():
     baseline = load_baseline()
     cases = [case for case in baseline["cases"] if case["boundary"] == "research_loop"]
     current = probe(ROOT, cases)
+    deltas = json.loads((ROOT / "tests/fixtures/kernel_parity/intentional_deltas.json").read_text(encoding="utf-8"))
     for case in cases:
+        if case["id"] in deltas:
+            continue
         assert current[case["id"]] == baseline["observations"][case["id"]], case["id"]

@@ -71,7 +71,7 @@ def test_project_delegate_rejects_string_false_outcome_ok() -> None:
 
 
 def test_research_outcome_rejects_string_false_ok() -> None:
-    from codey.operations.research_iteration import ResearchToolOutcome
+    from tests.support.research_iteration_adapter import ResearchToolOutcome
 
     result = ResearchToolOutcome(model_text="failed", ok="false")  # type: ignore[arg-type]
 

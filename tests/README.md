@@ -45,8 +45,9 @@ Their deterministic pytest wrappers are `test_deep_research_core_ab.py`,
 the A/B journal tools; they are data artifacts, not production compatibility
 modules.
 
-Research-only codec/controller fixtures live in `tests/support/` so production
-code has one task protocol and one task loop.
+Research-only codec/controller fixtures and the legacy iterator adapter live in
+`tests/support/` so production code has one task protocol, one task loop, and
+one research entry.
 
 ## Live Gates
 

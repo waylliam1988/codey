@@ -301,15 +301,12 @@ def run_entry_kernel(
     if auto_plan == "__direct__":
         return _direct_answer_outcome(frame, kind)
     session = _create_entry_session(frame, work, policy, kind)
-    try:
-        from codey.operations.recovery import record_entry_policy
+    from codey.operations.recovery import record_entry_policy
 
-        record_entry_policy(
-            getattr(deps, "runtime_mutations", None),
-            session_id=request.session_id, run_id=frame.run_id, policy=policy,
-        )
-    except Exception:
-        pass
+    record_entry_policy(
+        getattr(deps, "runtime_mutations", None),
+        session_id=request.session_id, run_id=frame.run_id, policy=policy,
+    )
     project_path, tool_fns, research_tools = _entry_executors(frame, deps, policy)
     try:
         delivered, _, resume_start, initial_results = _entry_recovery(frame, session)
@@ -395,6 +392,11 @@ def run_entry_kernel(
         pass
     summary = str(result.summary or "")
     receipt = {"display": {"summary": summary[:2000]}}
+    proof = getattr(result, "proof", None)
+    if proof is not None:
+        to_payload = getattr(proof, "to_payload", None)
+        if callable(to_payload):
+            receipt["completion_proof"] = to_payload()
     return ModeOutcome({
         "type": "task_done",
         "run_id": frame.run_id,

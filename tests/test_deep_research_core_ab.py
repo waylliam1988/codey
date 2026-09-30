@@ -258,6 +258,7 @@ def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
         f"[1] Omega method paper - {ab.PDF_METHOD_URL}"
     )
     provider = ab.ScriptedProvider(
+            json.dumps({"tool": "web_search", "args": {"query": "omega method validation"}}),
         json.dumps({"tool": "open_url", "args": {"url": ab.PDF_METHOD_URL}}),
         json.dumps({
             "tool": "source_search",

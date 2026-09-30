@@ -1,6 +1,6 @@
 """Live A/B probe for PubMed/arXiv connector-aware Research search.
 
-The probe runs the production ResearchIteration against live web providers. The
+The probe runs the shared research entry through a test-only adapter against live web providers. The
 baseline arm uses the browser search provider directly; the connector arm wraps
 it with ConnectorAwareSearchProvider. Progress is written atomically after each
 case/arm row so missing samples can be resumed without rerunning completed
@@ -28,7 +28,6 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_iteration import ResearchIteration
 from codey.protocols.json_scanner import extract_json_objects
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
@@ -49,6 +48,7 @@ from tests.manual.ab_journal import (
     TranscriptReplayCache,
     journal_directory_for,
 )
+from tests.support.research_iteration_adapter import ResearchIteration
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")

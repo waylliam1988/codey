@@ -1527,7 +1527,8 @@ class ResearchServerHelperTests(unittest.TestCase):
         # §1 entry auth: research intent carries strict_research through submit.
         submit.assert_called_once_with(
             "default", None, "hello", 500, True, "deepseek", "research",
-            requested_capabilities=(), strict_research=True, project_changes_required=False,
+            requested_capabilities=(), strict_research=True, sources_open_required=False,
+            project_changes_required=False,
         )
 
         self.assertEqual(
@@ -1551,7 +1552,8 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(review_payload, {"ok": True, "run_id": "run-2"})
         submit.assert_called_once_with(
             "default", td, "review diff", app_api.DEFAULT_MAX_TURNS, False, "deepseek", "review",
-            requested_capabilities=(), strict_research=False, project_changes_required=False,
+            requested_capabilities=(), strict_research=False, sources_open_required=False,
+            project_changes_required=False,
         )
 
         busy_status, busy_payload = app_api.run_submit_response({"task": "hello"}, mock.Mock(return_value=None))

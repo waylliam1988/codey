@@ -152,41 +152,14 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     except (TypeError, ValueError):
         row = completion_check("relevant_verification", CHECK_NOT_RUN, "verification_not_fresh")
         return [row] if row is not None else []
-    fresh_pass = False
-    fresh_fail = False
     try:
         sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
         sess_rev = int(getattr(session, "workspace_revision", 0) or 0)
     except Exception:
         sess_fp, sess_rev = "", 0
-    for item in verifs:
-        if not isinstance(item, dict):
-            continue
-        try:
-            rev = int(item.get("revision", -1))
-        except (TypeError, ValueError):
-            continue
-        if rev != latest:
-            continue
-        if item.get("exit_code", None) is None:
-            # Missing structured exit code: not_run, never pass/fail from text.
-            continue
-        try:
-            from codey.utils.refs import strict_exit_code as _strict_exit
-
-            code = _strict_exit(item["exit_code"])
-        except Exception:
-            code = None
-        if code is None:
-            fresh_fail = True
-            continue
-        if code != 0:
-            fresh_fail = True
-            continue
-        if not _session_check_covers_candidate(session, item, tuple(edited)):
-            continue
-        if _verification_identity_matches(item, sess_fp, sess_rev):
-            fresh_pass = True
+    fresh_pass, fresh_fail = _fresh_verification_verdict(
+        session, verifs, tuple(edited), latest, sess_fp, sess_rev,
+    )
     if fresh_pass and not fresh_fail:
         row = completion_check("relevant_verification", CHECK_PASS)
     elif fresh_fail:
@@ -194,6 +167,46 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     else:
         row = completion_check("relevant_verification", CHECK_NOT_RUN, "verification_not_fresh")
     return [row] if row is not None else []
+
+
+def _fresh_verification_verdict(
+    session: Any,
+    verifications: list[Any],
+    scope: tuple[str, ...],
+    latest_revision: int,
+    session_fingerprint: str,
+    session_revision: int,
+) -> tuple[bool, bool]:
+    latest_by_requirement: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in verifications:
+        if not isinstance(item, dict):
+            continue
+        try:
+            if int(item.get("revision", -1)) != latest_revision or item.get("exit_code") is None:
+                continue
+        except (TypeError, ValueError):
+            continue
+        key = (str(item.get("command") or "").strip(), str(item.get("cwd") or ".").strip() or ".")
+        latest_by_requirement[key] = item
+    fresh_pass = False
+    fresh_fail = False
+    from codey.utils.refs import strict_exit_code
+
+    for item in latest_by_requirement.values():
+        try:
+            code = strict_exit_code(item.get("exit_code"))
+        except Exception:
+            code = None
+        valid = (
+            code is not None
+            and _session_check_covers_candidate(session, item, scope)
+            and _verification_identity_matches(item, session_fingerprint, session_revision)
+        )
+        if not valid or code != 0:
+            fresh_fail = True
+        elif code == 0:
+            fresh_pass = True
+    return fresh_pass, fresh_fail
 
 
 def _session_check_covers_candidate(session: Any, item: dict[str, Any], scope: tuple[str, ...]) -> bool:
@@ -452,7 +465,8 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
 def _research_checks(session: Any, done_text: str, context: Any = None) -> list[CompletionCheck]:
     policy = getattr(session, "policy", None)
     strict = bool(getattr(policy, "strict_research", False))
-    if not strict:
+    source_required = bool(getattr(policy, "sources_open_required", False))
+    if not strict and not source_required:
         return []
     if context is not None:
         real = _ledger_checks(session, done_text, context)

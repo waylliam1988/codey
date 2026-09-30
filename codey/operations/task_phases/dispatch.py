@@ -214,6 +214,11 @@ def dispatch_run_mode(
     task_kind: str,
     config_result: ProjectConfigLoadResult,
 ) -> ModeOutcome:
+    from codey.operations.task_entry import build_task_policy_for_entry
+
+    request = getattr(frame, "request", None)
+    if request is not None:
+        frame.entry_policy = build_task_policy_for_entry(request, task_kind)
     # Single task entry: project/research/hybrid/readonly share one
     # run_task_mode (same TaskSession/tool loop); ResearchPipeline and project
     # review stay as strategy phases scheduled there. Chat/review/auto keep

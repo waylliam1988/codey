@@ -395,11 +395,17 @@ class EntryAuth:
     requested_capabilities: tuple[str, ...] = ()
     strict_research: bool = False
     project_changes_required: bool = False
+    sources_open_required: bool = False
 
 
 _WEB_TASK_MARKERS = (
-    "http://", "https://", "web_search", "open_url",
-    "查网页", "查资料", "官方文档", "查一下",
+    "web_search", "open_url", "查网页", "查资料", "官方文档", "查一下",
+    "浏览网页", "联网查询", "在线查找", "读取网页",
+)
+
+_WEB_NEGATION_MARKERS = (
+    "不要", "勿", "禁止", "无需", "不需要", "不用", "只检查本地",
+    "do not", "don't", "never", "without", "no web", "offline only",
 )
 
 _KNOWN_ENTRY_GRANTS = frozenset({
@@ -429,10 +435,18 @@ def derive_entry_auth(body: dict | None, *, project: str | None = None) -> Entry
         requested.add("web.read")
     if data.get("allow_write") is True:
         requested.add("project.write")
-    if intent in {"project", "hybrid"}:
+    if intent in {"project", "hybrid", "auto"}:
         lowered = task.lower()
-        if any(marker in task or marker in lowered for marker in _WEB_TASK_MARKERS):
+        for marker in _WEB_TASK_MARKERS:
+            marker_lower = marker.lower()
+            position = lowered.find(marker_lower)
+            if position < 0:
+                continue
+            context = lowered[max(0, position - 24):position]
+            if any(negation in context for negation in _WEB_NEGATION_MARKERS):
+                continue
             requested.add("web.read")
+            break
     strict = data.get("strict_research") is True or intent == "research"
     try:
         from codey.task.model import derive_project_changes_required
@@ -443,6 +457,7 @@ def derive_entry_auth(body: dict | None, *, project: str | None = None) -> Entry
     return EntryAuth(
         requested_capabilities=tuple(sorted(requested)),
         strict_research=strict,
+        sources_open_required=("web.read" in requested and intent in {"auto", "project", "hybrid"}),
         project_changes_required=requires,
     )
 
@@ -497,6 +512,7 @@ def run_submit_response(
             intent,
             requested_capabilities=entry_auth.requested_capabilities,
             strict_research=entry_auth.strict_research,
+            sources_open_required=entry_auth.sources_open_required,
             project_changes_required=entry_auth.project_changes_required,
         )
     except BrowserWorkerBusy:

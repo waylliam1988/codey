@@ -146,11 +146,14 @@ def _task_kind_and_policy(request: AgentRequest) -> tuple[str, Any]:
     from codey.policies.task_policy import build_task_policy
 
     task_kind = "planning" if request.permission_profile == "planning_readonly" else "project"
+    existing = getattr(request, "task_policy", None)
+    if existing is not None and callable(getattr(existing, "allows", None)):
+        return task_kind, existing
     policy = build_task_policy(
         SimpleNamespace(
             project=str(request.project),
             requested_capabilities=getattr(request, "requested_capabilities", ()),
-            strict_research=False,
+            strict_research=bool(getattr(request, "strict_research", False) is True),
         ),
         task_kind=task_kind,
     )

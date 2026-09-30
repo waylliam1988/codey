@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Unified entry authorization and durable task proof (no release)
+
+- Unified task entry authorization and completion requirements across project,
+  research, and headless runs; model routing cannot widen grants. Headless
+  completion only requires project changes when the entry explicitly requests
+  them.
+- Persisted safe replay arguments and bounded tool-result references in runtime
+  effects, selected the latest matching verification result, closed native done
+  follow-up receipts, rejected mixed shell batches, froze per-turn ToolSpec
+  snapshots, and added recursive schema validation plus projectless custom-tool
+  execution.
+- Removed the production `controller_enabled` branch, `ResearchIteration`
+  facade, `ResearchToolOutcome`, and unused repair prompt. Iterator-shaped
+  migration tests and manual probes now use a test-only adapter. Research
+  parity and strict argument migrations are recorded as exact intentional
+  deltas with before/after evidence.
+- Final verification: parity `682 cases / 0 failures`; full pytest **5833
+  passed, 32 skipped in 364.45s**. No release or version bump.
+
 ## Unreleased - Deterministic kernel parity and missing behavior restoration (no release)
 
 - Added a pinned, isolated pre-unification oracle for commit `958bcb4`: AST/source
