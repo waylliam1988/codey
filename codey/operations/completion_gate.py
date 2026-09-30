@@ -144,6 +144,9 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
             return [row] if row is not None else []
         row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE)
         return [row] if row is not None else []
+    if getattr(session, "verification_forbidden", False) is True:
+        row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE, "verification_forbidden_by_request")
+        return [row] if row is not None else []
     try:
         latest = max(int(v) for v in edited.values())
     except (TypeError, ValueError):
@@ -180,6 +183,8 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
         if code != 0:
             fresh_fail = True
             continue
+        if not _session_check_covers_candidate(session, item, tuple(edited)):
+            continue
         if _verification_identity_matches(item, sess_fp, sess_rev):
             fresh_pass = True
     if fresh_pass and not fresh_fail:
@@ -189,6 +194,16 @@ def _coding_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     else:
         row = completion_check("relevant_verification", CHECK_NOT_RUN, "verification_not_fresh")
     return [row] if row is not None else []
+
+
+def _session_check_covers_candidate(session: Any, item: dict[str, Any], scope: tuple[str, ...]) -> bool:
+    selected = getattr(session, "selected_verification", None)
+    if selected is None:
+        return True
+    from codey.completion.verification_policy import check_covers_selected_candidate
+
+    return check_covers_selected_candidate(selected, str(item.get("command") or ""),
+        str(item.get("cwd") or "."), scope, root=getattr(session, "project", None) or None)
 
 
 def _session_scope_files(session: Any) -> tuple[str, ...]:
@@ -604,6 +619,7 @@ class GateVerdict:
     complete: bool
     followup: str
     proof: CompletionProof | None
+    final_text: str = ""
 
 
 def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
@@ -693,8 +709,24 @@ def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> Ga
     return None
 
 
+def _finalize_research_text(session: Any, text: str, context: Any) -> str:
+    """Check and publish the same evidence-compiled answer, as the old runner did."""
+    if not getattr(getattr(session, "policy", None), "strict_research", False):
+        return text
+    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    ledger = get("research_ledger")
+    if ledger is None:
+        return text
+    from codey.research.done_finalizer import finalize_done_answer
+
+    finalized = finalize_done_answer(text, ledger, source_ids=dict(get("source_ids") or {}),
+                                    question=str(get("question") or ""), enforce_claim_support=True)
+    return finalized.text.strip()
+
+
 def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
     text = str(done_text or "").strip()
+    text = _finalize_research_text(session, text, context)
     checks: list[CompletionCheck] = []
     checks.extend(_coding_checks(session, context))
     checks.extend(_research_checks(session, text, context))
@@ -758,7 +790,7 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
             proof=None,
         )
     if proof is not None and proof.satisfied:
-        return GateVerdict(complete=True, followup="", proof=proof)
+        return GateVerdict(complete=True, followup="", proof=proof, final_text=text)
     reason = ""
     if proof is not None and proof.blocked_reason:
         reason = proof.blocked_reason

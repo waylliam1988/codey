@@ -226,8 +226,6 @@ def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def _validate_coding_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    if tool in {"parallel", "read_files"}:
-        return {}, f"{tool} batch calls are not supported in the unified kernel; call tools singly"
     try:
         from codey.toolchain import definition as tool_defs
         from codey.toolchain.runtime import MAX_REPLACEMENTS, READ_MAX_LINES
@@ -324,7 +322,17 @@ def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any]
         if name == "done":
             # ``done`` is a control tool with no runtime executor. Its
             # canonical ToolSpec validation above is the complete contract.
-            return dict(args) if isinstance(args, dict) else {}, ""
+            summary = str(args.get("summary") or "")
+            try:
+                nested = json.loads(summary)
+            except (ValueError, TypeError):
+                nested = None
+            if isinstance(nested, dict) and (nested.get("tool") or nested.get("name")):
+                return {}, "done summary must be the final user-facing answer, not another tool call"
+            from codey.research.tool_contract import validate_tool_args
+
+            validated_done = validate_tool_args("done", args)
+            return (dict(validated_done.args), "") if validated_done.ok else ({}, validated_done.error)
         # Custom/third-task tools: generic spec validation is sufficient.
         # They run via injected executors; no legacy coding/research repair.
         if executor not in {"project", "source", "knowledge"}:
@@ -350,13 +358,70 @@ def _validate_tool_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any]
     return {}, f"unknown tool: {tool or '?'}"
 
 
+def _expand_text_batch(tool: str, args: dict[str, Any]) -> tuple[list[tuple[str, dict[str, Any], str]], str]:
+    """Lower bounded read-only wrappers; validate the whole batch before effects."""
+    from codey.toolchain.definition import MAX_PARALLEL_CALLS, TOOL_DEFINITION_BY_NAME
+
+    if tool == "read_files":
+        paths = args.get("paths")
+        if isinstance(paths, str):
+            paths = [paths]
+        if not isinstance(paths, list) or not paths or len(paths) > MAX_NATIVE_CALLS_PER_TURN:
+            return [], f"read_files requires 1..{MAX_NATIVE_CALLS_PER_TURN} paths"
+        if any(not isinstance(path, str) or not path.strip() for path in paths):
+            return [], "read_files paths must be non-empty strings"
+        return [("read_file", {"path": path}, "") for path in paths], ""
+    calls = args.get("calls")
+    if not isinstance(calls, list) or not calls or len(calls) > MAX_PARALLEL_CALLS:
+        return [], f"parallel requires 1..{MAX_PARALLEL_CALLS} read-only calls"
+    expanded = []
+    for row in calls:
+        if not isinstance(row, dict):
+            return [], "every parallel call must be an object"
+        name, child_args = _tool_and_args(row)
+        definition = TOOL_DEFINITION_BY_NAME.get(name)
+        if definition is None or not definition.parallel_safe:
+            return [], "parallel accepts only list_dir, read_file, and grep"
+        if "args" in row and not isinstance(row["args"], dict):
+            return [], f"{name} args must be an object"
+        expanded.append((name, child_args, ""))
+    return expanded, ""
+
+
+def _lower_text_batches(items: list[tuple[str, dict[str, Any], str]]) -> tuple[list[tuple[str, dict[str, Any], str]], str]:
+    expanded = []
+    for raw_tool, args, call_id in items:
+        name = _canonical_name(raw_tool)
+        if name in {"parallel", "read_files"}:
+            if call_id:
+                return [], "batch wrappers are text-only; native calls require individual ids"
+            from codey.toolchain.tool_spec import validate_args_against_spec
+
+            error = validate_args_against_spec(name, args)
+            if error:
+                return [], error
+            children, error = _expand_text_batch(name, args)
+            if error:
+                return [], error
+            expanded.extend(children)
+        else:
+            expanded.append((raw_tool, args, call_id))
+    if len(expanded) > MAX_NATIVE_CALLS_PER_TURN:
+        return [], "expanded batch exceeds the turn call limit"
+    return expanded, ""
+
+
 def _plan_from_tool_objects(
     items: list[tuple[str, dict[str, Any], str]],
     *,
     policy: Any,
     controller_allowed: set[str] | None,
 ) -> ToolPlan:
+    items, batch_error = _lower_text_batches(items)
+    if batch_error:
+        return _invalid_plan(batch_error)
     calls: list[ToolCall] = []
+    text_keys: set[str] = set()
     for raw_tool, args, call_id in items:
         tool = _canonical_name(raw_tool)
         if not tool:
@@ -372,7 +437,7 @@ def _plan_from_tool_objects(
             if error:
                 return _invalid_plan(error, tool=tool)
             text = str(validated.get("summary") or "").strip()
-            return ToolPlan(calls=[], control=Control(kind="done", body=text))
+            return ToolPlan(calls=[], control=Control(kind="done", body=text), control_args=validated)
         if not _policy_allows(policy, tool):
             return _disallowed_plan(tool)
         if not _controller_allows(tool, controller_allowed):
@@ -380,6 +445,11 @@ def _plan_from_tool_objects(
         validated, error = _validate_tool_args(tool, args)
         if error:
             return _invalid_plan(error, tool=tool)
+        if not call_id:
+            key = json.dumps([tool, validated], sort_keys=True, ensure_ascii=False)
+            if key in text_keys:
+                continue
+            text_keys.add(key)
         calls.append(ToolCall(name=tool, args=validated, call_id=str(call_id or "")))
     if not calls:
         return _invalid_plan("no JSON tool call found", kind="no_json")
@@ -430,6 +500,9 @@ def normalize_turn(
             "native tool call without an id cannot be answered: " + ", ".join(missing),
             kind="invalid_args",
         )
+    ids = [str(getattr(call, "id", "") or "") for call in calls]
+    if len(ids) != len(set(ids)):
+        return _invalid_plan("duplicate native tool call ids cannot be answered unambiguously", kind="invalid_args")
     names = [str(getattr(c, "name", "") or "").strip().lower() for c in calls]
     if "done" in names and len(calls) != 1:
         return _invalid_plan("done must be the only call in a turn", tool="done", kind="too_many_tools")

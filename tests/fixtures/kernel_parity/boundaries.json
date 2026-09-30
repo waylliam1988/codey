@@ -1,0 +1,201 @@
+{
+  "schema": 1,
+  "removed_modules": {
+    "codey/agents/runner.py": {
+      "current_owners": [
+        "codey/operations/project_adapter.py",
+        "codey/operations/task_loop.py"
+      ],
+      "tests": [
+        "tests/test_kernel_parity_regressions.py",
+        "tests/test_task_entry_kernel_prod.py"
+      ]
+    },
+    "codey/agents/loop.py": {
+      "current_owners": [
+        "codey/operations/project_adapter.py",
+        "codey/operations/task_loop.py"
+      ],
+      "tests": [
+        "tests/test_kernel_parity_regressions.py",
+        "tests/test_task_entry_kernel_prod.py"
+      ]
+    },
+    "codey/agents/prompt_context.py": {
+      "current_owners": [
+        "codey/operations/kernel_prompt.py",
+        "codey/operations/project_adapter.py"
+      ],
+      "tests": [
+        "tests/test_agent_completion_repair_context.py",
+        "tests/test_native_overflow_is_provider_failure_without_retry.py"
+      ]
+    },
+    "codey/agents/tool_turn.py": {
+      "current_owners": [
+        "codey/operations/kernel_execution.py",
+        "codey/operations/task_execution.py"
+      ],
+      "tests": [
+        "tests/test_kernel_parity_regressions.py",
+        "tests/test_kernel_recovery_tristate.py"
+      ]
+    },
+    "codey/agents/result_delivery.py": {
+      "current_owners": [
+        "codey/operations/kernel_transport.py",
+        "codey/operations/task_effects.py"
+      ],
+      "tests": [
+        "tests/test_native_delivery.py",
+        "tests/test_kernel_recovery_failure.py"
+      ]
+    },
+    "codey/protocols/native_openai.py": {
+      "current_owners": [
+        "codey/operations/kernel_protocol.py",
+        "codey/toolchain/tool_spec.py"
+      ],
+      "tests": [
+        "tests/test_kernel_legacy_parity.py",
+        "tests/test_kernel_protocol_validator_failclosed.py"
+      ]
+    },
+    "codey/research/protocols.py": {
+      "current_owners": [
+        "codey/operations/kernel_protocol.py",
+        "codey/toolchain/tool_spec.py"
+      ],
+      "tests": [
+        "tests/test_kernel_legacy_parity.py",
+        "tests/test_kernel_protocol_validator_failclosed.py"
+      ]
+    },
+    "codey/research/runner.py": {
+      "current_owners": [
+        "codey/operations/research_iteration.py",
+        "codey/operations/task_loop.py"
+      ],
+      "tests": [
+        "tests/test_kernel_legacy_parity.py",
+        "tests/test_research_pipeline.py"
+      ]
+    },
+    "codey/research/controller.py": {
+      "current_owners": [
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/task_session.py"
+      ],
+      "tests": [
+        "tests/test_kernel_round_stateflow.py",
+        "tests/test_research_controller.py"
+      ]
+    },
+    "codey/research/native_bridge.py": {
+      "current_owners": [
+        "codey/operations/kernel_transport.py",
+        "codey/operations/task_execution.py"
+      ],
+      "tests": [
+        "tests/test_native_delivery.py",
+        "tests/test_research_native_codec.py"
+      ]
+    },
+    "codey/research/evidence_followup.py": {
+      "current_owners": [
+        "codey/operations/evidence_followup.py"
+      ],
+      "tests": [
+        "tests/test_research_evidence_followup.py"
+      ]
+    },
+    "codey/toolchain/registry.py": {
+      "current_owners": [
+        "codey/toolchain/tool_spec.py",
+        "codey/policies/task_policy.py"
+      ],
+      "tests": [
+        "tests/test_task_kernel_unification.py",
+        "tests/test_kernel_legacy_parity.py"
+      ]
+    }
+  },
+  "entry_chains": {
+    "coding": [
+      "AgentRequest",
+      "project_adapter.run",
+      "TaskSession",
+      "run_task_kernel",
+      "normalize_turn",
+      "execute_turn",
+      "completion_gate.evaluate",
+      "RunResult"
+    ],
+    "research": [
+      "run_research_iteration",
+      "TaskSession",
+      "controller_allowed_for_session",
+      "run_task_kernel",
+      "normalize_turn",
+      "execute_turn",
+      "completion_gate.evaluate",
+      "_persist_synthesis"
+    ],
+    "durable": [
+      "KernelRecordedProvider",
+      "KernelEffectSink",
+      "kernel_recovery_context",
+      "kernel_recovery_result",
+      "TaskSession.to_payload/from_payload"
+    ]
+  },
+  "request_dispositions": {
+    "shared_protocol": [
+      "codec"
+    ],
+    "untrusted_prior_hints_not_proof": [
+      "verification_changed_files",
+      "verification_successful_checks"
+    ],
+    "adapter_and_kernel": [
+      "provider",
+      "project",
+      "task",
+      "max_turns",
+      "stagnant_turns",
+      "on_event",
+      "on_shell_request",
+      "stop_flag",
+      "fresh_chat",
+      "strict_fresh_chat",
+      "change_tracker",
+      "conversation",
+      "provider_id",
+      "handoff",
+      "project_facts",
+      "research_context",
+      "project_map",
+      "project_config_warnings",
+      "work_checkpoint",
+      "verification_candidates",
+      "verification_candidate_loader",
+      "coding_context_enabled",
+      "ghost_directive",
+      "ghost_continuity",
+      "ghost_experiences",
+      "completion_repair_context",
+      "completion_repair_context_payload",
+      "permission_profile",
+      "tool_fns",
+      "trace_recorder",
+      "session_id",
+      "run_id",
+      "runtime_mutations",
+      "tool_result_delivery",
+      "managed_outputs",
+      "recovered_tool_outcomes",
+      "recovered_tool_result_batch_id"
+    ]
+  },
+  "live_provider_limit": "Provider ids are inventoried; browser DOM/model response quality is outside the offline differential oracle. Existing adapter tests cover capability selection, explicit normalization and strict identity."
+}

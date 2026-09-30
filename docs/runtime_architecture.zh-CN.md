@@ -63,3 +63,24 @@ runtime/observe/  events / evidence / prompt_* / terminalizer
 每个真实外部效果先写 intent，效果后写 settlement；safe 读可重放，
 unsafe 永不自动重复。storage/session 层不知道 agent 语义，progress 和
 outcome 不自动变成完成证据，完成只认 proof + verification。
+
+## 统一 kernel 的行为边界与 parity
+
+Coding 与 Research 共用 `task_loop`、`kernel_protocol`、`kernel_execution` 和
+completion gate。`project_adapter` 保留 AgentRequest/RunResult 边界；
+`research_iteration` 负责知识库与 synthesis 交付。
+
+- 文本 `read_files / parallel` 在解析期整批校验后降低为有序只读调用；native
+  只用各自显式 ID，不为 wrapper 编造 child ID。执行和恢复仍按每个 effect 结算。
+- `KernelProgress` 只观察变化、结果指纹与 SeenInfo，不生成 completion proof。
+- verification candidate 是提示；结构化 exit code、相关范围和当前 workspace
+  身份才是验证证据。禁止验证可为 not_applicable，不能伪装 pass。
+- provider 响应转换仍由显式 adapter hook 完成；会话/durable 包装器显式转交，
+  不信任动态属性，也不在 kernel 猜模型模板。
+- 取消后不启动新 effect；已有 delivery/recovery 仍优先使用原始结算，未执行槽
+  结算错误，native terminal 的已知 ID 及有界后续 ID 收到错误回执。
+- Research gate 检查并返回同一份 evidence 编译答案，随后该正文进入 synthesis。
+
+固定旧版源码 oracle 与精确差异门见
+[确定性 parity 审计](kernel_parity.zh-CN.md)。旧循环只允许由独立子进程 probe
+导入 reference tree，禁止回流为生产兼容模块。

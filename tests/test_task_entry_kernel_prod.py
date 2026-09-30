@@ -173,15 +173,18 @@ class ToolContractTests(unittest.TestCase):
         self.assertNotEqual(plan.protocol_error, "")
         self.assertEqual(plan.calls, [])
 
-    def test_parallel_not_advertised_until_implemented(self) -> None:
+    def test_text_batches_advertised_and_native_wrappers_excluded(self) -> None:
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
-        from codey.toolchain.tool_spec import visible_tool_names
+        from codey.toolchain.tool_spec import native_tools_for_policy, visible_tool_names
 
         policy = build_task_policy(
             TaskSubmission("s", "E:/tmp", "t", 8, False, "local"), task_kind="project")
-        self.assertNotIn("parallel", visible_tool_names(policy))
-        self.assertNotIn("read_files", visible_tool_names(policy))
+        self.assertIn("parallel", visible_tool_names(policy))
+        self.assertIn("read_files", visible_tool_names(policy))
+        native = {row["function"]["name"] for row in native_tools_for_policy(policy)}
+        self.assertNotIn("parallel", native)
+        self.assertNotIn("read_files", native)
 
     def test_search_then_open_allowed(self) -> None:
         from codey.operations.kernel_protocol import controller_allowed_for_session

@@ -122,6 +122,11 @@ class KernelRecordedProvider:
     def send(self, *args: Any, **kwargs: Any) -> Any:
         return self._send("send", *args, **kwargs)
 
+    def normalize_reply(self, reply: Any) -> Any:
+        from codey.operations.kernel_transport import normalize_provider_reply
+
+        return normalize_provider_reply(self.provider, reply)
+
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
         sink = self.sink
         sink.send_index += 1

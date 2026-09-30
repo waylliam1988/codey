@@ -2,6 +2,34 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Deterministic kernel parity and missing behavior restoration (no release)
+
+- Added a pinned, isolated pre-unification oracle for commit `958bcb4`: AST/source
+  fingerprints, removed-module/request-field boundary ownership, and 675 fixed
+  protocol/coding/research cases. The gate reports 576 equal cases and 99 exact
+  reviewed differences (91 intentional denials, 8 explicit changes), with zero
+  unclassified differences. See `docs/kernel_parity.zh-CN.md`.
+- Restored bounded text `read_files`/`parallel`, omitted list-directory defaults,
+  text deduplication, AAA/ABAB progress guards, verification candidate refresh,
+  request-forbidden verification handling, permission-aware fresh coding context,
+  conversation snapshots, and bounded Research follow-up questions.
+- Fixed stale-green result projection, provider normalization through conversation/
+  durable wrappers, cancellation between tool slots and during provider sends,
+  duplicate native call ids/receipts, and nested tool objects masquerading as done.
+  Research now checks, returns and persists the same evidence-compiled answer,
+  including claim-support demotion and citation normalization.
+- The reviewed parity exceptions preserve strict argument types/extra-key rejection
+  (`strict-arguments`), canonical `done.summary` (`canonical-done`), and whole JSON
+  envelope trust (`canonical-envelope`). Explicit changes are shared Research JSON
+  grammar/native eight-call budget, actual pre-cancelled turn counts and native
+  receipt closure. Fresh relevant verification remains required for changed projects
+  unless the request explicitly forbids it. Unknown provider templates, implicit
+  durable provider identity and overflow rollover remain denied.
+- Deterministic regressions were reproduced before production fixes, then passed.
+  Verification: ruff, compileall, JavaScript syntax, diff and collection checks clean.
+  Full pytest: 5813 passed, 29 skipped, 1471 subtests passed in 359.08s (0:05:59).
+- No version bump, release or release tag.
+
 ## Unreleased - Local provider text codec for unified kernel (no release)
 
 - Local provider responses now pass through `local_response_codec` before the

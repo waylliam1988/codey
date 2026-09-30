@@ -30,6 +30,11 @@ class _ConversationProvider:
     def send(self, *args: Any, **kwargs: Any) -> Any:
         return self._send("send", *args, **kwargs)
 
+    def normalize_reply(self, reply: Any) -> Any:
+        from codey.operations.kernel_transport import normalize_provider_reply
+
+        return normalize_provider_reply(self.provider, reply)
+
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
         reply = getattr(self.provider, name)(*args, **kwargs)
         prompt = str(args[0]) if name in {"send", "send_turn"} and args else json.dumps(
@@ -91,6 +96,10 @@ def _project_context(request: AgentRequest) -> str:
 
 def _session_checks_passed(session: Any) -> bool:
     """Project only an exact boolean verification result into the receipt."""
+    if getattr(session, "edited_files", None):
+        from codey.operations.completion_gate import _coding_checks
+
+        return any(row.status == "pass" for row in _coding_checks(session))
     verifications = getattr(session, "verifications", ()) or ()
     if not verifications:
         return False
@@ -213,7 +222,12 @@ def run(request: AgentRequest) -> RunResult:
         handoff=request.handoff,
         project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
         coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
+        verification_candidates=request.verification_candidates,
+        verification_candidate_loader=request.verification_candidate_loader,
     )
+    from codey.agents.verification_driver import forbids_verification
+
+    session.verification_forbidden = forbids_verification(request.task)
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
     from codey.operations.kernel_errors import RecoveryFailed as _RecoveryFailed
 
@@ -292,7 +306,7 @@ def run(request: AgentRequest) -> RunResult:
         start_turn=resume_start,
         initial_results=initial_results or None,
     )
-    return RunResult(
+    result = RunResult(
         summary=outcome.summary,
         stop_reason=outcome.stop_reason,
         turns=outcome.turns,
@@ -300,6 +314,20 @@ def run(request: AgentRequest) -> RunResult:
         changed=bool(session.edited_files),
         checks_ran=bool(session.verifications),
     )
+    if request.conversation is not None:
+        from codey.agents.handoff import ConversationSnapshot
+        from codey.providers.catalog import display_provider_name
+
+        prior = request.conversation.snapshot
+        request.conversation.update_snapshot(ConversationSnapshot(
+            mode=task_kind, goal=prior.goal or request.task, project=str(request.project),
+            provider_id=display_provider_name(request.provider_id, request.provider),
+            changed_files=tuple(sorted({*prior.changed_files, *session.edited_files})),
+            checks_passed=result.checks_passed, summary=result.summary,
+            blocker="" if result.stop_reason == "done" else result.summary,
+            conversation_summary=prior.conversation_summary,
+        ))
+    return result
 
 
 __all__ = ["run"]

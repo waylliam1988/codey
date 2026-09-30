@@ -222,6 +222,7 @@ def execute_turn(
     execution_evidence: Any = None,
     workspace_ignored_paths: Any = (),
     workspace_revision_store: Any = None,
+    stop_flag: Any = None,
 ) -> list[ToolResult]:
     """Execute one turn; identity is run+turn+index with durable delivery first.
 
@@ -285,7 +286,7 @@ def execute_turn(
         session, calls, runnable, delegate, identity_ref, active_turn, base_index,
         delivered_map, intent_sink, controller_allowed, project_path,
         workspace_ignored_paths, ignores, recovery_ctx, workspace_revision_store,
-        execution_evidence, settle, reconcile_intent_only,
+        execution_evidence, settle, reconcile_intent_only, stop_flag,
     )
 
 
@@ -419,7 +420,7 @@ def _execute_slots(
     intent_sink: Any, controller_allowed: Any, project_path: Any,
     workspace_ignored_paths: Any, ignores: tuple[str, ...], recovery_ctx: RecoveryContext,
     workspace_revision_store: Any, execution_evidence: Any, settle: Any,
-    reconcile_intent_only: Any,
+    reconcile_intent_only: Any, stop_flag: Any,
 ) -> list[ToolResult]:
     results: list[ToolResult] = []
     workspace_unconfirmed = False
@@ -451,6 +452,11 @@ def _execute_slots(
                 settle, guarded,
             )
             results.append(guarded)
+            continue
+        if stop_flag is not None and stop_flag.is_set():
+            blocked = _error_result(call, "task stopped; tool call was not executed")
+            settle(identity, call, blocked, ok=False)
+            results.append(blocked)
             continue
         result, ok, opened, evidence, exit_code, _handled = _run_via_delegate_or_fn(
             delegate, runnable, session, call, name, active_turn=active_turn,

@@ -2,18 +2,17 @@
 
 Coding definitions, Research contracts, and controller aliases converge here
 as ``ToolSpec`` rows: one grant, one parameter schema, one canonical name.
-``parallel``/``read_files`` stay hidden until implemented (never advertised
-but rejected). Unknown tools are denied, never passed as ``control``.
+Text batch wrappers lower to validated project calls before execution. Native
+calls use individual ids; wrappers are never advertised there. Unknown tools
+are denied, never passed as ``control``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
-# Batch tools stay hidden until the kernel implements them; advertising a tool
-# that every call rejects is a contract lie.
-_HIDDEN_UNTIL_IMPLEMENTED = frozenset({"parallel", "read_files"})
+_TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
 
 # Native (runtime) alias -> canonical model name for coding tools.
 _NATIVE_TO_CANONICAL = {
@@ -60,8 +59,6 @@ def _coding_specs() -> dict[str, ToolSpec]:
         "control": "control",
     }
     for definition in tool_defs.TOOL_DEFINITIONS:
-        if definition.name in _HIDDEN_UNTIL_IMPLEMENTED:
-            continue
         grant = grant_by_permission.get(definition.permission, "")
         if not grant:
             continue
@@ -70,7 +67,7 @@ def _coding_specs() -> dict[str, ToolSpec]:
             aliases=tuple(definition.aliases),
             grant=grant,
             parameters=tuple(definition.parameters),
-            required=tuple(definition.required),
+            required=() if definition.name == "list_dir" else tuple(definition.required),
             json_example=definition.examples[0] if definition.examples else "",
             description=definition.description,
             executor="project",
@@ -142,6 +139,12 @@ def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
     for name, spec in _research_specs().items():
         if name == "done":
+            # summary stays canonical; retain the research completion metadata.
+            coding_done = specs.get("done")
+            if coding_done is not None:
+                specs["done"] = replace(coding_done, parameters=(
+                    *coding_done.parameters, ("open_questions", {"type": "array", "items": {"type": "string"}}),
+                ))
             continue
         specs[name] = spec
     if "done" not in specs:
@@ -250,7 +253,7 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None)
             allowed = {str(n or "").strip().lower() for n in controller_allowed}
         except TypeError:
             allowed = None
-    order = ("list_dir", "read_file", "grep", "find_references", "edit", "run", "shell",
+    order = ("list_dir", "read_file", "read_files", "grep", "find_references", "parallel", "edit", "run", "shell",
              "web_search", "open_url", "source_search", "knowledge_search", "knowledge_read",
              "knowledge_write", "knowledge_link", "done")
     names: list[str] = []
@@ -309,6 +312,8 @@ def native_tools_for_snapshot(policy: Any, controller_allowed: Any = None) -> li
     """Native schemas for one turn's snapshot; same source as JSON contract."""
     tools: list[dict[str, object]] = []
     for name in visible_tool_names_for_snapshot(policy, controller_allowed):
+        if name in _TEXT_BATCH_TOOLS:
+            continue
         spec = tool_specs().get(name)
         if spec is None:
             continue

@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Deterministic pre-unification parity and restoration (2026-09-30)
+
+- Oracle: independent extraction of `958bcb485bf05d0ae8232763681d1df5ecee1d34`,
+  isolated subprocess import/HOME/workspaces, exact Git source-set/hash validation,
+  and frozen actual legacy results. Ordinary pytest needs no legacy checkout.
+- Inventory: 323 legacy / 346 current Python modules; all 12 removed modules and
+  all 40 legacy AgentRequest fields have explicit ownership/dispositions.
+- Fixed matrix: 675 cases (639 protocol, 26 coding loops, 10 research loops).
+  Actual files/operations, conversation snapshots, native receipts and persisted
+  note type/title/body/sources/open_questions are compared.
+  `576 PASS / 91 INTENTIONAL_DENY / 8 INTENTIONAL_CHANGE / 0 MISSING`.
+  Every reviewed difference locks exact before/after plus reason, tests and
+  CHANGELOG evidence; stale/unknown exceptions fail.
+- TDD: failures were observed before fixes for missing read-only batches/default
+  directories, progress guards/context freshness, request verification handling,
+  conversation state, provider-wrapper normalization, cancellation/duplicate
+  native ids, stale-green result projection, candidate removal, Research questions,
+  and evidence-finalized synthesis content. The exporter also received a red-first
+  lock against extra source files outside the pinned Git tree.
+- Focused checks: `714 passed` for the earlier corpus/regression stage;
+  affected integration suites `1746 passed, 1 skipped, 440 subtests passed`;
+  expanded Research-content/kernel check `804 passed`, and final completion/
+  Research consumers `69 passed`. These are staged runs, not disjoint test counts.
+- Final pre-checks: `ruff check .`, `compileall codey tests tools`, all JS
+  `node --check`, and `git diff --check` clean; `5842 tests collected`.
+  Independent legacy replay and current parity CLI finished with zero failures.
+- One final full run, after production edits and pre-checks:
+  `python -m pytest -q -p no:cacheprovider`:
+  **5813 passed, 29 skipped, 1471 subtests passed in 359.08s (0:05:59).**
+- Scope/limitations and reviewed analysis:
+  `docs/kernel_parity.zh-CN.md`; machine-readable surface/boundary report:
+  `tests/fixtures/kernel_parity/current_report.json`.
+  Offline parity is finite; live browser/model quality is outside this oracle.
+- This section and related documentation were written after the full pytest
+  result was available. No production changes were made afterward.
+- No release, release tag or version bump.
+
 ## Local provider codec and kernel-unification A/B (2026-09-30)
 
 - Scope: normalize complete local text tool frames in the provider adapter,

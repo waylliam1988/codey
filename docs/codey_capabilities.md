@@ -40,11 +40,19 @@ read -> edit -> run/check -> diff -> review -> done/blocked
 Git improves the workflow when available, but Codey keeps non-Git diff and
 restore paths so beginners can start without learning Git first.
 
+Text tool calls support bounded read-only batches: `read_files` and `parallel`
+validate the whole batch before running its actions in order. Repeated unchanged
+tool cycles stop within a bound; new information and successful edits keep going.
+Cancellation stops further actions, including later tools in the same batch.
+
 ## Research Loop
 
 Research can search the web, open HTML/PDF sources, save bounded notes, and
 produce a cited synthesis. Final claims must bind to saved evidence from opened
 sources; search results, local memory, and Ghost continuity are not evidence.
+
+The returned and saved synthesis uses the same compiled evidence/citations,
+demotes unsupported conclusions, and retains up to four follow-up questions.
 
 Biomedical and paper-oriented questions prefer PubMed/arXiv article results
 when available. Broad landing pages are skipped when a more specific source can
@@ -58,6 +66,7 @@ done. Codey records local completion proof from fresh checks, changed files,
 observed failures, and repair context.
 
 - Fresh passing checks can complete the task.
+- Explicit requests to skip verification are honored without claiming checks passed.
 - Missing, failed, or environment-broken checks block honestly.
 - One bounded facts-only repair round may be admitted for observed product
   failures.

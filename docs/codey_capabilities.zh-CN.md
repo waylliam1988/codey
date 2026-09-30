@@ -32,11 +32,18 @@
 
 有 Git 会增强体验，但没有 Git 也能用非 Git diff 和 restore 开始工作。
 
+文本工具支持有界只读批次 `read_files / parallel`：整批校验后按顺序执行。
+结果不变的重复循环会有界停止，新信息与成功编辑继续推进。
+取消会阻止后续动作，包括同批尚未开始的工具。
+
 ## Research 闭环
 
 Research 可以搜索网页、打开 HTML/PDF 来源、保存有界笔记，并生成带引用的 synthesis。
 最终 claim 必须绑定到已打开来源里保存的 evidence；搜索结果、本地记忆和 Ghost continuity
 都不是 evidence。
+
+返回和保存的 synthesis 使用同一份 evidence/引用编译结果，未支持结论降为限制，
+并保留最多 4 个追问。
 
 医学和论文类问题会优先打开 PubMed/arXiv 文章结果。宽泛首页会在有更具体来源时被跳过。
 如果 proof review 发现明确证据缺口，Codey 可以跑一轮有界 evidence-only follow-up，
@@ -48,6 +55,7 @@ Research 可以搜索网页、打开 HTML/PDF 来源、保存有界笔记，并�
 观察到的失败和 repair context 记录本地 completion proof。
 
 - 新鲜通过的相关检查可以完成任务。
+- 用户明确要求跳过验证时予以尊重，但不会宣称检查通过。
 - 缺少验证、验证失败或环境损坏会诚实 blocked。
 - 观察到产品失败时，可以允许一次有界 facts-only repair round。
 - edit/test integrity 可疑时，任务收据会标出需要检查，而不是显示 clean。

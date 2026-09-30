@@ -115,6 +115,11 @@ class TaskSession:
     # when the policy still grants project.write for other reasons.
     project_changes_required: bool = False
     coding_context_enabled: bool = True
+    verification_forbidden: bool = False
+    verification_candidates: tuple[Any, ...] = ()
+    verification_candidate_loader: Any = field(default=None, repr=False, compare=False)
+    verification_candidates_epoch: int = -1
+    selected_verification: Any = None
     # Current workspace identity observed by real edit/run execution.
     # Verifications carry the identity they observed; only a verification
     # whose fingerprint matches the current workspace can complete.
@@ -132,6 +137,7 @@ class TaskSession:
     notes_saved: int = 0
     transcript_notes: list[str] = field(default_factory=list)
     last_done_text: str = ""
+    last_done_args: dict[str, Any] = field(default_factory=dict)
     turn: int = 0
     executed: dict[str, dict[str, Any]] = field(default_factory=dict)
     _memory_results: dict[str, ToolResult] = field(default_factory=dict, repr=False, compare=False)
@@ -192,6 +198,7 @@ class TaskSession:
         exit_code: int | None = None,
         workspace_revision: int | None = None,
         workspace_fingerprint: str | None = None,
+        cwd: str = ".",
     ) -> None:
         if type(passed) is not bool:
             raise TypeError("verification passed must be a boolean")
@@ -201,7 +208,8 @@ class TaskSession:
             return
         import contextlib as _contextlib
 
-        row: dict[str, Any] = {"command": str(command or "")[:240], "revision": rev, "passed": passed}
+        row: dict[str, Any] = {"command": str(command or "")[:240], "cwd": str(cwd or ".")[:240],
+                               "revision": rev, "passed": passed}
         if exit_code is not None:
             try:
                 from codey.utils.refs import strict_exit_code as _strict_exit
@@ -288,6 +296,7 @@ class TaskSession:
             "handoff": str(self.handoff or "")[:2000],
             "project_changes_required": bool(self.project_changes_required),
             "coding_context_enabled": bool(self.coding_context_enabled),
+            "verification_forbidden": self.verification_forbidden is True,
             "workspace_revision": int(self.workspace_revision or 0),
             "workspace_fingerprint": str(self.workspace_fingerprint or "")[:120],
             "searches": [str(item or "")[:240] for item in (self.searches or [])][-20:],
@@ -313,6 +322,7 @@ class TaskSession:
             "verifications": [
                 {
                     "command": str(item.get("command", ""))[:240],
+                    "cwd": str(item.get("cwd", ".") or ".")[:240],
                     "revision": int(item.get("revision", 0) or 0),
                     "passed": (item.get("passed") if type(item.get("passed")) is bool else False),
                     "exit_code": item.get("exit_code", None),
@@ -329,6 +339,7 @@ class TaskSession:
             "notes_saved": int(self.notes_saved or 0),
             "transcript_notes": notes,
             "last_done_text": str(self.last_done_text or "")[:4000],
+            "last_done_args": {"open_questions": list(self.last_done_args.get("open_questions", []))[:4]},
             "turn": int(self.turn or 0),
             "executed": executed_refs,
             "policy": policy_payload,
@@ -375,6 +386,7 @@ class TaskSession:
         session.coding_context_enabled = restore(
             "coding_context_enabled", lambda: data.get("coding_context_enabled", True) is True
         )
+        session.verification_forbidden = data.get("verification_forbidden", False) is True
         session.workspace_revision = restore("workspace_revision", lambda: int(data.get("workspace_revision", 0) or 0))
         session.workspace_fingerprint = restore(
             "workspace_fingerprint", lambda: str(data.get("workspace_fingerprint", "") or "")[:120]
@@ -412,6 +424,11 @@ class TaskSession:
             "transcript_notes", lambda: _strict_text_list(data.get("transcript_notes", []) or [], "transcript_notes")
         )
         session.last_done_text = restore("last_done_text", lambda: str(data.get("last_done_text", "") or ""))
+        done_args = data.get("last_done_args", {})
+        if not isinstance(done_args, Mapping):
+            raise RecoveryFailed("session last_done_args must be a mapping")
+        session.last_done_args = {"open_questions": _strict_text_list(
+            done_args.get("open_questions", []), "last_done_args.open_questions")[:4]}
         session.turn = restore("turn", lambda: int(data.get("turn", 0) or 0))
         return session
 

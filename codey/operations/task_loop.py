@@ -22,6 +22,7 @@ from codey.operations import kernel_prompt as _prompt
 from codey.operations import kernel_transport as _transport
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_execution import execute_turn as _execute_turn
+from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import build_turn_snapshot as _build_turn_snapshot
 from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
@@ -387,6 +388,7 @@ def run_task_kernel(
         pending_initial = []
     turns_used = 0
     invalid_turns = 0
+    progress = KernelProgress(stagnant_turns)
     prev_contract: str = str(initial_contract or "")
     for turn in range(resume_start, max_turns + 1):
         if _stop_requested(stop_flag):
@@ -423,6 +425,10 @@ def run_task_kernel(
             )
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
+        cancelled = _cancel_after_send(stop_flag, provider, reply, native, native_tools, turns_used,
+                                      propagate=propagate_provider_failure)
+        if cancelled is not None:
+            return cancelled
         _events._emit_turn_event(on_event, turn, reply)
         plan = _normalize_turn(reply, policy=session.policy, controller_allowed=controller)
         protocol_action = _kernel_handle_protocol(
@@ -475,7 +481,7 @@ def run_task_kernel(
             managed_outputs, session_id, permission_profile,
             delivered_map, intent_sink, controller, _outer_evidence,
             workspace_ignored_paths, workspace_revision_store,
-            turns_used, propagate_provider_failure,
+            turns_used, propagate_provider_failure, stop_flag,
         )
         if isinstance(results_or_failure, KernelResult):
             return results_or_failure
@@ -493,8 +499,10 @@ def run_task_kernel(
         if isinstance(advance, KernelResult):
             return advance
         pending_native_messages, prompt = advance
-        if pending_native_messages is not None and prompt == "":
-            continue
+        stopped = _stop_no_progress(progress, results, session, provider, pending_native_messages, native_tools,
+                                    turns_used, stop_flag=stop_flag, propagate=propagate_provider_failure)
+        if stopped is not None:
+            return stopped
     return _finish_after_budget(
         session,
         provider,
@@ -503,6 +511,33 @@ def run_task_kernel(
         turns_used,
         propagate_provider_failure=propagate_provider_failure,
     )
+
+
+def _cancel_after_send(stop_flag, provider, reply, native, native_tools, turns_used, *, propagate):
+    if not _stop_requested(stop_flag):
+        return None
+    # A cancellation arriving during a slow send wins over returned tool calls.
+    if native:
+        try:
+            _transport.close_native_reply(provider, reply, native_tools, "task stopped; call not executed")
+        except Exception as exc:
+            return _provider_failure(exc, turns_used, propagate=propagate)
+    return KernelResult(False, "stopped", turns_used, "stopped")
+
+
+def _stop_no_progress(progress, results, session, provider, messages, native_tools, turns_used, *, propagate,
+                      stop_flag=None):
+    cancelled = _stop_requested(stop_flag)
+    if not cancelled and not progress.observe(results, session):
+        return None
+    if messages:
+        try:
+            _transport._drain_native_budget(provider, messages, native_tools)
+        except Exception as exc:
+            return _provider_failure(exc, turns_used, propagate=propagate)
+    if cancelled:
+        return KernelResult(False, "stopped", turns_used, "stopped")
+    return KernelResult(False, "stopped after repeated tool results without progress", turns_used, "no_progress")
 
 
 def _rebuild_turn_snapshot(
@@ -544,7 +579,7 @@ def _call_execute_turn(
     managed_outputs: Any, session_id: Any, permission_profile: Any,
     delivered_map: Any, intent_sink: Any, controller: Any, outer_evidence: Any,
     workspace_ignored_paths: Any, workspace_revision_store: Any,
-    turns_used: int, propagate_provider_failure: bool,
+    turns_used: int, propagate_provider_failure: bool, stop_flag: Any = None,
 ) -> Any:
     """Run one execution turn; faults fail closed as provider_failure."""
     try:
@@ -558,6 +593,7 @@ def _call_execute_turn(
             controller_allowed=controller, execution_evidence=outer_evidence,
             workspace_ignored_paths=workspace_ignored_paths,
             workspace_revision_store=workspace_revision_store,
+            stop_flag=stop_flag,
         )
     except Exception as exc:
         # Fail closed: an execution-layer fault (e.g. durable settle) never
@@ -630,6 +666,7 @@ def _handle_done_reply(
     """Evaluate one done proposal; fail closed with the call id answered."""
 
     session.last_done_text = str(plan.control.body or "") if plan.control is not None else ""
+    session.last_done_args = dict(plan.control_args)
     try:
         from codey.operations.completion_gate import evaluate as gate_evaluate
     except Exception:
@@ -644,6 +681,9 @@ def _handle_done_reply(
             )
         return prompt, pending
     try:
+        from codey.operations.project_verification import refresh_verification_candidates
+
+        refresh_verification_candidates(session)
         verdict = gate_evaluate(session, session.last_done_text, context=completion_context)
     except Exception as exc:
         prompt = f"Completion check failed ({exc}); cannot complete yet. Continue the task."
@@ -656,6 +696,7 @@ def _handle_done_reply(
             )
         return prompt, pending
     if verdict.complete:
+        session.last_done_text = str(getattr(verdict, "final_text", "") or session.last_done_text)
         # Native chains require every call id closed, including an accepted
         # done. Answer the done id with success before returning so the same
         # session can continue and the provider chain stays legal. A failed

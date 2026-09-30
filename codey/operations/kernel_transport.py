@@ -29,6 +29,11 @@ def _explicit_reply_normalizer(provider: Any) -> Any:
 
 def call_provider_send(provider: Any, prompt: str) -> Any:
     reply = provider.send(prompt)
+    return normalize_provider_reply(provider, reply)
+
+
+def normalize_provider_reply(provider: Any, reply: Any) -> Any:
+    """Apply only a declared hook, including through explicit kernel wrappers."""
     normalize = _explicit_reply_normalizer(provider)
     return normalize(reply) if callable(normalize) else reply
 
@@ -120,7 +125,7 @@ def _take_answered_reply(
         ids = [str(getattr(c, "id", "") or "") for c in (getattr(reply, "tool_calls", ()) or [])]
     except Exception:
         return None
-    ids = [i for i in ids if i]
+    ids = list(dict.fromkeys(i for i in ids if i))
     if not ids:
         return None
     return call_provider_send_results(
@@ -134,6 +139,8 @@ def _drain_native_budget(
     provider: Any,
     messages: list[dict[str, Any]],
     native_tools: Any,
+    *,
+    error: str = "turn budget exhausted; tool call was not executed",
 ) -> None:
     """Deliver the final native batch when the turn budget is exhausted.
 
@@ -145,14 +152,14 @@ def _drain_native_budget(
     for _ in range(4):
         reply = call_provider_send_results(provider, messages, native_tools)
         ids = [str(getattr(call, "id", "") or "") for call in (getattr(reply, "tool_calls", ()) or ())]
-        ids = [item for item in ids if item]
+        ids = list(dict.fromkeys(item for item in ids if item))
         if not ids:
             return None
         messages = [
             {
                 "role": "tool",
                 "tool_call_id": call_id,
-                "content": "ERROR: turn budget exhausted; tool call was not executed",
+                "content": f"ERROR: {error}",
             }
             for call_id in ids
         ]
@@ -179,7 +186,7 @@ def repair_native_dangling(
         ids = [str(getattr(call, "id", "") or "") for call in (getattr(reply, "tool_calls", ()) or ())]
     except Exception:
         return None
-    ids = [item for item in ids if item]
+    ids = list(dict.fromkeys(item for item in ids if item))
     if not ids:
         return None
     return call_provider_send_results(
@@ -187,6 +194,18 @@ def repair_native_dangling(
         [{"role": "tool", "tool_call_id": item, "content": f"ERROR: {error}"} for item in ids],
         native_tools,
     )
+
+
+def close_native_reply(provider: Any, reply: Any, native_tools: Any, error: str) -> None:
+    """Close a terminal reply and bounded follow-on calls without executing them."""
+    if isinstance(reply, str):
+        return
+    ids = list(dict.fromkeys(str(getattr(call, "id", "") or "")
+                            for call in (getattr(reply, "tool_calls", ()) or ())))
+    messages = [{"role": "tool", "tool_call_id": key, "content": f"ERROR: {error}"}
+                for key in ids if key]
+    if messages:
+        _drain_native_budget(provider, messages, native_tools, error=error)
 
 
 __all__ = [

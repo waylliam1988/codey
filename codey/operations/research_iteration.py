@@ -14,10 +14,10 @@ from codey.toolchain.runtime import ToolOutcome as _BaseOutcome
 
 
 def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
-                       project: str, on_event: Callable[[object], None]) -> str:
+                       project: str, on_event: Callable[[object], None], open_questions: Any = ()) -> str:
     if not summary or getattr(tools, "store", None) is None or getattr(tools, "changes", None) is None:
         return ""
-    from codey.knowledge.note import KnowledgeNote
+    from codey.knowledge.note import KnowledgeNote, clean_open_questions
     from codey.research.synthesis import run_concept_tags as _run_concept_tags
     from codey.research.synthesis import synthesis_body as _synthesis_body
     from codey.research.synthesis import synthesis_title as _synthesis_title
@@ -32,6 +32,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         type="synthesis", title=_synthesis_title(task),
         body=_synthesis_body(summary, tools.ledger), tags=tags,
         sources=sorted(tools.sources_read), session_id=session_id, project=project,
+        open_questions=clean_open_questions(open_questions)[:4],
     )
     try:
         tools.store.write_note(note, changes=tools.changes)
@@ -155,6 +156,7 @@ def run_research_iteration(
         synthesis_id = _persist_synthesis(
             tools, task, outcome.summary, session_id=session_id,
             project=project, on_event=on_event,
+            open_questions=session.last_done_args.get("open_questions", ()),
         )
     quality = None
     if outcome.summary and outcome.stop_reason == "done":

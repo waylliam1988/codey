@@ -30,6 +30,7 @@ def _record_run_verification(
         exit_code=code,
         workspace_revision=sess_rev or None,
         workspace_fingerprint=sess_fp or None,
+        cwd=str(args.get("path") or "."),
     )
 
 

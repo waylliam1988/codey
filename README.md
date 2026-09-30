@@ -95,6 +95,10 @@ pip install -e .[dev]
 python -m pytest
 ```
 
+The offline kernel parity gate is `python tools/kernel_parity.py --report parity.json`.
+Its pinned legacy oracle, coverage and reviewed differences are described in the
+[parity audit](docs/kernel_parity.zh-CN.md).
+
 ## License
 
 GPL-2.0-only

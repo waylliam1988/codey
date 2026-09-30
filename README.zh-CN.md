@@ -87,6 +87,9 @@ pip install -e .[dev]
 python -m pytest
 ```
 
+离线 kernel parity 门：`python tools/kernel_parity.py --report parity.json`。
+固定旧版 oracle、覆盖边界和差异裁决见[确定性审计报告](docs/kernel_parity.zh-CN.md)。
+
 ## 许可证
 
 GPL-2.0-only

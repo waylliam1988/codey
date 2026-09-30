@@ -2,6 +2,27 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 确定性 Kernel parity 与功能缺口补齐（未发布）
+
+- 固定统一前 `958bcb4` 为独立 oracle：枚举 AST/源码指纹、旧模块与 request
+  字段边界，以及 675 个协议/Coding/Research 场景。576 个行为一致，99 个精确
+  审核差异（91 个有意拒绝、8 个明确变更），未分类差异为 0。方法与裁决见
+  `docs/kernel_parity.zh-CN.md`。
+- 补回有界文本 `read_files / parallel`、默认目录、文本去重、AAA/ABAB 循环防呆、
+  verification candidate 刷新、明确禁止验证请求的处理、带权限与 freshness
+  校验的 coding context、conversation snapshot 与 Research 的有界追问。
+- 修复旧绿色结果在后续编辑后仍投影为通过、provider normalizer 被生产包装器遮蔽、
+  send/同批工具间取消后继续执行、native 重复 ID/回执，以及 done 嵌套工具对象。
+  Research 检查、返回与保存同一份 evidence 编译正文，恢复无证据结论降级和引用编译。
+- 精确 parity 例外保留严格参数类型/额外字段拒绝（`strict-arguments`）、唯一
+  `done.summary`（`canonical-done`）和全串 JSON 信任边界（`canonical-envelope`）。
+  明确变更包括 Research 共享 JSON 语法/8-call native 上限、实际取消 turn 计数及
+  native 回执闭合。项目改动仍要求新鲜相关验证，用户明确禁止验证除外；
+  未知 provider 模板、隐式 durable provider 身份和 overflow rollover 继续拒绝。
+- 按 TDD 先复现失败，再修改与回测。ruff、compileall、JavaScript 语法、diff
+  与收集检查通过。全量 pytest：5813 passed, 29 skipped, 1471 subtests passed in 359.08s (0:05:59).
+- 未修改版本号，未 release，未创建 release tag。
+
 ## Unreleased - 统一 Kernel 的本地 provider 文本 codec（未发布）
 
 - local provider 响应现在先经过 `local_response_codec`，再进入统一

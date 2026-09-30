@@ -1,0 +1,1484 @@
+{
+  "legacy_commit": "958bcb485bf05d0ae8232763681d1df5ecee1d34",
+  "case_count": 675,
+  "parity_count": 576,
+  "intentional": [
+    {
+      "id": "protocol/coding/coding_writer/json/read_files/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/parallel/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/done/missing-summary",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/done/summary-null",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/done/summary-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/done/summary-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/done/summary-empty",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/done/summary-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/done/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/envelope/prose",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/envelope/think",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/envelope/unknown-template",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text."
+    },
+    {
+      "id": "protocol/coding/coding_writer/json/envelope/done-answer",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/read_files/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/parallel/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/done/missing-summary",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/done/summary-null",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/done/summary-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/done/summary-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/done/summary-empty",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/done/summary-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/done/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/envelope/prose",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/envelope/think",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/envelope/unknown-template",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text."
+    },
+    {
+      "id": "protocol/coding/planning_readonly/json/envelope/done-answer",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/json/web_search/query-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/web_search/query-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/web_search/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/open_url/url-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/open_url/url-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/open_url/pages-null",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/open_url/pages-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/open_url/pages-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/open_url/pages-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/open_url/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/source_search/url-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/source_search/url-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/source_search/query-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/source_search/query-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/source_search/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_search/query-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_search/query-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_search/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_read/id-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_read/id-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_read/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/type-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/type-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/title-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/title-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/body-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/body-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/id-null",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/id-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/id-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/id-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/retrieved_at-null",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/retrieved_at-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/retrieved_at-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/retrieved_at-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/status-null",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/status-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/status-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/status-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/valid_until-null",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/valid_until-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/valid_until-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/valid_until-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_write/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_link/src-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_link/src-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_link/dst-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_link/dst-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_link/kind-null",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_link/kind-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_link/kind-object",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_link/kind-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/knowledge_link/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "ToolSpec validates declared types and extra keys; legacy coercion/fail-open arguments are deliberately rejected."
+    },
+    {
+      "id": "protocol/research/research/json/done/example-0",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/native/done/example-0",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/json/done/answer-bool",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/json/done/answer-number",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/json/done/answer-numeric-text",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/json/done/open_questions-empty",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/json/done/open_questions-numeric-text",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/json/done/extra-key",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/json/envelope/fenced",
+      "status": "INTENTIONAL_CHANGE",
+      "reason": "Research now shares the canonical JSON fence/name envelope and text deduplication grammar with coding; no model-specific template is recognized."
+    },
+    {
+      "id": "protocol/research/research/json/envelope/adjacent",
+      "status": "INTENTIONAL_CHANGE",
+      "reason": "Research now shares the canonical JSON fence/name envelope and text deduplication grammar with coding; no model-specific template is recognized."
+    },
+    {
+      "id": "protocol/research/research/json/envelope/done-answer",
+      "status": "INTENTIONAL_DENY",
+      "reason": "Completion requires a nonempty textual done.summary and declared optional fields; legacy answer/coercions are not a second control protocol."
+    },
+    {
+      "id": "protocol/research/research/json/envelope/done-summary",
+      "status": "INTENTIONAL_CHANGE",
+      "reason": "Research now shares the canonical JSON fence/name envelope and text deduplication grammar with coding; no model-specific template is recognized."
+    },
+    {
+      "id": "protocol/research/research/json/envelope/name-flat",
+      "status": "INTENTIONAL_CHANGE",
+      "reason": "Research now shares the canonical JSON fence/name envelope and text deduplication grammar with coding; no model-specific template is recognized."
+    },
+    {
+      "id": "protocol/research/research/native/batch/8",
+      "status": "INTENTIONAL_CHANGE",
+      "reason": "The unified native batch bound is eight explicit unique call ids, instead of the legacy research-only bound of four."
+    },
+    {
+      "id": "loop/create-done",
+      "status": "INTENTIONAL_DENY",
+      "reason": "A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored."
+    },
+    {
+      "id": "loop/read-edit-no-check",
+      "status": "INTENTIONAL_DENY",
+      "reason": "A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored."
+    },
+    {
+      "id": "loop/failed-check",
+      "status": "INTENTIONAL_DENY",
+      "reason": "A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored."
+    },
+    {
+      "id": "loop/pre-cancelled",
+      "status": "INTENTIONAL_CHANGE",
+      "reason": "A pre-cancelled task reports zero model turns actually used, while preserving no tool execution."
+    },
+    {
+      "id": "loop/native-read-done",
+      "status": "INTENTIONAL_CHANGE",
+      "reason": "Done and final-budget native calls now receive closing receipts; old dangling ids are not reproduced."
+    },
+    {
+      "id": "loop/native-budget",
+      "status": "INTENTIONAL_CHANGE",
+      "reason": "Done and final-budget native calls now receive closing receipts; old dangling ids are not reproduced."
+    }
+  ],
+  "failures": [],
+  "surface": {
+    "legacy_modules": 323,
+    "current_modules": 346,
+    "removed_modules": [
+      "codey/agents/loop.py",
+      "codey/agents/prompt_context.py",
+      "codey/agents/result_delivery.py",
+      "codey/agents/runner.py",
+      "codey/agents/tool_turn.py",
+      "codey/protocols/native_openai.py",
+      "codey/research/controller.py",
+      "codey/research/evidence_followup.py",
+      "codey/research/native_bridge.py",
+      "codey/research/protocols.py",
+      "codey/research/runner.py",
+      "codey/toolchain/registry.py"
+    ],
+    "added_modules": [
+      "codey/operations/completion_gate.py",
+      "codey/operations/evidence_followup.py",
+      "codey/operations/kernel_errors.py",
+      "codey/operations/kernel_events.py",
+      "codey/operations/kernel_execution.py",
+      "codey/operations/kernel_facts.py",
+      "codey/operations/kernel_progress.py",
+      "codey/operations/kernel_prompt.py",
+      "codey/operations/kernel_protocol.py",
+      "codey/operations/kernel_provenance.py",
+      "codey/operations/kernel_recovery.py",
+      "codey/operations/kernel_recovery_context.py",
+      "codey/operations/kernel_recovery_result.py",
+      "codey/operations/kernel_result.py",
+      "codey/operations/kernel_transport.py",
+      "codey/operations/project_adapter.py",
+      "codey/operations/project_completion_context.py",
+      "codey/operations/project_completion_enforcement.py",
+      "codey/operations/project_review_phase.py",
+      "codey/operations/project_verification.py",
+      "codey/operations/project_writer_phase.py",
+      "codey/operations/research_iteration.py",
+      "codey/operations/task_effects.py",
+      "codey/operations/task_execution.py",
+      "codey/operations/task_loop.py",
+      "codey/operations/task_session.py",
+      "codey/policies/task_policy.py",
+      "codey/providers/local_response_codec.py",
+      "codey/providers/native_tools.py",
+      "codey/research/evidence_rules.py",
+      "codey/research/run_result.py",
+      "codey/research/synthesis.py",
+      "codey/research/text_args.py",
+      "codey/runtime/core/run_result.py",
+      "codey/toolchain/tool_spec.py"
+    ],
+    "removed_declarations": [
+      "codey/agents/loop.py:Assign:DEFAULT_CODEC",
+      "codey/agents/loop.py:Assign:__all__",
+      "codey/agents/loop.py:ClassDef:_NativeDeliveryStop",
+      "codey/agents/loop.py:FunctionDef:_bounded_native_call_summary",
+      "codey/agents/loop.py:FunctionDef:_check_runaway_guard",
+      "codey/agents/loop.py:FunctionDef:_deliver_turn",
+      "codey/agents/loop.py:FunctionDef:_finish",
+      "codey/agents/loop.py:FunctionDef:_finish_max_turns",
+      "codey/agents/loop.py:FunctionDef:_handle_done_control",
+      "codey/agents/loop.py:FunctionDef:_handle_missing_control",
+      "codey/agents/loop.py:FunctionDef:_handle_protocol_error",
+      "codey/agents/loop.py:FunctionDef:_reply_display_text",
+      "codey/agents/loop.py:FunctionDef:_report_reply",
+      "codey/agents/loop.py:FunctionDef:_run_loop",
+      "codey/agents/loop.py:FunctionDef:_safe_positive",
+      "codey/agents/loop.py:FunctionDef:_send_followup",
+      "codey/agents/loop.py:FunctionDef:_setup_loop",
+      "codey/agents/loop.py:FunctionDef:_track_continue_progress",
+      "codey/agents/loop.py:FunctionDef:parse_reply",
+      "codey/agents/loop.py:FunctionDef:run",
+      "codey/agents/prompt_context.py:Assign:__all__",
+      "codey/agents/prompt_context.py:FunctionDef:_begin_provider_send",
+      "codey/agents/prompt_context.py:FunctionDef:_fail_provider_send",
+      "codey/agents/prompt_context.py:FunctionDef:_failed_effect_id",
+      "codey/agents/prompt_context.py:FunctionDef:_note_failed_effect_id",
+      "codey/agents/prompt_context.py:FunctionDef:_rollover_for_overflow",
+      "codey/agents/prompt_context.py:FunctionDef:_send_provider_with_effect",
+      "codey/agents/prompt_context.py:FunctionDef:_settle_provider_send",
+      "codey/agents/prompt_context.py:FunctionDef:_structured_send",
+      "codey/agents/prompt_context.py:FunctionDef:_tool_messages_surface",
+      "codey/agents/prompt_context.py:FunctionDef:_turn_display_text",
+      "codey/agents/prompt_context.py:FunctionDef:append_coding_context",
+      "codey/agents/prompt_context.py:FunctionDef:bind_pending_context_rows",
+      "codey/agents/prompt_context.py:FunctionDef:current_coding_context",
+      "codey/agents/prompt_context.py:FunctionDef:discard_pending_context_rows",
+      "codey/agents/prompt_context.py:FunctionDef:initial_reply",
+      "codey/agents/prompt_context.py:FunctionDef:initial_structured_reply",
+      "codey/agents/prompt_context.py:FunctionDef:open_fresh_chat",
+      "codey/agents/prompt_context.py:FunctionDef:project_intro",
+      "codey/agents/prompt_context.py:FunctionDef:provider_supports_structured",
+      "codey/agents/prompt_context.py:FunctionDef:record_repair_context_admission",
+      "codey/agents/prompt_context.py:FunctionDef:send_handoff_summary",
+      "codey/agents/prompt_context.py:FunctionDef:send_prompt",
+      "codey/agents/prompt_context.py:FunctionDef:send_structured_prompt",
+      "codey/agents/prompt_context.py:FunctionDef:send_structured_results",
+      "codey/agents/prompt_context.py:FunctionDef:session_native_tools",
+      "codey/agents/prompt_context.py:FunctionDef:session_uses_native_tools",
+      "codey/agents/prompt_context.py:FunctionDef:with_completion_repair_context",
+      "codey/agents/result_delivery.py:Assign:__all__",
+      "codey/agents/result_delivery.py:FunctionDef:build_next_tool_prompt",
+      "codey/agents/result_delivery.py:FunctionDef:deliver_recovered_results",
+      "codey/agents/result_delivery.py:FunctionDef:deliver_turn_results",
+      "codey/agents/result_delivery.py:FunctionDef:ensure_result_batch_intent",
+      "codey/agents/runner.py:Assign:__all__",
+      "codey/agents/state.py:ClassDef:RunResult",
+      "codey/agents/tool_turn.py:Assign:__all__",
+      "codey/agents/tool_turn.py:ClassDef:PlannedToolCall",
+      "codey/agents/tool_turn.py:ClassDef:TurnToolExecutionResult",
+      "codey/agents/tool_turn.py:FunctionDef:execute_planned_item",
+      "codey/agents/tool_turn.py:FunctionDef:execute_turn_tools",
+      "codey/agents/tool_turn.py:FunctionDef:replay_class_value",
+      "codey/operations/project_completion_flow.py:Assign:COMPLETION_REPAIR_FOLLOWUP",
+      "codey/operations/project_completion_flow.py:Assign:MAX_COMPLETION_REPAIR_ROUNDS",
+      "codey/operations/project_completion_flow.py:Assign:NEW_PROJECT_IGNORED_DIRS",
+      "codey/operations/project_completion_flow.py:Assign:NEW_PROJECT_IGNORED_FILES",
+      "codey/operations/project_completion_flow.py:ClassDef:AgentAccess",
+      "codey/operations/project_completion_flow.py:ClassDef:PersistenceAccess",
+      "codey/operations/project_completion_flow.py:ClassDef:ProjectCompletionDeps",
+      "codey/operations/project_completion_flow.py:ClassDef:ProjectRuntimeMutationError",
+      "codey/operations/project_completion_flow.py:ClassDef:ReviewAccess",
+      "codey/operations/project_completion_flow.py:ClassDef:RuntimeAccess",
+      "codey/operations/project_completion_flow.py:ClassDef:VerificationAccess",
+      "codey/operations/project_completion_flow.py:ClassDef:_ProjectRun",
+      "codey/operations/project_completion_flow.py:FunctionDef:_apply_completion_verdict",
+      "codey/operations/project_completion_flow.py:FunctionDef:_apply_repair_result",
+      "codey/operations/project_completion_flow.py:FunctionDef:_build_review_verification_map",
+      "codey/operations/project_completion_flow.py:FunctionDef:_build_writer_failover",
+      "codey/operations/project_completion_flow.py:FunctionDef:_bullet_lines",
+      "codey/operations/project_completion_flow.py:FunctionDef:_capture_writer_failure",
+      "codey/operations/project_completion_flow.py:FunctionDef:_clear_provider_session",
+      "codey/operations/project_completion_flow.py:FunctionDef:_close_provider",
+      "codey/operations/project_completion_flow.py:FunctionDef:_close_writer_for_review",
+      "codey/operations/project_completion_flow.py:FunctionDef:_commit_operation_proof",
+      "codey/operations/project_completion_flow.py:FunctionDef:_commit_runtime_operation",
+      "codey/operations/project_completion_flow.py:FunctionDef:_completion_evidence",
+      "codey/operations/project_completion_flow.py:FunctionDef:_default_is_git_repository",
+      "codey/operations/project_completion_flow.py:FunctionDef:_emit_review_unavailable",
+      "codey/operations/project_completion_flow.py:FunctionDef:_enforce_completion",
+      "codey/operations/project_completion_flow.py:FunctionDef:_enforcement_scope",
+      "codey/operations/project_completion_flow.py:FunctionDef:_maybe_consult_consensus_after_writer",
+      "codey/operations/project_completion_flow.py:FunctionDef:_maybe_run_completion_repair",
+      "codey/operations/project_completion_flow.py:FunctionDef:_needs_no_canary",
+      "codey/operations/project_completion_flow.py:FunctionDef:_on_writer_event",
+      "codey/operations/project_completion_flow.py:FunctionDef:_on_writer_switch",
+      "codey/operations/project_completion_flow.py:FunctionDef:_prepare_completion_enforcement",
+      "codey/operations/project_completion_flow.py:FunctionDef:_record_completion_evidence",
+      "codey/operations/project_completion_flow.py:FunctionDef:_record_no_success",
+      "codey/operations/project_completion_flow.py:FunctionDef:_refresh_checkpoint_view",
+      "codey/operations/project_completion_flow.py:FunctionDef:_refresh_review_project_map",
+      "codey/operations/project_completion_flow.py:FunctionDef:_render_review_change_brief",
+      "codey/operations/project_completion_flow.py:FunctionDef:_repair_writer",
+      "codey/operations/project_completion_flow.py:FunctionDef:_review_cycle_phase",
+      "codey/operations/project_completion_flow.py:FunctionDef:_run_one_writer_attempt",
+      "codey/operations/project_completion_flow.py:FunctionDef:_run_review_with_trace",
+      "codey/operations/project_completion_flow.py:FunctionDef:_run_writer_canary",
+      "codey/operations/project_completion_flow.py:FunctionDef:_run_writer_phase",
+      "codey/operations/project_completion_flow.py:FunctionDef:_select_next_writer",
+      "codey/operations/project_completion_flow.py:FunctionDef:_set_checkpoint_status",
+      "codey/operations/project_completion_flow.py:FunctionDef:_settle_blocked_completion",
+      "codey/operations/project_completion_flow.py:FunctionDef:_sync_failover_frame",
+      "codey/operations/project_completion_flow.py:FunctionDef:_writer_verification_candidates",
+      "codey/operations/project_completion_flow.py:FunctionDef:blocked_result",
+      "codey/operations/project_completion_flow.py:FunctionDef:handle_project_tool_event",
+      "codey/operations/project_completion_flow.py:FunctionDef:managed_tool_fns",
+      "codey/operations/project_completion_flow.py:FunctionDef:project_has_user_files",
+      "codey/operations/project_completion_flow.py:FunctionDef:record_analysis_run",
+      "codey/operations/project_completion_flow.py:FunctionDef:record_completion_proof_trace",
+      "codey/operations/project_completion_flow.py:FunctionDef:record_edit_integrity_trace",
+      "codey/operations/project_completion_flow.py:FunctionDef:record_review_input_prepared_trace",
+      "codey/operations/project_completion_flow.py:FunctionDef:safe_verification_map",
+      "codey/operations/research_flow.py:FunctionDef:run_hybrid_mode",
+      "codey/protocols/native_openai.py:Assign:_DEFAULT_LIMITS",
+      "codey/protocols/native_openai.py:Assign:__all__",
+      "codey/protocols/native_openai.py:ClassDef:NativeOpenAIToolCodec",
+      "codey/protocols/native_openai.py:ClassDef:NativeToolResultError",
+      "codey/protocols/native_openai.py:FunctionDef:build_native_codec_for_profile",
+      "codey/research/controller.py:Assign:CONTROLLER_ACTION_CONTRACTS",
+      "codey/research/controller.py:Assign:CONTROLLER_DISPLAY_LIMIT",
+      "codey/research/controller.py:Assign:FINAL_REPORT_SECTION_MARKERS",
+      "codey/research/controller.py:ClassDef:ControllerActionContract",
+      "codey/research/controller.py:ClassDef:OpenTarget",
+      "codey/research/controller.py:ClassDef:ResearchControlState",
+      "codey/research/controller.py:ClassDef:ResearchController",
+      "codey/research/controller.py:FunctionDef:_as_int",
+      "codey/research/controller.py:FunctionDef:_as_optional_int",
+      "codey/research/controller.py:FunctionDef:_clip",
+      "codey/research/controller.py:FunctionDef:_compile_open_hit_args",
+      "codey/research/controller.py:FunctionDef:_compile_open_result_args",
+      "codey/research/controller.py:FunctionDef:_compile_reopen_source_args",
+      "codey/research/controller.py:FunctionDef:_compile_source_search_args",
+      "codey/research/controller.py:FunctionDef:_controller_result_label",
+      "codey/research/controller.py:FunctionDef:_evidence_source_urls",
+      "codey/research/controller.py:FunctionDef:_finish_report_answer",
+      "codey/research/controller.py:FunctionDef:_finish_required",
+      "codey/research/controller.py:FunctionDef:_is_connector_source_url",
+      "codey/research/controller.py:FunctionDef:_looks_like_source_id",
+      "codey/research/controller.py:FunctionDef:_normalized_id",
+      "codey/research/controller.py:FunctionDef:_open_failed",
+      "codey/research/controller.py:FunctionDef:_priority_connector_result_ids",
+      "codey/research/controller.py:FunctionDef:_recent_unique_rows",
+      "codey/research/controller.py:FunctionDef:_result_line",
+      "codey/research/controller.py:FunctionDef:_result_url_key",
+      "codey/research/controller.py:FunctionDef:_rewrite_evidence",
+      "codey/research/controller.py:FunctionDef:_rewrite_evidence_item",
+      "codey/research/controller.py:FunctionDef:_rewrite_knowledge_write_args",
+      "codey/research/controller.py:FunctionDef:_rewrite_sources",
+      "codey/research/controller.py:FunctionDef:_source_line",
+      "codey/research/controller.py:FunctionDef:_stable_id",
+      "codey/research/controller.py:FunctionDef:_tool_examples",
+      "codey/research/controller.py:FunctionDef:compile_controller_action",
+      "codey/research/controller.py:FunctionDef:controller_action_contract_hash",
+      "codey/research/controller.py:FunctionDef:controller_action_names",
+      "codey/research/controller.py:FunctionDef:controller_system_prompt",
+      "codey/research/controller.py:FunctionDef:controller_tool_example",
+      "codey/research/controller.py:FunctionDef:controller_tool_name",
+      "codey/research/controller.py:FunctionDef:format_controller_results",
+      "codey/research/controller.py:FunctionDef:render_control_block",
+      "codey/research/controller.py:FunctionDef:render_controller_action_contract_text",
+      "codey/research/evidence_followup.py:Assign:_ALLOWED_KNOWLEDGE_WRITE_ARGS",
+      "codey/research/evidence_followup.py:Assign:_DEFAULT_CONTEXT_CHARS",
+      "codey/research/evidence_followup.py:Assign:_DONE_NO_RELEVANT_MATERIAL_RE",
+      "codey/research/evidence_followup.py:Assign:_MAX_CONTEXT_CHARS",
+      "codey/research/evidence_followup.py:Assign:_MIN_CONTEXT_CHARS",
+      "codey/research/evidence_followup.py:Assign:_SOURCE_ID_FORBIDDEN_RE",
+      "codey/research/evidence_followup.py:Assign:__all__",
+      "codey/research/evidence_followup.py:ClassDef:EvidenceFollowupController",
+      "codey/research/evidence_followup.py:ClassDef:EvidenceFollowupResult",
+      "codey/research/evidence_followup.py:ClassDef:_FollowupAttempt",
+      "codey/research/evidence_followup.py:FunctionDef:_check_evidence_allowlist",
+      "codey/research/evidence_followup.py:FunctionDef:_check_single_evidence_item",
+      "codey/research/evidence_followup.py:FunctionDef:_check_single_source",
+      "codey/research/evidence_followup.py:FunctionDef:_check_source_allowlist",
+      "codey/research/evidence_followup.py:FunctionDef:_context_char_limit",
+      "codey/research/evidence_followup.py:FunctionDef:_done_reports_no_relevant_material",
+      "codey/research/evidence_followup.py:FunctionDef:_evaluate_followup_reply",
+      "codey/research/evidence_followup.py:FunctionDef:_extract_evidence_items",
+      "codey/research/evidence_followup.py:FunctionDef:_extract_source_list",
+      "codey/research/evidence_followup.py:FunctionDef:_prepend_errors",
+      "codey/research/evidence_followup.py:FunctionDef:_reject_bad_note_type",
+      "codey/research/evidence_followup.py:FunctionDef:_reject_extra_write_args",
+      "codey/research/evidence_followup.py:FunctionDef:_reject_forbidden_tool",
+      "codey/research/evidence_followup.py:FunctionDef:build_evidence_followup_prompt",
+      "codey/research/evidence_followup.py:FunctionDef:build_evidence_followup_repair_prompt",
+      "codey/research/evidence_followup.py:FunctionDef:run_evidence_followup",
+      "codey/research/native_bridge.py:Assign:_RESEARCH_ATTEMPT_WINDOW",
+      "codey/research/native_bridge.py:Assign:__all__",
+      "codey/research/native_bridge.py:FunctionDef:answer_native_protocol_error",
+      "codey/research/native_bridge.py:FunctionDef:maybe_prefetch_native_turn",
+      "codey/research/native_bridge.py:FunctionDef:native_research_tools",
+      "codey/research/native_bridge.py:FunctionDef:next_message",
+      "codey/research/native_bridge.py:FunctionDef:record_and_check_cycle",
+      "codey/research/native_bridge.py:FunctionDef:send_native_tool_results",
+      "codey/research/native_bridge.py:FunctionDef:send_provider_structured",
+      "codey/research/native_bridge.py:FunctionDef:take_pending_or_send",
+      "codey/research/native_bridge.py:FunctionDef:turn_text",
+      "codey/research/native_bridge.py:FunctionDef:use_native_provider",
+      "codey/research/protocols.py:Assign:MAX_CALLS_PER_TURN",
+      "codey/research/protocols.py:Assign:MAX_NATIVE_CALLS_PER_TURN",
+      "codey/research/protocols.py:Assign:_EXACT_TOOL_OBJECT_KEYS",
+      "codey/research/protocols.py:Assign:_RESEARCH_DISCIPLINE_BASE",
+      "codey/research/protocols.py:Assign:_RESEARCH_EFFICIENT",
+      "codey/research/protocols.py:Assign:_RESEARCH_NOTE_TYPES",
+      "codey/research/protocols.py:ClassDef:JsonToolCodec",
+      "codey/research/protocols.py:ClassDef:NativeToolResultError",
+      "codey/research/protocols.py:ClassDef:ProtocolCodec",
+      "codey/research/protocols.py:FunctionDef:_hard_boundary",
+      "codey/research/protocols.py:FunctionDef:_known_tool_names",
+      "codey/research/protocols.py:FunctionDef:_research_body",
+      "codey/research/protocols.py:FunctionDef:_result_label",
+      "codey/research/protocols.py:FunctionDef:_system_prompt",
+      "codey/research/protocols.py:FunctionDef:_tool_names",
+      "codey/research/protocols.py:FunctionDef:exact_json_object",
+      "codey/research/protocols.py:FunctionDef:exact_tool_object_error",
+      "codey/research/protocols.py:FunctionDef:extract_json_objects",
+      "codey/research/runner.py:Assign:COMPLETION_EXTENSION_TURNS",
+      "codey/research/runner.py:Assign:DEFAULT_MAX_TURNS",
+      "codey/research/runner.py:Assign:MAX_EFFECTIVE_TURNS",
+      "codey/research/runner.py:Assign:MAX_IDLE_TURNS",
+      "codey/research/runner.py:Assign:MAX_PROTOCOL_ERRORS",
+      "codey/research/runner.py:Assign:PROVIDER_SEND_POLL_INTERVAL",
+      "codey/research/runner.py:Assign:RECENT_CONTEXT_LIMIT",
+      "codey/research/runner.py:Assign:_ACTIVITY",
+      "codey/research/runner.py:ClassDef:ResearchRunResult",
+      "codey/research/runner.py:ClassDef:ResearchRunner",
+      "codey/research/runner.py:ClassDef:_DoneReview",
+      "codey/research/runner.py:ClassDef:_DoneStep",
+      "codey/research/runner.py:ClassDef:_IdleStep",
+      "codey/research/runner.py:ClassDef:_ProtocolStep",
+      "codey/research/runner.py:ClassDef:_RunPreparation",
+      "codey/research/runner.py:ClassDef:_ToolCallStep",
+      "codey/research/runner.py:FunctionDef:_advisor_followup_prompt",
+      "codey/research/runner.py:FunctionDef:_allowed_research_tools",
+      "codey/research/runner.py:FunctionDef:_bounded_open_questions",
+      "codey/research/runner.py:FunctionDef:_chat_handoff_context",
+      "codey/research/runner.py:FunctionDef:_disallowed_tool_from_error",
+      "codey/research/runner.py:FunctionDef:_evidence_locator",
+      "codey/research/runner.py:FunctionDef:_has_completion_material",
+      "codey/research/runner.py:FunctionDef:_iteration_context",
+      "codey/research/runner.py:FunctionDef:_ledger_appendix",
+      "codey/research/runner.py:FunctionDef:_maybe_extend_completion_turns",
+      "codey/research/runner.py:FunctionDef:_opened_source_presentation",
+      "codey/research/runner.py:FunctionDef:_outcome_model_text",
+      "codey/research/runner.py:FunctionDef:_plan_note",
+      "codey/research/runner.py:FunctionDef:_quality_review_followup",
+      "codey/research/runner.py:FunctionDef:_recent_context",
+      "codey/research/runner.py:FunctionDef:_run_concept_tags",
+      "codey/research/runner.py:FunctionDef:_source_meta",
+      "codey/research/runner.py:FunctionDef:_synthesis_body",
+      "codey/research/runner.py:FunctionDef:_synthesis_title",
+      "codey/research/runner.py:FunctionDef:_tool_from_protocol_error",
+      "codey/research/runner.py:FunctionDef:_tool_results",
+      "codey/research/runner.py:FunctionDef:first_text_arg",
+      "codey/research/runner.py:FunctionDef:render_research_repair_prompt",
+      "codey/toolchain/registry.py:Assign:DEFAULT_REGISTRY",
+      "codey/toolchain/registry.py:Assign:__all__",
+      "codey/toolchain/registry.py:ClassDef:ToolRegistry",
+      "codey/toolchain/registry.py:ClassDef:ToolRegistrySnapshot"
+    ],
+    "added_declarations": [
+      "codey/app/api.py:Assign:_KNOWN_ENTRY_GRANTS",
+      "codey/app/api.py:Assign:_WEB_TASK_MARKERS",
+      "codey/app/api.py:ClassDef:EntryAuth",
+      "codey/app/api.py:FunctionDef:derive_entry_auth",
+      "codey/completion/contract.py:Assign:_EXTRA_COMPLETION_DOMAINS",
+      "codey/completion/contract.py:FunctionDef:completion_domains",
+      "codey/completion/contract.py:FunctionDef:register_completion_domain",
+      "codey/completion/verification_policy.py:Assign:UNITTEST_DISCOVER_FLAGS",
+      "codey/operations/completion_gate.py:Assign:CheckProvider",
+      "codey/operations/completion_gate.py:Assign:_PROVIDERS",
+      "codey/operations/completion_gate.py:Assign:__all__",
+      "codey/operations/completion_gate.py:ClassDef:GateVerdict",
+      "codey/operations/completion_gate.py:FunctionDef:_append_session_check",
+      "codey/operations/completion_gate.py:FunctionDef:_coding_checks",
+      "codey/operations/completion_gate.py:FunctionDef:_domain_for_session",
+      "codey/operations/completion_gate.py:FunctionDef:_engine_checks",
+      "codey/operations/completion_gate.py:FunctionDef:_evaluate_inner",
+      "codey/operations/completion_gate.py:FunctionDef:_evidence_with_session_facts",
+      "codey/operations/completion_gate.py:FunctionDef:_evidence_workspace_identity",
+      "codey/operations/completion_gate.py:FunctionDef:_finalize_research_text",
+      "codey/operations/completion_gate.py:FunctionDef:_ledger_checks",
+      "codey/operations/completion_gate.py:FunctionDef:_ledger_citable_urls",
+      "codey/operations/completion_gate.py:FunctionDef:_required_checks_verdict",
+      "codey/operations/completion_gate.py:FunctionDef:_research_checks",
+      "codey/operations/completion_gate.py:FunctionDef:_session_check_covers_candidate",
+      "codey/operations/completion_gate.py:FunctionDef:_session_identity_matches",
+      "codey/operations/completion_gate.py:FunctionDef:_session_latest_verification",
+      "codey/operations/completion_gate.py:FunctionDef:_session_profile",
+      "codey/operations/completion_gate.py:FunctionDef:_session_scope_files",
+      "codey/operations/completion_gate.py:FunctionDef:_synthesize_changes",
+      "codey/operations/completion_gate.py:FunctionDef:_synthesize_selected_check",
+      "codey/operations/completion_gate.py:FunctionDef:_task_requires_modification",
+      "codey/operations/completion_gate.py:FunctionDef:_verification_exit_code",
+      "codey/operations/completion_gate.py:FunctionDef:_verification_identity_matches",
+      "codey/operations/completion_gate.py:FunctionDef:_verification_targets_latest_edit",
+      "codey/operations/completion_gate.py:FunctionDef:evaluate",
+      "codey/operations/completion_gate.py:FunctionDef:make_check",
+      "codey/operations/completion_gate.py:FunctionDef:register_completion_check_provider",
+      "codey/operations/completion_gate.py:FunctionDef:unregister_completion_check_provider",
+      "codey/operations/evidence_followup.py:Assign:__all__",
+      "codey/operations/evidence_followup.py:FunctionDef:run_evidence_followup",
+      "codey/operations/kernel_errors.py:Assign:__all__",
+      "codey/operations/kernel_errors.py:ClassDef:EffectSettlementFailed",
+      "codey/operations/kernel_errors.py:ClassDef:RecoveryFailed",
+      "codey/operations/kernel_events.py:Assign:__all__",
+      "codey/operations/kernel_events.py:FunctionDef:_emit_tool_projection_failure",
+      "codey/operations/kernel_events.py:FunctionDef:_emit_tool_results",
+      "codey/operations/kernel_events.py:FunctionDef:_emit_tool_starts",
+      "codey/operations/kernel_events.py:FunctionDef:_emit_turn_event",
+      "codey/operations/kernel_events.py:FunctionDef:_event_call",
+      "codey/operations/kernel_execution.py:Assign:__all__",
+      "codey/operations/kernel_execution.py:FunctionDef:_begin_pending_intents",
+      "codey/operations/kernel_execution.py:FunctionDef:_build_delegate",
+      "codey/operations/kernel_execution.py:FunctionDef:_execute_slots",
+      "codey/operations/kernel_execution.py:FunctionDef:_explicit_policy_denial",
+      "codey/operations/kernel_execution.py:FunctionDef:_precheck_abort",
+      "codey/operations/kernel_execution.py:FunctionDef:_reconcile_guarded_slot",
+      "codey/operations/kernel_execution.py:FunctionDef:_run_via_delegate_or_fn",
+      "codey/operations/kernel_execution.py:FunctionDef:_settle_delivered_slot",
+      "codey/operations/kernel_execution.py:FunctionDef:_settle_edit_with_workspace_bump",
+      "codey/operations/kernel_execution.py:FunctionDef:_settle_slot",
+      "codey/operations/kernel_execution.py:FunctionDef:_turn_setup",
+      "codey/operations/kernel_execution.py:FunctionDef:execute_turn",
+      "codey/operations/kernel_execution.py:FunctionDef:run_ref",
+      "codey/operations/kernel_facts.py:Assign:__all__",
+      "codey/operations/kernel_facts.py:FunctionDef:_record_edit_fact",
+      "codey/operations/kernel_facts.py:FunctionDef:_record_knowledge_fact",
+      "codey/operations/kernel_facts.py:FunctionDef:_record_open_fact",
+      "codey/operations/kernel_facts.py:FunctionDef:_record_read_fact",
+      "codey/operations/kernel_facts.py:FunctionDef:_record_run_verification",
+      "codey/operations/kernel_facts.py:FunctionDef:_record_search_results",
+      "codey/operations/kernel_facts.py:FunctionDef:_search_result_rows",
+      "codey/operations/kernel_facts.py:FunctionDef:record_facts_for_result",
+      "codey/operations/kernel_progress.py:ClassDef:KernelProgress",
+      "codey/operations/kernel_prompt.py:Assign:__all__",
+      "codey/operations/kernel_prompt.py:Assign:logger",
+      "codey/operations/kernel_prompt.py:FunctionDef:_coding_context_for_session",
+      "codey/operations/kernel_prompt.py:FunctionDef:_format_results",
+      "codey/operations/kernel_prompt.py:FunctionDef:_repair_prompt",
+      "codey/operations/kernel_prompt.py:FunctionDef:_result_context",
+      "codey/operations/kernel_prompt.py:FunctionDef:_snapshot_names",
+      "codey/operations/kernel_prompt.py:FunctionDef:kernel_prompt_for_session",
+      "codey/operations/kernel_protocol.py:Assign:MAX_NATIVE_CALLS_PER_TURN",
+      "codey/operations/kernel_protocol.py:Assign:_CONTROLLER_ALIASES",
+      "codey/operations/kernel_protocol.py:Assign:__all__",
+      "codey/operations/kernel_protocol.py:ClassDef:TurnSnapshot",
+      "codey/operations/kernel_protocol.py:FunctionDef:_canonical_name",
+      "codey/operations/kernel_protocol.py:FunctionDef:_controller_allows",
+      "codey/operations/kernel_protocol.py:FunctionDef:_disallowed_plan",
+      "codey/operations/kernel_protocol.py:FunctionDef:_expand_text_batch",
+      "codey/operations/kernel_protocol.py:FunctionDef:_extract_json_objects",
+      "codey/operations/kernel_protocol.py:FunctionDef:_grant_for_tool",
+      "codey/operations/kernel_protocol.py:FunctionDef:_invalid_plan",
+      "codey/operations/kernel_protocol.py:FunctionDef:_is_coding_only_tool",
+      "codey/operations/kernel_protocol.py:FunctionDef:_lower_text_batches",
+      "codey/operations/kernel_protocol.py:FunctionDef:_native_tools_for_policy",
+      "codey/operations/kernel_protocol.py:FunctionDef:_plan_from_tool_objects",
+      "codey/operations/kernel_protocol.py:FunctionDef:_policy_allows",
+      "codey/operations/kernel_protocol.py:FunctionDef:_tool_and_args",
+      "codey/operations/kernel_protocol.py:FunctionDef:_validate_coding_args",
+      "codey/operations/kernel_protocol.py:FunctionDef:_validate_research_args",
+      "codey/operations/kernel_protocol.py:FunctionDef:_validate_tool_args",
+      "codey/operations/kernel_protocol.py:FunctionDef:build_turn_snapshot",
+      "codey/operations/kernel_protocol.py:FunctionDef:controller_allowed_for_session",
+      "codey/operations/kernel_protocol.py:FunctionDef:normalize_turn",
+      "codey/operations/kernel_provenance.py:Assign:_EVENT_PROOF_ATTR",
+      "codey/operations/kernel_provenance.py:Assign:_EXECUTOR_STRIPPED_AUDIT_KEYS",
+      "codey/operations/kernel_provenance.py:Assign:_KERNEL_WORKSPACE_ATTR",
+      "codey/operations/kernel_provenance.py:Assign:_TRUSTED_PROOF_CAPABILITY",
+      "codey/operations/kernel_provenance.py:Assign:_TRUSTED_PROOF_SOURCES",
+      "codey/operations/kernel_provenance.py:Assign:__all__",
+      "codey/operations/kernel_provenance.py:ClassDef:TrustedWorkspaceProof",
+      "codey/operations/kernel_provenance.py:FunctionDef:_disk_workspace_fingerprint",
+      "codey/operations/kernel_provenance.py:FunctionDef:_is_trusted_identity",
+      "codey/operations/kernel_provenance.py:FunctionDef:_kernel_workspace_identity_of",
+      "codey/operations/kernel_provenance.py:FunctionDef:_session_workspace_identity",
+      "codey/operations/kernel_provenance.py:FunctionDef:_sync_workspace_after_edit",
+      "codey/operations/kernel_provenance.py:FunctionDef:_trusted_workspace_proof",
+      "codey/operations/kernel_provenance.py:FunctionDef:_validated_trusted_proof",
+      "codey/operations/kernel_provenance.py:FunctionDef:_with_trusted_workspace_state",
+      "codey/operations/kernel_provenance.py:FunctionDef:attach_proof_to_event",
+      "codey/operations/kernel_provenance.py:FunctionDef:attach_trusted_workspace",
+      "codey/operations/kernel_provenance.py:FunctionDef:event_proof",
+      "codey/operations/kernel_provenance.py:FunctionDef:sync_workspace_state_after_edit",
+      "codey/operations/kernel_provenance.py:FunctionDef:with_trusted_workspace_state",
+      "codey/operations/kernel_recovery.py:Assign:__all__",
+      "codey/operations/kernel_recovery.py:ClassDef:RecoveryCheckResult",
+      "codey/operations/kernel_recovery.py:ClassDef:RecoverySlotResult",
+      "codey/operations/kernel_recovery.py:FunctionDef:_batch_aborted_results",
+      "codey/operations/kernel_recovery.py:FunctionDef:_batch_recovery_failed_results",
+      "codey/operations/kernel_recovery.py:FunctionDef:_check_batch_recovery",
+      "codey/operations/kernel_recovery.py:FunctionDef:_guarded_slot_result",
+      "codey/operations/kernel_recovery.py:FunctionDef:_is_recovery_error_text",
+      "codey/operations/kernel_recovery.py:FunctionDef:_is_recovery_failed_text",
+      "codey/operations/kernel_recovery.py:FunctionDef:_is_recovery_mismatch_text",
+      "codey/operations/kernel_recovery.py:FunctionDef:_is_unsafe_tool",
+      "codey/operations/kernel_recovery.py:FunctionDef:_recovery_failed_result",
+      "codey/operations/kernel_recovery.py:FunctionDef:_recovery_mismatch_result",
+      "codey/operations/kernel_recovery.py:FunctionDef:_replay_memory_slot",
+      "codey/operations/kernel_recovery.py:FunctionDef:_replay_persisted_unsafe_slot",
+      "codey/operations/kernel_recovery.py:FunctionDef:_same_effect_call",
+      "codey/operations/kernel_recovery.py:FunctionDef:_skip_unsettled",
+      "codey/operations/kernel_recovery.py:FunctionDef:apply_recovery_first",
+      "codey/operations/kernel_recovery.py:FunctionDef:delivered_slot_typed",
+      "codey/operations/kernel_recovery.py:FunctionDef:replay_slot_typed",
+      "codey/operations/kernel_recovery_context.py:Assign:__all__",
+      "codey/operations/kernel_recovery_context.py:ClassDef:RecoveryContext",
+      "codey/operations/kernel_recovery_context.py:FunctionDef:strict_receipt_bool",
+      "codey/operations/kernel_recovery_context.py:FunctionDef:strict_receipt_exit_code",
+      "codey/operations/kernel_recovery_context.py:FunctionDef:strict_receipt_text",
+      "codey/operations/kernel_recovery_context.py:FunctionDef:verified_persisted_identity",
+      "codey/operations/kernel_recovery_result.py:Assign:__all__",
+      "codey/operations/kernel_recovery_result.py:ClassDef:RecoveredResultSpec",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:_call_from_row_call",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:_row_text_fields",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:_strict_display_mapping",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:_strict_model_text",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:_strict_slot_index",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:_strict_truncated",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:build_recovered_result",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:build_recovery_error_result",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:build_recovery_mismatch_result",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:frame_outcome_exit_code",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:frame_outcome_ok",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:sanitize_recovery_audit",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:spec_from_delivered_result",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:spec_from_frame_row",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:spec_from_memory_result",
+      "codey/operations/kernel_recovery_result.py:FunctionDef:spec_from_persisted_record",
+      "codey/operations/kernel_result.py:Assign:__all__",
+      "codey/operations/kernel_result.py:FunctionDef:_call_args_digest",
+      "codey/operations/kernel_result.py:FunctionDef:_consistent_tool_result",
+      "codey/operations/kernel_result.py:FunctionDef:_error_result",
+      "codey/operations/kernel_result.py:FunctionDef:_normalize_audit_exit_code",
+      "codey/operations/kernel_result.py:FunctionDef:_normalize_delegate_result",
+      "codey/operations/kernel_result.py:FunctionDef:_normalize_explicit_result",
+      "codey/operations/kernel_result.py:FunctionDef:_result_ok",
+      "codey/operations/kernel_result.py:FunctionDef:_strip_executor_workspace_audit",
+      "codey/operations/kernel_result.py:FunctionDef:build_recovered_tool_result",
+      "codey/operations/kernel_result.py:FunctionDef:result_ok",
+      "codey/operations/kernel_result.py:FunctionDef:strict_exit_code_or_none",
+      "codey/operations/kernel_transport.py:Assign:__all__",
+      "codey/operations/kernel_transport.py:ClassDef:NativeBudgetExhausted",
+      "codey/operations/kernel_transport.py:FunctionDef:_drain_native_budget",
+      "codey/operations/kernel_transport.py:FunctionDef:_explicit_reply_normalizer",
+      "codey/operations/kernel_transport.py:FunctionDef:_native_tool_messages",
+      "codey/operations/kernel_transport.py:FunctionDef:_take_answered_reply",
+      "codey/operations/kernel_transport.py:FunctionDef:call_provider_send",
+      "codey/operations/kernel_transport.py:FunctionDef:call_provider_send_results",
+      "codey/operations/kernel_transport.py:FunctionDef:call_provider_send_turn",
+      "codey/operations/kernel_transport.py:FunctionDef:close_native_reply",
+      "codey/operations/kernel_transport.py:FunctionDef:normalize_provider_reply",
+      "codey/operations/kernel_transport.py:FunctionDef:provider_uses_native",
+      "codey/operations/kernel_transport.py:FunctionDef:repair_native_dangling",
+      "codey/operations/kernel_transport.py:FunctionDef:send_kernel_reply",
+      "codey/operations/project_adapter.py:Assign:__all__",
+      "codey/operations/project_adapter.py:ClassDef:_ConversationProvider",
+      "codey/operations/project_adapter.py:FunctionDef:_open_fresh_chat",
+      "codey/operations/project_adapter.py:FunctionDef:_project_context",
+      "codey/operations/project_adapter.py:FunctionDef:_recovered_result_for_row",
+      "codey/operations/project_adapter.py:FunctionDef:_require_write_permission",
+      "codey/operations/project_adapter.py:FunctionDef:_session_checks_passed",
+      "codey/operations/project_adapter.py:FunctionDef:_task_kind_and_policy",
+      "codey/operations/project_adapter.py:FunctionDef:_wrap_provider_with_sink",
+      "codey/operations/project_adapter.py:FunctionDef:run",
+      "codey/operations/project_completion_context.py:Assign:COMPLETION_REPAIR_FOLLOWUP",
+      "codey/operations/project_completion_context.py:Assign:MAX_COMPLETION_REPAIR_ROUNDS",
+      "codey/operations/project_completion_context.py:Assign:NEW_PROJECT_IGNORED_DIRS",
+      "codey/operations/project_completion_context.py:Assign:NEW_PROJECT_IGNORED_FILES",
+      "codey/operations/project_completion_context.py:Assign:__all__",
+      "codey/operations/project_completion_context.py:ClassDef:AgentAccess",
+      "codey/operations/project_completion_context.py:ClassDef:PersistenceAccess",
+      "codey/operations/project_completion_context.py:ClassDef:ProjectCompletionDeps",
+      "codey/operations/project_completion_context.py:ClassDef:ProjectRun",
+      "codey/operations/project_completion_context.py:ClassDef:ProjectRuntimeMutationError",
+      "codey/operations/project_completion_context.py:ClassDef:ReviewAccess",
+      "codey/operations/project_completion_context.py:ClassDef:RuntimeAccess",
+      "codey/operations/project_completion_context.py:ClassDef:VerificationAccess",
+      "codey/operations/project_completion_context.py:FunctionDef:_bullet_lines",
+      "codey/operations/project_completion_context.py:FunctionDef:_default_is_git_repository",
+      "codey/operations/project_completion_context.py:FunctionDef:blocked_result",
+      "codey/operations/project_completion_context.py:FunctionDef:commit_runtime_operation",
+      "codey/operations/project_completion_context.py:FunctionDef:handle_project_tool_event",
+      "codey/operations/project_completion_context.py:FunctionDef:managed_tool_fns",
+      "codey/operations/project_completion_context.py:FunctionDef:project_has_user_files",
+      "codey/operations/project_completion_context.py:FunctionDef:record_analysis_run",
+      "codey/operations/project_completion_context.py:FunctionDef:record_completion_proof_trace",
+      "codey/operations/project_completion_context.py:FunctionDef:record_edit_integrity_trace",
+      "codey/operations/project_completion_context.py:FunctionDef:record_review_input_prepared_trace",
+      "codey/operations/project_completion_context.py:FunctionDef:refresh_checkpoint_view",
+      "codey/operations/project_completion_context.py:FunctionDef:safe_verification_map",
+      "codey/operations/project_completion_enforcement.py:Assign:__all__",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_apply_completion_verdict",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_apply_repair_result",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_commit_operation_proof",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_completion_evidence",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_enforce_completion",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_enforcement_scope",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_maybe_run_completion_repair",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_prepare_completion_enforcement",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_record_completion_evidence",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:_settle_blocked_completion",
+      "codey/operations/project_completion_enforcement.py:FunctionDef:enforce_completion",
+      "codey/operations/project_review_phase.py:Assign:__all__",
+      "codey/operations/project_review_phase.py:FunctionDef:_build_review_verification_map",
+      "codey/operations/project_review_phase.py:FunctionDef:_close_writer_for_review",
+      "codey/operations/project_review_phase.py:FunctionDef:_emit_review_unavailable",
+      "codey/operations/project_review_phase.py:FunctionDef:_refresh_review_project_map",
+      "codey/operations/project_review_phase.py:FunctionDef:_render_review_change_brief",
+      "codey/operations/project_review_phase.py:FunctionDef:_repair_writer",
+      "codey/operations/project_review_phase.py:FunctionDef:_review_cycle_phase",
+      "codey/operations/project_review_phase.py:FunctionDef:_run_review_with_trace",
+      "codey/operations/project_review_phase.py:FunctionDef:_set_checkpoint_status",
+      "codey/operations/project_review_phase.py:FunctionDef:run_review_phase",
+      "codey/operations/project_verification.py:FunctionDef:refresh_verification_candidates",
+      "codey/operations/project_writer_phase.py:Assign:__all__",
+      "codey/operations/project_writer_phase.py:FunctionDef:_build_writer_failover",
+      "codey/operations/project_writer_phase.py:FunctionDef:_capture_writer_failure",
+      "codey/operations/project_writer_phase.py:FunctionDef:_clear_provider_session",
+      "codey/operations/project_writer_phase.py:FunctionDef:_close_provider",
+      "codey/operations/project_writer_phase.py:FunctionDef:_maybe_consult_consensus_after_writer",
+      "codey/operations/project_writer_phase.py:FunctionDef:_needs_no_canary",
+      "codey/operations/project_writer_phase.py:FunctionDef:_on_writer_event",
+      "codey/operations/project_writer_phase.py:FunctionDef:_on_writer_switch",
+      "codey/operations/project_writer_phase.py:FunctionDef:_record_no_success",
+      "codey/operations/project_writer_phase.py:FunctionDef:_run_one_writer_attempt",
+      "codey/operations/project_writer_phase.py:FunctionDef:_run_writer_canary",
+      "codey/operations/project_writer_phase.py:FunctionDef:_run_writer_phase",
+      "codey/operations/project_writer_phase.py:FunctionDef:_select_next_writer",
+      "codey/operations/project_writer_phase.py:FunctionDef:_sync_failover_frame",
+      "codey/operations/project_writer_phase.py:FunctionDef:_writer_verification_candidates",
+      "codey/operations/project_writer_phase.py:FunctionDef:run_writer_phase",
+      "codey/operations/recovery.py:FunctionDef:delivered_from_frame",
+      "codey/operations/recovery.py:FunctionDef:rebuilt_policy_from_log",
+      "codey/operations/recovery.py:FunctionDef:record_entry_policy",
+      "codey/operations/research_iteration.py:Assign:__all__",
+      "codey/operations/research_iteration.py:ClassDef:ResearchIteration",
+      "codey/operations/research_iteration.py:ClassDef:ResearchToolOutcome",
+      "codey/operations/research_iteration.py:FunctionDef:_persist_synthesis",
+      "codey/operations/research_iteration.py:FunctionDef:render_research_repair_prompt",
+      "codey/operations/research_iteration.py:FunctionDef:run_research_iteration",
+      "codey/operations/task_effects.py:Assign:__all__",
+      "codey/operations/task_effects.py:ClassDef:KernelEffectSink",
+      "codey/operations/task_effects.py:ClassDef:KernelRecordedProvider",
+      "codey/operations/task_effects.py:FunctionDef:_runtime_name",
+      "codey/operations/task_entry.py:Assign:_TASK_KINDS",
+      "codey/operations/task_entry.py:FunctionDef:_build_research_tools",
+      "codey/operations/task_entry.py:FunctionDef:_create_entry_session",
+      "codey/operations/task_entry.py:FunctionDef:_decide_auto",
+      "codey/operations/task_entry.py:FunctionDef:_direct_answer_outcome",
+      "codey/operations/task_entry.py:FunctionDef:_enrich_hybrid_outcome",
+      "codey/operations/task_entry.py:FunctionDef:_entry_apply_auto",
+      "codey/operations/task_entry.py:FunctionDef:_entry_check_conflict",
+      "codey/operations/task_entry.py:FunctionDef:_entry_executors",
+      "codey/operations/task_entry.py:FunctionDef:_entry_policy_with_recovery",
+      "codey/operations/task_entry.py:FunctionDef:_entry_provider_sink",
+      "codey/operations/task_entry.py:FunctionDef:_entry_recovery",
+      "codey/operations/task_entry.py:FunctionDef:_replay_recovered_facts",
+      "codey/operations/task_entry.py:FunctionDef:_sort_recovered_rows",
+      "codey/operations/task_entry.py:FunctionDef:_task_kind",
+      "codey/operations/task_entry.py:FunctionDef:_validate_recovered_rows",
+      "codey/operations/task_entry.py:FunctionDef:build_task_policy_for_entry",
+      "codey/operations/task_entry.py:FunctionDef:run_entry_kernel",
+      "codey/operations/task_entry.py:FunctionDef:run_task_mode",
+      "codey/operations/task_execution.py:Assign:__all__",
+      "codey/operations/task_execution.py:ClassDef:ExecutionDelegate",
+      "codey/operations/task_execution.py:FunctionDef:_is_ok_text",
+      "codey/operations/task_execution.py:FunctionDef:_tool_result",
+      "codey/operations/task_execution.py:FunctionDef:build_research_tools",
+      "codey/operations/task_execution.py:FunctionDef:effective_project_profile",
+      "codey/operations/task_loop.py:Assign:__all__",
+      "codey/operations/task_loop.py:ClassDef:KernelResult",
+      "codey/operations/task_loop.py:FunctionDef:_advance_after_results",
+      "codey/operations/task_loop.py:FunctionDef:_approval_stop",
+      "codey/operations/task_loop.py:FunctionDef:_call_execute_turn",
+      "codey/operations/task_loop.py:FunctionDef:_cancel_after_send",
+      "codey/operations/task_loop.py:FunctionDef:_finish_after_budget",
+      "codey/operations/task_loop.py:FunctionDef:_handle_done_reply",
+      "codey/operations/task_loop.py:FunctionDef:_is_native_provider",
+      "codey/operations/task_loop.py:FunctionDef:_kernel_handle_done_approval",
+      "codey/operations/task_loop.py:FunctionDef:_kernel_handle_protocol",
+      "codey/operations/task_loop.py:FunctionDef:_kernel_startup",
+      "codey/operations/task_loop.py:FunctionDef:_outer_evidence_for_context",
+      "codey/operations/task_loop.py:FunctionDef:_provider_failure",
+      "codey/operations/task_loop.py:FunctionDef:_rebuild_turn_snapshot",
+      "codey/operations/task_loop.py:FunctionDef:_snapshot_for_turn_state",
+      "codey/operations/task_loop.py:FunctionDef:_stop_no_progress",
+      "codey/operations/task_loop.py:FunctionDef:_stop_requested",
+      "codey/operations/task_loop.py:FunctionDef:run_task_kernel",
+      "codey/operations/task_phases/hooks.py:FunctionDef:_adopt_kernel_workspace_state",
+      "codey/operations/task_run.py:FunctionDef:requires_project_writer_lease",
+      "codey/operations/task_session.py:Assign:__all__",
+      "codey/operations/task_session.py:ClassDef:TaskSession",
+      "codey/operations/task_session.py:FunctionDef:_strict_evidence_list",
+      "codey/operations/task_session.py:FunctionDef:_strict_hit_targets",
+      "codey/operations/task_session.py:FunctionDef:_strict_text_list",
+      "codey/operations/task_session.py:FunctionDef:_strict_text_mapping",
+      "codey/operations/task_session.py:FunctionDef:_validate_restored_receipts",
+      "codey/operations/task_session.py:FunctionDef:turn_effect_id",
+      "codey/policies/task_policy.py:Assign:CODING_TOOL_GRANTS",
+      "codey/policies/task_policy.py:Assign:KNOWN_TASK_GRANTS",
+      "codey/policies/task_policy.py:Assign:RESEARCH_TOOL_GRANTS",
+      "codey/policies/task_policy.py:Assign:STRICT_RESEARCH_REQUIRED_CHECKS",
+      "codey/policies/task_policy.py:Assign:TASK_POLICY_VERSION",
+      "codey/policies/task_policy.py:Assign:__all__",
+      "codey/policies/task_policy.py:ClassDef:TaskPolicy",
+      "codey/policies/task_policy.py:FunctionDef:_alias_allowed",
+      "codey/policies/task_policy.py:FunctionDef:_has_project",
+      "codey/policies/task_policy.py:FunctionDef:_normalize_grant",
+      "codey/policies/task_policy.py:FunctionDef:_normalize_kind",
+      "codey/policies/task_policy.py:FunctionDef:_requested_grants",
+      "codey/policies/task_policy.py:FunctionDef:apply_auto_plan",
+      "codey/policies/task_policy.py:FunctionDef:build_task_policy",
+      "codey/policies/task_policy.py:FunctionDef:policy_for_dispatch",
+      "codey/policies/task_policy.py:FunctionDef:visible_research_tools",
+      "codey/protocols/json_scanner.py:FunctionDef:extract_json_objects",
+      "codey/providers/catalog.py:FunctionDef:display_provider_name",
+      "codey/providers/local_response_codec.py:Assign:_FRAME_PREFIX",
+      "codey/providers/local_response_codec.py:Assign:_FRAME_SUFFIX",
+      "codey/providers/local_response_codec.py:Assign:_TOOL_NAME_RE",
+      "codey/providers/local_response_codec.py:Assign:__all__",
+      "codey/providers/local_response_codec.py:FunctionDef:_literal_mapping",
+      "codey/providers/local_response_codec.py:FunctionDef:_quote_bare_keys",
+      "codey/providers/local_response_codec.py:FunctionDef:normalize_local_reply",
+      "codey/providers/local_response_codec.py:FunctionDef:parse_local_tool_markup",
+      "codey/providers/native_tools.py:Assign:__all__",
+      "codey/providers/native_tools.py:FunctionDef:supports_native_tools",
+      "codey/research/evidence_rules.py:Assign:_ALLOWED_KNOWLEDGE_WRITE_ARGS",
+      "codey/research/evidence_rules.py:Assign:_DEFAULT_CONTEXT_CHARS",
+      "codey/research/evidence_rules.py:Assign:_DONE_NO_RELEVANT_MATERIAL_RE",
+      "codey/research/evidence_rules.py:Assign:_MAX_CONTEXT_CHARS",
+      "codey/research/evidence_rules.py:Assign:_MIN_CONTEXT_CHARS",
+      "codey/research/evidence_rules.py:Assign:_SOURCE_ID_FORBIDDEN_RE",
+      "codey/research/evidence_rules.py:Assign:__all__",
+      "codey/research/evidence_rules.py:ClassDef:EvidenceFollowupController",
+      "codey/research/evidence_rules.py:ClassDef:EvidenceFollowupResult",
+      "codey/research/evidence_rules.py:FunctionDef:_check_evidence_allowlist",
+      "codey/research/evidence_rules.py:FunctionDef:_check_single_evidence_item",
+      "codey/research/evidence_rules.py:FunctionDef:_check_single_source",
+      "codey/research/evidence_rules.py:FunctionDef:_check_source_allowlist",
+      "codey/research/evidence_rules.py:FunctionDef:_context_char_limit",
+      "codey/research/evidence_rules.py:FunctionDef:_done_reports_no_relevant_material",
+      "codey/research/evidence_rules.py:FunctionDef:_extract_evidence_items",
+      "codey/research/evidence_rules.py:FunctionDef:_extract_source_list",
+      "codey/research/evidence_rules.py:FunctionDef:_reject_bad_note_type",
+      "codey/research/evidence_rules.py:FunctionDef:_reject_extra_write_args",
+      "codey/research/evidence_rules.py:FunctionDef:_reject_forbidden_tool",
+      "codey/research/evidence_rules.py:FunctionDef:build_evidence_followup_prompt",
+      "codey/research/evidence_rules.py:FunctionDef:build_evidence_followup_repair_prompt",
+      "codey/research/run_result.py:Assign:__all__",
+      "codey/research/run_result.py:ClassDef:ResearchRunResult",
+      "codey/research/synthesis.py:Assign:__all__",
+      "codey/research/synthesis.py:FunctionDef:_appendix_coverage",
+      "codey/research/synthesis.py:FunctionDef:_appendix_evidence",
+      "codey/research/synthesis.py:FunctionDef:_appendix_opened",
+      "codey/research/synthesis.py:FunctionDef:_evidence_locator",
+      "codey/research/synthesis.py:FunctionDef:_ledger_appendix",
+      "codey/research/synthesis.py:FunctionDef:_source_meta",
+      "codey/research/synthesis.py:FunctionDef:run_concept_tags",
+      "codey/research/synthesis.py:FunctionDef:synthesis_body",
+      "codey/research/synthesis.py:FunctionDef:synthesis_title",
+      "codey/research/text_args.py:Assign:__all__",
+      "codey/research/text_args.py:FunctionDef:first_text_arg",
+      "codey/runtime/core/operation_state.py:FunctionDef:_parse_task_policy",
+      "codey/runtime/core/run_result.py:Assign:__all__",
+      "codey/runtime/core/run_result.py:ClassDef:RunResult",
+      "codey/runtime/write/mutation_line.py:FunctionDef:_replace_task_policy",
+      "codey/task/model.py:FunctionDef:derive_project_changes_required",
+      "codey/toolchain/tool_spec.py:Assign:_CONTROLLER_ALIAS_ID_ARG",
+      "codey/toolchain/tool_spec.py:Assign:_CUSTOM_EXECUTORS",
+      "codey/toolchain/tool_spec.py:Assign:_NATIVE_TO_CANONICAL",
+      "codey/toolchain/tool_spec.py:Assign:_SPECS",
+      "codey/toolchain/tool_spec.py:Assign:_TEXT_BATCH_TOOLS",
+      "codey/toolchain/tool_spec.py:Assign:__all__",
+      "codey/toolchain/tool_spec.py:ClassDef:ToolSpec",
+      "codey/toolchain/tool_spec.py:FunctionDef:_all_specs",
+      "codey/toolchain/tool_spec.py:FunctionDef:_builtin_alias_allowed_keys",
+      "codey/toolchain/tool_spec.py:FunctionDef:_builtin_required_satisfied",
+      "codey/toolchain/tool_spec.py:FunctionDef:_check_array_value",
+      "codey/toolchain/tool_spec.py:FunctionDef:_check_boolean_value",
+      "codey/toolchain/tool_spec.py:FunctionDef:_check_integer_value",
+      "codey/toolchain/tool_spec.py:FunctionDef:_check_number_value",
+      "codey/toolchain/tool_spec.py:FunctionDef:_check_object_value",
+      "codey/toolchain/tool_spec.py:FunctionDef:_check_spec_value_against_schema",
+      "codey/toolchain/tool_spec.py:FunctionDef:_check_string_value",
+      "codey/toolchain/tool_spec.py:FunctionDef:_coding_specs",
+      "codey/toolchain/tool_spec.py:FunctionDef:_declared_map",
+      "codey/toolchain/tool_spec.py:FunctionDef:_is_research_tool",
+      "codey/toolchain/tool_spec.py:FunctionDef:_policy_allows",
+      "codey/toolchain/tool_spec.py:FunctionDef:_research_json_type",
+      "codey/toolchain/tool_spec.py:FunctionDef:_research_specs",
+      "codey/toolchain/tool_spec.py:FunctionDef:_schema_for_spec",
+      "codey/toolchain/tool_spec.py:FunctionDef:_spec_type_error",
+      "codey/toolchain/tool_spec.py:FunctionDef:_spec_want_and_minimum",
+      "codey/toolchain/tool_spec.py:FunctionDef:_validate_no_extra",
+      "codey/toolchain/tool_spec.py:FunctionDef:_validate_required_presence",
+      "codey/toolchain/tool_spec.py:FunctionDef:_validate_types",
+      "codey/toolchain/tool_spec.py:FunctionDef:canonical_tool_name",
+      "codey/toolchain/tool_spec.py:FunctionDef:custom_executor_for",
+      "codey/toolchain/tool_spec.py:FunctionDef:json_contract_text",
+      "codey/toolchain/tool_spec.py:FunctionDef:native_tools_for_policy",
+      "codey/toolchain/tool_spec.py:FunctionDef:native_tools_for_snapshot",
+      "codey/toolchain/tool_spec.py:FunctionDef:register_custom_executor",
+      "codey/toolchain/tool_spec.py:FunctionDef:register_custom_tool",
+      "codey/toolchain/tool_spec.py:FunctionDef:spec_for_tool",
+      "codey/toolchain/tool_spec.py:FunctionDef:tool_specs",
+      "codey/toolchain/tool_spec.py:FunctionDef:unregister_custom_tool",
+      "codey/toolchain/tool_spec.py:FunctionDef:validate_args_against_spec",
+      "codey/toolchain/tool_spec.py:FunctionDef:visible_tool_names",
+      "codey/toolchain/tool_spec.py:FunctionDef:visible_tool_names_for_snapshot",
+      "codey/utils/refs.py:FunctionDef:strict_exit_code",
+      "codey/utils/refs.py:FunctionDef:strict_run_success",
+      "codey/utils/refs.py:FunctionDef:strict_verification_success",
+      "codey/workspace/revision.py:ClassDef:WorkspaceIdentity"
+    ]
+  },
+  "boundaries": {
+    "schema": 1,
+    "removed_modules": {
+      "codey/agents/runner.py": {
+        "current_owners": [
+          "codey/operations/project_adapter.py",
+          "codey/operations/task_loop.py"
+        ],
+        "tests": [
+          "tests/test_kernel_parity_regressions.py",
+          "tests/test_task_entry_kernel_prod.py"
+        ]
+      },
+      "codey/agents/loop.py": {
+        "current_owners": [
+          "codey/operations/project_adapter.py",
+          "codey/operations/task_loop.py"
+        ],
+        "tests": [
+          "tests/test_kernel_parity_regressions.py",
+          "tests/test_task_entry_kernel_prod.py"
+        ]
+      },
+      "codey/agents/prompt_context.py": {
+        "current_owners": [
+          "codey/operations/kernel_prompt.py",
+          "codey/operations/project_adapter.py"
+        ],
+        "tests": [
+          "tests/test_agent_completion_repair_context.py",
+          "tests/test_native_overflow_is_provider_failure_without_retry.py"
+        ]
+      },
+      "codey/agents/tool_turn.py": {
+        "current_owners": [
+          "codey/operations/kernel_execution.py",
+          "codey/operations/task_execution.py"
+        ],
+        "tests": [
+          "tests/test_kernel_parity_regressions.py",
+          "tests/test_kernel_recovery_tristate.py"
+        ]
+      },
+      "codey/agents/result_delivery.py": {
+        "current_owners": [
+          "codey/operations/kernel_transport.py",
+          "codey/operations/task_effects.py"
+        ],
+        "tests": [
+          "tests/test_native_delivery.py",
+          "tests/test_kernel_recovery_failure.py"
+        ]
+      },
+      "codey/protocols/native_openai.py": {
+        "current_owners": [
+          "codey/operations/kernel_protocol.py",
+          "codey/toolchain/tool_spec.py"
+        ],
+        "tests": [
+          "tests/test_kernel_legacy_parity.py",
+          "tests/test_kernel_protocol_validator_failclosed.py"
+        ]
+      },
+      "codey/research/protocols.py": {
+        "current_owners": [
+          "codey/operations/kernel_protocol.py",
+          "codey/toolchain/tool_spec.py"
+        ],
+        "tests": [
+          "tests/test_kernel_legacy_parity.py",
+          "tests/test_kernel_protocol_validator_failclosed.py"
+        ]
+      },
+      "codey/research/runner.py": {
+        "current_owners": [
+          "codey/operations/research_iteration.py",
+          "codey/operations/task_loop.py"
+        ],
+        "tests": [
+          "tests/test_kernel_legacy_parity.py",
+          "tests/test_research_pipeline.py"
+        ]
+      },
+      "codey/research/controller.py": {
+        "current_owners": [
+          "codey/operations/kernel_protocol.py",
+          "codey/operations/task_session.py"
+        ],
+        "tests": [
+          "tests/test_kernel_round_stateflow.py",
+          "tests/test_research_controller.py"
+        ]
+      },
+      "codey/research/native_bridge.py": {
+        "current_owners": [
+          "codey/operations/kernel_transport.py",
+          "codey/operations/task_execution.py"
+        ],
+        "tests": [
+          "tests/test_native_delivery.py",
+          "tests/test_research_native_codec.py"
+        ]
+      },
+      "codey/research/evidence_followup.py": {
+        "current_owners": [
+          "codey/operations/evidence_followup.py"
+        ],
+        "tests": [
+          "tests/test_research_evidence_followup.py"
+        ]
+      },
+      "codey/toolchain/registry.py": {
+        "current_owners": [
+          "codey/toolchain/tool_spec.py",
+          "codey/policies/task_policy.py"
+        ],
+        "tests": [
+          "tests/test_task_kernel_unification.py",
+          "tests/test_kernel_legacy_parity.py"
+        ]
+      }
+    },
+    "entry_chains": {
+      "coding": [
+        "AgentRequest",
+        "project_adapter.run",
+        "TaskSession",
+        "run_task_kernel",
+        "normalize_turn",
+        "execute_turn",
+        "completion_gate.evaluate",
+        "RunResult"
+      ],
+      "research": [
+        "run_research_iteration",
+        "TaskSession",
+        "controller_allowed_for_session",
+        "run_task_kernel",
+        "normalize_turn",
+        "execute_turn",
+        "completion_gate.evaluate",
+        "_persist_synthesis"
+      ],
+      "durable": [
+        "KernelRecordedProvider",
+        "KernelEffectSink",
+        "kernel_recovery_context",
+        "kernel_recovery_result",
+        "TaskSession.to_payload/from_payload"
+      ]
+    },
+    "request_dispositions": {
+      "shared_protocol": [
+        "codec"
+      ],
+      "untrusted_prior_hints_not_proof": [
+        "verification_changed_files",
+        "verification_successful_checks"
+      ],
+      "adapter_and_kernel": [
+        "provider",
+        "project",
+        "task",
+        "max_turns",
+        "stagnant_turns",
+        "on_event",
+        "on_shell_request",
+        "stop_flag",
+        "fresh_chat",
+        "strict_fresh_chat",
+        "change_tracker",
+        "conversation",
+        "provider_id",
+        "handoff",
+        "project_facts",
+        "research_context",
+        "project_map",
+        "project_config_warnings",
+        "work_checkpoint",
+        "verification_candidates",
+        "verification_candidate_loader",
+        "coding_context_enabled",
+        "ghost_directive",
+        "ghost_continuity",
+        "ghost_experiences",
+        "completion_repair_context",
+        "completion_repair_context_payload",
+        "permission_profile",
+        "tool_fns",
+        "trace_recorder",
+        "session_id",
+        "run_id",
+        "runtime_mutations",
+        "tool_result_delivery",
+        "managed_outputs",
+        "recovered_tool_outcomes",
+        "recovered_tool_result_batch_id"
+      ]
+    },
+    "live_provider_limit": "Provider ids are inventoried; browser DOM/model response quality is outside the offline differential oracle. Existing adapter tests cover capability selection, explicit normalization and strict identity."
+  }
+}
