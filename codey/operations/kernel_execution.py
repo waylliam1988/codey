@@ -503,8 +503,8 @@ def _execute_slots(
         # Single settlement per effect: edits defer settlement until the
         # authoritative bump decides the final result.
         edit_done = _settle_edit_with_workspace_bump(
-            session, identity, call, name, result, ok, opened=opened,
-            evidence=evidence, exit_code=exit_code, project_path=project_path,
+            session, identity, call, name, result, ok,
+            exit_code=exit_code, project_path=project_path,
             execution_evidence=execution_evidence,
             workspace_ignored_paths=workspace_ignored_paths,
             workspace_revision_store=workspace_revision_store,
@@ -515,9 +515,7 @@ def _execute_slots(
                 workspace_unconfirmed = True
             continue
         settle(identity, call, result, ok=ok, exit_code=exit_code)
-        record_facts_for_result(
-            session, call, result, ok=ok, opened_url=opened, evidence_items=evidence, exit_code=exit_code
-        )
+        record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
         results.append(result)
     return results
 
@@ -530,8 +528,6 @@ def _settle_edit_with_workspace_bump(
     result: ToolResult,
     ok: bool,
     *,
-    opened: str,
-    evidence: list[dict[str, str]],
     exit_code: int | None,
     project_path: Any,
     execution_evidence: Any,
@@ -586,15 +582,7 @@ def _settle_edit_with_workspace_bump(
             results.append(failed)
             return "unconfirmed"
         settle(identity, call, trusted, ok=True)
-        record_facts_for_result(
-            session,
-            call,
-            trusted,
-            ok=True,
-            opened_url=opened,
-            evidence_items=evidence,
-            exit_code=exit_code,
-        )
+        record_facts_for_result(session, call, trusted, ok=True, exit_code=exit_code)
         results.append(trusted)
         return "trusted"
     if workspace_revision_store is not None:

@@ -17,7 +17,9 @@ from codey.completion.contract import (
     CompletionCheck,
     completion_check,
 )
-from codey.runtime.observe.execution_evidence import CheckEvidence
+from codey.completion.engine import CompletionEngine
+from codey.completion.verification_policy import VerificationCandidate
+from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvidence
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 
@@ -86,59 +88,6 @@ def _effective_verification_forbidden(session: Any) -> bool:
     return getattr(session, "verification_forbidden", False) is True
 
 
-def _fresh_verification_verdict(
-    session: Any,
-    verifications: list[Any],
-    scope: tuple[str, ...],
-    latest_revision: int,
-    session_fingerprint: str,
-    session_revision: int,
-) -> tuple[bool, bool]:
-    """Fresh verdict over the latest observation per (command, cwd).
-
-    Shares ``_latest_observations_by_key`` / ``_gap_for_latest_row`` with the
-    engine projection: the newest row per key is selected first, then
-    completeness, then success+identity. A latest row lacking a result or
-    identity never revives an older success for the same key.
-    """
-    latest_by_key = _latest_observations_by_key(verifications, latest_revision)
-    fresh_pass = False
-    fresh_fail = False
-    from codey.utils.refs import strict_exit_code
-
-    for item in latest_by_key.values():
-        command = str(item.get("command") or "").strip()
-        if _gap_for_latest_row(item, command):
-            # Incomplete latest blocks: never fall back to an older success.
-            fresh_fail = True
-            continue
-        try:
-            code = strict_exit_code(item.get("exit_code"))
-        except Exception:
-            code = None
-        valid = (
-            code is not None
-            and item.get("passed") is not False
-            and _session_check_covers_candidate(session, item, scope)
-            and _verification_identity_matches(item, session_fingerprint, session_revision)
-        )
-        if not valid or code != 0:
-            fresh_fail = True
-        elif code == 0:
-            fresh_pass = True
-    return fresh_pass, fresh_fail
-
-
-def _session_check_covers_candidate(session: Any, item: dict[str, Any], scope: tuple[str, ...]) -> bool:
-    selected = getattr(session, "selected_verification", None)
-    if selected is None:
-        return True
-    from codey.completion.verification_policy import check_covers_selected_candidate
-
-    return check_covers_selected_candidate(selected, str(item.get("command") or ""),
-        str(item.get("cwd") or "."), scope, root=getattr(session, "project", None) or None)
-
-
 def _session_scope_files(session: Any) -> tuple[str, ...]:
     try:
         edited = dict(getattr(session, "edited_files", {}) or {})
@@ -182,7 +131,32 @@ def _synthesize_changes(scope: tuple[str, ...], provided: Any) -> Any:
     }
 
 
-def _synthesize_selected_check(provided: Any, session: Any) -> Any:
+def _selected_equal(first: Any, second: Any) -> bool:
+    try:
+        return (
+            str(getattr(first, "command", "") or "").strip() == str(getattr(second, "command", "") or "").strip()
+            and str(getattr(first, "cwd", ".") or ".").strip() == str(getattr(second, "cwd", ".") or ".").strip()
+        )
+    except Exception:
+        return False
+
+
+def _resolve_selected_check(session: Any, context: Any) -> Any:
+    """One owner for the required verification candidate.
+
+    The session requirement wins; a context candidate only fills a missing
+    requirement. Two differing requirements block explicitly instead of
+    letting the latest run redefine what the task requires. With neither
+    requirement, the latest observation forms the default candidate with
+    its real command and cwd preserved.
+    """
+    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    provided = get("selected_check")
+    selected = getattr(session, "selected_verification", None)
+    if selected is not None and provided is not None and not _selected_equal(selected, provided):
+        raise ValueError("selected verification conflict: session and context disagree")
+    if selected is not None:
+        return selected
     if provided is not None:
         return provided
     latest = _session_latest_verification(session)
@@ -191,14 +165,29 @@ def _synthesize_selected_check(provided: Any, session: Any) -> Any:
     command = str(latest.get("command", "") or "").strip()
     if not command:
         return None
-    try:
-        from codey.completion.verification_policy import VerificationCandidate
-    except Exception:
+    cwd = str(latest.get("cwd", ".") or ".").strip() or "."
+    return VerificationCandidate(command=command[:240], cwd=cwd[:240], source="kernel_session")
+
+
+def _synthesize_selected_check(provided: Any, session: Any) -> Any:
+    # Compatibility alias: the model run never redefines the requirement.
+    if provided is not None:
+        selected = getattr(session, "selected_verification", None)
+        if selected is not None and not _selected_equal(selected, provided):
+            raise ValueError("selected verification conflict: session and context disagree")
+        return provided
+    latest = _session_latest_verification(session)
+    if latest is None:
+        selected = getattr(session, "selected_verification", None)
+        return selected
+    selected = getattr(session, "selected_verification", None)
+    if selected is not None:
+        return selected
+    command = str(latest.get("command", "") or "").strip()
+    if not command:
         return None
-    try:
-        return VerificationCandidate(command=command[:240], cwd=".", source="kernel_session")
-    except Exception:
-        return None
+    cwd = str(latest.get("cwd", ".") or ".").strip() or "."
+    return VerificationCandidate(command=command[:240], cwd=cwd[:240], source="kernel_session")
 
 
 def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tuple[str, ...]]:
@@ -327,45 +316,58 @@ def _is_projectable_row(row: dict[str, Any], command: str) -> bool:
     return _gap_for_latest_row(row, command) == ""
 
 
-def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
+def _normalized_scope_and_change(session: Any, context: Any) -> tuple[tuple[str, ...], bool]:
+    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    scope = tuple(get("scope_files") or ())
+    if not scope:
+        scope = _session_scope_files(session)
+    provided_changed = get("task_changed")
+    if provided_changed is None:
+        task_changed = bool(scope)
+    else:
+        try:
+            task_changed = bool(provided_changed) or bool(scope)
+        except Exception:
+            task_changed = bool(scope)
+    return scope, task_changed
+
+
+def _engine_checks(session: Any, context: Any) -> list[CompletionCheck]:
     get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
     provided = get("project_evaluation")
     if provided is not None:
         proof = provided.decision.proof
-        return list(proof.checks) if proof is not None else None
-    evidence = get("execution_evidence")
-    if evidence is None:
-        return None
-    if _effective_verification_forbidden(session):
-        row = completion_check(
-            "relevant_verification", CHECK_NOT_APPLICABLE, "verification_forbidden_by_request",
-        )
-        return [row] if row is not None else []
+        if proof is not None:
+            return list(proof.checks)
     try:
-        from codey.completion.engine import CompletionEngine
-    except Exception as exc:
-        row = completion_check("completion_engine", CHECK_NOT_RUN, f"engine_unavailable:{type(exc).__name__}")
-        return [row] if row is not None else []
-    try:
-        scope = tuple(get("scope_files") or ())
-        if not scope:
-            scope = _session_scope_files(session)
-        provided_changed = get("task_changed")
-        if provided_changed is None:
-            task_changed = bool(scope)
-        else:
-            try:
-                task_changed = bool(provided_changed) or bool(scope)
-            except Exception:
-                task_changed = bool(scope)
+        scope, task_changed = _normalized_scope_and_change(session, context)
+        # A failed candidate refresh leaves the requirement untrustworthy:
+        # block explicitly instead of falling back to the latest run.
+        if getattr(session, "verification_candidates_refresh_failed", False) is True:
+            row = completion_check(
+                "relevant_verification", CHECK_FAIL, "verification_candidates_refresh_failed",
+            )
+            return [row] if row is not None else []
+        # Modification is its own requirement: forbidding verification never
+        # excuses a missing edit, and review-trusted change facts arrive via
+        # scope_files/task_changed so a resumed green is not mis-rejected.
+        if _task_requires_modification(session) and not task_changed:
+            row = completion_check("project_changes_required", CHECK_FAIL, "project_changes_required")
+            return [row] if row is not None else []
+        if not scope and not task_changed:
+            row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE)
+            return [row] if row is not None else []
+        evidence = get("execution_evidence")
+        if evidence is None:
+            evidence = ExecutionEvidence(
+                workspace_revision=getattr(session, "workspace_revision", 0) or 0,
+                workspace_fingerprint=str(getattr(session, "workspace_fingerprint", "") or ""),
+            )
         changes = _synthesize_changes(scope, get("changes"))
-        selected = _synthesize_selected_check(get("selected_check"), session)
+        selected = _resolve_selected_check(session, context)
         # Single engine call over the complete projection: session facts fill
         # the gaps the unified production context does not carry, so the same
         # edit+fresh-pass passes with or without an evidence-only context.
-        # Old-version verification (stale revision) stays unobserved because
-        # _session_latest_verification only reflects the latest revision and
-        # the engine still requires freshness against the current scope.
         # An incomplete latest observation is an explicit projection gap:
         # block without consulting older success for the same check.
         effective_evidence, projection_gaps = _evidence_with_session_facts(evidence, session)
@@ -373,10 +375,6 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
             reason = str(projection_gaps[0] or "verification_identity_missing")
             row = completion_check("relevant_verification", CHECK_NOT_RUN, reason)
             return [row] if row is not None else []
-        # When there is no edited scope at all, fall back to the session
-        # checks (not_applicable) instead of forcing an engine_empty.
-        if not scope and not task_changed:
-            return None
         engine = CompletionEngine()
         result = engine.evaluate(
             run_id=str(get("run_id") or ""),
@@ -403,49 +401,12 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
 
 
 def project_completion_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
+    """Single verification decision for every caller.
+
+    Evidence presence only completes inputs; the rule is identical with or
+    without an evidence context. There is no second session-only verdict.
+    """
     _refresh_completion_workspace(session, context)
-    if context is not None:
-        real = _engine_checks(session, context)
-        if real is not None:
-            return real
-    edited = dict(getattr(session, "edited_files", {}) or {})
-    verifs = list(getattr(session, "verifications", ()) or [])
-    if not edited:
-        if _task_requires_modification(session):
-            row = completion_check("project_changes_required", CHECK_FAIL, "project_changes_required")
-            return [row] if row is not None else []
-        row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE)
-        return [row] if row is not None else []
-    if _effective_verification_forbidden(session):
-        row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE, "verification_forbidden_by_request")
-        return [row] if row is not None else []
-    exact_edits = [v for v in edited.values() if type(v) is int]
-    if not exact_edits:
-        row = completion_check("relevant_verification", CHECK_NOT_RUN, "verification_not_fresh")
-        return [row] if row is not None else []
-    latest = max(exact_edits)
-    sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
-    sess_rev_raw = getattr(session, "workspace_revision", 0)
-    sess_rev = sess_rev_raw if type(sess_rev_raw) is int else 0
-    # Same gap rule as the engine path: an incomplete latest observation
-    # blocks with its gap code instead of reviving an older success.
-    _gap_keys, _gaps = _projection_gaps_for_latest(
-        _latest_observations_by_key(verifs, latest),
-    )
-    if _gaps:
-        row = completion_check(
-            "relevant_verification", CHECK_NOT_RUN, str(_gaps[0] or "verification_result_missing"),
-        )
-        return [row] if row is not None else []
-    fresh_pass, fresh_fail = _fresh_verification_verdict(
-        session, verifs, tuple(edited), latest, sess_fp, sess_rev,
-    )
-    if fresh_pass and not fresh_fail:
-        row = completion_check("relevant_verification", CHECK_PASS)
-    elif fresh_fail:
-        row = completion_check("relevant_verification", CHECK_FAIL, "relevant_verification_failed")
-    else:
-        row = completion_check("relevant_verification", CHECK_NOT_RUN, "verification_not_fresh")
-    return [row] if row is not None else []
+    return _engine_checks(session, context)
 
 __all__ = ["project_completion_checks"]

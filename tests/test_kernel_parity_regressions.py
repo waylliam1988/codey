@@ -26,7 +26,18 @@ def replay():
                                  "loop/conversation", "loop/cancel-after-send", "loop/verification-forbidden",
                                  "loop/candidate-loader"])
 def test_real_loop_restores_legacy_behavior(replay, key):
+    import json
+    from pathlib import Path
+
+    from tools.kernel_parity import ROOT
+
     old, new = replay
+    if key in ("loop/conversation", "loop/verification-forbidden", "loop/candidate-loader"):
+        deltas = json.loads((ROOT / "tests/fixtures/kernel_parity/intentional_deltas.json").read_text(encoding="utf-8"))
+        assert key in deltas, f"intentional edit-alias deny must be reviewed for {key}"
+        assert new[key] == deltas[key]["after"]
+        assert old[key] == deltas[key]["before"]
+        return
     assert new[key] == old[key]
 
 
@@ -115,12 +126,21 @@ def test_unrelated_successful_check_cannot_satisfy_selected_candidate():
     from codey.operations.completion_gate import evaluate
     from codey.operations.task_session import TaskSession
 
+    fp = "sha256:" + "a" * 64
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.write"})))
     session.edited_files = {"a.py": 1}
-    session.selected_verification = VerificationCandidate("python -m pytest -q")
+    session.set_workspace_state(1, fp)
+    session.selected_verification = VerificationCandidate("python -m pytest -q", cwd=".", source="project")
     session.verifications = [{"command": "python -m compileall .", "cwd": ".", "revision": 1,
-                              "passed": True, "exit_code": 0}]
+                              "passed": True, "exit_code": 0,
+                              "workspace_revision": 1, "workspace_fingerprint": fp}]
     assert not evaluate(session, "finished").complete
+    # Success control: the specified check with the same identity must pass,
+    # proving the rejection above is replacement (not missing identity).
+    session.verifications = [{"command": "python -m pytest -q", "cwd": ".", "revision": 1,
+                              "passed": True, "exit_code": 0,
+                              "workspace_revision": 1, "workspace_fingerprint": fp}]
+    assert evaluate(session, "finished").complete
 
 
 @pytest.mark.parametrize("kind", ["project", "research"])

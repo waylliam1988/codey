@@ -43,7 +43,7 @@ from codey.runtime.core.run_result import RunResult
 from codey.storage.local_store import write_json_atomic
 from codey.task.model import TaskSubmission
 
-RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
+RESEARCH_ITERATION = "codey.operations.research_iteration.run_research_iteration"
 
 
 RESULTS_DIR = Path(__file__).with_name("results")

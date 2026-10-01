@@ -1,5 +1,51 @@
 # Codey Test Report
 
+## Single verification decision, real unknown observation, entry requirements, canonical source facts, exact redelivery, legacy alias removal, real soak completion (2026-10-01)
+
+Scope: unify the two completion verdicts, record unknown runs through the real
+toolchain, init entry requirements from the user task, gate direct answers,
+deliver native results across turn-start cancel, persist source facts in the
+receipt canonical, require exact-bool redelivery, remove legacy edit aliases
+and the research forwarding shim, and run soak completions through the real
+kernel with budgeted generation and closing replay contexts.
+Red-first: 13 new files failed before their fixes and pass after; no code was
+modified after the final full run; only this report and the changelogs were
+written after that run.
+
+### Behavior and test evidence
+
+| Boundary | Locked behavior | Regression files |
+| --- | --- | --- |
+| Real unknown blocks success | Success-then-unknown (`None`/`False`/`True`/`"0"`/`0.0`) records `passed=False` with no exit and blocks with/without evidence; unknown-then-new-success passes; denied calls never succeed | `tests/test_kernel_unknown_verification_invalidates_success.py` |
+| Missing exit reports failure | Missing structured exit is `ok=False` across record/event/UI/headless with no invented code | `tests/test_kernel_run_missing_exit_code_reports_failure.py`, `tests/test_kernel_explicit_executor_invalid_exit_code_projection.py`, `tests/test_delegate_run_bool_exit_code_rejected.py` |
+| Single verification decision | Specified `pytest` cannot be replaced by `compileall`; subdir `cwd` preserved; sibling `cwd` blocks; forbidden never excuses missing edits | `tests/test_completion_selected_verification_single_decision.py` |
+| Refresh failure blocks | Loader `OSError`/illegal preserves requirement, marks failed without epoch bump, blocks; recovery restores; legal empty distinct | `tests/test_verification_candidate_refresh_failure_blocks.py` |
+| Illegal provider rows block | `[None]`/`[legal,illegal]` yield `check_provider_error` FAIL | `tests/test_completion_provider_illegal_row_blocks.py` |
+| Entry requirements | Entry inits `verification_forbidden` from `request.task`; `model_hint` never flips it; adapter shares the function | `tests/test_entry_session_task_requirements_init.py` |
+| Direct answers gated | Sources-open/changes/strict-research block bare answers; plain greeting completes; entry failure continues to kernel | `tests/test_auto_direct_answer_respects_completion_gate.py` |
+| Between-turns delivery | Pending native results drain exactly once on turn-start cancel; delivery failure is `provider_failure` | `tests/test_kernel_native_cancel_between_turns_delivers.py` |
+| Canonical source facts | `hit_targets`/`opened_url`/`evidence_items` in `canonical`; live and recovery share one applier; conflicts raise; no re-network | `tests/test_source_search_hit_targets_persist_in_canonical.py` |
+| Exact redelivery | Non-bool `redelivered` raises `RecoveryFailed`; `True` redelivers, `False` stays safe-replay | `tests/test_recovered_redelivered_requires_exact_bool.py` |
+| Legacy aliases rejected | `old_string`/`new_string`/top-level `search`/`replace` rejected in validation and execution for JSON and native | `tests/test_edit_rejects_legacy_aliases_before_execution.py` |
+| Real log recovery | Real `RuntimeSessionLog` legal/unknown/>20/native-id replay; illegal identity never validates | `tests/test_session_log_receipt_recovery_preserves_facts.py` |
+| Replay closes context | `replay_script` closes on success and on `SoakFailure` | `tests/test_stress_replay_closes_browser_context.py` |
+| Real soak completion | `read→edit→run→done` through `run_task_kernel` with real adapters; budgeted generation; normalized view replay | `tests/stress/test_scheduler_completion_step_produces_real_view.py`, `tests/stress/scheduler.py` |
+
+### Actual runs
+
+- Targeted new red-first regression (13 files + stress view): **73 passed**.
+- Targeted related completion/restore/legacy-parity/research: **741 passed**.
+- Final full command: `python -m pytest tests/ -q --ignore=tests/stress --ignore=tests/test_ui_browser_e2e.py -p no:cacheprovider` **6142 passed, 9 skipped, 1492 subtests passed in 289.73s (0:04:49)**, zero failures in a single run.
+- Final stress command: `python -m pytest tests/stress/ -q -p no:cacheprovider` **94 passed in 80.55s (0:01:20)**, zero failures.
+- Final prechecks: `python -m ruff check codey/operations/kernel_facts.py codey/operations/project_completion_checks.py codey/operations/task_entry.py codey/operations/task_execution.py codey/operations/kernel_result.py codey/operations/kernel_recovery_result.py codey/operations/auto_loop.py codey/operations/task_loop.py codey/agents/request.py codey/operations/project_verification.py codey/operations/completion_gate.py`, `python -m pytest tests/test_architecture.py -q`: passed.
+
+### Limits and follow-ups
+
+- Intentional parity deltas for legacy `old_string`/`new_string` rejection (4 protocol + 9 loop) are recorded in `tests/fixtures/kernel_parity/intentional_deltas.json` with reason, tests, and `CHANGELOG.md`.
+- `TaskSession.to_payload/from_payload` behaviors are now covered by real-log tests, but the methods remain for existing test setup; full removal needs migrating the remaining `from_payload` fixtures and will be done as a follow-up to avoid a second full run here.
+- The 9 skips are Windows/symlink privilege/POSIX-contract limitations. No live web-model/native API benchmark was run.
+- Proof is via bounded state-sequence tests, the independent oracle, and fault injection, not a whole-program correctness proof.
+
 ## Unknown-latest block, exact-int restore, single exemption, real scheduler completion, exact schema/revision (2026-10-01)
 
 Scope: close the unknown-latest direct-path revival, the save/restore

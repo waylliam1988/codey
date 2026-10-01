@@ -48,11 +48,18 @@ def test_explicit_source_executor_does_not_use_project_only_guard():
 
 
 def test_false_verification_flag_cannot_be_overridden_by_exit_zero():
-    from codey.operations.project_completion_checks import _fresh_verification_verdict
+    from codey.operations.completion_gate import evaluate
 
-    session = TaskSession(policy=TaskPolicy(grants=frozenset()))
-    row = {"revision":1, "exit_code":0, "passed":False, "command":"pytest", "cwd":"."}
-    assert _fresh_verification_verdict(session, [row], ("a.py",), 1, "", 0) == (False, True)
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.write"})))
+    session.edited_files = {"a.py": 1}
+    fp = "sha256:" + "c" * 64
+    session.set_workspace_state(1, fp)
+    session.verifications = [{
+        "revision": 1, "exit_code": 0, "passed": False,
+        "command": "pytest", "cwd": ".",
+        "workspace_revision": 1, "workspace_fingerprint": fp,
+    }]
+    assert evaluate(session, "done", context=None).complete is False
 
 
 def test_synthesis_identity_does_not_collide_after_sanitizing_run_ids():

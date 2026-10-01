@@ -2,6 +2,111 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Single verification decision, real unknown observation, entry requirements, canonical source facts, exact redelivery, legacy alias removal, real soak completion (no release)
+
+- TDD red-first locks (13 new files, all failed before, pass after):
+  `test_kernel_unknown_verification_invalidates_success` (real `run_task_kernel`
+  success-then-unknown with `None`/`False`/`True`/`"0"`/`0.0` records `passed=False`
+  with no `exit_code` and blocks with/without evidence; unknown-then-new-success
+  passes; denied calls never become success),
+  `test_kernel_run_missing_exit_code_reports_failure` (missing exit reports
+  `ok=False` across record/event/UI/headless with no invented code),
+  `test_completion_selected_verification_single_decision` (specified `pytest`
+  cannot be replaced by `compileall` on both paths; subdir `cwd` preserved;
+  sibling `cwd` mismatch blocks; `verification_forbidden` never excuses missing
+  edits),
+  `test_verification_candidate_refresh_failure_blocks` (loader `OSError`/illegal
+  preserves the known requirement, marks refresh failed without bumping epoch,
+  blocks completion; recovery restores; legal empty distinct),
+  `test_completion_provider_illegal_row_blocks` (`[None]`/`[legal,illegal]`
+  produce `check_provider_error` FAIL instead of silent drop),
+  `test_entry_session_task_requirements_init` (entry inits
+  `verification_forbidden` from `request.task` via `task_forbids_verification`;
+  `model_hint` never flips it; adapter shares the same function and never
+  overwrites a shared session),
+  `test_auto_direct_answer_respects_completion_gate` (direct answers gate on
+  sources-open/changes/strict-research; plain greeting still completes),
+  `test_kernel_native_cancel_between_turns_delivers` (between-turns cancel
+  drains pending native results exactly once; delivery failure is
+  `provider_failure`),
+  `test_source_search_hit_targets_persist_in_canonical`
+  (`source_search`/`open_hit`/`knowledge_write` facts live in
+  `ToolResult.canonical`; live and recovery share `record_facts_for_result`;
+  same-id-same-target replays, same-id-different-target raises; no re-network),
+  `test_recovered_redelivered_requires_exact_bool` (`"false"`/`"true"`/`0`/`1`/
+  `None`/`[]`/`{}` raise `RecoveryFailed`; `True` redelivers without
+  re-execution; `False` stays safe-replay),
+  `test_edit_rejects_legacy_aliases_before_execution`
+  (`old_string`/`new_string`/top-level `search`/`replace` rejected in validation
+  and execution before any write for JSON and native; canonical
+  `search`/`replace` still edits),
+  `test_session_log_receipt_recovery_preserves_facts` (real `RuntimeSessionLog`
+  legal/unknown/>20/native-id replay; illegal identity never validates),
+  `test_stress_replay_closes_browser_context` (`replay_script` closes on
+  success and on `SoakFailure`).
+- P1 real unknown observation: `_record_run_verification` no longer drops
+  missing exits; every executed `run` records `passed=(ok and code==0)` with no
+  invented code; `record_facts_for_result` has one `run` path reading only the
+  kernel side-channel (never executor audit, never borrowed resume identity);
+  `_result_ok` for `run` without a structured exit is `False`;
+  `_normalize_delegate_result` fails closed when both exits are missing; UI/event
+  projections follow the receipt (`ok=False`, no `exit_code`).
+- P1 single verification decision: `_resolve_selected_check` keeps the session
+  requirement, fills only a missing requirement from context, raises on conflict
+  instead of letting the latest run redefine the task, and preserves real `cwd`;
+  `_engine_checks` is the only decision (constructs `ExecutionEvidence` when
+  missing, enforces `project_changes_required` before any forbidden exemption,
+  blocks on `verification_candidates_refresh_failed`, surfaces projection gaps,
+  fails closed as `engine_error` with no import fallback); `project_completion_checks`
+  delegates to it; `_fresh_verification_verdict`/`_session_check_covers_candidate`
+  and the engine-None fallback are removed.
+- P1 candidate refresh: `refresh_verification_candidates` validates loader output
+  (`VerificationCandidate` with non-empty command), preserves known candidates on
+  `OSError`/`TypeError`/`ValueError` without bumping epoch, tracks
+  `verification_candidates_refresh_failed`, clears on success; legal `()` stays
+  distinct from failure.
+- P1 entry requirements and auto gate: `_create_entry_session` inits
+  `verification_forbidden` from `request.task` via `task_forbids_verification`
+  (never `execution_task`/`model_hint`); `project_adapter` uses the same function
+  and preserves a shared session; `project_writer_phase` drops the unconsumed
+  `verification_forbidden` context key; `_direct_answer_outcome` and
+  `auto_loop._finish_auto_answer` gate direct answers (`blocked` when requirements
+  miss, `done` for plain greetings); entry direct failure falls through to the
+  shared kernel instead of claiming `done`.
+- P1 between-turns native delivery: `_stop_at_turn_start` drains pending native
+  tool messages (real results exactly once) and closes dangling replies as
+  not-executed; failures are `provider_failure`, never a clean close; budget and
+  no-progress paths share the same bounded drain.
+- P1 canonical source facts: `source_search` builds its hit text+mapping without
+  touching the session and stores `hit_targets`/`source_url` in `canonical`;
+  `open` stores `opened_url`/`request_url`; `knowledge_write` stores bounded
+  `evidence_items`; `record_facts_for_result` is the sole applier (same-id
+  idempotent, same-id-different-target raises; `open_hit` resolves via
+  `hit_targets`); the `opened_url`/`evidence_items` side-channels are removed.
+- P2 exact redelivery: `spec_for_recovered_row` requires `type(redelivered) is bool`
+  (`RecoveryFailed: redelivered must be a boolean` otherwise).
+- Cleanup (cold-start, no compat): `RecoveredToolOutcome.workspace_identity`
+  removed (provenance is `workspace_proof` only); edit accepts only
+  `replacements=[{search,replace}]` plus `content` for new files with a normal
+  `EditBlock` import (no alias fallback); `research_flow.run_research_iteration`
+  forwarding removed (callers use `research_iteration.run_research_iteration`
+  or the `run_iteration` injection; tests patch the canonical path);
+  `replay_script` and generation tests close `SoakContext` in `finally`.
+- P2 real soak completion: `_exec_completion_produce` runs
+  `read_file→edit→run→done` through `run_task_kernel` with default adapters on a
+  tiny real project (`py_compile` pass, `pytest` fail, unknown strips the exit at
+  the executor boundary); oracle views come from the kernel session/verdict
+  1:1; generation is budgeted to 8 real completions; `replay_script` returns
+  `completion_views`; the replay test compares normalized command/cwd/result/
+  identity/checks/completed instead of counts.
+- Intentional parity deltas (legacy `old_string`/`new_string` now rejected):
+  4 protocol `edit/example-*` plus 9 loop cases
+  (`read-edit-check-done`, `read-edit-no-check`, `verification-forbidden`,
+  `verification-requested`, `trusted-candidate`, `candidate-loader`,
+  `failed-check`, `failed-read-does-not-unlock-edit`, `conversation`) record
+  `before`/`after` with reason, tests, and `CHANGELOG.md`; `parity_regressions`
+  asserts the three loop keys against the reviewed `after`.
+
 ## Unreleased - Unknown-latest block, restore exact-int, single exemption source, real scheduler completion, exact schema/revision (no release)
 
 - TDD red-first locks (6 new files, all failed before, pass after):

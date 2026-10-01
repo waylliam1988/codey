@@ -339,6 +339,19 @@ def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def _validate_coding_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    if str(tool or "").strip().lower() == "edit" and isinstance(args, dict):
+        for legacy in ("old_string", "new_string"):
+            if legacy in args:
+                return {}, f"edit rejects legacy alias: {legacy}"
+            replacements = args.get("replacements")
+            if isinstance(replacements, list):
+                for item in replacements:
+                    if isinstance(item, dict) and legacy in item:
+                        return {}, f"edit rejects legacy alias: {legacy}"
+        # Top-level search/replace are not part of the canonical edit shape.
+        for legacy_top in ("search", "replace"):
+            if legacy_top in args:
+                return {}, f"edit rejects legacy alias: {legacy_top}"
     try:
         from codey.toolchain import definition as tool_defs
         from codey.toolchain.runtime import MAX_REPLACEMENTS, READ_MAX_LINES

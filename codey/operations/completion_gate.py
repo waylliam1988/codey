@@ -260,6 +260,10 @@ def _collect_provider_checks(session: Any, profile: str, checks: list[Completion
         for row in produced:
             if isinstance(row, CompletionCheck):
                 checks.append(row)
+            else:
+                illegal = completion_check(f"{key}_error", CHECK_FAIL, "check_provider_error")
+                if illegal is not None:
+                    checks.append(illegal)
 
 
 def _dedupe_checks(checks: list[CompletionCheck]) -> list[CompletionCheck]:

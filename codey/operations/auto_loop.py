@@ -275,10 +275,56 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
     return _finish_auto_answer(frame, state, prompt, strip_action_markers(raw))
 
 
+def _direct_gate_allows(request: Any, answer: str) -> bool:
+    """Common-gate check for a direct auto answer (no keyword guessing)."""
+    try:
+        from codey.agents.protocol import task_forbids_verification
+        from codey.operations.completion_gate import evaluate as gate_evaluate
+        from codey.operations.task_entry import build_task_policy_for_entry
+        from codey.operations.task_session import TaskSession
+
+        policy = build_task_policy_for_entry(request, "chat")
+        try:
+            forbidden = bool(task_forbids_verification(str(getattr(request, "task", "") or "")))
+        except Exception:
+            forbidden = False
+        session = TaskSession(
+            policy=policy,
+            task_kind="chat",
+            project=str(getattr(request, "project", "") or ""),
+            max_turns=max(1, int(getattr(request, "max_turns", 8) or 8)),
+            task_text=str(getattr(request, "task", "") or ""),
+            project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
+            verification_forbidden=forbidden,
+        )
+        context = {
+            "run_id": str(getattr(request, "run_id", "") or ""),
+            "task": str(getattr(request, "task", "") or ""),
+            "question": str(getattr(request, "task", "") or ""),
+            "project": str(getattr(request, "project", "") or ""),
+        }
+        return bool(gate_evaluate(session, answer, context=context).complete)
+    except Exception:
+        return False
+
+
 def _finish_auto_answer(frame: Any, state: Any, prompt: str, answer: str) -> ModeOutcome:
     """Record a direct auto answer exactly like a chat turn (no second call)."""
     request = frame.request
     reply = str(answer or "")
+    if not _direct_gate_allows(request, reply):
+        blocked = "Not done yet. Continue the task with the required tools or evidence."
+        return ModeOutcome({
+            "type": "task_done",
+            "run_id": frame.run_id,
+            "session_id": request.session_id,
+            "summary": blocked,
+            "stop_reason": "blocked",
+            "turns": 1,
+            "max_turns": request.max_turns,
+            "provider": frame.provider_id,
+            "mode": "chat",
+        })
     if frame.fresh_chat:
         frame.conversation.begin_window(frame.provider_id, "chat")
     with contextlib.suppress(Exception):

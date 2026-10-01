@@ -379,7 +379,7 @@ def _run_case(
                 ))
                 if not live:
                     stack.enter_context(mock.patch(
-                        "codey.operations.research_flow.run_research_iteration",
+                        "codey.operations.research_iteration.run_research_iteration",
                         side_effect=research_task,
                     ))
                 if not live and seeded_interest_candidates:

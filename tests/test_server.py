@@ -4422,7 +4422,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
-                "codey.operations.research_flow.run_research_iteration",
+                "codey.operations.research_iteration.run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
@@ -4591,7 +4591,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=[RuntimeError("tab unavailable"), provider],
             ) as get_provider,
             mock.patch(
-                "codey.operations.research_flow.run_research_iteration",
+                "codey.operations.research_iteration.run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
@@ -4627,7 +4627,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
-                "codey.operations.research_flow.run_research_iteration",
+                "codey.operations.research_iteration.run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):

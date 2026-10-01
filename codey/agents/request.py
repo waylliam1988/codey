@@ -41,10 +41,6 @@ class RecoveredToolOutcome:
     turn: int
     tool_index: int
     effect_id: str = ""
-    # Kernel-owned provenance payload beside display audit (WorkspaceIdentity,
-    # unverified until a durable check turns it into TrustedWorkspaceProof).
-    # Display ``outcome.audit`` workspace keys never confer trust.
-    workspace_identity: object | None = None
     # Only recovery's verified adapter can supply this kernel capability.
     workspace_proof: object | None = None
     # True only for settled-result redelivery (原结果重发，未重新执行）：

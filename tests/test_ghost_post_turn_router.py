@@ -17,7 +17,7 @@ from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes as collect_project_changes
 
-RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
+RESEARCH_ITERATION = "codey.operations.research_iteration.run_research_iteration"
 
 
 class _Provider:

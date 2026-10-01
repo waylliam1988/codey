@@ -428,8 +428,12 @@ def run_task_kernel(
     progress = KernelProgress(stagnant_turns)
     prev_contract: str = str(initial_contract or "")
     for turn in range(resume_start, max_turns + 1):
-        if _stop_requested(stop_flag):
-            return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
+        stopped = _stop_at_turn_start(
+            stop_flag, provider, pending_reply, pending_native_messages, native_tools,
+            turns_used, propagate_provider_failure=propagate_provider_failure,
+        )
+        if stopped is not None:
+            return stopped
         session.turn = turn
         turns_used = turn
         # First round reuses the startup snapshot (same session facts); later
@@ -556,6 +560,33 @@ def run_task_kernel(
         turns_used,
         propagate_provider_failure=propagate_provider_failure,
     )
+
+
+def _stop_at_turn_start(
+    stop_flag: Any, provider: Any, pending_reply: Any, pending_messages: Any, native_tools: Any,
+    turns_used: int, *, propagate_provider_failure: bool,
+) -> KernelResult | None:
+    """Turn-start stop: deliver pending native results, then report stopped.
+
+    Returns None to continue; otherwise the terminal result. Delivery
+    failures report provider_failure, never a clean close.
+    """
+    if not _stop_requested(stop_flag):
+        return None
+    if pending_messages:
+        try:
+            _transport._drain_native_budget(provider, pending_messages, native_tools)
+        except Exception as exc:
+            return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
+        return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
+    if pending_reply is not None and not isinstance(pending_reply, str):
+        try:
+            _transport.close_native_reply(
+                provider, pending_reply, native_tools, "task stopped; call not executed",
+            )
+        except Exception as exc:
+            return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
+    return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
 
 
 def _cancel_after_send(stop_flag, provider, reply, native, native_tools, turns_used, *, propagate):

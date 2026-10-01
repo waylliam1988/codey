@@ -3177,11 +3177,12 @@
   "loop/read-edit-no-check": {
     "status": "INTENTIONAL_DENY",
     "category": "fresh-verification",
-    "reason": "A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored.",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution. A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored.",
     "tests": [
       "tests/test_task_kernel_remaining.py",
       "tests/test_kernel_parity_regressions.py",
-      "tests/test_kernel_legacy_parity.py"
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py"
     ],
     "changelog": "CHANGELOG.md",
     "before": {
@@ -3229,7 +3230,7 @@
     "after": {
       "error": "",
       "files": {
-        "a.py": "x = 3\n",
+        "a.py": "x = 1\n",
         "b.py": "y = 2\n"
       },
       "fresh": 1,
@@ -3248,31 +3249,15 @@
           ],
           "kwargs": {},
           "tool": "read_file"
-        },
-        {
-          "args": [
-            "a.py",
-            "[EditBlock(search='x = 1', replace='x = 3')]"
-          ],
-          "kwargs": {},
-          "tool": "edit_file"
-        },
-        {
-          "args": [
-            ".",
-            "python -m pytest -q"
-          ],
-          "kwargs": {},
-          "tool": "run_command"
         }
       ],
       "receipt_ids": [],
       "result": {
-        "changed": true,
-        "checks_passed": true,
-        "checks_ran": true,
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
         "stop_reason": "done",
-        "turns": 5
+        "turns": 3
       },
       "snapshot": null
     }
@@ -3280,11 +3265,12 @@
   "loop/failed-check": {
     "status": "INTENTIONAL_DENY",
     "category": "fresh-verification",
-    "reason": "A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored.",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution. A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored.",
     "tests": [
       "tests/test_task_kernel_remaining.py",
       "tests/test_kernel_parity_regressions.py",
-      "tests/test_kernel_legacy_parity.py"
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py"
     ],
     "changelog": "CHANGELOG.md",
     "before": {
@@ -3340,7 +3326,7 @@
     "after": {
       "error": "",
       "files": {
-        "a.py": "x = 3\n",
+        "a.py": "x = 1\n",
         "b.py": "y = 2\n"
       },
       "fresh": 1,
@@ -3362,14 +3348,6 @@
         },
         {
           "args": [
-            "a.py",
-            "[EditBlock(search='x = 1', replace='x = 3')]"
-          ],
-          "kwargs": {},
-          "tool": "edit_file"
-        },
-        {
-          "args": [
             ".",
             "python -m pytest -q"
           ],
@@ -3379,11 +3357,11 @@
       ],
       "receipt_ids": [],
       "result": {
-        "changed": true,
+        "changed": false,
         "checks_passed": false,
         "checks_ran": true,
-        "stop_reason": "max_turns",
-        "turns": 5
+        "stop_reason": "done",
+        "turns": 4
       },
       "snapshot": null
     }
@@ -4498,6 +4476,813 @@
       "operations": [],
       "receipt_ids": [],
       "result": null,
+      "snapshot": null
+    }
+  },
+  "protocol/coding/coding_writer/json/edit/example-1": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "app.py",
+            "replacements": [
+              {
+                "replace": "new text",
+                "search": "old exact text"
+              }
+            ]
+          },
+          "id": "",
+          "name": "edit"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/coding/coding_writer/native/edit/example-1": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "app.py",
+            "replacements": [
+              {
+                "replace": "new text",
+                "search": "old exact text"
+              }
+            ]
+          },
+          "id": "c1",
+          "name": "edit"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/coding/coding_writer/json/edit/example-2": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "app.py",
+            "replacements": [
+              {
+                "replace": "new1",
+                "search": "old1"
+              },
+              {
+                "replace": "new2",
+                "search": "old2"
+              }
+            ]
+          },
+          "id": "",
+          "name": "edit"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/coding/coding_writer/native/edit/example-2": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "app.py",
+            "replacements": [
+              {
+                "replace": "new1",
+                "search": "old1"
+              },
+              {
+                "replace": "new2",
+                "search": "old2"
+              }
+            ]
+          },
+          "id": "c1",
+          "name": "edit"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "loop/read-edit-check-done": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "error": "",
+      "files": {
+        "a.py": "x = 3\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        },
+        {
+          "args": [
+            "a.py",
+            "[EditBlock(search='x = 1', replace='x = 3')]"
+          ],
+          "kwargs": {},
+          "tool": "edit_file"
+        },
+        {
+          "args": [
+            ".",
+            "python -m pytest -q"
+          ],
+          "kwargs": {},
+          "tool": "run_command"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": true,
+        "checks_passed": true,
+        "checks_ran": true,
+        "stop_reason": "done",
+        "turns": 4
+      },
+      "snapshot": null
+    },
+    "after": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        },
+        {
+          "args": [
+            ".",
+            "python -m pytest -q"
+          ],
+          "kwargs": {},
+          "tool": "run_command"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": true,
+        "checks_ran": true,
+        "stop_reason": "done",
+        "turns": 4
+      },
+      "snapshot": null
+    }
+  },
+  "loop/verification-forbidden": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "error": "",
+      "files": {
+        "a.py": "x = 3\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        },
+        {
+          "args": [
+            "a.py",
+            "[EditBlock(search='x = 1', replace='x = 3')]"
+          ],
+          "kwargs": {},
+          "tool": "edit_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": true,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 3
+      },
+      "snapshot": null
+    },
+    "after": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 3
+      },
+      "snapshot": null
+    }
+  },
+  "loop/verification-requested": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "error": "",
+      "files": {
+        "a.py": "x = 3\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        },
+        {
+          "args": [
+            "a.py",
+            "[EditBlock(search='x = 1', replace='x = 3')]"
+          ],
+          "kwargs": {},
+          "tool": "edit_file"
+        },
+        {
+          "args": [
+            ".",
+            "python -m pytest -q"
+          ],
+          "kwargs": {},
+          "tool": "run_command"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": true,
+        "checks_passed": true,
+        "checks_ran": true,
+        "stop_reason": "done",
+        "turns": 5
+      },
+      "snapshot": null
+    },
+    "after": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 3
+      },
+      "snapshot": null
+    }
+  },
+  "loop/trusted-candidate": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "error": "",
+      "files": {
+        "a.py": "x = 3\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        },
+        {
+          "args": [
+            "a.py",
+            "[EditBlock(search='x = 1', replace='x = 3')]"
+          ],
+          "kwargs": {},
+          "tool": "edit_file"
+        },
+        {
+          "args": [
+            ".",
+            "python -m pytest -q"
+          ],
+          "kwargs": {},
+          "tool": "run_command"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": true,
+        "checks_passed": true,
+        "checks_ran": true,
+        "stop_reason": "done",
+        "turns": 5
+      },
+      "snapshot": null
+    },
+    "after": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 3
+      },
+      "snapshot": null
+    }
+  },
+  "loop/candidate-loader": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "error": "",
+      "files": {
+        "a.py": "x = 3\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        },
+        {
+          "args": [
+            "a.py",
+            "[EditBlock(search='x = 1', replace='x = 3')]"
+          ],
+          "kwargs": {},
+          "tool": "edit_file"
+        },
+        {
+          "args": [],
+          "kwargs": {},
+          "tool": "candidate_loader"
+        },
+        {
+          "args": [
+            ".",
+            "python -m pytest -q"
+          ],
+          "kwargs": {},
+          "tool": "run_command"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": true,
+        "checks_passed": true,
+        "checks_ran": true,
+        "stop_reason": "done",
+        "turns": 5
+      },
+      "snapshot": null
+    },
+    "after": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 3
+      },
+      "snapshot": null
+    }
+  },
+  "loop/conversation": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "error": "",
+      "files": {
+        "a.py": "x = 3\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        },
+        {
+          "args": [
+            "a.py",
+            "[EditBlock(search='x = 1', replace='x = 3')]"
+          ],
+          "kwargs": {},
+          "tool": "edit_file"
+        },
+        {
+          "args": [
+            ".",
+            "python -m pytest -q"
+          ],
+          "kwargs": {},
+          "tool": "run_command"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": true,
+        "checks_passed": true,
+        "checks_ran": true,
+        "stop_reason": "done",
+        "turns": 4
+      },
+      "snapshot": {
+        "changed_files": [
+          "a.py"
+        ],
+        "summary": "finished"
+      }
+    },
+    "after": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        },
+        {
+          "args": [
+            ".",
+            "python -m pytest -q"
+          ],
+          "kwargs": {},
+          "tool": "run_command"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": true,
+        "checks_ran": true,
+        "stop_reason": "done",
+        "turns": 4
+      },
+      "snapshot": {
+        "changed_files": [],
+        "summary": "finished"
+      }
+    }
+  },
+  "loop/failed-read-does-not-unlock-edit": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "missing.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "no_progress",
+        "turns": 2
+      },
+      "snapshot": null
+    },
+    "after": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        },
+        {
+          "args": [
+            "missing.py"
+          ],
+          "kwargs": {},
+          "tool": "read_file"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 3
+      },
       "snapshot": null
     }
   }

@@ -192,13 +192,15 @@ def run(request: AgentRequest) -> RunResult:
             verification_candidates=request.verification_candidates,
             verification_candidate_loader=request.verification_candidate_loader,
         )
+    shared = request.task_session is not None
     session.max_turns = request.max_turns
     session.handoff = request.handoff
     session.verification_candidates = request.verification_candidates
     session.verification_candidate_loader = request.verification_candidate_loader
-    from codey.agents.verification_driver import forbids_verification
+    if not shared:
+        from codey.agents.protocol import task_forbids_verification
 
-    session.verification_forbidden = forbids_verification(request.task)
+        session.verification_forbidden = bool(task_forbids_verification(str(getattr(request, "task", "") or "")))
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
     from codey.operations.kernel_errors import RecoveryFailed as _RecoveryFailed
 

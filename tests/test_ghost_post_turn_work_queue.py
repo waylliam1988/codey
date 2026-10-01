@@ -27,7 +27,7 @@ from codey.runtime.core import cancellation
 from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
 
-RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
+RESEARCH_ITERATION = "codey.operations.research_iteration.run_research_iteration"
 
 
 class _Provider:

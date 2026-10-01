@@ -93,14 +93,44 @@ def test_completion_failure_and_unknown_never_pass(tmp_path):
 
 
 def test_scheduler_generation_can_emit_completion(tmp_path):
-    world, scheduler, _ = _world_scheduler_ctx(tmp_path, seed=12345)
-    seen = False
-    for _ in range(2000):
-        step = scheduler.next_step(world)
-        if step.get("op") == COMPLETION_OP:
-            seen = True
-            break
-    assert seen, "soak generation never emitted a completion step in 2000 draws"
+    world, scheduler, ctx = _world_scheduler_ctx(tmp_path, seed=12345)
+    try:
+        seen = False
+        for _ in range(2000):
+            step = scheduler.next_step(world)
+            if step.get("op") == COMPLETION_OP:
+                seen = True
+                break
+        assert seen, "soak generation never emitted a completion step in 2000 draws"
+    finally:
+        ctx.close()
+
+
+def _normalize_completion_view(view: dict, *roots: object) -> dict:
+    import copy
+
+    normalized = copy.deepcopy(view)
+    # Compare the decisive completion facts only; temp paths never decide.
+    obs = []
+    for row in normalized.get("verification_observations", []) or []:
+        obs.append({
+            "command": row.get("command"),
+            "cwd": row.get("cwd"),
+            "passed": row.get("passed"),
+            "exit_code": row.get("exit_code"),
+            "revision": row.get("revision"),
+            "workspace_revision": row.get("workspace_revision"),
+        })
+    obs.sort(key=lambda r: (str(r["command"]), str(r["cwd"])))
+    return {
+        "completed": normalized.get("completed"),
+        "proof_checks": sorted(
+            (c.get("check_id"), c.get("status"))
+            for c in normalized.get("proof_checks", []) or []
+        ),
+        "verification_observations": obs,
+        "verification_identity_valid": normalized.get("verification_identity_valid"),
+    }
 
 
 def test_completion_script_replays_identically(tmp_path):
@@ -117,11 +147,15 @@ def test_completion_script_replays_identically(tmp_path):
         for step in script:
             execute_step(scheduler, world, ctx, step)
         assert len(ctx.completion_views) == 1
+        orig_view = _normalize_completion_view(ctx.completion_views[0], tmp_path / "orig")
     finally:
         ctx.close()
-    # Replay on a fresh home must rebuild the same single passing view path
-    # without raising (deterministic, counter-free inputs only).
+    # Replay on a fresh home must rebuild the same completion facts
+    # (command, cwd, result, identity, checks, completed), not just counts.
     replay_home = tmp_path / "replay-state"
     replay_home.mkdir(parents=True, exist_ok=True)
     result = replay_script(script, replay_home)
     assert result["counts"].get(COMPLETION_OP) == 1
+    assert len(result.get("completion_views", [])) == 1
+    replay_view = _normalize_completion_view(result["completion_views"][0], replay_home)
+    assert replay_view == orig_view

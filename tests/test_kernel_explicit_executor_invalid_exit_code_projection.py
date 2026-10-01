@@ -53,10 +53,9 @@ class ExplicitExecutorInvalidExitCodeProjectionTests(unittest.TestCase):
                 session.executed[identity].get("ok", True),
                 f"executed.ok must be False for exit {bad!r}: {session.executed[identity]!r}",
             )
-            self.assertEqual(
-                session.verifications, [],
-                f"invalid exit {bad!r} must record no verification",
-            )
+            self.assertEqual(len(session.verifications), 1)
+            self.assertFalse(session.verifications[-1]["passed"])
+            self.assertNotIn("exit_code", session.verifications[-1])
             events: list = []
             kev._emit_tool_results(
                 events.append, session, [result], run_id="r-exit-proj-1", turn=1

@@ -11,8 +11,13 @@ from codey.knowledge.research_interest import (
 )
 from codey.operations.context import RunFrame, RunHooks
 from codey.operations.evidence_followup import run_evidence_followup
-from codey.operations.research_iteration import run_research_iteration as _run_iteration_impl
 from codey.operations.result import ModeOutcome
+
+
+def _canonical_iteration(deps: Any, **kwargs: Any) -> Any:
+    from codey.operations.research_iteration import run_research_iteration as canonical
+
+    return canonical(deps, **kwargs)
 from codey.operations.task_state import TaskState
 from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS
@@ -149,42 +154,6 @@ def run_research_mode(
         "receipt": receipt,
         "research": research_payload(result, pipeline_result=pipeline_result),
     }, research_result=result, research_pipeline_result=pipeline_result)
-
-
-def run_research_iteration(
-    deps: ResearchFlowDeps,
-    *,
-    provider,
-    session_id: str,
-    project: str,
-    task: str,
-    max_turns: int,
-    on_event: Callable[[object], None],
-    stop_flag,
-    provider_id: str,
-    run_id: str,
-    chat_handoff: str,
-    trace_recorder,
-    search,
-    tools=None,
-    iteration_context: str = "",
-    topic_continuity_context: str = "",
-    topic_continuity_payload: dict[str, object] | None = None,
-    requested_capabilities: tuple[str, ...] = (),
-    task_policy: Any = None,
-) -> ResearchIterationRun:
-    return _run_iteration_impl(
-        deps,
-        provider=provider, session_id=session_id, project=project,
-        task=task, max_turns=max_turns, on_event=on_event,
-        stop_flag=stop_flag, provider_id=provider_id, run_id=run_id,
-        chat_handoff=chat_handoff, trace_recorder=trace_recorder,
-        search=search, tools=tools, iteration_context=iteration_context,
-        topic_continuity_context=topic_continuity_context,
-        topic_continuity_payload=topic_continuity_payload,
-        requested_capabilities=requested_capabilities,
-        task_policy=task_policy,
-    )
 
 
 def build_research_topic_continuity(
@@ -340,7 +309,7 @@ def run_research_pipeline(
         topic_continuity_context: str = "",
         topic_continuity_payload=None,
     ):
-        runner = run_iteration or (lambda **kwargs: run_research_iteration(deps, **kwargs))
+        runner = run_iteration or (lambda **kwargs: _canonical_iteration(deps, **kwargs))
         return runner(
             provider=frame.provider,
             session_id=request.session_id,
@@ -491,7 +460,6 @@ __all__ = [
     "record_research_proof_review_trace",
     "research_payload",
     "research_queue_item_title",
-    "run_research_iteration",
     "run_research_mode",
     "run_research_pipeline",
 ]

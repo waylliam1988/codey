@@ -317,7 +317,13 @@ class SoakScheduler:
         return None
 
     def _completion_step(self) -> dict:
-        """One deterministic real completion: read/edit/verify/done inputs frozen."""
+        """One deterministic real completion: read/edit/verify/done inputs frozen.
+
+        Budgeted: real subprocess verification runs at most 8 times per
+        scheduler so long soaks do not spawn unbounded toolchains.
+        """
+        if self._completion_seq >= 8:
+            return {"op": TICK, "delta": 1, "faults": []}
         self._completion_seq += 1
         seq = self._completion_seq
         outcome = self.faults.weighted(
@@ -651,18 +657,26 @@ def execute_step(scheduler: SoakScheduler, world: Any, ctx: SoakContext, step: d
 
 
 def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakContext, step: dict) -> None:
-    """Run one real read/edit/verify/done chain and record its gate view.
+    """Run one real read/edit/verify/done chain through the task kernel.
 
     Randomness-free: every input comes from ``step`` (seq/relpath/content/
-    outcome). The file is really written, the workspace fingerprint is really
-    computed, the gate really evaluates, and the view really goes through the
-    truthfulness oracle. ``pass`` must complete; ``fail``/``unknown`` must not.
+    outcome). A deterministic fake web model emits read_file -> edit ->
+    run -> done; reading/editing use the default project adapters on a tiny
+    real project, verification runs a real whitelisted command, and unknown
+    is injected only at the executor return boundary (never by writing the
+    session directly). The oracle view comes from the kernel session and
+    verdict one-to-one with the run. ``pass`` must complete;
+    ``fail``/``unknown`` must not.
     """
+    import json
     from pathlib import Path
 
+    from codey.agents.tools import DEFAULT_TOOL_FNS
     from codey.operations.completion_gate import evaluate
+    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.core.models import ToolResult
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
     from codey.workspace.revision import workspace_fingerprint
 
@@ -677,37 +691,81 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
         raise ValueError(f"completion step has bad outcome: {outcome!r}")
     project_dir = Path(ctx.state_home) / "completion" / f"run-{seq:06d}"
     project_dir.mkdir(parents=True, exist_ok=True)
-    target = project_dir / relpath
-    target.write_text(content, encoding="utf-8")
-    # Real read fact: the content just written must be observable.
-    assert target.read_text(encoding="utf-8") == content
-    fp = workspace_fingerprint(str(project_dir))
-    assert fp, "real workspace fingerprint must exist"
+    old_content = "old = 0\n"
+    (project_dir / relpath).write_text(old_content, encoding="utf-8")
+    if outcome == "pass":
+        run_command = f"python -m py_compile {relpath}"
+    elif outcome == "fail":
+        run_command = "python -m pytest"
+    else:
+        run_command = f"python -m py_compile {relpath}"
+
+    class _DeterministicWeb:
+        def __init__(self) -> None:
+            self._replies = iter([
+                json.dumps({"tool": "read_file", "args": {"path": relpath}}),
+                json.dumps({"tool": "edit", "args": {
+                    "path": relpath,
+                    "replacements": [{"search": old_content, "replace": content}],
+                }}),
+                json.dumps({"tool": "run", "args": {"command": run_command, "path": "."}}),
+                json.dumps({"tool": "done", "args": {"summary": "done"}}),
+            ])
+
+        def new_chat(self) -> None:
+            pass
+
+        def send(self, _prompt: str) -> str:
+            return next(self._replies)
+
+        def close(self) -> None:
+            pass
+
     session = TaskSession(
         policy=TaskPolicy(grants=frozenset({
             "control", "project.read", "project.write", "project.verify",
         })),
         task_kind="project",
         project=str(project_dir),
+        max_turns=6,
     )
-    session.record_edit(relpath, revision=1)
-    session.set_workspace_state(7, fp)
-    if outcome == "pass":
-        session.record_verification(
-            "python -m pytest", 1, True, exit_code=0,
-            workspace_revision=7, workspace_fingerprint=fp, cwd=".",
-        )
-    elif outcome == "fail":
-        session.record_verification(
-            "python -m pytest", 1, False, exit_code=1,
-            workspace_revision=7, workspace_fingerprint=fp, cwd=".",
-        )
-    else:
-        session.record_verification(
-            "python -m pytest", 1, False, exit_code=None,
-            workspace_revision=7, workspace_fingerprint=fp, cwd=".",
-        )
-    evidence = ExecutionEvidence(workspace_revision=7, workspace_fingerprint=fp)
+    executors: dict = {}
+    if outcome == "unknown":
+        real_fns = DEFAULT_TOOL_FNS
+
+        def _unknown_run(call):  # type: ignore[no-untyped-def]
+            from codey.runtime.core.models import ToolCall as _Call
+
+            assert isinstance(call, _Call)
+            produced = real_fns.execute_run_command(
+                project_dir, str((call.args or {}).get("path", ".") or "."),
+                str((call.args or {}).get("command", "") or ""),
+                permission_profile="coding_writer", phase="writer",
+                tool_id=str(getattr(call, "call_id", "") or ""),
+            )
+            # Real subprocess ran; the boundary loses the structured exit.
+            return ToolResult(call=call, model_text=str(produced.model_text or ""), audit={})
+
+        executors = {"run": _unknown_run}
+    result = run_task_kernel(
+        session,
+        provider=_DeterministicWeb(),
+        provider_id="web",
+        executors=executors or None,
+        run_id=f"completion-{seq:06d}",
+        user_task="fix",
+        project_path=project_dir,
+        tool_fns=DEFAULT_TOOL_FNS,
+        completion_context=None,
+    )
+    assert session.verifications, "real kernel chain must record an observation"
+    assert (project_dir / relpath).read_text(encoding="utf-8") == content
+    fp = workspace_fingerprint(str(project_dir))
+    assert fp, "real workspace fingerprint must exist"
+    evidence = ExecutionEvidence(
+        workspace_revision=session.workspace_revision,
+        workspace_fingerprint=session.workspace_fingerprint,
+    )
     verdict = evaluate(session, "done", context={
         "execution_evidence": evidence,
         "project": str(project_dir),
@@ -715,6 +773,8 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
         "run_id": f"completion-{seq:06d}",
         "task": "fix",
     })
+    # Kernel verdict and gate re-evaluation over the same facts must agree.
+    assert verdict.complete is result.completed
     if outcome == "pass":
         assert verdict.complete is True, "passing completion chain must complete"
     else:
@@ -951,29 +1011,33 @@ def replay_script(script: list[dict], state_home: object, *, check_every: int = 
     world = StressWorld(Path(state_home), seed=0)
     scheduler = SoakScheduler(seed=0)
     ctx = SoakContext(world.state_home)
-    oracle = InvariantChecker()
-    for index, step in enumerate(script):
-        try:
-            execute_step(scheduler, world, ctx, step)
-        except Exception as exc:
-            raise SoakFailure(index, step, exc) from exc
-        if check_every and (index + 1) % check_every == 0:
-            scheduler.self_check(world)
-            facts = oracle.check_recovery_idempotent(world.canonical)
-            oracle.assert_valid(facts, unknowns=ctx.unknowns, completion_views=ctx.completion_views)
-    scheduler.self_check(world)
-    facts = oracle.check_recovery_idempotent(world.canonical)
-    oracle.assert_valid(facts, unknowns=ctx.unknowns, completion_views=ctx.completion_views)
-    oracle.check_no_duplicate_facts([c for c in ctx.committed if not c.endswith(":dup")])
-    return {
-        "facts": facts,
-        "committed": ctx.committed,
-        "rejected": ctx.rejected,
-        "unknowns": ctx.unknowns,
-        "counts": ctx.counts,
-        "fault_counts": ctx.fault_counts,
-        "restarts": ctx.restarts,
-    }
+    try:
+        oracle = InvariantChecker()
+        for index, step in enumerate(script):
+            try:
+                execute_step(scheduler, world, ctx, step)
+            except Exception as exc:
+                raise SoakFailure(index, step, exc) from exc
+            if check_every and (index + 1) % check_every == 0:
+                scheduler.self_check(world)
+                facts = oracle.check_recovery_idempotent(world.canonical)
+                oracle.assert_valid(facts, unknowns=ctx.unknowns, completion_views=ctx.completion_views)
+        scheduler.self_check(world)
+        facts = oracle.check_recovery_idempotent(world.canonical)
+        oracle.assert_valid(facts, unknowns=ctx.unknowns, completion_views=ctx.completion_views)
+        oracle.check_no_duplicate_facts([c for c in ctx.committed if not c.endswith(":dup")])
+        return {
+            "facts": facts,
+            "committed": ctx.committed,
+            "rejected": ctx.rejected,
+            "unknowns": ctx.unknowns,
+            "counts": ctx.counts,
+            "fault_counts": ctx.fault_counts,
+            "restarts": ctx.restarts,
+            "completion_views": list(ctx.completion_views),
+        }
+    finally:
+        ctx.close()
 
 
 class SoakFailure(Exception):

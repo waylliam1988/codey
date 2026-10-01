@@ -165,6 +165,7 @@ class TaskSession:
     verification_candidates: tuple[Any, ...] = ()
     verification_candidate_loader: Any = field(default=None, repr=False, compare=False)
     verification_candidates_epoch: int = -1
+    verification_candidates_refresh_failed: bool = False
     selected_verification: Any = None
     # Current workspace identity observed by real edit/run execution.
     # Verifications carry the identity they observed; only a verification

@@ -70,6 +70,15 @@ def _build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | 
     return build_research_tools(deps, session_id=session_id, project=project)
 
 
+def _entry_verification_forbidden(request: Any) -> bool:
+    from codey.agents.protocol import task_forbids_verification
+
+    try:
+        return bool(task_forbids_verification(str(getattr(request, "task", "") or "")))
+    except Exception:
+        return False
+
+
 def _create_entry_session(frame: RunFrame, work: RunWork, policy: Any, kind: str) -> Any:
     from codey.operations.task_session import TaskSession
 
@@ -83,6 +92,7 @@ def _create_entry_session(frame: RunFrame, work: RunWork, policy: Any, kind: str
         handoff=str(getattr(frame, "handoff", "") or ""),
         project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
         coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
+        verification_forbidden=_entry_verification_forbidden(request),
     )
     try:
         ev = getattr(work, "evidence", None)
@@ -347,7 +357,12 @@ def _run_entry_kernel(
     _entry_check_conflict(policy, request, kind)
     policy, auto_plan = _entry_apply_auto(frame, policy, kind)
     if auto_plan == "__direct__":
-        return _direct_answer_outcome(frame, kind)
+        direct = _direct_answer_outcome(frame, kind)
+        if direct.event.get("stop_reason") == "done":
+            return direct
+        # Direct answer failed the common gate: hand the missing
+        # requirements to the shared kernel instead of claiming done.
+        pass
     session = _create_entry_session(frame, work, policy, kind)
     from codey.operations.recovery import record_entry_policy
 
@@ -545,9 +560,50 @@ def _decide_auto(frame: RunFrame) -> str:
     return f"ACTION: {frame.task_kind}\nPLAN: {plan}" if plan else f"ACTION: {frame.task_kind}"
 
 
+def _direct_answer_gate(request: Any, answer: str) -> Any:
+    """Evaluate a direct answer against the common completion gate."""
+    from codey.operations.completion_gate import evaluate as gate_evaluate
+    from codey.operations.task_session import TaskSession
+
+    policy = build_task_policy_for_entry(request, "chat")
+    session = TaskSession(
+        policy=policy,
+        task_kind="chat",
+        project=str(getattr(request, "project", "") or ""),
+        max_turns=max(1, int(getattr(request, "max_turns", 8) or 8)),
+        task_text=str(getattr(request, "task", "") or ""),
+        project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
+        verification_forbidden=_entry_verification_forbidden(request),
+    )
+    context = {
+        "run_id": str(getattr(request, "run_id", "") or ""),
+        "task": str(getattr(request, "task", "") or ""),
+        "question": str(getattr(request, "task", "") or ""),
+        "project": str(getattr(request, "project", "") or ""),
+    }
+    return gate_evaluate(session, answer, context=context)
+
+
 def _direct_answer_outcome(frame: RunFrame, kind: str) -> ModeOutcome:
     request = frame.request
     summary = str(getattr(frame, "handoff", "") or "")
+    try:
+        verdict = _direct_answer_gate(request, summary)
+    except Exception:
+        verdict = None
+    if verdict is not None and not verdict.complete:
+        return ModeOutcome({
+            "type": "task_done",
+            "run_id": frame.run_id,
+            "session_id": request.session_id,
+            "summary": verdict.followup or "Not done yet. Continue the task.",
+            "stop_reason": "blocked",
+            "turns": 1,
+            "max_turns": request.max_turns,
+            "provider": frame.provider_id,
+            "mode": "chat",
+            "receipt": {"display": {"summary": (verdict.followup or "")[:2000]}},
+        })
     return ModeOutcome({
         "type": "task_done",
         "run_id": frame.run_id,

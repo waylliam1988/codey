@@ -70,6 +70,10 @@ def _result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) -
         if text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"):
             return False
         return audit_code == 0
+    if str(name or "").strip().lower() == "run":
+        # A run without any structured exit never reports success: ordinary
+        # output text must not become ok=True, and unknown exits block.
+        return False
     text = str(result.model_text or "")
     return not (text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"))
 
@@ -324,5 +328,8 @@ def _normalize_delegate_result(
         ok = False
     elif name == "run" and exit_code is None and audit_code is not None and not _result_ok(name, result):
         # Audit-only structured exit is authoritative for run.
+        ok = False
+    elif name == "run" and exit_code is None and audit_code is None:
+        # No structured exit anywhere: unknown run result fails closed.
         ok = False
     return result, ok, exit_code

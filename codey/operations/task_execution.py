@@ -293,7 +293,7 @@ class ExecutionDelegate:
     def _execute_edit(self, call: ToolCall) -> Any:
         from codey.agents.protocol import canonical_project_path
         from codey.agents.tool_execution import read_before_edit_outcome
-        from codey.toolchain.runtime import ToolOutcome, safe_join
+        from codey.toolchain.runtime import EditBlock, ToolOutcome, safe_join
 
         args = dict(call.args or {})
         path = str(args.get("path", "") or "")
@@ -318,26 +318,28 @@ class ExecutionDelegate:
         )
         if guard is not None:
             return guard
+        # Canonical protocol only: replacements with search/replace. Legacy
+        # old_string/new_string aliases are rejected before any file write.
+        for legacy in ("old_string", "new_string", "search", "replace"):
+            if legacy in args:
+                return ToolOutcome.error(f"edit rejects legacy alias: {legacy}")
         replacements = args.get("replacements")
+        if not isinstance(replacements, list) or not replacements:
+            return ToolOutcome.error("edit needs content or exact replacements")
         blocks: list[dict[str, str]] = []
-        if isinstance(replacements, list):
-            for item in replacements:
-                if isinstance(item, dict) and ("search" in item or "old_string" in item):
-                    blocks.append({
-                        "old_string": str(item.get("search", item.get("old_string")) or ""),
-                        "new_string": str(item.get("replace", item.get("new_string")) or ""),
-                    })
-        elif args.get("old_string") is not None:
-            blocks.append({"old_string": str(args.get("old_string") or ""),
-                           "new_string": str(args.get("new_string") or "")})
+        for item in replacements:
+            if not isinstance(item, dict):
+                return ToolOutcome.error("edit replacement must be a mapping")
+            if set(item) != {"search", "replace"}:
+                return ToolOutcome.error("edit replacement must be exactly search/replace")
+            search = str(item.get("search") or "")
+            replace = str(item.get("replace") or "")
+            if not search:
+                return ToolOutcome.error("edit replacement search must be non-empty")
+            blocks.append({"search": search, "replace": replace})
         if not blocks:
             return ToolOutcome.error("edit needs content or exact replacements")
-        try:
-            from codey.toolchain.runtime import EditBlock
-
-            edit_blocks = [EditBlock(search=b["old_string"], replace=b["new_string"]) for b in blocks]
-        except Exception:
-            edit_blocks = blocks  # type: ignore[assignment]
+        edit_blocks = [EditBlock(search=b["search"], replace=b["replace"]) for b in blocks]
         if self.change_tracker is not None:
             self.change_tracker.capture_before(path)
         outcome = self.tool_fns.edit_file(self.project_path, path, edit_blocks)
@@ -361,7 +363,21 @@ class ExecutionDelegate:
             turn=turn, tool_index=tool_index, presentation_result=title,
             model_text_override=model_text,
         )
-        return _tool_result(call, outcome), True, self._ledger_final_url({"url": url}), [], None
+        final_url = self._ledger_final_url({"url": url})
+        base = _tool_result(call, outcome)
+        try:
+            merged = dict(base.canonical) if isinstance(base.canonical, dict) else {}
+        except Exception:
+            merged = {}
+        merged["opened_url"] = final_url[:500]
+        merged["request_url"] = str(url or "")[:500]
+        result = ToolResult(
+            call=base.call, model_text=base.model_text, truncated=bool(base.truncated),
+            presentation=dict(base.presentation) if isinstance(base.presentation, dict) else {},
+            audit=dict(base.audit) if isinstance(base.audit, dict) else {},
+            canonical=merged,
+        )
+        return result, True, "", [], None
 
     def _execute_research(self, call: ToolCall, *, turn: int = 0,
                           tool_index: int = 0) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
@@ -396,9 +412,14 @@ class ExecutionDelegate:
                 if not url and str(args.get("source_id") or ""):
                     url = self._resolve_alias_url("reopen_source", {"source_id": args.get("source_id")}) or ""
                 text = tools.source_search(url, query, args.get("limit", 6))
-                if _is_ok_text(text) and url and self.session is not None:
-                    text = self._attach_hit_ids(text, url)
-                return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
+                ok_text = _is_ok_text(text)
+                if ok_text and url and self.session is not None:
+                    text, mapping = self._build_hit_mapping(text, url)
+                    return (
+                        ToolResult(call=call, model_text=text, canonical={"hit_targets": mapping, "source_url": url[:500]}),
+                        True, "", [], None,
+                    )
+                return ToolResult(call=call, model_text=text), ok_text, "", [], None
             if name == "knowledge_search":
                 from codey.research.text_args import first_text_arg
 
@@ -415,7 +436,11 @@ class ExecutionDelegate:
                 text = tools.knowledge_write(lowered)
                 if not _is_ok_text(text):
                     return ToolResult(call=call, model_text=text), False, "", [], None
-                return ToolResult(call=call, model_text=text), True, "", self._ledger_evidence(before), None
+                evidence = self._ledger_evidence(before)
+                return (
+                    ToolResult(call=call, model_text=text, canonical={"evidence_items": evidence}),
+                    True, "", [], None,
+                )
             if name == "knowledge_link":
                 text = tools.knowledge_link(str(args.get("src") or ""), str(args.get("dst") or ""),
                                             str(args.get("kind") or "relates"))
@@ -476,19 +501,42 @@ class ExecutionDelegate:
             return str((getattr(session, "hit_targets", {}) or {}).get(rid, {}).get("url", "") or "")
         return str(results.get(rid, "") or sources.get(rid, "") or "")
 
-    def _attach_hit_ids(self, text: str, url: str) -> str:
+    def _build_hit_mapping(self, text: str, url: str) -> tuple[str, dict[str, dict[str, object]]]:
+        """Build hit text plus its mapping without touching the session.
+
+        IDs consider both the live session mapping and the current batch so
+        repeated IDs never collide. The caller persists the mapping in the
+        receipt canonical; the single fact entry applies it to the session.
+        """
         import re
 
+        existing = dict(getattr(self.session, "hit_targets", {}) or {}) if self.session is not None else {}
+        batch: dict[str, dict[str, object]] = {}
+        by_target: dict[tuple[str, int, str], str] = {}
+        for key, value in list(existing.items()) + list(batch.values()):
+            if isinstance(value, dict):
+                by_target[(str(value.get("url", "")), int(value.get("offset", 0) or 0), str(value.get("pages", "")))] = key
         lines: list[str] = []
+        counter = len(existing) + 1
         for line in str(text or "").splitlines():
             match = re.match(r"^\s*\d+\.\s+(?:offset\s+(\d+)|p\.(\d+)):", line)
             if match:
-                hit_id = self.session.record_hit(
-                    url, offset=int(match.group(1) or 0), pages=match.group(2) or "",
-                )
+                target = (str(url or "")[:500], int(match.group(1) or 0), str(match.group(2) or ""))
+                hit_id = by_target.get(target, "")
+                if not hit_id:
+                    while f"h{counter}" in existing or f"h{counter}" in batch:
+                        counter += 1
+                    hit_id = f"h{counter}"
+                    counter += 1
+                    batch[hit_id] = {"url": target[0], "offset": target[1], "pages": target[2][:40]}
+                    by_target[target] = hit_id
                 line = f"{hit_id}: {line}"
             lines.append(line)
-        return "\n".join(lines)
+        return "\n".join(lines), batch
+
+    def _attach_hit_ids(self, text: str, url: str) -> str:
+        rendered, _mapping = self._build_hit_mapping(text, url)
+        return rendered
 
     def _ledger_final_url(self, args: dict) -> str:
         tools = self.research_tools

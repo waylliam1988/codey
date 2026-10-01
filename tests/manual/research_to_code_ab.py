@@ -698,12 +698,12 @@ def _self_test() -> None:
                     "path": "pricing.py",
                     "replacements": [
                         {
-                            "old_string": (
+                            "search": (
                                 "def discounted_total(amount, discount, tax_rate):\n"
                                 "    # RESEARCH_BRIEF_AB_BUG: wrong order, applies tax first.\n"
                                 "    return amount * (1 + tax_rate) - discount"
                             ),
-                            "new_string": (
+                            "replace": (
                                 "def discounted_total(amount, discount, tax_rate):\n"
                                 "    return (amount - discount) * (1 + tax_rate)"
                             ),

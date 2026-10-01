@@ -5,7 +5,8 @@ path returned the raw exit_code from tool_fns; a bool False would flow into
 record_facts and be stored as int 0. The kernel now coerces non-int exits
 to None and marks ok=False.
 
-Lock: delegate returning exit_code=False records no verification.
+Lock: delegate returning exit_code=False records a failed observation
+(passed=False, no exit_code), never a pass and never exit 0.
 """
 from __future__ import annotations
 
@@ -52,7 +53,9 @@ class DelegateRunBoolExitCodeRejectedTests(unittest.TestCase):
                     project_path=project,
                 )
             self.assertEqual(len(results), 1)
-            self.assertEqual(session.verifications, [], f"bool exit must not verify: {session.verifications}")
+            self.assertEqual(len(session.verifications), 1)
+            self.assertFalse(session.verifications[0]["passed"])
+            self.assertNotIn("exit_code", session.verifications[0])
 
 
 if __name__ == "__main__":

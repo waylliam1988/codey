@@ -340,13 +340,17 @@ def spec_for_recovered_row(item: Any) -> RecoveredResultSpec:
     """Dispatch one recovered row to its single spec builder.
 
     Settled redelivery (``redelivered=True``) rebuilds the original receipt
-    for any tool; all other rows stay on the safe-replay-only path.
+    for any tool; all other rows stay on the safe-replay-only path. The
+    marker must be an exact bool: truthy/falsy non-bools never select a
+    path silently.
     """
     try:
-        redelivered = bool(getattr(item, "redelivered", False))
+        raw = getattr(item, "redelivered", False)
     except Exception as exc:
         raise RecoveryFailed(f"recovered row unreadable: {exc}") from exc
-    if redelivered:
+    if type(raw) is not bool:
+        raise RecoveryFailed("recovered redelivered must be a boolean")
+    if raw:
         return spec_from_settled_redelivery_row(item)
     return spec_from_frame_row(item)
 
