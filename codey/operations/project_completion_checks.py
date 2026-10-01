@@ -32,7 +32,7 @@ def _workspace_identity_equal(ver_rev: object, ver_fp: object, cur_rev: object, 
         return False
     if not valid_workspace_revision(ver_rev) or not valid_workspace_revision(cur_rev):
         return False
-    if int(ver_rev) != int(cur_rev):
+    if ver_rev != cur_rev:
         return False
     ver_fp_text = str(ver_fp or "")
     cur_fp_text = str(cur_fp or "")
@@ -81,6 +81,11 @@ def _refresh_completion_workspace(session: Any, context: Any) -> None:
         evidence.set_workspace_state(session.workspace_revision, fingerprint)
 
 
+def _effective_verification_forbidden(session: Any) -> bool:
+    """One owner for the verification exemption: the session task requirement."""
+    return getattr(session, "verification_forbidden", False) is True
+
+
 def _fresh_verification_verdict(
     session: Any,
     verifications: list[Any],
@@ -89,22 +94,24 @@ def _fresh_verification_verdict(
     session_fingerprint: str,
     session_revision: int,
 ) -> tuple[bool, bool]:
-    latest_by_requirement: dict[tuple[str, str], dict[str, Any]] = {}
-    for item in verifications:
-        if not isinstance(item, dict):
-            continue
-        try:
-            if int(item.get("revision", -1)) != latest_revision or item.get("exit_code") is None:
-                continue
-        except (TypeError, ValueError):
-            continue
-        key = (str(item.get("command") or "").strip(), str(item.get("cwd") or ".").strip() or ".")
-        latest_by_requirement[key] = item
+    """Fresh verdict over the latest observation per (command, cwd).
+
+    Shares ``_latest_observations_by_key`` / ``_gap_for_latest_row`` with the
+    engine projection: the newest row per key is selected first, then
+    completeness, then success+identity. A latest row lacking a result or
+    identity never revives an older success for the same key.
+    """
+    latest_by_key = _latest_observations_by_key(verifications, latest_revision)
     fresh_pass = False
     fresh_fail = False
     from codey.utils.refs import strict_exit_code
 
-    for item in latest_by_requirement.values():
+    for item in latest_by_key.values():
+        command = str(item.get("command") or "").strip()
+        if _gap_for_latest_row(item, command):
+            # Incomplete latest blocks: never fall back to an older success.
+            fresh_fail = True
+            continue
         try:
             code = strict_exit_code(item.get("exit_code"))
         except Exception:
@@ -152,9 +159,8 @@ def _session_latest_verification(session: Any) -> dict[str, Any] | None:
     for item in verifs:
         if not isinstance(item, dict):
             continue
-        try:
-            rev = int(item.get("revision", -1))
-        except (TypeError, ValueError):
+        rev = item.get("revision", -1)
+        if type(rev) is not int:
             continue
         if rev >= latest_rev:
             latest_rev = rev
@@ -222,10 +228,10 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tupl
         return evidence, ()
     if not edited:
         return evidence, ()
-    try:
-        latest_edit = max(int(v) for v in edited.values())
-    except (TypeError, ValueError):
+    exact_edits = [v for v in edited.values() if type(v) is int]
+    if not exact_edits:
         return evidence, ()
+    latest_edit = max(exact_edits)
     try:
         verifications = list(getattr(session, "verifications", ()) or [])
     except Exception:
@@ -242,10 +248,7 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tupl
     for row in verifications:
         if not isinstance(row, dict):
             continue
-        try:
-            if int(row.get("revision", -1)) != latest_edit:
-                continue
-        except (TypeError, ValueError):
+        if type(row.get("revision", -1)) is not int or row.get("revision", -1) != latest_edit:
             continue
         command = str(row.get("command", "") or "").strip()[:500]
         cwd = str(row.get("cwd", ".") or ".").strip()[:240] or "."
@@ -269,20 +272,17 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tupl
 
 def _latest_observations_by_key(
     verifications: list[Any], latest_edit: int,
-) -> dict[tuple[str, str], tuple[int, dict[str, Any]]]:
+) -> dict[tuple[str, str], dict[str, Any]]:
     """Latest row per (command, cwd) among rows targeting the latest edit."""
-    latest_by_key: dict[tuple[str, str], tuple[int, dict[str, Any]]] = {}
-    for index, row in enumerate(verifications):
+    latest_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in verifications:
         if not isinstance(row, dict):
             continue
-        try:
-            if int(row.get("revision", -1)) != latest_edit:
-                continue
-        except (TypeError, ValueError):
+        if type(row.get("revision", -1)) is not int or row.get("revision", -1) != latest_edit:
             continue
         command = str(row.get("command", "") or "").strip()[:500]
         cwd = str(row.get("cwd", ".") or ".").strip()[:240] or "."
-        latest_by_key[(command, cwd)] = (index, row)
+        latest_by_key[(command, cwd)] = row
     return latest_by_key
 
 
@@ -306,12 +306,12 @@ def _gap_for_latest_row(row: dict[str, Any], command: str) -> str:
 
 
 def _projection_gaps_for_latest(
-    latest_by_key: dict[tuple[str, str], tuple[int, dict[str, Any]]],
+    latest_by_key: dict[tuple[str, str], dict[str, Any]],
 ) -> tuple[set[tuple[str, str]], list[str]]:
     """Keys whose latest observation is incomplete plus deduped gap codes."""
     gap_keys: set[tuple[str, str]] = set()
     gaps: list[str] = []
-    for key, (_, row) in latest_by_key.items():
+    for key, row in latest_by_key.items():
         command, _cwd = key
         code = _gap_for_latest_row(row, command)
         if not code:
@@ -324,16 +324,7 @@ def _projection_gaps_for_latest(
 
 def _is_projectable_row(row: dict[str, Any], command: str) -> bool:
     """One individually valid row for a key whose latest is complete."""
-    exit_code = row.get("exit_code")
-    if type(exit_code) is not int:
-        return False
-    ver_rev = row.get("workspace_revision")
-    ver_fp = str(row.get("workspace_fingerprint", "") or "")
-    if type(ver_rev) is not int or not valid_workspace_revision(ver_rev):
-        return False
-    if not valid_workspace_fingerprint(ver_fp):
-        return False
-    return bool(command)
+    return _gap_for_latest_row(row, command) == ""
 
 
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
@@ -345,6 +336,11 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
     evidence = get("execution_evidence")
     if evidence is None:
         return None
+    if _effective_verification_forbidden(session):
+        row = completion_check(
+            "relevant_verification", CHECK_NOT_APPLICABLE, "verification_forbidden_by_request",
+        )
+        return [row] if row is not None else []
     try:
         from codey.completion.engine import CompletionEngine
     except Exception as exc:
@@ -394,7 +390,7 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
             analysis_run_payloads=get("analysis_run_payloads") or (),
             project=get("project"),
             checkpoint_green=bool(get("checkpoint_green")),
-            verification_forbidden=bool(get("verification_forbidden")),
+            verification_forbidden=_effective_verification_forbidden(session),
         )
         proof = result.decision.proof
         rows = [row for row in (getattr(proof, "checks", ()) or ()) if isinstance(row, CompletionCheck)]
@@ -420,19 +416,27 @@ def project_completion_checks(session: Any, context: Any = None) -> list[Complet
             return [row] if row is not None else []
         row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE)
         return [row] if row is not None else []
-    if getattr(session, "verification_forbidden", False) is True:
+    if _effective_verification_forbidden(session):
         row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE, "verification_forbidden_by_request")
         return [row] if row is not None else []
-    try:
-        latest = max(int(v) for v in edited.values())
-    except (TypeError, ValueError):
+    exact_edits = [v for v in edited.values() if type(v) is int]
+    if not exact_edits:
         row = completion_check("relevant_verification", CHECK_NOT_RUN, "verification_not_fresh")
         return [row] if row is not None else []
-    try:
-        sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
-        sess_rev = int(getattr(session, "workspace_revision", 0) or 0)
-    except Exception:
-        sess_fp, sess_rev = "", 0
+    latest = max(exact_edits)
+    sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
+    sess_rev_raw = getattr(session, "workspace_revision", 0)
+    sess_rev = sess_rev_raw if type(sess_rev_raw) is int else 0
+    # Same gap rule as the engine path: an incomplete latest observation
+    # blocks with its gap code instead of reviving an older success.
+    _gap_keys, _gaps = _projection_gaps_for_latest(
+        _latest_observations_by_key(verifs, latest),
+    )
+    if _gaps:
+        row = completion_check(
+            "relevant_verification", CHECK_NOT_RUN, str(_gaps[0] or "verification_result_missing"),
+        )
+        return [row] if row is not None else []
     fresh_pass, fresh_fail = _fresh_verification_verdict(
         session, verifs, tuple(edited), latest, sess_fp, sess_rev,
     )

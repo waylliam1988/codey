@@ -2,6 +2,46 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 未知最新结果拦截、恢复精确整数、单一豁免源、真实 scheduler 完成、精确 schema/版本（未发布）
+
+- TDD 红测锁定（6 个新文件，先失败、后通过）：
+  `test_completion_latest_unknown_result_blocks_both_paths`（成功后接
+  `exit_code=None` 的未知结果在直接与引擎两条路径均拦截，不复活旧成功；
+  恢复后仍拦截；未知后接新成功放行）、
+  `test_verification_identity_roundtrip_preserves_invalidity`（`True`/`"1"`/
+  `1.0` 的工作区版本在恢复入口直接 `RecoveryFailed`；序列化永不把非法洗成
+  整数 1；合法/失败/缺失往返稳定）、
+  `test_completion_verification_forbidden_single_source`（豁免唯一归 session
+  所有；上下文缺失或冲突不改变两条路径结论）、
+  `tests/stress/test_scheduler_completion_step_produces_real_view`（确定性
+  `completion_produce` 步骤真实写 `.py`、真实指纹、真实 gate、真实视图且
+  oracle 1:1 检查；失败/未知永不通过；生成器可产出；`replay_script` 可重放）、
+  `test_affinity_schema_version_exact_int`（`True`/`1.0`/`"1"`/`None`/缺失均
+  拒绝且不改状态；精确整数仍放行）、
+  `test_workspace_revision_exact_int`（`valid_workspace_revision` 对布尔/字符串/
+  浮点返回 0；验证 `revision` 非精确整数恢复拒绝）。
+- P1 投影统一：`_fresh_verification_verdict` 与引擎投影共用
+  `_latest_observations_by_key`/`_gap_for_latest_row`（先选每组最新，再查完整性，
+  再查成功+身份）；直接路径同样输出 `CHECK_NOT_RUN`（`verification_result_missing`/
+  `identity_missing`/`invalid`），不再找旧成功；删除无用索引，`_is_projectable_row`
+  复用缺口规则，不再双规则。
+- P1 恢复/序列化：`_validate_restored_receipts` 拆为行校验（身份、revision、
+  command/cwd 精确类型；缺失保持缺失，非法类型直接 `RecoveryFailed`）；
+  `to_payload` 保留非法原值，不再 `int(...)` 洗白；头部/edited/turn/notes 用严格
+  整数；`record_edit`/`record_verification`/`record_hit` 要求精确整数；
+  `valid_workspace_revision` 要求 `type is int`（冷启动，无字符串/浮点兼容）。
+- P2 单一豁免：`_effective_verification_forbidden(session)` 为唯一来源；
+  `_engine_checks` 在投影缺口前直接返回 `not_applicable`，并把 session 值传给
+  引擎（上下文标志即使冲突也被忽略）；直接路径共用同一函数。
+- P2 真实 scheduler 完成：新增 `COMPLETION_PRODUCE`（生成侧 `completion` 区域+
+  序号+加权 pass/fail/unknown，执行侧无随机：真实写读文件、真实指纹、真实 gate、
+  真实视图、oracle 检查）；`execute_step`/`replay_script` 全链打通；用 `.py`
+  保持验证必需（`.txt` 会走文档免检）。
+- P2 精确 schema：`_valid_affinity_event` 要求 `type(version) is int`。
+- 验证：`ruff check codey tests tools`、`compileall`、`git diff --check` 通过。
+  最终全量：**6168 通过，10 跳过，1492 子测试通过，369.98 秒（0:06:09）**，单次零失败。
+- 未发布，无 tag、无版本 bump。
+
 ## Unreleased - 不完整最新观察拦截、独立 oracle、真实 kernel/soak 视图、严格 affinity 入口（未发布）
 
 - TDD 红测锁定（4 个新文件，先失败、后通过）：

@@ -114,13 +114,11 @@ class WorkspaceIdentity:
 
 
 def valid_workspace_revision(value: object) -> int:
-    if isinstance(value, bool):
+    # Cold-start strict: only an exact int counts. bool/str/float never
+    # coerce (int(True) == 1 and int("1") == 1 must not become revision 1).
+    if type(value) is not int:
         return 0
-    try:
-        revision = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError, OverflowError):
-        return 0
-    return revision if revision >= INITIAL_WORKSPACE_REVISION else 0
+    return value if value >= INITIAL_WORKSPACE_REVISION else 0
 
 
 def workspace_revision_ref(project: str | Path, revision: object) -> str:

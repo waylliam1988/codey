@@ -81,6 +81,7 @@ REPAIR_RUN = "repair_run"
 EXPIRE_APPROVALS = "expire_approvals"
 TICK = "tick"
 RESTART = "restart"
+COMPLETION_PRODUCE = "completion_produce"
 
 # Area selection weights: provider-heavy, restart-rare but constant.
 AREA_WEIGHTS = (
@@ -93,6 +94,7 @@ AREA_WEIGHTS = (
     ("browser", 5),
     ("clock", 3),
     ("restart", 2),
+    ("completion", 4),
 )
 
 # Per-area fault weights. Normal dominates; the danger zones get their own
@@ -219,6 +221,7 @@ class SoakScheduler:
         self._ghost_tag_seq = 0
         self._sse_seq = 0
         self._approval_seq = 0
+        self._completion_seq = 0
         self.provider_pending: dict[str, tuple[str, str]] = {}  # effect_id -> (run_id, mode)
         # batch_id -> (run_id, ref, tool_effect): dup retries must resend the
         # IDENTICAL batch (same digest); same id with different content is a
@@ -309,7 +312,24 @@ class SoakScheduler:
             return self._clock_step(world)
         if area == "restart":
             return {"op": RESTART, "faults": ["restart"]}
+        if area == "completion":
+            return self._completion_step()
         return None
+
+    def _completion_step(self) -> dict:
+        """One deterministic real completion: read/edit/verify/done inputs frozen."""
+        self._completion_seq += 1
+        seq = self._completion_seq
+        outcome = self.faults.weighted(
+            "completion-outcome", (("pass", 70), ("fail", 15), ("unknown", 15)),
+        )
+        return {
+            "op": COMPLETION_PRODUCE, "seq": seq,
+            "relpath": f"completion_{seq:06d}.py",
+            "content": f"x_{seq} = 1\n",
+            "outcome": str(outcome),
+            "faults": [],
+        }
 
     def _provider_step(self, world: Any) -> dict:
         # Only clean sends may settle as ok: timed-out intents stay unknown,
@@ -624,8 +644,83 @@ def execute_step(scheduler: SoakScheduler, world: Any, ctx: SoakContext, step: d
         world.clock.now += step["delta"]
     elif op == RESTART:
         _exec_restart(scheduler, world, ctx)
+    elif op == COMPLETION_PRODUCE:
+        _exec_completion_produce(scheduler, world, ctx, step)
     else:  # pragma: no cover - generator only emits known ops
         raise ValueError(f"unknown soak op: {op!r}")
+
+
+def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakContext, step: dict) -> None:
+    """Run one real read/edit/verify/done chain and record its gate view.
+
+    Randomness-free: every input comes from ``step`` (seq/relpath/content/
+    outcome). The file is really written, the workspace fingerprint is really
+    computed, the gate really evaluates, and the view really goes through the
+    truthfulness oracle. ``pass`` must complete; ``fail``/``unknown`` must not.
+    """
+    from pathlib import Path
+
+    from codey.operations.completion_gate import evaluate
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    from codey.workspace.revision import workspace_fingerprint
+
+    seq = step.get("seq", 0)
+    if type(seq) is not int or seq <= 0:
+        raise ValueError(f"completion step needs a positive seq: {step!r}")
+    raw_rel = str(step.get("relpath") or "").strip() or f"completion-{seq:06d}.txt"
+    relpath = Path(raw_rel).name or f"completion-{seq:06d}.txt"
+    content = str(step.get("content", ""))
+    outcome = str(step.get("outcome", "pass"))
+    if outcome not in ("pass", "fail", "unknown"):
+        raise ValueError(f"completion step has bad outcome: {outcome!r}")
+    project_dir = Path(ctx.state_home) / "completion" / f"run-{seq:06d}"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    target = project_dir / relpath
+    target.write_text(content, encoding="utf-8")
+    # Real read fact: the content just written must be observable.
+    assert target.read_text(encoding="utf-8") == content
+    fp = workspace_fingerprint(str(project_dir))
+    assert fp, "real workspace fingerprint must exist"
+    session = TaskSession(
+        policy=TaskPolicy(grants=frozenset({
+            "control", "project.read", "project.write", "project.verify",
+        })),
+        task_kind="project",
+        project=str(project_dir),
+    )
+    session.record_edit(relpath, revision=1)
+    session.set_workspace_state(7, fp)
+    if outcome == "pass":
+        session.record_verification(
+            "python -m pytest", 1, True, exit_code=0,
+            workspace_revision=7, workspace_fingerprint=fp, cwd=".",
+        )
+    elif outcome == "fail":
+        session.record_verification(
+            "python -m pytest", 1, False, exit_code=1,
+            workspace_revision=7, workspace_fingerprint=fp, cwd=".",
+        )
+    else:
+        session.record_verification(
+            "python -m pytest", 1, False, exit_code=None,
+            workspace_revision=7, workspace_fingerprint=fp, cwd=".",
+        )
+    evidence = ExecutionEvidence(workspace_revision=7, workspace_fingerprint=fp)
+    verdict = evaluate(session, "done", context={
+        "execution_evidence": evidence,
+        "project": str(project_dir),
+        "scope_files": (relpath,),
+        "run_id": f"completion-{seq:06d}",
+        "task": "fix",
+    })
+    if outcome == "pass":
+        assert verdict.complete is True, "passing completion chain must complete"
+    else:
+        assert verdict.complete is False, f"{outcome} completion chain must not complete"
+    view = ctx.record_real_completion_view(session, evidence, verdict, done_text="done")
+    ctx.oracle.check_completion_truthful(view)
 
 
 def _provider_intent_for(world: Any, step: dict) -> RuntimeEffectIntent:
@@ -897,6 +992,7 @@ __all__ = [
     "BROWSER_CALL",
     "BROWSER_SUBMIT",
     "CLUSTER_PROBABILITY",
+    "COMPLETION_PRODUCE",
     "EXPIRE_APPROVALS",
     "GHOST_APPEND",
     "GHOST_REPLAY",

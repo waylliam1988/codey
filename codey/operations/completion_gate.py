@@ -119,11 +119,8 @@ def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
                 ws_rev = item.get("workspace_revision")
                 ws_fp = str(item.get("workspace_fingerprint") or "")
                 identity = ""
-                try:
-                    if ws_rev is not None and int(ws_rev) >= 0:
-                        identity = f"@ws{int(ws_rev)}"
-                except (TypeError, ValueError):
-                    identity = ""
+                if type(ws_rev) is int and ws_rev >= 0:
+                    identity = f"@ws{ws_rev}"
                 if not identity and ws_fp:
                     identity = f"@{ws_fp[:24]}"
                 refs.append(f"verify:{command}{identity}:{exit_code}")

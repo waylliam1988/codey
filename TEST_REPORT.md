@@ -1,5 +1,39 @@
 # Codey Test Report
 
+## Unknown-latest block, exact-int restore, single exemption, real scheduler completion, exact schema/revision (2026-10-01)
+
+Scope: close the unknown-latest direct-path revival, the save/restore
+type-laundering, the dual verification-forbidden sources, the unwired
+scheduler/soak completion producer, the affinity `True`/`1.0` schema hole,
+and the `valid_workspace_revision("1")`/`1.0` coercion found in review.
+Red-first: 6 new files failed before their fixes and pass after; no code was
+modified after the final full run; only this report and the changelogs were
+written after that run.
+
+### Behavior and test evidence
+
+| Boundary | Locked behavior | Regression files |
+| --- | --- | --- |
+| Unknown latest blocks both paths | Success-then-unknown (`passed=False`, `exit_code=None`) blocks direct and engine paths despite earlier success; restore still blocks; unknown-then-new-success passes | `tests/test_completion_latest_unknown_result_blocks_both_paths.py` |
+| Identity round-trip never launders | Restore rejects `True`/`"1"`/`1.0` workspace_revision with `RecoveryFailed`; serialization never washes illegal to int 1; legal/failure/missing round-trips stable over repeats | `tests/test_verification_identity_roundtrip_preserves_invalidity.py` |
+| Single exemption source | Session `verification_forbidden` decides on both paths; missing/conflicting context never flips the verdict | `tests/test_completion_verification_forbidden_single_source.py` |
+| Real scheduler completion | Deterministic `completion_produce` writes a real `.py` file, fingerprints, gates, records one real view checked 1:1 by the oracle; fail/unknown never pass; generation emits it; `replay_script` replays it | `tests/stress/test_scheduler_completion_step_produces_real_view.py`, `tests/stress/scheduler.py` |
+| Exact affinity schema | `True`/`1.0`/`"1"`/`None`/missing schema rejected without mutation; exact int still accepted | `tests/test_affinity_schema_version_exact_int.py` |
+| Exact workspace revision | `valid_workspace_revision` returns 0 for bool/str/float; verification `revision` restore rejects non-exact ints | `tests/test_workspace_revision_exact_int.py` |
+
+### Actual runs
+
+- Targeted new red-first regression (6 files): **40 passed**.
+- Targeted related completion/restore/affinity/scheduler regression: **109 passed, 18 subtests passed**.
+- Intermediate full run: **6167 passed, 1 failed** (`test_task_session_does_not_serialize_string_false_verification_as_success` expecting `"false"` → `False` coercion); kept the fail-closed `passed` coercion (non-bool never becomes success) while identity ints stay uncoerced, then re-ran.
+- Final full command: `python -m pytest tests -q -p no:cacheprovider` **6168 passed, 10 skipped, 1492 subtests passed in 369.98s (0:06:09)**, zero failures in a single run.
+- Final prechecks: `python -m ruff check codey tests tools`, `python -m compileall -q codey tests tools`, `git diff --check`: passed.
+
+### Limits and follow-ups
+
+- The 10 skips are Windows/symlink privilege/POSIX-contract limitations. No live web-model/native API benchmark was run.
+- Proof is via bounded state-sequence tests, the independent oracle, and fault injection, not a whole-program correctness proof.
+
 ## Incomplete-latest block, independent oracle, real kernel/soak views, strict affinity apply (2026-10-01)
 
 Scope: close the incomplete-latest fail-open projection, the oracle

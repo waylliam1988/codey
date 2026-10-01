@@ -514,7 +514,8 @@ def _valid_affinity_event(event: Mapping[str, object]) -> bool:
     event_type = str(event.get("type") or "")
     if event_type not in _AFFINITY_EVENT_TYPES:
         return False
-    if event.get("schema_version") != AFFINITY_SCHEMA_VERSION:
+    version = event.get("schema_version")
+    if type(version) is not int or version != AFFINITY_SCHEMA_VERSION:
         return False
     expected = _AFFINITY_EVENT_KEYS.get(event_type)
     if expected is None or set(event.keys()) != set(expected):

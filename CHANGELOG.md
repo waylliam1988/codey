@@ -2,6 +2,57 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Unknown-latest block, restore exact-int, single exemption source, real scheduler completion, exact schema/revision (no release)
+
+- TDD red-first locks (6 new files, all failed before, pass after):
+  `test_completion_latest_unknown_result_blocks_both_paths` (success-then-unknown
+  with `exit_code=None` blocks direct and engine paths despite earlier success;
+  restore still blocks; unknown-then-new-success passes),
+  `test_verification_identity_roundtrip_preserves_invalidity` (restore rejects
+  `True`/`"1"`/`1.0` workspace_revision with `RecoveryFailed`; serialization never
+  washes illegal to int 1; legal/failure/missing round-trips stable),
+  `test_completion_verification_forbidden_single_source` (session owns exemption;
+  missing/conflicting context never flips direct or engine verdicts),
+  `tests/stress/test_scheduler_completion_step_produces_real_view` (deterministic
+  `completion_produce` step writes a real `.py` file, fingerprints, gates, records
+  one real view checked 1:1 by the oracle; fail/unknown never pass; generation
+  emits it; `replay_script` replays it),
+  `test_affinity_schema_version_exact_int` (`True`/`1.0`/`"1"`/`None`/missing
+  rejected without mutation; exact int still accepted),
+  `test_workspace_revision_exact_int` (`valid_workspace_revision` returns 0 for
+  bool/str/float; verification `revision` restore rejects non-exact ints).
+- P1 projection unity: `_fresh_verification_verdict` shares
+  `_latest_observations_by_key`/`_gap_for_latest_row` with the engine projection
+  (select latest per `(command, cwd)` first, then completeness, then
+  success+identity); direct path emits the same `CHECK_NOT_RUN`
+  (`verification_result_missing`/`identity_missing`/`identity_invalid`) instead of
+  reviving old success; `_latest_observations_by_key` drops the unused index and
+  `_is_projectable_row` reuses the gap rule (no dual rules).
+- P1 restore/serialize: `_validate_restored_receipts` splits into
+  `_validate_verification_row`/`_validate_executed_row` with exact-int identity,
+  revision, command/cwd checks (missing stays missing, illegal type raises
+  `RecoveryFailed`); `to_payload` preserves illegal types instead of `int(...)`
+  washing (`True`/`"1"`/`1.0` never become 1); headers/edited/turn/notes use
+  `_strict_restore_int`/`_persist_int`; `record_edit`/`record_verification`/
+  `record_hit` require exact ints; `valid_workspace_revision` requires
+  `type(value) is int` (cold-start, no string/float fallback).
+- P2 single exemption: `_effective_verification_forbidden(session)` is the only
+  source; `_engine_checks` short-circuits to `not_applicable` before projection
+  gaps and passes the session value to the engine (context flag ignored even on
+  conflict); direct path uses the same helper.
+- P2 real scheduler completion: `COMPLETION_PRODUCE` with `SoakScheduler`
+  generation (`completion` area + `_completion_seq` + weighted pass/fail/unknown)
+  and randomness-free `_exec_completion_produce` (real file write/read,
+  real fingerprint, real gate, `record_real_completion_view`, oracle check);
+  `execute_step`/`replay_script` carry it; `.py` files keep verification required
+  (`.txt` would be docs-only `not_applicable`).
+- P2 exact schema: `_valid_affinity_event` requires `type(version) is int`.
+- Verification: `ruff check codey tests tools`, `compileall`, and
+  `git diff --check` clean. Final full pytest:
+  **6168 passed, 10 skipped, 1492 subtests passed in 369.98s (0:06:09)**,
+  zero failures in a single run.
+- No release, tag, or version bump.
+
 ## Unreleased - Incomplete-latest block, independent oracle, real kernel/soak views, strict affinity apply (no release)
 
 - TDD red-first locks (4 new files, all failed before, pass after):
