@@ -932,9 +932,6 @@ def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
     )
 
 
-_items_from_events = items_from_events
-
-
 __all__ = [
     "WORK_ITEM_TRANSITION_ACTIONS",
     "WORK_ITEM_TRANSITION_MATRIX",

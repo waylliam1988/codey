@@ -1,5 +1,41 @@
 # Codey Test Report
 
+## Latest-observation completion, strict oracle wiring, queue alias removal, affinity split (2026-10-01)
+
+Scope: close the completion-projection latest-wins gap, the truthfulness
+oracle input/wiring gaps, work-queue legacy aliases, and the affinity
+duplicated transitions found in review. Red-first: 5 new files/groups failed
+before their fixes and pass after; existing verification/queue/affinity tests
+were migrated from legacy aliases to the formal owners. No code was modified
+after the final full run; only this report and the changelogs were written
+after that run.
+
+### Behavior and test evidence
+
+| Boundary | Locked behavior | Regression files |
+| --- | --- | --- |
+| Completion latest-wins | Success-then-failure blocks and failure-then-success passes with or without evidence context; stale revision blocks; cwd-independent; repeated evaluate stable without duplication | `test_completion_projection_latest_observation_wins.py` |
+| Oracle input validation | Missing fields, bool-as-int, `None==None`, and empty strict-Research source sets never pass | `tests/stress/test_completion_truthful_oracle_input_validation.py` |
+| Oracle real-run wiring | Real gate edit+verify+done builds a passing view; `assert_valid` calls the oracle (facts or explicit views); tampered identity/citations fail; recovery round-trip stays truthful; scheduler/soak forward `completion_views` | `tests/stress/test_completion_truthful_oracle_real_run.py`, `tests/stress/oracle.py`, `tests/stress/scheduler.py`, `tests/stress/soak.py` |
+| Work-queue hygiene | No `_items_from_*`/`_new_item` aliases; Store uses formal `items_from_*`/`new_item`; no dead `_apply_*`/`_valid_*` re-exports; delegation wraps real functions for both owners separately | `test_work_queue_no_legacy_aliases.py`, `test_work_queue_sources_own_conversions.py`, `test_work_queue_transition_split.py` |
+| Affinity split | Model/sources/events own their shapes; single `apply_affinity_event` + `replay_affinity_events` own every transition; Store does one full replay per read with no cross-round cache | `test_affinity_model_ownership.py`, `test_affinity_events_ownership.py`, `test_affinity_sources_ownership.py`, `test_affinity_replay_single_transition.py` |
+
+### Actual runs
+
+- Targeted completion/oracle regression: **44 passed**.
+- Targeted work-queue regression (aliases, delegation, transitions, ownership, parity): **41 passed, 37 subtests passed**.
+- Targeted affinity regression (ownership, replay, ghost affinity, graph primitives): **75 passed**.
+- Combined targeted gate/queue/affinity run: **214 passed**.
+- First full run in this round: **6106 passed, 10 skipped, 1492 subtests passed, 1 failed in 393.03s**. The single failure was `test_coldstart_export_cleanup::test_call_sites_use_common_helpers` still expecting `_common.event_ts` in the Store after the split (now owned by `affinity_events`); migrated to check Store (`now_iso_z`/`filter_values`) plus the events owner and re-verified with a targeted run.
+- Final full command: `python -m pytest tests -q -p no:cacheprovider` **6107 passed, 10 skipped, 1492 subtests passed in 368.05s (0:06:08)**.
+- Final prechecks: `python -m ruff check codey tests tools`, `python -m compileall -q codey tests tools`, `git diff --check`: passed.
+
+### Limits and follow-ups
+
+- The 10 skips are Windows/symlink privilege/POSIX-contract limitations. No live web-model/native API benchmark was run.
+- Affinity line count went from 2562 to ~1100 (Store-only); model/sources/events own their implementations and the Store delegates. No compatibility shims remain.
+- Proof is via bounded state-sequence tests, the independent oracle, and fault injection, not a whole-program correctness proof.
+
 ## Verification identity, strict-Research ledger, work-queue split, honest A/B (2026-09-30)
 
 Scope: close the completion-gate and work-queue gaps found in review of

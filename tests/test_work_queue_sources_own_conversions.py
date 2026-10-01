@@ -7,6 +7,7 @@ never imports the Store module.
 from __future__ import annotations
 
 import inspect
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,8 +54,41 @@ def test_sources_leaf_does_not_import_store():
 
 
 def test_store_delegates_to_source_owner():
+    import inspect
+
+    from codey.ghost.work_queue import GhostWorkQueueStore
+
     path = ROOT / "codey" / "ghost" / "work_queue.py"
     text = path.read_text(encoding="utf-8-sig")
-    assert "work_queue_sources" in text or "work_queue_events" in text
+    assert "work_queue_sources" in text
+    assert "work_queue_events" in text
     assert "def _items_from_events" not in text, "Store must not keep its own replay copy"
     assert "def _items_from_continuity" not in text, "Store must not keep its own source copy"
+    sync_src = inspect.getsource(GhostWorkQueueStore.sync_from_sources)
+    assert "items_from_continuity" in sync_src
+    assert "items_from_events" in sync_src
+
+
+def test_store_delegates_to_both_owners_separately():
+    from unittest import mock
+
+    from codey.ghost import work_queue as store_module
+    from codey.ghost import work_queue_events as events
+    from codey.ghost import work_queue_sources as sources
+    from codey.ghost.work_queue import GhostWorkQueueStore
+
+    assert store_module.items_from_events is events.items_from_events
+    assert store_module.items_from_continuity is sources.items_from_continuity
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        with (
+            mock.patch.object(
+                store_module, "items_from_events", wraps=events.items_from_events
+            ) as replay_spy,
+            mock.patch.object(
+                store_module, "items_from_continuity", wraps=sources.items_from_continuity
+            ) as sources_spy,
+        ):
+            store.sync_from_sources(session_id="s1", project="p1")
+            assert replay_spy.called, "Store must replay through work_queue_events"
+            assert sources_spy.called, "Store must convert through work_queue_sources"

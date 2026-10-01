@@ -2,6 +2,46 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 最新观察决定完成、oracle 严格接线、队列别名清理与 Affinity 拆分（未发布）
+
+- TDD 红色锁定 5 组新文件（先失败、后通过）：
+  `test_completion_projection_latest_observation_wins`（成功→失败拦截、
+  失败→成功放行，无论是否带证据上下文；旧版本拦截；cwd 独立；重复求值稳定）、
+  `tests/stress/test_completion_truthful_oracle_input_validation`（缺字段、
+  布尔当版本、`None==None`、空来源集合永不通过）、
+  `tests/stress/test_completion_truthful_oracle_real_run`（真实 gate 运行构造
+  通过视图；`assert_valid` 确实调用 oracle；篡改身份或引用必败；恢复往返仍真实）、
+  `test_work_queue_no_legacy_aliases`（无 `_items_from_*`/`_new_item` 别名；
+  Store 使用正式所有者；无多余 `_apply_*`/`_valid_*` 重导出）、
+  `test_affinity_model_ownership` / `test_affinity_events_ownership` /
+  `test_affinity_sources_ownership` / `test_affinity_replay_single_transition`
+ （模型/来源/事件各自拥有形状；单一 `apply_affinity_event` +
+  `replay_affinity_events` 拥有全部转换）。
+- P0 完成投影：`ExecutionEvidence.observe_check` 是成功/失败/环境更新的唯一
+  所有者；`_evidence_with_session_facts` 按记录顺序把最新编辑的验证事实经由它
+  投影，保留原命令/cwd/退出码/工作区身份。同一（命令，目录）以后一次观察为准；
+  过期身份永不成为新鲜通过。删除 `_append_session_check`、
+  `_verification_targets_latest_edit`、`_verification_exit_code`、
+  `_evidence_workspace_identity` 与 `_session_identity_matches`。
+- Oracle 真实性：`check_completion_truthful` 对缺字段关闭失败，使用精确布尔/
+  精确整数与有效版本/指纹相等校验；严格 Research 要求显式来源集合。新增测试侧
+  `completion_view_from_gate`（只读真实会话/证据/裁决/账本/完成文本，不抄裁决
+  结论），并接通 `assert_valid(..., completion_views=...)` 与
+  `SoakContext.completion_views` 经 scheduler/soak。
+- 工作队列卫生（冷启动，无兼容）：删除 `_items_from_events`、
+  `_new_item`/`_items_from_*` 别名与 Store 无用重导出（`_apply_*`、`_valid_*`、
+  `_WORK_TRANSITION_PATCH_KEYS`、`_research_proof_ref`、`_new_item`、未使用的
+  转换矩阵重导出）；Store 使用正式 `items_from_events`/`new_item`/`items_from_*`。
+  迁移转换规则、队列、affinity、post-turn 测试、手工 A/B 与 parity/sweep 测试到
+  所有者；委托测试包装真实函数并分别要求两个所有者。
+- Affinity 拆分（4 职责，无通用框架）：新增 `affinity_model.py`（数据/身份/
+  载荷规则，无 Store/锁/I/O）、`affinity_sources.py`（显式参数的
+  `collect_source_specs`）、`affinity_events.py`（单一 `apply_affinity_event` +
+  `replay_affinity_events`，无路径/锁/写入）。`affinity.py` 仅保留 Store/事务/
+  查询/提示与 `apply_affinity_work_boost`；一次读取只做一次完整重放，无跨轮缓存。
+  迁移 affinity 测试与手工 A/B 到所有者；转换故障测试只 patch 转换所有者。
+- 未发布、未打 tag、未升级版本。
+
 ## Unreleased - 验证身份、严格 Research 账本、工作队列拆分与诚实 A/B（未发布）
 
 - TDD 红色锁定 6 个新文件（先失败、后通过）：

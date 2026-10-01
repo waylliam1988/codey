@@ -73,14 +73,14 @@ class CancellationPropagationTests(unittest.TestCase):
                 store.list_nodes()
 
     def test_affinity_cross_store_specs_reraise_cancel(self) -> None:
-        from codey.ghost import affinity as affinity_module
+        from codey.ghost import affinity_sources as affinity_sources_owner
 
         class _Boom:
             def list_nodes(self, **_kwargs):
                 raise cancellation.TaskCancelled("stop")
 
         with self.assertRaises(cancellation.TaskCancelled):
-            affinity_module._node_specs_from_hebbian(_Boom())
+            affinity_sources_owner._node_specs_from_hebbian(_Boom())
 
     def test_details_recovery_reraises_cancel(self) -> None:
         from codey.runs import details as details_module

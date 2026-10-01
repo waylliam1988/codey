@@ -76,12 +76,11 @@ def test_bool_string_zero_revision_cannot_complete(tmp_path):
 def test_session_identity_requires_matching_revision_even_when_fingerprint_matches(tmp_path):
     from codey.operations import project_completion_checks as pcc
 
-    session, fp = _project_session(tmp_path, revision=7)
-    latest = {"workspace_fingerprint": fp, "workspace_revision": 2}
-    assert pcc._session_identity_matches(session, latest, 7, fp) is False
+    _, fp = _project_session(tmp_path, revision=7)
+    assert pcc._workspace_identity_equal(2, fp, 7, fp) is False
 
 
-def test_stale_session_verification_does_not_project_into_evidence(tmp_path):
+def test_stale_session_verification_does_not_count_as_fresh_success(tmp_path):
     from codey.operations import project_completion_checks as pcc
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
@@ -92,20 +91,19 @@ def test_stale_session_verification_does_not_project_into_evidence(tmp_path):
     )
     evidence = ExecutionEvidence(workspace_revision=7, workspace_fingerprint=fp)
     projected = pcc._evidence_with_session_facts(evidence, session)
-    assert list(projected.checks_after_edit) == []
+    assert list(projected.successful_checks) == []
+    assert evaluate(session, "done").complete is False
 
 
-def test_session_append_preserves_cwd_and_full_identity(tmp_path):
-    from codey.operations import project_completion_checks as pcc
-    from codey.runtime.observe.execution_evidence import ExecutionEvidence
+def test_session_observe_preserves_cwd_and_full_identity(tmp_path):
+    from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvidence
 
     _, fp = _project_session(tmp_path, revision=7)
     evidence = ExecutionEvidence(workspace_revision=7, workspace_fingerprint=fp)
-    row = {
-        "command": "pytest", "cwd": "pkg", "revision": 1, "passed": True,
-        "exit_code": 0, "workspace_revision": 7, "workspace_fingerprint": fp,
-    }
-    pcc._append_session_check(evidence, row)
+    evidence.observe_check(
+        CheckEvidence("pytest", "pkg", exit_code=0, workspace_revision=7, workspace_fingerprint=fp),
+        succeeded=True,
+    )
     rows = list(evidence.checks_after_edit)
     assert rows and rows[-1].cwd == "pkg"
     assert rows[-1].workspace_revision == 7

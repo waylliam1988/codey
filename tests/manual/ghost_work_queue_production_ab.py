@@ -22,10 +22,11 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import codey.ghost.work_queue as work_queue_module
 from codey.agents.request import AgentRequest
 from codey.app import server
 from codey.app import task_submit as task_submit
+from codey.ghost.work_queue_model import WORK_QUEUE_SCHEMA_VERSION, _session_ref
+from codey.ghost.work_queue_sources import new_item
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
@@ -390,11 +391,11 @@ def _seed_case_item(
     session_id: str,
 ) -> None:
     if case.seed_kind == "research":
-        item = work_queue_module._new_item(
+        item = new_item(
             kind="research",
             status="queued",
             scope="session",
-            scope_ref=work_queue_module._session_ref(session_id),
+            scope_ref=_session_ref(session_id),
             title="Research the saved provider recovery question",
             why_now="Bounded local open question from continuity.",
             priority=0.8,
@@ -421,7 +422,7 @@ def _seed_case_item(
         )
         return
     elif case.seed_kind == "review" and project is not None:
-        item = work_queue_module._new_item(
+        item = new_item(
             kind="review",
             status="queued",
             scope="project",
@@ -445,7 +446,7 @@ def _seed_case_item(
 def _write_work_snapshot(store, items) -> None:
     store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
-        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
         "event_id": "manual_work_snapshot",
         "ts": "2999-01-01T00:00:00Z",

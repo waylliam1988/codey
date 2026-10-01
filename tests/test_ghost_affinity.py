@@ -10,12 +10,31 @@ from unittest import mock
 import pytest
 
 import codey.ghost.affinity as affinity_module
-import codey.ghost.work_queue as work_queue_module
-from codey.ghost.affinity import AffinityEdge, AffinityNode, GhostAffinityStore
+from codey.ghost.affinity import GhostAffinityStore
+from codey.ghost.affinity_events import (
+    _edge_reinforced_event,
+    _node_reinforced_event,
+    _reinforce_edge,
+    _reinforce_node,
+    _scope_deleted_event,
+)
+from codey.ghost.affinity_model import (
+    AFFINITY_SCHEMA_VERSION,
+    NODE_LEARNING_RATE,
+    AffinityEdge,
+    AffinityEdgeSpec,
+    AffinityNode,
+    AffinityNodeSpec,
+    _edge_id,
+    _node_id,
+)
+from codey.ghost.affinity_sources import _scope_ref
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal
 from codey.ghost.work_queue import GhostWorkQueueStore
+from codey.ghost.work_queue_model import WORK_QUEUE_SCHEMA_VERSION as _WORK_QUEUE_SCHEMA_VERSION
+from codey.ghost.work_queue_sources import new_item as _new_work_item
 from codey.knowledge.research_interest import ResearchInterestCandidate
 
 FRESH_TS = "2999-01-01T00:00:00Z"
@@ -100,7 +119,7 @@ def _work_item(
     priority: float = 0.7,
     proof_refs: tuple[str, ...] = (),
 ):
-    item = work_queue_module._new_item(
+    item = _new_work_item(
         kind=kind,
         status="queued" if status == "done" else status,
         scope="project",
@@ -162,7 +181,7 @@ def _affinity_edge(
     source_ref: str,
 ) -> AffinityEdge:
     return AffinityEdge(
-        id=affinity_module._edge_id(source, target, relation, scope, scope_ref),
+        id=_edge_id(source, target, relation, scope, scope_ref),
         source=source,
         target=target,
         relation=relation,
@@ -181,7 +200,7 @@ def _affinity_edge(
 def _write_work_snapshot(store: GhostWorkQueueStore, items) -> None:
     store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
-        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "schema_version": _WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
         "event_id": "test_work_snapshot",
         "ts": FRESH_TS,
@@ -198,7 +217,7 @@ def _write_work_snapshot(store: GhostWorkQueueStore, items) -> None:
 def _write_affinity_snapshot(store: GhostAffinityStore, nodes, edges) -> None:
     store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
-        "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+        "schema_version": AFFINITY_SCHEMA_VERSION,
         "type": "ghost_affinity_snapshot",
         "event_id": "test_affinity_snapshot",
         "ts": FRESH_TS,
@@ -284,8 +303,8 @@ def test_source_ref_replay_is_noop() -> None:
 
 
 def test_reference_count_does_not_scale_reinforcement() -> None:
-    def node_spec(refs: tuple[str, ...]) -> affinity_module._NodeSpec:
-        return affinity_module._NodeSpec(
+    def node_spec(refs: tuple[str, ...]) -> AffinityNodeSpec:
+        return AffinityNodeSpec(
             kind="task_type",
             key="research",
             label="research",
@@ -296,8 +315,8 @@ def test_reference_count_does_not_scale_reinforcement() -> None:
             source_refs=refs,
         )
 
-    one = affinity_module._reinforce_node(None, node_spec(("ref:1",)), now=FRESH_TS)[0]
-    five = affinity_module._reinforce_node(
+    one = _reinforce_node(None, node_spec(("ref:1",)), now=FRESH_TS)[0]
+    five = _reinforce_node(
         None,
         node_spec(tuple(f"ref:{index}" for index in range(5))),
         now=FRESH_TS,
@@ -307,8 +326,8 @@ def test_reference_count_does_not_scale_reinforcement() -> None:
     # same ONE reinforcement event as 1 ref.
     assert abs(one.weight - five.weight) < 1e-12
 
-    def edge_spec(refs: tuple[str, ...]) -> affinity_module._EdgeSpec:
-        return affinity_module._EdgeSpec(
+    def edge_spec(refs: tuple[str, ...]) -> AffinityEdgeSpec:
+        return AffinityEdgeSpec(
             source="provider-a",
             target="task_research",
             relation="works_well_for",
@@ -319,8 +338,8 @@ def test_reference_count_does_not_scale_reinforcement() -> None:
             source_refs=refs,
         )
 
-    edge_one = affinity_module._reinforce_edge(None, edge_spec(("ref:1",)), now=FRESH_TS)[0]
-    edge_five = affinity_module._reinforce_edge(
+    edge_one = _reinforce_edge(None, edge_spec(("ref:1",)), now=FRESH_TS)[0]
+    edge_five = _reinforce_edge(
         None,
         edge_spec(tuple(f"ref:{index}" for index in range(5))),
         now=FRESH_TS,
@@ -355,10 +374,10 @@ def test_work_priority_hints_use_relevant_target_edge_among_irrelevant_edges() -
         project = Path(td, "project")
         project.mkdir()
         scope = "project"
-        scope_ref = affinity_module._scope_ref("project", str(project))
+        scope_ref = _scope_ref("project", str(project))
         affinity = GhostAffinityStore(td)
-        project_id = affinity_module._node_id("project", scope, scope_ref, scope_ref)
-        task_id = affinity_module._node_id("task_type", scope, scope_ref, "research")
+        project_id = _node_id("project", scope, scope_ref, scope_ref)
+        task_id = _node_id("task_type", scope, scope_ref, "research")
         nodes = [
             _affinity_node(project_id, "project", scope_ref, scope, scope_ref, weight=0.9),
             _affinity_node(task_id, "task_type", "research", scope, scope_ref, weight=0.05),
@@ -369,7 +388,7 @@ def test_work_priority_hints_use_relevant_target_edge_among_irrelevant_edges() -
             ),
         ]
         for index in range(20):
-            other_task_id = affinity_module._node_id("task_type", scope, scope_ref, f"other-{index}")
+            other_task_id = _node_id("task_type", scope, scope_ref, f"other-{index}")
             nodes.append(_affinity_node(other_task_id, "task_type", f"other-{index}", scope, scope_ref, weight=0.05))
             edges.append(
                 _affinity_edge(
@@ -655,7 +674,9 @@ def test_decay_preserves_last_reinforced_and_fanout_cap_prunes_edges() -> None:
     candidate = _candidate(concepts=("alpha", "beta", "gamma", "delta"))
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
-        with mock.patch.object(affinity_module, "MAX_EDGE_OUT_DEGREE", 1):
+        import codey.ghost.affinity_events as _affinity_events_owner
+
+        with mock.patch.object(_affinity_events_owner, "MAX_EDGE_OUT_DEGREE", 1):
             with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:00Z"):
                 affinity.sync_from_sources(research_interest_candidates=(candidate,), session_id="s1")
             before_nodes = affinity.list_nodes(session_id="s1")
@@ -717,7 +738,7 @@ def test_concurrent_reinforce_accumulates_both_events() -> None:
 
         final = GhostAffinityStore(td).list_nodes(kind="research_concept", session_id="s1")[0]
 
-    expected_increment = affinity_module.NODE_LEARNING_RATE * 0.7 * 0.8
+    expected_increment = NODE_LEARNING_RATE * 0.7 * 0.8
     assert round(final.weight - base_weight, 4) == round(expected_increment * 2, 4)
     assert {"research_interest:alpha-a", "research_interest:alpha-b"}.issubset(set(final.source_refs))
 
@@ -731,7 +752,12 @@ def test_snapshot_then_reinforce_continues_accumulating() -> None:
                 session_id="s1",
             ).ok
             before = affinity.list_nodes(kind="research_concept", session_id="s1")[0]
-            with mock.patch.object(affinity_module, "MAX_AFFINITY_EVENTS", 0):
+            import codey.ghost.affinity_model as _affinity_model_owner
+
+            with (
+                mock.patch.object(affinity_module, "MAX_AFFINITY_EVENTS", 0),
+                mock.patch.object(_affinity_model_owner, "MAX_AFFINITY_EVENTS", 0),
+            ):
                 compacted = affinity.compact_if_needed()
             assert compacted["compacted"] is True
             assert "ghost_affinity_snapshot" in affinity.events_path.read_text(encoding="utf-8")
@@ -742,7 +768,7 @@ def test_snapshot_then_reinforce_continues_accumulating() -> None:
             ).ok
             after = affinity.list_nodes(kind="research_concept", session_id="s1")[0]
 
-    expected_increment = affinity_module.NODE_LEARNING_RATE * 0.7 * 0.8
+    expected_increment = NODE_LEARNING_RATE * 0.7 * 0.8
     assert round(after.weight - before.weight, 4) == round(expected_increment, 4)
 
 
@@ -753,7 +779,7 @@ def test_old_affinity_upsert_event_is_unsupported_for_mutation() -> None:
         affinity.events_path.write_text(
             json.dumps(
                 {
-                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "schema_version": AFFINITY_SCHEMA_VERSION,
                     "type": "ghost_affinity_node_upsert",
                     "event_id": "old",
                     "ts": FRESH_TS,
@@ -781,7 +807,7 @@ def test_affinity_snapshot_with_invalid_row_is_unsupported_for_mutation() -> Non
         affinity.events_path.write_text(
             json.dumps(
                 {
-                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "schema_version": AFFINITY_SCHEMA_VERSION,
                     "type": "ghost_affinity_snapshot",
                     "event_id": "bad-snapshot",
                     "ts": FRESH_TS,
@@ -839,7 +865,7 @@ def test_affinity_event_with_extra_top_level_field_is_unsupported_for_mutation()
 def test_affinity_node_spec_with_noncanonical_numeric_field_fails_closed(field: str, bad_value: object) -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
-        spec = affinity_module._NodeSpec(
+        spec = AffinityNodeSpec(
             kind="research_concept",
             key="alpha",
             label="alpha",
@@ -849,7 +875,7 @@ def test_affinity_node_spec_with_noncanonical_numeric_field_fails_closed(field: 
             reward=0.7,
             source_refs=("ref:node",),
         )
-        event = affinity_module._node_reinforced_event(spec, ts=FRESH_TS)
+        event = _node_reinforced_event(spec, ts=FRESH_TS)
         event["spec"][field] = bad_value
         affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
         affinity.events_path.write_text(
@@ -870,7 +896,7 @@ def test_affinity_node_spec_with_noncanonical_numeric_field_fails_closed(field: 
 def test_affinity_edge_reinforcement_without_source_nodes_fails_closed() -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
-        edge = affinity_module._EdgeSpec(
+        edge = AffinityEdgeSpec(
             source="missing-source",
             target="missing-target",
             relation="associated_with",
@@ -883,7 +909,7 @@ def test_affinity_edge_reinforcement_without_source_nodes_fails_closed() -> None
         affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
         affinity.events_path.write_text(
             json.dumps(
-                affinity_module._edge_reinforced_event(edge, ts=FRESH_TS),
+                _edge_reinforced_event(edge, ts=FRESH_TS),
                 ensure_ascii=False,
                 separators=(",", ":"),
                 sort_keys=True,
@@ -909,9 +935,9 @@ def test_affinity_edge_reinforcement_without_source_nodes_fails_closed() -> None
 def test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed(field: str, bad_value: object) -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
-        source = affinity_module._node_id("research_concept", "session", "s1", "alpha")
-        target = affinity_module._node_id("research_concept", "session", "s1", "beta")
-        source_node = affinity_module._NodeSpec(
+        source = _node_id("research_concept", "session", "s1", "alpha")
+        target = _node_id("research_concept", "session", "s1", "beta")
+        source_node = AffinityNodeSpec(
             kind="research_concept",
             key="alpha",
             label="alpha",
@@ -921,7 +947,7 @@ def test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed(field: 
             reward=0.7,
             source_refs=("ref:source",),
         )
-        target_node = affinity_module._NodeSpec(
+        target_node = AffinityNodeSpec(
             kind="research_concept",
             key="beta",
             label="beta",
@@ -931,7 +957,7 @@ def test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed(field: 
             reward=0.7,
             source_refs=("ref:target",),
         )
-        edge = affinity_module._EdgeSpec(
+        edge = AffinityEdgeSpec(
             source=source,
             target=target,
             relation="associated_with",
@@ -941,11 +967,11 @@ def test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed(field: 
             reward=0.7,
             source_refs=("ref:edge",),
         )
-        edge_event = affinity_module._edge_reinforced_event(edge, ts=FRESH_TS)
+        edge_event = _edge_reinforced_event(edge, ts=FRESH_TS)
         edge_event["spec"][field] = bad_value
         events = (
-            affinity_module._node_reinforced_event(source_node, ts=FRESH_TS),
-            affinity_module._node_reinforced_event(target_node, ts=FRESH_TS),
+            _node_reinforced_event(source_node, ts=FRESH_TS),
+            _node_reinforced_event(target_node, ts=FRESH_TS),
             edge_event,
         )
         affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
@@ -982,8 +1008,8 @@ def test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed(field: 
 def test_affinity_snapshot_numeric_type_mismatch_fails_closed(row_kind: str, field: str, bad_value: object) -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
-        source = affinity_module._node_id("research_concept", "session", "s1", "alpha")
-        target = affinity_module._node_id("research_concept", "session", "s1", "beta")
+        source = _node_id("research_concept", "session", "s1", "alpha")
+        target = _node_id("research_concept", "session", "s1", "beta")
         node_rows = [
             _affinity_node(source, "research_concept", "alpha", "session", "s1", weight=0.4).to_payload(),
             _affinity_node(target, "research_concept", "beta", "session", "s1", weight=0.4).to_payload(),
@@ -1001,7 +1027,7 @@ def test_affinity_snapshot_numeric_type_mismatch_fails_closed(row_kind: str, fie
         affinity.events_path.write_text(
             json.dumps(
                 {
-                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "schema_version": AFFINITY_SCHEMA_VERSION,
                     "type": "ghost_affinity_snapshot",
                     "event_id": "bad-snapshot",
                     "ts": FRESH_TS,
@@ -1034,7 +1060,7 @@ def test_affinity_scope_deleted_payload_with_missing_count_fields_is_unsupported
         affinity.events_path.write_text(
             json.dumps(
                 {
-                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "schema_version": AFFINITY_SCHEMA_VERSION,
                     "type": "ghost_affinity_scope_deleted",
                     "event_id": "bad-scope-delete",
                     "ts": FRESH_TS,
@@ -1064,7 +1090,7 @@ def test_affinity_scope_deleted_payload_with_noncanonical_count_is_unsupported_f
 ) -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
-        event = affinity_module._scope_deleted_event(
+        event = _scope_deleted_event(
             "project",
             "project:alpha",
             removed_nodes=1,
@@ -1095,7 +1121,7 @@ def test_affinity_decay_payload_with_extra_field_is_unsupported_for_mutation() -
         affinity.events_path.write_text(
             json.dumps(
                 {
-                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "schema_version": AFFINITY_SCHEMA_VERSION,
                     "type": "ghost_affinity_decay_applied",
                     "event_id": "bad-decay",
                     "ts": FRESH_TS,
@@ -1133,7 +1159,7 @@ def test_affinity_decay_payload_with_missing_field_is_unsupported_for_mutation()
         affinity.events_path.write_text(
             json.dumps(
                 {
-                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "schema_version": AFFINITY_SCHEMA_VERSION,
                     "type": "ghost_affinity_decay_applied",
                     "event_id": "bad-decay",
                     "ts": FRESH_TS,
@@ -1170,7 +1196,7 @@ def test_affinity_decay_payload_with_noncanonical_count_is_unsupported_for_mutat
         affinity.events_path.write_text(
             json.dumps(
                 {
-                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "schema_version": AFFINITY_SCHEMA_VERSION,
                     "type": "ghost_affinity_decay_applied",
                     "event_id": "bad-decay",
                     "ts": FRESH_TS,
@@ -1248,4 +1274,4 @@ def test_affinity_decay_propagates_projection_write_failure_warning() -> None:
 
 
 def test_affinity_schema_version_stays_cold_start_v1() -> None:
-    assert affinity_module.AFFINITY_SCHEMA_VERSION == 1
+    assert AFFINITY_SCHEMA_VERSION == 1

@@ -37,7 +37,6 @@ from codey.ghost.work_queue_events import (
     _item_payloads,
     _item_sort_key,
     _items_deleted_event,
-    _items_from_events,
     _merge_items,
     _observed_event,
     _primary_proof_matches_item_kind,
@@ -50,36 +49,7 @@ from codey.ghost.work_queue_events import (
     _transition_allowed,
     _transition_event,
     _valid_work_event,
-)
-from codey.ghost.work_queue_events import (
-    _WORK_TRANSITION_PATCH_KEYS as _WORK_TRANSITION_PATCH_KEYS,
-)
-from codey.ghost.work_queue_events import (
-    WORK_ITEM_TRANSITION_ACTIONS as WORK_ITEM_TRANSITION_ACTIONS,
-)
-from codey.ghost.work_queue_events import (
-    WORK_ITEM_TRANSITION_MATRIX as WORK_ITEM_TRANSITION_MATRIX,
-)
-from codey.ghost.work_queue_events import (
-    _apply_block_transition as _apply_block_transition,
-)
-from codey.ghost.work_queue_events import (
-    _apply_claim_transition as _apply_claim_transition,
-)
-from codey.ghost.work_queue_events import (
-    _apply_queue_transition as _apply_queue_transition,
-)
-from codey.ghost.work_queue_events import (
-    _apply_reject_transition as _apply_reject_transition,
-)
-from codey.ghost.work_queue_events import (
-    _valid_claim_transition as _valid_claim_transition,
-)
-from codey.ghost.work_queue_events import (
-    _valid_release_transition as _valid_release_transition,
-)
-from codey.ghost.work_queue_events import (
-    _valid_work_transition as _valid_work_transition,
+    items_from_events,
 )
 from codey.ghost.work_queue_model import (
     CLAIMABLE_STATUSES,
@@ -113,18 +83,12 @@ from codey.ghost.work_queue_model import (
     _proof_run_ref,
     _session_ref,
 )
-from codey.ghost.work_queue_model import (
-    _research_proof_ref as _research_proof_ref,
-)
 from codey.ghost.work_queue_sources import (
-    _items_from_continuity,
-    _items_from_research_interest_candidates,
-    _items_from_run_projection,
-    _items_from_terminal_event,
-    _items_from_work_checkpoint,
-)
-from codey.ghost.work_queue_sources import (
-    _new_item as _new_item,
+    items_from_continuity,
+    items_from_research_interest_candidates,
+    items_from_run_projection,
+    items_from_terminal_event,
+    items_from_work_checkpoint,
 )
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
@@ -212,7 +176,7 @@ class GhostWorkQueueStore:
             now = _common.now_iso_z()
             candidates: list[GhostWorkItem] = []
             candidates.extend(
-                _items_from_continuity(
+                items_from_continuity(
                     continuity_store,
                     session_id=session_id,
                     project=project,
@@ -220,7 +184,7 @@ class GhostWorkQueueStore:
                 )
             )
             candidates.extend(
-                _items_from_research_interest_candidates(
+                items_from_research_interest_candidates(
                     research_interest_candidates,
                     session_id=session_id,
                     project=project,
@@ -228,7 +192,7 @@ class GhostWorkQueueStore:
                 )
             )
             candidates.extend(
-                _items_from_work_checkpoint(
+                items_from_work_checkpoint(
                     work_checkpoint_store,
                     session_id=session_id,
                     project=project,
@@ -236,7 +200,7 @@ class GhostWorkQueueStore:
                 )
             )
             candidates.extend(
-                _items_from_run_projection(
+                items_from_run_projection(
                     run_projection,
                     session_id=session_id,
                     project=project,
@@ -244,7 +208,7 @@ class GhostWorkQueueStore:
                 )
             )
             candidates.extend(
-                _items_from_terminal_event(
+                items_from_terminal_event(
                     terminal_event,
                     session_id=session_id,
                     run_id=run_id,
@@ -254,7 +218,7 @@ class GhostWorkQueueStore:
             )
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
-                items = _bounded_items(_items_from_events(events))
+                items = _bounded_items(items_from_events(events))
                 expired = tuple(item for item in items if _is_expired(item, now))
                 append_events: list[dict[str, object]] = []
                 if expired:
@@ -276,7 +240,7 @@ class GhostWorkQueueStore:
                             write_projection=False,
                             compact=False,
                         )
-                    new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                    new_items = _bounded_items(items_from_events((*events, *append_events)))
                     return _WorkMutation(
                         GhostWorkSyncResult(
                             True, skipped_reason="no_sources", items_changed=len(expired), total_items=len(new_items)
@@ -301,7 +265,7 @@ class GhostWorkQueueStore:
                         write_projection=False,
                         compact=False,
                     )
-                new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                new_items = _bounded_items(items_from_events((*events, *append_events)))
                 return _WorkMutation(
                     GhostWorkSyncResult(
                         True, items_changed=observed_count, total_items=len(new_items), warnings=self.last_warnings
@@ -385,7 +349,7 @@ class GhostWorkQueueStore:
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 now = _common.now_iso_z()
                 append_events: list[dict[str, object]] = []
-                items = _bounded_items(_items_from_events(events))
+                items = _bounded_items(items_from_events(events))
                 for item in items:
                     if not _is_stale_claim(item, now):
                         continue
@@ -405,7 +369,7 @@ class GhostWorkQueueStore:
                         )
                     )
                 if append_events:
-                    items = _bounded_items(_items_from_events((*events, *append_events)))
+                    items = _bounded_items(items_from_events((*events, *append_events)))
                 candidate = _next_claimable_item(
                     items,
                     session_id=session_id,
@@ -420,7 +384,7 @@ class GhostWorkQueueStore:
                     )
                     if not append_events:
                         return _WorkMutation(result, items=tuple(items), write_projection=False, compact=False)
-                    new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                    new_items = _bounded_items(items_from_events((*events, *append_events)))
                     return _WorkMutation(result, append_events=tuple(append_events), items=tuple(new_items))
                 mode = mode_for_work_item(replace(candidate, status="running"), project=project)
                 if not mode:
@@ -456,7 +420,7 @@ class GhostWorkQueueStore:
                         ts=now,
                     )
                 )
-                new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                new_items = _bounded_items(items_from_events((*events, *append_events)))
                 return _WorkMutation(
                     GhostWorkClaimResult(
                         True,
@@ -498,7 +462,7 @@ class GhostWorkQueueStore:
         try:
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
-                items = _bounded_items(_items_from_events(events))
+                items = _bounded_items(items_from_events(events))
                 current = _find_item(items, item_id)
                 if current is None or current.status != "running":
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
@@ -526,7 +490,7 @@ class GhostWorkQueueStore:
                         },
                         ts=now,
                     )
-                    new_items = _bounded_items(_items_from_events((*events, event)))
+                    new_items = _bounded_items(items_from_events((*events, event)))
                     return _WorkMutation(blocked, append_events=(event,), items=tuple(new_items))
                 completed = replace(
                     current,
@@ -550,7 +514,7 @@ class GhostWorkQueueStore:
                     },
                     ts=now,
                 )
-                new_items = _bounded_items(_items_from_events((*events, event)))
+                new_items = _bounded_items(items_from_events((*events, event)))
                 return _WorkMutation(completed, append_events=(event,), items=tuple(new_items))
 
             result = self._mutate_event_log(decide)
@@ -586,7 +550,7 @@ class GhostWorkQueueStore:
         try:
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
-                items = _bounded_items(_items_from_events(events))
+                items = _bounded_items(items_from_events(events))
                 current = _find_item(items, item_id)
                 if current is None or current.status != "running":
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
@@ -617,7 +581,7 @@ class GhostWorkQueueStore:
                     },
                     ts=now,
                 )
-                new_items = _bounded_items(_items_from_events((*events, event)))
+                new_items = _bounded_items(items_from_events((*events, event)))
                 return _WorkMutation(updated, append_events=(event,), items=tuple(new_items))
 
             result = self._mutate_event_log(decide)
@@ -634,7 +598,7 @@ class GhostWorkQueueStore:
         try:
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
-                items = _bounded_items(_items_from_events(events))
+                items = _bounded_items(items_from_events(events))
                 current = _find_item(items, item_id)
                 if current is None:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
@@ -669,7 +633,7 @@ class GhostWorkQueueStore:
                     },
                     ts=now,
                 )
-                new_items = _bounded_items(_items_from_events((*events, event)))
+                new_items = _bounded_items(items_from_events((*events, event)))
                 return _WorkMutation(queued, append_events=(event,), items=tuple(new_items))
 
             result = self._mutate_event_log(decide)
@@ -684,7 +648,7 @@ class GhostWorkQueueStore:
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 now = _common.now_iso_z()
-                items = _bounded_items(_items_from_events(events))
+                items = _bounded_items(items_from_events(events))
                 append_events: list[dict[str, object]] = []
                 for item in items:
                     if not _is_stale_claim(item, now):
@@ -712,7 +676,7 @@ class GhostWorkQueueStore:
                         write_projection=False,
                         compact=False,
                     )
-                new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                new_items = _bounded_items(items_from_events((*events, *append_events)))
                 return _WorkMutation(
                     GhostWorkSyncResult(
                         True, items_changed=len(append_events), total_items=len(new_items), warnings=self.last_warnings
@@ -744,7 +708,7 @@ class GhostWorkQueueStore:
                 if items:
                     event_warnings = ("work_events_missing",)
             else:
-                items = tuple(_items_from_events(events))
+                items = tuple(items_from_events(events))
             projection = _projection_payload(items, generated_at=_common.now_iso_z(), warnings=event_warnings)
             return {
                 "schema_version": WORK_QUEUE_SCHEMA_VERSION,
@@ -782,7 +746,7 @@ class GhostWorkQueueStore:
         try:
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
-                items = _bounded_items(_items_from_events(events))
+                items = _bounded_items(items_from_events(events))
                 removed = [
                     item
                     for item in items
@@ -804,7 +768,7 @@ class GhostWorkQueueStore:
                     session_ref=session_ref if normalized_scope == "session" else "",
                     ts=_common.now_iso_z(),
                 )
-                new_items = _bounded_items(_items_from_events((*events, event)))
+                new_items = _bounded_items(items_from_events((*events, event)))
                 return _WorkMutation(
                     {"removed": len(removed), "warnings": []}, append_events=(event,), items=tuple(new_items)
                 )
@@ -820,7 +784,7 @@ class GhostWorkQueueStore:
         try:
             with with_file_lock(self.events_path):
                 events = self._events_for_mutation_locked()
-                self._write_projection(_bounded_items(_items_from_events(events)), warnings=[])
+                self._write_projection(_bounded_items(items_from_events(events)), warnings=[])
             return True
         except (OSError, TypeError, ValueError):
             return False
@@ -853,7 +817,7 @@ class GhostWorkQueueStore:
                         True, False, before, before, self.last_warnings, warning_cleaner=_bounded_warnings
                     )
                 events = self._events_for_mutation_locked()
-                items = _bounded_items(_items_from_events(events))
+                items = _bounded_items(items_from_events(events))
                 self._write_events_atomic([_snapshot_event(items, ts=_common.now_iso_z(), reason="events_compacted")])
                 self._write_projection(items, warnings=[])
                 after = _event_file_stats(
@@ -888,7 +852,7 @@ class GhostWorkQueueStore:
         try:
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
-                items = _bounded_items(_items_from_events(events))
+                items = _bounded_items(items_from_events(events))
                 current = _find_item(items, item_id)
                 if current is None:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
@@ -939,7 +903,7 @@ class GhostWorkQueueStore:
                     patch=patch,
                     ts=now,
                 )
-                new_items = _bounded_items(_items_from_events((*events, event)))
+                new_items = _bounded_items(items_from_events((*events, event)))
                 return _WorkMutation(updated, append_events=(event,), items=tuple(new_items))
 
             result = self._mutate_event_log(decide)
@@ -958,7 +922,7 @@ class GhostWorkQueueStore:
         if self.events_path.exists():
             events = self._read_events_unlocked()
             if not self._events_read_blocked:
-                return tuple(_bounded_items(_items_from_events(events)))
+                return tuple(_bounded_items(items_from_events(events)))
             return self._load_projection_items_unlocked()
         projection = self._load_projection_items_unlocked()
         if projection:

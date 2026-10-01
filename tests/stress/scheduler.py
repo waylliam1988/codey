@@ -518,6 +518,7 @@ class SoakContext:
         self.committed: list[str] = []
         self.rejected: list[str] = []
         self.unknowns: list[tuple[str, str]] = []
+        self.completion_views: list[dict] = []
         self.counts: dict[str, int] = {}
         self.fault_counts: dict[str, int] = {}
         self.restarts = 0
@@ -836,10 +837,10 @@ def replay_script(script: list[dict], state_home: object, *, check_every: int = 
         if check_every and (index + 1) % check_every == 0:
             scheduler.self_check(world)
             facts = oracle.check_recovery_idempotent(world.canonical)
-            oracle.assert_valid(facts, unknowns=ctx.unknowns)
+            oracle.assert_valid(facts, unknowns=ctx.unknowns, completion_views=ctx.completion_views)
     scheduler.self_check(world)
     facts = oracle.check_recovery_idempotent(world.canonical)
-    oracle.assert_valid(facts, unknowns=ctx.unknowns)
+    oracle.assert_valid(facts, unknowns=ctx.unknowns, completion_views=ctx.completion_views)
     oracle.check_no_duplicate_facts([c for c in ctx.committed if not c.endswith(":dup")])
     return {
         "facts": facts,

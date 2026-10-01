@@ -22,13 +22,14 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import codey.ghost.affinity as affinity_module
-import codey.ghost.work_queue as work_queue_module
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.env_names import PROVIDER_CDP_PORT_ENV
-from codey.ghost.affinity import AffinityNode
+from codey.ghost.affinity_model import AFFINITY_SCHEMA_VERSION, AffinityNode, _node_id
+from codey.ghost.affinity_sources import _scope_ref
 from codey.ghost.hebbian import GhostNode
+from codey.ghost.work_queue_model import WORK_QUEUE_SCHEMA_VERSION, _session_ref
+from codey.ghost.work_queue_sources import new_item
 from codey.knowledge.research_interest import ResearchInterestCandidate
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
@@ -378,7 +379,7 @@ def _directive_affinity_node(
     weight: float,
 ) -> AffinityNode:
     key = f"style_preference:style_preference:{conflict_key}:{value_key}"
-    node_id = affinity_module._node_id("user_preference", "user", "", key)
+    node_id = _node_id("user_preference", "user", "", key)
     return AffinityNode(
         id=node_id,
         kind="user_preference",
@@ -406,9 +407,9 @@ def _directive_affinity_node(
 
 
 def _research_affinity_node(concept: str, *, weight: float) -> AffinityNode:
-    scope_ref = affinity_module._scope_ref("session", "s1")
+    scope_ref = _scope_ref("session", "s1")
     key = str(concept or "").strip().casefold()
-    node_id = affinity_module._node_id("research_concept", "session", scope_ref, key)
+    node_id = _node_id("research_concept", "session", scope_ref, key)
     return AffinityNode(
         id=node_id,
         kind="research_concept",
@@ -430,11 +431,11 @@ def _research_affinity_node(concept: str, *, weight: float) -> AffinityNode:
 
 
 def _work_item(concept: str, priority: float):
-    return work_queue_module._new_item(
+    return new_item(
         kind="research",
         status="queued",
         scope="session",
-        scope_ref=work_queue_module._session_ref("s1"),
+        scope_ref=_session_ref("s1"),
         title=f"Research {concept} provider recovery",
         why_now="Manual bounded affinity A/B.",
         priority=priority,
@@ -451,7 +452,7 @@ def _work_item(concept: str, priority: float):
 def _write_affinity_snapshot(store, nodes, edges) -> None:
     store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
-        "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+        "schema_version": AFFINITY_SCHEMA_VERSION,
         "type": "ghost_affinity_snapshot",
         "event_id": "manual_affinity_snapshot",
         "ts": "2999-01-01T00:00:00Z",
@@ -469,7 +470,7 @@ def _write_affinity_snapshot(store, nodes, edges) -> None:
 def _write_work_snapshot(store, items) -> None:
     store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
-        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
         "event_id": "manual_work_snapshot",
         "ts": "2999-01-01T00:00:00Z",

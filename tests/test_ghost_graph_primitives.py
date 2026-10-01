@@ -107,8 +107,9 @@ class GraphPrimitivesTests(unittest.TestCase):
         self.assertEqual([(row.source, row.target) for row in bounded], [("a", "b")])
 
     def test_stores_delegate_without_changing_clamps(self) -> None:
-        from codey.ghost import affinity as affinity_module
+        from codey.ghost import affinity_events as affinity_events_owner
         from codey.ghost import hebbian as hebbian_module
+        from codey.ghost.affinity_model import _unit_float as _affinity_unit_float
 
         now = "2026-09-20T00:00:00Z"
         basis = "2026-06-22T00:00:00Z"
@@ -118,13 +119,13 @@ class GraphPrimitivesTests(unittest.TestCase):
         self.assertAlmostEqual(
             hebbian, round(max(0.0, min(1.0, raw)), 6), places=6
         )
-        affinity = affinity_module._decayed_weight(0.8, basis, now, 90.0)
+        affinity = affinity_events_owner._decayed_weight(0.8, basis, now, 90.0)
         from codey.ghost.numbers import clamp_unit_float
 
         self.assertEqual(affinity, clamp_unit_float(raw, digits=6))
         # Bool edge stays store-local: Hebbian rounds True->1.0, affinity
         # clamps True->0.0. Primitives must not paper over the difference.
-        self.assertEqual(affinity_module._unit_float(True), 0.0)
+        self.assertEqual(_affinity_unit_float(True), 0.0)
 
 
 if __name__ == "__main__":

@@ -119,38 +119,73 @@ class InvariantChecker:
         and ledger -- never the verdict's own claims. Verification must bind
         the current (revision, fingerprint) pair exactly; strict Research
         must cite only opened sources from a valid ledger with a valid
-        report.
+        report. Missing fields fail closed: absent information never counts
+        as success, ``True`` never stands in for an int revision, and
+        ``None == None`` never counts as a fingerprint match.
         """
-        if not view.get("completed"):
+        if not isinstance(view, dict):
+            _fail("completion_truthful", self._prefix("completion view must be a mapping"))
+        completed = view.get("completed")
+        if type(completed) is not bool:
+            _fail("completion_truthful", self._prefix(f"completed must be an exact bool, got {completed!r}"))
+        if completed is False:
             return
-        if not view.get("proof_exists"):
+        if view.get("proof_exists") is not True:
             _fail("completion_truthful", self._prefix("completed without a durable proof"))
-        if not view.get("required_checks_passed", True):
+        if view.get("required_checks_passed") is not True:
             _fail("completion_truthful", self._prefix("completed with failing required checks"))
-        if view.get("verification_required"):
-            if not view.get("verification_identity_valid"):
+        if "verification_required" not in view or type(view.get("verification_required")) is not bool:
+            _fail("completion_truthful", self._prefix("completed without an explicit verification requirement"))
+        if "strict_research" not in view or type(view.get("strict_research")) is not bool:
+            _fail("completion_truthful", self._prefix("completed without an explicit research requirement"))
+        if view.get("verification_required") is True:
+            if view.get("verification_identity_valid") is not True:
                 _fail("completion_truthful", self._prefix("verification identity is not valid"))
-            if view.get("verification_revision") != view.get("workspace_revision"):
+            ver_rev = view.get("verification_revision")
+            ws_rev = view.get("workspace_revision")
+            if type(ver_rev) is not int or type(ws_rev) is not int:
                 _fail(
                     "completion_truthful",
-                    self._prefix(
-                        f"stale verification revision "
-                        f"{view.get('verification_revision')!r} != "
-                        f"workspace {view.get('workspace_revision')!r}"
-                    ),
+                    self._prefix(f"verification revision must be exact int, got {ver_rev!r} vs {ws_rev!r}"),
                 )
-            if view.get("verification_fingerprint") != view.get("workspace_fingerprint"):
+            try:
+                from codey.workspace.revision import valid_workspace_revision
+            except Exception:
+                valid_workspace_revision = lambda v: v if type(v) is int and v >= 1 else 0  # noqa: E731
+            if not valid_workspace_revision(ver_rev) or not valid_workspace_revision(ws_rev):
+                _fail("completion_truthful", self._prefix("verification revision is not a valid workspace revision"))
+            if int(ver_rev) != int(ws_rev):
+                _fail(
+                    "completion_truthful",
+                    self._prefix(f"stale verification revision {ver_rev!r} != workspace {ws_rev!r}"),
+                )
+            ver_fp = view.get("verification_fingerprint")
+            ws_fp = view.get("workspace_fingerprint")
+            try:
+                from codey.workspace.revision import valid_workspace_fingerprint
+            except Exception:
+                valid_workspace_fingerprint = lambda v: v if isinstance(v, str) and v.startswith("sha256:") else ""  # noqa: E731
+            if not valid_workspace_fingerprint(ver_fp) or not valid_workspace_fingerprint(ws_fp):
+                _fail("completion_truthful", self._prefix("verification fingerprint is not valid"))
+            if str(ver_fp) != str(ws_fp):
                 _fail("completion_truthful", self._prefix("verification fingerprint mismatch"))
-        if view.get("strict_research"):
-            if not view.get("ledger_valid"):
+        if view.get("strict_research") is True:
+            if view.get("ledger_valid") is not True:
                 _fail("completion_truthful", self._prefix("strict Research without a valid ledger"))
-            opened = set(view.get("opened_sources", ()))
-            if not set(view.get("cited_sources", ())) <= opened:
-                _fail("completion_truthful", self._prefix("cited sources escape opened sources"))
-            if not set(view.get("cited_evidence_sources", ())) <= opened:
-                _fail("completion_truthful", self._prefix("cited evidence escapes opened sources"))
-            if not view.get("report_valid"):
+            if view.get("report_valid") is not True:
                 _fail("completion_truthful", self._prefix("strict-Research report is invalid"))
+            for key in ("opened_sources", "cited_sources", "cited_evidence_sources"):
+                if key not in view or not isinstance(view.get(key), (list, tuple)):
+                    _fail("completion_truthful", self._prefix(f"strict Research without {key}"))
+            opened = {str(u) for u in (view.get("opened_sources") or ()) if str(u)}
+            cited = {str(u) for u in (view.get("cited_sources") or ()) if str(u)}
+            cited_evidence = {str(u) for u in (view.get("cited_evidence_sources") or ()) if str(u)}
+            if not opened:
+                _fail("completion_truthful", self._prefix("strict Research without opened sources"))
+            if not cited <= opened:
+                _fail("completion_truthful", self._prefix("cited sources escape opened sources"))
+            if not cited_evidence <= opened:
+                _fail("completion_truthful", self._prefix("cited evidence escapes opened sources"))
 
     def check_no_new_operations_on_restart(
         self, before: list[str], after: list[str]
@@ -198,11 +233,15 @@ class InvariantChecker:
         *,
         unknowns: list[tuple[str, str]] | None = None,
         completions: list[tuple[str, bool]] | None = None,
+        completion_views: list[dict] | None = None,
     ) -> dict:
         """Run the fact-shaped checks over one canonical snapshot.
 
         An intent row plus its settlement row share an effect id by design,
         so the duplicate key is (kind, id): the same fact recorded twice.
+        Completion truthfulness runs here too when callers supply views built
+        from real logs, workspaces, and ledgers (see
+        :func:`completion_view_from_gate`).
         """
         committed = []
         for row in list(facts.get("log_rows", [])) + list(facts.get("ghost_rows", [])):
@@ -214,7 +253,150 @@ class InvariantChecker:
             self.check_no_fake_success(unknowns)
         if completions is not None:
             self.check_completion_has_proof(completions)
+        views = completion_views
+        if views is None:
+            raw_views = facts.get("completion_views") if isinstance(facts, dict) else None
+            if isinstance(raw_views, list):
+                views = raw_views
+        if views is not None:
+            for view in views:
+                self.check_completion_truthful(view)
         return facts
 
 
-__all__ = ["InvariantChecker", "InvariantViolation"]
+def completion_view_from_gate(
+    *,
+    session: object,
+    evidence: object,
+    verdict: object,
+    research_ledger: object = None,
+    done_text: str = "",
+) -> dict:
+    """Build a truthfulness view from real gate facts, never verdict claims.
+
+    Reads the durable session verifications, the current evidence workspace,
+    the verdict's proof existence, the task policy requirements, and the real
+    ledger/report inputs. Verification identity and ledger containment are
+    recomputed here so the oracle independently rechecks them instead of
+    trusting a ``*_valid = True`` claim.
+    """
+    try:
+        from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
+    except Exception:
+        valid_workspace_revision = lambda v: v if type(v) is int and v >= 1 else 0  # noqa: E731
+        valid_workspace_fingerprint = lambda v: v if isinstance(v, str) and v.startswith("sha256:") else ""  # noqa: E731
+
+    complete = bool(getattr(verdict, "complete", False) is True)
+    proof = getattr(verdict, "proof", None)
+    proof_exists = proof is not None
+    try:
+        rows = list(getattr(proof, "checks", ()) or ()) if proof is not None else []
+    except Exception:
+        rows = []
+    try:
+        required_checks_passed = bool(complete and bool(rows) and all(
+            str(getattr(row, "status", "")) == "pass" for row in rows
+        ))
+    except Exception:
+        required_checks_passed = False
+    try:
+        edited = dict(getattr(session, "edited_files", {}) or {})
+    except Exception:
+        edited = {}
+    verification_forbidden = getattr(session, "verification_forbidden", False) is True
+    verification_required = bool(edited) and not verification_forbidden
+    try:
+        latest_edit = max(int(v) for v in edited.values()) if edited else None
+    except (TypeError, ValueError):
+        latest_edit = None
+    try:
+        verifs = list(getattr(session, "verifications", ()) or [])
+    except Exception:
+        verifs = []
+    latest_ver: dict | None = None
+    if latest_edit is not None:
+        for item in verifs:
+            if not isinstance(item, dict):
+                continue
+            try:
+                if int(item.get("revision", -1)) == latest_edit:
+                    latest_ver = item
+            except (TypeError, ValueError):
+                continue
+    try:
+        workspace_revision = getattr(evidence, "workspace_revision", 0)
+        workspace_fingerprint = str(getattr(evidence, "workspace_fingerprint", "") or "")
+    except Exception:
+        workspace_revision, workspace_fingerprint = 0, ""
+    if latest_ver is None:
+        verification_revision: object = None
+        verification_fingerprint: object = ""
+        verification_identity_valid = False
+    else:
+        verification_revision = latest_ver.get("workspace_revision")
+        verification_fingerprint = latest_ver.get("workspace_fingerprint", "")
+        verification_identity_valid = bool(
+            type(verification_revision) is int
+            and type(workspace_revision) is int
+            and bool(valid_workspace_revision(verification_revision))
+            and bool(valid_workspace_revision(workspace_revision))
+            and int(verification_revision) == int(workspace_revision)
+            and bool(valid_workspace_fingerprint(str(verification_fingerprint or "")))
+            and bool(valid_workspace_fingerprint(str(workspace_fingerprint or "")))
+            and str(verification_fingerprint) == str(workspace_fingerprint)
+        )
+    policy = getattr(session, "policy", None)
+    strict_research = getattr(policy, "strict_research", False) is True
+    ledger_valid = False
+    opened_sources: list[str] = []
+    if strict_research:
+        try:
+            finals = set(research_ledger.final_url_set()) if research_ledger is not None else set()
+        except Exception:
+            finals = set()
+        opened_sources = sorted(str(u) for u in finals if str(u))
+        ledger_valid = bool(opened_sources)
+    try:
+        evidence_rows = list(getattr(session, "evidence", []) or [])
+    except Exception:
+        evidence_rows = []
+    cited_sources = sorted({
+        str(row.get("source_url", "")) for row in evidence_rows
+        if isinstance(row, dict) and str(row.get("source_url", ""))
+    })
+    cited_evidence_sources = list(cited_sources)
+    if strict_research and research_ledger is not None:
+        try:
+            ledger_urls = {
+                str(getattr(item, "source_url", "")) for item in (getattr(research_ledger, "evidence_items", ()) or ())
+                if str(getattr(item, "source_url", ""))
+            }
+            cited_evidence_sources = sorted({u for u in cited_sources if u in ledger_urls} or ledger_urls)
+        except Exception:
+            cited_evidence_sources = list(cited_sources)
+    text = str(done_text or "")
+    report_valid = bool("结论" in text and "来源" in text) if strict_research else False
+    if not strict_research:
+        opened_sources = []
+        cited_sources = []
+        cited_evidence_sources = []
+    return {
+        "completed": complete,
+        "proof_exists": proof_exists,
+        "required_checks_passed": bool(required_checks_passed),
+        "verification_required": bool(verification_required),
+        "verification_identity_valid": bool(verification_identity_valid),
+        "verification_revision": verification_revision,
+        "workspace_revision": workspace_revision,
+        "verification_fingerprint": verification_fingerprint,
+        "workspace_fingerprint": workspace_fingerprint,
+        "strict_research": bool(strict_research),
+        "ledger_valid": bool(ledger_valid),
+        "opened_sources": list(opened_sources),
+        "cited_sources": list(cited_sources),
+        "cited_evidence_sources": list(cited_evidence_sources),
+        "report_valid": bool(report_valid),
+    }
+
+
+__all__ = ["InvariantChecker", "InvariantViolation", "completion_view_from_gate"]

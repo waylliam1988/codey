@@ -306,8 +306,8 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
     def test_work_queue_transition_overflow(self):
         import inspect
 
-        from codey.ghost import work_queue as wq
-        src = inspect.getsource(wq._apply_queue_transition)
+        from codey.ghost import work_queue_events as wq_events
+        src = inspect.getsource(wq_events._apply_queue_transition)
         self.assertIn("OverflowError", src, "transition still misses OverflowError")
 
     def test_inbox_int_bool(self):

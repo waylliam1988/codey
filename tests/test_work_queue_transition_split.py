@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
-from codey.ghost import work_queue as wq
+from codey.ghost.work_queue_events import (
+    _apply_block_transition,
+    _apply_claim_transition,
+    _apply_queue_transition,
+    _apply_reject_transition,
+    _apply_transition_event,
+    _valid_claim_transition,
+    _valid_release_transition,
+    _valid_work_transition,
+)
+from codey.ghost.work_queue_sources import new_item
 
 TS = "2026-01-01T00:00:00Z"
 NOW = "2026-01-02T00:00:00Z"
 
 
 def _item(status="queued", kind="coding", retry=0, run_id=""):
-    return wq._new_item(
+    return new_item(
         kind=kind,
         status=status,
         scope="user",
@@ -66,8 +76,8 @@ def test_valid_claim_ok():
             "updated_at": TS,
         },
     )
-    assert wq._valid_work_transition(ev) is True
-    assert wq._valid_claim_transition(
+    assert _valid_work_transition(ev) is True
+    assert _valid_claim_transition(
         ev["patch"], "running", "queued", "", 0
     ) is True
 
@@ -85,7 +95,7 @@ def test_valid_claim_bad_status():
             "updated_at": TS,
         },
     )
-    assert wq._valid_work_transition(ev) is False
+    assert _valid_work_transition(ev) is False
 
 
 def test_valid_complete_ok():
@@ -100,7 +110,7 @@ def test_valid_complete_ok():
             "updated_at": TS,
         },
     )
-    assert wq._valid_work_transition(ev) is True
+    assert _valid_work_transition(ev) is True
 
 
 def test_valid_complete_missing_proof():
@@ -110,7 +120,7 @@ def test_valid_complete_missing_proof():
         item,
         {"status": "done", "completed_run_id": "run-1", "updated_at": TS},
     )
-    assert wq._valid_work_transition(ev) is False
+    assert _valid_work_transition(ev) is False
 
 
 def test_valid_release_queued_ok():
@@ -120,8 +130,8 @@ def test_valid_release_queued_ok():
         item,
         {"status": "queued", "updated_at": TS},
     )
-    assert wq._valid_work_transition(ev) is True
-    assert wq._valid_release_transition(ev["patch"], "queued", "running", "run-1") is True
+    assert _valid_work_transition(ev) is True
+    assert _valid_release_transition(ev["patch"], "queued", "running", "run-1") is True
 
 
 def test_valid_release_stale_blocked_ok():
@@ -131,7 +141,7 @@ def test_valid_release_stale_blocked_ok():
         item,
         {"status": "blocked", "blocked_reason": "stale_claim", "updated_at": TS},
     )
-    assert wq._valid_work_transition(ev) is True
+    assert _valid_work_transition(ev) is True
 
 
 def test_valid_block_ok():
@@ -141,7 +151,7 @@ def test_valid_block_ok():
         item,
         {"status": "blocked", "blocked_reason": "need info", "updated_at": TS},
     )
-    assert wq._valid_work_transition(ev) is True
+    assert _valid_work_transition(ev) is True
 
 
 def test_valid_reject_ok():
@@ -151,7 +161,7 @@ def test_valid_reject_ok():
         item,
         {"status": "rejected", "updated_at": TS},
     )
-    assert wq._valid_work_transition(ev) is True
+    assert _valid_work_transition(ev) is True
 
 
 def test_valid_queue_ok():
@@ -164,7 +174,7 @@ def test_valid_queue_ok():
         item,
         {"status": "queued", "retry_count": 0, "updated_at": TS},
     )
-    assert wq._valid_work_transition(ev) is True
+    assert _valid_work_transition(ev) is True
 
 
 def test_valid_queue_bad_retry():
@@ -174,7 +184,7 @@ def test_valid_queue_bad_retry():
         item,
         {"status": "queued", "retry_count": 1, "updated_at": TS},
     )
-    assert wq._valid_work_transition(ev) is False
+    assert _valid_work_transition(ev) is False
 
 
 def test_apply_claim_ok():
@@ -191,7 +201,7 @@ def test_apply_claim_ok():
             "updated_at": NOW,
         },
     )
-    assert wq._apply_transition_event(by, ev, now=NOW) == "applied"
+    assert _apply_transition_event(by, ev, now=NOW) == "applied"
     assert by[item.id].status == "running"
     assert by[item.id].started_run_id == "run-9"
 
@@ -209,7 +219,7 @@ def test_apply_complete_ok():
             "updated_at": NOW,
         },
     )
-    assert wq._apply_transition_event(by, ev, now=NOW) == "applied"
+    assert _apply_transition_event(by, ev, now=NOW) == "applied"
     assert by[item.id].status == "done"
 
 
@@ -217,7 +227,7 @@ def test_apply_release_to_queued():
     item = _running_item(run_id="run-1")
     by = {item.id: item}
     ev = _event("release", item, {"status": "queued", "updated_at": NOW})
-    assert wq._apply_transition_event(by, ev, now=NOW) == "applied"
+    assert _apply_transition_event(by, ev, now=NOW) == "applied"
     assert by[item.id].status == "queued"
     assert by[item.id].started_run_id == ""
 
@@ -230,7 +240,7 @@ def test_apply_release_to_blocked():
         item,
         {"status": "blocked", "blocked_reason": "stale_claim", "updated_at": NOW},
     )
-    assert wq._apply_transition_event(by, ev, now=NOW) == "applied"
+    assert _apply_transition_event(by, ev, now=NOW) == "applied"
     assert by[item.id].status == "blocked"
 
 
@@ -240,7 +250,7 @@ def test_apply_block_ok():
     ev = _event(
         "block", item, {"status": "blocked", "blocked_reason": "dep", "updated_at": NOW}
     )
-    assert wq._apply_transition_event(by, ev, now=NOW) == "applied"
+    assert _apply_transition_event(by, ev, now=NOW) == "applied"
     assert by[item.id].status == "blocked"
 
 
@@ -248,7 +258,7 @@ def test_apply_reject_ok():
     item = _item(status="candidate")
     by = {item.id: item}
     ev = _event("reject", item, {"status": "rejected", "updated_at": NOW})
-    assert wq._apply_transition_event(by, ev, now=NOW) == "applied"
+    assert _apply_transition_event(by, ev, now=NOW) == "applied"
     assert by[item.id].status == "rejected"
 
 
@@ -261,14 +271,14 @@ def test_apply_queue_ok():
     ev = _event(
         "queue", item, {"status": "queued", "retry_count": 0, "updated_at": NOW}
     )
-    assert wq._apply_transition_event(by, ev, now=NOW) == "applied"
+    assert _apply_transition_event(by, ev, now=NOW) == "applied"
     assert by[item.id].status == "queued"
     assert by[item.id].retry_count == 0
 
 
 def test_apply_stale_and_invalid():
     item = _item(status="queued")
-    assert wq._apply_transition_event({"other": item}, _event("claim", item, {}), now=NOW) == "stale"
+    assert _apply_transition_event({"other": item}, _event("claim", item, {}), now=NOW) == "stale"
     by = {item.id: item}
     bad = _event("claim", item, {"status": "running", "updated_at": NOW})
     # missing started_run_id/retry -> invalid (precondition ok, matrix ok)
@@ -277,13 +287,13 @@ def test_apply_stale_and_invalid():
         "expected_started_run_id": "",
         "expected_retry_count": 0,
     }
-    assert wq._apply_transition_event(by, bad, now=NOW) == "invalid"
+    assert _apply_transition_event(by, bad, now=NOW) == "invalid"
 
 
 def test_helpers_direct():
     item = _item(status="queued", retry=0)
-    assert wq._apply_claim_transition(item, {"status": "x"}, now=NOW) is None
-    assert wq._apply_block_transition(item, {"blocked_reason": ""}, now=NOW) is None
-    assert wq._apply_queue_transition(item, {}, now=NOW) is None
-    updated = wq._apply_reject_transition(item, {"updated_at": NOW}, now=NOW)
+    assert _apply_claim_transition(item, {"status": "x"}, now=NOW) is None
+    assert _apply_block_transition(item, {"blocked_reason": ""}, now=NOW) is None
+    assert _apply_queue_transition(item, {}, now=NOW) is None
+    updated = _apply_reject_transition(item, {"updated_at": NOW}, now=NOW)
     assert updated is not None and updated.status == "rejected"

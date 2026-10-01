@@ -195,122 +195,71 @@ def _synthesize_selected_check(provided: Any, session: Any) -> Any:
         return None
 
 
-def _verification_targets_latest_edit(session: Any, latest: Any) -> bool:
+def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
+    """Project ordered session verifications into execution evidence.
+
+    Every verification that targets the latest edit is replayed in recorded
+    order through the single ``ExecutionEvidence.observe_check`` owner,
+    preserving its original command, cwd, exit code, and workspace identity.
+    Success and failure share that path so the latest observation for one
+    (command, cwd) replaces the earlier one: success-then-failure blocks and
+    failure-then-success passes, with or without an evidence context. Invalid
+    identities never become passing evidence; freshness against the current
+    workspace is decided by the engine over the projected rows.
+    """
+    if evidence is None:
+        return evidence
     try:
         edited = dict(getattr(session, "edited_files", {}) or {})
     except Exception:
-        return True
-    latest_edit = max((int(v) for v in edited.values()), default=0) if edited else 0
+        return evidence
+    if not edited:
+        return evidence
     try:
-        ver_rev = int(latest.get("revision", -1))
+        latest_edit = max(int(v) for v in edited.values())
     except (TypeError, ValueError):
-        return False
-    return not edited or ver_rev == latest_edit
-
-
-def _verification_exit_code(latest: Any) -> int | None:
-    exit_code = latest.get("exit_code", None)
-    if exit_code is None:
-        return None
+        return evidence
     try:
-        from codey.utils.refs import strict_exit_code as _strict_exit
-
-        return _strict_exit(exit_code)
+        verifications = list(getattr(session, "verifications", ()) or [])
     except Exception:
-        return None
-
-
-def _evidence_workspace_identity(evidence: Any) -> tuple[int, str, bool]:
-    rev = getattr(evidence, "workspace_revision", 0)
-    fp = str(getattr(evidence, "workspace_fingerprint", "") or "")
-    if type(rev) is not int or not valid_workspace_revision(rev):
-        return 0, fp, False
-    if not valid_workspace_fingerprint(fp):
-        return rev, fp, False
-    return rev, fp, True
-
-
-def _session_identity_matches(session: Any, latest: Any, rev: int, fp: str) -> bool:
-    """Session projection needs the same strict identity as direct checks."""
-    if not _workspace_identity_equal(
-        latest.get("workspace_revision"), latest.get("workspace_fingerprint"), rev, fp,
-    ):
-        return False
-    try:
-        sess_rev = getattr(session, "workspace_revision", 0)
-        sess_fp = str(getattr(session, "workspace_fingerprint", "") or "")
-    except Exception:
-        return False
-    return _workspace_identity_equal(sess_rev, sess_fp, rev, fp)
-
-
-def _append_session_check(evidence: Any, row: dict[str, Any]) -> Any:
-    """Copy one verified session fact into evidence without re-stamping it.
-
-    Preserves the original command, cwd, exit code, revision, and
-    fingerprint; deduplicates on the full identity so the same command in
-    a different directory never overwrites its sibling.
-    """
-    command = str(row.get("command", "") or "").strip()[:500]
-    cwd = str(row.get("cwd", ".") or ".").strip()[:240] or "."
-    exit_code = row.get("exit_code")
-    if type(exit_code) is not int:
         return evidence
-    ver_rev = row.get("workspace_revision")
-    ver_fp = str(row.get("workspace_fingerprint", "") or "")
-    if type(ver_rev) is not int or not valid_workspace_revision(ver_rev):
-        return evidence
-    if not valid_workspace_fingerprint(ver_fp):
-        return evidence
-    if not command:
-        return evidence
-    item = CheckEvidence(
-        command, cwd, exit_code=exit_code,
-        workspace_revision=ver_rev, workspace_fingerprint=ver_fp,
-    )
-    for existing in list(getattr(evidence, "checks_after_edit", []) or []):
-        if (
-            str(getattr(existing, "command", "") or "") == item.command
-            and str(getattr(existing, "cwd", "") or "") == item.cwd
-            and getattr(existing, "workspace_revision", 0) == item.workspace_revision
-            and str(getattr(existing, "workspace_fingerprint", "") or "") == item.workspace_fingerprint
-        ):
-            return evidence
-    evidence._append_check(evidence.checks_after_edit, item)
-    return evidence
-
-
-def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
-    """Project session verifications into execution evidence for the engine.
-
-    Only real execution facts with a matching workspace identity complete.
-    A missing or invalid workspace fingerprint stays not_run; the gate never
-    synthesizes a format-valid fingerprint (e.g. sha256("kernel-session:…"))
-    because format-valid does not mean it matches the actual file version.
-    """
-    latest = _session_latest_verification(session)
-    if latest is None or evidence is None:
-        return evidence
-    if not _verification_targets_latest_edit(session, latest):
-        return evidence
-    exit_code = _verification_exit_code(latest)
-    if exit_code is None:
+    if not verifications:
         return evidence
     from codey.utils.refs import strict_verification_success
 
-    if not strict_verification_success(
-        latest.get("passed"), exit_code, passed_present="passed" in latest
-    ):
+    observe = getattr(evidence, "observe_check", None)
+    if not callable(observe):
         return evidence
-    command = str(latest.get("command", "") or "").strip()[:500]
-    if not command:
-        return evidence
-    rev, fp, valid = _evidence_workspace_identity(evidence)
-    if not valid:
-        return evidence
-    if not _session_identity_matches(session, latest, rev, fp):
-        return evidence
-    return _append_session_check(evidence, latest)
+    for row in verifications:
+        if not isinstance(row, dict):
+            continue
+        try:
+            if int(row.get("revision", -1)) != latest_edit:
+                continue
+        except (TypeError, ValueError):
+            continue
+        command = str(row.get("command", "") or "").strip()[:500]
+        cwd = str(row.get("cwd", ".") or ".").strip()[:240] or "."
+        exit_code = row.get("exit_code")
+        if type(exit_code) is not int:
+            continue
+        ver_rev = row.get("workspace_revision")
+        ver_fp = str(row.get("workspace_fingerprint", "") or "")
+        if type(ver_rev) is not int or not valid_workspace_revision(ver_rev):
+            continue
+        if not valid_workspace_fingerprint(ver_fp):
+            continue
+        if not command:
+            continue
+        succeeded = strict_verification_success(
+            row.get("passed"), exit_code, passed_present="passed" in row,
+        )
+        item = CheckEvidence(
+            command, cwd, exit_code=exit_code,
+            workspace_revision=ver_rev, workspace_fingerprint=ver_fp,
+        )
+        observe(item, succeeded=succeeded)
+    return evidence
 
 
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:

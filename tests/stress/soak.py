@@ -80,10 +80,10 @@ def run_soak(
                 if check_every and (index + 1) % check_every == 0:
                     scheduler.self_check(world)
                     facts = oracle.check_recovery_idempotent(world.canonical)
-                    oracle.assert_valid(facts, unknowns=ctx.unknowns)
+                    oracle.assert_valid(facts, unknowns=ctx.unknowns, completion_views=ctx.completion_views)
             scheduler.self_check(world)
             facts = oracle.check_recovery_idempotent(world.canonical)
-            oracle.assert_valid(facts, unknowns=ctx.unknowns)
+            oracle.assert_valid(facts, unknowns=ctx.unknowns, completion_views=ctx.completion_views)
             oracle.check_no_duplicate_facts(
                 [c for c in ctx.committed if not c.endswith(":dup")]
             )

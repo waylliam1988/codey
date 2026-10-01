@@ -4,9 +4,10 @@ import json
 import tempfile
 from unittest import mock
 
-import codey.ghost.work_queue as work_queue_module
 from codey.app import server
 from codey.app import task_submit as task_submit
+from codey.ghost.work_queue_model import WORK_QUEUE_SCHEMA_VERSION, _session_ref
+from codey.ghost.work_queue_sources import new_item
 from codey.knowledge.research_interest import ResearchInterestCandidate
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
@@ -85,11 +86,11 @@ def _research_candidate(concept: str, *, variant: int = 1) -> ResearchInterestCa
 
 
 def _queued_research_item(*, title: str, concept: str, priority: float):
-    return work_queue_module._new_item(
+    return new_item(
         kind="research",
         status="queued",
         scope="session",
-        scope_ref=work_queue_module._session_ref("s1"),
+        scope_ref=_session_ref("s1"),
         title=title,
         why_now="Bounded queued research item.",
         priority=priority,
@@ -106,7 +107,7 @@ def _queued_research_item(*, title: str, concept: str, priority: float):
 def _write_work_snapshot(store, items) -> None:
     store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
-        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
         "event_id": "test_work_snapshot",
         "ts": "2999-01-01T00:00:00Z",

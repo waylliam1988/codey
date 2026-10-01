@@ -298,6 +298,48 @@ class ExecutionEvidence:
             rendered = rendered[:MAX_RENDER_CHARS].rstrip() + "\n[evidence truncated]"
         return rendered
 
+    def observe_check(self, item: CheckEvidence, *, succeeded: bool) -> None:
+        """Record one already-identified check observation as the single owner.
+
+        Success and failure share this path so a later observation for the
+        same (command, cwd) replaces the earlier one. Product failures clear
+        prior successes because a fresh fail wins over any pass; capacity
+        limits and the environment-failure policy are preserved.
+        """
+        if not isinstance(item, CheckEvidence) or not item.command:
+            return
+        if type(succeeded) is not bool:
+            return
+        if succeeded:
+            if _is_non_check_run_failure(item):
+                self._append_check(
+                    self.environment_failures_after_edit,
+                    item,
+                    MAX_FAILED_CHECKS,
+                )
+                return
+            self.failed_checks_after_edit[:] = [
+                existing
+                for existing in self.failed_checks_after_edit
+                if (existing.command, existing.cwd) != (item.command, item.cwd)
+            ]
+            self.environment_failures_after_edit[:] = [
+                existing
+                for existing in self.environment_failures_after_edit
+                if (existing.command, existing.cwd) != (item.command, item.cwd)
+            ]
+            self._append_check(self.checks_after_edit, item)
+            return
+        if _is_non_check_run_failure(item):
+            self._append_check(
+                self.environment_failures_after_edit,
+                item,
+                MAX_FAILED_CHECKS,
+            )
+            return
+        self.checks_after_edit.clear()
+        self._append_check(self.failed_checks_after_edit, item, MAX_FAILED_CHECKS)
+
     def _record_run(self, args: dict, outcome: object) -> None:
         command = _text(args.get("command"))
         cwd = _text(args.get("path"), 240) or "."
@@ -325,28 +367,7 @@ class ExecutionEvidence:
             workspace_revision=self.workspace_revision,
             workspace_fingerprint=self.workspace_fingerprint,
         )
-        if ok:
-            self.failed_checks_after_edit[:] = [
-                existing
-                for existing in self.failed_checks_after_edit
-                if (existing.command, existing.cwd) != (command, cwd)
-            ]
-            self.environment_failures_after_edit[:] = [
-                existing
-                for existing in self.environment_failures_after_edit
-                if (existing.command, existing.cwd) != (command, cwd)
-            ]
-            self._append_check(self.checks_after_edit, item)
-            return
-        if _is_non_check_run_failure(item):
-            self._append_check(
-                self.environment_failures_after_edit,
-                item,
-                MAX_FAILED_CHECKS,
-            )
-            return
-        self.checks_after_edit.clear()
-        self._append_check(self.failed_checks_after_edit, item, MAX_FAILED_CHECKS)
+        self.observe_check(item, succeeded=ok)
 
     def _record_information(self, key, values: list, item, limit: int) -> None:
         if key in self._seen_info:

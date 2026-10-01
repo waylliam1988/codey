@@ -10,6 +10,8 @@ import codey.ghost.work_queue as work_queue_module
 from codey.agents.request import AgentRequest
 from codey.app import server
 from codey.app import task_submit as task_submit
+from codey.ghost.work_queue_model import WORK_QUEUE_SCHEMA_VERSION
+from codey.ghost.work_queue_sources import new_item
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.task_entry import run_task_submission
@@ -202,7 +204,7 @@ def _research_record():
 
 def _seed_review_item(state: server.AppContext, project: Path) -> str:
     assert state.ghost_work_queue is not None
-    item = work_queue_module._new_item(
+    item = new_item(
         kind="review",
         status="queued",
         scope="project",
@@ -218,7 +220,7 @@ def _seed_review_item(state: server.AppContext, project: Path) -> str:
         now="2999-01-01T00:00:00Z",
     )
     event = {
-        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
         "event_id": "test_work_snapshot",
         "ts": "2999-01-01T00:00:00Z",

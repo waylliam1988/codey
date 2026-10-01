@@ -2,6 +2,59 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Latest-observation completion, strict oracle wiring, queue alias removal, affinity split (no release)
+
+- TDD red-first locks (5 new files, all failed before, pass after):
+  `test_completion_projection_latest_observation_wins` (success-then-failure
+  blocks and failure-then-success passes with or without evidence context;
+  stale revision blocks; cwd-independent; repeated evaluate stable),
+  `tests/stress/test_completion_truthful_oracle_input_validation` (missing
+  fields, bool-as-int, None==None, and empty source sets never pass),
+  `tests/stress/test_completion_truthful_oracle_real_run` (real gate run
+  builds a passing view; `assert_valid` calls the oracle; tampered identity
+  or citations fail; recovery round-trip stays truthful),
+  `test_work_queue_no_legacy_aliases` (no `_items_from_*`/`_new_item` aliases;
+  Store uses formal owners; no dead `_apply_*`/`_valid_*` re-exports),
+  `test_affinity_model_ownership` / `test_affinity_events_ownership` /
+  `test_affinity_sources_ownership` / `test_affinity_replay_single_transition`
+  (model/sources/events own their shapes; single `apply_affinity_event` +
+  `replay_affinity_events` own every transition).
+- P0 completion projection: `ExecutionEvidence.observe_check` is the single
+  owner for success/failure/environment updates; `_evidence_with_session_facts`
+  replays ordered verifications for the latest edit through it, preserving
+  original command/cwd/exit/workspace identity. Latest observation wins per
+  (command, cwd); stale identities never become fresh passes. Removed
+  `_append_session_check`, `_verification_targets_latest_edit`,
+  `_verification_exit_code`, `_evidence_workspace_identity`, and
+  `_session_identity_matches`.
+- Oracle honesty: `check_completion_truthful` fails closed on missing fields,
+  exact-bool/exact-int checks, and valid revision/fingerprint equality;
+  strict Research requires explicit source sets. Added test-side
+  `completion_view_from_gate` (reads real session/evidence/verdict/ledger/
+  done-text, never verdict claims) and wired `assert_valid(...,
+  completion_views=...)` plus `SoakContext.completion_views` through
+  scheduler/soak.
+- Work-queue hygiene (cold start, no compat): deleted `_items_from_events`,
+  `_new_item`/`_items_from_*` aliases and dead Store re-exports
+  (`_apply_*`, `_valid_*`, `_WORK_TRANSITION_PATCH_KEYS`,
+  `_research_proof_ref`, `_new_item`, unused transition-matrix re-exports);
+  Store uses `items_from_events`/`new_item`/`items_from_*` formally. Migrated
+  `test_work_queue_transition_split`, `test_ghost_work_queue`,
+  `test_ghost_affinity`, post-turn tests, manual A/B scripts, and
+  `test_proof_ref_parity`/`test_fail_closed_runtime_sweep` to the owners;
+  strengthened delegation tests to wrap real functions and require both
+  owners separately.
+- Affinity split (4 responsibilities, no generic framework): new
+  `affinity_model.py` (data/identity/payload rules, no Store/lock/I/O),
+  `affinity_sources.py` (`collect_source_specs` with explicit params),
+  `affinity_events.py` (single `apply_affinity_event` +
+  `replay_affinity_events`; no paths/locks/writes). `affinity.py` keeps only
+  Store/transactions/queries/hints plus `apply_affinity_work_boost`; one read
+  does one full replay with no cross-round cache. Migrated affinity tests and
+  manual A/B to the owners; transition-failure tests patch the transition
+  owner.
+- No release, tag, or version bump.
+
 ## Unreleased - Verification identity, strict-Research ledger, work-queue split, honest A/B (no release)
 
 - TDD red-first locks (6 new files, all failed before, pass after):

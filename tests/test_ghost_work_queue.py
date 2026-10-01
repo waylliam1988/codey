@@ -17,6 +17,14 @@ from codey.ghost.work_queue import (
     is_strict_work_continuation,
     proof_refs_from_task_event,
 )
+from codey.ghost.work_queue_events import (
+    _WORK_TRANSITION_PATCH_KEYS,
+    WORK_ITEM_TRANSITION_ACTIONS,
+    WORK_ITEM_TRANSITION_MATRIX,
+    _items_deleted_event,
+)
+from codey.ghost.work_queue_model import WORK_QUEUE_SCHEMA_VERSION, _session_ref
+from codey.ghost.work_queue_sources import new_item
 from codey.runs.ledger_projection import RunLedgerProjection
 from codey.runs.work_checkpoint import WorkCheckpointStore
 from codey.storage.local_store import delete_file
@@ -47,7 +55,7 @@ class _FakeKnowledge:
 def _write_work_snapshot(store: GhostWorkQueueStore, items) -> None:
     store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
-        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
         "event_id": "test_work_snapshot",
         "ts": FRESH_TS,
@@ -63,7 +71,7 @@ def _write_work_snapshot(store: GhostWorkQueueStore, items) -> None:
 
 def _work_observed_event(item, *, event_id: str = "observed") -> dict[str, object]:
     return {
-        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_item_observed",
         "event_id": event_id,
         "ts": FRESH_TS,
@@ -73,7 +81,7 @@ def _work_observed_event(item, *, event_id: str = "observed") -> dict[str, objec
 
 def _work_transition_event(current, *, action: str, patch: dict[str, object], event_id: str) -> dict[str, object]:
     return {
-        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_item_transitioned",
         "event_id": event_id,
         "ts": FRESH_TS,
@@ -841,7 +849,7 @@ def test_old_work_upsert_event_is_unsupported_for_mutation() -> None:
         store.events_path.write_text(
             json.dumps(
                 {
-                    "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+                    "schema_version": WORK_QUEUE_SCHEMA_VERSION,
                     "type": "ghost_work_item_upsert",
                     "event_id": "old",
                     "ts": FRESH_TS,
@@ -877,7 +885,7 @@ def test_work_snapshot_with_invalid_item_is_unsupported_for_mutation() -> None:
         store.events_path.write_text(
             json.dumps(
                 {
-                    "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+                    "schema_version": WORK_QUEUE_SCHEMA_VERSION,
                     "type": "ghost_work_snapshot",
                     "event_id": "bad-snapshot",
                     "ts": FRESH_TS,
@@ -910,11 +918,11 @@ def test_work_snapshot_with_invalid_item_is_unsupported_for_mutation() -> None:
 def test_work_transition_missing_precondition_is_unsupported_for_mutation() -> None:
     with tempfile.TemporaryDirectory() as td:
         store = GhostWorkQueueStore(td)
-        item = work_queue_module._new_item(
+        item = new_item(
             kind="research",
             status="queued",
             scope="session",
-            scope_ref=work_queue_module._session_ref("s1"),
+            scope_ref=_session_ref("s1"),
             title="Research provider recovery follow-up",
             why_now="Bounded local test.",
             priority=0.8,
@@ -951,11 +959,11 @@ def test_work_transition_missing_precondition_is_unsupported_for_mutation() -> N
 def test_work_transition_malformed_running_missing_started_run_id_is_fail_closed() -> None:
     with tempfile.TemporaryDirectory() as td:
         store = GhostWorkQueueStore(td)
-        item = work_queue_module._new_item(
+        item = new_item(
             kind="research",
             status="queued",
             scope="session",
-            scope_ref=work_queue_module._session_ref("s1"),
+            scope_ref=_session_ref("s1"),
             title="Research provider recovery follow-up",
             why_now="Bounded local test.",
             priority=0.8,
@@ -968,7 +976,7 @@ def test_work_transition_malformed_running_missing_started_run_id_is_fail_closed
         )
         # Transition to running but with empty started_run_id
         bad_transition = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
             "event_id": "bad-claim-event",
             "ts": FRESH_TS,
@@ -1004,11 +1012,11 @@ def test_work_transition_malformed_running_missing_started_run_id_is_fail_closed
 def test_work_transition_malformed_done_missing_proof_refs_is_fail_closed() -> None:
     with tempfile.TemporaryDirectory() as td:
         store = GhostWorkQueueStore(td)
-        item = work_queue_module._new_item(
+        item = new_item(
             kind="research",
             status="running",
             scope="session",
-            scope_ref=work_queue_module._session_ref("s1"),
+            scope_ref=_session_ref("s1"),
             title="Research provider recovery follow-up",
             why_now="Bounded local test.",
             priority=0.8,
@@ -1021,7 +1029,7 @@ def test_work_transition_malformed_done_missing_proof_refs_is_fail_closed() -> N
         )
         item = replace(item, started_run_id="run-1", retry_count=1)
         bad_complete_transition = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
             "event_id": "bad-complete-event",
             "ts": FRESH_TS,
@@ -1113,7 +1121,7 @@ def test_work_queue_claim_missing_retry_or_lease_is_invalid_event() -> None:
         item = store.list_items()[0]
 
         bad_claim = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
             "event_id": "bad-claim",
             "ts": FRESH_TS,
@@ -1152,7 +1160,7 @@ def test_work_queue_complete_with_mismatched_proof_fails_closed() -> None:
         item = store.list_items()[0]
         # research item requires research_proof:... ref
         bad_complete = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
             "event_id": "bad-complete",
             "ts": FRESH_TS,
@@ -1171,7 +1179,7 @@ def test_work_queue_complete_with_mismatched_proof_fails_closed() -> None:
             },
         }
         valid_claim = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
             "event_id": "valid-claim",
             "ts": FRESH_TS,
@@ -1211,7 +1219,7 @@ def test_work_queue_release_to_queued_retaining_lease_is_invalid() -> None:
         item = store.list_items()[0]
 
         bad_release = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
             "event_id": "bad-release",
             "ts": FRESH_TS,
@@ -1270,7 +1278,7 @@ def test_work_transition_malformed_queue_missing_retry_count_fails_closed() -> N
         store, item_id = _seed_research_work_item(td)
         item = store.list_items()[0]
         bad_queue = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
             "event_id": "bad-queue",
             "ts": FRESH_TS,
@@ -1307,7 +1315,7 @@ def test_work_transition_complete_mismatched_run_id_fails_closed() -> None:
         store, item_id = _seed_research_work_item(td)
         item = store.list_items()[0]
         valid_claim = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
             "event_id": "valid-claim",
             "ts": FRESH_TS,
@@ -1327,7 +1335,7 @@ def test_work_transition_complete_mismatched_run_id_fails_closed() -> None:
             },
         }
         mismatched_complete = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
             "event_id": "mismatched-complete",
             "ts": FRESH_TS,
@@ -1380,7 +1388,7 @@ def test_work_snapshot_with_invalid_state_invariants_fails_closed() -> None:
             "proof_refs": ["research_proof:" + "a" * 16],  # invalid on queued item
         }
         event = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_snapshot",
             "event_id": "test_bad_snapshot",
             "ts": FRESH_TS,
@@ -1423,7 +1431,7 @@ def test_work_snapshot_done_item_missing_completed_run_id_fails_closed() -> None
             "proof_refs": ["research_proof:" + "a" * 16],
         }
         event = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_snapshot",
             "event_id": "test_bad_done_snapshot",
             "ts": FRESH_TS,
@@ -1447,11 +1455,11 @@ def test_work_snapshot_done_item_missing_completed_run_id_fails_closed() -> None
 def test_work_observed_event_with_extra_item_field_fails_closed() -> None:
     with tempfile.TemporaryDirectory() as td:
         store = GhostWorkQueueStore(td)
-        item = work_queue_module._new_item(
+        item = new_item(
             kind="research",
             status="queued",
             scope="session",
-            scope_ref=work_queue_module._session_ref("s1"),
+            scope_ref=_session_ref("s1"),
             title="Research provider recovery follow-up",
             why_now="Bounded local test.",
             priority=0.8,
@@ -1496,11 +1504,11 @@ def test_work_observed_event_with_noncanonical_numeric_field_fails_closed(
 ) -> None:
     with tempfile.TemporaryDirectory() as td:
         store = GhostWorkQueueStore(td)
-        item = work_queue_module._new_item(
+        item = new_item(
             kind="research",
             status="queued",
             scope="session",
-            scope_ref=work_queue_module._session_ref("s1"),
+            scope_ref=_session_ref("s1"),
             title="Research provider recovery follow-up",
             why_now="Bounded local test.",
             priority=0.8,
@@ -1531,11 +1539,11 @@ def test_work_observed_event_with_noncanonical_numeric_field_fails_closed(
 def test_work_expired_delete_event_with_noncanonical_empty_fields_fails_closed() -> None:
     with tempfile.TemporaryDirectory() as td:
         store = GhostWorkQueueStore(td)
-        item = work_queue_module._new_item(
+        item = new_item(
             kind="research",
             status="queued",
             scope="session",
-            scope_ref=work_queue_module._session_ref("s1"),
+            scope_ref=_session_ref("s1"),
             title="Research provider recovery follow-up",
             why_now="Bounded local test.",
             priority=0.8,
@@ -1546,7 +1554,7 @@ def test_work_expired_delete_event_with_noncanonical_empty_fields_fails_closed()
             run_refs=(),
             now=FRESH_TS,
         )
-        event = work_queue_module._items_deleted_event(reason="expired", expected_items=(item,), ts=FRESH_TS)
+        event = _items_deleted_event(reason="expired", expected_items=(item,), ts=FRESH_TS)
         event["payload"]["item_ids"] = [None]
         event["payload"]["scope"] = "not-a-scope"
         store.events_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1566,7 +1574,7 @@ def test_work_scope_deleted_event_with_wrong_ref_shape_fails_closed() -> None:
     with tempfile.TemporaryDirectory() as td:
         store = GhostWorkQueueStore(td)
         event = {
-            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_items_deleted",
             "event_id": "bad-scope-delete",
             "ts": FRESH_TS,
@@ -1604,7 +1612,7 @@ def test_work_scope_deleted_event_with_wrong_ref_shape_fails_closed() -> None:
 
 
 def test_work_queue_schema_version_stays_cold_start_v1() -> None:
-    assert work_queue_module.WORK_QUEUE_SCHEMA_VERSION == 1
+    assert WORK_QUEUE_SCHEMA_VERSION == 1
 
 
 def test_work_queue_transition_matrix_is_single_authority() -> None:
@@ -1630,6 +1638,6 @@ def test_work_queue_transition_matrix_is_single_authority() -> None:
         },
     }
 
-    assert expected == work_queue_module.WORK_ITEM_TRANSITION_MATRIX
-    assert frozenset(expected) == work_queue_module.WORK_ITEM_TRANSITION_ACTIONS
-    assert set(work_queue_module._WORK_TRANSITION_PATCH_KEYS) == set(expected)
+    assert expected == WORK_ITEM_TRANSITION_MATRIX
+    assert frozenset(expected) == WORK_ITEM_TRANSITION_ACTIONS
+    assert set(_WORK_TRANSITION_PATCH_KEYS) == set(expected)

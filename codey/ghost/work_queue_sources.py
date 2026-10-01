@@ -335,14 +335,6 @@ def items_from_terminal_event(
     ]
 
 
-_new_item = new_item
-_items_from_continuity = items_from_continuity
-_items_from_research_interest_candidates = items_from_research_interest_candidates
-_items_from_work_checkpoint = items_from_work_checkpoint
-_items_from_run_projection = items_from_run_projection
-_items_from_terminal_event = items_from_terminal_event
-
-
 __all__ = [
     "items_from_continuity",
     "items_from_research_interest_candidates",

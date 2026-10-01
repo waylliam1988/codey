@@ -1,6 +1,6 @@
 """Parity guard for generated-ref validation.
 
-Both Ghost completion (``codey.ghost.work_queue._research_proof_ref``) and
+Both Ghost completion (``codey.ghost.work_queue_model._research_proof_ref``) and
 Research product (``codey.research.proof_quality._proof_ref_or_empty``) must
 accept exactly ``research_proof:<16 lowercase hex>``. Both delegate to the
 generic ``codey.utils.refs.generated_ref`` with their own prefix; this
@@ -50,7 +50,7 @@ class ProofRefParityTests(unittest.TestCase):
                     self.assertEqual(_shared(ref), "")
 
     def test_ghost_and_research_paths_agree(self) -> None:
-        from codey.ghost.work_queue import _research_proof_ref as ghost_ref
+        from codey.ghost.work_queue_model import _research_proof_ref as ghost_ref
         from codey.research.proof_quality import _proof_ref_or_empty as research_ref
 
         cases = list(VALID) + [c for c in INVALID if isinstance(c, str)]
@@ -89,7 +89,7 @@ class ProofRefParityTests(unittest.TestCase):
         self.assertNotIn("research_proof", refs_mod.generated_ref.__code__.co_consts)
 
     def test_non_string_scalars_fail_closed_through_all_paths(self) -> None:
-        from codey.ghost.work_queue import _research_proof_ref as ghost_ref
+        from codey.ghost.work_queue_model import _research_proof_ref as ghost_ref
         from codey.research.proof_quality import _proof_ref_or_empty as research_ref
 
         cases = [
