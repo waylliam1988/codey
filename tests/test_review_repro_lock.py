@@ -56,7 +56,9 @@ def test_issue2_default_hybrid_uses_unified_session():
     # After cutover, hybrid must hit unified before any deps access, so empty
     # namespaces suffice. Before cutover it falls through to legacy flows.
     with patch("codey.operations.task_phases.dispatch.run_task_mode", return_value=outcome) as unified:
-        actual = dispatch_run_mode(SN(), SN(), SN(), SN(), SN(), SN(), "hybrid", SN())
+        actual = dispatch_run_mode(SN(), SN(), SN(), SN(),
+                                   SN(recovered_tool_outcomes=(), settled_tool_outcomes=()),
+                                   SN(), "hybrid", SN())
     assert actual is outcome
     assert unified.call_count == 1
 

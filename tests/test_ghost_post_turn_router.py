@@ -114,51 +114,55 @@ class _FailingProvider(_Provider):
         raise RuntimeError("offline")
 
 
-def test_auto_router_result_is_consumed_before_task_start_and_main_connect() -> None:
-    """Unified auto: the first normal call requests research; no retired
-    router call happens and the PLAN is forwarded, not discarded."""
+def test_auto_research_action_continues_real_kernel_without_mode_redispatch() -> None:
+    import json
+    from types import SimpleNamespace
+
+    from codey.research.ledger import ResearchLedger
+
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
         events = state.subscribe()
-        main_provider = _Provider("ACTION: research\nPLAN: 查今天的版本变化")
-        order: list[str] = []
-
-        def get_provider(_provider_id: str):
-            order.append("main")
-            return main_provider
-
-        runner = _runner(state)
-        research_iteration = mock.Mock(
-            return_value=ResearchIterationRun(
-                result=ResearchRunResult("q", "researched", "done", 1)
-            )
-        )
-
+        main_provider = _Provider()
+        replies = iter([
+            "ACTION: research\nPLAN: 查今天的版本变化",
+            json.dumps({"tool": "web_search", "args": {"query": "version"}}),
+            json.dumps({"tool": "open_url", "args": {"url": "https://example.com/version"}}),
+            json.dumps({"tool": "done", "args": {"summary": "Observed version information."}}),
+        ])
+        def send(text):
+            main_provider.prompts.append(text)
+            return next(replies)
+        main_provider.send = send
+        ledger = ResearchLedger()
+        def search(query):
+            ledger.record_search(query, [{"url": "https://example.com/version", "title": "Version"}])
+            return "1. Version\nhttps://example.com/version"
+        def opened(url, **kwargs):
+            ledger.record_open(url, url, "Version", "VERSION_KERNEL_MARKER")
+            return "VERSION_KERNEL_MARKER"
+        tools = SimpleNamespace(ledger=ledger, web_search=search, open_url=opened)
+        unused = mock.Mock(side_effect=AssertionError("mode redispatch must not run"))
         with (
-            mock.patch.object(state, "get_provider", side_effect=get_provider),
-            mock.patch(RESEARCH_ITERATION, research_iteration),
+            mock.patch.object(state, "get_provider", return_value=main_provider),
+            mock.patch(RESEARCH_ITERATION, unused),
+            mock.patch("codey.operations.task_entry._entry_executors", return_value=(None, None, tools)),
         ):
-            _run_and_wait_for_local_maintenance(
-                runner,
-                state,
-                TaskSubmission("session-1", None, "查一下今天的版本变化", 8, False, "deepseek"),
-            )
-
+            _run_and_wait_for_local_maintenance(_runner(state), state,
+                TaskSubmission("session-1", None, "查一下今天的版本变化", 8, False, "deepseek",
+                               requested_capabilities=("web.read",)))
             emitted = []
             while not events.empty():
                 emitted.append(events.get_nowait())
-
-            start = next(event for event in emitted if event["type"] == "task_start")
             done = _done_events(state)[0]
             observations = state.ghost_observations.read_committed(session_id="session-1")
-
-    assert order == ["main"]
-    assert len(main_provider.prompts) == 1
-    assert start["mode"] == "chat"
-    assert done["mode"] == "research"
-    assert research_iteration.call_count == 1
-    assert "Ghost" not in main_provider.prompts[0]
-    assert "Codey" not in main_provider.prompts[0]
+    assert done["stop_reason"] == "done"
+    assert done["turns"] == 4
+    assert len(main_provider.prompts) == 4
+    assert "VERSION_KERNEL_MARKER" in main_provider.prompts[-1]
+    assert ledger.final_url_set() == {"https://example.com/version"}
+    unused.assert_not_called()
+    assert any(event["type"] == "task_start" for event in emitted)
     assert len(observations) == 1
     assert observations[0]["run_id"] == done["run_id"]
     assert observations[0]["user_text"] == "查一下今天的版本变化"

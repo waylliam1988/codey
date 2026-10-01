@@ -304,7 +304,7 @@ class RequiredChecksHygieneTests(unittest.TestCase):
 
     def test_policy_recovery_does_not_silently_truncate(self) -> None:
         from codey.policies.task_policy import TaskPolicy
-        payload = {"grants": ["control"], "strict_research": False, "required_checks": [f"c{i}" for i in range(20)], "source": "t", "version": 1}
+        payload = TaskPolicy(frozenset({"control"}), required_checks=tuple(f"c{i}" for i in range(20)), source="t").to_payload()
         revived = TaskPolicy.from_payload(payload)
         # Must not silently truncate to 16; keep all so the gate can report over-limit.
         self.assertEqual(len(revived.required_checks), 20)

@@ -3,7 +3,7 @@
 Production topology: policy -> session -> snapshot -> adapter.send ->
 normalize_turn -> done gate or execute_turn -> record -> deliver. Web text
 JSON and native tool calls converge in ``kernel_protocol.normalize_turn``;
-facts live in ``kernel_session.TaskSession``; project, web, and knowledge
+facts live in ``task_session.TaskSession``; project, web, and knowledge
 tools dispatch through ``execute_turn``; ``done`` converges in the single
 ``completion_gate``. The loop sends exactly one provider message per
 iteration (no double-send): a ``done`` rejection becomes the next prompt,

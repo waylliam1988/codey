@@ -116,8 +116,10 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         from types import SimpleNamespace as NS
 
         from codey.operations.kernel_recovery_result import build_recovered_result, spec_from_frame_row
-        from codey.operations.project_adapter import _recovered_result_for_row
+        from codey.operations.kernel_session_recovery import restore_task_session
         from codey.operations.recovery import delivered_from_frame
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.toolchain.runtime import ToolOutcome
         from tests.recovery_test_helpers import (
@@ -134,7 +136,7 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
 
         for result in (
             build_recovered_result(spec_from_frame_row(row)),
-            _recovered_result_for_row(row),
+            restore_task_session(SimpleNamespace(run_id="r-x", recovered_tool_outcomes=(row,)), TaskSession(policy=TaskPolicy(grants=frozenset({"control"}))))[3][0],
             next(iter(delivered_from_frame(NS(run_id="r-x", recovered_tool_outcomes=(row,)), effect_scope="task").values())),
         ):
             rev, _fp = _trusted_workspace_from_result(result)

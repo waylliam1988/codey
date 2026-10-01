@@ -140,8 +140,8 @@ class ExecutionEvidence:
         if not isinstance(checks, (list, tuple)):
             return
         for item in checks or ():
-            command = _text(getattr(item, "command", ""))
-            cwd = _text(getattr(item, "cwd", "."), 240) or "."
+            command = str(getattr(item, "command", "") or "").strip()
+            cwd = str(getattr(item, "cwd", ".") or ".").strip() or "."
             revision = valid_workspace_revision(
                 getattr(item, "workspace_revision", 0)
             )
@@ -341,8 +341,8 @@ class ExecutionEvidence:
         self._append_check(self.failed_checks_after_edit, item, MAX_FAILED_CHECKS)
 
     def _record_run(self, args: dict, outcome: object) -> None:
-        command = _text(args.get("command"))
-        cwd = _text(args.get("path"), 240) or "."
+        command = str(args.get("command") or "").strip()
+        cwd = str(args.get("path") or ".").strip() or "."
         if not command:
             return
         from codey.utils.refs import strict_run_success

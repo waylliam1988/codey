@@ -30,6 +30,7 @@ class _RouteProvider:
     def __init__(self, reply: str) -> None:
         self.reply = reply
         self.prompt = ""
+        self.prompts = []
         self.closed = False
 
     def new_chat(self, timeout: float | None = None) -> None:
@@ -38,7 +39,8 @@ class _RouteProvider:
     def send(self, text: str, timeout: float | None = None) -> str:
         del timeout
         self.prompt = text
-        return self.reply
+        self.prompts.append(text)
+        return self.reply.pop(0) if isinstance(self.reply, list) else self.reply
 
     def close(self) -> None:
         self.closed = True
@@ -271,50 +273,35 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertIn("Project Map", str(seen["project_map"]))
         self.assertIn("invalid JSON", str(seen["project_config_warnings"]))
 
-    def test_auto_intent_uses_router_before_headless_task_mode(self) -> None:
-        """Unified auto: the first normal call requests planning; no second
-        routing call happens."""
-        seen: dict[str, object] = {}
+    def test_auto_readonly_plan_uses_same_real_kernel_and_original_policy(self) -> None:
         rows: list[dict[str, object]] = []
-        main_provider = _RouteProvider(
-            "ACTION: planning_readonly\nPLAN: 只给方案不改代码"
-        )
-
-        def fake_agent(request: AgentRequest):
-            seen["permission_profile"] = request.permission_profile
-            seen["change_tracker"] = request.change_tracker
-            return RunResult("plan only", "done", 1)
-
+        main_provider = _RouteProvider([
+            "ACTION: planning_readonly\nPLAN: Inspect a.py and explain",
+            json.dumps({"tool": "read_file", "args": {"path": "a.py"}}),
+            json.dumps({"tool": "done", "args": {"summary": "plan only"}}),
+        ])
+        unused_agent = mock.Mock(side_effect=AssertionError("old mode entry must not run"))
         with tempfile.TemporaryDirectory() as td:
+            project = Path(td, "project")
+            project.mkdir()
+            (project / "a.py").write_text("READONLY_KERNEL_MARKER = 1", encoding="utf-8")
             result = run_headless(
-                HeadlessRequest(
-                    project=Path(td, "project"),
-                    task="先别改代码，只给我一个方案",
-                    provider_id="qwen",
-                    max_turns=3,
-                    session_id="session-1",
-                    intent="auto",
-                    state_home=Path(td, "state"),
-                ),
-                emit_jsonl=rows.append,
-                agent_run=fake_agent,
+                HeadlessRequest(project=project, task="先别改代码，只给我一个方案", provider_id="qwen",
+                                max_turns=3, session_id="session-1", intent="auto", state_home=Path(td, "state")),
+                emit_jsonl=rows.append, agent_run=unused_agent,
                 collect_changes=lambda *_args, **_kwargs: {
-                    "ok": True,
-                    "changed_count": 0,
-                    "files": [],
-                    "diff": "",
+                    "ok": True, "changed_count": 0, "files": [], "diff": "",
                 },
                 connect_provider=lambda *_args, **_kwargs: main_provider,
             )
-
+            self.assertEqual((project / "a.py").read_text(encoding="utf-8"), "READONLY_KERNEL_MARKER = 1")
         self.assertEqual(result.exit_code, 0)
-        # task_start still shows the deferred baseline; the terminal event
-        # carries the decided planning mode after the first normal call.
-        self.assertEqual(rows[0]["mode"], "agent")
-        self.assertEqual(rows[-1]["mode"], "planning")
-        self.assertEqual(seen["permission_profile"], "planning_readonly")
-        self.assertIsNone(seen["change_tracker"])
-        self.assertNotIn("Ghost", main_provider.prompt)
+        self.assertEqual(rows[-1]["stop_reason"], "done")
+        self.assertEqual(rows[-1]["turns"], 3)
+        unused_agent.assert_not_called()
+        self.assertEqual(len(main_provider.prompts), 3)
+        self.assertIn("READONLY_KERNEL_MARKER", main_provider.prompts[-1])
+        self.assertNotIn("Ghost", main_provider.prompts[0])
 
     def test_headless_event_payload_clips_large_fields(self) -> None:
         payload = headless_event_payload({

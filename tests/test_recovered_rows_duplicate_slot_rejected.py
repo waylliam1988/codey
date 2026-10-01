@@ -33,21 +33,21 @@ class RecoveredRowsDuplicateSlotRejectedTests(unittest.TestCase):
 
     def test_duplicate_slot_raises_in_entry_validation(self) -> None:
         from codey.operations.kernel_errors import RecoveryFailed
-        from codey.operations.task_entry import _validate_recovered_rows
+        from codey.operations.kernel_session_recovery import _validate_recovered_rows
 
         with self.assertRaises(RecoveryFailed):
             _validate_recovered_rows([_row(1, 0), _row(1, 0)])
 
     def test_bool_turn_rejected(self) -> None:
         from codey.operations.kernel_errors import RecoveryFailed
-        from codey.operations.task_entry import _validate_recovered_rows
+        from codey.operations.kernel_session_recovery import _validate_recovered_rows
 
         with self.assertRaises(RecoveryFailed):
             _validate_recovered_rows([_row(True, 0)])
 
     def test_negative_index_rejected(self) -> None:
         from codey.operations.kernel_errors import RecoveryFailed
-        from codey.operations.task_entry import _validate_recovered_rows
+        from codey.operations.kernel_session_recovery import _validate_recovered_rows
 
         with self.assertRaises(RecoveryFailed):
             _validate_recovered_rows([_row(1, -1)])

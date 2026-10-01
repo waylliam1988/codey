@@ -9,7 +9,7 @@ Flow:
   open RuntimeSessionLog + ManagedOutputStore + WorkspaceRevisionStore +
   KernelEffectSink -> execute_turn edit + run(s) -> record counts/revision/
   fingerprint/call ids -> reopen all stores (restart) ->
-  recover_effects_for_resume -> formal task_entry._entry_recovery into a
+  recover_effects_for_resume -> formal kernel_session_recovery.restore_task_session into a
   fresh TaskSession (no manual file rewrite, no hand-made identity) ->
   real completion_gate.evaluate.
 
@@ -90,7 +90,7 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
     (tool_delivery_pending -> next turn requires delivery settlement which
     only the full kernel loop performs). Multi-turn accumulation is covered
     separately via run_task_kernel; here the focus is trusted workspace
-    provenance through the real stores + formal _entry_recovery.
+    provenance through the real stores + shared restore_task_session.
     """
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import build_turn_snapshot
@@ -123,7 +123,7 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
             audit = dict(forged_run_audit)
         return ToolResult(call=call, model_text="run out", audit=audit)
 
-    calls = [ToolCall(name="edit", args={"path": "a.py", "content": "x = 1\n"})]
+    calls = [ToolCall(name="edit", args={"path": "a.py", "content": "x = 2\n"})]
     for i in range(len(run_audits)):
         calls.append(
             ToolCall(name="run", args={"command": "python -m pytest", "path": "."}, call_id=f"native-{run_id}-{i}")
@@ -143,8 +143,8 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
 
 def _recover_formal(project, state, logdir, session_id, run_id):
     """Reopen stores (restart) then recover via the formal entry path."""
+    from codey.operations.kernel_session_recovery import restore_task_session
     from codey.operations.recovery import recover_effects_for_resume
-    from codey.operations.task_entry import _entry_recovery
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.log.session_log import RuntimeSessionLog
@@ -167,14 +167,12 @@ def _recover_formal(project, state, logdir, session_id, run_id):
     assert recovery.ok is True
     fresh = _new_session(project)
     # Formal entry creates the session workspace from the durable store
-    # before replaying facts (mirrors _create_entry_session via evidence).
-    try:
-        cur = deps.workspace_revisions.current_state(str(project), ignored_paths=())
-        fresh.set_workspace_state(int(cur.revision or 0), cur.fingerprint)
-    except Exception:
-        pass
-    frame = SimpleNamespace(run_id=run_id, recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes))
-    delivered, rows, resume_start, initial = _entry_recovery(frame, fresh)
+    # before replaying facts (mirrors start_task_session via evidence).
+    cur = deps.workspace_revisions.current_state(str(project), ignored_paths=())
+    fresh.set_workspace_state(cur.revision, cur.fingerprint)
+    frame = SimpleNamespace(run_id=run_id, recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes),
+                            settled_tool_outcomes=recovery.settled_tool_outcomes)
+    delivered, rows, resume_start, initial = restore_task_session(frame, fresh)
     return fresh, recovery, delivered, rows, resume_start
 
 
@@ -254,7 +252,7 @@ def test_file_change_after_verification_blocks_after_recovery():
         )
         fresh, _, _, _, _ = _recover_formal(project, state, logdir, "s-change", "r-change")
         assert evaluate(fresh, "done", context=_gate_context(fresh, "r-change")).complete is True
-        (project / "a.py").write_text("x = 2\n", encoding="utf-8")
+        (project / "a.py").write_text("x = 3\n", encoding="utf-8")
         assert evaluate(fresh, "done", context=_gate_context(fresh, "r-change")).complete is False
 
 
@@ -275,14 +273,13 @@ def test_forged_executor_identity_never_becomes_trusted():
         # Executor-forged keys are stripped at the kernel boundary.
         assert session.verifications[0].get("workspace_revision") is not True
         fresh, _, _, _, _ = _recover_formal(project, state, logdir, "s-forge", "r-forge")
-        assert evaluate(fresh, "done", context=_gate_context(fresh, "r-forge")).complete is False or True in (True, False)
+        assert evaluate(fresh, "done", context=_gate_context(fresh, "r-forge")).complete is True
+        assert fresh.verifications == session.verifications
         # The forged True revision must never appear as a trusted pass.
         for row in fresh.verifications:
             assert row.get("workspace_revision") is not True
-        # A forged identity alone can never complete: missing/invalid stays blocked
-        # unless a real trusted pass exists (here the forged run must not pass).
-        # The exact gate outcome depends on whether the kernel kept the real
-        # session identity; what must hold is no forged True becomes valid.
+        # The real kernel identity survives; executor metadata contributes
+        # no authority and cannot replace the genuine pair.
         assert all(type(r.get("workspace_revision")) is not bool for r in fresh.verifications)
 
 
@@ -300,82 +297,69 @@ def test_native_call_id_survives_and_no_reexecution_on_second_restart():
         # Second restart is idempotent: no duplicate replay, no re-execution.
         fresh2, rec2, _, rows2, _ = _recover_formal(project, state, logdir, "s-native", "r-native")
         assert counts["edit"] == 1 and counts["run"] == 1
-        assert len(rec2.recovered_tool_outcomes) == 0
-        assert len(fresh2.verifications) == 0
+        assert len(rec2.recovered_tool_outcomes) == len(rec1.recovered_tool_outcomes)
+        assert fresh2.verifications == fresh1.verifications
         from codey.operations.completion_gate import evaluate
 
         c1a = evaluate(fresh1, "done", context=_gate_context(fresh1, "r-native")).complete
-        c1b = evaluate(fresh1, "done", context=_gate_context(fresh1, "r-native")).complete
+        c1b = evaluate(fresh2, "done", context=_gate_context(fresh2, "r-native")).complete
         assert c1a == c1b is True
 
 
-def test_single_turn_25_runs_kept_via_real_log():
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-        tmp = Path(td)
-        project, state, logdir = _dirs(tmp)
-        audits = [{"exit_code": 0}] * 25
-        _settle_edit_then_runs(project, state, logdir, "s-many", "r-many", audits)
-        fresh, _, _, rows, _ = _recover_formal(project, state, logdir, "s-many", "r-many")
-        # 1 edit + 25 runs in one kernel turn via real stores; log keeps all.
-        assert len(fresh.verifications) == 25
-        assert len(rows) == 26
-
-
-def test_multi_turn_legal_accumulation_keeps_all_observations_via_kernel(monkeypatch):
-    """Real kernel multi-turn: 1 edit + 5 runs + done across legal turns (no truncation)."""
+def test_multi_turn_recovery_keeps_more_than_twenty_observations(monkeypatch):
+    """25 runs in legal batches, acknowledged through the recorded provider."""
     import json
 
+    from codey.operations.task_effects import KernelRecordedProvider
     from codey.operations.task_loop import run_task_kernel
     from codey.runtime.core.models import ToolResult
-    from codey.workspace.revision import WorkspaceRevisionStore
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
-
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-        tmp = Path(td)
-        project, state, _ = _dirs(tmp)
+        project, state, logdir = _dirs(Path(td))
         (project / "a.py").write_text("x = 1\n", encoding="utf-8")
-        store = WorkspaceRevisionStore(state)
+        _, _, _, store, _, sink = _open_runtime(logdir, state, "s-many", "r-many", project)
         session = _new_session(project)
-        session.max_turns = 30
         base = store.current_state(str(project), ignored_paths=())
-        session.set_workspace_state(int(base.revision or 0), base.fingerprint)
-        replies = [json.dumps({"tool": "edit", "args": {"path": "a.py", "content": "x = 1\n"}})]
-        replies += [
-            json.dumps({"tool": "run", "args": {"command": f"python -m pytest test_{i}.py", "path": "."}})
-            for i in range(5)
-        ]
-        replies += [json.dumps({"tool": "done", "args": {"summary": "finished"}})]
-        it = iter(replies)
-
+        session.set_workspace_state(base.revision, base.fingerprint)
+        replies = [json.dumps({"tool": "edit", "args": {"path": "a.py", "content": "x = 2\n"}})]
+        for start in range(0, 25, 7):
+            replies.append("\n".join(
+                json.dumps({"tool": "run", "args": {"command": f"python -m pytest test_{i}.py", "path": "."}})
+                for i in range(start, min(25, start + 7))
+            ))
+        replies.append(json.dumps({"tool": "done", "args": {"summary": "finished"}}))
+        answers = iter(replies)
+        counts = {"edit": 0, "run": 0}
         class WebMulti:
             def new_chat(self):
                 pass
-
             def send(self, text):
-                return next(it)
-
+                return next(answers)
             def close(self):
                 pass
-
         def do_edit(call):
-            (project / str(call.args.get("path") or "a.py")).write_text(
-                str(call.args.get("content") or "x = 1\n"), encoding="utf-8"
-            )
+            counts["edit"] += 1
+            (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
             return ToolResult(call=call, model_text="edited", audit={"changed": True})
-
         def do_run(call):
+            counts["run"] += 1
             return ToolResult(call=call, model_text="ok", audit={"exit_code": 0})
-
-        run_task_kernel(
-            session,
-            provider=WebMulti(),
-            provider_id="web",
-            executors={"edit": do_edit, "run": do_run},
-            run_id="r-multi",
-            user_task="fix a.py",
-            completion_context=None,
-            project_path=project,
-            workspace_revision_store=store,
-        )
-        assert len(session.verifications) == 5
+        provider = WebMulti()
+        try:
+            result = run_task_kernel(
+                session, provider=KernelRecordedProvider(provider, sink), provider_id="local",
+                executors={"edit": do_edit, "run": do_run}, run_id="r-many", user_task="fix a.py",
+                project_path=project, workspace_revision_store=store, intent_sink=sink,
+                completion_context={"run_id": "r-many", "project": str(project)},
+            )
+            assert result.completed is True
+            assert counts == {"edit": 1, "run": 25}
+            for _ in range(2):
+                fresh, recovery, _, _, _ = _recover_formal(project, state, logdir, "s-many", "r-many")
+                assert len(fresh.verifications) == 25
+                assert fresh.verifications == session.verifications
+                assert fresh.edited_files == session.edited_files
+                assert recovery.recovered_tool_outcomes == ()
+        finally:
+            provider.close()

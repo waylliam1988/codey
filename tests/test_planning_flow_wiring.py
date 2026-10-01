@@ -11,7 +11,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 
-def _planning_request(*, requested=(), entry_policy=None, recovered=(), knowledge_store=None):
+def _planning_request(*, requested=(), entry_policy=None, recovered=(), settled=(), knowledge_store=None):
     from unittest import mock
 
     from codey.operations.planning_flow import PlanningFlowDeps, run_planning_readonly_mode
@@ -44,6 +44,7 @@ def _planning_request(*, requested=(), entry_policy=None, recovered=(), knowledg
         provider_session_changed=False, preflight_switches=0,
         trace=SimpleNamespace(call=lambda *a, **k: None),
         recovered_tool_outcomes=tuple(recovered),
+        settled_tool_outcomes=tuple(settled),
         recovered_tool_result_batch_id="",
         entry_policy=entry_policy,
     )
@@ -93,8 +94,9 @@ def test_planning_forwards_recovery_rows_and_denied_capabilities():
         call=ToolCall("read_file", {"path": "a.py"}, "c1"),
         outcome=ToolOutcome("x", True), turn=0, tool_index=0, effect_id="e1",
     )
-    req = _planning_request(recovered=(row,))
+    req = _planning_request(recovered=(row,), settled=(row,))
     assert tuple(req.recovered_tool_outcomes) == (row,)
+    assert tuple(req.settled_tool_outcomes) == (row,)
 
 
 def test_planning_with_web_read_gets_research_executors():

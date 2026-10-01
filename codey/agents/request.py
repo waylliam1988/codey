@@ -92,6 +92,7 @@ class AgentRequest:
     workspace_ignored_paths: tuple[str, ...] = ()
     managed_outputs: ManagedOutputStore | None = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
+    settled_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     recovered_tool_result_batch_id: str = ""
     requested_capabilities: tuple[str, ...] = ()
     research_tools: object | None = None

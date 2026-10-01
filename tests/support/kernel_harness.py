@@ -26,18 +26,15 @@ def build_kernel_fixture(request: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
     except Exception:
         load_project_instructions = None  # type: ignore[assignment]
     try:
+        from codey.agents.protocol import task_forbids_verification, task_requests_verification
         from codey.agents.state import (
             AgentLoopSession,
             LoopProgress,
             LoopStagnation,
+            LoopVerification,
             ResolvedLoopConfig,
         )
         from codey.agents.tools import DEFAULT_TOOL_FNS
-        from codey.agents.verification_driver import (
-            forbids_verification,
-            initial_verification_state,
-            requires_verification,
-        )
         from codey.policies.permissions import profile_for_name
         from codey.protocols import JsonToolCodec
         from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
@@ -126,7 +123,10 @@ def build_kernel_fixture(request: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
         changed_files.update(tuple(getattr(request, "verification_changed_files", ()) or ()))
     progress = LoopProgress(changed_files=set(changed_files), read_file_paths=set(), known_file_paths=set())
     try:
-        verification = initial_verification_state(request)
+        verification = LoopVerification(
+            paths=set(request.verification_changed_files),
+            successful_checks=[(item.command, item.cwd, 0) for item in request.verification_successful_checks],
+        )
     except Exception:
         verification = None
     try:
@@ -191,8 +191,8 @@ def build_kernel_fixture(request: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
                 system_prompt_text=system_prompt_text,
                 project_instructions=tuple(project_instructions or ()),
                 native_tools=tuple(native_tools) if native_tools is not None else None,
-                verification_required=requires_verification(str(getattr(request, "task", "") or "")),
-                verification_forbidden=forbids_verification(str(getattr(request, "task", "") or "")),
+                verification_required=task_requests_verification(str(getattr(request, "task", "") or "")),
+                verification_forbidden=task_forbids_verification(str(getattr(request, "task", "") or "")),
             ),
             trace=trace,
             progress=progress,

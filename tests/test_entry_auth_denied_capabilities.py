@@ -117,11 +117,13 @@ def test_recovered_policy_rejects_malformed_fields_instead_of_dropping_restricti
             TaskPolicy.from_payload({**good, field: value})
 
 
-def test_auto_plan_preserves_parent_explicit_denial():
-    from codey.policies.task_policy import apply_auto_plan
+def test_execution_hint_preserves_explicit_denial():
+    from types import SimpleNamespace
 
-    parent = TaskPolicy(grants=frozenset({"control", "web.read"}),
-                        denied_capabilities=frozenset({"web.read"}))
-    narrowed = apply_auto_plan(parent, "ACTION: research\nPLAN: read docs")
-    assert not narrowed.allows("web.read")
-    assert narrowed.denied_capabilities == parent.denied_capabilities
+    from codey.operations.task_entry import build_task_policy_for_entry
+
+    request = SimpleNamespace(project="", requested_capabilities=("web.read",),
+                              denied_capabilities=("web.read",), model_hint="ACTION: research\nPLAN: read docs")
+    policy = build_task_policy_for_entry(request, "project")
+    assert not policy.allows("web.read")
+    assert policy.denied_capabilities == frozenset({"web.read"})

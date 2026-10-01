@@ -105,8 +105,10 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
 
     def test_all_recovery_entries_share_trust_rule(self) -> None:
         """Every recovery entry must refuse forged audit without kernel provenance."""
-        from codey.operations.project_adapter import _recovered_result_for_row
+        from codey.operations.kernel_session_recovery import restore_task_session
         from codey.operations.recovery import delivered_from_frame
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall
         from tests.recovery_test_helpers import (
             delivered_slot_result as _delivered_slot_result,
@@ -124,7 +126,7 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
         self.assertEqual(rev, 0, "delivered_from_frame must not trust forged audit")
 
         # 2) project_adapter row rebuild keeps display but stays untrusted
-        adapted = _recovered_result_for_row(row)
+        adapted = restore_task_session(SimpleNamespace(run_id="r-x", recovered_tool_outcomes=(row,)), TaskSession(policy=TaskPolicy(grants=frozenset({"control"}))))[3][0]
         rev, _fp = _trusted_workspace_from_result(adapted)
         self.assertEqual(rev, 0, "project_adapter must not trust forged audit")
 

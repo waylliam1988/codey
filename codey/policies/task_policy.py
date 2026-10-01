@@ -9,12 +9,16 @@ through the live path/command/network guards at execution time.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 from codey.policies.capabilities import KNOWN_TASK_GRANTS
 
 TASK_POLICY_VERSION = 1
+_TASK_POLICY_FIELDS = frozenset({
+    "grants", "strict_research", "sources_open_required", "required_checks",
+    "source", "version", "denied_capabilities",
+})
 
 # 工具授权唯一来源为 ToolSpec（toolchain.tool_spec.spec_for_tool().grant），
 # 此处不再维护重复名单，避免漂移。
@@ -99,49 +103,45 @@ class TaskPolicy:
     def to_payload(self) -> dict[str, object]:
         return {
             "grants": sorted(self.grants or frozenset()),
-            "strict_research": bool(self.strict_research),
-            "sources_open_required": bool(self.sources_open_required),
+            "strict_research": self.strict_research,
+            "sources_open_required": self.sources_open_required,
             "required_checks": list(self.required_checks or ()),
-            "source": str(self.source or ""),
-            "version": int(self.version or TASK_POLICY_VERSION),
+            "source": self.source,
+            "version": self.version,
             "denied_capabilities": sorted(self.denied_capabilities or frozenset()),
         }
 
     @staticmethod
     def from_payload(payload: object) -> TaskPolicy:
         if not isinstance(payload, dict):
-            return TaskPolicy(
-                grants=frozenset({"control"}),
-                source="recovered:invalid",
-                version=TASK_POLICY_VERSION,
-            )
-        version = payload.get("version")
+            raise ValueError("task policy must be an object")
+        if set(payload) != _TASK_POLICY_FIELDS:
+            raise ValueError(f"task policy fields differ: {set(payload) ^ _TASK_POLICY_FIELDS}")
+        version = payload["version"]
         if type(version) is not int or version != TASK_POLICY_VERSION:
             # 冷启动无兼容负担：未知版本直接拒绝，由调用方 fail-closed，
             # 绝不按当前格式继续解释。
             raise ValueError(f"unsupported task policy version: {version!r}")
-        grants = _restored_grants(payload.get("grants", ()), "grants")
-        denied = _restored_grants(payload.get("denied_capabilities", ()), "denied_capabilities")
-        grants.add("control")
-        raw_checks = payload.get("required_checks", ())
+        grants = _restored_grants(payload["grants"], "grants")
+        denied = _restored_grants(payload["denied_capabilities"], "denied_capabilities")
+        raw_checks = payload["required_checks"]
         if not isinstance(raw_checks, (list, tuple)) or any(
             not isinstance(item, str) or not item.strip() for item in raw_checks
         ):
             raise ValueError("required_checks must contain nonempty strings")
-        checks = tuple(dict.fromkeys(raw_checks))
+        checks = tuple(raw_checks)
         # Preserve every requirement; the completion gate rejects overflow.
-        strict = _restored_bool(payload.get("strict_research", False), "strict_research")
-        sources_open_required = _restored_bool(payload.get("sources_open_required", False), "sources_open_required")
-        source = payload.get("source", "")
+        strict = _restored_bool(payload["strict_research"], "strict_research")
+        sources_open_required = _restored_bool(payload["sources_open_required"], "sources_open_required")
+        source = payload["source"]
         if not isinstance(source, str):
             raise ValueError("source must be a string")
-        grants -= denied
         return TaskPolicy(
             grants=frozenset(grants),
             strict_research=strict,
             sources_open_required=sources_open_required,
             required_checks=tuple(checks),
-            source=source[:240] if source else "recovered",
+            source=source,
             version=TASK_POLICY_VERSION,
             denied_capabilities=frozenset(denied),
         )
@@ -235,14 +235,13 @@ def build_task_policy(
 
     # Unknown requested capabilities are ignored (denied); they never widen grants.
     grants.intersection_update(KNOWN_TASK_GRANTS | {"control"})
-    if "control" not in grants:
-        grants.add("control")
-
     # 入口显式否决最后统一扣除：默认授权、requested、strict 分支都不能加回。
     denied = _denied_grants(submission)
     grants -= denied
 
     required_checks = STRICT_RESEARCH_REQUIRED_CHECKS if strict else (("research_sources_opened",) if sources_open_required else ())
+    if getattr(submission, "project_changes_required", False) is True:
+        required_checks = (*required_checks, "project_changes_required")
     requested_text = ",".join(sorted(requested)) if requested else "-"
     denied_text = ",".join(sorted(denied)) if denied else "-"
     source = f"kind:{kind or 'project'};project:{'yes' if has_project else 'no'};requested:{requested_text};strict:{'yes' if strict else 'no'};denied:{denied_text}"
@@ -257,27 +256,10 @@ def build_task_policy(
     )
 
 
-def _grant_for_tool_name(name: str) -> str:
-    try:
-        from codey.toolchain.tool_spec import spec_for_tool as _spec_for
-
-        spec = _spec_for(name)
-        return str(getattr(spec, "grant", "") or "") if spec is not None else ""
-    except Exception:
-        return ""
-
-
-def _alias_allowed(canonical: str, allowed: set[str]) -> bool:
-    if canonical == "open_url":
-        return bool({"open_result", "reopen_source", "open_hit"} & allowed)
-    return False
-
-
 def policy_for_dispatch(request: object, kind: object, *, strict_research: object = False) -> TaskPolicy | None:
     """Build the immutable TaskPolicy for one dispatch kind (user intent only).
 
-    Moved from operations.task_loop so policy lives with policy; task_loop
-    re-exports it for backward compatibility.
+    Model execution hints never participate in authorization.
     """
     try:
         return build_task_policy(request, task_kind=kind, strict_research=strict_research)
@@ -285,34 +267,11 @@ def policy_for_dispatch(request: object, kind: object, *, strict_research: objec
         return None
 
 
-def apply_auto_plan(policy: object, plan_text: object) -> object:
-    """Narrow a policy by an auto PLAN; the plan can never widen grants."""
-    if policy is None or not callable(getattr(policy, "allows", None)):
-        return policy
-    text = str(plan_text or "")
-    lowered = text.lower()
-    if "action:" not in lowered and "plan:" not in lowered:
-        return policy
-    grants = set(getattr(policy, "grants", frozenset()) or frozenset())
-    if "action: project" not in lowered and "action:project" not in lowered:
-        grants.discard("project.write")
-        grants.discard("shell.approval")
-    if "action: research" not in lowered and "action:research" not in lowered:
-        grants.discard("web.read")
-        grants.discard("knowledge.read")
-        grants.discard("knowledge.write")
-        grants.discard("knowledge.link")
-    grants.add("control")
-    return replace(policy, grants=frozenset(grants), source=policy.source + ";auto_narrowed")
-
-
-
 __all__ = [
     "KNOWN_TASK_GRANTS",
     "STRICT_RESEARCH_REQUIRED_CHECKS",
     "TASK_POLICY_VERSION",
     "TaskPolicy",
-    "apply_auto_plan",
     "build_task_policy",
     "policy_for_dispatch",
 ]

@@ -5,72 +5,48 @@ a plain greeting with no requirements still completes in one shot.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from codey.operations.auto_loop import run_auto_mode
+from tests.test_auto_direct_answer_continues_to_kernel import _auto_deps, _SeqProvider
+from tests.test_auto_direct_answer_continues_to_kernel import _auto_frame as make_frame
+
 
 def _auto_frame(task, **overrides):
-    from codey.operations.context import RunFrame
-    from codey.task.model import TaskSubmission
+    return make_frame(task, _SeqProvider(["finished"]), **overrides)
 
-    request = TaskSubmission(
-        session_id="s-auto",
-        project="/tmp/proj",
-        task=task,
-        max_turns=8,
-        continue_task=False,
-        provider_id="web",
-        intent="auto",
-        run_id="r-auto",
-        **overrides,
-    )
-    return RunFrame(
-        request=request,
-        project_text="/tmp/proj",
-        provider=None,
-        provider_id="web",
-        run_id="r-auto",
-        task_kind="auto",
-        conversation=None,
-        fresh_chat=False,
-        handoff="",
-        research_handoff="",
-        prior_snapshot=None,
-        recovered_owner_prompt="",
-        provider_session_changed=False,
-        preflight_tried=set(),
-        preflight_switches=0,
-    )
+
+def run_candidate(frame):
+    return run_auto_mode(frame, SimpleNamespace(), SimpleNamespace(), _auto_deps(SimpleNamespace(), SimpleNamespace()))
 
 
 def test_direct_answer_blocked_when_sources_required():
-    from codey.operations.task_entry import _direct_answer_outcome
 
     frame = _auto_frame("hello finished", sources_open_required=True)
     frame.handoff = "finished"
-    outcome = _direct_answer_outcome(frame, "chat")
+    outcome = run_candidate(frame)
     assert outcome.event.get("stop_reason") != "done"
 
 
 def test_direct_answer_blocked_when_changes_required():
-    from codey.operations.task_entry import _direct_answer_outcome
 
     frame = _auto_frame("hello finished", project_changes_required=True)
     frame.handoff = "finished"
-    outcome = _direct_answer_outcome(frame, "chat")
+    outcome = run_candidate(frame)
     assert outcome.event.get("stop_reason") != "done"
 
 
 def test_direct_answer_blocked_when_strict_research():
-    from codey.operations.task_entry import _direct_answer_outcome
 
     frame = _auto_frame("hello finished", strict_research=True)
     frame.handoff = "finished"
-    outcome = _direct_answer_outcome(frame, "chat")
+    outcome = run_candidate(frame)
     assert outcome.event.get("stop_reason") != "done"
 
 
 def test_plain_greeting_direct_answer_completes():
-    from codey.operations.task_entry import _direct_answer_outcome
 
     frame = _auto_frame("hello")
     frame.handoff = "hi there"
-    outcome = _direct_answer_outcome(frame, "chat")
+    outcome = run_candidate(frame)
     assert outcome.event.get("stop_reason") == "done"

@@ -9,8 +9,7 @@ recovery errors funnel through ``build_recovery_error_result`` /
 ``build_recovery_mismatch_result`` (no scattered ``ToolResult(...)``):
 
 - ``recovery.delivered_from_frame`` (safe replay + settled redelivery)
-- ``task_entry._entry_recovery``
-- ``project_adapter._recovered_result_for_row`` (safe replay only)
+- ``kernel_session_recovery.restore_task_session`` (all entry adapters)
 - ``kernel_recovery`` replay/delivered slots
 
 Frame recovery is safe-replay only, except for settled redelivery rows

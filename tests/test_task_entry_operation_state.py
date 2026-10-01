@@ -230,11 +230,11 @@ def _runtime_outcome(state: server.AppContext, run_id: str) -> str:
 def _operation_leaf_sequence(state: server.AppContext, run_id: str) -> list[str]:
     assert state.runtime_log is not None
     op_id = operation_id_for_run(run_id)
-    return [
-        str(entry.payload["leaf"])
-        for entry in state.runtime_log.read(SESSION)
-        if entry.operation_id == op_id and entry.kind == "operation_state"
-    ]
+    # Metadata updates (policy/provider/attempt) persist the same leaf;
+    # assert phase transitions independently from those durable updates.
+    leaves = [str(entry.payload["leaf"]) for entry in state.runtime_log.read(SESSION)
+              if entry.operation_id == op_id and entry.kind == "operation_state"]
+    return [leaf for index, leaf in enumerate(leaves) if index == 0 or leaf != leaves[index - 1]]
 
 
 class CleanRunTerminalTests(unittest.TestCase):
@@ -331,6 +331,13 @@ class CleanRunTerminalTests(unittest.TestCase):
                 task_kind="project",
             )
             assert started is not None
+            from codey.operations.recovery import record_entry_policy
+            from codey.operations.task_entry import build_task_policy_for_entry
+
+            original_request = TaskSubmission(SESSION, str(project), "Change the module and verify", 6,
+                                               False, "deepseek", intent="project")
+            record_entry_policy(crashed_state.runtime_mutations, session_id=SESSION, run_id=run_id,
+                                policy=build_task_policy_for_entry(original_request, "project"))
             crashed_state.runtime_mutations.mark_writer_running(
                 SESSION,
                 run_id,
@@ -351,12 +358,7 @@ class CleanRunTerminalTests(unittest.TestCase):
             entries = resumed_state.runtime_log.read(SESSION)
             op_id = operation_id_for_run(run_id)
             self.assertEqual(
-                [
-                    entry.payload["leaf"]
-                    for entry in entries
-                    if entry.operation_id == op_id
-                    and entry.kind == "operation_state"
-                ],
+                _operation_leaf_sequence(resumed_state, run_id),
                 [
                     LEAF_ACCEPTED,
                     LEAF_WRITER_RUNNING,

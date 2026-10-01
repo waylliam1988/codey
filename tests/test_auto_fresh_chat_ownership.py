@@ -1,257 +1,95 @@
-"""Red-first: Auto ACTION must hand a fresh window to executors.
+"""Auto and its task kernel own exactly one window and one total budget.
 
-Bug 2: run_auto_mode() does a second new_chat() after ACTION then sets
-fresh_chat=False, so project/planning executors send the short
-"continue" prompt instead of the full project_intro().
-The mode executor must own the ACTION-after reset.
+This replaces the former two-window handoff expectations. The assertions
+observe real kernel sends and file reads rather than mimicking an executor
+with a handwritten PROJECT_INTRO string.
 """
-from __future__ import annotations
-
-import unittest
 from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace
-from unittest import mock
 
+import pytest
+
+from codey.agents.tools import DEFAULT_TOOL_FNS
 from codey.operations.auto_loop import run_auto_mode
-from codey.operations.result import ModeOutcome
-from codey.task.model import TaskSubmission
+from codey.operations.context import RunWork
+from codey.operations.task_entry import run_entry_kernel
+from codey.policies.task_policy import TaskPolicy
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from tests.test_auto_direct_answer_continues_to_kernel import _auto_deps, _auto_frame, _SeqProvider
 
 
-class _CountingProvider:
-    name = "Fake"
+@pytest.mark.parametrize("action", ["project", "research", "planning_readonly"])
+def test_auto_action_sends_shared_protocol_and_reads_file_in_one_window(tmp_path, monkeypatch, action):
+    monkeypatch.setenv("NATIVE_TOOLS", "0")
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    class Provider(_SeqProvider):
+        def __init__(self):
+            super().__init__([f"ACTION: {action}\nPLAN: inspect a.py",
+                              '{"tool":"read_file","args":{"path":"a.py"}}',
+                              '{"tool":"done","args":{"summary":"read"}}'])
+            self.windows = 0
+            self.prompts = []
+        def new_chat(self):
+            self.windows += 1
+        def send(self, text):
+            self.prompts.append(text)
+            return super().send(text)
+    provider = Provider()
+    frame = _auto_frame("inspect a.py", provider)
+    frame.request = replace(frame.request, project=str(tmp_path))
+    frame.project_text = str(tmp_path)
+    frame.task_kind = "project"
+    frame.fresh_chat = True
+    frame.entry_policy = TaskPolicy(frozenset({"control", "project.read"}))
+    monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *args: (tmp_path, DEFAULT_TOOL_FNS, None))
+    runtime = SimpleNamespace(state=SimpleNamespace())
+    acquire = []
+    def continued(active_frame, work, hooks, *, followup):
+        return run_entry_kernel(active_frame, work, hooks, runtime, task_kind="project", continuation_followup=followup)
+    deps = replace(_auto_deps(SimpleNamespace(), SimpleNamespace()), continue_task=continued,
+                   acquire_writer=lambda _: acquire.append(True) or True)
+    outcome = run_auto_mode(frame, RunWork([], ExecutionEvidence()),
+                            SimpleNamespace(on_event=lambda _: None, on_shell_request=None), deps)
+    assert outcome.event["stop_reason"] == "done"
+    assert provider.windows == 1
+    assert provider.sends == 3
+    assert outcome.event["turns"] == 3
+    assert "read_file" in provider.prompts[1]
+    assert frame.entry_session.read_files == {"a.py"}
+    assert acquire == []
 
-    def __init__(self, reply: str) -> None:
-        self.reply = reply
-        self.new_chat_calls = 0
-        self.prompts: list[str] = []
 
-    def new_chat(self, timeout: float | None = None) -> None:
-        del timeout
-        self.new_chat_calls += 1
-
-    def send(self, text: str, timeout: float | None = None) -> str:
-        del timeout
-        self.prompts.append(text)
-        return self.reply
-
-    def close(self) -> None:
-        pass
+def test_auto_first_prompt_receives_project_scoped_context():
+    provider = _SeqProvider(["hello"])
+    frame = _auto_frame("hello", provider)
+    seen = []
+    def context(*, session_id, project):
+        seen.append((session_id, project))
+        return SimpleNamespace(text="Project continuity")
+    deps = replace(_auto_deps(SimpleNamespace(), SimpleNamespace()), ghost_directive_fn=context)
+    run_auto_mode(frame, RunWork([], ExecutionEvidence()), SimpleNamespace(), deps)
+    assert seen == [(frame.request.session_id, frame.request.project)]
+    assert provider.sends == 1
 
 
-def _frame(task: str, provider: _CountingProvider, project: str = "/repo"):
-    return SimpleNamespace(
-        request=TaskSubmission("session-1", project, task, 8, False, "local"),
-        run_id="run-1",
-        task_kind="auto",
-        provider=provider,
-        provider_id="local",
-        project_text=str(Path(project).expanduser().resolve()),
-        conversation=mock.Mock(),
-        fresh_chat=True,
-        handoff="",
-        trace=None,
-        recovered_tool_outcomes=(),
-    )
+def test_initial_reset_failure_never_executes_or_continues():
+    class Provider(_SeqProvider):
+        def new_chat(self):
+            raise RuntimeError("reset failed")
+    provider = Provider(["ACTION: project\nPLAN: edit"])
+    frame = _auto_frame("edit", provider)
+    frame.fresh_chat = True
+    continued = []
+    deps = replace(_auto_deps(SimpleNamespace(), SimpleNamespace()),
+                   continue_task=lambda *a, **k: continued.append(True))
+    with pytest.raises(RuntimeError, match="reset failed"):
+        run_auto_mode(frame, RunWork([], ExecutionEvidence()), SimpleNamespace(), deps)
+    assert provider.sends == 0
+    assert continued == []
 
 
-def _deps(state, mode_deps):
+def test_auto_has_no_mode_dispatch_plumbing():
+    from dataclasses import fields
+
     from codey.operations.auto_loop import AutoRunDeps
-
-    return AutoRunDeps(
-        state=state,
-        mode_deps=mode_deps,
-        config_result=None,
-        acquire_writer=lambda _p: True,
-        release_writer=lambda _p: None,
-        open_ledger_for=lambda _k: None,
-    )
-
-
-def _ok(mode: str) -> ModeOutcome:
-    return ModeOutcome({
-        "type": "task_done", "run_id": "run-1", "session_id": "session-1",
-        "summary": "ok", "stop_reason": "done", "turns": 1,
-        "max_turns": 8, "provider": "local", "mode": mode,
-    })
-
-
-class AutoFreshChatOwnershipTests(unittest.TestCase):
-    def test_auto_first_prompt_receives_project_scoped_ghost_context(self) -> None:
-        provider = _CountingProvider("ACTION: project\nPLAN: inspect")
-        frame = _frame("inspect", provider)
-        seen: list[tuple[str, str]] = []
-
-        def scoped_context(kind: str):
-            def load(*, session_id: str, project: str = ""):
-                seen.append((session_id, project))
-                text = f"{kind} project context" if project == "/repo" else ""
-                return SimpleNamespace(text=text)
-            return load
-
-        mode_deps = SimpleNamespace(
-            project=lambda *_args, **_kwargs: _ok("project"),
-            research=mock.Mock(), planning=mock.Mock(), review=mock.Mock(),
-        )
-        deps = replace(
-            _deps(mock.Mock(), mode_deps),
-            ghost_directive_fn=scoped_context("Directive"),
-            ghost_continuity_fn=scoped_context("Continuity"),
-        )
-
-        run_auto_mode(frame, SimpleNamespace(), SimpleNamespace(), deps)
-
-        self.assertEqual(seen, [("session-1", "/repo"), ("session-1", "/repo")])
-        self.assertIn("Directive project context", provider.prompts[0])
-        self.assertIn("Continuity project context", provider.prompts[0])
-        self.assertEqual(len(provider.prompts), 1)
-
-    def test_project_handoff_is_fresh_and_auto_does_not_reset(self) -> None:
-        provider = _CountingProvider("ACTION: project\nPLAN: fix it")
-        frame = _frame("fix it", provider)
-        seen: dict[str, object] = {}
-
-        def run_project(active_frame, _work, _hooks, config_result=None):
-            del _work, _hooks, config_result
-            seen["fresh_chat"] = active_frame.fresh_chat
-            # Auto must not have consumed the reset: exactly the decision
-            # window reset so far; the executor owns the next one.
-            seen["new_chats_at_handoff"] = provider.new_chat_calls
-            return _ok("project")
-
-        mode_deps = SimpleNamespace(
-            project=run_project, research=mock.Mock(),
-            planning=mock.Mock(), review=mock.Mock(),
-        )
-        run_auto_mode(
-            frame, SimpleNamespace(), SimpleNamespace(),
-            _deps(mock.Mock(), mode_deps),
-        )
-        self.assertTrue(
-            seen.get("fresh_chat"),
-            "project executor must see fresh_chat=True after Auto ACTION",
-        )
-        self.assertEqual(
-            seen.get("new_chats_at_handoff"), 1,
-            "Auto must not do the ACTION-after reset itself "
-            "(only the decision-window reset)",
-        )
-
-    def test_planning_handoff_is_fresh_and_auto_does_not_reset(self) -> None:
-        provider = _CountingProvider("ACTION: planning_readonly\nPLAN: look")
-        frame = _frame("look", provider)
-        seen: dict[str, object] = {}
-
-        def run_planning(active_frame, _work, config_result=None):
-            del _work, config_result
-            seen["fresh_chat"] = active_frame.fresh_chat
-            seen["new_chats_at_handoff"] = provider.new_chat_calls
-            return _ok("planning_readonly")
-
-        mode_deps = SimpleNamespace(
-            project=mock.Mock(), research=mock.Mock(),
-            planning=run_planning, review=mock.Mock(),
-        )
-        run_auto_mode(
-            frame, SimpleNamespace(), SimpleNamespace(),
-            _deps(mock.Mock(), mode_deps),
-        )
-        self.assertTrue(seen.get("fresh_chat"))
-        self.assertEqual(seen.get("new_chats_at_handoff"), 1)
-
-    def test_executor_reset_failure_must_not_reuse_action_window(self) -> None:
-        # The executor owns the reset: if its own new_chat fails with
-        # strict semantics, it must raise instead of reusing the window
-        # that still contains the ACTION scaffolding.
-        # Production entry: project_adapter strict fresh-chat path.
-        import tempfile
-
-        from codey.agents.request import AgentRequest
-
-        with tempfile.TemporaryDirectory() as td:
-            from pathlib import Path as _Path
-
-            req = AgentRequest(
-                provider=_FailingProvider(),  # type: ignore[arg-type]
-                project=_Path(td),
-                task="fix",
-                on_event=lambda _e: None,
-                fresh_chat=True,
-                permission_profile="coding_writer",
-                provider_id="local",
-                max_turns=1,
-            )
-            from codey.operations import project_adapter as adapter
-
-            with self.assertRaises(RuntimeError):
-                adapter.run(req)
-
-    def test_project_executor_sends_full_intro_exactly_once(self) -> None:
-        """Near-real chain: one ACTION-after reset + full intro, no reuse."""
-        provider = _CountingProvider("ACTION: project\nPLAN: fix it")
-        frame = _frame("fix it", provider)
-
-        def run_project(active_frame, _work, _hooks, config_result=None):
-            del _work, _hooks, config_result
-            # Mimic the real Writer first call: strict reset once, then the
-            # full project intro (never the short "continue" prompt).
-            if not active_frame.fresh_chat:
-                provider.send(
-                    "Continue with the established project and JSON tool protocol."
-                )
-                return _ok("project")
-            provider.new_chat()
-            provider.send(
-                "PROJECT_INTRO with project instructions and JSON tool protocol"
-            )
-            return _ok("project")
-
-        mode_deps = SimpleNamespace(
-            project=run_project, research=mock.Mock(),
-            planning=mock.Mock(), review=mock.Mock(),
-        )
-        run_auto_mode(
-            frame, SimpleNamespace(), SimpleNamespace(),
-            _deps(mock.Mock(), mode_deps),
-        )
-        # Decision reset (1) + executor reset (1) = exactly 2; the ACTION
-        # scaffolding window is never reused.
-        self.assertEqual(provider.new_chat_calls, 2)
-        exec_prompts = provider.prompts[1:]
-        self.assertEqual(len(exec_prompts), 1)
-        self.assertIn("PROJECT_INTRO", exec_prompts[0])
-        self.assertIn("tool protocol", exec_prompts[0].lower())
-
-    def test_project_executor_reset_failure_does_not_execute(self) -> None:
-        provider = _CountingProvider("ACTION: project\nPLAN: fix it")
-        frame = _frame("fix it", provider)
-
-        def run_project(active_frame, _work, _hooks, config_result=None):
-            del _work, _hooks, config_result
-            # Strict executor reset: failure must propagate, never fall
-            # back to the ACTION window.
-            raise RuntimeError("executor reset failed")
-
-        mode_deps = SimpleNamespace(
-            project=run_project, research=mock.Mock(),
-            planning=mock.Mock(), review=mock.Mock(),
-        )
-        with self.assertRaisesRegex(RuntimeError, "executor reset failed"):
-            run_auto_mode(
-                frame, SimpleNamespace(), SimpleNamespace(),
-                _deps(mock.Mock(), mode_deps),
-            )
-        # Only the decision prompt ran; no executor prompt leaked.
-        self.assertEqual(len(provider.prompts), 1)
-
-
-class _FailingProvider:
-    name = "Failing"
-
-    def new_chat(self, timeout: float | None = None) -> None:
-        del timeout
-        raise RuntimeError("reset failed")
-
-
-if __name__ == "__main__":
-    unittest.main()
+    assert not {"mode_deps", "config_result"} & {item.name for item in fields(AutoRunDeps)}

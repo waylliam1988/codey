@@ -41,6 +41,9 @@ class RunFrame:
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     recovered_tool_result_batch_id: str = ""
     entry_policy: Any | None = None
+    settled_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
+    entry_session: Any | None = None
+    entry_research_tools: Any | None = None
 
 
 @dataclass

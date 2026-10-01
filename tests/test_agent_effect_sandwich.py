@@ -588,6 +588,12 @@ class AgentEffectSandwichTests(unittest.TestCase):
             run_id,
             provider_id="mock_provider",
         )
+        from codey.operations.recovery import record_entry_policy
+        from codey.policies.task_policy import TaskPolicy
+
+        original_policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
+        record_entry_policy(state.runtime_mutations, session_id=self.session_id,
+                            run_id=run_id, policy=original_policy)
         effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
         items = (
             DeliveryBatchItem(
@@ -628,6 +634,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         def fake_agent_run(req: Any) -> RunResult:
             seen_requests.append(req)
+            self.assertEqual(req.task_policy, original_policy)
             return RunResult("ok", "done", 2, False, False, False)
 
         deps = TaskRunDeps(
@@ -672,7 +679,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(recovered[0].call.name, "read")
         self.assertIn("recovered file text", recovered[0].outcome.model_text)
 
-    def test_recovered_hybrid_writer_resume_dispatches_project_not_research(self) -> None:
+    def test_recovered_hybrid_keeps_kind_and_delivers_real_kernel_results(self) -> None:
         state = server.AppContext()
         run_id = "run-recovered-hybrid-writer-1"
         target = self.project_dir / "target.txt"
@@ -731,6 +738,11 @@ class AgentEffectSandwichTests(unittest.TestCase):
             ),
         )
 
+        from codey.operations.recovery import record_entry_policy
+        from codey.policies.task_policy import TaskPolicy
+
+        record_entry_policy(state.runtime_mutations, session_id=self.session_id, run_id=run_id,
+                            policy=TaskPolicy(grants=frozenset({"control", "project.read"})))
         seen_requests: list[Any] = []
 
         def fake_agent_run(req: Any) -> RunResult:
@@ -759,8 +771,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
             is_git_repository=lambda _project: True,
         )
 
-        with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_entry.run_entry_kernel", autospec=True) as mock_hybrid:
+        provider = MockProvider(reply='{"tool":"done","args":{"summary":"read complete"}}')
+        with patch.object(state, "get_provider", return_value=provider):
             run_task_submission(
                 deps,
                 TaskSubmission(
@@ -775,15 +787,15 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 ),
             )
 
-        mock_hybrid.assert_not_called()
-        self.assertEqual(len(seen_requests), 1)
-        request = seen_requests[0]
-        self.assertTrue(request.fresh_chat or request.conversation is not None)
-        self.assertTrue(request.recovered_tool_outcomes)
-        self.assertIn("hybrid recovered file text", request.recovered_tool_outcomes[0].outcome.model_text)
+        self.assertEqual(seen_requests, [])
+        self.assertEqual(len(provider.send_history), 1)
+        self.assertIn("hybrid recovered file text", provider.send_history[0])
+        done_events = [event for event in emitted_events if event.get("type") == "task_done"]
+        self.assertEqual(len(done_events), 1)
+        self.assertEqual(done_events[0]["stop_reason"], "done")
         start_events = [e for e in emitted_events if e.get("type") == "task_start"]
         self.assertEqual(len(start_events), 1)
-        self.assertEqual(start_events[0].get("mode"), "agent")
+        self.assertEqual(start_events[0].get("mode"), "hybrid")
         self.assertTrue(start_events[0].get("continue_task"))
 
     def test_recovery_failure_finishes_accepted_operation_terminal(self) -> None:
@@ -1006,7 +1018,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             task_kind="planning_readonly",
         )
 
-        self.assertTrue(recovery.ok)
+        self.assertFalse(recovery.ok)  # Interrupted tool has no trustworthy result receipt.
         self.assertEqual(recovery.recovered_tool_outcomes, ())
         loaded = self.effects.load_effects(self.session_id, run_id)
         proj = next(p for p in loaded if p.intent.effect_id == eff_read)
@@ -1015,7 +1027,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.status, "interrupted")
         self.assertEqual(proj.settlement.replay_count, 0)
 
-    def test_resume_invalid_persisted_replay_args_fails_closed_without_recovery_failure(self) -> None:
+    def test_resume_invalid_persisted_replay_args_stops_without_executing(self) -> None:
         eff_id = "eff_bad_replay_args"
         lane = lane_for_run(self.run_id)
         op_id = operation_id_for_run(self.run_id)
@@ -1090,7 +1102,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             task_kind="project",
         )
 
-        self.assertTrue(recovery.ok)
+        self.assertFalse(recovery.ok)  # No original observation can be reconstructed.
         self.assertEqual(recovery.recovered_tool_outcomes, ())
         loaded = self.effects.load_effects(self.session_id, self.run_id)
         proj = next(p for p in loaded if p.intent.effect_id == eff_id)
@@ -1133,7 +1145,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertTrue(recovery.ok)
+        self.assertFalse(recovery.ok)  # Interrupted tool has no trustworthy result receipt.
         recovered = recovery.recovered_tool_outcomes
         self.assertEqual(len(recovered), 0)  # Unsafe is NEVER replayed
 

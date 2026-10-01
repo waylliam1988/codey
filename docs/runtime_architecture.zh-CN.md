@@ -84,3 +84,16 @@ completion gate。`project_adapter` 保留 AgentRequest/RunResult 边界；
 固定旧版源码 oracle 与精确差异门见
 [确定性 parity 审计](kernel_parity.zh-CN.md)。旧循环只允许由独立子进程 probe
 导入 reference tree，禁止回流为生产兼容模块。
+
+
+## 原策略和恢复事实的当前所有者（2026-10-01）
+
+- 原策略在 dispatch 的首个工具/auto 调用前记录；MutationLine 首次设置后拒绝不同值，相同值幂等。
+- runtime 保存策略原 JSON，领域 schema 只由 TaskPolicy 校验；恢复缺失或非法就阻塞，不从新请求补授权。
+- delivery recovered 只表示已重建，不推进为 delivered；只有实际交付确认或 abandoned 才终止该批次。
+- 已交付工具观察仍投影为 TaskSession 事实；项目和共同入口共用 `kernel_session_recovery.restore_task_session`。
+- Research 观察在同一工具收据 canonical 内；`ledger_receipts` 恢复完整正文、页和证据。整批暂存，成功才发布，不建立第二持久日志。
+- auto 工具 ACTION 和拒绝完成的回答均继续同一窗口/会话/预算；模型标签不改变原授权或要求。
+- command/cwd/URL 是完整身份；展示边界可以裁剪，事实和完成关联不裁剪。
+
+可执行检查与准确的证明边界见 [kernel_invariants.zh-CN.md](kernel_invariants.zh-CN.md)。

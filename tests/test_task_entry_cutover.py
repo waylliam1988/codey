@@ -35,7 +35,7 @@ def test_opt_in_task_kind_reaches_shared_kernel(project: str | None, expected: s
                             search_factory=None, run_research_advisors=None, managed_outputs=None,
                             runtime_mutations=None),
             SimpleNamespace(), SimpleNamespace(),
-            SimpleNamespace(claimed_work_item=None), SimpleNamespace(request=request, recovered_tool_outcomes=()),
+            SimpleNamespace(claimed_work_item=None), SimpleNamespace(request=request, run_id="r", recovered_tool_outcomes=(), settled_tool_outcomes=()),
             SimpleNamespace(), "hybrid",
             SimpleNamespace(),
         )
@@ -59,7 +59,7 @@ def test_auto_intent_reaches_auto_router_before_single_entry() -> None:
 
     request = TaskSubmission("s", "E:/codey", "read only", 2, False, "local", intent="auto")
     frame = SimpleNamespace(
-        request=request, recovered_tool_outcomes=(),
+        request=request, run_id="r", recovered_tool_outcomes=(), settled_tool_outcomes=(),
     )
     work = SimpleNamespace(claimed_work_item=None)
     outcome = ModeOutcome({"type": "task_done", "mode": "chat"})
@@ -90,8 +90,8 @@ def test_default_kinds_all_use_shared_kernel(kind: str) -> None:
     outcome = ModeOutcome({"type": "task_done", "mode": kind})
     with patch("codey.operations.task_phases.dispatch.run_task_mode", return_value=outcome) as unified:
         actual = dispatch_run_mode(
-            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(),
-            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(), kind,
+            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(), SimpleNamespace(),
+            SimpleNamespace(recovered_tool_outcomes=(), settled_tool_outcomes=()), SimpleNamespace(), kind,
             SimpleNamespace(),
         )
     assert actual is outcome
@@ -144,7 +144,8 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     frame = SimpleNamespace(
         request=request, task_kind="project", run_id="r", provider=provider,
         provider_id="deepseek", project_text=str(tmp_path), handoff="",
-        recovered_tool_outcomes=(), recovered_tool_result_batch_id="",
+        recovered_tool_outcomes=(),
+        settled_tool_outcomes=(), recovered_tool_result_batch_id="",
     )
     events: list[object] = []
     hooks = SimpleNamespace(on_event=events.append, on_shell_request=events.append)
@@ -181,7 +182,8 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
         request=request, task_kind="project", run_id="r",
         provider=SimpleNamespace(send=lambda *_args, **_kwargs: ""),
         provider_id="local", project_text=str(project), handoff="",
-        recovered_tool_outcomes=(), recovered_tool_result_batch_id="",
+        recovered_tool_outcomes=(),
+        settled_tool_outcomes=(), recovered_tool_result_batch_id="",
     )
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=None)

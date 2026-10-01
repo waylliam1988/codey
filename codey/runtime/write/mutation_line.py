@@ -561,6 +561,8 @@ def _operation_settled_entry(state: RuntimeOperationState) -> dict[str, object]:
 def _replace_task_policy(state: RuntimeOperationState, policy: dict[str, object]) -> RuntimeOperationState:
     if state.task_policy == policy:
         return state
+    if state.task_policy:
+        raise RuntimeOperationTransitionError("task authorization snapshot is immutable")
     from dataclasses import replace
 
     return replace(state, task_policy=dict(policy))

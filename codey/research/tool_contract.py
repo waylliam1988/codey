@@ -1,4 +1,4 @@
-"""Typed Research tool contracts for the text JSON fallback."""
+"""Research domain tool contracts, projected into the shared ToolSpec registry."""
 
 from __future__ import annotations
 

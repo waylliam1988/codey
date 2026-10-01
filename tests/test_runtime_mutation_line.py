@@ -305,7 +305,7 @@ class RuntimeMutationLineTests(unittest.TestCase):
                 recovered_reads=1,
             )
 
-    def test_record_delivery_recovered_settles_tool_delivery_pending_state(self) -> None:
+    def test_record_delivery_recovered_keeps_results_pending_until_sent(self) -> None:
         self._accept_and_run_writer()
         read = self._tool_intent("read", 0)
         batch_id = new_batch_id(self.run_id, 1)
@@ -347,8 +347,8 @@ class RuntimeMutationLineTests(unittest.TestCase):
         )
 
         rows = self.log.entries(self.session_id)[before:]
-        self.assertEqual([row.kind for row in rows], ["operation_effect", "operation_state"])
-        self.assertEqual(self.operations.load(self.session_id, self.run_id).leaf, LEAF_WRITER_RUNNING)
+        self.assertEqual([row.kind for row in rows], ["operation_effect"])
+        self.assertEqual(self.operations.load(self.session_id, self.run_id).leaf, LEAF_TOOL_DELIVERY_PENDING)
         self.assertTrue(self.delivery.load_batches(self.session_id, self.run_id)[0].is_recovered)
 
     def test_provider_delivery_receipt_commits_with_provider_settlement(self) -> None:

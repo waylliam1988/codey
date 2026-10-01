@@ -13,6 +13,8 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
+from codey.research.ledger import ResearchLedger
+from codey.research.ledger_receipts import ledger_observation
 from codey.runtime.core.models import ToolCall, ToolResult
 
 
@@ -369,8 +371,11 @@ class ExecutionDelegate:
             merged = dict(base.canonical) if isinstance(base.canonical, dict) else {}
         except Exception:
             merged = {}
-        merged["opened_url"] = final_url[:500]
-        merged["request_url"] = str(url or "")[:500]
+        merged["opened_url"] = final_url
+        merged["request_url"] = str(url or "")
+        ledger = getattr(self.research_tools, "ledger", None)
+        if isinstance(ledger, ResearchLedger):
+            merged["research_observation"] = ledger_observation(ledger, "open", url=url)
         result = ToolResult(
             call=base.call, model_text=base.model_text, truncated=bool(base.truncated),
             presentation=dict(base.presentation) if isinstance(base.presentation, dict) else {},
@@ -389,7 +394,11 @@ class ExecutionDelegate:
                 from codey.research.text_args import first_text_arg
 
                 text = tools.web_search(first_text_arg(args, "query"))
-                return ToolResult(call=call, model_text=text), _is_ok_text(text), None
+                canonical = {}
+                ledger = getattr(tools, "ledger", None)
+                if _is_ok_text(text) and isinstance(ledger, ResearchLedger):
+                    canonical["research_observation"] = ledger_observation(ledger, name)
+                return ToolResult(call=call, model_text=text, canonical=canonical), _is_ok_text(text), None
             if name == "open_url":
                 opened = tools.open_url(str(args.get("url") or ""), offset=args.get("offset", 0),
                                         limit=args.get("limit", 6000), pages=str(args.get("pages") or ""))
@@ -415,8 +424,12 @@ class ExecutionDelegate:
                 ok_text = _is_ok_text(text)
                 if ok_text and url and self.session is not None:
                     text, mapping = self._build_hit_mapping(text, url)
+                    canonical = {"hit_targets": mapping, "source_url": url}
+                    ledger = getattr(tools, "ledger", None)
+                    if isinstance(ledger, ResearchLedger):
+                        canonical["research_observation"] = ledger_observation(ledger, name)
                     return (
-                        ToolResult(call=call, model_text=text, canonical={"hit_targets": mapping, "source_url": url[:500]}),
+                        ToolResult(call=call, model_text=text, canonical=canonical),
                         True, None,
                     )
                 return ToolResult(call=call, model_text=text), ok_text, None
@@ -437,8 +450,12 @@ class ExecutionDelegate:
                 if not _is_ok_text(text):
                     return ToolResult(call=call, model_text=text), False, None
                 evidence = self._ledger_evidence(before)
+                canonical = {"evidence_items": evidence}
+                ledger = getattr(tools, "ledger", None)
+                if isinstance(ledger, ResearchLedger):
+                    canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
                 return (
-                    ToolResult(call=call, model_text=text, canonical={"evidence_items": evidence}),
+                    ToolResult(call=call, model_text=text, canonical=canonical),
                     True, None,
                 )
             if name == "knowledge_link":
@@ -521,39 +538,25 @@ class ExecutionDelegate:
         for line in str(text or "").splitlines():
             match = re.match(r"^\s*\d+\.\s+(?:offset\s+(\d+)|p\.(\d+)):", line)
             if match:
-                target = (str(url or "")[:500], int(match.group(1) or 0), str(match.group(2) or ""))
+                target = (str(url or ""), int(match.group(1) or 0), str(match.group(2) or ""))
                 hit_id = by_target.get(target, "")
                 if not hit_id:
                     while f"h{counter}" in existing or f"h{counter}" in batch:
                         counter += 1
                     hit_id = f"h{counter}"
                     counter += 1
-                    batch[hit_id] = {"url": target[0], "offset": target[1], "pages": target[2][:40]}
+                    batch[hit_id] = {"url": target[0], "offset": target[1], "pages": target[2]}
                     by_target[target] = hit_id
                 line = f"{hit_id}: {line}"
             lines.append(line)
         return "\n".join(lines), batch
 
     def _ledger_final_url(self, args: dict) -> str:
-        tools = self.research_tools
-        ledger = getattr(tools, "ledger", None)
-        if ledger is None:
-            return str(args.get("url", "") or "")
-        try:
-            finals = ledger.final_url_set()
-        except Exception:
-            return str(args.get("url", "") or "")
-        requested = str(args.get("url", "") or "")
-        try:
-            from codey.research.urls import opened_url
+        from codey.research.urls import opened_url
 
-            canonical = opened_url(ledger, requested)
-        except Exception:
-            canonical = requested
-        if canonical in finals:
-            return canonical
-        ordered = list(finals)
-        return ordered[-1] if ordered else requested
+        requested = str(args.get("url", "") or "")
+        ledger = getattr(self.research_tools, "ledger", None)
+        return opened_url(ledger, requested)
 
     def _ledger_evidence(self, before: int) -> list[dict[str, str]]:
         tools = self.research_tools
@@ -565,7 +568,7 @@ class ExecutionDelegate:
             url = str(getattr(item, "source_url", "") or "").strip()
             excerpt = str(getattr(item, "excerpt", "") or "").strip()
             if url and excerpt:
-                evidence.append({"source_url": url[:500], "excerpt": excerpt[:600]})
+                evidence.append({"source_url": url, "excerpt": excerpt[:600]})
         return evidence
 
 

@@ -133,6 +133,15 @@ class ResearchLedger:
         forked._source_pages = {k: dict(v) for k, v in self._source_pages.items()}
         return forked
 
+    def commit_projection(self, staged: ResearchLedger) -> None:
+        """Publish a fully validated receipt projection while keeping this view."""
+        self.searches = staged.searches
+        self.opened_sources = staged.opened_sources
+        self.evidence_items = staged.evidence_items
+        self.source_searches = staged.source_searches
+        self._source_texts = staged._source_texts
+        self._source_pages = staged._source_pages
+
     def record_search(self, query: str, results: list[dict]) -> None:
         query = " ".join(str(query or "").split())
         if not query:

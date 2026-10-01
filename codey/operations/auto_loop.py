@@ -16,12 +16,12 @@ PLAN: <一句话计划，可引用用户原话>
 首输出直接用于回答或执行动作，绝不作为被丢弃的“新路由轮”。
 有项目的普通问候不会在动作选定前抢占项目写锁；真正选择编辑类动作后
 再由本模块取得相应资源。恢复中的工具结果仍按现有安全恢复路径处理
-（调用方在首调用前检查 ``recovered_tool_outcomes`` 并直走 project）。
+（调用方在首调用前检查待交付结果与历史事实，直接恢复原任务）。
 
 资源边界（诚实说明）：provider 连接是模型级而非模式级，首调用仍复用
 前置准备阶段按基线连好的 provider；模式级独占资源（项目写锁、ledger
-模式）为 ``auto`` 延迟到动作选定后。会话准备对象（conversation plan）
-是轻量计划，实际窗口初始化仍由各模式入口完成。
+模式）为 ``auto`` 延迟到动作选定后。工具任务沿用同一个会话、授权、
+完成要求与累计预算；review 是独立报告策略，不建立工具循环。
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from codey.operations.result import ModeOutcome
-from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 
 AUTO_ACTION_KINDS = ("research", "project", "planning_readonly", "review")
@@ -147,8 +146,6 @@ class AutoRunDeps:
     """Callbacks the unified auto loop needs; built by dispatch (no imports)."""
 
     state: Any
-    mode_deps: Any
-    config_result: Any
     acquire_writer: Callable[[str], bool]
     release_writer: Callable[[str], None]
     open_ledger_for: Callable[[str], None]
@@ -157,6 +154,8 @@ class AutoRunDeps:
     experiences_fn: Callable[..., str] | None = None
     has_reviewable_diff_fn: Callable[[], bool] | None = None
     research_available: bool = True
+    continue_task: Callable[..., ModeOutcome] | None = None
+    review_task: Callable[[Any], ModeOutcome] | None = None
 
 
 def _local_context_text(deps: AutoRunDeps, *, session_id: str, project: str) -> str:
@@ -205,9 +204,8 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
     if experiences.strip():
         prompt = f"{prompt}\n\n{experiences.strip()}"
     if frame.fresh_chat:
-        # Same window discipline as chat: the decision call runs in a fresh
-        # window. Executors own their ACTION-after reset so the ACTION
-        # scaffolding never pollutes their history.
+        # Open the one task window. Tool continuation records this exchange
+        # and keeps the window and first-turn budget.
         frame.provider.new_chat()
     with contextlib.suppress(Exception):
         record_provider_send_prompt(
@@ -234,260 +232,100 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
     )
     if not permitted:
         return _finish_auto_answer(frame, work, hooks, deps, state, prompt, strip_action_markers(raw))
+    _record_direct_exchange(frame, state, prompt, raw)
     frame.request = with_auto_plan(request, decision.plan)
-    frame.task_kind = decision.kind
-    deps.open_ledger_for(decision.kind)
-    # Ownership: the mode executor owns the ACTION-after reset. Auto only
-    # marks the handoff as requiring an isolated fresh window; it must not
-    # reset here, otherwise project/planning executors would see
-    # fresh_chat=False and send the short "continue" prompt into a window
-    # that was just cleared (missing project_intro + tool protocol).
-    # Research resets inside its own runner; project/planning reset on
-    # their first strict attempt; review uses no provider window.
-    frame.fresh_chat = True
-    if decision.kind == "project":
-        if not deps.acquire_writer(project_text):
-            summary = "另一个任务正在写该项目，稍后重试。"
-            return ModeOutcome({
-                "type": "task_done",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "summary": summary,
-                "stop_reason": "stopped",
-                "turns": 1,
-                "max_turns": request.max_turns,
-                "provider": frame.provider_id,
-                "mode": "project",
-            })
-        try:
-            return deps.mode_deps.project(
-                frame, work, hooks, config_result=deps.config_result,
-            )
-        finally:
-            with contextlib.suppress(Exception):
-                deps.release_writer(project_text)
-    if decision.kind == "research":
-        return deps.mode_deps.research(frame, hooks)
-    if decision.kind == "planning_readonly":
-        return deps.mode_deps.planning(frame, work, config_result=deps.config_result)
     if decision.kind == "review":
-        return deps.mode_deps.review(frame)
-    return _finish_auto_answer(frame, work, hooks, deps, state, prompt, strip_action_markers(raw))
+        if deps.review_task is None:
+            return _direct_outcome(frame, "Review is unavailable.", stop_reason="blocked")
+        deps.open_ledger_for("review")
+        return deps.review_task(frame)
+    from codey.operations.task_entry import build_task_policy_for_entry, start_task_session
+
+    policy = frame.entry_policy
+    if policy is None:
+        policy = build_task_policy_for_entry(frame.request, frame.task_kind)
+        frame.entry_policy = policy
+    session = start_task_session(frame, work, policy, frame.task_kind)
+    session.turn = max(session.turn, 1)
+    followup = "Continue the original authorized task using the shared tool protocol."
+    if decision.plan:
+        followup += f"\nModel plan: {decision.plan}"
+    return _continue_direct_candidate(frame, work, hooks, deps, followup)
 
 
 def _record_direct_exchange(frame: Any, state: Any, prompt: str, reply: str) -> None:
     request = frame.request
-    if bool(getattr(frame, "fresh_chat", False)):
-        with contextlib.suppress(Exception):
-            frame.conversation.begin_window(frame.provider_id, "chat")
-    with contextlib.suppress(Exception):
-        state.set_provider_session(frame.provider_id, request.session_id)
-    with contextlib.suppress(Exception):
-        frame.conversation.record_exchange(
-            prompt,
-            reply,
-            replace(
-                frame.conversation.snapshot,
-                provider_id=frame.provider_id,
-                blocker="",
-                latest_user=request.task,
-                latest_reply=reply,
-            ),
-        )
+    if frame.fresh_chat:
+        frame.conversation.begin_window(frame.provider_id, "chat", frame.project_text)
+    frame.fresh_chat = False
+    setter = getattr(state, "set_provider_session", None)
+    if callable(setter):
+        setter(frame.provider_id, request.session_id)
+    frame.conversation.record_exchange(
+        prompt, reply,
+        replace(frame.conversation.snapshot, provider_id=frame.provider_id,
+                blocker="", latest_user=request.task, latest_reply=reply),
+    )
 
 
-def _rejected_direct_needs_research(verdict: Any, request: Any) -> bool:
-    try:
-        proof = getattr(verdict, "proof", None)
-        checks = tuple(getattr(proof, "checks", ()) or ()) if proof is not None else ()
-        for row in checks:
-            try:
-                cid = str(getattr(row, "check_id", "") or "")
-                status = str(getattr(row, "status", "") or "")
-            except Exception:
-                continue
-            if cid.startswith("research_") and status != "pass":
-                return True
-    except Exception:
-        pass
-    try:
-        if bool(getattr(request, "sources_open_required", False) is True):
-            return True
-        if bool(getattr(request, "strict_research", False) is True):
-            return True
-    except Exception:
-        pass
-    return False
+def _direct_outcome(frame: Any, reason: str, *, stop_reason: str, proof: Any = None) -> ModeOutcome:
+    receipt = {"display": {"summary": reason[:2000]}}
+    if proof is not None:
+        receipt["completion_proof"] = proof.to_payload()
+    return ModeOutcome({
+        "type": "task_done", "run_id": frame.run_id,
+        "session_id": frame.request.session_id, "summary": reason,
+        "stop_reason": stop_reason, "turns": 1, "max_turns": frame.request.max_turns,
+        "provider": frame.provider_id, "mode": "chat", "receipt": receipt,
+    }, display=({"type": "reply", "run_id": frame.run_id,
+                 "session_id": frame.request.session_id, "text": reason},) if stop_reason == "done" else ())
 
 
-def _rejected_direct_needs_project(verdict: Any, request: Any) -> bool:
+def _continue_direct_candidate(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps, followup: str) -> ModeOutcome:
+    session = frame.entry_session
+    if session.turn >= session.max_turns:
+        return _direct_outcome(frame, followup, stop_reason="max_turns")
+    if deps.continue_task is None:
+        return _direct_outcome(frame, followup, stop_reason="blocked")
+    deps.open_ledger_for(session.task_kind)
+    project = frame.project_text
+    leased = False
+    if project and (session.policy.allows("project.write") or session.policy.allows("shell.approval")):
+        try:
+            leased = deps.acquire_writer(project) is True
+        except Exception as exc:
+            return _direct_outcome(frame, f"Project writer lease failed: {type(exc).__name__}: {exc}",
+                                   stop_reason="blocked")
+        if not leased:
+            return _direct_outcome(frame, "Project writer is busy; retry later.", stop_reason="stopped")
     try:
-        proof = getattr(verdict, "proof", None)
-        checks = tuple(getattr(proof, "checks", ()) or ()) if proof is not None else ()
-        for row in checks:
-            try:
-                cid = str(getattr(row, "check_id", "") or "")
-                status = str(getattr(row, "status", "") or "")
-            except Exception:
-                continue
-            if cid in {"project_changes_required", "relevant_verification"} and status != "pass":
-                return True
-    except Exception:
-        pass
-    try:
-        if bool(getattr(request, "project_changes_required", False) is True):
-            return True
-    except Exception:
-        pass
-    return False
+        return deps.continue_task(frame, work, hooks, followup=followup)
+    finally:
+        if leased:
+            deps.release_writer(project)
 
 
 def _finish_auto_answer(
-    frame: Any, work: Any, hooks: Any, deps: Any, state: Any, prompt: str, answer: str,
+    frame: Any, work: Any, hooks: Any, deps: AutoRunDeps, state: Any, prompt: str, answer: str,
 ) -> ModeOutcome:
-    """Shared direct-answer candidate: pass completes, reject continues the run.
-
-    Uses the single task_entry verdict owner with the real frame.run_id.
-    A rejected candidate is recorded once, then the same run continues into
-    the existing project/research kernel with the original authorization.
-    Honest block only when no capable kernel exists.
-    """
+    """A direct candidate either completes or continues the same task kernel."""
     from codey.operations.task_entry import evaluate_direct_answer_candidate
 
-    request = frame.request
     reply = str(answer or "")
-    try:
-        verdict = evaluate_direct_answer_candidate(frame, reply)
-    except Exception as exc:
-        _record_direct_exchange(frame, state, prompt, reply)
-        reason = (
-            f"Completion gate check failed ({type(exc).__name__}: {exc}); "
-            "cannot complete yet. Continue the task."
-        )
-        return ModeOutcome({
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": reason,
-            "stop_reason": "blocked",
-            "turns": 1,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "chat",
-            "receipt": {"display": {"summary": reason[:2000]}},
-        })
-    try:
-        complete = verdict.complete
-    except Exception:
-        complete = False
-    if complete is True:
-        _record_direct_exchange(frame, state, prompt, reply)
-        result = RunResult(reply, "done", 1)
-        return ModeOutcome({
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": result.summary,
-            "stop_reason": result.stop_reason,
-            "turns": result.turns,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "chat",
-        }, display=({
-            "type": "reply",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "text": reply,
-        },))
-    # Rejected candidate: record once, then continue the same run.
     _record_direct_exchange(frame, state, prompt, reply)
     try:
-        followup = str(getattr(verdict, "followup", "") or "")
-    except Exception:
-        followup = ""
-    project_text = str(getattr(frame, "project_text", "") or "")
-    needs_research = _rejected_direct_needs_research(verdict, request)
-    needs_project = _rejected_direct_needs_project(verdict, request)
-    # Prefer the kernel the verdict says is missing; fall back to request flags.
-    if needs_research and bool(getattr(deps, "research_available", True)):
-        try:
-            frame.task_kind = "research"
-            with contextlib.suppress(Exception):
-                deps.open_ledger_for("research")
-            frame.fresh_chat = True
-            return deps.mode_deps.research(frame, hooks)
-        except Exception as exc:
-            reason = followup or f"Research continuation failed ({type(exc).__name__}); cannot complete yet."
-            return ModeOutcome({
-                "type": "task_done",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "summary": reason,
-                "stop_reason": "blocked",
-                "turns": 1,
-                "max_turns": request.max_turns,
-                "provider": frame.provider_id,
-                "mode": "chat",
-                "receipt": {"display": {"summary": str(reason)[:2000]}},
-            })
-    if (needs_project or not needs_research) and project_text:
-        try:
-            if not deps.acquire_writer(project_text):
-                reason = "另一个任务正在写该项目，稍后重试。"
-                return ModeOutcome({
-                    "type": "task_done",
-                    "run_id": frame.run_id,
-                    "session_id": request.session_id,
-                    "summary": reason,
-                    "stop_reason": "stopped",
-                    "turns": 1,
-                    "max_turns": request.max_turns,
-                    "provider": frame.provider_id,
-                    "mode": "project",
-                })
-        except Exception:
-            pass
-        try:
-            frame.task_kind = "project"
-            frame.fresh_chat = True
-            return deps.mode_deps.project(frame, work, hooks, config_result=deps.config_result)
-        finally:
-            with contextlib.suppress(Exception):
-                deps.release_writer(project_text)
-    if bool(getattr(deps, "research_available", True)) and not project_text:
-        try:
-            frame.task_kind = "research"
-            with contextlib.suppress(Exception):
-                deps.open_ledger_for("research")
-            frame.fresh_chat = True
-            return deps.mode_deps.research(frame, hooks)
-        except Exception as exc:
-            reason = followup or f"Research continuation failed ({type(exc).__name__}); cannot complete yet."
-            return ModeOutcome({
-                "type": "task_done",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "summary": reason,
-                "stop_reason": "blocked",
-                "turns": 1,
-                "max_turns": request.max_turns,
-                "provider": frame.provider_id,
-                "mode": "chat",
-                "receipt": {"display": {"summary": str(reason)[:2000]}},
-            })
-    reason = followup or "Not done yet. Continue the task with the required tools or evidence."
-    return ModeOutcome({
-        "type": "task_done",
-        "run_id": frame.run_id,
-        "session_id": request.session_id,
-        "summary": reason,
-        "stop_reason": "blocked",
-        "turns": 1,
-        "max_turns": request.max_turns,
-        "provider": frame.provider_id,
-        "mode": "chat",
-        "receipt": {"display": {"summary": str(reason)[:2000]}},
-    })
+        verdict = evaluate_direct_answer_candidate(frame, reply, work=work)
+    except Exception as exc:
+        return _direct_outcome(frame, f"Completion gate failed: {type(exc).__name__}: {exc}", stop_reason="blocked")
+    if verdict is None or type(getattr(verdict, "complete", None)) is not bool:
+        return _direct_outcome(frame, "Completion gate returned an invalid verdict.", stop_reason="blocked")
+    session = frame.entry_session
+    session.turn = max(session.turn, 1)
+    if verdict.complete:
+        return _direct_outcome(frame, verdict.final_text or reply, stop_reason="done", proof=verdict.proof)
+    return _continue_direct_candidate(
+        frame, work, hooks, deps, verdict.followup or "Complete the missing task requirements.",
+    )
 
 
 __all__ = [

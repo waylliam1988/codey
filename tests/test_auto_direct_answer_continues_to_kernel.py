@@ -72,40 +72,37 @@ def _auto_deps(state, mode_deps):
 
     return AutoRunDeps(
         state=state,
-        mode_deps=mode_deps,
-        config_result=None,
+        review_task=getattr(mode_deps, "review", None),
         acquire_writer=lambda _p: True,
         release_writer=lambda _p: None,
         open_ledger_for=lambda _k: None,
     )
 
 
-def test_sources_task_continues_to_kernel_not_blocked():
+def test_sources_task_continues_same_task_callback():
+    from dataclasses import replace
+
     from codey.operations.auto_loop import run_auto_mode
     from codey.operations.result import ModeOutcome
 
-    provider = _SeqProvider(["finished"])
-    frame = _auto_frame("must open sources", provider, sources_open_required=True)
-    research_called = {}
-
-    def fake_research(active_frame, _hooks):
-        research_called["yes"] = True
-        assert active_frame.run_id == frame.run_id
-        return ModeOutcome({
-            "type": "task_done", "run_id": frame.run_id, "session_id": "s-auto",
-            "summary": "opened", "stop_reason": "done", "turns": 2,
-            "max_turns": 8, "provider": "web", "mode": "research",
-        })
-
-    mode_deps = SimpleNamespace(
-        project=mock.Mock(), research=fake_research,
-        planning=mock.Mock(), review=mock.Mock(),
-    )
-    deps = _auto_deps(mock.Mock(), mode_deps)
-    outcome = run_auto_mode(frame, SimpleNamespace(), SimpleNamespace(), deps)
-
-    assert research_called.get("yes") is True, "blocked direct must continue to research kernel"
-    assert outcome.event.get("stop_reason") == "done"
+    frame = _auto_frame("must open sources", _SeqProvider(["finished"]), sources_open_required=True)
+    modes = SimpleNamespace(project=mock.Mock(), research=mock.Mock(), planning=mock.Mock(), review=mock.Mock())
+    work, hooks = SimpleNamespace(), SimpleNamespace()
+    calls = []
+    def continuation(active_frame, active_work, active_hooks, *, followup):
+        assert active_frame is frame and active_work is work and active_hooks is hooks
+        assert active_frame.entry_session.policy.sources_open_required is True
+        assert active_frame.entry_session.turn == 1
+        assert active_frame.fresh_chat is False
+        assert followup
+        calls.append(active_frame.entry_session)
+        return ModeOutcome({"stop_reason": "blocked"})
+    deps = replace(_auto_deps(SimpleNamespace(), modes), continue_task=continuation)
+    outcome = run_auto_mode(frame, work, hooks, deps)
+    assert len(calls) == 1
+    assert outcome.event["stop_reason"] == "blocked"
+    modes.research.assert_not_called()
+    modes.project.assert_not_called()
 
 
 def test_greeting_stays_single_shot():
@@ -148,8 +145,8 @@ def test_direct_gate_uses_frame_run_id_not_request():
     with umock.patch.object(gate, "evaluate", side_effect=spy):
         # task_entry path
         frame.handoff = "hi there"
-        outcome = entry._direct_answer_outcome(frame, "chat")
-        assert outcome.event.get("stop_reason") == "done"
+        verdict = entry.evaluate_direct_answer_candidate(frame, "hi there")
+        assert verdict.complete is True
         assert seen.get("run_id") == "real-123", f"task_entry gate must use frame.run_id, got {seen.get('run_id')!r}"
 
     seen.clear()

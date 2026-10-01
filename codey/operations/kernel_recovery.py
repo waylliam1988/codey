@@ -37,9 +37,6 @@ __all__ = [
     "_batch_recovery_failed_results",
     "_check_batch_recovery",
     "_guarded_slot_result",
-    "_is_recovery_error_text",
-    "_is_recovery_failed_text",
-    "_is_recovery_mismatch_text",
     "_recovery_failed_result",
     "_recovery_mismatch_result",
     "_same_effect_call",
@@ -401,23 +398,6 @@ def delivered_slot_typed(
             disposition="FAILED",
             result=_recovery_failed_result(call, f"delivered rebuild failed: {exc}"),
         )
-
-
-def _is_recovery_mismatch_text(text: object) -> bool:
-    """Legacy display helper (kept for external callers; control uses disposition)."""
-    return str(text or "").startswith("ERROR: recovery mismatch")
-
-
-def _is_recovery_failed_text(text: object) -> bool:
-    """Legacy display helper (kept for external callers; control uses disposition)."""
-    text_str = str(text or "")
-    return text_str.startswith("ERROR: recovery failed") or text_str.startswith(
-        "ERROR: persisted unsafe result lacks verified workspace provenance"
-    )
-
-
-def _is_recovery_error_text(text: object) -> bool:
-    return _is_recovery_mismatch_text(text) or _is_recovery_failed_text(text)
 
 
 def _check_batch_recovery(

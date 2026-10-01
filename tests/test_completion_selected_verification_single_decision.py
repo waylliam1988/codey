@@ -201,3 +201,75 @@ def test_forbidden_with_real_edit_defers_to_other_checks(tmp_path, with_evidence
     rows = project_completion_checks(session, context)
     by_id = {r.check_id: r.status for r in rows}
     assert by_id.get("relevant_verification") == "not_applicable"
+
+
+
+@pytest.mark.parametrize("field", ["command", "cwd"])
+def test_long_verification_identity_is_never_a_display_clip(tmp_path, field):
+    from codey.operations.project_completion_checks import _evidence_with_session_facts
+
+    session = make_session(tmp_path)
+    command = "python -m pytest" + " -q" * 200
+    cwd = "segment/" * 85 + "selected"
+    session.record_verification(command, 1, True, exit_code=0, cwd=cwd,
+                                workspace_revision=session.workspace_revision,
+                                workspace_fingerprint=session.workspace_fingerprint)
+    assert session.verifications[-1][field] == {"command": command, "cwd": cwd}[field]
+    evidence = _context(session, tmp_path)["execution_evidence"]
+    evidence, gaps = _evidence_with_session_facts(evidence, session)
+    assert not gaps
+    assert evidence.checks_after_edit[-1].command == command
+    assert evidence.checks_after_edit[-1].cwd == cwd
+
+
+def test_long_commands_do_not_merge_failed_and_successful_observations(tmp_path):
+    from codey.operations.project_completion_checks import _latest_observations_by_key
+
+    session = make_session(tmp_path)
+    prefix = "python -m pytest " + " " * 550
+    first, second = prefix + "tests/test_selected.py", prefix + "tests/test_other.py"
+    for command, passed in ((first, False), (second, True)):
+        session.record_verification(command, 1, passed, exit_code=0 if passed else 1,
+                                    workspace_revision=session.workspace_revision,
+                                    workspace_fingerprint=session.workspace_fingerprint)
+    selected = _latest_observations_by_key(session.verifications, 1)
+    assert set(selected) == {(first.strip(), "."), (second.strip(), ".")}
+    assert selected[(first.strip(), ".")]["passed"] is False
+    assert selected[(second.strip(), ".")]["passed"] is True
+
+
+def test_event_evidence_keeps_original_long_verification_identity(tmp_path):
+    from codey.toolchain.runtime import ToolOutcome
+
+    session = make_session(tmp_path)
+    evidence = _context(session, tmp_path)["execution_evidence"]
+    command, cwd = "python -m pytest" + " -q" * 200, "segment/" * 85
+    evidence._record_run({"command": command, "path": cwd}, ToolOutcome("pass", True, exit_code=0))
+    assert evidence.checks_after_edit[-1].command == command
+    assert evidence.checks_after_edit[-1].cwd == cwd
+
+
+
+def test_real_receipt_restart_preserves_long_command_identity(tmp_path):
+    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.recovery import record_entry_policy
+    from codey.runtime.core.models import ToolCall, ToolResult
+    from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime, _recover_formal
+
+    project, state, logdir = _dirs(tmp_path)
+    session = make_session(project)
+    log, mutations, managed, store, deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    current = store.current_state(str(project))
+    session.set_workspace_state(current.revision, current.fingerprint)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy)
+    command = "python -m pytest" + " -q" * 200
+    result = execute_turn(session, [ToolCall("run", {"command": command, "path": "."})],
+                          executors={"run": lambda call: ToolResult(call, "passed", audit={"exit_code": 0})},
+                          run_id="r", turn=1, effect_scope="task", project_path=project,
+                          intent_sink=sink, workspace_revision_store=store)[0]
+    assert result.model_text == "passed"
+    restored, recovery, delivered, rows, start = _recover_formal(project, state, logdir, "s", "r")
+    assert recovery.ok
+    assert session.verifications[-1]["command"] == command
+    assert restored.verifications[-1]["command"] == command
+    assert rows[0].call.args["command"] == command

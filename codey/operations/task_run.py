@@ -176,6 +176,7 @@ class _PhaseWork:
     work: RunWork
     recovered_tool_outcomes: tuple = ()
     recovered_tool_result_batch_id: str = ""
+    settled_tool_outcomes: tuple = ()
 
 
 def _finish_trace_event(
@@ -449,8 +450,12 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
             "ERROR: Runtime recovery failed to settle unconfirmed effects.",
             current_work=work,
         )
-    if recovery.recovered_tool_outcomes:
-        setup.task_kind = "project"
+    if recovery.recovered_tool_outcomes or recovery.settled_tool_outcomes or getattr(work.operation, "task_policy", {}):
+        original_kind = getattr(work.operation, "task_kind", "")
+        if original_kind in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly"}:
+            setup.task_kind = original_kind
+        elif setup.task_kind not in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly"}:
+            setup.task_kind = "hybrid"
         if not setup.continue_task:
             setup.request = replace(setup.request, continue_task=True)
             setup.continue_task = True
@@ -467,6 +472,7 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
         work=work,
         recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes) + shell_rows,
         recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
+        settled_tool_outcomes=recovery.settled_tool_outcomes,
     ), None
 
 
@@ -521,7 +527,7 @@ def _route_ghost_work(
     Post-turn ghost work still runs inside the settlement helpers, so the
     ghost lifecycle bookends the run instead of hiding mid-orchestrator."""
     state = setup.state
-    if not workload.recovered_tool_outcomes:
+    if not workload.recovered_tool_outcomes and not workload.settled_tool_outcomes:
         try:
             claimed = claim_or_route_ghost_work(
                 setup.ghost_deps, setup.request,
@@ -630,6 +636,7 @@ def _connect_provider_frame(
         project_config_result=setup.project_config_result,
         recovered_tool_outcomes=workload.recovered_tool_outcomes,
         recovered_tool_result_batch_id=workload.recovered_tool_result_batch_id,
+        settled_tool_outcomes=workload.settled_tool_outcomes,
     )
     return frame, provider, provider_id, frame.conversation
 
@@ -676,6 +683,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         if not (
             _is_auto(setup.request)
             and not workload.recovered_tool_outcomes
+            and not workload.settled_tool_outcomes
             and setup.claimed_work_item is None
         ):
             open_run_ledger(

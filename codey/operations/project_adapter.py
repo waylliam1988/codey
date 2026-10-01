@@ -54,9 +54,9 @@ def _project_context(request: AgentRequest) -> str:
                    request.completion_repair_context_payload, epoch_id=epoch)
     candidate_text = ""
     if request.permission_profile == "coding_writer" and request.verification_candidates:
-        from codey.agents.verification_driver import forbids_verification
+        from codey.agents.protocol import task_forbids_verification
 
-        if not forbids_verification(request.task):
+        if not task_forbids_verification(request.task):
             lines = [
                 f"- {str(item.command)[:240]} (cwd: {str(item.cwd)[:120]})"
                 for item in request.verification_candidates[:5]
@@ -77,20 +77,6 @@ def _session_checks_passed(session: Any, proof: Any = None) -> bool:
     return isinstance(latest, dict) and type(latest.get("passed")) is bool and latest["passed"]
 
 
-def _recovered_result_for_row(row: Any) -> Any:
-    """Thin adapter: row -> unified spec -> single builder (no local trust)."""
-    from codey.operations.kernel_errors import RecoveryFailed
-    from codey.operations.kernel_recovery_result import build_recovered_result, spec_for_recovered_row
-
-    try:
-        spec = spec_for_recovered_row(row)
-        return build_recovered_result(spec)
-    except RecoveryFailed:
-        raise
-    except Exception as exc:
-        raise RecoveryFailed(f"recovered result rebuild failed: {exc}") from exc
-
-
 def _open_fresh_chat(request: AgentRequest) -> bool:
     if not request.fresh_chat:
         return False
@@ -99,6 +85,7 @@ def _open_fresh_chat(request: AgentRequest) -> bool:
 
 
 def _task_kind_and_policy(request: AgentRequest) -> tuple[str, Any]:
+    from codey.agents.protocol import task_forbids_verification
     from codey.policies.task_policy import build_task_policy
 
     task_kind = "planning" if request.permission_profile == "planning_readonly" else "project"
@@ -110,6 +97,8 @@ def _task_kind_and_policy(request: AgentRequest) -> tuple[str, Any]:
             project=str(request.project),
             requested_capabilities=getattr(request, "requested_capabilities", ()),
             strict_research=bool(getattr(request, "strict_research", False) is True),
+            project_changes_required=request.project_changes_required,
+            denied_capabilities=("project.verify",) if task_forbids_verification(request.task) else (),
         ),
         task_kind=task_kind,
     )
@@ -157,12 +146,17 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
 
 def run(request: AgentRequest) -> RunResult:
     from codey.operations.task_loop import run_task_kernel
-    from codey.operations.task_session import TaskSession, turn_effect_id
+    from codey.operations.task_session import TaskSession
 
     task_kind, policy = _task_kind_and_policy(request)
     _require_write_permission(task_kind, policy, request)
     if request.task_session is not None and request.task_session.policy != policy:
         raise ValueError("project continuation cannot replace task authorization")
+    if request.runtime_mutations is not None and request.session_id and request.run_id:
+        from codey.operations.recovery import record_entry_policy
+
+        record_entry_policy(request.runtime_mutations, session_id=request.session_id,
+                            run_id=request.run_id, policy=policy)
     provider, intent_sink = _wrap_provider_with_sink(request, request.provider)
     if policy.allows("project.write"):
         request.project.mkdir(parents=True, exist_ok=True)
@@ -193,6 +187,11 @@ def run(request: AgentRequest) -> RunResult:
             verification_candidate_loader=request.verification_candidate_loader,
         )
     shared = request.task_session is not None
+    if not shared and request.workspace_revision_store is not None:
+        current = request.workspace_revision_store.current_state(
+            str(request.project), ignored_paths=request.workspace_ignored_paths,
+        )
+        session.set_workspace_state(current.revision, current.fingerprint)
     session.max_turns = request.max_turns
     session.handoff = request.handoff
     session.verification_candidates = request.verification_candidates
@@ -200,58 +199,19 @@ def run(request: AgentRequest) -> RunResult:
     if not shared:
         from codey.agents.protocol import task_forbids_verification
 
-        session.verification_forbidden = bool(task_forbids_verification(str(getattr(request, "task", "") or "")))
+        session.verification_forbidden = ("project.verify" in policy.denied_capabilities or
+                                              task_forbids_verification(request.task))
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
-    from codey.operations.kernel_errors import RecoveryFailed as _RecoveryFailed
+    from codey.operations.kernel_session_recovery import restore_task_session
 
-    try:
-        from codey.operations.kernel_recovery_result import _strict_slot_index as _strict_idx
-
-        seen: set[tuple[int, int]] = set()
-        for row in list(request.recovered_tool_outcomes or ()):
-            if getattr(row, "call", None) is None or getattr(row, "outcome", None) is None:
-                raise _RecoveryFailed("malformed recovered row: missing call/outcome")
-            turn = _strict_idx(getattr(row, "turn", None), field="turn")
-            index = _strict_idx(getattr(row, "tool_index", None), field="tool_index")
-            if (turn, index) in seen:
-                raise _RecoveryFailed(f"duplicate recovered slot: turn={turn} index={index}")
-            seen.add((turn, index))
-        recovered_sorted = sorted(
-            list(request.recovered_tool_outcomes or ()),
-            key=lambda item: (int(item.turn), int(item.tool_index)),
-        )
-    except _RecoveryFailed:
-        raise
-    except Exception as exc:
-        raise _RecoveryFailed(f"malformed recovered rows: {exc}") from exc
-    delivered: dict[str, Any] = {}
-    try:
-        from codey.operations.kernel_facts import record_facts_for_result as _record_facts
-        from codey.operations.kernel_recovery_result import frame_outcome_exit_code, frame_outcome_ok
-
-        for row in recovered_sorted:
-            result = _recovered_result_for_row(row)
-            delivered[turn_effect_id(f"{request.run_id or 'adhoc'}:{effect_scope}",
-                                     row.turn, row.tool_index)] = result
-            _record_facts(session, row.call, result, ok=frame_outcome_ok(row),
-                          exit_code=frame_outcome_exit_code(row))
-    except _RecoveryFailed:
-        raise
-    except Exception as exc:
-        raise _RecoveryFailed(f"recovered facts replay failed: {exc}") from exc
-    # Recovery-first: deliver the original batch before any new model call,
-    # and resume after the max recovered turn so identities never collide.
-    resume_start = 1
-    initial_results: list[Any] = []
-    if recovered_sorted:
-        try:
-            resume_start = max(int(getattr(r, "turn", None)) for r in recovered_sorted) + 1
-            resume_start = max(1, resume_start)
-        except Exception as exc:
-            raise _RecoveryFailed(f"recovered resume turn unreadable: {exc}") from exc
-        for row in recovered_sorted:
-            initial_results.append(delivered[turn_effect_id(
-                f"{request.run_id or 'adhoc'}:{effect_scope}", row.turn, row.tool_index)])
+    delivered, _, resume_start, initial_results = restore_task_session(
+        SimpleNamespace(
+            run_id=request.run_id or "adhoc",
+            recovered_tool_outcomes=request.recovered_tool_outcomes,
+            settled_tool_outcomes=request.settled_tool_outcomes,
+        ),
+        session, effect_scope=effect_scope, research_ledger=getattr(request.research_tools, "ledger", None),
+    )
     outcome = run_task_kernel(
         session,
         provider=provider,

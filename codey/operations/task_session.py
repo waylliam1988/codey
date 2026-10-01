@@ -67,6 +67,7 @@ class TaskSession:
     turn: int = 0
     executed: dict[str, dict[str, Any]] = field(default_factory=dict)
     _memory_results: dict[str, ToolResult] = field(default_factory=dict, repr=False, compare=False)
+    restored_effect_ids: set[str] = field(default_factory=set, repr=False, compare=False)
 
     def record_search(self, query: str) -> None:
         text = str(query or "").strip()
@@ -77,24 +78,24 @@ class TaskSession:
         rid = str(result_id or "").strip().lower()
         target = str(url or "").strip()
         if rid and target:
-            self.search_results[rid] = target[:500]
+            self.search_results[rid] = target
 
     def record_open(self, url: str, *, source_id: str = "") -> None:
         text = str(url or "").strip()
         if text:
-            self.opened_sources.add(text[:500])
+            self.opened_sources.add(text)
             sid = str(source_id or "").strip().lower()
             if not sid:
-                sid = next((key for key, value in self.source_ids.items() if value == text[:500]), "")
+                sid = next((key for key, value in self.source_ids.items() if value == text), "")
             if not sid:
                 sid = f"s{len(self.source_ids) + 1}"
-            self.source_ids[sid] = text[:500]
+            self.source_ids[sid] = text
 
     def record_evidence(self, source_url: str, excerpt: str) -> None:
         url = str(source_url or "").strip()
         clip = str(excerpt or "").strip()
         if url and clip:
-            self.evidence.append({"source_url": url[:500], "excerpt": clip[:600]})
+            self.evidence.append({"source_url": url, "excerpt": clip[:600]})
 
     def record_edit(self, path: str, revision: int | None = None) -> int:
         key = str(path or "").strip() or "file"
@@ -121,7 +122,7 @@ class TaskSession:
         if type(revision) is not int:
             return
         rev = revision
-        row: dict[str, Any] = {"command": str(command or "")[:240], "cwd": str(cwd or ".")[:240],
+        row: dict[str, Any] = {"command": str(command or ""), "cwd": str(cwd or "."),
                                "revision": rev, "passed": passed}
         if exit_code is not None:
             try:

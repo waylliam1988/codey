@@ -119,12 +119,10 @@ class EntryAuthTests(unittest.TestCase):
                            requested_capabilities=("web.read",)),
             task_kind="project",
         )
-        incoming = build_task_policy(
-            TaskSubmission("s", "E:/tmp", "t", 8, False, "local"),
-            task_kind="project",
-        )
-        # No session log: falls back to incoming (fail-closed to live grants).
-        self.assertEqual(rebuilt_policy_from_log(None, incoming), incoming)
+        from codey.operations.kernel_errors import RecoveryFailed
+
+        with self.assertRaises(RecoveryFailed):
+            rebuilt_policy_from_log(None, session_id="s", run_id="r")
         # Stored payload round-trips via from_payload (session log source).
         from codey.policies.task_policy import TaskPolicy
 
@@ -362,30 +360,17 @@ class PersistenceTests(unittest.TestCase):
         execute_turn(session, [call], executors=ex, run_id="r", turn=2)
         self.assertEqual(made, ["read", "read"])
 
-    def test_formal_receipts_stay_bounded(self) -> None:
-        import json
-
+    def test_session_clips_display_text_but_preserves_source_identity(self) -> None:
         from codey.operations.task_session import TaskSession
-        from codey.policies.task_policy import build_task_policy
-        from codey.task.model import TaskSubmission
+        from codey.policies.task_policy import TaskPolicy
 
-        policy = build_task_policy(
-            TaskSubmission("s", "E:/tmp", "t", 8, False, "local"), task_kind="project")
-        session = TaskSession(policy=policy, task_kind="project", project="E:/tmp", max_turns=8)
+        session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
+        url = "https://example.com/?query=" + "y" * 1000
         session.record_search("x" * 100000)
-        session.record_evidence("https://" + "y" * 100000, "z" * 100000)
-        session.transcript_notes = ["x" * 100000]
-        # Record-time bounds keep refs small; transcript_notes is in-memory
-        # only (durable output goes via ManagedOutputStore refs, not raw text).
+        session.record_evidence(url, "z" * 100000)
         assert len(session.searches[0]) <= 240
-        assert len(session.evidence[0]["source_url"]) <= 500
+        assert session.evidence[0]["source_url"] == url
         assert len(session.evidence[0]["excerpt"]) <= 600
-        bounded = {
-            "searches": session.searches,
-            "evidence": session.evidence,
-            "edited": session.edited_files,
-        }
-        assert len(json.dumps(bounded)) < 20000
 
 
 class CompletionGateProdTests(unittest.TestCase):
@@ -468,12 +453,8 @@ class DispatchSwitchTests(unittest.TestCase):
             record_entry_policy(
                 mutations, session_id="s-policy", run_id="r-policy", policy=original,
             )
-            incoming = TaskPolicy(
-                grants=frozenset({"control", "project.write"}),
-                source="new_request",
-            )
             revived = rebuilt_policy_from_log(
-                log, incoming, session_id="s-policy", run_id="r-policy",
+                log, session_id="s-policy", run_id="r-policy",
             )
             self.assertEqual(revived.to_payload(), original.to_payload())
 
@@ -488,15 +469,15 @@ class DispatchSwitchTests(unittest.TestCase):
         self.assertIn('"hybrid"', source)
         self.assertNotIn("run_hybrid_mode", source)
 
-    def test_auto_plan_narrows_never_widens(self) -> None:
-        from codey.policies.task_policy import apply_auto_plan, build_task_policy
+    def test_model_hint_cannot_grant_web_read(self) -> None:
+        from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
         policy = build_task_policy(
-            TaskSubmission("s", "E:/tmp", "hi", 8, False, "local"), task_kind="project")
-        narrowed = apply_auto_plan(policy, "ACTION: project\nPLAN: fix")
-        self.assertTrue(narrowed.allows("project.read"))
-        self.assertFalse(narrowed.allows("web.read"))
+            TaskSubmission("s", "E:/tmp", "hi", 8, False, "local",
+                           model_hint="ACTION: research\nPLAN: browse"), task_kind="project")
+        self.assertTrue(policy.allows("project.read"))
+        self.assertFalse(policy.allows("web.read"))
 
     def test_arch_forbids_old_loops_in_dispatch(self) -> None:
         import pathlib

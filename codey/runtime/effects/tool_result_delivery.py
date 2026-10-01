@@ -7,7 +7,7 @@ around the delivery of tool results to model providers:
 3. send_superseded: voids a prior attempt that deterministically sent nothing
    usable (e.g. a context-overflow rejection), allowing one live retry
 4. delivered: recorded when the provider request settles successfully
-5. recovered: recorded when safe results are reconstructed on resume
+5. recovered: results reconstructed on resume; delivery is still pending
 
 Strictly bounded: never records raw result text, prompts, replies, stdout,
 stderr, diffs, or source bodies.
@@ -422,8 +422,8 @@ class DeliveryBatchProjection:
 
     @property
     def is_terminal(self) -> bool:
-        """Exactly one of delivered / recovered / abandoned may hold."""
-        return bool(self.is_delivered or self.is_recovered or self.is_abandoned)
+        """Reconstruction does not acknowledge a provider delivery."""
+        return bool(self.is_delivered or self.is_abandoned)
 
     @property
     def active_attempts(self) -> tuple[str, ...]:
@@ -447,12 +447,11 @@ class DeliveryBatchProjection:
         """True only if entire batch is all-safe, never terminal, no live send attempt.
 
         Attempts voided by send_superseded (deterministically unsent, e.g. a
-        context-overflow rejection) do not block recovery. Delivered,
-        recovered, and abandoned are mutually exclusive terminals.
+        context-overflow rejection) do not block recovery. Reconstruction is
+        nonterminal; acknowledged delivery and abandonment are terminals.
         """
         return (
             not self.is_delivered
-            and not self.is_recovered
             and not self.is_abandoned
             and not bool(self.active_attempts)
             and self.is_all_safe
@@ -697,8 +696,8 @@ def abandoned_entry(
 ) -> dict[str, object] | None:
     """Close an undelivered batch when writer/repair settles past it.
 
-    Never disguised as delivered/recovered: the three terminals are mutually
-    exclusive. Idempotent on same reason, conflicting on different reason.
+    Reconstruction may precede abandonment, but acknowledged delivery may
+    not. Idempotent on same reason, conflicting on different reason.
     """
     clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
     clean_reason = _require_bounded_str(reason, "reason", 80)
@@ -707,7 +706,7 @@ def abandoned_entry(
     projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
     if projection is None:
         raise ToolResultDeliveryError(f"cannot record abandoned for unknown batch: {clean_batch_id!r}")
-    if projection.is_delivered or projection.is_recovered:
+    if projection.is_delivered:
         raise ToolResultDeliveryError(f"cannot record abandoned for terminal batch: {clean_batch_id!r}")
     if projection.is_abandoned:
         if projection.abandoned_reason == clean_reason:
@@ -1031,15 +1030,13 @@ def _check_delivery_terminals(
     recovered_facts: dict[str, dict[str, Any]],
     abandoned_facts: dict[str, dict[str, Any]],
 ) -> None:
-    """Abandoned is exclusive with delivered/recovered.
+    """Abandoned is exclusive with delivered.
 
     Recovered then delivered is a valid resume path (reconstructed results
     still need a provider send), so delivered+recovered may coexist.
     """
     for bid in set(delivered) & set(abandoned_facts):
         raise ToolResultDeliveryError(f"batch has both delivered and abandoned: {bid!r}")
-    for bid in set(recovered_facts) & set(abandoned_facts):
-        raise ToolResultDeliveryError(f"batch has both recovered and abandoned: {bid!r}")
 
 
 def _build_delivery_projections(

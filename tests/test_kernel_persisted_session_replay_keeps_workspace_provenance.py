@@ -75,8 +75,8 @@ def _new_session(project: Path):
 
 
 def _recover_formal(project, state, logdir, session_id, run_id):
+    from codey.operations.kernel_session_recovery import restore_task_session
     from codey.operations.recovery import recover_effects_for_resume
-    from codey.operations.task_entry import _entry_recovery
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.log.session_log import RuntimeSessionLog
@@ -104,7 +104,7 @@ def _recover_formal(project, state, logdir, session_id, run_id):
     except Exception:
         pass
     frame = SimpleNamespace(run_id=run_id, recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes))
-    delivered, rows, resume_start, initial = _entry_recovery(frame, fresh)
+    delivered, rows, resume_start, initial = restore_task_session(frame, fresh)
     return fresh, recovery, delivered, rows, resume_start, deps
 
 

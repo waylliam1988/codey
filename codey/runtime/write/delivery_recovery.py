@@ -10,8 +10,6 @@ from __future__ import annotations
 from codey.runtime.core.operation_state import (
     LEAF_TOOL_DELIVERY_PENDING,
     RuntimeOperationTransitionError,
-    mark_tool_delivery_settled,
-    operation_state_entry,
 )
 from codey.runtime.effects.tool_result_delivery import recovered_entry
 from codey.runtime.log.session_view import (
@@ -51,21 +49,9 @@ def build_delivery_recovered_rows(
         state.leaf != LEAF_TOOL_DELIVERY_PENDING
         or pending.delivery_batch_id != batch_id
     ):
-        if not projection_batch.is_recovered:
-            raise RuntimeOperationTransitionError(
-                "delivery recovery requires matching delivery_pending state"
-            )
-        entry = recovered_entry(
-            session_id,
-            run_id,
-            batch_id=batch_id,
-            recovered_effect_ids=recovered_ids,
-            recovered_reads=recovered_reads,
-            recovered_lookups=recovered_lookups,
-            batches=batches,
+        raise RuntimeOperationTransitionError(
+            "delivery recovery requires matching delivery_pending state"
         )
-        return () if entry is None else (entry,)
-    next_state = mark_tool_delivery_settled(state)
     rows: list[dict[str, object]] = []
     entry = recovered_entry(
         session_id,
@@ -78,7 +64,6 @@ def build_delivery_recovered_rows(
     )
     if entry is not None:
         rows.append(entry)
-    rows.append(operation_state_entry(next_state))
     return tuple(rows)
 
 

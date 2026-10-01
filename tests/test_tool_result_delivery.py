@@ -11,6 +11,7 @@ from codey.operations.recovery import recover_effects_for_resume
 from codey.runs.details import load_run_details
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_state import (
+    LEAF_TOOL_DELIVERY_PENDING,
     LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
     lane_for_run,
@@ -1230,16 +1231,13 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 )
 
                 self.assertTrue(recovery.ok)
-                if attempt == 0:
-                    self.assertEqual(
-                        tuple(item.effect_id for item in recovery.recovered_tool_outcomes),
-                        (eff_read, eff_search),
-                    )
-                else:
-                    self.assertEqual(recovery.recovered_tool_outcomes, ())
+                self.assertEqual(
+                    tuple(item.effect_id for item in recovery.recovered_tool_outcomes),
+                    (eff_read, eff_search),
+                )
                 state = restart_operations.load(self.session_id, self.run_id)
                 assert state is not None
-                self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
+                self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
                 if expected_snapshot is None:
                     expected_snapshot = snapshot
                     expected_count = len(restart_log.entries(self.session_id))
@@ -1331,7 +1329,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(batches[0].recovered_lookups, 1)
         state = self.operations.load(self.session_id, self.run_id)
         assert state is not None
-        self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
+        self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
         committed_count = len(self.log.entries(self.session_id))
         expected_snapshot = self._durable_snapshot(
             self.log,
@@ -1351,11 +1349,13 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             )
 
             self.assertTrue(repeated.ok)
-            self.assertEqual(repeated.recovered_tool_outcomes, ())
+            self.assertEqual(
+                tuple(row.effect_id for row in repeated.recovered_tool_outcomes), (eff_read, eff_search),
+            )
             self.assertEqual(len(restart_log.entries(self.session_id)), committed_count)
             state = restart_operations.load(self.session_id, self.run_id)
             assert state is not None
-            self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
+            self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
             self.assertEqual(
                 self._durable_snapshot(
                     restart_log,
@@ -1651,7 +1651,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertTrue(recovery.ok)
+        self.assertFalse(recovery.ok)  # Interrupted tool has no original result receipt.
         # Must fail-closed: 0 recovered outcomes, read is blocked from single fallback
         self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
 
@@ -2063,7 +2063,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertTrue(recovery.ok)
+        self.assertFalse(recovery.ok)  # Interrupted tool has no original result receipt.
         self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
         pending = self.effects.pending_effects(self.session_id, self.run_id)
         self.assertEqual(len(pending), 0)

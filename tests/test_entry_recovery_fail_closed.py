@@ -30,7 +30,7 @@ def _row(turn: object, index: int, name: str = "edit"):
 
 class EntryRecoveryFailClosedTests(unittest.TestCase):
     def test_delivered_construction_failure_is_not_empty_map(self) -> None:
-        from codey.operations import task_entry as te
+        from codey.operations import kernel_session_recovery as te
         from codey.operations.kernel_recovery import RecoveryFailed
         from codey.operations.task_session import TaskSession
 
@@ -40,13 +40,13 @@ class EntryRecoveryFailClosedTests(unittest.TestCase):
             recovered_tool_outcomes=(_row(1, 0),),
         )
         with mock.patch(
-            "codey.operations.recovery.delivered_from_frame",
+            "codey.operations.kernel_session_recovery.delivered_from_frame",
             side_effect=RuntimeError("boom"),
-        ), self.assertRaises(RecoveryFailed):
-            te._entry_recovery(frame, session)
+        ), self.assertRaisesRegex(RecoveryFailed, "boom"):
+            te.restore_task_session(frame, session)
 
     def test_malformed_row_does_not_reexecute_unsafe_tool(self) -> None:
-        from codey.operations import task_entry as te
+        from codey.operations import kernel_session_recovery as te
         from codey.operations.kernel_recovery import RecoveryFailed
         from codey.operations.task_session import TaskSession
 
@@ -56,10 +56,10 @@ class EntryRecoveryFailClosedTests(unittest.TestCase):
         # Malformed turn identity is part of effect identity: must raise typed
         # RecoveryFailed, never silently resume at 1 and re-execute.
         with self.assertRaises(RecoveryFailed):
-            te._entry_recovery(frame, session)
+            te.restore_task_session(frame, session)
 
     def test_recovery_builder_failure_raises_recovery_failed(self) -> None:
-        from codey.operations import task_entry as te
+        from codey.operations import kernel_session_recovery as te
         from codey.operations.kernel_errors import RecoveryFailed
         from codey.operations.task_session import TaskSession
 
@@ -75,7 +75,7 @@ class EntryRecoveryFailClosedTests(unittest.TestCase):
             # Builder outage is a typed recovery failure; the entry never
             # returns bare success and never invokes executors.
             with self.assertRaises(RecoveryFailed) as ctx:
-                te._entry_recovery(frame, session)
+                te.restore_task_session(frame, session)
             self.assertTrue(
                 any(token in str(ctx.exception).lower() for token in ("recovered", "rebuild", "provenance", "recovery")),
                 f"RecoveryFailed must mention recovery, got {ctx.exception!r}",

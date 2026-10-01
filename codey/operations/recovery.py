@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -52,9 +52,76 @@ class ResumeRecoveryResult:
     ok: bool
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     recovered_tool_result_batch_id: str = ""
+    settled_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
 
 
 def recover_effects_for_resume(
+    deps: Any,
+    *,
+    session_id: str,
+    run_id: str,
+    project: str,
+    task_kind: str,
+    ignored_paths: tuple[str, ...] = (),
+) -> ResumeRecoveryResult:
+    """Recover pending delivery and project all settled facts independently.
+
+    A delivered batch stops needing provider messages, but its observations
+    remain part of the task on every restart. No executor runs while loading
+    settled facts, and an unavailable receipt never becomes an empty task.
+    """
+    pending = _recover_pending_effects(
+        deps, session_id=session_id, run_id=run_id, project=project,
+        task_kind=task_kind, ignored_paths=ignored_paths,
+    )
+    if not pending.ok:
+        return pending
+    store = _runtime_effect_store(deps)
+    if store is None:
+        return pending
+    try:
+        facts = _settled_facts(
+            store.load_effects(session_id, run_id), pending.recovered_tool_outcomes,
+            deps=deps, session_id=session_id, run_id=run_id, project=project,
+            ignored_paths=ignored_paths,
+        )
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ResumeRecoveryResult(ok=False)
+    return replace(pending, settled_tool_outcomes=facts)
+
+
+def _settled_facts(
+    projections: tuple[RuntimeEffectProjection, ...], pending_rows: tuple[RecoveredToolOutcome, ...], *,
+    deps: Any, session_id: str, run_id: str, project: str, ignored_paths: tuple[str, ...],
+) -> tuple[RecoveredToolOutcome, ...]:
+    pending_by_id = {row.effect_id: row for row in pending_rows}
+    rows: list[RecoveredToolOutcome] = []
+    for projection in projections:
+        intent = projection.intent
+        if intent.effect_category != EFFECT_CATEGORY_TOOL_CALL or not projection.is_settled:
+            continue
+        row = pending_by_id.get(intent.effect_id)
+        if row is None:
+            result = rebuild_settled_tool_result(
+                projection, managed_store=_managed_output_store(deps),
+                session_id=session_id, run_id=run_id,
+                project_path=Path(project) if project else None,
+                workspace_store=getattr(deps, "workspace_revisions", None),
+                ignored_paths=ignored_paths,
+            )
+            if result is None:
+                raise ValueError("settled task fact has no valid receipt")
+            row = _redelivered_outcome(
+                projection, result, turn=intent.turn, tool_index=intent.tool_index,
+                effect_id=intent.effect_id,
+            )
+            if row is None:
+                raise ValueError("settled task fact cannot be reconstructed")
+        rows.append(row)
+    return tuple(rows)
+
+
+def _recover_pending_effects(
     deps: Any,
     *,
     session_id: str,
@@ -375,7 +442,7 @@ def _redeliver_settled_batch_for_action(
         (item for item in batches if item.intent.batch_id == action.delivery_batch_id),
         None,
     )
-    if batch is None or batch.is_delivered or batch.is_recovered or batch.is_abandoned:
+    if batch is None or batch.is_delivered or batch.is_abandoned:
         return ResumeRecoveryResult(ok=False)
     if batch.active_attempts:
         return ResumeRecoveryResult(ok=False)
@@ -637,7 +704,7 @@ def record_entry_policy(
     """Record the entry authorization snapshot in the existing session log.
 
     The session log stays the single durable fact source; no competing
-    persistent log is created. Fail-open: logging never blocks the task.
+    persistent log is created. Persistence failures stop durable tasks.
     """
     if mutations is None or policy is None:
         return
@@ -657,55 +724,25 @@ def record_entry_policy(
 
 
 def rebuilt_policy_from_log(
-    session_log: Any,
-    incoming: Any,
-    *,
-    session_id: str = "",
-    run_id: str = "",
+    session_log: Any, *, session_id: str, run_id: str,
 ) -> Any:
-    """Rebuild the same entry policy from the existing session log.
+    """Restore original grants AND completion requirements, or stop recovery."""
+    from codey.operations.kernel_errors import RecoveryFailed
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.core.operation_state import operation_state_from_entries
 
-    When the log carries a stored policy payload, revive it via
-    TaskPolicy.from_payload so recovery reuses the entry snapshot; new
-    requests never replace it. Otherwise return the incoming policy.
-    """
     try:
         if session_log is None:
-            return incoming
-        # The durable operation projection is the existing log view; when it
-        # exposes a stored policy payload, prefer it. Otherwise fall back to
-        # the incoming policy (fail-closed elsewhere: callers still enforce
-        # grants at execution time).
-        stored_payload = None
-        from codey.runtime.core.operation_state import operation_state_from_entries
-
+            raise ValueError("policy log is unavailable")
         state = operation_state_from_entries(
             session_log.entries(session_id), session_id=session_id, run_id=run_id,
         )
-        stored_payload = getattr(state, "task_policy", None) if state is not None else None
-        if stored_payload is not None:
-            try:
-                from codey.policies.task_policy import TaskPolicy
-
-                revived = TaskPolicy.from_payload(stored_payload)
-                if callable(getattr(revived, "allows", None)):
-                    return revived
-            except Exception:
-                pass
-    except Exception:
-        pass
-    # A recovered run without a persisted policy is not allowed to inherit
-    # newly submitted capabilities. Keep control only and require the caller
-    # to surface any missing authorization as a blocked recovery.
-    try:
-        from codey.policies.task_policy import TaskPolicy
-
-        return TaskPolicy(
-            grants=frozenset({"control"}),
-            source="recovered:missing_policy",
-        ) if session_log is not None else incoming
-    except Exception:
-        return incoming if session_log is None else None
+        payload = state.task_policy if state is not None else None
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError("original task policy is missing")
+        return TaskPolicy.from_payload(payload)
+    except Exception as exc:
+        raise RecoveryFailed(f"task policy recovery failed: {exc}") from exc
 
 
 __all__ = [

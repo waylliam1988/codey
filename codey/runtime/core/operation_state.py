@@ -7,7 +7,9 @@ ledger; UI events and run traces are observation only.
 
 from __future__ import annotations
 
+import copy
 import hashlib
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
@@ -391,32 +393,20 @@ def _parse_operation_identity(payload: dict[str, object]) -> tuple[str, str, str
 
 
 def _parse_task_policy(value: object) -> dict[str, object]:
+    """Preserve opaque authorization data; TaskPolicy owns its schema.
+
+    Runtime storage must neither drop newly added fields nor turn invalid
+    values into valid ones. Semantic validation belongs to the policy owner.
+    """
     if value is None:
         return {}
     if not isinstance(value, dict):
         raise RuntimeOperationTransitionError("task_policy must be an object")
-    grants = value.get("grants", ())
-    checks = value.get("required_checks", ())
-    if not isinstance(grants, (list, tuple)) or not all(isinstance(item, str) for item in grants):
-        raise RuntimeOperationTransitionError("task_policy grants must be text")
-    if not isinstance(checks, (list, tuple)) or not all(isinstance(item, str) for item in checks):
-        raise RuntimeOperationTransitionError("task_policy checks must be text")
-    strict = value.get("strict_research", False)
-    if not isinstance(strict, bool):
-        raise RuntimeOperationTransitionError("task_policy strict_research must be boolean")
     try:
-        version = int(value.get("version", 1))
-    except (TypeError, ValueError):
-        raise RuntimeOperationTransitionError("task_policy version must be integer") from None
-    if version < 1:
-        raise RuntimeOperationTransitionError("task_policy version must be positive")
-    return {
-        "grants": sorted({str(item) for item in grants if str(item)}),
-        "strict_research": strict,
-        "required_checks": [str(item) for item in checks if str(item)],
-        "source": str(value.get("source", "") or "")[:240],
-        "version": version,
-    }
+        json.dumps(value, allow_nan=False)
+        return copy.deepcopy(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeOperationTransitionError("task_policy must be JSON data") from exc
 
 
 def _parse_operation_counts(payload: dict[str, object]) -> tuple[int, int, int, int, int, int]:
@@ -715,12 +705,12 @@ def mark_writer_running(
 ) -> RuntimeOperationState:
     provider = _text(provider_id, "provider_id")
     attempt = _count(writer_attempt, "writer_attempt", minimum=1)
-    if (
-        state.leaf == LEAF_WRITER_RUNNING
-        and state.provider_id == provider
-        and state.writer_attempt == attempt
-    ):
-        return state
+    if state.leaf in {LEAF_WRITER_RUNNING, LEAF_TOOL_DELIVERY_PENDING}:
+        # Rebinding a writer changes transport metadata, never acknowledges
+        # delivery or restarts the task state machine.
+        if state.provider_id == provider and state.writer_attempt == attempt:
+            return state
+        return replace(state, provider_id=provider, writer_attempt=attempt, updated_at=_now())
     return _transition(
         state,
         LEAF_WRITER_RUNNING,

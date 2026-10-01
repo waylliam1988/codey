@@ -77,6 +77,8 @@ def _run_one_writer_attempt(
     ctx.writer_attempt_index += 1
     recovered_outcomes = ctx.frame.recovered_tool_outcomes
     ctx.frame.recovered_tool_outcomes = ()
+    settled_outcomes = ctx.frame.settled_tool_outcomes
+    ctx.frame.settled_tool_outcomes = ()
     recovered_batch_id = ctx.frame.recovered_tool_result_batch_id
     ctx.frame.recovered_tool_result_batch_id = ""
     try:
@@ -140,6 +142,7 @@ def _run_one_writer_attempt(
         workspace_ignored_paths=ctx.configured_ignored_paths,
         managed_outputs=ctx.deps.persistence.managed_outputs,
         recovered_tool_outcomes=recovered_outcomes,
+        settled_tool_outcomes=settled_outcomes,
         recovered_tool_result_batch_id=recovered_batch_id,
         requested_capabilities=ctx.request.requested_capabilities,
         strict_research=bool(getattr(ctx.request, "strict_research", False) is True),

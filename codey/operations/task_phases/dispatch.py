@@ -38,6 +38,7 @@ from codey.operations.project_completion_context import (
 )
 from codey.operations.project_completion_flow import run_project_mode
 from codey.operations.provider_preflight import connect_provider_with_preflight
+from codey.operations.recovery import rebuilt_policy_from_log, record_entry_policy
 from codey.operations.research_flow import (
     ResearchFlowDeps,
     record_evidence_ledger_write,
@@ -47,7 +48,7 @@ from codey.operations.research_flow import (
 )
 from codey.operations.result import ModeOutcome
 from codey.operations.review_flow import ReviewFlowDeps, run_review_mode
-from codey.operations.task_entry import run_task_mode
+from codey.operations.task_entry import build_task_policy_for_entry, run_entry_kernel, run_task_mode
 from codey.operations.task_state import TaskState
 from codey.providers.capabilities import rank_providers
 from codey.research.search_factory import default_research_search_provider
@@ -55,27 +56,6 @@ from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.task.kind import startup_failover_mode, trace_mode
 from codey.task.model import TaskSubmission
 from codey.workspace.config import ProjectConfigLoadResult, preferred_provider_for
-
-
-def _previous_run_policy(deps: Any, request: Any, frame: Any) -> Any | None:
-    """Approval continuations require the original persisted authorization."""
-    previous = str(getattr(request, "previous_run_id", "") or "")
-    if not previous:
-        return None
-    try:
-        from codey.policies.task_policy import TaskPolicy
-        from codey.runtime.core.operation_state import operation_state_from_entries
-
-        session_log = deps.runtime_mutations.session_log
-        state = operation_state_from_entries(
-            session_log.entries(request.session_id),
-            session_id=request.session_id, run_id=previous,
-        )
-        if state is None or not isinstance(state.task_policy, dict):
-            raise ValueError("missing original task policy")
-        return TaskPolicy.from_payload(state.task_policy)
-    except (AttributeError, OSError, TypeError, ValueError) as exc:
-        raise RuntimeError("original task authorization unavailable for approval continuation") from exc
 
 
 def connect_and_build_frame(
@@ -93,6 +73,7 @@ def connect_and_build_frame(
     project_config_result: ProjectConfigLoadResult,
     recovered_tool_outcomes: tuple = (),
     recovered_tool_result_batch_id: str = "",
+    settled_tool_outcomes: tuple = (),
 ) -> tuple[RunFrame, Any, str]:
     """Run provider preflight and build the RunFrame; returns (frame, provider, provider_id)."""
     supervisor = state.providers.supervisor
@@ -151,6 +132,7 @@ def connect_and_build_frame(
         trace=trace,
         recovered_tool_outcomes=recovered_tool_outcomes,
         recovered_tool_result_batch_id=recovered_tool_result_batch_id,
+        settled_tool_outcomes=settled_tool_outcomes,
     )
     return frame, provider, provider_id
 
@@ -236,22 +218,30 @@ def dispatch_run_mode(
     task_kind: str,
     config_result: ProjectConfigLoadResult,
 ) -> ModeOutcome:
-    from codey.operations.task_entry import build_task_policy_for_entry
-
     request = getattr(frame, "request", None)
     if request is not None:
-        frame.entry_policy = build_task_policy_for_entry(request, task_kind)
-        # 审批 continuation 继续沿用原运行的持久化策略（同一任务会话、
-        # 同一授权快照）；原策略缺失时终止 continuation。
-        reused = _previous_run_policy(deps, request, frame)
-        if reused is not None:
-            frame.entry_policy = reused
+        previous = str(getattr(request, "previous_run_id", "") or "")
+        operation = getattr(work, "operation", None)
+        recovering = bool(frame.recovered_tool_outcomes or frame.settled_tool_outcomes
+                          or getattr(operation, "task_policy", {})
+                          or (operation is not None and operation.leaf != "accepted"))
+        if previous or recovering:
+            mutations = getattr(deps, "runtime_mutations", None)
+            frame.entry_policy = rebuilt_policy_from_log(
+                getattr(mutations, "session_log", None),
+                session_id=request.session_id, run_id=previous or frame.run_id,
+            )
+        else:
+            frame.entry_policy = build_task_policy_for_entry(request, task_kind)
+        record_entry_policy(getattr(deps, "runtime_mutations", None),
+                            session_id=request.session_id, run_id=frame.run_id, policy=frame.entry_policy)
     # Single task entry: project/research/hybrid/readonly share one
     # run_task_mode (same TaskSession/tool loop); ResearchPipeline and project
-    # review stay as strategy phases scheduled there. Chat/review/auto keep
-    # their flows. Hybrid hits the single session before any deps access, so
-    # empty namespaces suffice in cutover locks (no legacy two-phase).
+    # review stay as workflow strategies. Auto's first answer is gated;
+    # tool continuations enter the same kernel with the original policy.
     _early = str(task_kind or "").strip().lower()
+    if _early != "project" and (frame.recovered_tool_outcomes or frame.settled_tool_outcomes):
+        return run_entry_kernel(frame, work, hooks, deps, task_kind=task_kind, config_result=config_result)
     if _early == "hybrid":
         return run_task_mode(
             frame, work, hooks, deps,
@@ -319,6 +309,7 @@ def dispatch_run_mode(
     if (
         is_auto_request(frame.request)
         and not frame.recovered_tool_outcomes
+        and not frame.settled_tool_outcomes
         and work.claimed_work_item is None
     ):
         from codey.operations.review_flow import has_reviewable_diff as _has_diff
@@ -326,8 +317,7 @@ def dispatch_run_mode(
 
         auto_deps = AutoRunDeps(
             state=deps.state,
-            mode_deps=mode_deps,
-            config_result=config_result,
+            review_task=mode_deps.review,
             acquire_writer=lambda project: deps.state.acquire_project_writer(project),
             release_writer=lambda project: deps.state.release_project_writer(project),
             open_ledger_for=lambda kind: _open_ledger(
@@ -339,6 +329,11 @@ def dispatch_run_mode(
             experiences_fn=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
             has_reviewable_diff_fn=lambda: _has_diff(review_deps, frame.request.project),
             research_available=True,
+            continue_task=lambda active_frame, active_work, active_hooks, followup: run_entry_kernel(
+                active_frame, active_work, active_hooks, deps,
+                task_kind=active_frame.entry_session.task_kind,
+                config_result=config_result, continuation_followup=followup,
+            ),
         )
         return run_auto_mode(frame, work, hooks, auto_deps)
     # Single entry for task kinds (no old two-phase hybrid). This stays

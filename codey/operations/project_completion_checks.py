@@ -133,7 +133,7 @@ def _resolve_selected_check(session: Any, context: Any) -> Any:
     if not command:
         return None
     cwd = str(latest.get("cwd", ".") or ".").strip() or "."
-    return VerificationCandidate(command=command[:240], cwd=cwd[:240], source="kernel_session")
+    return VerificationCandidate(command=command, cwd=cwd, source="kernel_session")
 
 
 def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tuple[str, ...]]:
@@ -192,8 +192,8 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tupl
             continue
         if type(row.get("revision", -1)) is not int or row.get("revision", -1) != latest_edit:
             continue
-        command = str(row.get("command", "") or "").strip()[:500]
-        cwd = str(row.get("cwd", ".") or ".").strip()[:240] or "."
+        command = str(row.get("command", "") or "").strip()
+        cwd = str(row.get("cwd", ".") or ".").strip() or "."
         if (command, cwd) in gap_keys:
             continue
         if not _is_projectable_row(row, command):
@@ -222,8 +222,8 @@ def _latest_observations_by_key(
             continue
         if type(row.get("revision", -1)) is not int or row.get("revision", -1) != latest_edit:
             continue
-        command = str(row.get("command", "") or "").strip()[:500]
-        cwd = str(row.get("cwd", ".") or ".").strip()[:240] or "."
+        command = str(row.get("command", "") or "").strip()
+        cwd = str(row.get("cwd", ".") or ".").strip() or "."
         latest_by_key[(command, cwd)] = row
     return latest_by_key
 

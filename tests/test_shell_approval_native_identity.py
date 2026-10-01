@@ -280,8 +280,8 @@ def test_session_projection_never_shortens_native_call_id():
         assert len(logged_results) == 2
         assert logged_results[1].call.call_id == LONG_CALL_ID
 
+        from codey.operations.kernel_session_recovery import restore_task_session
         from codey.operations.recovery import recover_effects_for_resume
-        from codey.operations.task_entry import _entry_recovery
 
         log2 = RuntimeSessionLog(logdir)
         mutations2 = RuntimeMutationLine(log2)
@@ -303,7 +303,7 @@ def test_session_projection_never_shortens_native_call_id():
         except Exception:
             pass
         frame = SimpleNamespace(run_id=run_id, recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes))
-        delivered, rows, resume_start, initial = _entry_recovery(frame, fresh)
+        delivered, rows, resume_start, initial = restore_task_session(frame, fresh)
         assert any(
             getattr(row, "call", None) is not None and getattr(row.call, "call_id", "") == LONG_CALL_ID
             for row in rows

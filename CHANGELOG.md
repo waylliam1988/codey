@@ -2,6 +2,15 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Original authorization, durable fact recovery and same-window auto (no release)
+
+- Persist the original policy before tools; reject missing/invalid recovery and replacement of an existing snapshot. Preserve denials, source requirements, explicit must-change and verification prohibition without schema/type laundering.
+- Project all settled facts even after delivery. Reconstructed batches remain pending until acknowledgement; repeated restart/provider switch preserves pending results. Stage Research ledger and task facts atomically from existing managed receipts, including full source text/PDF pages/evidence.
+- Auto direct-answer rejection and ordinary tool ACTION continue one session/window/budget through the shared kernel. Remove second routing, mode dependency wiring and duplicate recovery facades.
+- Remove unused verification decisions/forwarders and five dead recovery/policy helpers. Preserve full source URLs and command/cwd identities; canonical search IDs use the existing landing-page rule.
+- Add red-first behavioral regressions plus finite state/capability/crash checks. Final full: **6399 passed, 29 skipped, 1495 subtests passed in 396.40s**. First full PubMed failure and subsequent long-identity regressions are documented, not hidden.
+- Production net **-342 lines** from `cac74c9`. [Proof scope](docs/kernel_invariants.zh-CN.md): finite checks, not a whole-program no-bug theorem; no live UI/model latency/token claim. No tag/release/version bump.
+
 ## Unreleased - Fail-closed direct gate, loader None, auto continuation, stale-proof block, real recovery, payload removal, hit atomicity, slot convergence, replay identity (no release)
 
 - TDD red-first locks (7 new files, all failed before, pass after):

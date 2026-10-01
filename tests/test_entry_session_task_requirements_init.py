@@ -51,33 +51,33 @@ def _work():
 
 
 def test_entry_inits_verification_forbidden_from_user_task():
-    from codey.operations.task_entry import _create_entry_session, build_task_policy_for_entry
+    from codey.operations.task_entry import build_task_policy_for_entry, start_task_session
 
     frame = _frame("Please edit a.py; do not run tests.")
 
     work = _work()
     policy = build_task_policy_for_entry(frame.request, "project")
-    session = _create_entry_session(frame, work, policy, "project")
+    session = start_task_session(frame, work, policy, "project")
     assert session.verification_forbidden is True
     assert session.project_changes_required is False
 
 
 def test_model_hint_cannot_clear_user_forbids():
-    from codey.operations.task_entry import _create_entry_session, build_task_policy_for_entry
+    from codey.operations.task_entry import build_task_policy_for_entry, start_task_session
 
     frame = _frame("Please edit a.py; do not run tests.", model_hint="please run pytest now")
     work = _work()
     policy = build_task_policy_for_entry(frame.request, "project")
-    session = _create_entry_session(frame, work, policy, "project")
+    session = start_task_session(frame, work, policy, "project")
     # User requirement wins; model hint is execution text only.
     assert session.verification_forbidden is True
 
 
 def test_model_hint_cannot_invent_forbids():
-    from codey.operations.task_entry import _create_entry_session, build_task_policy_for_entry
+    from codey.operations.task_entry import build_task_policy_for_entry, start_task_session
 
     frame = _frame("Please edit a.py and run pytest.", model_hint="do not run tests")
     work = _work()
     policy = build_task_policy_for_entry(frame.request, "project")
-    session = _create_entry_session(frame, work, policy, "project")
+    session = start_task_session(frame, work, policy, "project")
     assert session.verification_forbidden is False

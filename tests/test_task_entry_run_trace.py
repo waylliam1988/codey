@@ -238,10 +238,8 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
         assert "RAW_PROVIDER_ERROR_SHOULD_NOT_BE_SAVED" not in serialized
 
 
-def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
-    """Unified auto research: the first normal call carries the ACTION, the
-    trace records the deferred baseline plus the executed research mode, and
-    no retired router call happens."""
+def test_explicit_research_result_writes_structured_trace_refs() -> None:
+    """Explicit Research archives bounded report refs without source-body leaks."""
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         state = server.AppContext(root / "state")
@@ -287,7 +285,7 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
                         4,
                         False,
                         "deepseek",
-                        intent="auto",
+                        intent="research",
                     )
                 )
                 assert state.wait_for_ghost_sleep(timeout=30)
@@ -297,12 +295,12 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         serialized = json.dumps(payload, ensure_ascii=False)
         research_payload = state.run_registry.last_terminal_event()["research"]
 
-        assert payload["mode_initial"] == "chat"
+        assert payload["mode_initial"] == "research"
         assert payload["mode_final"] == "research"
         assert payload["permission_profile"] == "research"
-        assert payload["mode_selection"]["source"] == "baseline"
-        assert payload["mode_selection"]["reason_code"] == "baseline_kept"
-        assert len(main_provider.prompts) == 1
+        assert payload["mode_selection"]["source"] == "explicit_user_choice"
+        assert payload["mode_selection"]["reason_code"] == "intent_selected"
+        research_iteration.assert_called_once()
         assert set(payload["research_note_ids"]) == {"note-created", "note-updated", "synth-1"}
         assert payload["research_source_refs"][0]["host"] == "example.com"
         assert payload["research_pipeline_runs"]

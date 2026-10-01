@@ -1,5 +1,51 @@
 # Codey Test Report
 
+## Original policy, durable fact projection and same-window auto convergence (2026-10-01)
+
+Reviewed from `cac74c9`, including the final compatibility/dead-helper audit.
+Production changes were finished before the final full run; documentation was
+updated afterwards. Final staging trimmed only trailing blank lines in one new module (identical AST), with no behavioral change after the full run. Historical results below remain historical baselines.
+
+### Actual verification
+
+- First full run: `python -m pytest tests -q`: **1 failed, 6393 passed, 29 skipped, 1495 subtests passed in 428.21s**. The failure exposed canonical search IDs including a filtered PubMed landing page; production now uses the existing domain selection rule rather than changing that test's expectation.
+- Final full run: `python -m pytest tests -q -rs`: **6399 passed, 29 skipped, 1495 subtests passed in 396.40s (0:06:36)**, zero failures.
+- Final prechecks: `python -m ruff check codey tests`, `python -m compileall -q codey tests`, `git diff --check`: passed.
+- Targeted ownership/recovery/architecture: **180 passed, 387 subtests passed**. Subsequent entry/mathematical checks: **60 passed**. Source/verification/architecture after the final production fix: **125 passed, 381 subtests passed**; related identity/recovery regressions: **53 passed**. These overlapping runs are not added to the full-suite total.
+- Skips: symlink privileges, POSIX paths/process groups, unavailable `O_NOFOLLOW`, and the opt-in real UI browser test. No live model/API latency or token benchmark was run.
+
+### Behavior and ownership
+
+| Boundary | Regression evidence |
+| --- | --- |
+| Reconstructed delivery stays pending until actual acknowledgement; repeated restart and provider replacement retain original results | `test_restart_preserves_facts_and_pending_delivery.py` |
+| Already delivered effects still rebuild task facts, without re-executing commands or writes | `test_recovery_trace_invariants.py`, real-log tests |
+| Missing/invalid original policy blocks; grants, denials and requirements round-trip exactly; even pre-settlement resume cannot reauthorize; persisted policy cannot be replaced | `test_recovery_requires_original_policy.py` |
+| Auto answer rejection and normal ACTION continue the original session, window and total budget; model plans do not grant authority; lease failure does not execute | `test_auto_continuation_preserves_task.py`, real headless/ghost regressions |
+| Research restores exact sources, text, PDF pages, timestamps and archived evidence from existing receipts; failed projection commits neither ledger nor session facts | `test_recovery_restores_research_ledger.py` |
+| Recovery keeps the original task mode | `test_recovery_preserves_task_mode.py` |
+| Source URLs remain full identities; canonical results exclude snippet URLs and apply the existing landing-page filter; invalid batches do not partially commit | `test_source_locators_preserve_identity.py`, existing PubMed regression |
+| Long verification command/cwd remain full identities in session, evidence, projection and real receipt recovery; distinct observations cannot merge at a display cutoff | `test_completion_selected_verification_single_decision.py` |
+| Deleted second auto router, recovery facades, unused verification decisions and text-based recovery helpers cannot regrow | `test_kernel_entry_has_no_second_auto_router.py` |
+
+Deterministic defects and deletions were reproduced red before repair. Finite
+state enumeration, crash-trace enumeration and additional long-PDF round-trip
+checks are supporting verification; they are not claimed to have all been red.
+Older auto mocks were migrated to real kernel read/search/open/done assertions.
+The explicit Research trace contract remains tested at the Research entry.
+Operation tests assert phase transitions separately from persisted policy and
+provider metadata updates. Frozen parity expectations were not regenerated.
+
+### Mathematical scope, cleanliness and performance
+
+- Actual receipt builders/projector: finite BFS reaches **44 states / 134 accepted edges** for one safe batch and two provider effect IDs.
+- Capability checks enumerate **512 grant subsets x 2 denial patterns** (none/all granted). This is not every partial-denial combination.
+- Durable recovery: **81 length-three traces** over restart/ack/failure and three verification histories, using real stores and independent expectations.
+- Repository AST/name-reference scan found no remaining unreferenced top-level private-function candidates after deleting five confirmed dead helpers; this heuristic cannot prove absence of all dead classes, fields or dynamic references.
+- Production-only diff from `cac74c9`, including two new modules: **+672 / -1014, net -342 lines**. Test/document growth is counted separately.
+- Full bodies now survive recovery through managed receipts; this adds storage work. No browser smoothness, latency or token saving is inferred from line count or fake providers.
+- Exact assumptions, ownership and limits: [kernel_invariants.zh-CN.md](docs/kernel_invariants.zh-CN.md). These results support the reviewed invariants, not a whole-program no-bug theorem.
+
 ## Fail-closed direct gate, loader None, auto continuation, stale-proof block, real recovery, payload removal, hit atomicity, slot convergence, replay identity (2026-10-01)
 
 Scope: close the fail-open direct-answer gate, the `None`-loader requirement

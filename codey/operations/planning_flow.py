@@ -146,6 +146,7 @@ def run_planning_readonly_mode(
             workspace_revision_store=getattr(state, "workspace_revisions", None),
             managed_outputs=getattr(state, "managed_outputs", None),
             recovered_tool_outcomes=tuple(getattr(frame, "recovered_tool_outcomes", ()) or ()),
+            settled_tool_outcomes=frame.settled_tool_outcomes,
             recovered_tool_result_batch_id=str(getattr(frame, "recovered_tool_result_batch_id", "") or ""),
             requested_capabilities=tuple(getattr(request, "requested_capabilities", ()) or ()),
             strict_research=bool(getattr(request, "strict_research", False) is True),

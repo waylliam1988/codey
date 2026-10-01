@@ -24,6 +24,7 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
         )
         frame = SimpleNamespace(
             recovered_tool_outcomes=(),
+            settled_tool_outcomes=(),
             recovered_tool_result_batch_id="",
             conversation=None,
             provider_session_changed=False,
@@ -82,6 +83,7 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
         )
         frame = SimpleNamespace(
             recovered_tool_outcomes=(),
+            settled_tool_outcomes=(),
             recovered_tool_result_batch_id="",
             conversation=None,
             provider_session_changed=False,

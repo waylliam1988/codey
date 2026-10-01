@@ -66,8 +66,8 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
         raw_pages = target.get("pages", "")
         if type(raw_pages) is not str:
             raise ValueError("hit target pages must be a string")
-        url = raw_url.strip()[:500]
-        pages = raw_pages[:40]
+        url = raw_url.strip()
+        pages = raw_pages
         if not url:
             raise ValueError("hit target is malformed")
         clean = {"url": url, "offset": raw_offset, "pages": pages}
@@ -86,7 +86,7 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
 
 def _record_open_fact(session: TaskSession, name: str, args: dict[str, Any], result: ToolResult) -> None:
     canonical = _canonical_mapping(result)
-    opened_url = str(canonical.get("opened_url", "") or "").strip()[:500]
+    opened_url = str(canonical.get("opened_url", "") or "").strip()
     if name == "open_url":
         url = (opened_url or str(args.get("url", "") or "")).strip()
         if url:
@@ -116,7 +116,7 @@ def _record_knowledge_fact(session: TaskSession, result: ToolResult) -> None:
         url = str(item.get("source_url", "") or "").strip()
         excerpt = str(item.get("excerpt", "") or "").strip()
         if url and excerpt:
-            session.record_evidence(url[:500], excerpt[:600])
+            session.record_evidence(url, excerpt[:600])
 
 
 def _record_edit_fact(session: TaskSession, args: dict[str, Any], result: ToolResult) -> None:
@@ -181,7 +181,7 @@ def record_facts_for_result(
     if not ok:
         return
     if name == "web_search":
-        _record_search_results(session, args, text)
+        _record_search_results(session, args, text, _canonical_mapping(result))
     elif name == "open_url" or name in _CONTROLLER_ALIASES:
         _record_open_fact(session, name, args, result)
     elif name == "knowledge_write":
@@ -205,9 +205,28 @@ def _search_result_rows(text: str) -> list[tuple[str, str]]:
     return rows
 
 
-def _record_search_results(session: TaskSession, args: dict[str, Any], text: str) -> None:
+def _record_search_results(
+    session: TaskSession, args: dict[str, Any], text: str, canonical: dict[str, Any],
+) -> None:
+    observation = canonical.get("research_observation")
+    if observation is not None:
+        if not isinstance(observation, dict) or set(observation) != {"search"}:
+            raise ValueError("invalid search observation")
+        search = observation["search"]
+        if not isinstance(search, dict) or not isinstance(search.get("results"), (list, tuple)):
+            raise ValueError("invalid search results")
+        from codey.research.url_selection import source_candidate_skip_reason
+
+        urls = []
+        for row in search["results"]:
+            if not isinstance(row, dict) or type(row.get("url")) is not str or not row["url"]:
+                raise ValueError("invalid search result URL")
+            if not source_candidate_skip_reason(row["url"]):
+                urls.append(row["url"])
+    else:
+        urls = [url for _, url in _search_result_rows(text)]
     session.record_search(str(args.get("query", "") or ""))
-    for _rid, url in _search_result_rows(text):
+    for url in urls:
         existing = next((key for key, value in session.search_results.items() if value == url), "")
         if not existing:
             existing = f"r{len(session.search_results) + 1}"

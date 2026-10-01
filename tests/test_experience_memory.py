@@ -76,14 +76,17 @@ def _auto_frame(*, task: str, project: str = "", provider: _FakeProvider | None 
         handoff="",
         trace=None,
         recovered_tool_outcomes=(),
+        settled_tool_outcomes=(),
+        entry_policy=None,
+        entry_session=None,
+        entry_research_tools=None,
     )
 
 
 def _auto_deps(state, mode_deps, **overrides):
     params = {
         "state": state,
-        "mode_deps": mode_deps,
-        "config_result": None,
+        "review_task": getattr(mode_deps, "review", None),
         "acquire_writer": lambda _project: True,
         "release_writer": lambda _project: None,
         "open_ledger_for": lambda _kind: None,
@@ -155,7 +158,8 @@ class UnifiedAutoCallCountTests(unittest.TestCase):
         frame = _auto_frame(task="查一下今天的消息", provider=provider)
         seen: dict[str, str] = {}
 
-        def run_research(active_frame, _hooks):
+        def run_research(active_frame, _work, _hooks, *, followup):
+            self.assertIn("查今天的发布记录", followup)
             seen["task"] = active_frame.request.task
             seen["executed"] = execution_task(active_frame.request)
             return ModeOutcome({"type": "task_done", "mode": "research",
@@ -172,7 +176,8 @@ class UnifiedAutoCallCountTests(unittest.TestCase):
         outcome = run_auto_mode(
             frame, SimpleNamespace(), SimpleNamespace(),
             _auto_deps(mock.Mock(), mode_deps,
-                       open_ledger_for=lambda kind: opened.append(kind)),
+                       open_ledger_for=lambda kind: opened.append(kind),
+                       continue_task=run_research),
         )
         self.assertEqual(provider.send_calls, 1)
         self.assertEqual(outcome.event["mode"], "research")
@@ -181,7 +186,7 @@ class UnifiedAutoCallCountTests(unittest.TestCase):
         self.assertIn("查一下今天的消息", seen["executed"])
         self.assertEqual(seen["task"], "查一下今天的消息")
         self.assertNotIn("Auto plan", seen["task"])
-        self.assertEqual(opened, ["research"])
+        self.assertEqual(opened, ["chat"])
 
     def test_first_call_failure_propagates_without_second_call(self) -> None:
         class _DeadProvider(_FakeProvider):
@@ -225,7 +230,8 @@ class UnifiedAutoCallCountTests(unittest.TestCase):
             frame, SimpleNamespace(), SimpleNamespace(),
             _auto_deps(mock.Mock(), mode_deps,
                        acquire_writer=lambda project: acquired.append(project) or True,
-                       release_writer=lambda project: released.append(project)),
+                       release_writer=lambda project: released.append(project),
+                       continue_task=run_project),
         )
         # Writer claimed only after the action was chosen, released after run.
         self.assertTrue(acquired)
@@ -236,6 +242,8 @@ class UnifiedAutoCallCountTests(unittest.TestCase):
         provider = _FakeProvider("ACTION: planning_readonly\nPLAN: 只看不改")
         frame = _auto_frame(task="看看结构", project="/repo", provider=provider)
         acquire = mock.Mock(return_value=True)
+        from codey.policies.task_policy import TaskPolicy
+        frame.entry_policy = TaskPolicy(frozenset({"control", "project.read"}))
 
         def run_planning(*_args, **_kwargs):
             return ModeOutcome({"type": "task_done", "mode": "planning_readonly",
@@ -249,7 +257,7 @@ class UnifiedAutoCallCountTests(unittest.TestCase):
         )
         outcome = run_auto_mode(
             frame, SimpleNamespace(), SimpleNamespace(),
-            _auto_deps(mock.Mock(), mode_deps, acquire_writer=acquire),
+            _auto_deps(mock.Mock(), mode_deps, acquire_writer=acquire, continue_task=run_planning),
         )
         acquire.assert_not_called()
         mode_deps.project.assert_not_called()
