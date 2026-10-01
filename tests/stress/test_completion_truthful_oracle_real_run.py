@@ -160,11 +160,40 @@ def test_strict_research_real_ledger_passes_and_tampered_citation_fails() -> Non
         InvariantChecker().check_completion_truthful(tampered_view)
 
 
-def test_recovered_session_completion_still_builds_truthful_view(tmp_path) -> None:
-    session, evidence, verdict = _project_gate(tmp_path)
-    payload = session.to_payload()
+def _explicit_copy_session(session):
+    import copy
+
     from codey.operations.task_session import TaskSession
 
-    restored = TaskSession.from_payload(payload, policy=session.policy)
-    view = completion_view_from_gate(session=restored, evidence=evidence, verdict=verdict)
+    copied = TaskSession(
+        policy=session.policy,
+        task_kind=session.task_kind,
+        project=session.project,
+        max_turns=session.max_turns,
+    )
+    copied.edited_files = copy.deepcopy(session.edited_files)
+    copied.verifications = copy.deepcopy(session.verifications)
+    copied.read_files = set(session.read_files)
+    copied.workspace_revision = session.workspace_revision
+    copied.workspace_fingerprint = session.workspace_fingerprint
+    return copied
+
+
+def test_recovered_session_completion_still_builds_truthful_view(tmp_path) -> None:
+    from codey.operations.completion_gate import evaluate
+
+    session, evidence, verdict = _project_gate(tmp_path)
+    # Explicit state copy: same factory plus copied facts, no restore path.
+    copied = _explicit_copy_session(session)
+    assert copied.verifications == session.verifications
+    assert copied.edited_files == session.edited_files
+    assert copied.workspace_revision == session.workspace_revision
+    assert copied.workspace_fingerprint == session.workspace_fingerprint
+    # Gate keeps the same verdict on the copied state.
+    copied_verdict = evaluate(copied, "done", context=None)
+    assert copied_verdict.complete is True
+    # Oracle behavior is consistent across the explicit copy.
+    original_view = completion_view_from_gate(session=session, evidence=evidence, verdict=verdict)
+    InvariantChecker().check_completion_truthful(original_view)
+    view = completion_view_from_gate(session=copied, evidence=evidence, verdict=copied_verdict)
     InvariantChecker().check_completion_truthful(view)

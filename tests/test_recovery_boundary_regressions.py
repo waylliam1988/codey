@@ -134,15 +134,27 @@ def test_invalid_present_event_proof_raises_instead_of_becoming_absent() -> None
 
 
 def test_session_restore_rejects_malformed_early_field_without_dropping_receipt() -> None:
-    from codey.operations.kernel_errors import RecoveryFailed
-    from codey.operations.task_session import TaskSession
+    import copy
 
-    payload = {
-        "hit_targets": {"h1": {"url": "x", "offset": "broken"}},
-        "executed": {"effect": {"name": "edit", "ok": True}},
+    from codey.operations.kernel_facts import _apply_hit_targets
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.write", "control"})))
+    session.hit_targets = {"h0": {"url": "https://example.com/a", "offset": 0, "pages": ""}}
+    session.executed = {
+        "effect": {"name": "edit", "ok": True, "call_id": "c1", "args_digest": "d", "excerpt": "old"}
     }
-    with pytest.raises(RecoveryFailed):
-        TaskSession.from_payload(payload)
+    before_targets = copy.deepcopy(session.hit_targets)
+    before_executed = copy.deepcopy(session.executed)
+    # Formal persisted boundary for the source-mapping receipt: the whole
+    # batch is rejected on the illegal offset type.
+    with pytest.raises(ValueError):
+        _apply_hit_targets(session, {"h1": {"url": "x", "offset": "broken"}})
+    # Original state is unchanged: no partial insert, no receipt dropped.
+    assert session.hit_targets == before_targets
+    assert "h1" not in session.hit_targets
+    assert session.executed == before_executed
 
 
 def test_proof_validator_rejects_subclasses_and_coerced_fields() -> None:

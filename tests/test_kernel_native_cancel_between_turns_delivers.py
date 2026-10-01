@@ -51,7 +51,7 @@ def test_cancel_between_turns_delivers_executed_result(tmp_path):
     import codey.providers.native_tools as nt
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
-    from codey.runtime.core.models import ToolCall, ToolResult
+    from codey.runtime.core.models import ToolResult
 
     (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
     session = TaskSession(policy=_policy(), task_kind="project", project=str(tmp_path), max_turns=5)
@@ -100,8 +100,9 @@ def test_cancel_between_turns_delivers_executed_result(tmp_path):
 
 
 def test_delivery_failure_reports_provider_failure(tmp_path):
-    import codey.providers.native_tools as nt
     from types import SimpleNamespace
+
+    import codey.providers.native_tools as nt
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolResult

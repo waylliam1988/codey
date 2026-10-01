@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Fail-closed direct gate, loader None, auto continuation, stale-proof block, real recovery, payload removal, hit atomicity, slot convergence, replay identity (2026-10-01)
+
+Scope: close the fail-open direct-answer gate, the `None`-loader requirement
+wipe, the auto blocked-early termination, the stale-proof bypass, the
+hand-rebuilt recovery fixture, the parallel `TaskSession` persistence API, the
+`str()`-washed hit mapping with partial commits, the empty execution slots,
+and the fingerprint-dropping replay comparison. Red-first: 7 new files plus
+replay-identity and real-assertion-failure locks failed before their fixes and
+pass after; no code was modified after the final full run; only this report
+and the changelogs were written after that run.
+
+### Behavior and test evidence
+
+| Boundary | Locked behavior | Regression files |
+| --- | --- | --- |
+| Gate failure never completes | Gate exception/`None`/illegal verdict blocks with reason preserved; greeting still completes | `tests/test_direct_answer_gate_failure_never_completes.py` |
+| Loader None preserves requirement | `None` preserves required `pytest`, blocks `compileall` on gate and real kernel; legal recovery restores | `tests/test_verification_loader_none_preserves_requirement.py` |
+| Auto rejection continues | Sources task continues to research kernel in same run; greeting single-shot; real `frame.run_id` | `tests/test_auto_direct_answer_continues_to_kernel.py` |
+| Stale proof never bypasses | Stale pass blocks on refresh-failed/missing-edits/workspace-changed; operation scope completes despite incomplete memory | `tests/test_project_evaluation_reuse_blocked.py` |
+| Real log recovery | Separate `project/`+`state/`+`log/`, real stores, `execute_turn` receipts, reopen, `recover_effects_for_resume` + formal `_entry_recovery`, gate decides; forged never trusted; second restart idempotent | `tests/test_session_log_receipt_recovery_preserves_facts.py` |
+| No parallel persistence API | `TaskSession` has no `to_payload`/`from_payload`; callers use explicit copies/real log/gate | `tests/test_task_session_has_no_parallel_persistence_api.py` |
+| Hit mapping atomic | Raw url/pages/offset types validated before truncation; whole batch commits atomically; idempotent replay | `tests/test_hit_targets_raw_types_atomic_commit.py` |
+| Replay keeps identity | Fingerprint-only change compares unequal; same relative content across temp homes compares equal; real `assert 1 == 2` blocks as failed | `tests/stress/test_completion_view_normalize_keeps_identity.py`, `tests/stress/test_scheduler_completion_step_produces_real_view.py` |
+
+### Actual runs
+
+- Final full command: `python -m pytest tests -q` **6264 passed, 10 skipped, 1492 subtests passed in 403.28s (0:06:43)**, zero failures in a single run.
+- Final architecture command: `python -m pytest tests/test_architecture.py -q` **94 passed, 379 subtests passed**, zero failures (included in the full run above).
+- Final prechecks: `ruff check codey tests` passed; `git diff --check` passed.
+- Targeted behavior command (10 files, P1/P2/P3 locks): **64 passed**.
+
+### Limits and follow-ups
+
+- The 10 skips are Windows/symlink privilege/POSIX-contract limitations. No UI browser e2e beyond `tests/`, no live web-model/native API benchmark, and no model latency/token measurement were run; web-model experience is not claimed from structure alone.
+- `TaskPolicy.to_payload/from_payload` retained as the formal authorization path; runtime state serialization and tool receipts remain the formal persistence boundary. Frozen parity baselines kept; this cold-start deletion registered here with formal-recovery protection.
+- Proof is via bounded state-sequence tests, the independent oracle, and fault injection, not a whole-program correctness proof. In particular: completion implies current required checks pass; valid verification binds current workspace identity; recovery never re-executes settled effects; check faults never announce done.
+
 ## Single verification decision, real unknown observation, entry requirements, canonical source facts, exact redelivery, legacy alias removal, real soak completion (2026-10-01)
 
 Scope: unify the two completion verdicts, record unknown runs through the real

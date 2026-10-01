@@ -167,7 +167,7 @@ class ExecutionDelegate:
         return False
 
     def execute(self, call: ToolCall, *, turn: int = 0,
-                tool_index: int = 0) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
+                tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
         name = str(call.name or "").strip().lower()
         try:
             spec = self._resolve_spec(name)
@@ -189,7 +189,7 @@ class ExecutionDelegate:
                 produced = fn(call)
             except Exception as exc:
                 result = ToolResult(call=call, model_text=f"ERROR: {exc or 'tool failed'}")
-                return result, False, "", [], None
+                return result, False, None
             if isinstance(produced, ToolResult):
                 result = produced
             elif isinstance(produced, str):
@@ -201,9 +201,9 @@ class ExecutionDelegate:
                 ok = bool(_ok(name, result))
             except Exception:
                 ok = not str(result.model_text or "").startswith("ERROR:")
-            return result, ok, "", [], None
+            return result, ok, None
         result = ToolResult(call=call, model_text=f"ERROR: no production executor for {name or '?'}")
-        return result, False, "", [], None
+        return result, False, None
 
     def _policy_check(self, call: ToolCall) -> tuple[bool, str, bool]:
         """Returns (denied, message, approval_required) via the coding guards."""
@@ -250,11 +250,11 @@ class ExecutionDelegate:
     def _project_permission_profile(self) -> str:
         return effective_project_profile(self.permission_profile)
 
-    def _execute_project(self, call: ToolCall) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
+    def _execute_project(self, call: ToolCall) -> tuple[ToolResult, bool, int | None]:
         denied, message, _approval = self._policy_check(call)
         if denied:
             result = ToolResult(call=call, model_text=f"ERROR: {message}")
-            return result, False, "", [], None
+            return result, False, None
         name = str(call.name or "").strip().lower()
         runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
                         "find_references": "references"}.get(name, name)
@@ -268,12 +268,12 @@ class ExecutionDelegate:
                 )
                 result = _tool_result(call, outcome)
                 ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
-                return result, ok, "", [], None
+                return result, ok, None
             if name == "edit":
                 outcome = self._execute_edit(call)
                 result = _tool_result(call, outcome)
                 ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
-                return result, ok, "", [], None
+                return result, ok, None
             if name == "run":
                 outcome = self.tool_fns.execute_run_command(
                     self.project_path, str((call.args or {}).get("path", ".") or "."),
@@ -283,12 +283,12 @@ class ExecutionDelegate:
                 )
                 result = _tool_result(call, outcome)
                 ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
-                return result, ok, "", [], getattr(outcome, "exit_code", None)
+                return result, ok, getattr(outcome, "exit_code", None)
         except Exception as exc:
             result = ToolResult(call=call, model_text=f"ERROR: {exc}")
-            return result, False, "", [], None
+            return result, False, None
         result = ToolResult(call=call, model_text=f"ERROR: unsupported project tool {name}")
-        return result, False, "", [], None
+        return result, False, None
 
     def _execute_edit(self, call: ToolCall) -> Any:
         from codey.agents.protocol import canonical_project_path
@@ -348,10 +348,10 @@ class ExecutionDelegate:
         return outcome
 
     def _opened_result(self, call: ToolCall, opened: Any, url: str, *, turn: int,
-                       tool_index: int) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
+                       tool_index: int) -> tuple[ToolResult, bool, int | None]:
         model_text = str(getattr(opened, "model_text", opened) or "")
         if not _is_ok_text(model_text):
-            return ToolResult(call=call, model_text=model_text), False, "", [], None
+            return ToolResult(call=call, model_text=model_text), False, None
         from codey.research.output_receipts import maybe_externalize_output
 
         title = next((line.removeprefix("Title: ") for line in model_text.splitlines()
@@ -377,10 +377,10 @@ class ExecutionDelegate:
             audit=dict(base.audit) if isinstance(base.audit, dict) else {},
             canonical=merged,
         )
-        return result, True, "", [], None
+        return result, True, None
 
     def _execute_research(self, call: ToolCall, *, turn: int = 0,
-                          tool_index: int = 0) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None]:
+                          tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
         tools = self.research_tools
         name = str(call.name or "").strip().lower()
         args = dict(call.args or {})
@@ -389,7 +389,7 @@ class ExecutionDelegate:
                 from codey.research.text_args import first_text_arg
 
                 text = tools.web_search(first_text_arg(args, "query"))
-                return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
+                return ToolResult(call=call, model_text=text), _is_ok_text(text), None
             if name == "open_url":
                 opened = tools.open_url(str(args.get("url") or ""), offset=args.get("offset", 0),
                                         limit=args.get("limit", 6000), pages=str(args.get("pages") or ""))
@@ -398,7 +398,7 @@ class ExecutionDelegate:
             if name in {"open_result", "reopen_source", "open_hit"}:
                 url = self._resolve_alias_url(name, args)
                 if not url:
-                    return ToolResult(call=call, model_text=f"ERROR: unknown {name} id"), False, "", [], None
+                    return ToolResult(call=call, model_text=f"ERROR: unknown {name} id"), False, None
                 target = (getattr(self.session, "hit_targets", {}) or {}).get(
                     str(args.get("hit_id") or "").lower(), {}
                 ) if name == "open_hit" else {}
@@ -417,37 +417,37 @@ class ExecutionDelegate:
                     text, mapping = self._build_hit_mapping(text, url)
                     return (
                         ToolResult(call=call, model_text=text, canonical={"hit_targets": mapping, "source_url": url[:500]}),
-                        True, "", [], None,
+                        True, None,
                     )
-                return ToolResult(call=call, model_text=text), ok_text, "", [], None
+                return ToolResult(call=call, model_text=text), ok_text, None
             if name == "knowledge_search":
                 from codey.research.text_args import first_text_arg
 
                 text = tools.knowledge_search(first_text_arg(args, "query"))
-                return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
+                return ToolResult(call=call, model_text=text), _is_ok_text(text), None
             if name == "knowledge_read":
                 text = tools.knowledge_read(str(args.get("id") or ""))
-                return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
+                return ToolResult(call=call, model_text=text), _is_ok_text(text), None
             if name == "knowledge_write":
                 before = len(getattr(getattr(tools, "ledger", None), "evidence_items", ()) or ())
                 lowered, problem = self._lower_knowledge_sources(args)
                 if problem:
-                    return ToolResult(call=call, model_text=f"ERROR: {problem}"), False, "", [], None
+                    return ToolResult(call=call, model_text=f"ERROR: {problem}"), False, None
                 text = tools.knowledge_write(lowered)
                 if not _is_ok_text(text):
-                    return ToolResult(call=call, model_text=text), False, "", [], None
+                    return ToolResult(call=call, model_text=text), False, None
                 evidence = self._ledger_evidence(before)
                 return (
                     ToolResult(call=call, model_text=text, canonical={"evidence_items": evidence}),
-                    True, "", [], None,
+                    True, None,
                 )
             if name == "knowledge_link":
                 text = tools.knowledge_link(str(args.get("src") or ""), str(args.get("dst") or ""),
                                             str(args.get("kind") or "relates"))
-                return ToolResult(call=call, model_text=text), _is_ok_text(text), "", [], None
+                return ToolResult(call=call, model_text=text), _is_ok_text(text), None
         except Exception as exc:
-            return ToolResult(call=call, model_text=f"ERROR: {exc}"), False, "", [], None
-        return ToolResult(call=call, model_text=f"ERROR: unknown research tool {name}"), False, "", [], None
+            return ToolResult(call=call, model_text=f"ERROR: {exc}"), False, None
+        return ToolResult(call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
 
     def _lower_knowledge_sources(self, args: dict) -> tuple[dict, str]:
         import re
@@ -513,7 +513,7 @@ class ExecutionDelegate:
         existing = dict(getattr(self.session, "hit_targets", {}) or {}) if self.session is not None else {}
         batch: dict[str, dict[str, object]] = {}
         by_target: dict[tuple[str, int, str], str] = {}
-        for key, value in list(existing.items()) + list(batch.values()):
+        for key, value in list(existing.items()):
             if isinstance(value, dict):
                 by_target[(str(value.get("url", "")), int(value.get("offset", 0) or 0), str(value.get("pages", "")))] = key
         lines: list[str] = []
@@ -533,10 +533,6 @@ class ExecutionDelegate:
                 line = f"{hit_id}: {line}"
             lines.append(line)
         return "\n".join(lines), batch
-
-    def _attach_hit_ids(self, text: str, url: str) -> str:
-        rendered, _mapping = self._build_hit_mapping(text, url)
-        return rendered
 
     def _ledger_final_url(self, args: dict) -> str:
         tools = self.research_tools

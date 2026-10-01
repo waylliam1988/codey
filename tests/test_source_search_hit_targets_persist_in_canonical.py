@@ -32,7 +32,7 @@ def test_source_search_canonical_replays_to_same_facts():
 
     delegate = ExecutionDelegate(session=session, research_tools=type("R", (), {"source_search": FakeSearch().source_search})())
     call = ToolCall("source_search", {"url": "https://example.com/a", "query": "q"})
-    result, ok, opened, evidence, exit_code = delegate._execute_research(call, turn=1, tool_index=0)
+    result, ok, exit_code = delegate._execute_research(call, turn=1, tool_index=0)
     assert ok is True
     assert "h1" in result.model_text
     assert isinstance(result.canonical, dict)

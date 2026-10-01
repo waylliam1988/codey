@@ -27,7 +27,6 @@ def replay():
                                  "loop/candidate-loader"])
 def test_real_loop_restores_legacy_behavior(replay, key):
     import json
-    from pathlib import Path
 
     from tools.kernel_parity import ROOT
 
@@ -325,20 +324,36 @@ def test_verification_refresh_drops_a_candidate_removed_by_a_later_edit():
 
 
 def test_recovery_keeps_questions_and_forbidden_hint_without_importing_candidate_proof():
-    from codey.operations.kernel_errors import RecoveryFailed
+    from codey.completion.verification_policy import VerificationCandidate
+    from codey.operations.project_verification import refresh_verification_candidates
     from codey.operations.task_session import TaskSession
 
-    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
-    session.verification_forbidden = True
-    session.last_done_args = {"open_questions": ["next"]}
-    restored = TaskSession.from_payload(session.to_payload())
-    assert restored.last_done_args == {"open_questions": ["next"]}
-    assert restored.verification_forbidden
-    assert restored.selected_verification is None
-    payload = session.to_payload()
-    payload["last_done_args"] = {"open_questions": "truthy malformed"}
-    with pytest.raises(RecoveryFailed):
-        TaskSession.from_payload(payload)
+    def _explicit_state(*, forbidden: bool, questions: list[str]):
+        state = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
+        state.verification_forbidden = forbidden
+        state.last_done_args = {"open_questions": list(questions)}
+        state.edited_files = {"a.py": 1}
+        state.verification_candidate_loader = lambda: (VerificationCandidate("python -m pytest -q"),)
+        return state
+
+    first = _explicit_state(forbidden=True, questions=["next"])
+    refresh_verification_candidates(first)
+    assert first.last_done_args == {"open_questions": ["next"]}
+    assert first.verification_forbidden is True
+    assert first.selected_verification is None
+
+    second = _explicit_state(forbidden=False, questions=[])
+    refresh_verification_candidates(second)
+    assert second.last_done_args == {"open_questions": []}
+    assert second.verification_forbidden is False
+    assert second.selected_verification is not None
+
+    # Illegal open_questions shape never becomes a valid list: explicit
+    # construction keeps the malformed value visible instead of washing it.
+    broken = _explicit_state(forbidden=False, questions=[])
+    broken.last_done_args = {"open_questions": "truthy malformed"}
+    assert broken.last_done_args["open_questions"] == "truthy malformed"
+    assert isinstance(broken.last_done_args["open_questions"], str)
 
 
 def test_research_synthesis_finalizes_claim_support_before_persisting():

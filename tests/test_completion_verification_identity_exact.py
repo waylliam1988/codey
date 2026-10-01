@@ -53,31 +53,30 @@ def test_stale_revision_with_matching_fingerprint_cannot_complete(tmp_path):
         "pytest", revision=1, passed=True, exit_code=0,
         workspace_revision=2, workspace_fingerprint=fp, cwd=".",
     )
-    from codey.operations import project_completion_checks as pcc
-
-    assert pcc._verification_identity_matches(
-        session.verifications[-1], session.workspace_fingerprint, session.workspace_revision,
-    ) is False
     assert evaluate(session, "done").complete is False
 
 
 def test_bool_string_zero_revision_cannot_complete(tmp_path):
-    from codey.operations import project_completion_checks as pcc
-
-    session, fp = _project_session(tmp_path, revision=7)
     for bad_rev in (True, "7", 0, -1, None):
-        row = {
+        session, fp = _project_session(tmp_path, revision=7)
+        session.verifications = [
+            {
+                "command": "pytest", "cwd": ".", "revision": 1, "passed": True,
+                "exit_code": 0, "workspace_revision": bad_rev, "workspace_fingerprint": fp,
+            }
+        ]
+        assert evaluate(session, "done").complete is False, bad_rev
+
+
+def test_mismatched_revision_blocks_even_when_fingerprint_matches(tmp_path):
+    session, fp = _project_session(tmp_path, revision=7)
+    session.verifications = [
+        {
             "command": "pytest", "cwd": ".", "revision": 1, "passed": True,
-            "exit_code": 0, "workspace_revision": bad_rev, "workspace_fingerprint": fp,
+            "exit_code": 0, "workspace_revision": 2, "workspace_fingerprint": fp,
         }
-        assert pcc._verification_identity_matches(row, fp, 7) is False, bad_rev
-
-
-def test_session_identity_requires_matching_revision_even_when_fingerprint_matches(tmp_path):
-    from codey.operations import project_completion_checks as pcc
-
-    _, fp = _project_session(tmp_path, revision=7)
-    assert pcc._workspace_identity_equal(2, fp, 7, fp) is False
+    ]
+    assert evaluate(session, "done").complete is False
 
 
 def test_stale_session_verification_does_not_count_as_fresh_success(tmp_path):
@@ -116,11 +115,6 @@ def test_matching_revision_and_fingerprint_can_proceed(tmp_path):
         "pytest", revision=1, passed=True, exit_code=0,
         workspace_revision=7, workspace_fingerprint=fp, cwd=".",
     )
-    from codey.operations import project_completion_checks as pcc
-
-    assert pcc._verification_identity_matches(
-        session.verifications[-1], fp, 7,
-    ) is True
     assert evaluate(session, "done").complete is True
 
 

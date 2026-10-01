@@ -362,7 +362,9 @@ class PersistenceTests(unittest.TestCase):
         execute_turn(session, [call], executors=ex, run_id="r", turn=2)
         self.assertEqual(made, ["read", "read"])
 
-    def test_payload_stays_bounded(self) -> None:
+    def test_formal_receipts_stay_bounded(self) -> None:
+        import json
+
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
@@ -370,11 +372,20 @@ class PersistenceTests(unittest.TestCase):
         policy = build_task_policy(
             TaskSubmission("s", "E:/tmp", "t", 8, False, "local"), task_kind="project")
         session = TaskSession(policy=policy, task_kind="project", project="E:/tmp", max_turns=8)
+        session.record_search("x" * 100000)
+        session.record_evidence("https://" + "y" * 100000, "z" * 100000)
         session.transcript_notes = ["x" * 100000]
-        payload = session.to_payload()
-        import json
-
-        self.assertLess(len(json.dumps(payload)), 20000)
+        # Record-time bounds keep refs small; transcript_notes is in-memory
+        # only (durable output goes via ManagedOutputStore refs, not raw text).
+        assert len(session.searches[0]) <= 240
+        assert len(session.evidence[0]["source_url"]) <= 500
+        assert len(session.evidence[0]["excerpt"]) <= 600
+        bounded = {
+            "searches": session.searches,
+            "evidence": session.evidence,
+            "edited": session.edited_files,
+        }
+        assert len(json.dumps(bounded)) < 20000
 
 
 class CompletionGateProdTests(unittest.TestCase):

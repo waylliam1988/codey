@@ -48,23 +48,40 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
         return
     if not isinstance(mapping, dict):
         raise ValueError("hit_targets must be a mapping")
+    # Two-phase: validate raw types/content and all conflicts into a local
+    # pending set first; only commit once the whole batch passes. Never wash
+    # illegal types via str() and never leave partial state behind.
+    pending: dict[str, dict[str, object]] = {}
     for hid, target in mapping.items():
         if type(hid) is not str or not hid:
             raise ValueError("hit id must be a non-empty string")
         if not isinstance(target, dict):
             raise ValueError("hit target must be a mapping")
-        url = str(target.get("url", "") or "").strip()[:500]
-        offset = target.get("offset", 0)
-        pages = str(target.get("pages", "") or "")[:40]
-        if not url or type(offset) is not int or offset < 0 or type(pages) is not str:
+        raw_url = target.get("url", "")
+        if type(raw_url) is not str:
+            raise ValueError("hit target url must be a string")
+        raw_offset = target.get("offset", 0)
+        if type(raw_offset) is not int or raw_offset < 0:
+            raise ValueError("hit target offset must be a nonnegative integer")
+        raw_pages = target.get("pages", "")
+        if type(raw_pages) is not str:
+            raise ValueError("hit target pages must be a string")
+        url = raw_url.strip()[:500]
+        pages = raw_pages[:40]
+        if not url:
             raise ValueError("hit target is malformed")
-        clean = {"url": url, "offset": offset, "pages": pages}
-        existing = (getattr(session, "hit_targets", {}) or {}).get(hid)
-        if existing is not None:
-            if existing != clean:
-                raise ValueError(f"conflicting hit target for {hid}")
-            continue
-        session.hit_targets[hid] = clean
+        clean = {"url": url, "offset": raw_offset, "pages": pages}
+        if hid in pending and pending[hid] != clean:
+            raise ValueError(f"conflicting hit target for {hid}")
+        pending[hid] = clean
+    existing_all = dict(getattr(session, "hit_targets", {}) or {})
+    for hid, clean in pending.items():
+        existing = existing_all.get(hid)
+        if existing is not None and existing != clean:
+            raise ValueError(f"conflicting hit target for {hid}")
+    for hid, clean in pending.items():
+        if hid not in session.hit_targets:
+            session.hit_targets[hid] = clean
 
 
 def _record_open_fact(session: TaskSession, name: str, args: dict[str, Any], result: ToolResult) -> None:

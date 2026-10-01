@@ -93,7 +93,7 @@ def run_ref(run_id: object) -> str:
 
 def _explicit_policy_denial(
     delegate: Any, call: ToolCall, *, project_path: Any = None
-) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None, bool] | None:
+) -> tuple[ToolResult, bool, int | None] | None:
     """Delegate guard for the explicit executor; fail-closed on outage.
 
     With a project path, a missing delegate means the project guard is
@@ -109,10 +109,7 @@ def _explicit_policy_denial(
                     "delegate unavailable with project path; refusing to run explicit executor",
                 ),
                 False,
-                "",
-                [],
                 None,
-                True,
             )
         return None
     try:
@@ -121,10 +118,7 @@ def _explicit_policy_denial(
         return (
             _error_result(call, "policy check unavailable; refusing to run executor"),
             False,
-            "",
-            [],
             None,
-            True,
         )
     if not handles:
         return None
@@ -136,10 +130,7 @@ def _explicit_policy_denial(
                 return (
                     ToolResult(call=call, model_text=f"ERROR: {message}"),
                     False,
-                    "",
-                    [],
                     None,
-                    True,
                 )
     except Exception as exc:
         # Fail closed: a policy-check outage never authorizes the
@@ -147,10 +138,7 @@ def _explicit_policy_denial(
         return (
             _error_result(call, f"policy check unavailable; refusing to run {call.name or '?'}: {exc}"),
             False,
-            "",
-            [],
             None,
-            True,
         )
     return None
 
@@ -165,7 +153,7 @@ def _run_via_delegate_or_fn(
     active_turn: int,
     tool_index: int,
     project_path: Any = None,
-) -> tuple[ToolResult, bool, str, list[dict[str, str]], int | None, bool]:
+) -> tuple[ToolResult, bool, int | None]:
     """Execute via explicit executor first, delegate as fallback.
 
     An injected ``executors`` entry wins so tests (and custom harnesses)
@@ -182,7 +170,7 @@ def _run_via_delegate_or_fn(
         try:
             produced = fn(call)
         except Exception as exc:
-            return _error_result(call, str(exc) or "tool failed"), False, "", [], None, True
+            return _error_result(call, str(exc) or "tool failed"), False, None
         if isinstance(produced, ToolResult):
             result = _consistent_tool_result(call, produced)
         elif isinstance(produced, str):
@@ -191,17 +179,17 @@ def _run_via_delegate_or_fn(
             result = ToolResult(call=call, model_text=str(produced))
         result, ok = _normalize_explicit_result(name, result)
         exit_code = strict_exit_code_or_none(result.audit.get("exit_code")) if name == "run" else None
-        return result, ok, "", [], exit_code, True
+        return result, ok, exit_code
     if delegate is not None and delegate.handles(name):
-        result, ok, opened, evidence, exit_code = delegate.execute(
+        result, ok, exit_code = delegate.execute(
             call,
             turn=active_turn,
             tool_index=tool_index,
         )
         result = _consistent_tool_result(call, result)
         result, ok, exit_code = _normalize_delegate_result(name, result, ok, exit_code)
-        return result, ok, opened, evidence, exit_code, True
-    return _error_result(call, f"unknown tool executor: {name or '?'}"), False, "", [], None, True
+        return result, ok, exit_code
+    return _error_result(call, f"unknown tool executor: {name or '?'}"), False, None
 
 
 def execute_turn(
@@ -488,7 +476,7 @@ def _execute_slots(
             settle(identity, call, blocked, ok=False)
             results.append(blocked)
             continue
-        result, ok, opened, evidence, exit_code, _handled = _run_via_delegate_or_fn(
+        result, ok, exit_code = _run_via_delegate_or_fn(
             delegate, runnable, session, call, name, active_turn=active_turn,
             tool_index=base_index + offset, project_path=project_path,
         )

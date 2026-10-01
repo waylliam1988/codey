@@ -37,7 +37,8 @@ class DelegateRunBoolExitCodeRejectedTests(unittest.TestCase):
                 def execute(self, call, *, turn=0, tool_index=0):
                     return (
                         ToolResult(call=call, model_text="ok", audit={"exit_code": False}),
-                        True, "", [], False,
+                        True,
+                        False,
                     )
 
             import unittest.mock as mock

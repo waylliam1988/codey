@@ -128,7 +128,7 @@ def test_success_then_unknown_then_new_success_allows_completion(tmp_path, monke
             return ToolResult(call=call, model_text="unknown", audit={})
         return ToolResult(call=call, model_text="ok", audit={"exit_code": 0})
 
-    result = run_task_kernel(
+    run_task_kernel(
         session,
         provider=WebThree(),
         provider_id="web",
@@ -167,4 +167,4 @@ def test_denied_run_is_not_recorded_as_success(tmp_path, monkeypatch):
     assert str(results[0].model_text).startswith("ERROR:")
     # Denied calls settle as errors; they must never become a passing
     # verification observation.
-    assert all(not (v.get("passed") is True) for v in session.verifications)
+    assert all(v.get("passed") is not True for v in session.verifications)

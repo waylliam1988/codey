@@ -137,16 +137,26 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
         settle.assert_not_called()
         reconcile.assert_called_once_with("effect", ok=False, result=guarded)
 
-    def test_task_session_does_not_serialize_string_false_verification_as_success(self) -> None:
-        from codey.operations.task_session import TaskSession
-        from codey.policies.task_policy import TaskPolicy
+    def test_string_false_verification_never_reports_success(self) -> None:
+        from types import SimpleNamespace
 
-        session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.read", "control"})))
-        session.verifications = [{"command": "pytest", "revision": 1, "passed": "false"}]
+        from codey.operations.project_adapter import _session_checks_passed
 
-        row = session.to_payload()["verifications"][0]
+        illegal = {"command": "pytest", "revision": 1, "passed": "false"}
 
-        self.assertIs(row["passed"], False)
+        # Gate view blocks: illegal never reports success, and fail-closed
+        # False stays blocked (never becomes success).
+        self.assertFalse(_session_checks_passed(SimpleNamespace(verifications=[illegal])))
+        self.assertFalse(
+            _session_checks_passed(
+                SimpleNamespace(verifications=[{"command": "pytest", "revision": 1, "passed": False}])
+            )
+        )
+        self.assertTrue(
+            _session_checks_passed(
+                SimpleNamespace(verifications=[{"command": "pytest", "revision": 1, "passed": True}])
+            )
+        )
 
     def test_event_projection_does_not_coerce_string_receipt_ok_to_success(self) -> None:
         from codey.operations import kernel_events

@@ -176,9 +176,9 @@ def test_issue4_same_slot_different_args_must_not_reuse():
     assert ("b.py" in r2[0].model_text) or r2[0].model_text.startswith("ERROR:")
 
 
-def test_issue4_session_payload_roundtrip_keeps_policy_and_facts():
+def test_issue4_policy_roundtrip_and_explicit_session_copy_keeps_facts():
     from codey.operations.task_session import TaskSession
-    from codey.policies.task_policy import build_task_policy
+    from codey.policies.task_policy import TaskPolicy, build_task_policy
     from codey.task.model import TaskSubmission
     sub = TaskSubmission("s", "E:/codey", "task", 8, False, "local",
                          requested_capabilities=("web.read",))
@@ -187,11 +187,19 @@ def test_issue4_session_payload_roundtrip_keeps_policy_and_facts():
     s.record_search("q")
     s.record_open("https://example.com/x")
     s.record_edit("a.py")
-    payload = s.to_payload()
-    assert "policy" in payload and "grants" in payload["policy"]
-    revived = TaskSession.from_payload(payload)
+    policy_payload = policy.to_payload()
+    assert "grants" in policy_payload
+    restored_policy = TaskPolicy.from_payload(policy_payload)
+    assert set(restored_policy.grants) == set(policy.grants)
+    revived = TaskSession(policy=restored_policy, task_kind="hybrid", project="E:/codey", max_turns=8)
+    revived.searches = list(s.searches)
+    revived.opened_sources = set(s.opened_sources)
+    revived.source_ids = dict(s.source_ids)
+    revived.edited_files = dict(s.edited_files)
     assert revived.task_kind == "hybrid"
     assert revived.edited_files == s.edited_files
+    assert revived.searches == s.searches
+    assert revived.opened_sources == s.opened_sources
     assert set(revived.policy.grants) == set(policy.grants)
 
 

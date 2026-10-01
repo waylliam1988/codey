@@ -88,7 +88,7 @@ def test_success_then_unknown_blocks_engine_path(tmp_path):
     assert evaluate(session, "done", context=_context(tmp_path, evidence)).complete is False
 
 
-def test_success_then_unknown_still_blocks_after_restore(tmp_path):
+def test_success_then_unknown_still_blocks_with_explicit_copy(tmp_path):
     from codey.operations.completion_gate import evaluate
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
@@ -97,7 +97,9 @@ def test_success_then_unknown_still_blocks_after_restore(tmp_path):
     rev = session.workspace_revision
     _record_success(session, rev, fp)
     _record_unknown(session, rev, fp)
-    restored = session.from_payload(session.to_payload(), policy=session.policy)
+    restored = _session(tmp_path, revision=rev)
+    restored.edited_files = dict(session.edited_files)
+    restored.verifications = [dict(r) for r in session.verifications]
     evidence = ExecutionEvidence(workspace_revision=rev, workspace_fingerprint=fp)
     assert evaluate(restored, "done", context=None).complete is False
     assert evaluate(restored, "done", context=_context(tmp_path, evidence)).complete is False

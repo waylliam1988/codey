@@ -1,13 +1,14 @@
-"""Persisted effect receipts retain strict exit codes across session restart."""
+"""Persisted effect receipts retain strict exit codes (log+receipt+gate, no payload)."""
 from __future__ import annotations
 
 import unittest
 
 
 class PersistedReceiptExitCodeRoundTripTests(unittest.TestCase):
-    def test_exit_code_survives_task_session_payload_round_trip(self) -> None:
+    def test_exact_int_exit_code_stays_success(self) -> None:
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
+        from codey.utils.refs import strict_exit_code, strict_verification_success
 
         session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.read", "control"})))
         session.executed["effect"] = {
@@ -19,13 +20,15 @@ class PersistedReceiptExitCodeRoundTripTests(unittest.TestCase):
             "exit_code": 0,
         }
 
-        restored = TaskSession.from_payload(session.to_payload(), policy=session.policy)
+        self.assertEqual(session.executed["effect"].get("exit_code"), 0)
+        self.assertIs(type(session.executed["effect"].get("exit_code")), int)
+        self.assertEqual(strict_exit_code(session.executed["effect"].get("exit_code")), 0)
+        self.assertTrue(strict_verification_success(True, session.executed["effect"].get("exit_code")))
 
-        self.assertEqual(restored.executed["effect"].get("exit_code"), 0)
-
-    def test_invalid_exit_code_is_not_persisted(self) -> None:
+    def test_string_exit_code_never_becomes_success(self) -> None:
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
+        from codey.utils.refs import strict_exit_code, strict_verification_success
 
         session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.read", "control"})))
         session.executed["effect"] = {
@@ -33,8 +36,8 @@ class PersistedReceiptExitCodeRoundTripTests(unittest.TestCase):
             "excerpt": "exit 0", "exit_code": "0",
         }
 
-        row = TaskSession.from_payload(session.to_payload(), policy=session.policy).to_payload()["executed"]["effect"]
-        self.assertNotIn("exit_code", row)
+        self.assertIsNone(strict_exit_code(session.executed["effect"].get("exit_code")))
+        self.assertFalse(strict_verification_success(True, session.executed["effect"].get("exit_code")))
 
 
 if __name__ == "__main__":

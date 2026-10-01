@@ -6,8 +6,6 @@ restore likewise rejects non-exact ints. Saving never launders these types.
 """
 from __future__ import annotations
 
-import copy
-
 import pytest
 
 
@@ -27,8 +25,9 @@ def test_valid_workspace_revision_accepts_exact_int():
 
 
 @pytest.mark.parametrize("bad_rev", [True, "1", 1.0])
-def test_verification_revision_restore_rejects_non_exact_int(tmp_path, bad_rev):
-    from codey.operations.kernel_errors import RecoveryFailed
+def test_verification_illegal_revision_never_matches_latest(tmp_path, bad_rev):
+    from codey.operations.completion_gate import evaluate
+    from codey.operations.project_completion_checks import _session_latest_verification
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.workspace.revision import workspace_fingerprint
@@ -44,11 +43,17 @@ def test_verification_revision_restore_rejects_non_exact_int(tmp_path, bad_rev):
     )
     session.record_edit("a.py", revision=1)
     session.set_workspace_state(7, fp)
-    session.record_verification(
-        "python -m pytest", 1, True, exit_code=0,
-        workspace_revision=7, workspace_fingerprint=fp, cwd=".",
-    )
-    payload = copy.deepcopy(session.to_payload())
-    payload["verifications"][0]["revision"] = bad_rev
-    with pytest.raises(RecoveryFailed):
-        TaskSession.from_payload(payload)
+    session.verifications = [
+        {
+            "command": "python -m pytest",
+            "revision": bad_rev,
+            "passed": True,
+            "exit_code": 0,
+            "workspace_revision": 7,
+            "workspace_fingerprint": fp,
+            "cwd": ".",
+        }
+    ]
+    # Gate view: illegal revision never matches the latest edit (blocked).
+    assert _session_latest_verification(session) is None
+    assert evaluate(session, "done", context=None).complete is False

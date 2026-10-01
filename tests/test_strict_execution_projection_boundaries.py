@@ -61,7 +61,7 @@ def test_project_delegate_rejects_string_false_outcome_ok() -> None:
 
     delegate = ExecutionDelegate(project_path=Path("."), tool_fns=ToolFns())
     delegate._policy_check = lambda _call: (False, "", False)
-    result, ok, _opened, _evidence, exit_code = delegate._execute_project(
+    result, ok, exit_code = delegate._execute_project(
         ToolCall(name="run", args={"command": "false", "path": "."})
     )
 

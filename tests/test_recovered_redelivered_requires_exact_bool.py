@@ -35,10 +35,9 @@ def test_redelivery_marker_requires_exact_bool(value):
 
 
 def test_true_redelivers_without_reexecution():
-    from codey.operations.kernel_recovery_result import spec_for_recovered_row
-
     from types import SimpleNamespace
 
+    from codey.operations.kernel_recovery_result import spec_for_recovered_row
     from codey.runtime.core.models import ToolCall
     from codey.toolchain.runtime import ToolOutcome
 

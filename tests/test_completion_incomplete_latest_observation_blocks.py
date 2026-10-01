@@ -104,13 +104,16 @@ def test_incomplete_old_record_followed_by_valid_success_completes(tmp_path):
     assert evaluate(session, "done", context=_context(tmp_path, evidence)).complete is True
 
 
-def test_incomplete_latest_still_blocks_after_session_restore(tmp_path):
+def test_incomplete_latest_still_blocks_with_explicit_state_copy(tmp_path):
     session = _session(tmp_path)
     fp = session.workspace_fingerprint
     rev = session.workspace_revision
     _record_success(session, rev, fp)
     _record_incomplete_failure(session, "missing_fingerprint", rev, fp)
-    restored = TaskSession.from_payload(session.to_payload(), policy=session.policy)
+    # Explicit state copy (no parallel persistence API): same facts, new object.
+    restored = _session(tmp_path, revision=rev)
+    restored.edited_files = dict(session.edited_files)
+    restored.verifications = [dict(r) for r in session.verifications]
     evidence = ExecutionEvidence(workspace_revision=rev, workspace_fingerprint=fp)
     assert evaluate(restored, "done", context=None).complete is False
     assert evaluate(restored, "done", context=_context(tmp_path, evidence)).complete is False

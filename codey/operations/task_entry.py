@@ -560,62 +560,110 @@ def _decide_auto(frame: RunFrame) -> str:
     return f"ACTION: {frame.task_kind}\nPLAN: {plan}" if plan else f"ACTION: {frame.task_kind}"
 
 
-def _direct_answer_gate(request: Any, answer: str) -> Any:
-    """Evaluate a direct answer against the common completion gate."""
+def _direct_answer_gate(request: Any, answer: str, *, run_id: str = "", project: str = "") -> Any:
+    """Single owner for direct-answer completion checks (no keyword guessing).
+
+    Uses the entry's real run identity and project path when provided;
+    falls back to the request only for legacy direct calls.
+    """
     from codey.operations.completion_gate import evaluate as gate_evaluate
     from codey.operations.task_session import TaskSession
 
+    effective_run_id = str(run_id or getattr(request, "run_id", "") or "")
+    effective_project = str(project or getattr(request, "project", "") or "")
     policy = build_task_policy_for_entry(request, "chat")
     session = TaskSession(
         policy=policy,
         task_kind="chat",
-        project=str(getattr(request, "project", "") or ""),
+        project=effective_project,
         max_turns=max(1, int(getattr(request, "max_turns", 8) or 8)),
         task_text=str(getattr(request, "task", "") or ""),
         project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
         verification_forbidden=_entry_verification_forbidden(request),
     )
     context = {
-        "run_id": str(getattr(request, "run_id", "") or ""),
+        "run_id": effective_run_id,
         "task": str(getattr(request, "task", "") or ""),
         "question": str(getattr(request, "task", "") or ""),
-        "project": str(getattr(request, "project", "") or ""),
+        "project": effective_project,
     }
     return gate_evaluate(session, answer, context=context)
+
+
+def evaluate_direct_answer_candidate(frame: Any, answer: str) -> Any:
+    """Shared direct-answer verdict for every entry (task_entry + auto_loop)."""
+    request = getattr(frame, "request", None)
+    return _direct_answer_gate(
+        request,
+        answer,
+        run_id=str(getattr(frame, "run_id", "") or ""),
+        project=str(getattr(frame, "project_text", "") or ""),
+    )
+
+
+def _direct_answer_blocked(frame: RunFrame, reason: str) -> ModeOutcome:
+    request = frame.request
+    return ModeOutcome({
+        "type": "task_done",
+        "run_id": frame.run_id,
+        "session_id": request.session_id,
+        "summary": reason,
+        "stop_reason": "blocked",
+        "turns": 1,
+        "max_turns": request.max_turns,
+        "provider": frame.provider_id,
+        "mode": "chat",
+        "receipt": {"display": {"summary": reason[:2000]}},
+    })
 
 
 def _direct_answer_outcome(frame: RunFrame, kind: str) -> ModeOutcome:
     request = frame.request
     summary = str(getattr(frame, "handoff", "") or "")
     try:
-        verdict = _direct_answer_gate(request, summary)
-    except Exception:
-        verdict = None
-    if verdict is not None and not verdict.complete:
+        verdict = evaluate_direct_answer_candidate(frame, summary)
+    except Exception as exc:
+        reason = (
+            f"Completion gate check failed ({type(exc).__name__}: {exc}); "
+            "cannot complete yet. Continue the task."
+        )
+        return _direct_answer_blocked(frame, reason)
+    if verdict is None:
+        return _direct_answer_blocked(
+            frame,
+            "Completion gate returned no verdict; cannot complete yet. Continue the task.",
+        )
+    try:
+        complete = verdict.complete
+    except Exception as exc:
+        return _direct_answer_blocked(
+            frame,
+            f"Completion gate verdict unreadable ({type(exc).__name__}); "
+            "cannot complete yet. Continue the task.",
+        )
+    if complete is True:
         return ModeOutcome({
             "type": "task_done",
             "run_id": frame.run_id,
             "session_id": request.session_id,
-            "summary": verdict.followup or "Not done yet. Continue the task.",
-            "stop_reason": "blocked",
+            "summary": summary,
+            "stop_reason": "done",
             "turns": 1,
             "max_turns": request.max_turns,
             "provider": frame.provider_id,
             "mode": "chat",
-            "receipt": {"display": {"summary": (verdict.followup or "")[:2000]}},
+            "receipt": {"display": {"summary": summary[:2000]}},
         })
-    return ModeOutcome({
-        "type": "task_done",
-        "run_id": frame.run_id,
-        "session_id": request.session_id,
-        "summary": summary,
-        "stop_reason": "done",
-        "turns": 1,
-        "max_turns": request.max_turns,
-        "provider": frame.provider_id,
-        "mode": "chat",
-        "receipt": {"display": {"summary": summary[:2000]}},
-    })
+    if complete is False:
+        try:
+            followup = str(getattr(verdict, "followup", "") or "")
+        except Exception:
+            followup = ""
+        return _direct_answer_blocked(frame, followup or "Not done yet. Continue the task.")
+    return _direct_answer_blocked(
+        frame,
+        "Completion gate verdict invalid; cannot complete yet. Continue the task.",
+    )
 
 
 def run_task_mode(

@@ -23,44 +23,12 @@ from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvi
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 
-def _workspace_identity_equal(ver_rev: object, ver_fp: object, cur_rev: object, cur_fp: object) -> bool:
-    """One strict workspace identity rule for every verification path.
-
-    Both revisions must be exact ``int`` (``bool`` rejected) with a valid
-    workspace value and equal; both fingerprints must be valid and equal.
-    Missing or malformed identity never matches.
-    """
-    if type(ver_rev) is not int or type(cur_rev) is not int:
-        return False
-    if not valid_workspace_revision(ver_rev) or not valid_workspace_revision(cur_rev):
-        return False
-    if ver_rev != cur_rev:
-        return False
-    ver_fp_text = str(ver_fp or "")
-    cur_fp_text = str(cur_fp or "")
-    if not valid_workspace_fingerprint(ver_fp_text) or not valid_workspace_fingerprint(cur_fp_text):
-        return False
-    return ver_fp_text == cur_fp_text
-
-
 def _task_requires_modification(session: Any) -> bool:
     """An explicit goal requirement applies independently of task profile."""
     if getattr(session, "project_changes_required", False) is True:
         return True
     policy = getattr(session, "policy", None)
     return "project_changes_required" in tuple(getattr(policy, "required_checks", ()) or ())
-
-
-def _verification_identity_matches(item: dict[str, Any], sess_fp: str, sess_rev: int) -> bool:
-    """Exit-0 verification passes only with matching file identity.
-
-    Both sides must carry a complete (revision, fingerprint) pair; missing
-    or mismatched identity never passes. Tasks that need no verification
-    return not_applicable upstream instead of relying on this helper.
-    """
-    return _workspace_identity_equal(
-        item.get("workspace_revision"), item.get("workspace_fingerprint"), sess_rev, sess_fp,
-    )
 
 
 def _refresh_completion_workspace(session: Any, context: Any) -> None:
@@ -70,8 +38,7 @@ def _refresh_completion_workspace(session: Any, context: Any) -> None:
     from codey.workspace.revision import workspace_fingerprint
 
     get = context.get if isinstance(context, dict) else lambda key: getattr(context, key, None)
-    # Post-review evaluation already refreshed the operation's evidence.
-    if get("project_evaluation") is not None or not session.edited_files:
+    if not session.edited_files:
         return
     root = getattr(session, "project", "") or get("project")
     if not root or not Path(root).is_dir():
@@ -169,27 +136,6 @@ def _resolve_selected_check(session: Any, context: Any) -> Any:
     return VerificationCandidate(command=command[:240], cwd=cwd[:240], source="kernel_session")
 
 
-def _synthesize_selected_check(provided: Any, session: Any) -> Any:
-    # Compatibility alias: the model run never redefines the requirement.
-    if provided is not None:
-        selected = getattr(session, "selected_verification", None)
-        if selected is not None and not _selected_equal(selected, provided):
-            raise ValueError("selected verification conflict: session and context disagree")
-        return provided
-    latest = _session_latest_verification(session)
-    if latest is None:
-        selected = getattr(session, "selected_verification", None)
-        return selected
-    selected = getattr(session, "selected_verification", None)
-    if selected is not None:
-        return selected
-    command = str(latest.get("command", "") or "").strip()
-    if not command:
-        return None
-    cwd = str(latest.get("cwd", ".") or ".").strip() or "."
-    return VerificationCandidate(command=command[:240], cwd=cwd[:240], source="kernel_session")
-
-
 def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tuple[str, ...]]:
     """Project ordered session verifications into execution evidence.
 
@@ -215,18 +161,25 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tupl
         edited = dict(getattr(session, "edited_files", {}) or {})
     except Exception:
         return evidence, ()
-    if not edited:
-        return evidence, ()
-    exact_edits = [v for v in edited.values() if type(v) is int]
-    if not exact_edits:
-        return evidence, ()
-    latest_edit = max(exact_edits)
     try:
         verifications = list(getattr(session, "verifications", ()) or [])
     except Exception:
         return evidence, ()
     if not verifications:
         return evidence, ()
+    exact_edits = [v for v in edited.values() if type(v) is int]
+    if exact_edits:
+        latest_edit = max(exact_edits)
+    else:
+        # Operation-confirmed scope may exist while memory edited_files is
+        # incomplete (e.g. resumed recovery). Fall back to the verifications'
+        # own latest revision so a legal recovery still projects; scope and
+        # task_changed already confirmed edits before reaching here.
+        revs = [r.get("revision", -1) for r in verifications if isinstance(r, dict)]
+        revs = [r for r in revs if type(r) is int]
+        if not revs:
+            return evidence, ()
+        latest_edit = max(revs)
     from codey.utils.refs import strict_verification_success
 
     observe = getattr(evidence, "observe_check", None)
@@ -334,11 +287,10 @@ def _normalized_scope_and_change(session: Any, context: Any) -> tuple[tuple[str,
 
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck]:
     get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
-    provided = get("project_evaluation")
-    if provided is not None:
-        proof = provided.decision.proof
-        if proof is not None:
-            return list(proof.checks)
+    # A precomputed project_evaluation is never a bypass: mandatory
+    # requirements are always recomputed from current session facts and the
+    # current context. Reuse (evidence_refs merging) happens in the gate
+    # after the fresh checks pass, never as an early return here.
     try:
         scope, task_changed = _normalized_scope_and_change(session, context)
         # A failed candidate refresh leaves the requirement untrustworthy:

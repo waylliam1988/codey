@@ -528,17 +528,17 @@ class RecoveryTests(unittest.TestCase):
             executed.append("web_search")
             return ToolResult(call=call, model_text="found https://example.com/a")
 
-        # First run executes once; the persisted delivery (not the bounded
-        # session payload) carries the full result across the switch.
+        # First run executes once; the durable delivery carries the full
+        # result across the switch.
         plan = normalize_turn('{"tool":"web_search","args":{"query":"q"}}', policy=policy)
         results = execute_turn(session, plan.calls, executors={"web_search": fake_search},
                                run_id="run-1", turn=1)
         self.assertEqual(len(results), 1)
         delivered = {turn_effect_id("run-1", 1, 0): results[0]}
-        payload = session.to_payload()
-        from codey.operations.task_session import TaskSession as RevivedSession
-
-        revived = RevivedSession.from_payload(payload, policy=policy)
+        # Explicit state copy: same identity + facts.
+        revived = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=8)
+        revived.searches = list(session.searches)
+        revived.search_results = dict(session.search_results)
         again = execute_turn(revived, plan.calls, executors={"web_search": fake_search},
                              run_id="run-1", turn=1, delivered=delivered)
         self.assertEqual(executed, ["web_search"])

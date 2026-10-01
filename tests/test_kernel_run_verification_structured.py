@@ -53,7 +53,7 @@ class StructuredRunVerificationTests(unittest.TestCase):
         session = _session()
         call = ToolCall(name="run", args={"command": "echo hi"}, call_id="c2")
         # Injected executor path: raw string result with pass text, no exit code.
-        result, ok, opened, evidence, exit_code, handled = ke._run_via_delegate_or_fn(
+        result, ok, exit_code = ke._run_via_delegate_or_fn(
             None, {"run": lambda c: "all pass OK"}, session, call, "run",
             active_turn=1, tool_index=0,
         )

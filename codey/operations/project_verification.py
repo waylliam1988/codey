@@ -8,7 +8,7 @@ def _validate_candidates(rows: object) -> tuple:
     from codey.completion.verification_policy import VerificationCandidate
 
     if rows is None:
-        return ()
+        raise ValueError("verification candidates loader returned None")
     if not isinstance(rows, (list, tuple)):
         raise ValueError("verification candidates must be a list or tuple")
     cleaned: list = []
@@ -33,10 +33,12 @@ def refresh_verification_candidates(session) -> None:
 
         try:
             fresh = _validate_candidates(loader())
-        except (OSError, TypeError, ValueError):
+        except Exception:
             # Preserve the known requirement; never clear to empty on
             # failure and never mark the epoch as successfully refreshed.
             # A legal empty return is distinct: it succeeds and clears.
+            # None, illegal members, and any loader/validation error all
+            # fail closed here.
             with contextlib.suppress(Exception):
                 session.verification_candidates_refresh_failed = True
             return

@@ -69,9 +69,7 @@ def test_probe_baseline_arm_denies_source_search():
     assert ab._arm_controller_denied("source_search") == ()
 
 
-def test_denied_scope_survives_session_payload_roundtrip():
-    from codey.operations.task_session import TaskSession
-
+def test_denied_scope_survives_explicit_state_copy():
     session = _opened_session(denied=("source_search",))
-    clone = TaskSession.from_payload(session.to_payload(), policy=session.policy)
+    clone = _opened_session(denied=tuple(session.controller_denied))
     assert tuple(clone.controller_denied) == ("source_search",)

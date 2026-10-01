@@ -2,8 +2,85 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
-## Unreleased - Single verification decision, real unknown observation, entry requirements, canonical source facts, exact redelivery, legacy alias removal, real soak completion (no release)
+## Unreleased - Fail-closed direct gate, loader None, auto continuation, stale-proof block, real recovery, payload removal, hit atomicity, slot convergence, replay identity (no release)
 
+- TDD red-first locks (7 new files, all failed before, pass after):
+  `test_direct_answer_gate_failure_never_completes` (gate exception/`None`/illegal
+  verdict never completes; plain greeting still completes),
+  `test_verification_loader_none_preserves_requirement` (`None` loader preserves
+  the required `pytest`, marks refresh failed, blocks `compileall` substitution
+  on the gate and on the real `run_task_kernel`; legal recovery restores),
+  `test_auto_direct_answer_continues_to_kernel` (sources task continues to the
+  research kernel in the same run instead of terminating `blocked`; greeting
+  stays single-shot; gate uses `frame.run_id`/`frame.project_text`, not empty
+  `request.run_id`),
+  `test_project_evaluation_reuse_blocked` (stale passing proof blocks on
+  refresh-failed/missing-edits/workspace-changed; fresh legal passes;
+  operation-confirmed scope completes despite incomplete memory),
+  `test_session_log_receipt_recovery_preserves_facts` rewritten to the formal
+  entry (separate `project/`+`state/`+`log/`, real `RuntimeSessionLog`+
+  `ManagedOutputStore`+`WorkspaceRevisionStore`+`KernelEffectSink`,
+  `execute_turn` edit+run receipts, reopen stores, `recover_effects_for_resume`
+  + formal `_entry_recovery`, no file rewrite, no hand-made identity; legal
+  completes, unknown blocks, post-verify edit blocks, forged identity never
+  trusted, native call ids survive, second restart idempotent, single-turn 25
+  kept plus multi-turn kernel accumulation),
+  `test_hit_targets_raw_types_atomic_commit` (non-string url/pages and
+  bool/float offset rejected without `str()` washing; illegal/conflicting
+  second row leaves no partial state; same-id-same-target idempotent),
+  `test_task_session_has_no_parallel_persistence_api` (deletion lock).
+  `test_completion_view_normalize_keeps_identity` (fingerprint-only change
+  makes normalized views unequal; same relative content across temp dirs stays
+  equal) plus `test_real_pytest_assertion_failure_blocks_with_failed_observation`
+  (real `assert 1 == 2` blocks as failed, not unknown).
+- P1 fail-closed direct gate: `task_entry._direct_answer_outcome` only completes
+  on `verdict.complete is True`; gate exceptions/`None`/illegal verdicts block
+  with the failure reason preserved; `evaluate_direct_answer_candidate` is the
+  single owner using `frame.run_id`/`frame.project_text`; `auto_loop`
+  `_direct_gate_allows` removed; rejected auto direct answers record the first
+  exchange once then continue the same run into the existing research/project
+  kernel with the original authorization (honest block only when no capable
+  kernel exists).
+- P1 loader `None`: `_validate_candidates` rejects `None`; any loader/validation
+  exception marks `verification_candidates_refresh_failed` and preserves the
+  known requirement and epoch; legal `()` stays distinct.
+- P2 stale-proof block: `project_completion_checks._engine_checks` never
+  early-returns `project_evaluation` checks; `_refresh_completion_workspace`
+  always refreshes from current files; `project_completion_enforcement`
+  passes full `scope_files`/`task_changed`/`changes`/`selected_check`/
+  `execution_evidence`/`analysis_run_payloads`/`checkpoint_green` to the gate
+  and syncs `verification_forbidden`; `_evidence_with_session_facts` falls back
+  to the verifications' latest revision when memory `edited_files` is
+  incomplete so operation-confirmed scope still completes.
+- P2 real recovery: `test_session_log_receipt_recovery_preserves_facts` now
+  proves legal recovery completes via the real gate, illegal never validates,
+  and replays never re-execute; `TaskSession.to_payload/from_payload` and its
+  private strict helpers deleted (~350 lines); remaining callers migrated to
+  explicit state copies, real-log recovery, or direct gate checks;
+  `TaskPolicy.to_payload/from_payload` retained as the formal authorization
+  path; `test_task_entry_kernel_prod.test_payload_stays_bounded` became
+  `test_formal_receipts_stay_bounded` (record-time bounds + managed-output
+  refs, not a parallel payload).
+- P2 hit atomicity: `kernel_facts._apply_hit_targets` validates raw
+  `url`/`offset`/`pages` types before any `str()`/truncation and commits the
+  whole batch atomically after checking intra-batch and existing-id conflicts.
+- P3 hygiene: `research_flow` forwarding shim and mid-import lambda removed
+  (`functools.partial` with a lazy canonical import inside `iteration`, no
+  `E402`, mock-compatible); `_synthesize_selected_check`,
+  `task_execution._attach_hit_ids`, `TaskSession.record_hit`,
+  `project_completion_checks._workspace_identity_equal`/
+  `_verification_identity_matches` deleted (identity tests moved to the real
+  gate); `_build_hit_mapping` dead `batch.values()` branch removed;
+  execution returns converged to `(result, ok, exit_code)` with source facts
+  read only from `ToolResult.canonical` (`ExecutionDelegate.execute`,
+  `_execute_project`, `_execute_research`, `_run_via_delegate_or_fn`,
+  `_execute_slots` plus tuple-length test mocks updated; no new result
+  framework).
+- P3 replay honesty: `tests/stress/..._normalize_completion_view` keeps
+  `workspace_fingerprint`/`verification_fingerprint`, revisions, required
+  checks and decision state, relativizes only temp roots, and sorts proof
+  checks safely; fingerprint-only edits compare unequal; same relative content
+  across temp homes compares equal.
 - TDD red-first locks (13 new files, all failed before, pass after):
   `test_kernel_unknown_verification_invalidates_success` (real `run_task_kernel`
   success-then-unknown with `None`/`False`/`True`/`"0"`/`0.0` records `passed=False`

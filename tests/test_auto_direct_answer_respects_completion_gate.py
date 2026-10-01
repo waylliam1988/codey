@@ -5,8 +5,6 @@ a plain greeting with no requirements still completes in one shot.
 """
 from __future__ import annotations
 
-import pytest
-
 
 def _auto_frame(task, **overrides):
     from codey.operations.context import RunFrame

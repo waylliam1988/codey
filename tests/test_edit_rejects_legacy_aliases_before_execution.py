@@ -35,7 +35,7 @@ def test_legacy_top_level_alias_rejected(tmp_path):
 
     _session, delegate = _delegate(tmp_path)
     call = ToolCall("edit", {"path": "a.py", "old_string": "hello", "new_string": "hi"})
-    result, ok, _o, _e, _x = delegate.execute(call)
+    result, ok, _x = delegate.execute(call)
     assert ok is False
     assert str(result.model_text).startswith("ERROR:")
 
@@ -45,7 +45,7 @@ def test_legacy_replacement_alias_rejected(tmp_path):
 
     _session, delegate = _delegate(tmp_path)
     call = ToolCall("edit", {"path": "a.py", "replacements": [{"old_string": "hello", "new_string": "hi"}]})
-    result, ok, _o, _e, _x = delegate.execute(call)
+    result, ok, _x = delegate.execute(call)
     assert ok is False
     assert str(result.model_text).startswith("ERROR:")
 
@@ -55,7 +55,7 @@ def test_canonical_replacement_edits(tmp_path):
 
     _session, delegate = _delegate(tmp_path)
     call = ToolCall("edit", {"path": "a.py", "replacements": [{"search": "hello", "replace": "hi"}]})
-    result, ok, _o, _e, _x = delegate.execute(call)
+    result, ok, _x = delegate.execute(call)
     assert ok is True
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "hi\n"
 
@@ -65,7 +65,7 @@ def test_no_change_reports_unchanged(tmp_path):
 
     _session, delegate = _delegate(tmp_path)
     call = ToolCall("edit", {"path": "a.py", "replacements": [{"search": "missing", "replace": "hi"}]})
-    result, ok, _o, _e, _x = delegate.execute(call)
+    result, ok, _x = delegate.execute(call)
     # Missing search either errors or reports unchanged without writing.
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "hello\n"
 

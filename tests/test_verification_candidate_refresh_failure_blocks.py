@@ -15,7 +15,6 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
-
 FP = "sha256:" + "b" * 64
 
 

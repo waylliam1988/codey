@@ -8,7 +8,6 @@ from __future__ import annotations
 
 
 def _frame(task, model_hint=""):
-    from types import SimpleNamespace
 
     from codey.operations.context import RunFrame
     from codey.task.model import TaskSubmission

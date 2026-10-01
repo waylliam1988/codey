@@ -192,7 +192,7 @@ def test_forbidden_with_real_edit_defers_to_other_checks(tmp_path, with_evidence
             "run_id": "forbidden-with-edit",
             "task": "fix a.py",
         }
-    verdict = evaluate(session, "done", context=context)
+    evaluate(session, "done", context=context)
     # Verification is exempt; the edit requirement is satisfied so the gate
     # must not fail on missing verification (other domains may still block,
     # but the project check itself must not demand a run).

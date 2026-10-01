@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from codey.completion.contract import CHECK_FAIL, CHECK_PASS, completion_check
 from codey.operations.completion_gate import (
+    evaluate,
     register_completion_check_provider,
     unregister_completion_check_provider,
 )
-from codey.operations.completion_gate import evaluate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 
