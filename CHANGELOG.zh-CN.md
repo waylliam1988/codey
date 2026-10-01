@@ -2,6 +2,29 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 本地模型 canonical edit 协议与实机复测（未发布）
+
+- 将 edit 的唯一规范形状收敛为 `replacements[{old_string,new_string}]`；native schema、prompt、codec、repair、ToolSpec 和 kernel validator 使用同一协议，kernel 不再处理模型方言或历史别名。
+- 新增协议漂移回归测试，确认旧 `search/replace`、`old/new`、`before/after` 等别名在执行前拒绝，provider 适配仍是模型模板的唯一边界。
+- 使用 KoboldCpp Gemma 12B 对 Pi 与 Codey 做独立项目 A/B 复测：两边均能完成正确 edit 和测试；Codey 在 2048/4096 预算下实际修改与测试均成功，但模型最后的完成响应被截断，因此严格终态为 provider failure，未产生 false completion 或 duplicate mutation。8192 轮因本地生成持续增长而中止，不计入统计。
+- 详细记录见 [LOCAL_MODEL_PI_AB_REPORT.zh-CN.md](tests/manual/LOCAL_MODEL_PI_AB_REPORT.zh-CN.md)。
+
+## Unreleased - Provider 响应归一化与有界截断续轮（未发布）
+
+- 保持 kernel 只接收 `AssistantTurn` / `ProviderToolCall`；Gemma 的
+  `[TOOLCALL REASONING]`、`final_decision` 和 `tool_name` 只作为 provider metadata，
+  不会被推断成工具调用或完成信号。
+- 增加 Ollama 原生 `/api/chat` 响应 codec：稳定生成缺失 call id，归一化
+  `done_reason`，仅把真实 `message.tool_calls` 转为标准 assistant turn。
+- 本地 OpenAI-compatible provider 对 `finish_reason=length` 允许一次正常续轮；第二次
+  截断返回 `provider_failure`，普通文本永远不能绕过 `done` completion gate。
+- TDD 新增 provider contract、Gemma metadata、Ollama normalization、一次续轮和二次
+  截断失败测试。全量验证：**6415 passed，32 skipped，1488 subtests passed**；`ruff check .`
+  通过。
+- 2026-10-02 KoboldCpp Gemma 12B 实机：done probe 产生 1 次 native `done` 和 1 个
+  `task_done`；coding A/B 两边都完成正确 patch 和测试，Codey 因末轮第二次
+  `finish_reason=length` 以 `provider_failure` 结束，无 false completion、无 duplicate mutation。
+
 ## Unreleased - 原授权不变、持久事实恢复、auto 同窗续跑（未发布）
 
 - 首个工具前保存原策略；恢复缺失/非法时拒绝，已设置的快照不可替换。拒绝项、来源要求、必须修改和禁止验证无损持久化，不洗类型。

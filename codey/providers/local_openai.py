@@ -177,39 +177,47 @@ class LocalOpenAIProvider:
         close/new_chat/abandon) never mutates history.
         """
         from codey.providers.base import AssistantTurn, ProviderToolCall
+        from codey.providers.local_response_codec import normalize_local_reply
 
         parsed, dropped = _parse_tool_calls(message)
+        text = str(message.get("content") or "")
+        metadata_turn = normalize_local_reply(text)
+        provider_metadata = {}
+        if isinstance(metadata_turn, AssistantTurn):
+            provider_metadata = dict(metadata_turn.raw)
+            text = metadata_turn.text
         if generation is not None and generation != self._generation:
-            text = str(message.get("content") or "")
             return AssistantTurn(
                 text=text,
                 tool_calls=tuple(
                     ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
                     for call in parsed
                 ) if not dropped else (),
-                raw={"finish_reason": str(message.get("_finish_reason") or ""), "stale_generation": True},
+                raw={"finish_reason": str(message.get("_finish_reason") or ""), "stale_generation": True,
+                     "continuable_length": bool(message.get("_continuable_length")), **provider_metadata},
             )
         if dropped:
             self._messages = (
                 [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
             )
-            text = str(message.get("content") or "")
             if not text:
                 text = f"ERROR: local model returned {dropped} malformed tool call(s) without ids"
             return AssistantTurn(
                 text=text,
                 tool_calls=(),
-                raw={"finish_reason": str(message.get("_finish_reason") or ""), "malformed_dropped": dropped},
+                raw={"finish_reason": str(message.get("_finish_reason") or ""), "malformed_dropped": dropped,
+                     **provider_metadata},
             )
         self._messages = candidate
         self._messages.append(_store_assistant_message(message))
         return AssistantTurn(
-            text=str(message.get("content") or ""),
+            text=text,
             tool_calls=tuple(
                 ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
                 for call in parsed
             ),
-            raw={"finish_reason": str(message.get("_finish_reason") or "")},
+            raw={"finish_reason": str(message.get("_finish_reason") or ""),
+                 "continuable_length": bool(message.get("_continuable_length")), **provider_metadata},
         )
 
     def send_turn(
@@ -414,8 +422,6 @@ class LocalOpenAIProvider:
         kind = errors.classify_openai_choice(choice)
         if kind == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
             raise errors.ContextOverflowError("local model context overflow (finish_reason=length)")
-        if kind == errors.ProviderErrorKind.OUTPUT_LENGTH:
-            raise errors.OutputLengthError()
         if kind == errors.ProviderErrorKind.FATAL:
             raise RuntimeError(
                 "local model content filtered "
@@ -424,13 +430,23 @@ class LocalOpenAIProvider:
         message = choice.get("message")
         if not isinstance(message, dict):
             raise RuntimeError("local model returned a choice without message content")
+        raw_calls = message.get("tool_calls")
+        if kind == errors.ProviderErrorKind.OUTPUT_LENGTH and raw_calls:
+            raise errors.OutputLengthError(
+                "model output truncated while emitting tool calls; refusing partial tool execution"
+            )
         out: dict[str, object] = {
             "content": message.get("content") or "",
             "_finish_reason": str(choice.get("finish_reason") or ""),
         }
+        if kind == errors.ProviderErrorKind.OUTPUT_LENGTH:
+            # Preserve a text-only length stop as a continuable assistant turn.
+            # Tool calls are parsed below and malformed/truncated arguments
+            # remain fail-closed; the kernel may spend one normal turn asking
+            # the local provider to continue or call done.
+            out["_continuable_length"] = True
         if "tool_calls" in message and not isinstance(message.get("tool_calls"), list):
             raise RuntimeError("local model returned malformed tool_calls")
-        raw_calls = message.get("tool_calls")
         if isinstance(raw_calls, list):
             out["tool_calls"] = raw_calls
         return out

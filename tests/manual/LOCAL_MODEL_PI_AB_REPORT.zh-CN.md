@@ -97,3 +97,50 @@ r7 是当前修复后的稳定版本在同一模型和同一任务上的最终�
 如果目标是需要真实修改、测试证明、避免重复副作用、失败可解释、后续可恢复的编码任务，当前证据支持优先使用 Codey。Codey 的优势不是“更会想”，而是把模型输出转换成受约束、可验证、可恢复的执行过程。
 
 下一步要补的是**真实中断恢复 A/B**：在同一任务中注入 provider timeout、进程崩溃和 SSE reconnect，然后比较两边是否能恢复、是否重复 mutation，以及恢复后的最终 receipt 是否一致。
+
+## 7. canonical old/new 协议后的复测（2026-10-02）
+
+本节是协议收敛到唯一 `replacements[{old_string,new_string}]` 后的独立复测。模型仍为同一 KoboldCpp Gemma 12B，temperature 为 `0`，Pi 与 Codey 使用同一任务和同一 `max_tokens`，每个 arm 使用独立临时项目。
+
+| 预算 | Pi | Codey | 说明 |
+|---:|---|---|---|
+| 2048 | patch/测试通过，task success | patch/测试通过，但 `finish_reason=length`，task failure | Codey 已完成 1 次 edit 和测试，末轮未生成完成调用；严格终态为 provider failure |
+| 4096 | patch/测试通过，task success | patch/测试通过，但仍 `finish_reason=length` | Codey 仍无重复 mutation；不能把截断当成完成 |
+| 8192 | 未形成完整结果 | 未形成完整结果 | KoboldCpp 生成持续增长，客户端断开；该轮未写入 `result.json`，不计入统计 |
+
+2048 与 4096 的完整记录位于 `artifacts/real-local-ab-20261001-final` 和 `artifacts/real-local-ab-20261002-final`。Codey 的事件日志显示：两轮都只读两次、编辑一次、运行一次，没有重复 mutation、没有重复工具调用、没有 false completion；失败发生在最后的结束响应被模型截断之后。该行为说明当前内核正确保留了“未收到合法完成调用就不能宣布成功”的约束。
+
+这次复测没有证明旧 kernel 更好。旧 kernel 对工具参数形状更宽松，冷启动时更容易把 schema 漂移隐藏起来；当前 kernel 使用单一 canonical old/new 协议，并把模型模板解析留在 provider 层，协议错误和截断会显式失败。对于本地 Gemma，当前剩余限制是 provider/model 的结束调用和输出预算，不应通过 kernel fallback 放宽。
+
+## 8. Provider 归一化与有界截断续轮（2026-10-02 TDD）
+
+本轮先写红测，再实现 provider 层协议：
+
+```text
+模型原始响应 -> provider codec -> AssistantTurn / ProviderToolCall -> kernel
+```
+
+Gemma/KoboldCpp 实际输出的：
+
+```text
+[TOOLCALL REASONING]: {"reasoning":"...","final_decision":"yes|no","tool_name":"..."}
+```
+
+被记录为 `AssistantTurn.raw.provider_metadata`。`final_decision` 和 `tool_name` 不会
+生成工具调用，也不会使普通文本完成任务。Ollama 原生 `/api/chat` 的 `message.tool_calls`
+通过独立 codec 归一化；缺失 call id 时使用稳定的 provider 层 id。kernel 没有加入
+Gemma、Qwen、Ollama 或 DeepSeek 字段。
+
+`finish_reason=length` 的策略是一次续轮：续轮消耗正常 turn budget，模型必须自己发出
+合法工具调用或 `done`。再次 `length` 直接是 `provider_failure`；“Tests passed”之类的
+普通文本不会进入 completion gate，也不能完成任务。
+
+### 本轮实机证据
+
+| Probe | 结果 |
+|---|---|
+| `real_local_done_probe.py`，Gemma 12B，`max_tokens=512` | 1 次 native `done` 请求，1 个 `task_done`，Codey `stop_reason=done`；同一服务也观测到普通文本 `finish_reason=length`，没有被当成完成 |
+| `real_local_ab.py`，Gemma 12B，temperature 0，`max_tokens=2048` | Pi：patch/测试通过，task success；Codey：patch/测试通过，1 次 edit、无 duplicate mutation，但末轮第二次 `length`，严格终态 `provider_failure` |
+
+这说明 Pi 捕获的是 provider 标准 `stopReason=length`，不是 Gemma 的
+`final_decision` 字段。Codey 采用同一原则，同时保留一次有界续轮和严格完成门。

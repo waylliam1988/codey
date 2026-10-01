@@ -36,6 +36,17 @@ Research 的旧 `controller.py` 与 `protocols.py` 已移出生产包；需要�
 
 ## 核心结论
 
+Provider 响应必须先归一化，再进入共享内核：
+
+```text
+原始响应 -> provider codec -> AssistantTurn / ProviderToolCall -> kernel
+```
+
+模型模板、reasoning 标记、Gemma `final_decision`、Qwen/DeepSeek 特殊字段和 Ollama
+原生 envelope 属于 provider 层。kernel 只校验标准工具调用、`done` 参数、policy 和
+completion gate。普通文本不能自动完成；`finish_reason=length` 只允许 provider 标记的
+一次续轮，第二次截断必须失败。
+
 coding 和 research 都要纳入 tool protocol portability，但不能强行统一模型可见工具名，也不需要为了“看起来统一”新增一套 semantic taxonomy。
 
 ```text

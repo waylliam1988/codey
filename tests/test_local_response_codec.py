@@ -7,7 +7,11 @@ from codey.operations.kernel_protocol import normalize_turn
 from codey.operations.kernel_transport import call_provider_send
 from codey.providers.base import AssistantTurn
 from codey.providers.local_openai import LocalOpenAIProvider
-from codey.providers.local_response_codec import normalize_local_reply, parse_local_tool_markup
+from codey.providers.local_response_codec import (
+    normalize_local_reply,
+    normalize_ollama_response,
+    parse_local_tool_markup,
+)
 
 
 def test_local_gemma_frame_normalizes_to_standard_tool_call() -> None:
@@ -87,3 +91,57 @@ def test_local_codec_output_still_uses_kernel_toolspec_and_policy_validation() -
 
     assert plan.calls == []
     assert plan.protocol_error
+
+
+def test_gemma_final_decision_is_provider_metadata_only() -> None:
+    turn = normalize_local_reply(
+        '[TOOLCALL REASONING]: {"reasoning":"tests passed","final_decision":"yes","tool_name":"edit"}'
+    )
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.tool_calls == ()
+    assert turn.raw["provider_metadata"] == {
+        "reasoning": "tests passed",
+        "final_decision": "yes",
+        "tool_name": "edit",
+    }
+
+
+def test_unknown_final_decision_is_not_a_tool_call() -> None:
+    turn = normalize_local_reply(
+        '[TOOLCALL REASONING]: {"final_decision":"maybe","tool_name":"unknown"}'
+    )
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.tool_calls == ()
+
+
+def test_ollama_native_response_normalizes_to_assistant_turn() -> None:
+    turn = normalize_ollama_response({
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "function": {"name": "done", "arguments": {"summary": "finished"}},
+            }],
+        },
+        "done": True,
+        "done_reason": "stop",
+    })
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.tool_calls[0].name == "done"
+    assert turn.tool_calls[0].id.startswith("ollama-")
+    assert turn.raw["finish_reason"] == "stop"
+
+
+def test_ollama_plain_text_is_not_completion() -> None:
+    turn = normalize_ollama_response({
+        "message": {"role": "assistant", "content": "Tests passed."},
+        "done": True,
+        "done_reason": "stop",
+    })
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.text == "Tests passed."
+    assert turn.tool_calls == ()

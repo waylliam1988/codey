@@ -52,6 +52,49 @@ def _is_native_provider(provider: Any, *, provider_id: object = "") -> bool:
     return _transport.provider_uses_native(provider, provider_id=provider_id)
 
 
+def _local_length_continuation_prompt(reply: Any, *, native: bool, provider_id: object, used: bool) -> str | None:
+    if used or not native or str(provider_id or "") != "local":
+        return None
+    action = _local_length_reply_action(reply, used=False, turns=0)
+    return action if isinstance(action, str) else None
+
+
+def _local_length_reply_action(
+    reply: Any, *, native: bool, provider_id: object, used: bool, turns: int,
+) -> KernelResult | str | None:
+    if not native or str(provider_id or "") != "local":
+        return None
+    raw = getattr(reply, "raw", None)
+    if not isinstance(raw, Mapping) or raw.get("continuable_length") is not True:
+        return None
+    if used:
+        return KernelResult(
+            completed=False,
+            summary="local provider emitted finish_reason=length twice",
+            turns=turns,
+            stop_reason="provider_failure",
+        )
+    if getattr(reply, "tool_calls", ()):
+        return None
+    return (
+        "Your previous response was truncated before a tool call. "
+        "Continue the task with the next required tool call, or call "
+        "done(summary) if the verified task is complete. Do not output "
+        "ordinary explanation."
+    )
+
+
+def _consume_local_length_reply(
+    reply: Any, *, native: bool, provider_id: object, used: bool, turns: int,
+) -> tuple[KernelResult | None, str | None]:
+    action = _local_length_reply_action(
+        reply, native=native, provider_id=provider_id, used=used, turns=turns,
+    )
+    if isinstance(action, KernelResult):
+        return action, None
+    return None, action if isinstance(action, str) else None
+
+
 def _provider_failure(exc: Exception, turns_used: int, *, propagate: bool) -> KernelResult:
     if propagate:
         raise exc
@@ -341,7 +384,14 @@ def _completion_context_with_ignores(context: Any, ignored_paths: Any) -> Any:
     return context
 
 
-def run_task_kernel(
+def _resume_start(value: object) -> int:
+    try:
+        return max(1, int(value)) if value is not None else 1
+    except (TypeError, ValueError):
+        return 1
+
+
+def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machine
     session: TaskSession,
     *,
     provider: Any,
@@ -415,16 +465,14 @@ def run_task_kernel(
         return KernelResult(
             completed=False, summary=f"controller configuration error: {exc}", turns=0, stop_reason="controller_failure"
         )
-    try:
-        resume_start = max(1, int(start_turn)) if start_turn is not None else 1
-    except (TypeError, ValueError):
-        resume_start = 1
+    resume_start = _resume_start(start_turn)
     try:
         pending_initial = list(initial_results or [])
     except Exception:
         pending_initial = []
     turns_used = 0
     invalid_turns = 0
+    length_continuations = 0
     progress = KernelProgress(stagnant_turns)
     prev_contract: str = str(initial_contract or "")
     for turn in range(resume_start, max_turns + 1):
@@ -473,6 +521,17 @@ def run_task_kernel(
         if cancelled is not None:
             return cancelled
         _events._emit_turn_event(on_event, turn, reply)
+        length_failure, continuation = _consume_local_length_reply(
+            reply, native=native, provider_id=provider_id,
+            used=length_continuations > 0, turns=turns_used,
+        )
+        if length_failure is not None:
+            return length_failure
+        if continuation is not None:
+            length_continuations = 1
+            prompt = continuation
+            pending_reply = None
+            continue
         plan = _normalize_turn(reply, snapshot=turn_snapshot)
         from codey.operations.kernel_trace import record_turn
 
