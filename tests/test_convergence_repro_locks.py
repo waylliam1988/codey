@@ -68,7 +68,7 @@ class FakeFingerprintTests(unittest.TestCase):
         evidence = ExecutionEvidence(workspace_revision=1, workspace_fingerprint="")
         before_fp = str(getattr(evidence, "workspace_fingerprint", "") or "")
         self.assertEqual(before_fp, "")
-        _evidence_with_session_facts(evidence, session)
+        _, _gaps = _evidence_with_session_facts(evidence, session)
         after_fp = str(getattr(evidence, "workspace_fingerprint", "") or "")
         # Must NOT synthesize a format-valid fingerprint from kernel-session hash.
         self.assertEqual(after_fp, "")

@@ -2,6 +2,47 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 不完整最新观察拦截、独立 oracle、真实 kernel/soak 视图、严格 affinity 入口（未发布）
+
+- TDD 红测锁定（4 个新文件，先失败、后通过）：
+  `test_completion_incomplete_latest_observation_blocks`（缺身份/坏身份的
+  最新失败在有/无上下文时均拦截，不会复活旧成功；旧坏+最新合法放行；
+  恢复后仍拦截）、
+  `tests/stress/test_completion_oracle_verification_result_applicability_citations`
+ （身份合法但 exit 1 拒绝；只读 `not_applicable` 放行；真实报告新增未打开
+  引用且账本不变时拒绝）、
+  `test_affinity_apply_validates_envelope`（缺信封、坏快照、空 decay、
+  多余字段、错误 schema、严格重放）、
+  `tests/stress/test_completion_kernel_and_soak_produces_views`
+ （确定性假 provider 走真实工具循环完成；kernel 会话的 gate 视图通过
+  oracle；`SoakContext.record_real_completion_view` 产生真实视图且 oracle
+  检查次数 1:1）。
+- P1 投影：`_evidence_with_session_facts` 返回 `(evidence, gaps)`；先确定
+  每个 `(command, cwd)` 的最新观察，不完整最新直接排除整组旧成功，并返回
+  `verification_identity_missing` / `invalid` / `verification_result_missing`；
+  `_engine_checks` 有缺口直接返回 `CHECK_NOT_RUN`，不再咨询旧成功。已拆小
+  函数降复杂度。
+- Oracle 独立：视图携带 `proof_checks`、`verification_observations`
+ （含 command/cwd/passed/exit/身份）与 `report_text` 的真实引用解析（无账本
+  兜底）；`required_checks_passed` 允许 `pass`/`not_applicable`；判定侧重查
+  exit 0 + `passed is True` + 身份一致、proof 行卫生、opened/cited 包含关系
+  及解析与上报一致；直接导入工作区校验，无 fallback。
+- Stress/Research 诚实：`test_completion_truthful_oracle_real_run` 改用真实
+  `ResearchLedger` + 完整报告（删除手动覆盖，先断言 `verdict.complete`，
+  再改报告文本重建视图）；scheduler 新增
+  `SoakContext.record_real_completion_view` 生产者，`completion_views`
+  不再空跑。
+- Affinity 严格：`apply_affinity_event` 先验完整信封（精确键、`schema_version`、
+  `event_id`/`ts`）再变更状态；`_valid_affinity_event` 要求精确键集合与 schema，
+  快照要求 `reason` 字符串；删除 events 的 `_rows_from_events` 与
+  `_event_read_warnings`、Store 的无用导入与 `__all__` 再导出。
+- 空跑测试按实改名：单读写入真实事件并在 Store 调用点打桩，断言键与
+  `call_count == 1`；容量用小上限测节点/边/fanout 与端点；边测试拆分为
+  删除清存量与删后追加拒绝；快照比较完整 payload。
+- 验证：`ruff`、`compileall`、`git diff --check` 干净。最终全量
+  **6128 通过，10 跳过，1492 子测试通过，耗时 382.81s（0:06:22）**，单次零失败。
+- 未发布、未打 tag、未升级版本。
+
 ## Unreleased - 最新观察决定完成、oracle 严格接线、队列别名清理与 Affinity 拆分（未发布）
 
 - TDD 红色锁定 5 组新文件（先失败、后通过）：

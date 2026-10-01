@@ -39,7 +39,6 @@ from codey.ghost.affinity_events import (
     _scope_deleted_event,
     _snapshot_event,
     _valid_affinity_event,
-    apply_affinity_event,
     replay_affinity_events,
 )
 from codey.ghost.affinity_model import (
@@ -100,10 +99,6 @@ from codey.storage.local_store import (
     delete_file,
     write_json_atomic,
 )
-
-# Re-exported for type checks without implying ownership; the single
-# transition owner remains ``affinity_events.apply_affinity_event``.
-_ = apply_affinity_event
 
 
 @dataclass(frozen=True)
@@ -1097,6 +1092,4 @@ __all__ = [
     "GhostAffinityStore",
     "GhostAffinitySyncResult",
     "apply_affinity_work_boost",
-    "collect_source_specs",
-    "replay_affinity_events",
 ]

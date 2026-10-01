@@ -13,22 +13,34 @@ from tests.stress.oracle import InvariantChecker, InvariantViolation
 
 
 def _valid_view() -> dict:
+    fp = "sha256:" + "a" * 64
     return {
         "completed": True,
         "proof_exists": True,
+        "proof_checks": [{"check_id": "relevant_verification", "status": "pass"}],
         "required_checks_passed": True,
         "verification_required": True,
+        "verification_observations": [{
+            "command": "python -m pytest",
+            "cwd": ".",
+            "passed": True,
+            "exit_code": 0,
+            "revision": 1,
+            "workspace_revision": 7,
+            "workspace_fingerprint": fp,
+        }],
         "verification_identity_valid": True,
         "verification_revision": 7,
         "workspace_revision": 7,
-        "verification_fingerprint": "sha256:" + "a" * 64,
-        "workspace_fingerprint": "sha256:" + "a" * 64,
+        "verification_fingerprint": fp,
+        "workspace_fingerprint": fp,
         "strict_research": True,
         "ledger_valid": True,
         "opened_sources": ["https://example.com/a"],
         "cited_sources": ["https://example.com/a"],
         "cited_evidence_sources": ["https://example.com/a"],
         "report_valid": True,
+        "report_text": "## 结论\n- ok [1]\n\n## 来源\n[1] Title - https://example.com/a",
     }
 
 

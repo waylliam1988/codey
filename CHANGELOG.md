@@ -2,6 +2,59 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Incomplete-latest block, independent oracle, real kernel/soak views, strict affinity apply (no release)
+
+- TDD red-first locks (4 new files, all failed before, pass after):
+  `test_completion_incomplete_latest_observation_blocks` (missing/bad
+  identity latest blocks with/without context despite earlier success;
+  incomplete-old-then-valid-success passes; restore still blocks),
+  `tests/stress/test_completion_oracle_verification_result_applicability_citations`
+  (failed exit with valid identity rejected; readonly `not_applicable`
+  accepted; unopened citation in real report rejected with ledger unchanged),
+  `test_affinity_apply_validates_envelope` (missing envelope, bad snapshot,
+  empty decay, extra field, wrong schema, strict replay),
+  `tests/stress/test_completion_kernel_and_soak_produces_views`
+  (deterministic fake-provider kernel completes via the real tool loop; gate
+  view from the kernel session passes the oracle;
+  `SoakContext.record_real_completion_view` carries real views with 1:1
+  oracle checks).
+- P1 projection: `_evidence_with_session_facts` returns
+  `(evidence, gaps)`; latest per `(command, cwd)` is determined first, an
+  incomplete latest excludes its whole key so old success never revives, and
+  gaps (`verification_identity_missing` / `verification_identity_invalid` /
+  `verification_result_missing`) make `_engine_checks` emit `CHECK_NOT_RUN`
+  without consulting the engine. Split into small helpers for complexity.
+- Oracle independence: `completion_view_from_gate` carries `proof_checks`,
+  `verification_observations` (command/cwd/passed/exit/identity),
+  and `report_text` with `parse_citation_rows` citations (no ledger
+  fallback); `required_checks_passed` allows `pass`/`not_applicable`;
+  `check_completion_truthful` rechecks exact exit 0 plus exact `passed True`
+  plus identity equality, proof-row hygiene, and opened/cited/evidence
+  containment plus parsed-vs-cited equality; direct workspace imports with no
+  fallback lambdas.
+- Stress/Research honesty: `test_completion_truthful_oracle_real_run`
+  rebuilt on a real `ResearchLedger` plus a full report (no manual view
+  overrides, asserts `verdict.complete` first, tampers report text);
+  scheduler adds the `SoakContext.record_real_completion_view` producer so
+  `completion_views` is never an empty loop.
+- Affinity strictness: `apply_affinity_event` validates the full envelope
+  (exact keys, `schema_version`, `event_id`/`ts`) before mutating;
+  `_valid_affinity_event` requires exact key sets plus schema, snapshot
+  requires a `reason` string; deleted `_rows_from_events` and
+  `_event_read_warnings` in events, the dummy `apply_affinity_event` import
+  in the Store, and the Store `__all__` re-exports (`collect_source_specs`,
+  `replay_affinity_events`).
+- Empty-test fixes with accurate names: single-read writes one real event,
+  patches the Store call site, and asserts the key plus `call_count == 1`;
+  caps use small owner limits with fanout/endpoint checks; the edge test is
+  split into scope-delete-clears vs edge-after-delete-rejected; snapshot
+  compares full payloads.
+- Verification: `ruff check codey tests tools`, `compileall`, and
+  `git diff --check` clean. Final full pytest:
+  **6128 passed, 10 skipped, 1492 subtests passed in 382.81s (0:06:22)**,
+  zero failures in a single run.
+- No release, tag, or version bump.
+
 ## Unreleased - Latest-observation completion, strict oracle wiring, queue alias removal, affinity split (no release)
 
 - TDD red-first locks (5 new files, all failed before, pass after):

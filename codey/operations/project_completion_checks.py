@@ -195,7 +195,7 @@ def _synthesize_selected_check(provided: Any, session: Any) -> Any:
         return None
 
 
-def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
+def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tuple[str, ...]]:
     """Project ordered session verifications into execution evidence.
 
     Every verification that targets the latest edit is replayed in recorded
@@ -203,33 +203,42 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
     preserving its original command, cwd, exit code, and workspace identity.
     Success and failure share that path so the latest observation for one
     (command, cwd) replaces the earlier one: success-then-failure blocks and
-    failure-then-success passes, with or without an evidence context. Invalid
-    identities never become passing evidence; freshness against the current
-    workspace is decided by the engine over the projected rows.
+    failure-then-success passes, with or without an evidence context.
+
+    The latest observation per (command, cwd) is determined first; when that
+    latest row lacks workspace identity (or command/exit), its whole key is
+    excluded so an old success can never revive, and a projection gap is
+    returned (``verification_identity_missing`` /
+    ``verification_identity_invalid`` / ``verification_result_missing``).
+    Earlier incomplete rows for a key whose latest is complete stay skipped
+    without blocking. Freshness against the current workspace is decided by
+    the engine over the projected rows.
     """
     if evidence is None:
-        return evidence
+        return evidence, ()
     try:
         edited = dict(getattr(session, "edited_files", {}) or {})
     except Exception:
-        return evidence
+        return evidence, ()
     if not edited:
-        return evidence
+        return evidence, ()
     try:
         latest_edit = max(int(v) for v in edited.values())
     except (TypeError, ValueError):
-        return evidence
+        return evidence, ()
     try:
         verifications = list(getattr(session, "verifications", ()) or [])
     except Exception:
-        return evidence
+        return evidence, ()
     if not verifications:
-        return evidence
+        return evidence, ()
     from codey.utils.refs import strict_verification_success
 
     observe = getattr(evidence, "observe_check", None)
     if not callable(observe):
-        return evidence
+        return evidence, ()
+    latest_by_key = _latest_observations_by_key(verifications, latest_edit)
+    gap_keys, gaps = _projection_gaps_for_latest(latest_by_key)
     for row in verifications:
         if not isinstance(row, dict):
             continue
@@ -240,17 +249,13 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
             continue
         command = str(row.get("command", "") or "").strip()[:500]
         cwd = str(row.get("cwd", ".") or ".").strip()[:240] or "."
-        exit_code = row.get("exit_code")
-        if type(exit_code) is not int:
+        if (command, cwd) in gap_keys:
             continue
+        if not _is_projectable_row(row, command):
+            continue
+        exit_code = row.get("exit_code")
         ver_rev = row.get("workspace_revision")
         ver_fp = str(row.get("workspace_fingerprint", "") or "")
-        if type(ver_rev) is not int or not valid_workspace_revision(ver_rev):
-            continue
-        if not valid_workspace_fingerprint(ver_fp):
-            continue
-        if not command:
-            continue
         succeeded = strict_verification_success(
             row.get("passed"), exit_code, passed_present="passed" in row,
         )
@@ -259,7 +264,76 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> Any:
             workspace_revision=ver_rev, workspace_fingerprint=ver_fp,
         )
         observe(item, succeeded=succeeded)
-    return evidence
+    return evidence, tuple(gaps)
+
+
+def _latest_observations_by_key(
+    verifications: list[Any], latest_edit: int,
+) -> dict[tuple[str, str], tuple[int, dict[str, Any]]]:
+    """Latest row per (command, cwd) among rows targeting the latest edit."""
+    latest_by_key: dict[tuple[str, str], tuple[int, dict[str, Any]]] = {}
+    for index, row in enumerate(verifications):
+        if not isinstance(row, dict):
+            continue
+        try:
+            if int(row.get("revision", -1)) != latest_edit:
+                continue
+        except (TypeError, ValueError):
+            continue
+        command = str(row.get("command", "") or "").strip()[:500]
+        cwd = str(row.get("cwd", ".") or ".").strip()[:240] or "."
+        latest_by_key[(command, cwd)] = (index, row)
+    return latest_by_key
+
+
+def _gap_for_latest_row(row: dict[str, Any], command: str) -> str:
+    """Gap code for one latest observation, or empty when complete."""
+    exit_code = row.get("exit_code")
+    if not command or type(exit_code) is not int:
+        return "verification_result_missing"
+    has_rev = "workspace_revision" in row and row.get("workspace_revision") is not None
+    raw_fp = row.get("workspace_fingerprint")
+    has_fp = "workspace_fingerprint" in row and raw_fp is not None and str(raw_fp or "") != ""
+    if not has_rev or not has_fp:
+        return "verification_identity_missing"
+    ver_rev = row.get("workspace_revision")
+    ver_fp = str(row.get("workspace_fingerprint", "") or "")
+    if type(ver_rev) is not int or not valid_workspace_revision(ver_rev):
+        return "verification_identity_invalid"
+    if not valid_workspace_fingerprint(ver_fp):
+        return "verification_identity_invalid"
+    return ""
+
+
+def _projection_gaps_for_latest(
+    latest_by_key: dict[tuple[str, str], tuple[int, dict[str, Any]]],
+) -> tuple[set[tuple[str, str]], list[str]]:
+    """Keys whose latest observation is incomplete plus deduped gap codes."""
+    gap_keys: set[tuple[str, str]] = set()
+    gaps: list[str] = []
+    for key, (_, row) in latest_by_key.items():
+        command, _cwd = key
+        code = _gap_for_latest_row(row, command)
+        if not code:
+            continue
+        gap_keys.add(key)
+        if code not in gaps:
+            gaps.append(code)
+    return gap_keys, gaps
+
+
+def _is_projectable_row(row: dict[str, Any], command: str) -> bool:
+    """One individually valid row for a key whose latest is complete."""
+    exit_code = row.get("exit_code")
+    if type(exit_code) is not int:
+        return False
+    ver_rev = row.get("workspace_revision")
+    ver_fp = str(row.get("workspace_fingerprint", "") or "")
+    if type(ver_rev) is not int or not valid_workspace_revision(ver_rev):
+        return False
+    if not valid_workspace_fingerprint(ver_fp):
+        return False
+    return bool(command)
 
 
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
@@ -296,7 +370,13 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck] | None:
         # Old-version verification (stale revision) stays unobserved because
         # _session_latest_verification only reflects the latest revision and
         # the engine still requires freshness against the current scope.
-        effective_evidence = _evidence_with_session_facts(evidence, session)
+        # An incomplete latest observation is an explicit projection gap:
+        # block without consulting older success for the same check.
+        effective_evidence, projection_gaps = _evidence_with_session_facts(evidence, session)
+        if projection_gaps:
+            reason = str(projection_gaps[0] or "verification_identity_missing")
+            row = completion_check("relevant_verification", CHECK_NOT_RUN, reason)
+            return [row] if row is not None else []
         # When there is no edited scope at all, fall back to the session
         # checks (not_applicable) instead of forcing an engine_empty.
         if not scope and not task_changed:

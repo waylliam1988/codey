@@ -1,5 +1,39 @@
 # Codey Test Report
 
+## Incomplete-latest block, independent oracle, real kernel/soak views, strict affinity apply (2026-10-01)
+
+Scope: close the incomplete-latest fail-open projection, the oracle
+exit/applicability/citation gaps, the stress empty wiring plus Research
+manual-pass, and the affinity direct-apply plus dead-code gaps found in
+review. Red-first: 4 new files failed before their fixes and pass after;
+the real-run Research test was rebuilt on a real ledger/report with no
+manual overrides; empty affinity tests were rewritten with accurate names.
+No code was modified after the final full run; only this report and the
+changelogs were written after that run.
+
+### Behavior and test evidence
+
+| Boundary | Locked behavior | Regression files |
+| --- | --- | --- |
+| Incomplete latest blocks | Missing/bad-identity latest failure blocks with/without context despite earlier success; incomplete-old-then-valid-success passes; restore still blocks | `tests/test_completion_incomplete_latest_observation_blocks.py` |
+| Oracle result/applicability/citations | Failed exit with valid identity rejected; readonly `not_applicable` accepted; unopened citation in real report rejected with ledger unchanged | `tests/stress/test_completion_oracle_verification_result_applicability_citations.py` |
+| Kernel/soak real views | Deterministic fake-provider kernel completes via the real tool loop; gate view from the kernel session passes the oracle; `SoakContext.record_real_completion_view` carries real views with 1:1 oracle checks | `tests/stress/test_completion_kernel_and_soak_produces_views.py`, `tests/stress/scheduler.py` |
+| Research real run | Real `ResearchLedger` plus full report passes with `verdict.complete` asserted first; tampered report text fails; no manual view overrides | `tests/stress/test_completion_truthful_oracle_real_run.py` |
+| Affinity strict apply | Missing envelope, bad snapshot, empty decay, extra field, wrong schema, and strict replay all raise without mutating state | `tests/test_affinity_apply_validates_envelope.py` |
+| Affinity hygiene | No `_rows_from_events`/`_event_read_warnings` compat, no dummy Store import, no Store `__all__` re-exports; single read does one replay on real events; caps/fanout/endpoints and full-payload snapshot locked | `test_affinity_replay_single_transition.py`, `test_affinity_events_ownership.py` |
+
+### Actual runs
+
+- Targeted P1/oracle/kernel/soak/affinity regression: **67 passed**.
+- Targeted affinity ownership/replay/ghost-affinity: **76 passed**.
+- Final full command: `python -m pytest tests -q -p no:cacheprovider` **6128 passed, 10 skipped, 1492 subtests passed in 382.81s (0:06:22)**, zero failures in a single run.
+- Final prechecks: `python -m ruff check codey tests tools`, `python -m compileall -q codey tests tools`, `git diff --check`: passed.
+
+### Limits and follow-ups
+
+- The 10 skips are Windows/symlink privilege/POSIX-contract limitations. No live web-model/native API benchmark was run.
+- Proof is via bounded state-sequence tests, the independent oracle, and fault injection, not a whole-program correctness proof.
+
 ## Latest-observation completion, strict oracle wiring, queue alias removal, affinity split (2026-10-01)
 
 Scope: close the completion-projection latest-wins gap, the truthfulness

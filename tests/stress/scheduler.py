@@ -540,6 +540,34 @@ class SoakContext:
         with contextlib.suppress(Exception):
             self.browser.close()
 
+    def record_real_completion_view(
+        self,
+        session: object,
+        evidence: object,
+        verdict: object,
+        *,
+        research_ledger: object = None,
+        done_text: str = "",
+    ) -> dict:
+        """Append one real gate completion view built from live facts.
+
+        The view comes from ``completion_view_from_gate`` over the given
+        session/evidence/verdict/ledger/report -- never hand-filled booleans
+        -- so ``assert_valid(..., completion_views=...)`` actually exercises
+        the oracle once per real completion.
+        """
+        from tests.stress.oracle import completion_view_from_gate
+
+        view = completion_view_from_gate(
+            session=session,
+            evidence=evidence,
+            verdict=verdict,
+            research_ledger=research_ledger,
+            done_text=done_text,
+        )
+        self.completion_views.append(view)
+        return view
+
 
 # -- executor: randomness-free, script-replayable ---------------------------
 

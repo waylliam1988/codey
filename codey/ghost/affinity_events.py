@@ -14,14 +14,12 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from codey.ghost import _common
-from codey.ghost._warnings import event_read_warnings
 from codey.ghost.affinity_model import (
     EDGE_HALF_LIFE_DAYS,
     EDGE_LEARNING_RATE,
     MAX_AFFINITY_EDGES,
     MAX_AFFINITY_NODES,
     MAX_AFFINITY_REFS,
-    MAX_AFFINITY_WARNINGS,
     MAX_EDGE_OUT_DEGREE,
     MIN_EDGE_WEIGHT,
     MIN_NODE_WEIGHT,
@@ -99,6 +97,8 @@ def apply_affinity_event(state: dict[str, dict[str, Any]], event: Mapping[str, o
     """Validate and apply one event; illegal events raise explicitly."""
     if not isinstance(event, Mapping):
         raise ValueError("affinity event must be a mapping")
+    if not _valid_affinity_event(event):
+        raise ValueError("invalid affinity event envelope")
     event_type = str(event.get("type") or "")
     now = _common.event_ts(event)
     nodes: dict[str, AffinityNode] = state.setdefault("nodes", {})
@@ -505,12 +505,19 @@ def _snapshot_event(
 
 
 def _valid_affinity_event(event: Mapping[str, object]) -> bool:
+    from codey.ghost.affinity_model import AFFINITY_SCHEMA_VERSION
+
     if not clip_signal_text(event.get("event_id"), 120):
         return False
     if not clip_signal_text(event.get("ts"), 80):
         return False
     event_type = str(event.get("type") or "")
-    if not _common.mapping_keys_within(event, _AFFINITY_EVENT_KEYS.get(event_type, ())):
+    if event_type not in _AFFINITY_EVENT_TYPES:
+        return False
+    if event.get("schema_version") != AFFINITY_SCHEMA_VERSION:
+        return False
+    expected = _AFFINITY_EVENT_KEYS.get(event_type)
+    if expected is None or set(event.keys()) != set(expected):
         return False
     if event_type == "ghost_affinity_snapshot":
         return _valid_affinity_snapshot(event)
@@ -526,6 +533,8 @@ def _valid_affinity_event(event: Mapping[str, object]) -> bool:
 
 
 def _valid_affinity_snapshot(event: Mapping[str, object]) -> bool:
+    if not isinstance(event.get("reason"), str):
+        return False
     raw_nodes = event.get("nodes")
     raw_edges = event.get("edges")
     if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
@@ -563,23 +572,6 @@ def _affinity_events_replay_cleanly(events: Iterable[dict[str, object]]) -> bool
     return True
 
 
-def _rows_from_events(
-    events: Iterable[dict[str, object]],
-) -> tuple[list[AffinityNode], list[AffinityEdge]]:
-    # Backward-compatible replay that skips illegal rows (Store validates
-    # separately via ``_affinity_events_replay_cleanly``). New code should
-    # call ``replay_affinity_events`` directly.
-    state: dict[str, dict[str, Any]] = {"nodes": {}, "edges": {}}
-    for event in events:
-        try:
-            apply_affinity_event(state, event)
-        except (ValueError, TypeError, AttributeError):
-            continue
-    nodes = _bounded_nodes(state["nodes"].values())
-    edges = _bounded_edges(state["edges"].values(), node_ids={node.id for node in nodes})
-    return nodes, edges
-
-
 def _valid_scope_deleted_payload(payload: object) -> bool:
     from codey.ghost.affinity_model import _clean_scope as _clean_scope_value
     from codey.ghost.schema import contains_sensitive_signal_text
@@ -604,15 +596,11 @@ def _valid_scope_deleted_payload(payload: object) -> bool:
 
 
 def _valid_decay_payload(payload: object) -> bool:
-    if not isinstance(payload, Mapping) or not _common.mapping_keys_within(payload, _DECAY_PAYLOAD_KEYS):
+    if not isinstance(payload, Mapping):
         return False
     if set(payload.keys()) != _DECAY_PAYLOAD_KEYS:
         return False
     return all(_common.valid_nonnegative_int_payload(payload.get(key)) for key in _DECAY_PAYLOAD_KEYS)
-
-
-def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    return event_read_warnings(warnings, stream="affinity_events", limit=MAX_AFFINITY_WARNINGS)
 
 
 __all__ = [

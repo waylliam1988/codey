@@ -90,7 +90,7 @@ def test_completion_gate_rejects_invalid_or_conflicting_passed_with_zero_exit(pa
             }
         ],
     )
-    _evidence_with_session_facts(evidence, session)
+    _, _gaps = _evidence_with_session_facts(evidence, session)
     assert evidence.checks_after_edit == []
 
 

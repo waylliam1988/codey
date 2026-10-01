@@ -96,8 +96,9 @@ def test_snapshot_and_incremental_replay_agree() -> None:
     nodes_inc, edges_inc = replay_affinity_events(incremental)
     snapshot = [_snapshot_event(nodes_inc, edges_inc, ts=now, reason="test")]
     nodes_snap, edges_snap = replay_affinity_events([*incremental, *snapshot])
-    # Snapshot truncates history but preserves rows.
-    assert {n.id for n in nodes_snap} == {n.id for n in nodes_inc}
+    # Snapshot truncates history but preserves full row payloads.
+    assert [n.to_payload() for n in nodes_snap] == [n.to_payload() for n in nodes_inc]
+    assert [e.to_payload() for e in edges_snap] == [e.to_payload() for e in edges_inc]
 
 
 def test_store_calls_events_owner_with_real_function() -> None:

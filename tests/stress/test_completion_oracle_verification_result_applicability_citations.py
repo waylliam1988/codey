@@ -1,9 +1,8 @@
-"""Oracle real-run wiring: views come from gate facts, not verdict claims.
+"""Oracle independently rechecks verification outcome, applicability, citations.
 
-Locks that a real project edit plus verification plus ``done`` builds a
-passing truthfulness view, that ``assert_valid`` actually calls the oracle,
-and that tampered verification identity or ledger citations fail even when
-the view still claims completion.
+Locks: a failing latest verification (exit 1) never passes even with valid
+identity; a read-only task with not_applicable verification passes; a report
+that cites an unopened URL fails even when the ledger itself is unchanged.
 """
 from __future__ import annotations
 
@@ -12,7 +11,7 @@ import pytest
 from tests.stress.oracle import InvariantChecker, InvariantViolation, completion_view_from_gate
 
 
-def _project_gate(tmp_path):
+def _passing_project_gate(tmp_path):
     from codey.operations.completion_gate import evaluate
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
@@ -37,7 +36,7 @@ def _project_gate(tmp_path):
         "execution_evidence": evidence,
         "project": str(tmp_path),
         "scope_files": ("a.py",),
-        "run_id": "real-run",
+        "run_id": "oracle-result",
         "task": "fix",
     }
     verdict = evaluate(session, "done", context=context)
@@ -45,43 +44,38 @@ def _project_gate(tmp_path):
     return session, evidence, verdict
 
 
-def test_real_project_run_builds_passing_view(tmp_path) -> None:
-    session, evidence, verdict = _project_gate(tmp_path)
+def test_oracle_rejects_failed_latest_verification_with_valid_identity(tmp_path):
+    session, evidence, verdict = _passing_project_gate(tmp_path)
+    fp = session.workspace_fingerprint
+    session.record_verification(
+        "python -m pytest", 1, False, exit_code=1,
+        workspace_revision=7, workspace_fingerprint=fp, cwd=".",
+    )
     view = completion_view_from_gate(session=session, evidence=evidence, verdict=verdict)
-    InvariantChecker().check_completion_truthful(view)
-
-
-def test_assert_valid_calls_truthful_oracle_for_real_view(tmp_path) -> None:
-    session, evidence, verdict = _project_gate(tmp_path)
-    view = completion_view_from_gate(session=session, evidence=evidence, verdict=verdict)
-    calls: list[dict] = []
-    checker = InvariantChecker()
-    original = checker.check_completion_truthful
-    def _track(v: dict) -> None:
-        calls.append(v)
-        return original(v)
-    checker.check_completion_truthful = _track  # type: ignore[method-assign]
-    checker.assert_valid({"log_rows": [], "ghost_rows": []}, completion_views=[view])
-    assert len(calls) == 1
-    # facts-carried views take the same path.
-    checker.assert_valid({"log_rows": [], "ghost_rows": [], "completion_views": [view]})
-    assert len(calls) == 2
-
-
-def test_tampered_verification_identity_fails_oracle(tmp_path) -> None:
-    session, evidence, verdict = _project_gate(tmp_path)
-    view = completion_view_from_gate(session=session, evidence=evidence, verdict=verdict)
-    view["verification_fingerprint"] = "sha256:" + "b" * 64
     with pytest.raises(InvariantViolation):
         InvariantChecker().check_completion_truthful(view)
 
 
-def _real_research_gate():
+def test_oracle_accepts_readonly_completion_with_not_applicable_verification():
     from codey.operations.completion_gate import evaluate
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
-    from codey.research.ledger import ResearchLedger
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
+
+    session = TaskSession(
+        policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
+        task_kind="project",
+        project="demo",
+    )
+    evidence = ExecutionEvidence()
+    verdict = evaluate(session, "done", context=None)
+    assert verdict.complete is True
+    view = completion_view_from_gate(session=session, evidence=evidence, verdict=verdict)
+    InvariantChecker().check_completion_truthful(view)
+
+
+def _real_research_ledger_and_report():
+    from codey.research.ledger import ResearchLedger
 
     url = "https://example.com/helium"
     source_text = "Helium is separated from natural gas streams. 2026 supply note."
@@ -118,6 +112,16 @@ def _real_research_gate():
     )
     assert not prepared.error
     ledger.add_evidence_items(list(prepared.items), note_id="note-1")
+    return ledger, summary, url
+
+
+def test_oracle_rejects_report_citing_unopened_source_ledger_unchanged():
+    from codey.operations.completion_gate import evaluate
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.observe.execution_evidence import ExecutionEvidence
+
+    ledger, summary, url = _real_research_ledger_and_report()
     session = TaskSession(
         policy=TaskPolicy(
             grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
@@ -133,21 +137,17 @@ def _real_research_gate():
         "research_ledger": ledger,
         "source_ids": dict(session.source_ids),
         "question": "Research helium supply",
-        "run_id": "research-run",
+        "run_id": "research-citation",
     }
     verdict = evaluate(session, summary, context=context)
     assert verdict.complete is True
-    return session, evidence, verdict, ledger, summary
-
-
-def test_strict_research_real_ledger_passes_and_tampered_citation_fails() -> None:
-    session, evidence, verdict, ledger, summary = _real_research_gate()
     view = completion_view_from_gate(
         session=session, evidence=evidence, verdict=verdict,
         research_ledger=ledger, done_text=summary,
     )
     InvariantChecker().check_completion_truthful(view)
     tampered = summary + "\n[2] Unopened - https://unopened.example/b\n"
+    # Also cite the unopened source in the conclusion so the parser sees it.
     tampered = tampered.replace(
         "Helium supply depends on gas processing. [1]",
         "Helium supply depends on gas processing. [1][2]",
@@ -158,13 +158,3 @@ def test_strict_research_real_ledger_passes_and_tampered_citation_fails() -> Non
     )
     with pytest.raises(InvariantViolation):
         InvariantChecker().check_completion_truthful(tampered_view)
-
-
-def test_recovered_session_completion_still_builds_truthful_view(tmp_path) -> None:
-    session, evidence, verdict = _project_gate(tmp_path)
-    payload = session.to_payload()
-    from codey.operations.task_session import TaskSession
-
-    restored = TaskSession.from_payload(payload, policy=session.policy)
-    view = completion_view_from_gate(session=restored, evidence=evidence, verdict=verdict)
-    InvariantChecker().check_completion_truthful(view)

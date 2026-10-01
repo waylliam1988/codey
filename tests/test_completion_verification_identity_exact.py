@@ -90,7 +90,7 @@ def test_stale_session_verification_does_not_count_as_fresh_success(tmp_path):
         workspace_revision=2, workspace_fingerprint=fp, cwd="pkg",
     )
     evidence = ExecutionEvidence(workspace_revision=7, workspace_fingerprint=fp)
-    projected = pcc._evidence_with_session_facts(evidence, session)
+    projected, _gaps = pcc._evidence_with_session_facts(evidence, session)
     assert list(projected.successful_checks) == []
     assert evaluate(session, "done").complete is False
 
@@ -134,7 +134,7 @@ def test_evidence_projection_preserves_original_cwd_and_version(tmp_path):
         workspace_revision=7, workspace_fingerprint=fp, cwd="pkg",
     )
     evidence = ExecutionEvidence(workspace_revision=7, workspace_fingerprint=fp)
-    projected = pcc._evidence_with_session_facts(evidence, session)
+    projected, _gaps = pcc._evidence_with_session_facts(evidence, session)
     rows = list(projected.checks_after_edit)
     assert rows, "matching verification must project one check"
     assert rows[-1].cwd == "pkg"
