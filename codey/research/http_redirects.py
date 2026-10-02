@@ -6,6 +6,8 @@ import contextlib
 import urllib.request
 from urllib.parse import urljoin
 
+from codey.utils.refs import coerce_int
+
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
@@ -20,7 +22,7 @@ def build_no_redirect_opener():
 
 def is_redirect_status(status: object) -> bool:
     try:
-        return int(status or 0) in REDIRECT_STATUSES
+        return coerce_int(status or 0) in REDIRECT_STATUSES
     except (TypeError, ValueError, OverflowError):
         return False
 

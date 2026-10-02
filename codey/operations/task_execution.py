@@ -251,6 +251,9 @@ class ExecutionDelegate:
         return effective_project_profile(self.permission_profile)
 
     def _execute_project(self, call: ToolCall) -> tuple[ToolResult, bool, int | None]:
+        if self.project_path is None:
+            return ToolResult(call=call, model_text="ERROR: project path unavailable"), False, None
+        project_path = self.project_path
         denied, message, _approval = self._policy_check(call)
         if denied:
             result = ToolResult(call=call, model_text=f"ERROR: {message}")
@@ -263,7 +266,7 @@ class ExecutionDelegate:
                 from codey.agents.tool_execution import execute_information_tool_call
 
                 outcome = execute_information_tool_call(
-                    self.project_path, self.tool_fns,
+                    project_path, self.tool_fns,
                     ToolCall(runtime_name, dict(call.args or {})),
                 )
                 result = _tool_result(call, outcome)
@@ -276,7 +279,7 @@ class ExecutionDelegate:
                 return result, ok, None
             if name == "run":
                 outcome = self.tool_fns.execute_run_command(
-                    self.project_path, str((call.args or {}).get("path", ".") or "."),
+                    project_path, str((call.args or {}).get("path", ".") or "."),
                     str((call.args or {}).get("command", "") or ""),
                     permission_profile=self._project_permission_profile(), phase="writer",
                     tool_id=str(getattr(call, "call_id", "") or ""),
@@ -295,11 +298,14 @@ class ExecutionDelegate:
         from codey.agents.tool_execution import read_before_edit_outcome
         from codey.toolchain.runtime import EditBlock, ToolOutcome, safe_join
 
+        if self.project_path is None:
+            return ToolOutcome.error("project path unavailable")
+        project_path = self.project_path
         args = dict(call.args or {})
         path = str(args.get("path", "") or "")
         try:
-            canonical = canonical_project_path(self.project_path, path)
-            target = safe_join(self.project_path, canonical)
+            canonical = canonical_project_path(project_path, path)
+            target = safe_join(project_path, canonical)
         except ValueError:
             return ToolOutcome.error("workspace_escape: path escapes project root")
         if "content" in args:
@@ -309,12 +315,12 @@ class ExecutionDelegate:
                 )
             if self.change_tracker is not None:
                 self.change_tracker.capture_before(path)
-            outcome = self.tool_fns.write_file(self.project_path, path, str(args.get("content") or ""))
+            outcome = self.tool_fns.write_file(project_path, path, str(args.get("content") or ""))
             if outcome.ok and outcome.changed and self.change_tracker is not None:
                 self.change_tracker.capture_after(path)
             return outcome
         guard = read_before_edit_outcome(
-            self.project_path, path, set(getattr(self.session, "read_files", set()) or set()),
+            project_path, path, set(getattr(self.session, "read_files", set()) or set()),
         )
         if guard is not None:
             return guard
@@ -422,12 +428,12 @@ class ExecutionDelegate:
                 ok_text = _is_ok_text(text)
                 if ok_text and url and self.session is not None:
                     text, mapping = self._build_hit_mapping(text, url)
-                    canonical = {"hit_targets": mapping, "source_url": url}
+                    hit_canonical: dict[str, object] = {"hit_targets": mapping, "source_url": url}
                     ledger = getattr(tools, "ledger", None)
                     if isinstance(ledger, ResearchLedger):
-                        canonical["research_observation"] = ledger_observation(ledger, name)
+                        hit_canonical["research_observation"] = ledger_observation(ledger, name)
                     return (
-                        ToolResult(call=call, model_text=text, canonical=canonical),
+                        ToolResult(call=call, model_text=text, canonical=hit_canonical),
                         True, None,
                     )
                 return ToolResult(call=call, model_text=text), ok_text, None
@@ -448,12 +454,12 @@ class ExecutionDelegate:
                 if not _is_ok_text(text):
                     return ToolResult(call=call, model_text=text), False, None
                 evidence = self._ledger_evidence(before)
-                canonical = {"evidence_items": evidence}
+                evidence_canonical: dict[str, object] = {"evidence_items": evidence}
                 ledger = getattr(tools, "ledger", None)
                 if isinstance(ledger, ResearchLedger):
-                    canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
+                    evidence_canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
                 return (
-                    ToolResult(call=call, model_text=text, canonical=canonical),
+                    ToolResult(call=call, model_text=text, canonical=evidence_canonical),
                     True, None,
                 )
             if name == "knowledge_link":

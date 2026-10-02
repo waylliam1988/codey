@@ -21,6 +21,7 @@ from codey.research.pipeline import (
     ResearchIterationRun,
     ResearchPipeline,
     ResearchPipelineConfig,
+    ResearchPipelineResult,
 )
 from codey.research.proof_quality import proof_review_trace_payload
 from codey.research.query_planner import build_research_plan, research_plan_trace_payload
@@ -91,7 +92,7 @@ def run_research_mode(
     hooks: RunHooks,
     *,
     proof_question: str = "",
-    run_pipeline: Callable[..., object] | None = None,
+    run_pipeline: Callable[..., ResearchPipelineResult] | None = None,
 ) -> ModeOutcome:
     request = frame.request
     if frame.provider is None:
@@ -287,7 +288,7 @@ def run_research_pipeline(
     run_iteration: Callable[..., ResearchIterationRun] | None = None,
     build_context: Callable[..., ResearchContext] | None = None,
     record_ledger_write: Callable[[RunHooks, EvidenceLedgerWriteResult], None] | None = None,
-):
+) -> ResearchPipelineResult:
     request = frame.request
     if frame.provider is None:
         raise RuntimeError("provider is not connected")

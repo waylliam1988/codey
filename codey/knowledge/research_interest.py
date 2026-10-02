@@ -13,6 +13,7 @@ from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.concepts import ConceptGraphBuilder, MissingConceptLink
 from codey.knowledge.note import clean_open_questions
 from codey.knowledge.store import KnowledgeStore
+from codey.utils.refs import coerce_float, coerce_int
 
 MAX_RESEARCH_INTEREST_CANDIDATES = 8
 MAX_RESEARCH_INTEREST_REFS = 10
@@ -372,7 +373,7 @@ def _unit_float(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
     try:
-        number = float(value)
+        number = coerce_float(value)
     except (TypeError, ValueError, OverflowError):
         return 0.0
     if not math.isfinite(number):
@@ -386,7 +387,7 @@ def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int
     if isinstance(value, str) and not value.strip().isascii():
         return default
     try:
-        number = int(value)
+        number = coerce_int(value, default=default)
     except (TypeError, ValueError, OverflowError):
         number = default
     return max(minimum, min(maximum, number))
@@ -401,7 +402,9 @@ def _hint_weight_by_target(hints: Iterable[Any], *, kind: str) -> dict[str, floa
         if not target:
             continue
         try:
-            weight = float(_field(hint, "weight") or 0.0) * float(_field(hint, "confidence") or 0.0)
+            weight = coerce_float(_field(hint, "weight") or 0.0) * coerce_float(
+                _field(hint, "confidence") or 0.0
+            )
         except (TypeError, ValueError, OverflowError):
             weight = 0.0
         out[target] = max(out.get(target, 0.0), max(0.0, min(1.0, weight)))

@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from codey.storage.local_store import StoreCorruption, read_json_strict
 
@@ -79,11 +79,11 @@ def over_compact_budget(
 ) -> bool:
     """True when an ``event_file_stats`` reading exceeds either budget."""
     try:
-        events = int(stats.get("events") or 0)
-        size = int(stats.get("bytes") or 0)
+        events = int(cast(Any, stats.get("events") or 0))
+        size = int(cast(Any, stats.get("bytes") or 0))
     except (TypeError, ValueError):
         return True
-    return events > max(0, int(max_events or 0)) or size > max(0, int(max_bytes or 0))
+    return events > max(0, int(cast(Any, max_events or 0))) or size > max(0, int(cast(Any, max_bytes or 0)))
 
 
 __all__ = [

@@ -99,6 +99,7 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+from codey.utils.refs import coerce_int
 
 _STRICT_CONTINUATION_CN = frozenset(
     {
@@ -812,7 +813,7 @@ class GhostWorkQueueStore:
                     warning = str(before["warning"] or "work_events_unreadable")
                     self.last_warnings = (warning,)
                     return _compact_payload(False, False, before, before, (warning,), warning_cleaner=_bounded_warnings)
-                if before["events"] <= MAX_WORK_EVENTS and before["bytes"] <= MAX_WORK_EVENTS_BYTES:
+                if coerce_int(before["events"]) <= MAX_WORK_EVENTS and coerce_int(before["bytes"]) <= MAX_WORK_EVENTS_BYTES:
                     return _compact_payload(
                         True, False, before, before, self.last_warnings, warning_cleaner=_bounded_warnings
                     )
@@ -1058,7 +1059,7 @@ class GhostWorkQueueStore:
         if not stats["readable"]:
             self.last_warnings = (str(stats["warning"] or "work_events_unreadable"),)
             return
-        if stats["events"] <= MAX_WORK_EVENTS and stats["bytes"] <= MAX_WORK_EVENTS_BYTES:
+        if coerce_int(stats["events"]) <= MAX_WORK_EVENTS and coerce_int(stats["bytes"]) <= MAX_WORK_EVENTS_BYTES:
             return
         try:
             self._write_events_atomic([_snapshot_event(items, ts=_common.now_iso_z(), reason="events_compacted")])

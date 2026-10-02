@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from codey.research.evidence_runtime import is_valid_runtime_ref
-from codey.utils.refs import clean_sha256_hex, clip, stable_ref
+from codey.utils.refs import clean_sha256_hex, clip, coerce_int, stable_ref
 
 ARTIFACT_REF_PREFIX = "artifact:"
 ARTIFACT_VERSION_REF_PREFIX = "artifact_version:"
@@ -73,7 +73,7 @@ def _bounded_size(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        parsed = int(value)
+        parsed = coerce_int(value)
     except (TypeError, ValueError, OverflowError):
         return 0
     return max(0, min(parsed, MAX_SIZE_BYTES))

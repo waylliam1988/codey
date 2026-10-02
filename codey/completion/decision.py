@@ -30,14 +30,16 @@ from codey.completion.verification import (
     relevant_verification_pairs,
     verification_provenance,
 )
+from codey.completion.verification_policy import VerificationCandidate
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from codey.utils.refs import coerce_int
 
 
 def _safe_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return int(value)  # type: ignore[arg-type]
+        return coerce_int(value)
     except (TypeError, ValueError, OverflowError):
         return 0
 
@@ -64,7 +66,7 @@ def build_completion_decision(
     stop_reason: str,
     task_changed: bool,
     files: tuple[str, ...],
-    selected_check: object,
+    selected_check: VerificationCandidate | None,
     evidence: ExecutionEvidence,
     analysis_run_payloads: Iterable[Mapping[str, object]] = (),
     project: str | Path | None = None,

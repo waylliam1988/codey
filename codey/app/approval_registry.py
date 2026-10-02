@@ -113,14 +113,14 @@ class ApprovalRegistry:
         return self.expire_shell_results(session_id=session_id, output=output)
 
     def pending_ui_event(self, active: RunSnapshot | None) -> dict | None:
-        candidates = [
-            pending.get("ui_event")
-            for pending in [
-                *reversed(tuple(self._pending_teach.values())),
-                *reversed(tuple(self._pending_shell.values())),
-            ]
-            if isinstance(pending.get("ui_event"), dict)
-        ]
+        candidates: list[dict[str, object]] = []
+        for pending in [
+            *reversed(tuple(self._pending_teach.values())),
+            *reversed(tuple(self._pending_shell.values())),
+        ]:
+            event = pending.get("ui_event")
+            if isinstance(event, dict):
+                candidates.append(event)
         if active is not None:
             for event in candidates:
                 if event.get("run_id") == active.run_id:

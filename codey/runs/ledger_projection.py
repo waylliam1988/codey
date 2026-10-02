@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from codey.runs.ledger import SCHEMA_VERSION, RunLedgerRecord, RunLedgerStore, read_ledger
 from codey.runs.receipt import TaskReceipt, task_receipt_from_payload
+from codey.utils.refs import coerce_int, parse_int
 
 
 @dataclass(frozen=True)
@@ -378,7 +379,7 @@ def _int(value: object, default: int = 0) -> int:
     if isinstance(value, str) and not value.strip().isascii():
         return default
     try:
-        return int(value)
+        return coerce_int(value, default=default)
     except (TypeError, ValueError, OverflowError):
         return default
 
@@ -389,7 +390,7 @@ def _optional_int(value: object) -> int | None:
     if isinstance(value, str) and not value.strip().isascii():
         return None
     try:
-        return int(value)
+        return parse_int(value)
     except (TypeError, ValueError, OverflowError):
         return None
 

@@ -94,7 +94,7 @@ def _set_checkpoint_status(ctx: ProjectRun, status: str) -> None:
 
 
 def _emit_review_unavailable(ctx: ProjectRun) -> None:
-    ctx.state.emit(
+    ctx.task_state.emit(
         {
             "type": "review",
             "session_id": ctx.request.session_id,
@@ -104,10 +104,12 @@ def _emit_review_unavailable(ctx: ProjectRun) -> None:
 
 
 def _run_review_with_trace(ctx: ProjectRun, **kwargs):
+    changes_value = kwargs.get("changes")
+    changes = changes_value if isinstance(changes_value, dict) else {}
     try:
         review_impact_map = safe_review_impact_map(
             kwargs.get("project") or ctx.project,
-            kwargs.get("changes") if isinstance(kwargs.get("changes"), dict) else {},
+            changes,
         )
     except cancellation.TaskCancelled:
         raise
@@ -117,7 +119,7 @@ def _run_review_with_trace(ctx: ProjectRun, **kwargs):
         ctx.frame.trace,
         task=str(kwargs.get("task") or ""),
         writer_summary=str(kwargs.get("writer_summary") or ""),
-        changes=kwargs.get("changes") if isinstance(kwargs.get("changes"), dict) else {},
+        changes=changes,
         recent_log=str(kwargs.get("recent_log") or ""),
         change_brief=str(kwargs.get("change_brief") or ""),
         project_map=str(kwargs.get("project_map") or ""),
@@ -169,7 +171,7 @@ def _review_cycle_phase(ctx: ProjectRun) -> None:
             ctx.work.evidence.has_successful_checks
             or (not ctx.work.evidence.observed_tool_events and ctx.result.checks_passed)
         ),
-        stop_requested=ctx.state.run_registry.stop_flag.is_set,
+        stop_requested=ctx.task_state.run_registry.stop_flag.is_set,
         refresh_project_map=partial(_refresh_review_project_map, ctx),
         build_verification_map=partial(_build_review_verification_map, ctx),
         run_review=partial(_run_review_with_trace, ctx),

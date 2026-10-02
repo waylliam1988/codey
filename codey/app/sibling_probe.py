@@ -11,6 +11,7 @@ Everything else here is light.
 
 from __future__ import annotations
 
+import functools
 import threading
 import time
 import uuid
@@ -77,10 +78,7 @@ def handle_profile_doctor(
         try:
             selected = profile_doctor.choose_candidate(
                 request,
-                lambda prompt, helper=helper: helper.send(
-                    prompt,
-                    timeout=_profile_doctor_timeout(deadline),
-                ),
+                functools.partial(helper.send, timeout=_profile_doctor_timeout(deadline)),
             )
         except cancellation.TaskCancelled:
             raise
@@ -122,10 +120,7 @@ def handle_flow_recovery(
             try:
                 selected = provider_flow.choose_candidate(
                     request,
-                    lambda prompt, helper=helper: helper.send(
-                        prompt,
-                        timeout=_profile_doctor_timeout(deadline),
-                    ),
+                    functools.partial(helper.send, timeout=_profile_doctor_timeout(deadline)),
                 )
             except cancellation.TaskCancelled:
                 raise
@@ -176,8 +171,12 @@ def handle_control_teach(ctx: TaskState, request: provider_controls.ControlTeach
                 "text": request.message,
             }
             ctx.approvals.add_teach(teach_id, pending)
-        ctx.emit(pending["ui_event"])
-        if not pending["event"].wait(CONTROL_TEACH_TIMEOUT):
+        ui_event = pending.get("ui_event")
+        wait_event = pending.get("event")
+        if not isinstance(ui_event, dict) or not isinstance(wait_event, threading.Event):
+            raise RuntimeError("invalid pending control state")
+        ctx.emit(ui_event)
+        if not wait_event.wait(CONTROL_TEACH_TIMEOUT):
             ctx.pop_pending_teach(teach_id)
             provider_controls.cancel_click_capture(request.page)
             raise TimeoutError("Timed out waiting for Resume")

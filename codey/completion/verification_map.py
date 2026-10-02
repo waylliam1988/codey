@@ -74,9 +74,9 @@ class VerificationMap:
             lines.append("- (none found; this does not prove that no relevant tests exist)")
         lines.append("Observed successful checks after the latest edit:")
         if self.observed_checks:
-            for item in self.observed_checks:
-                suffix = f" (cwd {item.cwd})" if item.cwd != "." else ""
-                lines.append(f"- {item.command}{suffix}")
+            for check in self.observed_checks:
+                suffix = f" (cwd {check.cwd})" if check.cwd != "." else ""
+                lines.append(f"- {check.command}{suffix}")
         else:
             lines.append("- (none observed)")
         if self.recommended_commands:

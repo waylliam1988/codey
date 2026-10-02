@@ -192,7 +192,7 @@ def project_topic_continuity(
     claim_items, claim_input_count = _items_from_claim_refs(claim_rows)
     items.extend(claim_items)
 
-    items = _dedupe_items(items)
+    items = list(_dedupe_items(items))
     candidates = build_topic_candidates(items)
     corrections = tuple(item for item in items if item.kind == ITEM_KIND_CORRECTION)
     preferences = tuple(item for item in items if item.kind == ITEM_KIND_PREFERENCE)

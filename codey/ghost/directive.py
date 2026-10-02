@@ -22,6 +22,7 @@ from codey.ghost.hebbian import (
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.typed_fields import dangerous_text, render_typed_field
 from codey.storage.local_store import StoreCorruption, read_json_strict
+from codey.utils.refs import coerce_float, coerce_int
 
 DEFAULT_DIRECTIVE_BUDGET = 900
 MAX_DIRECTIVE_LINE_CHARS = 160
@@ -123,8 +124,8 @@ def render_ghost_directive(
     selected = _resolve_competing_nodes(applicable, warnings=warnings)
     selected = _suppress_lower_scope_conflicts(selected, warnings=warnings)
     hint_weights = _hint_weight_by_target(affinity_hints, kind="directive_order")
-    selected = tuple(sorted(selected, key=lambda node: _node_sort_key(node, hint_weights)))[:MAX_DIRECTIVE_ITEMS]
-    if not selected:
+    ranked: tuple[GhostNode, ...] = tuple(sorted(selected, key=lambda node: _node_sort_key(node, hint_weights)))[:MAX_DIRECTIVE_ITEMS]
+    if not ranked:
         return GhostDirective("", warnings=_bounded_warnings(warnings))
 
     header = (
@@ -135,12 +136,12 @@ def render_ghost_directive(
     )
     parts = [header]
     truncated = False
-    max_budget = max(0, int(budget or 0))
+    max_budget = max(0, coerce_int(budget or 0))
     if max_budget <= 0:
         return GhostDirective("", selected_nodes=(), warnings=_bounded_warnings(warnings), truncated=True)
 
     included: list[GhostNode] = []
-    for node in selected:
+    for node in ranked:
         line = _node_line(node)
         if line is None:
             continue
@@ -284,7 +285,7 @@ def _suppress_lower_scope_conflicts(
     return selected
 
 
-def _node_sort_key(node: GhostNode, hint_weights: dict[str, float] | None = None) -> tuple[int, int, float, str]:
+def _node_sort_key(node: GhostNode, hint_weights: dict[str, float] | None = None) -> tuple[int, int, float, tuple[int, ...]]:
     hint = (hint_weights or {}).get(node.id, 0.0)
     return (
         KIND_PRIORITY.get(node.kind, 99),
@@ -339,7 +340,9 @@ def _hint_weight_by_target(hints: Iterable[Any], *, kind: str) -> dict[str, floa
         if not target:
             continue
         try:
-            weight = float(_field(hint, "weight") or 0.0) * float(_field(hint, "confidence") or 0.0)
+            weight = coerce_float(_field(hint, "weight") or 0.0) * coerce_float(
+                _field(hint, "confidence") or 0.0
+            )
         except (TypeError, ValueError, OverflowError):
             weight = 0.0
         out[target] = max(out.get(target, 0.0), max(0.0, min(1.0, weight)))

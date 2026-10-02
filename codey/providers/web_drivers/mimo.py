@@ -775,12 +775,11 @@ def _chat(
                 )
                 if completion_ready:
                     _wait_response_footer_ready(page, action_baseline)
+                    def final_text(ready: bool = built_in_ready) -> str:
+                        return _final_text(page, completion_verified=not ready)
                     return send_loop.read_completion(
                         ctx,
-                        lambda built_in_ready=built_in_ready: _final_text(
-                            page,
-                            completion_verified=not built_in_ready,
-                        ),
+                        final_text,
                     )
 
         late = _wait_late_response(
@@ -815,12 +814,11 @@ def _chat(
             )
             if completion_ready:
                 _wait_response_footer_ready(page, action_baseline)
+                def final_text(ready: bool = built_in_ready) -> str:
+                    return _final_text(page, completion_verified=not ready)
                 return send_loop.read_completion(
                     ctx,
-                    lambda built_in_ready=built_in_ready: _final_text(
-                        page,
-                        completion_verified=not built_in_ready,
-                    ),
+                    final_text,
                 )
         recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
         if recovered is not None:

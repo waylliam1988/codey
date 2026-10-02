@@ -48,6 +48,9 @@ jobs:
           codey/app/task_submit.py codey/app/server.py codey/app/headless_runner.py
           codey/workspace/changes.py codey/completion/contract.py
           codey/runtime/log/entries.py codey/runtime/core/cancellation.py
+          codey/operations/task_loop.py codey/operations/project_writer_phase.py
+          codey/operations/project_completion_enforcement.py
+          codey/research/evidence_ledger.py codey/runs/trace.py
 
       - name: Pytest
         run: python -m pytest -q -o faulthandler_timeout=120
@@ -95,6 +98,9 @@ jobs:
           codey/app/task_submit.py codey/app/server.py codey/app/headless_runner.py
           codey/workspace/changes.py codey/completion/contract.py
           codey/runtime/log/entries.py codey/runtime/core/cancellation.py
+          codey/operations/task_loop.py codey/operations/project_writer_phase.py
+          codey/operations/project_completion_enforcement.py
+          codey/research/evidence_ledger.py codey/runs/trace.py
 
       - name: POSIX file-boundary regressions
         run: python -m pytest -q -o faulthandler_timeout=120 tests/test_changes.py tests/test_workspace_paths.py tests/test_bounded_capture_and_context.py tests/test_coldstart_hardening.py

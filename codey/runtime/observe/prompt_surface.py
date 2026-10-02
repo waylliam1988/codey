@@ -185,6 +185,8 @@ def _validate_surface_identity(payload: Mapping[str, object]) -> bool:
         or prompt_digest != canonical_surface_prompt_digest(prompt_digest)
     ):
         return False
+    assert isinstance(phase, str)
+    assert isinstance(send_ref, str)
     return surface_id == prompt_surface_id(phase=phase, send_ref=send_ref, prompt_digest=prompt_digest)
 
 

@@ -23,6 +23,7 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
+from codey.utils.refs import coerce_int
 
 SCHEMA_VERSION = 1
 MAX_PERSISTED_CONVERSATIONS = 64
@@ -82,7 +83,7 @@ def _nonnegative_int(value: object, default: int = 0) -> int:
     if value is None or isinstance(value, bool):
         return default
     try:
-        return max(0, int(value or 0))  # type: ignore[arg-type]
+        return max(0, coerce_int(value or 0, default=default))
     except (TypeError, ValueError, OverflowError):
         return default
 
@@ -91,7 +92,7 @@ def _positive_int(value: object, default: int) -> int:
     if isinstance(value, bool):
         return default
     try:
-        parsed = int(value or 0)  # type: ignore[arg-type]
+        parsed = coerce_int(value or 0, default=0)
     except (TypeError, ValueError, OverflowError):
         return default
     return parsed if parsed > 0 else default

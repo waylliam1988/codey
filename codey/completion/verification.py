@@ -46,6 +46,7 @@ from codey.completion.contract import (
 )
 from codey.completion.edit_scope import is_document_path
 from codey.completion.verification_policy import (
+    VerificationCandidate,
     check_covers_selected_candidate,
 )
 from codey.research.evidence_runtime import normalize_runtime_ref
@@ -287,7 +288,7 @@ class VerificationProvenance:
 
 
 def coding_verification_state(
-    selected_check: object,
+    selected_check: VerificationCandidate | None,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
     *,
@@ -403,7 +404,7 @@ def verification_provenance(
 
 def relevant_verification_pairs(
     verification_state: str,
-    selected_check: object,
+    selected_check: VerificationCandidate | None,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
     *,
@@ -441,7 +442,7 @@ def relevant_verification_pairs(
     return tuple(pairs)
 
 
-def _analysis_run_cwd_digest(cwd: object, project: object) -> str:
+def _analysis_run_cwd_digest(cwd: object, project: str | Path | None) -> str:
     from codey.research.identity import path_ref
 
     return str(path_ref(str(cwd or "."), project=project).get("digest") or "")
@@ -450,7 +451,7 @@ def _analysis_run_cwd_digest(cwd: object, project: object) -> str:
 def matching_analysis_run_refs(
     analysis_runs: object,
     pairs: tuple[tuple[str, str], ...],
-    project: object = None,
+    project: str | Path | None = None,
 ) -> tuple[str, ...]:
     """Latest analysis-run ref per decisive (command, cwd) pair.
 
@@ -470,7 +471,8 @@ def matching_analysis_run_refs(
     if not wanted:
         return ()
     by_pair: dict[tuple[str, str], str] = {}
-    for row in analysis_runs or ():
+    rows = analysis_runs if isinstance(analysis_runs, (list, tuple)) else ()
+    for row in rows:
         if not isinstance(row, Mapping):
             continue
         display = str(row.get("command_display") or "")
@@ -488,9 +490,9 @@ def matching_analysis_run_refs(
             by_pair[key] = ref
     refs: list[str] = []
     for key in wanted:
-        ref = by_pair.get(key)
-        if ref and ref not in refs:
-            refs.append(ref)
+        found_ref = by_pair.get(key)
+        if found_ref and found_ref not in refs:
+            refs.append(found_ref)
     return tuple(refs)
 
 
@@ -667,7 +669,7 @@ def classify_verification_failure(
 
 
 def decisive_failure_fact(
-    selected_check: object,
+    selected_check: VerificationCandidate | None,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
     *,
@@ -690,7 +692,7 @@ def decisive_failure_fact(
 
 
 def decisive_environment_failure_fact(
-    selected_check: object,
+    selected_check: VerificationCandidate | None,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
     *,

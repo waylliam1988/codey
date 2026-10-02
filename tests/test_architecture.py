@@ -2215,6 +2215,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/hebbian.py",
             "ghost/inbox.py",
             "ghost/work_queue.py",
+            "operations/task_loop.py",
             "providers/controls.py",
             # PLR split 2026-09-26: extracted per-branch helpers stay in-module
             # for cohesion (single caller, domain-specific); file crossed 1000.

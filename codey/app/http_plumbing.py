@@ -51,8 +51,11 @@ def resolve_web_asset(url_path: str) -> tuple[Path, str] | None:
 
 def loopback_allowed_hosts(handler: BaseHTTPRequestHandler) -> set[str]:
     try:
-        port = handler.server.server_address[1]
-        bind_ip = str(handler.server.server_address[0] or "")
+        address = handler.server.server_address
+        if not isinstance(address, tuple) or len(address) < 2:
+            return set()
+        port = address[1]
+        bind_ip = str(address[0] or "")
     except Exception:
         return set()
     hosts = {
@@ -71,8 +74,11 @@ def loopback_allowed_hosts(handler: BaseHTTPRequestHandler) -> set[str]:
 
 def request_allowed_origins(handler: BaseHTTPRequestHandler) -> set[str]:
     try:
-        port = handler.server.server_address[1]
-        bind_ip = str(handler.server.server_address[0] or "")
+        address = handler.server.server_address
+        if not isinstance(address, tuple) or len(address) < 2:
+            return set()
+        port = address[1]
+        bind_ip = str(address[0] or "")
     except Exception:
         return set()
     origins = {

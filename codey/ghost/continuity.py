@@ -43,6 +43,7 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+from codey.utils.refs import coerce_int
 
 if TYPE_CHECKING:
     from codey.runs.ledger_projection import RunLedgerProjection
@@ -527,7 +528,7 @@ class GhostContinuityStore:
                             "bytes_after": before["bytes"],
                             "warnings": list(self.last_warnings),
                         }
-                if before["events"] <= MAX_CONTINUITY_EVENTS and before["bytes"] <= MAX_CONTINUITY_EVENTS_BYTES:
+                if coerce_int(before["events"]) <= MAX_CONTINUITY_EVENTS and coerce_int(before["bytes"]) <= MAX_CONTINUITY_EVENTS_BYTES:
                     return {
                         "ok": True,
                         "compacted": False,

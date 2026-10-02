@@ -16,6 +16,11 @@ CORE_MODULES = (
     "codey/completion/contract.py",
     "codey/runtime/log/entries.py",
     "codey/runtime/core/cancellation.py",
+    "codey/operations/task_loop.py",
+    "codey/operations/project_writer_phase.py",
+    "codey/operations/project_completion_enforcement.py",
+    "codey/research/evidence_ledger.py",
+    "codey/runs/trace.py",
 )
 
 

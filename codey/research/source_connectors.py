@@ -44,6 +44,7 @@ from codey.research.urls import host_key, parsed_url
 from codey.utils.refs import (
     bounded_refs,
     clip,
+    coerce_float,
     digest_text,
     identifier,
     stable_ref,
@@ -1105,7 +1106,7 @@ def _score(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
     try:
-        score = float(value)
+        score = coerce_float(value)
     except (TypeError, ValueError, OverflowError):
         return 0.0
     import math as _math

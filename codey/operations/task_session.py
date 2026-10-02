@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from codey.runtime.core.models import ToolResult
-from codey.utils.refs import stable_ref
+from codey.utils.refs import coerce_int, stable_ref
 
 
 def session_checks_passed(session: Any, proof: Any = None) -> bool:
@@ -29,7 +29,12 @@ def turn_effect_id(run_id: object, turn: object, tool_index: object) -> str:
     """
 
     try:
-        return stable_ref("task_turn_effect", str(run_id or ""), int(turn or 0), int(tool_index or 0))
+        return stable_ref(
+            "task_turn_effect",
+            str(run_id or ""),
+            coerce_int(turn or 0),
+            coerce_int(tool_index or 0),
+        )
     except Exception:
         return stable_ref("task_turn_effect", str(run_id or ""), str(turn or 0), str(tool_index or 0))
 

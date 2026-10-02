@@ -8,6 +8,7 @@ import os
 import stat
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 _WINDOWS_RESERVED_STEMS = frozenset({
     "con",
@@ -199,7 +200,7 @@ def bounded_directory_entries(
     max_entries: int,
     *,
     include_hidden: bool = True,
-    sort_key: Callable[[Path], object] | None = None,
+    sort_key: Callable[[Path], Any] | None = None,
     check_cancel: Callable[[], None] | None = None,
     swallow_errors: bool = False,
 ) -> tuple[list[Path], bool]:
@@ -237,7 +238,7 @@ def is_test_path(rel: str) -> bool:
 
 def _sorted_entries(
     entries: list[Path],
-    sort_key: Callable[[Path], object] | None,
+    sort_key: Callable[[Path], Any] | None,
 ) -> list[Path]:
     if sort_key is None:
         return sorted(entries)

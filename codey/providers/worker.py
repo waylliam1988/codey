@@ -61,7 +61,7 @@ class _WorkerSession:
     """
 
     proc: subprocess.Popen[str]
-    job: object
+    job: cancellation.ProcessTreeOwner | None
     stderr_tail: deque[str] = field(
         default_factory=lambda: deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
     )
@@ -228,7 +228,7 @@ class WorkerChatProvider:
                 cancellation.terminate_process_tree(proc, job)
             if job is not None:
                 with contextlib.suppress(Exception):
-                    job.close()  # type: ignore[union-attr]
+                    job.close()
             self._join_threads(started)
             self._close_stopped_session_pipes(session)
             raise
@@ -996,7 +996,7 @@ def _failure_from_response(provider_id: str, method: str, response: dict) -> Pro
             str(raw.get("time") or ""),
             str(raw.get("kind") or FAILURE_RESPONSE_MISSING),
             str(raw.get("stage") or ""),
-            facts=raw.get("facts") if isinstance(raw.get("facts"), dict) else {},
+            facts={str(key): value for key, value in raw["facts"].items()} if isinstance(raw.get("facts"), dict) else {},
         )
     return ProviderFailure(
         provider_id,

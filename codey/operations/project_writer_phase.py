@@ -254,6 +254,7 @@ def _clear_provider_session(ctx: ProjectRun, pid: str) -> None:
 
 
 def _run_writer_canary(ctx: ProjectRun, pid: str, item: Any) -> bool:
+    assert ctx.hooks.supervisor is not None
     return run_half_open_canary(pid, item, ctx.hooks.supervisor)
 
 
@@ -346,6 +347,7 @@ def _maybe_consult_consensus_after_writer(ctx: ProjectRun) -> None:
 
 def _run_writer_phase(ctx: ProjectRun) -> None:
     ctx.failover = _build_writer_failover(ctx)
+    assert ctx.failover is not None
     _commit_runtime_operation(
         ctx,
         "mark_writer_running",
@@ -369,9 +371,11 @@ def _run_writer_phase(ctx: ProjectRun) -> None:
         )
     finally:
         _sync_failover_frame(ctx)
+    assert ctx.result is not None
+    result = ctx.result
     # Approval and cancellation can retain an unexecuted or uncertain intent.
     # The outer lifecycle terminalizes them without claiming tool settlement.
-    if ctx.result.stop_reason not in {"approval", "stopped"}:
+    if result.stop_reason not in {"approval", "stopped"}:
         _commit_runtime_operation(
             ctx,
             "mark_writer_settled",
@@ -379,8 +383,8 @@ def _run_writer_phase(ctx: ProjectRun) -> None:
                 session_id,
                 run_id,
                 provider_id=ctx.frame.provider_id,
-                turns_used=ctx.result.turns,
-                stop_reason=ctx.result.stop_reason,
+                turns_used=result.turns,
+                stop_reason=result.stop_reason,
             ),
         )
     ctx.inherited_green = bool(

@@ -145,7 +145,7 @@ def build_shell_approval_pending(
         pending["turn"] = approval.turn
     if type(approval.tool_index) is int and approval.tool_index >= 0:
         pending["tool_index"] = approval.tool_index
-    pending["ui_event"] = {
+    ui_event: dict[str, object] = {
         "type": "shell_request",
         "run_id": run_id,
         "session_id": session_id,
@@ -161,7 +161,8 @@ def build_shell_approval_pending(
         "deferred_tool_calls": deferred_tool_calls,
     }
     if "call_id" in pending:
-        pending["ui_event"]["call_id"] = pending["call_id"]
+        ui_event["call_id"] = pending["call_id"]
+    pending["ui_event"] = ui_event
     return pending
 
 

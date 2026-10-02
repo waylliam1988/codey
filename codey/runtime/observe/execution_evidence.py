@@ -192,16 +192,16 @@ class ExecutionEvidence:
             path = _text(args.get("path"), 240)
             offset = self._integer(args.get("offset"), 1)
             limit = self._integer(args.get("limit"), 0)
-            item = ReadEvidence(path, offset, limit, self.edit_epoch, outcome.ok, outcome.truncated)
-            key = (name, path, offset, limit, self.edit_epoch)
-            self._record_information(key, self.reads, item, MAX_READS)
+            read_item = ReadEvidence(path, offset, limit, self.edit_epoch, outcome.ok, outcome.truncated)
+            read_key = (name, path, offset, limit, self.edit_epoch)
+            self._record_information(read_key, self.reads, read_item, MAX_READS)
             self._record_truncation(name, f"{path}:{offset}", outcome.truncated)
             return
         if name in {"search", "references"}:
             path = _text(args.get("path"), 240) or "."
             arg = "query" if name == "search" else "symbol"
             value = _text(args.get(arg), 240)
-            item = SearchEvidence(
+            search_item = SearchEvidence(
                 name,
                 path,
                 value,
@@ -209,8 +209,8 @@ class ExecutionEvidence:
                 outcome.ok,
                 outcome.ok and not outcome.truncated,
             )
-            key = (name, path, value, self.edit_epoch)
-            self._record_information(key, self.searches, item, MAX_SEARCHES)
+            search_key = (name, path, value, self.edit_epoch)
+            self._record_information(search_key, self.searches, search_item, MAX_SEARCHES)
             self._record_truncation(name, f"{value} under {path}", outcome.truncated)
 
     @property

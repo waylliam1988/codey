@@ -40,7 +40,8 @@ class _JobState(Enum):
 def _call_deadlines(timeout: float | None) -> tuple[Any, float | None]:
     caller_event = cancellation.current_event()
     caller_deadline = cancellation.current_deadline()
-    timeout_deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+    timeout_deadline = None if timeout is None else time.monotonic() + max(0.0, float(timeout))
+    active_deadline: float | None
     if caller_deadline is not None and timeout_deadline is not None:
         active_deadline = min(caller_deadline, timeout_deadline)
     else:

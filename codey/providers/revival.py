@@ -263,7 +263,7 @@ def _record_control_failure_locked(path: Path, provider_id: str, action: str) ->
         return False
     meta = provider.get(REVIVAL_KEY)
     revival_actions = _changed_actions(meta) if isinstance(meta, dict) else set()
-    if action in revival_actions:
+    if isinstance(meta, dict) and action in revival_actions:
         failures = int(meta.get("failures") or 0) + 1
         if failures < MAX_CONTROL_FAILURES:
             meta["failures"] = failures

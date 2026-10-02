@@ -48,7 +48,7 @@ def query_int(
     minimum: int,
     maximum: int,
 ) -> int:
-    raw = (query.get(key) or [default])[0]
+    raw = str((query.get(key) or [str(default)])[0])
     if isinstance(raw, bool):
         value = default
     elif isinstance(raw, int):

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.runtime.core import cancellation
+from codey.utils.refs import coerce_int
 from codey.workspace.context_epoch import (
     PROVIDER_TURN_ADMISSION,
     PROVIDER_TURN_BOUNDARY,
@@ -27,7 +28,7 @@ def _safe_budget(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value))  # type: ignore[arg-type]
+        return max(0, coerce_int(value))
     except (TypeError, ValueError, OverflowError):
         return 0
 MAX_PROMPT_SOURCE_REFS = 64
@@ -150,7 +151,7 @@ class FailOpenPromptTrace:
             freshness = freshness_override or str(getattr(section, "freshness", "") or "")
             name = str(getattr(section, "name", "") or "prompt_section")
             text = str(getattr(section, "text", "") or "")
-            budget = max(0, int(getattr(section, "budget", 0) or 0))
+            budget = max(0, coerce_int(getattr(section, "budget", 0) or 0))
             truncated = bool(getattr(section, "truncated", False))
             source_refs = _source_refs(
                 getattr(section, "source_refs", ()),

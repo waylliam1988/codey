@@ -25,6 +25,7 @@ from codey.utils.refs import (
     clip,
     digest_json,
     digest_text,
+    parse_int,
     stable_ref,
 )
 
@@ -92,7 +93,9 @@ def _bounded_duration(value: object) -> int | None:
     if isinstance(value, bool):
         return None
     try:
-        parsed = int(value)
+        parsed = parse_int(value)
+        if parsed is None:
+            return None
     except (TypeError, ValueError, OverflowError):
         return None
     if parsed < 0:
@@ -104,7 +107,7 @@ def _optional_int(value: object) -> int | None:
     if isinstance(value, bool):
         return None
     try:
-        return int(value)
+        return parse_int(value)
     except (TypeError, ValueError, OverflowError):
         return None
 

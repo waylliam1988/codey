@@ -193,7 +193,7 @@ def items_from_research_interest_candidates(
                 scope=scope,
                 scope_ref=scope_ref,
                 title=title,
-                why_now=_field(candidate, "why_now") or "Bounded local research interest.",
+                why_now=str(_field(candidate, "why_now") or "Bounded local research interest."),
                 priority=priority,
                 confidence=confidence,
                 source=source,
@@ -202,8 +202,8 @@ def items_from_research_interest_candidates(
                 run_refs=(),
                 now=now,
                 metadata={
-                    "related_concepts": list(_field(candidate, "related_concepts") or ())[:6],
-                    "shared_neighbors": list(_field(candidate, "shared_neighbors") or ())[:6],
+                    "related_concepts": _list(_field(candidate, "related_concepts"))[:6],
+                    "shared_neighbors": _list(_field(candidate, "shared_neighbors"))[:6],
                     "strong_support": strong,
                 },
             )

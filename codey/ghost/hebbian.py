@@ -55,6 +55,7 @@ from codey.storage.local_store import (
     delete_file,
     write_json_atomic,
 )
+from codey.utils.refs import coerce_float, coerce_int
 
 HEBBIAN_SCHEMA_VERSION = 1
 
@@ -63,7 +64,7 @@ def _safe_count(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value or 0))  # type: ignore[arg-type]
+        return max(0, coerce_int(value or 0))
     except (TypeError, ValueError, OverflowError):
         return 0
 MAX_GHOST_NODES = 500
@@ -585,7 +586,7 @@ class GhostHebbianStore:
                     }
             nodes, edges = self._load_state_unlocked()
             now = _common.now_iso_z()
-            interval = max(0, int(min_interval_seconds or 0))
+            interval = max(0, coerce_int(min_interval_seconds or 0))
             if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
                 return {
                     "removed_nodes": 0,
@@ -1164,7 +1165,7 @@ def _merge_refs(
         ref = clip_signal_text(value, 160)
         if ref and ref not in out:
             out.append(ref)
-    return tuple(out[-max(1, int(limit or 1)) :])
+    return tuple(out[-max(1, coerce_int(limit or 1, default=1)) :])
 
 
 def _clean_refs(value: object, *, limit: int) -> tuple[str, ...]:
@@ -1190,7 +1191,7 @@ def _coerce_confidence(value: object) -> float | None:
 
 def _coerce_reward(value: object) -> float:
     try:
-        reward = float(value)
+        reward = coerce_float(value, default=1.0)
     except (TypeError, ValueError, OverflowError):
         return 1.0
     if not math.isfinite(reward):

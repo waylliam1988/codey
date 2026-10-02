@@ -314,12 +314,12 @@ def _bounded_tokens(values: Iterable[object], limit: int) -> tuple[str, ...]:
 
 def _host_of(host: object, *url_refs: object) -> str:
     # www-stripping has one owner: source_domains.strip_www.
-    text = source_domains.strip_www(host)
+    text = source_domains.strip_www(str(host or ""))
     if text:
         return text
     for ref in url_refs:
         if isinstance(ref, Mapping):
-            candidate = source_domains.strip_www(ref.get("host"))
+            candidate = source_domains.strip_www(str(ref.get("host") or ""))
             if candidate:
                 return candidate
     return ""

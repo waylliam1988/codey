@@ -13,6 +13,7 @@ from typing import Literal
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import delete_file
+from codey.utils.refs import coerce_int
 
 BadRowPolicy = Literal["warn", "block", "quarantine_tail"]
 
@@ -175,7 +176,7 @@ class GhostEventLog:
                 temporary.unlink()
 
     def prune_tail(self, max_rows: int) -> None:
-        count = max(0, int(max_rows))
+        count = max(0, coerce_int(max_rows))
         with with_file_lock(self.path):
             try:
                 if not self.path.is_file() or count_jsonl_rows(self.path) <= count:
@@ -287,7 +288,7 @@ def event_file_stats(
         if not target.is_file():
             return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
         event_bytes = target.stat().st_size
-        if event_bytes > max(0, int(max_bytes or 0)):
+        if event_bytes > max(0, coerce_int(max_bytes or 0)):
             return {
                 "events": 0,
                 "bytes": event_bytes,
@@ -306,7 +307,7 @@ def _safe_count(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value or 0))  # type: ignore[arg-type]
+        return max(0, coerce_int(value or 0))
     except (TypeError, ValueError, OverflowError):
         return 0
 

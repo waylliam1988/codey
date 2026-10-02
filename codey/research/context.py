@@ -151,10 +151,10 @@ class RunTraceResearchSink:
         self._sink.call("flush")
 
     def record_research_source_trust(self, projections: Iterable[object] | None) -> None:
-        payloads = [
-            item.to_payload() if callable(getattr(item, "to_payload", None)) else item
-            for item in (projections or ())
-        ]
+        payloads: list[object] = []
+        for item in projections or ():
+            to_payload = getattr(item, "to_payload", None)
+            payloads.append(to_payload() if callable(to_payload) else item)
         payloads = [item for item in payloads if isinstance(item, Mapping)]
         if not payloads:
             return

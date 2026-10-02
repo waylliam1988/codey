@@ -19,7 +19,7 @@ from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
 from codey.storage.local_store import project_key, session_key
-from codey.utils.refs import generated_ref
+from codey.utils.refs import coerce_int, generated_ref
 
 WORK_QUEUE_SCHEMA_VERSION = 1
 
@@ -380,7 +380,7 @@ def _int(value: object) -> int:
                 stripped = stripped[1:]
             if stripped and not (stripped.isascii() and stripped.isdigit()):
                 return 0
-        return int(value or 0)  # type: ignore[arg-type]
+        return coerce_int(value or 0)
     except (TypeError, ValueError, OverflowError):
         return 0
 

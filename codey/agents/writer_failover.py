@@ -126,6 +126,7 @@ class WriterFailoverRunner:
         cur_checkpoint = checkpoint
         if self.provider is None:
             cur_fresh, cur_checkpoint = self._initial_reconnect(cur_fresh, cur_checkpoint)
+        assert self.provider is not None
         while True:
             counter = _TurnCounter()
             spec = WriterAttempt(

@@ -78,7 +78,7 @@ def record_provider_success_event(supervisor: Any, pid: str) -> None:
         logger.exception("provider health success record failed for %s", pid)
 
 
-def build_hooks(
+def build_hooks(  # noqa: C901
     deps: Any,
     state: TaskState,
     work: RunWork,
@@ -187,7 +187,9 @@ def build_hooks(
             post_approval_instructions=risk.post_approval_instructions,
         )
         state.add_pending_shell_approval(approval_id, pending)
-        state.emit(pending["ui_event"])
+        event = pending.get("ui_event")
+        if isinstance(event, dict):
+            state.emit(event)
 
     supervisor = state.providers.supervisor
     self_repair = getattr(state, "self_repair", None)

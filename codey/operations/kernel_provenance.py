@@ -79,7 +79,7 @@ class TrustedWorkspaceProof:
 
     identity: Any
     source: str = ""
-    _capability: object = field(repr=False, compare=False)
+    _capability: object = field(default=None, repr=False, compare=False)
 
     def __init__(self, identity: Any, source: str = "", *, _capability: object = None) -> None:
         if _capability is not _TRUSTED_PROOF_CAPABILITY:
@@ -185,6 +185,7 @@ def event_proof(event: Any) -> TrustedWorkspaceProof | None:
     if proof is None:
         raise RecoveryFailed("event proof attribute is present but empty")
     _validated_trusted_proof(proof)
+    assert isinstance(proof, TrustedWorkspaceProof)
     return proof
 
 

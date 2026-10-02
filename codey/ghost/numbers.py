@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import math
 
+from codey.utils.refs import coerce_float
+
 
 def coerce_unit_float(value: object, *, digits: int = 4) -> float | None:
     """Strict coercion: unusable input projects to None (fail closed)."""
     if isinstance(value, bool):
         return None
     try:
-        number = float(value)
+        number = coerce_float(value, default=float("nan"))
     except (TypeError, ValueError, OverflowError):
         return None
     if not math.isfinite(number) or number < 0.0 or number > 1.0:
@@ -30,7 +32,7 @@ def clamp_unit_float(value: object, *, digits: int = 4) -> float:
     if isinstance(value, bool):
         return 0.0
     try:
-        number = float(value)
+        number = coerce_float(value)
     except (TypeError, ValueError, OverflowError):
         return 0.0
     if not math.isfinite(number):

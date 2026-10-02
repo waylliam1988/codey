@@ -211,9 +211,11 @@ def _successful_checks_from_payload(value: object) -> tuple[SuccessfulCheck, ...
 def _successful_change_from_payload(value: object) -> SuccessfulChange | None:
     if not isinstance(value, dict):
         return None
+    raw_files = value.get("files")
+    files: Sequence[object] = tuple(raw_files) if isinstance(raw_files, (list, tuple)) else ()
     return _successful_change(
         task=value.get("task"),
-        files=value.get("files") if isinstance(value.get("files"), (list, tuple)) else (),
+        files=files,
         checks=_successful_checks_from_payload(value.get("checks")),
         receipt=value.get("receipt", ""),
     )

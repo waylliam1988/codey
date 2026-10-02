@@ -8,6 +8,7 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from typing import Any, cast
 
 from codey.providers import local_config as _local_config
 from codey.providers import local_discovery as _local_discovery
@@ -200,7 +201,7 @@ class LocalOpenAIProvider:
             return AssistantTurn(
                 text=text,
                 tool_calls=tuple(
-                    ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
+                    ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=cast(dict[str, Any], call.get("arguments")) if isinstance(call.get("arguments"), dict) else {})
                     for call in parsed
                 ) if not dropped else (),
                 raw={"finish_reason": str(message.get("_finish_reason") or ""), "stale_generation": True,
@@ -223,7 +224,7 @@ class LocalOpenAIProvider:
         return AssistantTurn(
             text=text,
             tool_calls=tuple(
-                ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
+                ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=cast(dict[str, Any], call.get("arguments")) if isinstance(call.get("arguments"), dict) else {})
                 for call in parsed
             ),
             raw={"finish_reason": str(message.get("_finish_reason") or ""),
@@ -310,7 +311,7 @@ class LocalOpenAIProvider:
         """
         from codey.providers import error_classification as errors
 
-        candidate: list[dict] = [dict(message) for message in self._messages]
+        candidate: list[dict[str, object]] = [dict(message) for message in self._messages]
         if not candidate and self.system_prompt:
             candidate.append({"role": "system", "content": self.system_prompt})
         for item in pending_messages:

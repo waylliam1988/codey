@@ -14,8 +14,10 @@ import time as _time
 
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.operations.task_state import TaskState
+from codey.providers.base import ChatProvider
 from codey.providers.capabilities import rank_providers
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS  # noqa: F401
+from codey.providers.supervisor import ProviderSupervisor
 from codey.utils.refs import clip, digest_text
 
 
@@ -34,19 +36,19 @@ def warm_provider_tabs(*args: object, **kwargs: object) -> dict:
     return _provider_registry().warm_provider_tabs(*args, **kwargs)
 
 
-def connect_provider(*args: object, **kwargs: object) -> object:
+def connect_provider(*args: object, **kwargs: object) -> ChatProvider:
     return _provider_registry().connect_provider(*args, **kwargs)
 
 
-def connect_existing_provider(provider_id: str) -> object:
+def connect_existing_provider(provider_id: str) -> ChatProvider:
     return _provider_registry().connect_existing_provider(provider_id)
 
 
-def connect_fresh_provider_tab(provider_id: str, **kwargs: object) -> object:
+def connect_fresh_provider_tab(provider_id: str, **kwargs: object) -> ChatProvider:
     return _provider_registry().connect_fresh_provider_tab(provider_id, **kwargs)
 
 
-def borrow_open_provider(provider_id: str, owner_page: object) -> object | None:
+def borrow_open_provider(provider_id: str, owner_page: object) -> ChatProvider | None:
     return _provider_registry().borrow_open_provider(provider_id, owner_page)
 
 
@@ -54,13 +56,14 @@ def reviewer_candidates(
     ctx: TaskState,
     writer_id: str,
     *,
-    supervisor: object | None = None,
+    supervisor: ProviderSupervisor | None = None,
 ) -> tuple[str, ...]:
     from codey.providers.ids import normalize_provider_id
 
     writer = normalize_provider_id(writer_id) or DEFAULT_PROVIDER_ID
     if supervisor is None:
         supervisor = ctx.providers.supervisor
+    assert supervisor is not None
     candidates = tuple(
         provider_id
         for provider_id in PROVIDER_LABELS

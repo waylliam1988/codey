@@ -201,7 +201,7 @@ def _allowed_schema_keys(kind: str) -> set[str]:
     return {"type"}
 
 
-def _valid_schema_bounds(kind: str, schema: dict) -> bool:
+def _valid_schema_bounds(kind: str, schema: Mapping[Any, Any]) -> bool:
     for bound_key in ("minimum", "maximum"):
         if bound_key not in schema:
             continue
@@ -225,7 +225,7 @@ def _valid_schema_bounds(kind: str, schema: dict) -> bool:
     return True
 
 
-def _valid_schema_nested(kind: str, schema: dict) -> bool:
+def _valid_schema_nested(kind: str, schema: Mapping[Any, Any]) -> bool:
     if kind == "array" and "items" in schema:
         return _valid_custom_schema(schema["items"])
     if kind != "object":
@@ -296,7 +296,7 @@ def register_custom_tool(
             return False
     if any(not str(item or "").strip() for item in required):
         return False
-    example_args = {
+    example_args: dict[str, object] = {
         str(key): ([] if isinstance(schema, Mapping) and schema.get("type") == "array" else
                    {} if isinstance(schema, Mapping) and schema.get("type") == "object" else
                    0 if isinstance(schema, Mapping) and schema.get("type") in {"integer", "number"} else
@@ -462,7 +462,11 @@ def native_tools_for_snapshot(policy: Any, controller_allowed: Any = None) -> li
                 "parameters": _schema_for_spec(spec),
             },
         })
-    tools.sort(key=lambda item: str(((item.get("function") or {}).get("name")) or ""))
+    def tool_name(item: dict[str, object]) -> str:
+        function = item.get("function")
+        return str(function.get("name") or "") if isinstance(function, dict) else ""
+
+    tools.sort(key=tool_name)
     return tools
 
 
@@ -722,10 +726,8 @@ def _validate_required_presence(spec: Any, declared: dict[str, object], is_built
         if value is None:
             return f"{spec.name} missing required arg '{key}'"
         if isinstance(declared.get(key), Mapping):
-            try:
-                want = str(declared.get(key, {}).get("type", "") or "").lower()  # type: ignore[union-attr]
-            except Exception:
-                want = ""
+            raw_declared = declared.get(key)
+            want = str(raw_declared.get("type", "") or "").lower() if isinstance(raw_declared, Mapping) else ""
             if want == "string" and not str(value or "").strip():
                 return f"{spec.name} missing required arg '{key}'"
     return ""

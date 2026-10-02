@@ -22,6 +22,7 @@ from codey.knowledge.graph import (
     ResearchGraphArtifact,
 )
 from codey.knowledge.store import KnowledgeStore
+from codey.utils.refs import coerce_int
 
 DEFAULT_CONCEPT_NODE_LIMIT = 64
 DEFAULT_CONCEPT_EDGE_LIMIT = 128
@@ -60,7 +61,7 @@ def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int
     if isinstance(value, str) and not value.strip().isascii():
         return default
     try:
-        parsed = int(value)  # type: ignore[arg-type]
+        parsed = coerce_int(value, default=default)
     except (TypeError, ValueError, OverflowError):
         parsed = default
     return max(minimum, min(parsed, maximum))
@@ -410,10 +411,10 @@ def _missing_link_rows(
         adjacency.setdefault(dst, set()).add(src)
         pair = frozenset((src, dst))
         linked.add(pair)
-        refs = supports_by_pair.setdefault(pair, [])
+        pair_refs = supports_by_pair.setdefault(pair, [])
         for ref in declared.get((src, dst, _kind), []):
-            if ref.note_id and ref.note_id not in {existing.note_id for existing in refs}:
-                refs.append(ref)
+            if ref.note_id and ref.note_id not in {existing.note_id for existing in pair_refs}:
+                pair_refs.append(ref)
     kept_declared = [c for c in kept if c in adjacency]
     candidates: list[MissingConceptLink] = []
     for i, a in enumerate(kept_declared):

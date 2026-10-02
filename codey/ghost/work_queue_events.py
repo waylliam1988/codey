@@ -32,6 +32,7 @@ from codey.ghost.work_queue_model import (
     _research_proof_ref,
     _valid_work_item_payload,
 )
+from codey.utils.refs import coerce_int
 
 _PROJECTION_KIND = "ghost_work_items_projection"
 
@@ -343,7 +344,8 @@ def _valid_work_event(event: Mapping[str, object]) -> bool:
             return False
         reason = str(payload.get("reason") or "") if isinstance(payload, Mapping) else ""
         item_ids = payload.get("item_ids") if isinstance(payload, Mapping) else []
-        expected_items = payload.get("expected_items") if isinstance(payload, Mapping) else []
+        expected_items_value = payload.get("expected_items") if isinstance(payload, Mapping) else []
+        expected_items = _list(expected_items_value)
         scope = str(payload.get("scope") or "") if isinstance(payload, Mapping) else ""
         project_ref = str(payload.get("project_ref") or "") if isinstance(payload, Mapping) else ""
         session_ref = str(payload.get("session_ref") or "") if isinstance(payload, Mapping) else ""
@@ -384,10 +386,10 @@ def _valid_claim_transition(
         return False
     if "retry_count" not in patch:
         return False
-    retry_count = patch["retry_count"]
+    retry_count = _int(patch["retry_count"])
     if not _common.valid_nonnegative_int_payload(retry_count):
         return False
-    if retry_count < 1 or retry_count != expected_retry_count + 1:
+    if retry_count < 1 or retry_count != _int(expected_retry_count) + 1:
         return False
     if clip_signal_text(patch.get("blocked_reason"), 120):
         return False
@@ -519,9 +521,10 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
     updated_at = clip_signal_text(patch.get("updated_at"), 80)
     if not updated_at:
         return False
-    expected_status = _clean_status(precondition.get("expected_status"))
-    expected_started_run_id = clip_signal_text(precondition.get("expected_started_run_id"), 120)
-    expected_retry_count = precondition.get("expected_retry_count")
+    precondition_map = precondition if isinstance(precondition, Mapping) else {}
+    expected_status = _clean_status(precondition_map.get("expected_status"))
+    expected_started_run_id = clip_signal_text(precondition_map.get("expected_started_run_id"), 120)
+    expected_retry_count = precondition_map.get("expected_retry_count")
     if not _common.valid_nonnegative_int_payload(expected_retry_count):
         return False
     if action == "claim":
@@ -655,7 +658,7 @@ def _apply_claim_transition(
     lease_expires_at = clip_signal_text(patch.get("lease_expires_at"), 80)
     if not started_run_id or not lease_expires_at or "retry_count" not in patch:
         return None
-    retry_count = patch["retry_count"]
+    retry_count = _int(patch["retry_count"])
     if not _common.valid_nonnegative_int_payload(retry_count):
         return None
     if retry_count < 1 or retry_count != current.retry_count + 1:
@@ -765,7 +768,7 @@ def _apply_queue_transition(
     if "retry_count" not in patch:
         return None
     try:
-        if int(patch["retry_count"]) != 0:
+        if coerce_int(patch["retry_count"]) != 0:
             return None
     except (TypeError, ValueError, OverflowError):
         return None

@@ -207,6 +207,7 @@ class ProjectTaskContextBuilder:
         resume_requested = continue_task or provider_session_changed
         same_task = previous is not None and previous.original_task.strip() == task.strip()
         if same_project and resume_requested and (continue_task or same_task):
+            assert previous is not None
             try:
                 item = self.work_checkpoints.reconcile(
                     previous,
@@ -216,7 +217,7 @@ class ProjectTaskContextBuilder:
                 return CheckpointContext()
             return _checkpoint_context(item, resumed=True)
         try:
-            item = self.work_checkpoints.start(
+            started = self.work_checkpoints.start(
                 run_id=run_id,
                 session_id=session_id,
                 project=project,
@@ -229,6 +230,9 @@ class ProjectTaskContextBuilder:
                 corrupt_backup_path=corrupt_backup,
                 prompt=notice,
             )
+        if started is None:
+            return CheckpointContext(corrupt_backup_path=corrupt_backup, prompt=notice)
+        item = started
         if item is None:
             return CheckpointContext(
                 corrupt_backup_path=corrupt_backup,

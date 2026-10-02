@@ -40,6 +40,7 @@ from codey.operations.kernel_result import (
 )
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.utils.refs import coerce_int
 
 __all__ = [
     "execute_turn",
@@ -310,11 +311,11 @@ def _turn_setup(
     workspace_ignored_paths: Any, project_path: Any, workspace_revision_store: Any,
 ) -> tuple[int, int, str, str, dict[str, ToolResult], tuple[str, ...], RecoveryContext]:
     try:
-        active_turn = int(turn) if turn is not None else int(session.turn or 0)
+        active_turn = coerce_int(turn) if turn is not None else coerce_int(session.turn or 0)
     except (TypeError, ValueError):
         active_turn = int(session.turn or 0)
     try:
-        base_index = int(tool_index_base or 0)
+        base_index = coerce_int(tool_index_base or 0)
     except (TypeError, ValueError):
         base_index = 0
     run_ref_str = str(run_id or "")

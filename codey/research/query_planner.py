@@ -35,6 +35,7 @@ from codey.research.source_connectors import (
 from codey.utils.refs import (
     bounded_refs,
     clip,
+    coerce_float,
     digest_text,
     identifier,
     stable_ref,
@@ -182,7 +183,7 @@ def build_research_plan(
     max_query_count = _bounded_int(max_queries, 1, MAX_PLAN_QUERIES)
     max_source_count = _bounded_int(max_sources, 1, MAX_PLAN_SOURCES)
     if _proof_ok_without_required_gap(payload):
-        reason_codes = ("proof_ok_no_required_followup",)
+        reason_codes: tuple[str, ...] = ("proof_ok_no_required_followup",)
         warnings: tuple[str, ...] = ()
         plan_ref = stable_ref(
             "research_plan",
@@ -216,7 +217,7 @@ def build_research_plan(
         preferences=preferences,
         max_queries=max_query_count,
     )
-    reason_codes = list(bounded_refs([
+    reason_codes = tuple(bounded_refs([
         *_reason_codes_from_review(payload),
         *pref_reasons,
         *(
@@ -225,7 +226,7 @@ def build_research_plan(
             else ()
         ),
     ], limit=MAX_PLAN_REASON_CODES))
-    warnings = list(_planner_warnings(payload, preferences))
+    warnings = tuple(_planner_warnings(payload, preferences))
     plan_ref = stable_ref(
         "research_plan",
         question_digest,
@@ -538,7 +539,7 @@ def _planner_warnings(
 
 def _unit_float(value: object) -> float:
     try:
-        number = float(value)
+        number = coerce_float(value)
     except (TypeError, ValueError, OverflowError):
         return 0.0
     if not math.isfinite(number):

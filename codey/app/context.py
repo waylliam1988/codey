@@ -13,7 +13,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from codey.repairs.self_repair import SelfRepairSupervisor
@@ -80,10 +80,12 @@ class AppContext:
     ) -> None:
         self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
+        assert self._ephemeral_runtime_home is not None or self.state_home is not None
+        ephemeral_runtime_home = self._ephemeral_runtime_home
         runtime_state_home = (
             self.state_home
             if self.state_home is not None
-            else Path(self._ephemeral_runtime_home.name)
+            else Path(ephemeral_runtime_home.name if ephemeral_runtime_home is not None else tempfile.gettempdir())
         )
         self.lock = threading.Lock()
         # Spawn gate: Stop's generation bump and the executor's final
@@ -110,8 +112,8 @@ class AppContext:
         )
         resolved_state_home = Path(state_home).expanduser().resolve() if state_home else None
         self._knowledge_store_enabled = resolved_state_home == DEFAULT_STATE_HOME.expanduser().resolve()
-        self._knowledge_store: object | None = None
-        self._knowledge_root = Path(state_home) / "vault" if self._knowledge_store_enabled else None
+        self._knowledge_store: KnowledgeStore | None = None
+        self._knowledge_root = Path(state_home) / "vault" if state_home is not None and self._knowledge_store_enabled else None
         self.knowledge_indexer = KnowledgeIndexer(
             store=lambda: self._knowledge_store,
         )
@@ -189,7 +191,7 @@ class AppContext:
             lease = self._project_writer_leases.pop(key, None)
         if lease is not None:
             with contextlib.suppress(Exception):
-                lease.release()
+                cast(Any, lease).release()
 
     def _ghost_store(
         self,
@@ -316,7 +318,7 @@ class AppContext:
     @knowledge_store.setter
     def knowledge_store(self, value: object | None) -> None:
         with self.lock:
-            self._knowledge_store = value
+            self._knowledge_store = cast(KnowledgeStore, value) if value is not None else None
             self._knowledge_store_enabled = value is not None
             if value is not None and self._knowledge_root is None and self.state_home is not None:
                 self._knowledge_root = self.state_home / "vault"
@@ -583,7 +585,7 @@ class AppContext:
             changes = self.research_changes.get(run_id)
         if changes is None:
             return {"ok": False, "error": "research changes not found"}
-        result = changes.restore_result()
+        result = cast(Any, changes).restore_result()
         if self.knowledge_store is not None:
             self._schedule_knowledge_rebuild()
         if result.ok:

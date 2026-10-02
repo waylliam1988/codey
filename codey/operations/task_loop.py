@@ -30,6 +30,7 @@ from codey.operations.kernel_trace import record_turn
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.toolchain.tool_spec import thaw_schema_value
+from codey.utils.refs import nonnegative_int
 
 if TYPE_CHECKING:  # Annotations only; the loop never re-exports TaskSession.
     from codey.operations.task_session import TaskSession
@@ -58,7 +59,7 @@ class KernelTransportDeps:
     """Provider and turn transport state owned by the kernel boundary."""
 
     provider: Any
-    run_id: object = ""
+    run_id: str = ""
     effect_scope: str = ""
     provider_id: object = ""
     user_task: object = ""
@@ -123,22 +124,67 @@ class KernelRunRequest:
         def take(name: str, default: object = None) -> object:
             return raw.pop(name, default)
 
+        def take_optional_int(name: str) -> int | None:
+            value = take(name)
+            if value is None:
+                return None
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"{name} must be an int or None")
+            return value
+
+        def take_delivered(name: str) -> Mapping[str, ToolResult] | None:
+            value = take(name)
+            if value is None:
+                return None
+            if not isinstance(value, Mapping) or not all(isinstance(item, ToolResult) for item in value.values()):
+                raise TypeError(f"{name} must be a mapping or None")
+            return value
+
+        def take_results(name: str) -> list[ToolResult] | None:
+            value = take(name)
+            if value is None:
+                return None
+            if not isinstance(value, list) or not all(
+                isinstance(item, ToolResult) for item in value
+            ):
+                raise TypeError(f"{name} must be a list of ToolResult or None")
+            return value
+
+        def take_callback(name: str) -> Callable[[Any], None] | None:
+            value = take(name)
+            if value is None:
+                return None
+            if not callable(value):
+                raise TypeError(f"{name} must be callable or None")
+            return value
+
+        def take_executors() -> Mapping[str, Callable[[ToolCall], Any]] | None:
+            value = take("executors")
+            if value is None:
+                return None
+            if not isinstance(value, Mapping) or not all(
+                isinstance(name, str) and callable(executor)
+                for name, executor in value.items()
+            ):
+                raise TypeError("executors must map tool names to callables")
+            return value
+
         transport = KernelTransportDeps(
             provider=provider,
-            run_id=take("run_id", ""),
+            run_id=str(take("run_id", "") or ""),
             effect_scope=str(take("effect_scope", "") or ""),
             provider_id=take("provider_id", ""),
             user_task=take("user_task", ""),
             context_text=str(take("context_text", "") or ""),
             stop_flag=take("stop_flag"),
-            stagnant_turns=take("stagnant_turns"),
-            delivered=take("delivered"),
-            start_turn=take("start_turn"),
-            initial_results=take("initial_results"),
+            stagnant_turns=take_optional_int("stagnant_turns"),
+            delivered=take_delivered("delivered"),
+            start_turn=take_optional_int("start_turn"),
+            initial_results=take_results("initial_results"),
             provider_session_changed=bool(take("provider_session_changed", False)),
         )
         execution = KernelExecutionDeps(
-            executors=take("executors"),
+            executors=take_executors(),
             project_path=take("project_path"),
             tool_fns=take("tool_fns"),
             research_tools=take("research_tools"),
@@ -152,8 +198,8 @@ class KernelRunRequest:
         observation = KernelObservationDeps(
             intent_sink=take("intent_sink"),
             completion_context=take("completion_context"),
-            on_event=take("on_event"),
-            on_shell_request=take("on_shell_request"),
+            on_event=take_callback("on_event"),
+            on_shell_request=take_callback("on_shell_request"),
             trace_recorder=take("trace_recorder"),
             propagate_provider_failure=bool(take("propagate_provider_failure", False)),
         )
@@ -163,39 +209,71 @@ class KernelRunRequest:
         return cls(transport=transport, execution=execution, observation=observation)
 
 
-def _bind_run_request(request: KernelRunRequest) -> tuple[object, ...]:
+@dataclass(frozen=True)
+class _BoundRunRequest:
+    provider: Any
+    executors: Mapping[str, Callable[[ToolCall], Any]] | None
+    run_id: str
+    effect_scope: str
+    provider_id: object
+    project_path: Any
+    tool_fns: Any
+    research_tools: Any
+    change_tracker: Any
+    managed_outputs: Any
+    session_id: str
+    permission_profile: str
+    user_task: object
+    context_text: str
+    stop_flag: Any
+    stagnant_turns: int | None
+    delivered: Mapping[str, ToolResult] | None
+    intent_sink: Any
+    completion_context: Any
+    on_event: Callable[[Any], None] | None
+    on_shell_request: Callable[[Any], None] | None
+    propagate_provider_failure: bool
+    start_turn: int | None
+    initial_results: list[ToolResult] | None
+    provider_session_changed: bool
+    workspace_ignored_paths: Any
+    workspace_revision_store: Any
+    trace_recorder: Any
+
+
+def _bind_run_request(request: KernelRunRequest) -> _BoundRunRequest:
     transport = request.transport
     execution = request.execution
     observation = request.observation
-    return (
-        transport.provider,
-        execution.executors,
-        transport.run_id,
-        transport.effect_scope,
-        transport.provider_id,
-        execution.project_path,
-        execution.tool_fns,
-        execution.research_tools,
-        execution.change_tracker,
-        execution.managed_outputs,
-        execution.session_id,
-        execution.permission_profile,
-        transport.user_task,
-        transport.context_text,
-        transport.stop_flag,
-        transport.stagnant_turns,
-        transport.delivered,
-        observation.intent_sink,
-        observation.completion_context,
-        observation.on_event,
-        observation.on_shell_request,
-        observation.propagate_provider_failure,
-        transport.start_turn,
-        transport.initial_results,
-        transport.provider_session_changed,
-        execution.workspace_ignored_paths,
-        execution.workspace_revision_store,
-        observation.trace_recorder,
+    return _BoundRunRequest(
+        provider=transport.provider,
+        executors=execution.executors,
+        run_id=transport.run_id,
+        effect_scope=transport.effect_scope,
+        provider_id=transport.provider_id,
+        project_path=execution.project_path,
+        tool_fns=execution.tool_fns,
+        research_tools=execution.research_tools,
+        change_tracker=execution.change_tracker,
+        managed_outputs=execution.managed_outputs,
+        session_id=execution.session_id,
+        permission_profile=execution.permission_profile,
+        user_task=transport.user_task,
+        context_text=transport.context_text,
+        stop_flag=transport.stop_flag,
+        stagnant_turns=transport.stagnant_turns,
+        delivered=transport.delivered,
+        intent_sink=observation.intent_sink,
+        completion_context=observation.completion_context,
+        on_event=observation.on_event,
+        on_shell_request=observation.on_shell_request,
+        propagate_provider_failure=observation.propagate_provider_failure,
+        start_turn=transport.start_turn,
+        initial_results=transport.initial_results,
+        provider_session_changed=transport.provider_session_changed,
+        workspace_ignored_paths=execution.workspace_ignored_paths,
+        workspace_revision_store=execution.workspace_revision_store,
+        trace_recorder=observation.trace_recorder,
     )
 
 
@@ -222,7 +300,7 @@ class _KernelStartup:
     delivered: dict[str, ToolResult]
     max_turns: int
     native: bool
-    identity_ref: object
+    identity_ref: str
     state: _ProviderTurnState
     native_tools: list[dict[str, Any]]
     snapshot: Any
@@ -506,7 +584,7 @@ def _kernel_startup(
     provider: Any,
     *,
     executors: Mapping[str, Callable[[ToolCall], Any]] | None,
-    run_id: object,
+    run_id: str,
     effect_scope: str,
     provider_id: object,
     user_task: object,
@@ -554,10 +632,7 @@ def _completion_context_with_ignores(context: Any, ignored_paths: Any) -> Any:
 
 
 def _resume_start(value: object) -> int:
-    try:
-        return max(1, int(value)) if value is not None else 1
-    except (TypeError, ValueError):
-        return 1
+    return max(1, nonnegative_int(value))
 
 
 def run_task_kernel(
@@ -571,15 +646,34 @@ def run_task_kernel(
     elif legacy_options:
         unknown = ", ".join(sorted(legacy_options))
         raise TypeError(f"request cannot be combined with legacy options: {unknown}")
-    (
-        provider, executors, run_id, effect_scope, provider_id, project_path,
-        tool_fns, research_tools, change_tracker, managed_outputs, session_id,
-        permission_profile, user_task, context_text, stop_flag, stagnant_turns,
-        delivered, intent_sink, completion_context, on_event, on_shell_request,
-        propagate_provider_failure, start_turn, initial_results,
-        provider_session_changed, workspace_ignored_paths,
-        workspace_revision_store, trace_recorder,
-    ) = _bind_run_request(request)
+    bound = _bind_run_request(request)
+    provider, executors = bound.provider, bound.executors
+    run_id, effect_scope, provider_id = (
+        bound.run_id, bound.effect_scope, bound.provider_id
+    )
+    project_path = bound.project_path
+    tool_fns = bound.tool_fns
+    research_tools = bound.research_tools
+    change_tracker = bound.change_tracker
+    managed_outputs = bound.managed_outputs
+    session_id = bound.session_id
+    permission_profile = bound.permission_profile
+    user_task = bound.user_task
+    context_text = bound.context_text
+    stop_flag = bound.stop_flag
+    stagnant_turns = bound.stagnant_turns
+    delivered = bound.delivered
+    intent_sink = bound.intent_sink
+    completion_context = bound.completion_context
+    on_event = bound.on_event
+    on_shell_request = bound.on_shell_request
+    propagate_provider_failure = bound.propagate_provider_failure
+    start_turn = bound.start_turn
+    initial_results = bound.initial_results
+    provider_session_changed = bound.provider_session_changed
+    workspace_ignored_paths = bound.workspace_ignored_paths
+    workspace_revision_store = bound.workspace_revision_store
+    trace_recorder = bound.trace_recorder
     completion_context = _completion_context_with_ignores(completion_context, workspace_ignored_paths)
     try:
         startup = _kernel_startup(

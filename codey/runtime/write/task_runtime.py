@@ -59,9 +59,10 @@ class TaskRuntime:
 
     def run(self, request: TaskSubmission) -> None:
         if self.prepare is not None:
-            request = self.prepare(request)
-            if request is None:
+            prepared = self.prepare(request)
+            if prepared is None:
                 return
+            request = prepared
         if not request.run_id:
             raise ValueError("runtime task submissions require a run_id")
         run_id = request.run_id

@@ -50,7 +50,7 @@ from codey.research.source_connectors import (
 )
 from codey.research.urls import canonical_key, full_key, host_key, parsed_url
 from codey.runtime.core import cancellation
-from codey.utils.refs import clip
+from codey.utils.refs import clip, coerce_float
 
 CONNECTOR_SEARCH_IDS = ("pubmed", "arxiv")
 CONNECTOR_RESULT_LIMIT = 2
@@ -573,7 +573,7 @@ def _bounded_timeout(value: object) -> float:
     if isinstance(value, bool):
         return float(CONNECTOR_TIMEOUT_SECONDS)
     try:
-        parsed = float(value)
+        parsed = coerce_float(value, default=float(CONNECTOR_TIMEOUT_SECONDS))
     except (TypeError, ValueError, OverflowError):
         parsed = float(CONNECTOR_TIMEOUT_SECONDS)
     if not math.isfinite(parsed):

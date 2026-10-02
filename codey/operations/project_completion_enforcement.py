@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from codey.agents.protocol import task_forbids_verification
-from codey.completion.engine import CompletionEngine
+from codey.completion.engine import CompletionEngine, CompletionEvidence
 from codey.completion.repair_context import (
     project_repair_context,
     repair_candidate,
@@ -15,7 +15,7 @@ from codey.completion.verification import (
     STANCE_INHERITED_PASS,
     decisive_failure_fact,
 )
-from codey.completion.verification_policy import select_verification_candidate
+from codey.completion.verification_policy import VerificationCandidate, select_verification_candidate
 from codey.operations.project_completion_context import (
     COMPLETION_REPAIR_FOLLOWUP,
     MAX_COMPLETION_REPAIR_ROUNDS,
@@ -65,7 +65,7 @@ def _completion_evidence(
     scope_files: tuple[str, ...],
     check: object,
     stop: str,
-) -> object:
+) -> CompletionEvidence:
     assert ctx.completion_engine is not None
     evidence = ctx.completion_engine.evaluate(
         run_id=ctx.frame.run_id,
@@ -74,7 +74,7 @@ def _completion_evidence(
         stop_reason=stop,
         task_changed=changed,
         scope_files=scope_files,
-        selected_check=check,
+        selected_check=check if isinstance(check, VerificationCandidate) else None,
         evidence=ctx.work.evidence,
         analysis_run_payloads=ctx.work.analysis_run_payloads,
         project=ctx.project,
@@ -197,6 +197,7 @@ def _prepare_completion_enforcement(ctx: ProjectRun) -> None:
 def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
     assert ctx.result is not None
     assert ctx.completion_engine is not None
+    result = ctx.result
     remaining_turns = ctx.request.max_turns - ctx.result.turns
     if not (
         ctx.proof is not None
@@ -254,6 +255,7 @@ def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
     )
 
     try:
+        assert ctx.failover is not None
         repair_result = ctx.failover.run(
             task=COMPLETION_REPAIR_FOLLOWUP,
             turn_budget=remaining_turns,
@@ -280,7 +282,7 @@ def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
         repair_blocked_reason = ""
         if repair_result.stop_reason not in {"done", "approval", "stopped"}:
             repair_remaining_turns = (
-                ctx.request.max_turns - ctx.result.turns - repair_result.turns
+                ctx.request.max_turns - result.turns - repair_result.turns
             )
             repair_blocked_reason = ctx.completion_engine.blocked_reason(
                 proof_status=ctx.proof.status,
@@ -297,7 +299,7 @@ def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
                     run_id,
                     provider_id=ctx.frame.provider_id,
                     stop_reason=repair_result.stop_reason,
-                    turns_used=ctx.result.turns + repair_result.turns,
+                    turns_used=result.turns + repair_result.turns,
                     blocked_reason=repair_blocked_reason,
                 ),
             )

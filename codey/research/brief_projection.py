@@ -223,7 +223,7 @@ def project_research_brief(
         record_digest=(
             snapshot.record_digest
             if snapshot
-            else content_digest((payload or {}).get("record_digest"))
+            else content_digest((payload if isinstance(payload, Mapping) else {}).get("record_digest"))
         ),
         answer_status=_snapshot_answer(snapshot)
         or _status_token((payload or {}).get("answer_status"), ANSWER_STATUSES, default="not_answered"),
@@ -233,7 +233,7 @@ def project_research_brief(
         assumption_refs=_tuple_slice(snapshot.assumption_refs if snapshot else ()),
         analysis_run_refs=_tuple_slice(snapshot.analysis_run_refs if snapshot else ()),
         artifact_version_refs=_tuple_slice(snapshot.artifact_version_refs if snapshot else ()),
-        source_count=len(snapshot.source_refs) if snapshot else _count_field(payload, "sources"),
+        source_count=len(snapshot.source_refs) if snapshot else _count_field(payload if isinstance(payload, Mapping) else {}, "sources"),
         proof_review_refs=_proof_refs(snapshot, proof_reviews),
         planner_gap_refs=_refs_from_items(planner_gaps, ("gap_id",), "planner_gap"),
         review_finding_refs=_refs_from_items(findings, ("finding_id",), "review_finding"),
@@ -345,11 +345,11 @@ def _impact_lines(impact: ResearchImpactContract) -> list[str]:
     lines = ["Implementation impact (research-derived, context only):"]
     if impact.affected_files:
         lines.append("- files likely affected: " + ", ".join(impact.affected_files))
-    for item in impact.implementation_constraints:
-        tag = "verified" if item.support == "verified" else "assumption+risk"
-        lines.append(f"- constraint [{tag}]: {item.text}")
-    for item in impact.risk_notes:
-        lines.append(f"- risk: {item}")
+    for constraint in impact.implementation_constraints:
+        tag = "verified" if constraint.support == "verified" else "assumption+risk"
+        lines.append(f"- constraint [{tag}]: {constraint.text}")
+    for risk in impact.risk_notes:
+        lines.append(f"- risk: {risk}")
     if impact.test_suggestions:
         lines.append("- tests to consider (not authorized by this handoff):")
         lines.extend(f"  - {item}" for item in impact.test_suggestions)
@@ -422,7 +422,8 @@ def _proof_refs(
 def _refs_from_items(items: Iterable[object], keys: tuple[str, ...], kind: str) -> tuple[str, ...]:
     refs: list[str] = []
     for item in items or ():
-        raw = item.to_payload() if callable(getattr(item, "to_payload", None)) else item
+        to_payload = getattr(item, "to_payload", None)
+        raw = to_payload() if callable(to_payload) else item
         if not isinstance(raw, Mapping):
             continue
         value = ""
@@ -442,7 +443,8 @@ def _refs_from_items(items: Iterable[object], keys: tuple[str, ...], kind: str) 
 def _code_tokens(items: Iterable[object], keys: tuple[str, ...], limit: int) -> tuple[str, ...]:
     out: list[str] = []
     for item in items or ():
-        raw = item.to_payload() if callable(getattr(item, "to_payload", None)) else item
+        to_payload = getattr(item, "to_payload", None)
+        raw = to_payload() if callable(to_payload) else item
         if not isinstance(raw, Mapping):
             continue
         for key in keys:

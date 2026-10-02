@@ -42,9 +42,9 @@ class ConversationRegistry:
                 self.store.save(oldest_id, oldest_context)
         loaded = self.store.load(session_id)
         loaded.on_change = (
-            lambda value, owner=session_id, owner_token=token: self._save(
-                owner,
-                owner_token,
+            lambda value: self._save(
+                session_id,
+                token,
                 value,
             )
         )

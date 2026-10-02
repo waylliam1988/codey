@@ -6,6 +6,7 @@ import contextlib
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
@@ -40,9 +41,9 @@ class ResearchToolOutput:
 
 @dataclass
 class ResearchTools:
-    search: object
-    store: KnowledgeStore | None
-    changes: KnowledgeChanges | None
+    search: Any
+    store: Any
+    changes: Any
     diagnostics: object | None = None
     session_id: str = ""
     project: str = ""
@@ -109,7 +110,7 @@ class ResearchTools:
         results = outcome.hits
         if not results:
             return "no results"
-        lines = []
+        lines: list[str] = []
         skipped = 0
         for r in results:
             url = str(r.get("url") or "")
@@ -279,7 +280,9 @@ class ResearchTools:
     def _record_failure(self, area: str, action: str, error: object, *, url: str = "") -> None:
         if self.diagnostics is not None:
             with contextlib.suppress(Exception):
-                self.diagnostics.record(area, action, error, url=url, model=getattr(self.search, "name", ""))
+                recorder = getattr(self.diagnostics, "record", None)
+                if callable(recorder):
+                    recorder(area, action, error, url=url, model=getattr(self.search, "name", ""))
 
     def _provenance_problem(self, note_type: str, sources: list[str]) -> str | None:
         if not sources:

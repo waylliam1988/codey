@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from codey.research import source_domains
 from codey.research.source_document import SourceDocument
 from codey.research.urls import host_key, opened_url, parsed_url
+from codey.utils.refs import coerce_int, parse_int
 
 MAX_SNIPPET_CHARS = 360
 MAX_CLAIM_CHARS = 260
@@ -173,8 +174,10 @@ class ResearchLedger:
         if not final_url:
             return
         text = str(document.text or "")
-        pages_read = tuple(_safe_page_number(page) for page in document.pages_read)
-        pages_read = tuple(page for page in pages_read if page is not None and page > 0)
+        pages_read = tuple(
+            page for page in (_safe_page_number(raw) for raw in document.pages_read)
+            if page is not None and page > 0
+        )
         requested_url = str(requested_url or "").strip()
         page_map = {page.number: page.text for page in document.page_texts if page.number > 0}
         existing = next(
@@ -595,7 +598,9 @@ def _safe_page_number(value: object) -> int | None:
     if isinstance(value, bool):
         return None
     try:
-        number = int(value)  # type: ignore[arg-type]
+        number = parse_int(value)
+        if number is None:
+            return None
     except (TypeError, ValueError, OverflowError):
         return None
     return number if number > 0 else None
@@ -605,7 +610,7 @@ def _safe_count(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value))  # type: ignore[arg-type]
+        return max(0, coerce_int(value))
     except (TypeError, ValueError, OverflowError):
         return 0
 

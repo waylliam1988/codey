@@ -275,6 +275,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
             "output": "",
         }
     proc = None
+    completed = None
     job = None
     capture_truncated = False
     try:
@@ -306,7 +307,6 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
             capture_truncated = bool(
                 completed.stdout_truncated or completed.stderr_truncated
             )
-            proc = completed
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         return _stopped_shell_result()
     except cancellation.ProcessOutputReadError as exc:
@@ -349,11 +349,11 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
             "output": "",
         }
 
-    output_parts = []
-    if proc.stdout:
-        output_parts.append(proc.stdout.rstrip())
-    if proc.stderr:
-        output_parts.append("[stderr]\n" + proc.stderr.rstrip())
+    output_parts: list[str] = []
+    if completed is not None and completed.stdout:
+        output_parts.append(completed.stdout.rstrip())
+    if completed is not None and completed.stderr:
+        output_parts.append("[stderr]\n" + completed.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
     output, display_truncated = clip_middle(output, ticket.output_limit)
     truncated = bool(display_truncated or capture_truncated)
@@ -361,7 +361,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
         "ok": True,
         "status": "exit",
         "error": None,
-        "exit_code": proc.returncode,
+        "exit_code": completed.returncode if completed is not None else None,
         "output": output,
         "truncated": truncated,
     }

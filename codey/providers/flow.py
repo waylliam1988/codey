@@ -257,6 +257,7 @@ def make_recovery_request(
     if stage not in PREDICATES_BY_STAGE:
         return None
     latest = trace.latest()
+    templates: tuple[tuple[str, ...], ...]
     if stage == STAGE_COMPLETION:
         if not latest.response_nonempty or not trace.repeated(PREDICATE_RESPONSE_STABLE):
             return None
@@ -310,6 +311,7 @@ def request_recovery(
     if request is None:
         return None
     attempts.add(key)
+    selected: str | None
     if len(request.candidates) == 1:
         selected = request.candidates[0].candidate_id
     else:

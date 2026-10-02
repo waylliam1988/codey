@@ -32,6 +32,7 @@ from codey.operations.result import ModeOutcome
 from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.runs.receipt import VERIFICATION_TRUST_TRUSTED, build_task_receipt
 from codey.runtime.core import cancellation
+from codey.runtime.observe.execution_evidence import CheckEvidence
 from codey.runtime.observe.terminalizer import task_done_event
 from codey.task.model import execution_task
 from codey.workspace.change_brief import (
@@ -102,6 +103,7 @@ def _prepare_project_context(ctx: ProjectRun) -> None:
 
 
 def _prepare_new_project_context(ctx: ProjectRun) -> None:
+    assert ctx.state is not None
     ctx.has_user_files = project_has_user_files(ctx.project)
     if ctx.deps.agent.run_consensus is not None and not ctx.has_user_files:
         context = render_project_context(
@@ -169,8 +171,11 @@ def _prepare_new_project_context(ctx: ProjectRun) -> None:
 def _persist_verified_project_facts(ctx: ProjectRun) -> bool:
     """Persist project facts for a trusted done run; returns success."""
     assert ctx.result is not None
+    project_facts = ctx.deps.persistence.project_facts
+    if project_facts is None:
+        return True
     required = (
-        ctx.deps.persistence.project_facts is not None
+        project_facts is not None
         and ctx.result.stop_reason == "done"
         and ctx.task_changed
         and ctx.result.checks_passed
@@ -187,7 +192,7 @@ def _persist_verified_project_facts(ctx: ProjectRun) -> bool:
             and ctx.work.work_checkpoint is not None
             else ctx.request.task
         )
-        succeeded = ctx.deps.persistence.project_facts.record_successful_change(
+        succeeded = project_facts.record_successful_change(
             ctx.project,
             task=fact_task,
             files=ctx.files,
@@ -213,15 +218,16 @@ def _settle_work_checkpoint(ctx: ProjectRun, facts_write_succeeded: bool) -> Non
     if ctx.deps.persistence.work_checkpoints is None or ctx.work.work_checkpoint is None:
         return
     assert ctx.result is not None
-    if ctx.result.stop_reason == "done" and facts_write_succeeded:
+    result = ctx.result
+    if result.stop_reason == "done" and facts_write_succeeded:
         try:
             ctx.deps.persistence.work_checkpoints.delete(ctx.request.session_id)
             ctx.work.work_checkpoint = None
         except OSError:
             pass
-    elif ctx.result.stop_reason != "done":
+    elif result.stop_reason != "done":
         ctx.hooks.update_checkpoint(
-            lambda store, item: store.set_status(item, "interrupted", ctx.result.stop_reason)
+            lambda store, item: store.set_status(item, "interrupted", result.stop_reason)
         )
 
 
@@ -260,17 +266,18 @@ def _build_project_done_event(ctx: ProjectRun) -> dict:
 
 def _finalize_project(ctx: ProjectRun) -> ModeOutcome:
     assert ctx.result is not None
+    result = ctx.result
     ctx.receipt = build_task_receipt(
         ctx.task_changes,
         proof=getattr(ctx.decision, "proof", None),
         provenance=getattr(ctx.decision, "provenance", None),
         integrity=ctx.integrity,
-        checks_passed=ctx.result.checks_passed,
+        checks_passed=result.checks_passed,
     )
     ctx.hooks.append_ledger(
         lambda ledger: ledger.append_changes_collected(
             ctx.task_changes,
-            checks_passed=ctx.result.checks_passed,
+            checks_passed=result.checks_passed,
             receipt=ctx.receipt.to_dict(),
         )
     )
@@ -315,6 +322,7 @@ def run_project_mode(
         work=work,
         hooks=hooks,
         project=project,
+        state=deps.state,
         config_result=config_result,
         research_result=research_result,
         research_pipeline_result=research_pipeline_result,
@@ -339,7 +347,7 @@ def record_project_memory(
     task: str,
     files: tuple[str, ...],
     receipt: str,
-    checks: tuple[object, ...],
+    checks: tuple[CheckEvidence, ...],
 ) -> None:
     if deps.persistence.knowledge_store is None:
         return

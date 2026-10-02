@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from codey.agents.request import AgentRequest
 from codey.operations.provider_session import ConversationProvider
@@ -183,7 +183,7 @@ def run(request: AgentRequest) -> RunResult:
         )
     shared = request.task_session is not None
     if not shared and request.workspace_revision_store is not None:
-        current = request.workspace_revision_store.current_state(
+        current = cast(Any, request.workspace_revision_store).current_state(
             str(request.project), ignored_paths=request.workspace_ignored_paths,
         )
         session.set_workspace_state(current.revision, current.fingerprint)

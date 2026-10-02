@@ -19,6 +19,7 @@ from codey.runs.text_clip import clip_text as _clip
 from codey.runtime.observe.events import RunEvent
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key
+from codey.utils.refs import coerce_int, parse_int
 
 SCHEMA_VERSION = 1
 MAX_TEXT_CHARS = 1_000
@@ -205,12 +206,14 @@ class RunLedgerWriter:
         self._mtime_ns = _stat_mtime_ns(path)
         # Observable failure state (cold start, in-memory only): callers
         # and tests read these instead of guessing from missing rows.
+        self.disabled_reason: str
+        self.last_error_reason: str
         if file_state.corrupt:
-            self.disabled_reason: str = "ledger_corrupt"
-            self.last_error_reason: str = "ledger corrupt"
+            self.disabled_reason = "ledger_corrupt"
+            self.last_error_reason = "ledger corrupt"
         else:
-            self.disabled_reason: str = "ledger_truncated" if self.truncated else ""
-            self.last_error_reason: str = ""
+            self.disabled_reason = "ledger_truncated" if self.truncated else ""
+            self.last_error_reason = ""
 
     def append(self, event_type: str, **fields: object) -> None:
         if self.disabled:
@@ -273,8 +276,9 @@ class RunLedgerWriter:
     ) -> None:
         if not isinstance(changes, dict):
             changes = {}
-        source_files = changes.get("files") if isinstance(changes.get("files"), list) else []
-        files = []
+        source_files_value = changes.get("files")
+        source_files = source_files_value if isinstance(source_files_value, list) else []
+        files: list[dict[str, object]] = []
         for item in source_files:
             if not isinstance(item, dict):
                 continue
@@ -428,7 +432,7 @@ class RunLedgerWriter:
                     self._append_truncated_once_locked(current_seq, current_bytes)
                     return
                 self._write_line_locked(line)
-                self.seq = int(payload["seq"])
+                self.seq = coerce_int(payload["seq"])
                 self.bytes_written = next_size
                 self._mtime_ns = _stat_mtime_ns(self.path)
         except (OSError, TimeoutError, TypeError, ValueError) as exc:
@@ -470,7 +474,7 @@ class RunLedgerWriter:
         }
         line = _json_line(payload)
         self._write_line_locked(line)
-        self.seq = int(payload["seq"])
+        self.seq = coerce_int(payload["seq"])
         self.bytes_written = current_bytes + len(line.encode("utf-8"))
         self._mtime_ns = _stat_mtime_ns(self.path)
         self.disabled = True
@@ -488,7 +492,7 @@ def _int_or_none(value: object) -> int | None:
     if isinstance(value, str) and not value.strip().isascii():
         return None
     try:
-        return int(value)
+        return parse_int(value)
     except (TypeError, ValueError, OverflowError):
         return None
 

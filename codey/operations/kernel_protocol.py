@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
@@ -164,7 +164,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     if native:
         try:
             from codey.toolchain.tool_spec import _schema_for_spec as _schema_fn
-            rebuilt = []
+            rebuilt: list[dict[str, Any]] = []
             by_name = {getattr(s, "name", ""): s for s in frozen}
             for name in names:
                 if name in {"parallel", "read_files"}:
@@ -180,7 +180,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
                         "parameters": _schema_fn(spec),
                     },
                 })
-            rebuilt.sort(key=lambda item: str(((item.get("function") or {}).get("name")) or ""))
+            rebuilt.sort(key=lambda item: str((item.get("function") or {}).get("name", "") if isinstance(item.get("function"), dict) else ""))
             native_now = rebuilt
         except Exception as exc:
             # 构建失败即停本轮：绝不回退到实时注册表的旧 schema。
@@ -189,7 +189,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     return TurnSnapshot(
         allowed=allowed,
         contract_text=str(contract_now or ""),
-        native_tools=tuple(_freeze_schema_value(row) for row in native_now),
+        native_tools=tuple(cast(dict[str, Any], _freeze_schema_value(row)) for row in native_now),
         tool_names=names,
         policy=session.policy,
         frozen_specs=frozen,
@@ -479,6 +479,7 @@ def _validate_tool_args(
         return _validate_coding_args(name, args)
     if executor in {"source", "knowledge"}:
         return _validate_research_args(name, args)
+    return {}, "unsupported tool executor"
 
 
 def _expand_text_batch(tool: str, args: dict[str, Any]) -> tuple[list[tuple[str, dict[str, Any], str]], str]:

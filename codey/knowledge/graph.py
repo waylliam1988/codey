@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from codey.knowledge.store import KnowledgeStore
+from codey.utils.refs import coerce_int
 
 GRAPH_EDGE_KINDS = (
     "relates",
@@ -133,6 +134,12 @@ class KnowledgeGraphBuilder:
     def __init__(self, store: KnowledgeStore | None) -> None:
         self.store = store
 
+    @property
+    def _required_store(self) -> KnowledgeStore:
+        if self.store is None:
+            raise RuntimeError("knowledge store is not configured")
+        return self.store
+
     def build_for_session(
         self,
         session_id: str = "",
@@ -157,7 +164,7 @@ class KnowledgeGraphBuilder:
             return ResearchGraphArtifact(depth=depth, warnings=("No research focus found",))
 
         note_ids = self._expand_note_ids(focus, depth)
-        rows = self.store.index.notes_by_ids(list(note_ids))
+        rows = self._required_store.index.notes_by_ids(list(note_ids))
         if not rows:
             return ResearchGraphArtifact(depth=depth, warnings=("No graph notes found",))
 
@@ -218,7 +225,7 @@ class KnowledgeGraphBuilder:
         if not session_id:
             return ()
         try:
-            rows = self.store.index.recent(
+            rows = self._required_store.index.recent(
                 1,
                 session_id=session_id,
                 types=("synthesis", "decision"),
@@ -227,7 +234,7 @@ class KnowledgeGraphBuilder:
             rows = []
         if not rows:
             try:
-                rows = self.store.index.recent(1, session_id=session_id)
+                rows = self._required_store.index.recent(1, session_id=session_id)
             except Exception:
                 rows = []
         return tuple(str(row.get("id") or "") for row in rows if row.get("id"))
@@ -238,7 +245,7 @@ class KnowledgeGraphBuilder:
         for _level in range(depth):
             if not frontier:
                 break
-            rows = self.store.index.links_touching(sorted(frontier))
+            rows = self._required_store.index.links_touching(sorted(frontier))
             next_frontier: set[str] = set()
             for row in rows:
                 src = str(row.get("src_id") or "")
@@ -251,7 +258,7 @@ class KnowledgeGraphBuilder:
         return tuple(focus) + tuple(sorted(selected - set(focus)))
 
     def _note_edges(self, note_ids: set[str]) -> tuple[GraphEdge, ...]:
-        rows = self.store.index.links_touching(sorted(note_ids))
+        rows = self._required_store.index.links_touching(sorted(note_ids))
         edges: dict[tuple[str, str, str], GraphEdge] = {}
         for row in rows:
             src = str(row.get("src_id") or "")
@@ -274,7 +281,7 @@ class KnowledgeGraphBuilder:
         if len(rows) <= limit:
             return rows
         edge_bonus: dict[str, int] = {}
-        degree = Counter()
+        degree: Counter[str] = Counter()
         for edge in edges:
             bonus = _EDGE_PRIORITY.get(edge.kind, 0)
             degree[edge.src] += 1
@@ -363,7 +370,7 @@ class KnowledgeGraphBuilder:
         node_limit: int,
         edge_limit: int,
     ) -> None:
-        sources = self.store.index.sources_for(sorted(note_ids))
+        sources = self._required_store.index.sources_for(sorted(note_ids))
         existing_nodes = {node.id for node in nodes}
         source_counts = Counter(str(row.get("source") or "") for row in sources)
         for row in sources:
@@ -436,7 +443,7 @@ class KnowledgeGraphBuilder:
 
 
 def _degree(edges: tuple[GraphEdge, ...]) -> Counter:
-    degree = Counter()
+    degree: Counter[str] = Counter()
     for edge in edges:
         degree[edge.src] += 1
         degree[edge.dst] += 1
@@ -458,7 +465,7 @@ def _as_int(value: object, default: int) -> int:
     if isinstance(value, bool):
         return default
     try:
-        return int(value)
+        return coerce_int(value, default=default)
     except (TypeError, ValueError, OverflowError):
         return default
 
@@ -500,7 +507,7 @@ def _stable_hash(value: str) -> str:
 
 
 def _excerpt(body: str, limit: int = 420) -> str:
-    lines = []
+    lines: list[str] = []
     for line in str(body or "").splitlines():
         stripped = line.strip()
         if not stripped:

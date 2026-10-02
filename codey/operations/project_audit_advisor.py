@@ -14,7 +14,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from codey.agents.consensus import (
@@ -39,6 +39,7 @@ from codey.operations.task_loop import (
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import controls as provider_controls
+from codey.providers.base import ChatProvider
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -216,7 +217,7 @@ def run_project_audit_advisor(
                         stop_flag=stop,
                     ),
                     execution=KernelExecutionDeps(
-                        executors=_audit_kernel_executors(project_path),
+                    executors=cast(Mapping[str, Callable[[Any], Any]], _audit_kernel_executors(project_path)),
                         project_path=project_path,
                     ),
                     observation=KernelObservationDeps(
@@ -253,7 +254,7 @@ def run_project_audit(
     provider_ids: Sequence[str],
     provider_labels: Mapping[str, str],
     availability: Callable[[], Mapping[str, bool]],
-    connect_existing: Callable[[str], object],
+    connect_existing: Callable[[str], ChatProvider],
     clear_provider_session: Callable[[str], None] | None = None,
     context: str = "",
     max_advisors: int = MAX_CONSENSUS_ADVISORS,
@@ -275,7 +276,7 @@ def run_project_audit(
     reports: list[ConsensusAdvice] = []
     for advisor_id in candidates:
         cancellation.check()
-        advisor = None
+        advisor: ChatProvider | None = None
         try:
             advisor = connect_existing(advisor_id)
             if clear_provider_session is not None:

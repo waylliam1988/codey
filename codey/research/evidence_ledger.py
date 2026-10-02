@@ -267,7 +267,8 @@ class EvidenceLedgerStore:
                 previous_counts = _counts(loaded) if loaded else {}
                 previous_ledger_ref = str(loaded.get("ledger_ref") or "") if loaded else ""
                 previous_warnings = tuple(
-                    str(item) for item in (loaded or {}).get("warnings", ())[:MAX_WARNINGS]
+                    str(item)
+                    for item in _list_values((loaded or {}).get("warnings"))[:MAX_WARNINGS]
                 )
                 if rotated_unavailable:
                     payload["warnings"] = list(
@@ -364,7 +365,9 @@ class EvidenceLedgerStore:
             ledger_ref=str(payload.get("ledger_ref") or ""),
             record_id=record_id,
             counts=_counts(payload),
-            warnings=tuple(str(item) for item in payload.get("warnings", ())[:MAX_WARNINGS]),
+            warnings=tuple(
+                str(item) for item in _list_values(payload.get("warnings"))[:MAX_WARNINGS]
+            ),
         )
 
     def load(
@@ -411,6 +414,8 @@ class EvidenceLedgerStore:
         # into a sidecar before rotation sees it.
         payload = read_json(path, max_bytes=MAX_EVIDENCE_LEDGER_BYTES)
         if not _canonical_ledger_payload(payload):
+            return None
+        if not isinstance(payload, dict):
             return None
         # Content-addressing must hold on read too, not only at write time:
         # any in-file tampering invalidates the whole ledger (fail closed)
@@ -493,6 +498,8 @@ class EvidenceLedgerStore:
                 target = _dict_map(combined, key)
                 merge = _merge_source_row if key == "sources" else None
                 for row_id, entry in _mapping(payload.get(key)).items():
+                    if not isinstance(entry, Mapping):
+                        return None
                     if not _put_ledger_row(
                         target,
                         row_id,
@@ -650,7 +657,7 @@ def _append_payload(
                 return False
             relation_ids.append(relation_id)
 
-    record_entry = {
+    record_entry: dict[str, object] = {
         "record_id": record_id,
         "record_digest": content_digest(record.get("record_digest")),
         "run_id": identifier(run_id or record.get("run_id"), 120),
@@ -674,7 +681,7 @@ def _append_payload(
         "stop_reason": identifier(record.get("stop_reason"), 80),
         "captured_at": _now(),
     }
-    records = _records(payload)
+    records: list[dict[str, object]] = _records(payload)
     records = [item for item in records if item.get("record_id") != record_id]
     records.append(record_entry)
     payload["records"] = records[-MAX_LEDGER_RECORDS:]
@@ -1003,7 +1010,7 @@ def _canonical_ledger_payload(payload: object) -> bool:
     records = _records(payload)
     if len(records) != len(payload.get("records", ())) or len(records) > MAX_LEDGER_RECORDS:
         return False
-    live = {
+    live: dict[str, set[str]] = {
         "sources": set(),
         "evidence": set(),
         "claims": set(),
@@ -1085,7 +1092,7 @@ def _source_schema_ok(source: Mapping[str, object]) -> bool:
         and _clip_schema_ok(source.get("retrieved_at"), 80)
         and _identifier_schema_ok(source.get("content_kind"), 40, allow_empty=False)
         and isinstance(source.get("page_count"), int)
-        and int(source.get("page_count") or 0) >= 0
+        and nonnegative_int(source.get("page_count")) >= 0
         and _positive_ints(source.get("pages_read"), 48) == source.get("pages_read")
         and isinstance(source.get("truncated"), bool)
     )
@@ -1108,7 +1115,7 @@ def _claim_schema_ok(claim: Mapping[str, object]) -> bool:
         _identifier_schema_ok(claim.get("claim_id"), 80, allow_empty=False)
         and _digest_schema_ok(claim.get("claim_text_digest"))
         and isinstance(claim.get("claim_chars"), int)
-        and 0 <= int(claim.get("claim_chars") or 0) <= MAX_CLAIM_TEXT_CHARS
+        and 0 <= nonnegative_int(claim.get("claim_chars")) <= MAX_CLAIM_TEXT_CHARS
         and _identifier_schema_ok(claim.get("claim_section"), 80, allow_empty=False)
         and _positive_ints(claim.get("citation_numbers"), 24) == claim.get("citation_numbers")
         and list(bounded_refs(_list_values(claim.get("evidence_refs")), limit=48)) == claim.get("evidence_refs")
@@ -1123,7 +1130,7 @@ def _assumption_schema_ok(assumption: Mapping[str, object]) -> bool:
         _identifier_schema_ok(assumption.get("assumption_id"), 80, allow_empty=False)
         and _digest_schema_ok(assumption.get("assumption_text_digest"))
         and isinstance(assumption.get("assumption_chars"), int)
-        and 0 <= int(assumption.get("assumption_chars") or 0) <= MAX_CLAIM_TEXT_CHARS
+        and 0 <= nonnegative_int(assumption.get("assumption_chars")) <= MAX_CLAIM_TEXT_CHARS
         and _identifier_schema_ok(assumption.get("reason"), 80)
         and _identifier_schema_ok(assumption.get("claim_ref"), 80)
     )
@@ -1347,13 +1354,14 @@ def _trim_maps(payload: dict[str, object]) -> None:
             live[key].update(refs[key])
     payload["records"] = list(reversed(kept_reversed))
     for key, limit in limits.items():
-        payload[key] = {
+        trimmed = {
             item_id: value
             for item_id, value in maps[key].items()
             if item_id in live[key]
         }
-        if len(payload[key]) > limit:
-            payload[key] = dict(list(payload[key].items())[:limit])
+        if len(trimmed) > limit:
+            trimmed = dict(list(trimmed.items())[:limit])
+        payload[key] = trimmed
     if pruned:
         _add_warning(payload, "records_pruned_for_ledger_closure")
 
@@ -1377,7 +1385,11 @@ def _has_record(payload: Mapping[str, object], record_id: str, record_digest: st
 
 
 def _records(payload: Mapping[str, object]) -> list[dict[str, object]]:
-    return [item for item in payload.get("records", ()) if isinstance(item, dict)]
+    return [
+        item
+        for item in _list_values(payload.get("records"))
+        if isinstance(item, dict)
+    ]
 
 
 def _dict_map(payload: dict[str, object], key: str) -> dict[str, object]:
@@ -1386,9 +1398,9 @@ def _dict_map(payload: dict[str, object], key: str) -> dict[str, object]:
         rows = dict(value)
         payload[key] = rows
         return rows
-    rows: dict[str, object] = {}
-    payload[key] = rows
-    return rows
+    empty_rows: dict[str, object] = {}
+    payload[key] = empty_rows
+    return empty_rows
 
 
 def _mapping(value: object) -> dict[str, object]:

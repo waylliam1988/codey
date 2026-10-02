@@ -165,7 +165,9 @@ def _summarize(index: int, action: str, item: Discovery) -> CandidateSummary:
         for token in (_structure_hint(value) for value in fingerprint.get("classes", []))
         if token
     )[:6]
-    raw_data = fingerprint.get("data") if isinstance(fingerprint.get("data"), dict) else {}
+    raw_data = fingerprint.get("data")
+    if not isinstance(raw_data, dict):
+        raw_data = {}
     data = {
         key: value
         for key, value in (

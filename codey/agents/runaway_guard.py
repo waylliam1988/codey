@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from codey.agents.state import ToolAttemptRecord
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.utils.refs import coerce_int
 
 DEFAULT_REPEAT_THRESHOLD = 3
 DEFAULT_CYCLE_PERIODS = (2, 3, 4)
@@ -46,7 +47,7 @@ def _safe_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return int(value)  # type: ignore[arg-type]
+        return coerce_int(value)
     except (TypeError, ValueError, OverflowError):
         return 0
 

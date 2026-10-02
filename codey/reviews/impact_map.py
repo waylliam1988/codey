@@ -193,7 +193,7 @@ def _scan_reference_files(
         return (), False
 
     refs: list[ImpactReference] = []
-    seen: set[tuple[str, int, str, str]] = set()
+    seen: set[tuple[str, str, int, str]] = set()
     for line in scan.output.splitlines():
         match = REF_ROW_RE.match(line)
         if not match:
@@ -252,13 +252,17 @@ def _cap_references_for_render(
                 return
 
     for symbol in symbols:
+        def is_test_ref(ref: ImpactReference, candidate: str = symbol) -> bool:
+            return ref.symbol == candidate and _is_test_path(ref.path)
         take(
-            lambda ref, candidate=symbol: ref.symbol == candidate and _is_test_path(ref.path),
+            is_test_ref,
             limit=1,
         )
     for symbol in symbols:
+        def is_source_ref(ref: ImpactReference, candidate: str = symbol) -> bool:
+            return ref.symbol == candidate and not _is_test_path(ref.path)
         take(
-            lambda ref, candidate=symbol: ref.symbol == candidate and not _is_test_path(ref.path),
+            is_source_ref,
             limit=1,
         )
     take(lambda _ref: True)

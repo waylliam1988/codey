@@ -148,15 +148,16 @@ class NetworkPolicy:
         try:
             infos = socket.getaddrinfo(normalized_host, effective_port, proto=socket.IPPROTO_TCP)
         except OSError:
-            reason = "could not resolve host"
+            dns_reason = "could not resolve host"
             if use_cache:
-                self._record_cache(cache_key, reason, now)
-            return reason
+                self._record_cache(cache_key, dns_reason, now)
+            return dns_reason
 
         saw_resolved_address = False
-        reason = None
+        reason: str | None = None
         for info in infos:
-            address = info[4][0].split("%")[0]
+            raw_address = info[4][0]
+            address = str(raw_address).split("%")[0]
             try:
                 resolved = ipaddress.ip_address(address)
             except ValueError:

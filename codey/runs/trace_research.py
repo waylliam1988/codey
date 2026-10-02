@@ -397,7 +397,8 @@ def project_reproducibility_capsule(capsule: Mapping[str, object]) -> dict[str, 
 
 
 def project_review_finding(item: object) -> dict[str, object] | None:
-    raw = item.to_payload() if callable(getattr(item, "to_payload", None)) else item
+    to_payload = getattr(item, "to_payload", None)
+    raw = to_payload() if callable(to_payload) else item
     if not isinstance(raw, Mapping):
         return None
     finding_id = _generated_ref(raw.get("finding_id"), "review_finding")
@@ -428,7 +429,8 @@ def project_review_finding(item: object) -> dict[str, object] | None:
 
 
 def project_planner_gap(item: object) -> dict[str, object] | None:
-    raw = item.to_payload() if callable(getattr(item, "to_payload", None)) else item
+    to_payload = getattr(item, "to_payload", None)
+    raw = to_payload() if callable(to_payload) else item
     if not isinstance(raw, Mapping):
         return None
     gap_id = _generated_ref(raw.get("gap_id"), "planner_gap")
@@ -459,7 +461,8 @@ def project_planner_gap(item: object) -> dict[str, object] | None:
 
 
 def project_source_trust_row(item: object) -> dict[str, object] | None:
-    raw = item.to_payload() if callable(getattr(item, "to_payload", None)) else item
+    to_payload = getattr(item, "to_payload", None)
+    raw = to_payload() if callable(to_payload) else item
     if not isinstance(raw, Mapping):
         return None
     source_ref = _normalize_runtime_ref(raw.get("source_ref"), kind="source")

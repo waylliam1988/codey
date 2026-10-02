@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import json
 import os
 import subprocess
@@ -130,10 +131,7 @@ def _run_worker_job(
                 helper.new_chat(timeout=model_timeout)
                 result = run_adapter_repair(
                     provider_id,
-                    send_prompt=lambda prompt, provider=helper: provider.send(
-                        prompt,
-                        timeout=model_timeout,
-                    ),
+                    send_prompt=functools.partial(helper.send, timeout=model_timeout),
                     state_home=state_home,
                     source_root=source_root,
                     failure_kind=failure_kind,

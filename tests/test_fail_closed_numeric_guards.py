@@ -98,6 +98,15 @@ def test_refs_nonnegative_int_overflow_does_not_crash() -> None:
     assert nonnegative_int("abc") == 0
 
 
+def test_refs_coercion_helpers_preserve_explicit_defaults() -> None:
+    from codey.utils.refs import coerce_float, coerce_int
+
+    assert coerce_int("7") == 7
+    assert coerce_int("bad", default=4) == 4
+    assert coerce_float("0.25") == 0.25
+    assert coerce_float(float("inf"), default=0.5) == 0.5
+
+
 def test_positive_int_overflow_does_not_crash() -> None:
     from codey.utils.positive_int import positive_int
 

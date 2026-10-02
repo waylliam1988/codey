@@ -104,7 +104,7 @@ def _node_specs_from_hebbian(hebbian_store: Any) -> list[AffinityNodeSpec]:
         return []
     specs: list[AffinityNodeSpec] = []
     for node in rows:
-        if str(getattr(node, "status", "")) != "active" or getattr(node, "superseded_by", ""):
+        if str(getattr(node, "status", "") or "") != "active" or str(getattr(node, "superseded_by", "") or ""):
             continue
         affinity_kind = _HEBBIAN_KIND_MAP.get(str(getattr(node, "kind", "") or ""))
         if not affinity_kind:

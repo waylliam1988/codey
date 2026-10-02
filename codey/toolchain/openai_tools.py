@@ -58,7 +58,11 @@ def render_openai_tools(
                 },
             }
         )
-    tools.sort(key=lambda item: str(((item.get("function") or {}).get("name")) or ""))
+    def tool_name(item: dict[str, object]) -> str:
+        function = item.get("function")
+        return str(function.get("name") or "") if isinstance(function, dict) else ""
+
+    tools.sort(key=tool_name)
     return tools
 
 

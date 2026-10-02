@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol
 
 from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
@@ -48,6 +49,11 @@ OPEN_MAX_LIMIT = 12000
 OPEN_MIN_LIMIT = 500
 SEARCH_LIMIT = 8
 PDF_SOURCE_SEARCH_MAX_PAGES = 30
+
+
+class _SearchProvider(Protocol):
+    def search(self, query: str, *, limit: int) -> list[dict]: ...
+    def fetch(self, url: str) -> dict: ...
 
 
 @dataclass(frozen=True)
@@ -91,7 +97,7 @@ class SearchedInside:
 class ResearchSourceGateway:
     """Acquisition spine over one search provider and one run ledger."""
 
-    search_provider: object
+    search_provider: _SearchProvider
     ledger: ResearchLedger
     on_failure: Callable[..., None] | None = None
 

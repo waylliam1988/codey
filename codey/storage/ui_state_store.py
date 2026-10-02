@@ -13,6 +13,7 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+from codey.utils.refs import coerce_float
 
 SCHEMA_VERSION = 1
 MAX_UI_STATE_BYTES = 16 * 1024 * 1024
@@ -73,7 +74,7 @@ def _int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        number = float(value or 0)
+        number = coerce_float(value or 0)
     except (TypeError, ValueError, OverflowError):
         return 0
     if not math.isfinite(number):
@@ -236,16 +237,15 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
     for item in value[:MAX_SESSIONS]:
         if not isinstance(item, dict):
             continue
+        terminal_runs = item.get("terminalRuns")
+        if not isinstance(terminal_runs, list):
+            terminal_runs = []
         entry: dict[str, Any] = {
             "id": _str(item.get("id")),
             "title": _str(item.get("title") or "New chat", MAX_TITLE),
             "messages": _clean_messages(item.get("messages")),
             "terminalRuns": [
-                _str(run_id) for run_id in (
-                    item.get("terminalRuns")
-                    if isinstance(item.get("terminalRuns"), list)
-                    else []
-                )[-32:]
+                _str(run_id) for run_id in terminal_runs[-32:]
             ],
             "createdAt": _int(item.get("createdAt")),
             "projectId": _str(item.get("projectId")) or None,

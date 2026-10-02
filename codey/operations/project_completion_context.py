@@ -12,7 +12,7 @@ import contextlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from codey.agents.tools import AgentToolFns
 from codey.agents.writer_failover import WriterFailoverRunner
@@ -21,6 +21,7 @@ from codey.completion.edit_integrity import EditIntegrityObservation
 from codey.completion.engine import CompletionEngine, blocked_note
 from codey.completion.repair_context import RepairContextProjection
 from codey.completion.verification_map import render_verification_map
+from codey.completion.verification_policy import VerificationCandidate
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.prompting import (
@@ -29,16 +30,17 @@ from codey.operations.prompting import (
 from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.operations.task_state import TaskState
 from codey.providers.diagnostics import ProviderFailure
-from codey.runs.work_checkpoint import WorkCheckpointStore
+from codey.runs.work_checkpoint import CheckpointCheck, WorkCheckpointStore
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.write.mutation_line import RuntimeOperationState
 from codey.storage.managed_outputs import (
     ManagedOutputStore,
     run_command_with_managed_output,
 )
 from codey.workspace.change_brief import ChangeBrief
-from codey.workspace.config import ProjectConfigLoadResult
-from codey.workspace.facts import ProjectFactsStore
+from codey.workspace.config import ProjectConfigLoadResult, ProjectVerificationCommand
+from codey.workspace.facts import ProjectFactsStore, VerifiedCommand
 
 
 def _default_is_git_repository(_project: str | Path) -> bool:
@@ -326,7 +328,7 @@ def commit_runtime_operation(ctx: ProjectRun, step: str, commit: Callable[[Any, 
         raise ProjectRuntimeMutationError(f"runtime mutation failed while committing {step}: {exc}") from exc
     if committed is None:
         raise ProjectRuntimeMutationError(f"runtime mutation produced no operation while committing {step}")
-    ctx.work.operation = committed
+    ctx.work.operation = cast(RuntimeOperationState, committed)
 
 
 @dataclass
@@ -336,18 +338,18 @@ class ProjectRun:
     work: RunWork
     hooks: RunHooks
     project: str
+    state: TaskState
     config_result: ProjectConfigLoadResult | None = None
     research_result: Any = None
     research_pipeline_result: Any = None
-    state: TaskState | None = None
     request: Any = None
     context_builder: ProjectTaskContextBuilder | None = None
     project_context: Any = None
     verified_facts: str = ""
-    verification_verified_commands: tuple[str, ...] = ()
-    verification_candidates: tuple[Any, ...] = ()
-    resumed_verification_commands: tuple[str, ...] = ()
-    configured_verification_commands: tuple[str, ...] = ()
+    verification_verified_commands: tuple[VerifiedCommand, ...] = ()
+    verification_candidates: tuple[VerificationCandidate, ...] = ()
+    resumed_verification_commands: tuple[CheckpointCheck, ...] = ()
+    configured_verification_commands: tuple[ProjectVerificationCommand, ...] = ()
     configured_ignored_paths: tuple[str, ...] = ()
     project_map_chars: int = 0
     project_map: str = ""
@@ -383,6 +385,13 @@ class ProjectRun:
     repaired_once: bool = False
     writer_attempt_index: int = 0
     receipt: Any = None
+
+    @property
+    def task_state(self) -> TaskState:
+        """Return the state installed by project context preparation."""
+        if self.state is None:
+            raise ProjectRuntimeMutationError("project task state is not prepared")
+        return self.state
 
 
 def handle_project_tool_event(

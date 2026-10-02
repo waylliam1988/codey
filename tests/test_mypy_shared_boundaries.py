@@ -7,8 +7,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _mypy(*paths: str, follow_imports: str | None = None) -> str:
+def _mypy(
+    *paths: str,
+    follow_imports: str | None = None,
+    platform: str | None = None,
+) -> str:
     flags = [] if follow_imports is None else ["--follow-imports", follow_imports]
+    if platform is not None:
+        flags.extend(["--platform", platform])
     result = subprocess.run(
         [sys.executable, "-m", "mypy", "--ignore-missing-imports", *flags, *paths],
         cwd=ROOT,
@@ -62,3 +68,34 @@ def test_dynamic_payload_boundaries_are_clean() -> None:
 def test_process_tree_adapter_is_clean() -> None:
     output = _mypy("codey/runtime/core/cancellation.py", follow_imports="skip")
     assert "codey\\runtime\\core\\cancellation.py" not in output
+
+
+def test_process_tree_adapter_is_clean_on_linux_stubs() -> None:
+    output = _mypy(
+        "codey/runtime/core/cancellation.py",
+        follow_imports="skip",
+        platform="linux",
+    )
+    assert "Module has no attribute \"WinDLL\"" not in output
+    assert "Module has no attribute \"WinError\"" not in output
+    assert "Module has no attribute \"get_last_error\"" not in output
+    assert "Module has no attribute \"CREATE_NEW_PROCESS_GROUP\"" not in output
+
+
+def test_kernel_and_evidence_boundaries_are_clean() -> None:
+    output = _mypy(
+        "codey/operations/task_loop.py",
+        "codey/operations/project_writer_phase.py",
+        "codey/operations/project_completion_enforcement.py",
+        "codey/research/evidence_ledger.py",
+        "codey/runs/trace.py",
+        follow_imports="skip",
+    )
+    for module in (
+        "codey\\operations\\task_loop.py",
+        "codey\\operations\\project_writer_phase.py",
+        "codey\\operations\\project_completion_enforcement.py",
+        "codey\\research\\evidence_ledger.py",
+        "codey\\runs\\trace.py",
+    ):
+        assert module not in output

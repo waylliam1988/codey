@@ -5,12 +5,19 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from codey.agents.consensus import MAX_CONSENSUS_ADVISORS, ConsensusAdvice, advisor_ids
 from codey.providers import controls as provider_controls
 from codey.research.source_document import compact_pages
 from codey.runtime.core import cancellation
 from codey.utils.text_budget import clip_tail
+
+
+class _AdvisorProvider(Protocol):
+    def new_chat(self, timeout: float | None = None) -> None: ...
+    def send(self, text: str, timeout: float | None = None) -> str: ...
+    def close(self) -> None | bool: ...
 
 RESEARCH_ADVISOR_TIMEOUT = 60.0
 MAX_EVIDENCE_PACK_CHARS = 12_000
@@ -68,7 +75,8 @@ class EvidencePack:
                 number = item.get("number")
                 title = item.get("title") or ""
                 url = item.get("url") or ""
-                quality = item.get("quality") or {}
+                quality_value = item.get("quality")
+                quality = quality_value if isinstance(quality_value, Mapping) else {}
                 pages = compact_pages(item.get("pages") or ())
                 quality_text = " · ".join(
                     part for part in (
@@ -104,16 +112,27 @@ class EvidencePack:
                 ))
         if self.coverage:
             lines.extend(["", "Coverage:"])
-            queries = self.coverage.get("queries") or []
+            queries_value = self.coverage.get("queries")
+            queries = (
+                queries_value
+                if isinstance(queries_value, (list, tuple))
+                else []
+            )
             if queries:
                 lines.extend(f"- query: {item}" for item in list(queries)[:MAX_ADVISOR_SOURCE_URLS])
-            skipped = self.coverage.get("skipped_results") or []
+            skipped_value = self.coverage.get("skipped_results")
+            skipped = (
+                skipped_value
+                if isinstance(skipped_value, (list, tuple))
+                else []
+            )
             if skipped:
                 lines.append("Skipped results:")
-                for item in list(skipped)[:MAX_ADVISOR_SOURCE_URLS]:
+                for item in skipped[:MAX_ADVISOR_SOURCE_URLS]:
+                    row = item if isinstance(item, Mapping) else {}
                     lines.append(
-                        f"- {item.get('title') or item.get('url') or ''} "
-                        f"({item.get('reason') or 'skipped'})"
+                        f"- {row.get('title') or row.get('url') or ''} "
+                        f"({row.get('reason') or 'skipped'})"
                     )
         if self.warnings:
             lines.extend(["Warnings:", *[f"- {item}" for item in self.warnings]])
@@ -140,7 +159,7 @@ def run_research_advisors(
     provider_ids: Sequence[str],
     provider_labels: Mapping[str, str],
     availability: Callable[[], Mapping[str, bool]],
-    connect_existing: Callable[[str], object],
+    connect_existing: Callable[[str], _AdvisorProvider],
     pack: EvidencePack,
     clear_provider_session: Callable[[str], None] | None = None,
     max_advisors: int = MAX_CONSENSUS_ADVISORS,

@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass
 
+from codey.utils.refs import coerce_int
+
 SOURCE_SEARCH_DEFAULT_LIMIT = 6
 SOURCE_SEARCH_MAX_LIMIT = 12
 SOURCE_SEARCH_SNIPPET_CHARS = 320
@@ -27,7 +29,7 @@ def bounded_limit(value: object, default: int = SOURCE_SEARCH_DEFAULT_LIMIT) -> 
     if isinstance(value, bool):
         return default
     try:
-        parsed = int(value)
+        parsed = coerce_int(value, default=default)
     except (TypeError, ValueError, OverflowError):
         parsed = default
     return max(1, min(SOURCE_SEARCH_MAX_LIMIT, parsed))
@@ -112,7 +114,7 @@ def snippet_at(text: str, offset: int) -> str:
         offset_int = 0
     else:
         try:
-            offset_int = int(offset or 0)
+            offset_int = coerce_int(offset or 0)
         except (TypeError, ValueError, OverflowError):
             offset_int = 0
     offset = max(0, min(len(text), offset_int))

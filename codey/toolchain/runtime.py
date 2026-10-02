@@ -470,10 +470,10 @@ def _unique_anchor_position(content: str, value: str, kind: str) -> int | None:
         rf"(?<![A-Za-z0-9_]){re.escape(value)}(?![A-Za-z0-9_])"
     )
     matches = pattern.finditer(content)
-    first = next(matches, None)
-    if first is None or next(matches, None) is not None:
+    first_match = next(matches, None)
+    if first_match is None or next(matches, None) is not None:
         return None
-    return first.start()
+    return first_match.start()
 
 
 def _edit_anchor(content: str, search: str) -> tuple[str, str, int] | None:

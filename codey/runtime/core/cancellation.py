@@ -67,6 +67,12 @@ if os.name == "nt":
     import ctypes
     from ctypes import wintypes
 
+    # The Windows-only ctypes entry points are not present in Linux typeshed
+    # stubs. Keep the dynamic platform API behind this adapter boundary so
+    # Linux mypy checks do not model unavailable Windows symbols.
+    _windows_ctypes: Any = ctypes
+    _windows_subprocess: Any = subprocess
+
     _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
     _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 
@@ -110,7 +116,7 @@ class _WindowsJob:
     def __init__(self, proc: subprocess.Popen[bytes]) -> None:
         if os.name != "nt":
             raise OSError("Windows Job Objects are unavailable")
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32 = _windows_ctypes.WinDLL("kernel32", use_last_error=True)
         kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
         kernel32.CreateJobObjectW.restype = wintypes.HANDLE
         kernel32.SetInformationJobObject.argtypes = [
@@ -129,7 +135,7 @@ class _WindowsJob:
 
         handle = kernel32.CreateJobObjectW(None, None)
         if not handle:
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _windows_ctypes.WinError(_windows_ctypes.get_last_error())
         self._kernel32 = kernel32
         self._handle = handle
         try:
@@ -143,12 +149,12 @@ class _WindowsJob:
                 ctypes.byref(limits),
                 ctypes.sizeof(limits),
             ):
-                raise ctypes.WinError(ctypes.get_last_error())
+                raise _windows_ctypes.WinError(_windows_ctypes.get_last_error())
             if not kernel32.AssignProcessToJobObject(
                 handle,
                 wintypes.HANDLE(cast(_PopenWithHandle, proc)._handle),
             ):
-                raise ctypes.WinError(ctypes.get_last_error())
+                raise _windows_ctypes.WinError(_windows_ctypes.get_last_error())
         except Exception:
             self.close()
             raise
@@ -275,7 +281,7 @@ def start_process(
     check()
     group_args: dict[str, Any]
     if os.name == "nt":
-        group_args = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        group_args = {"creationflags": _windows_subprocess.CREATE_NEW_PROCESS_GROUP}
     else:
         group_args = {"start_new_session": True}
     proc = subprocess.Popen(
@@ -491,7 +497,7 @@ def attach_process_tree(proc: subprocess.Popen[bytes]) -> ProcessTreeOwner | Non
 
 
 def terminate_process_tree(
-    proc: subprocess.Popen[bytes],
+    proc: subprocess.Popen[Any],
     job: ProcessTreeOwner | None = None,
 ) -> None:
     """Terminate a process tree started in its own process group.

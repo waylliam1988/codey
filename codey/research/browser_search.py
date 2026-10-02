@@ -146,7 +146,7 @@ class BrowserSearchProvider:
         self.launch = launch
         self.isolated = bool(isolated)
         self.bring_to_front = bool(bring_to_front)
-        self._session = None
+        self._session: Any | None = None
         self._search_page = None
         self._fetch_page = None
         self._last_worker_health: dict[str, object] = {}
@@ -301,8 +301,10 @@ class BrowserSearchProvider:
         engine: str = "",
         deadline: float | None = None,
     ) -> list[dict]:
-        active_profile = profile or self._profile
         active_engine = engine or self.engine
+        active_profile = profile if isinstance(profile, dict) else self._profile
+        if not isinstance(active_profile, dict):
+            raise SearchUnavailableError("search_profile_missing", engine=active_engine, detail="search profile unavailable")
         if deadline is None:
             deadline = time.monotonic() + _SEARCH_TOTAL_TIMEOUT_SECONDS
         remaining_ms = int(max(250.0, (deadline - time.monotonic()) * 1000))

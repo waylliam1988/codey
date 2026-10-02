@@ -1211,6 +1211,20 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         self.assertEqual(request.session_id, "session-1")
         self.assertEqual(request.message, "Click the send button in the model page")
 
+    def test_request_teaching_rejects_handler_removed_after_availability_check(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        controls.set_teach_handler(mock.Mock())
+
+        def remove_handler() -> bool:
+            controls.set_teach_handler(None)
+            return True
+
+        with (
+            mock.patch.object(controls, "can_teach", side_effect=remove_handler),
+            self.assertRaisesRegex(TimeoutError, "control teaching is unavailable"),
+        ):
+            controls.request_teaching(page, "qwen", controls.CONTROL_SEND_BUTTON)
+
     def test_doctor_selects_ambiguous_candidate_then_existing_confirmation_saves_it(self) -> None:
         page = mock.Mock(url="https://chat.qwen.ai/")
         first = mock.Mock()

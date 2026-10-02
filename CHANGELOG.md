@@ -2,6 +2,17 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Full-tree typing closure (no release)
+
+- Completed the staged TaskState, task-loop, structured verification,
+  dynamic-payload, trace, and ProcessTreeOwner boundaries. The CI incremental
+  gate now covers 16 modules, and `python -m mypy codey` is clean across all
+  363 source files.
+- The single full pytest run recorded **6651 passed, 12 skipped, 9 failed,
+  1480 subtests passed** in **459.58s**. The nine deterministic regressions
+  were fixed and their affected scenarios rechecked with **10 passed, 10
+  subtests**; the full suite was not repeated. Ruff and diff checks passed.
+
 ## Unreleased - Typed application and runtime boundaries (no release)
 
 - Replaced the task writer `TaskState` project argument with the concrete

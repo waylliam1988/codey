@@ -68,3 +68,9 @@ a production bug is made at this stage.
 An earlier local run with mypy 1.13.0 produced 510 diagnostics. That result is
 not part of the frozen baseline because CI installs 1.18.2. The only frozen
 number for this migration is the 1.18.2 result above.
+
+## Current status (2026-10-03)
+
+After the staged boundary cleanup, the same command now reports **0 errors
+in 363 source files** with mypy 1.18.2. The raw file above remains unchanged
+as the frozen starting point; this section records the ratcheted result.

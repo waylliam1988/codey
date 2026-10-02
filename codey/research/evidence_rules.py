@@ -15,7 +15,7 @@ from typing import Any
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.query_planner import ResearchPlan
 from codey.research.tools import ResearchTools
-from codey.utils.refs import clip
+from codey.utils.refs import clip, coerce_int
 
 _SOURCE_ID_FORBIDDEN_RE = re.compile(r"\b(?:s\d+|source_id|result_id|hit_id)\b", re.IGNORECASE)
 _ALLOWED_KNOWLEDGE_WRITE_ARGS = frozenset({"type", "title", "body", "sources", "evidence"})
@@ -269,7 +269,7 @@ def _done_reports_no_relevant_material(args: object) -> bool:
 
 def _context_char_limit(value: object) -> int:
     try:
-        parsed = int(value)
+        parsed = coerce_int(value)
     except (TypeError, ValueError, OverflowError):
         parsed = _DEFAULT_CONTEXT_CHARS
     return max(_MIN_CONTEXT_CHARS, min(_MAX_CONTEXT_CHARS, parsed))

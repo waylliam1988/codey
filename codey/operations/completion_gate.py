@@ -51,12 +51,14 @@ def register_completion_check_provider(
     if profile is not None:
         if isinstance(profile, str):
             wanted = {profile.strip().lower()} if profile.strip() else set()
-        else:
+        elif isinstance(profile, (list, tuple, set, frozenset)):
             try:
                 wanted = {str(item or "").strip().lower() for item in profile}
             except TypeError:
                 wanted = set()
             wanted.discard("")
+        else:
+            wanted = set()
         profiles = frozenset(wanted)
     _PROVIDERS[key] = (fn, profiles)
     return True

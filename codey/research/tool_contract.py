@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import math
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,10 +18,10 @@ PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
 @dataclass(frozen=True)
 class ToolArg:
-    type: type
+    type: builtins.type[Any]
     default: Any = None
     singleton_dict: bool = False
-    list_item_type: type | None = None
+    list_item_type: builtins.type[Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -203,7 +204,11 @@ def render_openai_tools(*, include_source_search: bool = True) -> list[dict[str,
                 },
             }
         )
-    tools.sort(key=lambda item: str(((item.get("function") or {}).get("name")) or ""))
+    def tool_name(item: dict[str, object]) -> str:
+        function = item.get("function")
+        return str(function.get("name") or "") if isinstance(function, dict) else ""
+
+    tools.sort(key=tool_name)
     return tools
 
 

@@ -16,10 +16,13 @@ import json
 import math
 import re
 from collections.abc import Iterable
-from typing import SupportsIndex, SupportsInt, TypeAlias, cast
+from typing import SupportsFloat, SupportsIndex, SupportsInt, TypeAlias, cast
 
 DEFAULT_REF_LIMIT = 12
 _INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
+_FLOAT_INPUT: TypeAlias = (
+    str | bytes | bytearray | SupportsFloat | SupportsIndex
+)
 
 
 def clip(value: object, limit: int = 240) -> str:
@@ -40,6 +43,29 @@ def nonnegative_int(value: object) -> int:
         return max(0, int(cast(_INT_INPUT, value)))
     except (TypeError, ValueError, OverflowError):
         return 0
+
+
+def parse_int(value: object) -> int | None:
+    """Return an integer from an untyped boundary, or None if invalid."""
+    try:
+        return int(cast(_INT_INPUT, value))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def coerce_int(value: object, *, default: int = 0) -> int:
+    """Convert an untyped boundary value while keeping the caller's fallback."""
+    parsed = parse_int(value)
+    return default if parsed is None else parsed
+
+
+def coerce_float(value: object, *, default: float = 0.0) -> float:
+    """Convert a finite untyped boundary value while keeping the fallback."""
+    try:
+        number = float(cast(_FLOAT_INPUT, value))
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return number if math.isfinite(number) else default
 
 
 def strict_nonnegative_int(value: object) -> int:
@@ -225,12 +251,15 @@ __all__ = [
     "bounded_refs",
     "clean_sha256_hex",
     "clip",
+    "coerce_float",
+    "coerce_int",
     "digest_json",
     "content_digest",
     "digest_text",
     "identifier",
     "is_valid_hostname",
     "nonnegative_int",
+    "parse_int",
     "generated_ref",
     "normalize_text",
     "stable_ref",

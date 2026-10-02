@@ -2,6 +2,16 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 全树类型检查收口（未发布）
+
+- 完成 TaskState、task loop、结构化 verification、动态 payload、trace 和
+  ProcessTreeOwner 边界收口。CI 增量门槛现在覆盖 16 个模块，
+  `python -m mypy codey` 已在 363 个源码文件上零错误。
+- 唯一一次全量 pytest 记录为 **6651 passed、12 skipped、9 failed、1480
+  subtests passed**，耗时 **459.58 秒**。这 9 个确定性回归已修复，受影响
+  场景定向复测为 **10 passed、10 subtests**；按执行约束未重复全量测试。
+  Ruff 和 diff 检查均通过。
+
 ## Unreleased - 应用与运行时类型边界收口（未发布）
 
 - 将任务 writer 的 `TaskState` project 参数修正为具体的 `str | Path` 契约，

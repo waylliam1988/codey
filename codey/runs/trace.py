@@ -93,7 +93,7 @@ from codey.runs.trace_values import (
 )
 from codey.runtime.observe.prompt_envelope import is_model_boundary_freshness
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
-from codey.utils.refs import digest_text
+from codey.utils.refs import coerce_int, digest_text
 from codey.workspace.context_epoch import admission_from_rendered_source
 
 
@@ -449,7 +449,7 @@ class RunTraceRecorder:
         self._completion_proof_keys: set[str] = set()
         self._edit_integrity_keys: set[str] = set()
         self._source_trust_keys: set[str] = set()
-        self._brief_projection_keys: set[str] = set()
+        self._brief_projection_keys: set[tuple[str, str]] = set()
         self._topic_continuity_keys: set[str] = set()
         self._completion_repair_keys: set[str] = set()
         self._prompt_surface_keys: set[str] = set()
@@ -635,27 +635,32 @@ class RunTraceRecorder:
                 cleaned.append({
                     "name": _identifier(item.get("name"), 80),
                     "digest": _clip(item.get("digest"), 80),
-                    "chars": max(0, int(item.get("chars") or 0)),
-                    "source_refs": list(_bounded_refs(item.get("source_refs") or ())),
+                    "chars": _nonnegative_int(item.get("chars")),
+                    "source_refs": list(
+                        _bounded_refs(_trace_list_items(item.get("source_refs")))
+                    ),
                     "model_visible": bool(item.get("model_visible", True)),
                     "freshness": _identifier(item.get("freshness"), 80),
                     "epoch_id": _identifier(item.get("epoch_id"), 80),
                     "capability_id": _identifier(item.get("capability_id"), 80),
                 })
             sections = tuple(cleaned)
+        schema_version = payload["schema_version"]
+        if not isinstance(schema_version, int):
+            return False
         item = PromptSurfaceTrace(
             surface_id=surface_id,
             phase=_identifier(payload.get("phase"), 40),
             prompt_digest=_clip(payload.get("prompt_digest"), 80),
-            prompt_chars=max(0, int(payload.get("prompt_chars") or 0)),
+            prompt_chars=_nonnegative_int(payload.get("prompt_chars")),
             epoch_id=_identifier(payload.get("epoch_id"), 80),
             send_ref=send_ref,
-            source_refs=_bounded_refs(payload.get("source_refs") or ()),
+            source_refs=_bounded_refs(_trace_list_items(payload.get("source_refs"))),
             provider_effect_id=_clip(payload.get("provider_effect_id"), 80),
             model_tool_contract_hash=_clip(payload.get("model_tool_contract_hash"), 80),
             runtime_tool_contract_hash=_clip(payload.get("runtime_tool_contract_hash"), 80),
             sections=sections,
-            schema_version=payload["schema_version"],
+            schema_version=schema_version,
         )
         self._prompt_surface_keys.add(surface_id)
         self.manifest.prompt_surfaces.append(item)
@@ -682,7 +687,7 @@ class RunTraceRecorder:
                 budget=_nonnegative_int(section_args.get("budget")),
                 truncated=bool(section_args.get("truncated", False)),
                 freshness=str(section_args.get("freshness") or ""),
-                source_refs=section_args.get("source_refs") or (),
+                source_refs=_trace_list_items(section_args.get("source_refs")),
                 epoch_id=str(section_args.get("epoch_id") or ""),
                 admission_reason=str(section_args.get("admission_reason") or ""),
                 capability_id=str(section_args.get("capability_id") or ""),
@@ -846,13 +851,13 @@ class RunTraceRecorder:
         review_key = (
             str(payload["proof_ref"]),
             str(payload.get("question_digest") or ""),
-            tuple(payload["reason_codes"]),
+            tuple(_trace_list_items(payload.get("reason_codes"))),
         )
         for existing in self.manifest.research_proof_reviews:
             existing_key = (
                 str(existing.get("proof_ref") or ""),
                 str(existing.get("question_digest") or ""),
-                tuple(existing.get("reason_codes", ()) or ()),
+                tuple(_trace_list_items(existing.get("reason_codes"))),
             )
             if existing_key == review_key:
                 return
@@ -900,7 +905,7 @@ class RunTraceRecorder:
                 str(row["action"]),
                 str(row["error"]),
             )
-            counts[key] = min(999, counts.get(key, 0) + int(row["count"]))
+            counts[key] = min(999, counts.get(key, 0) + coerce_int(row["count"]))
         if not counts:
             return
         existing = {
@@ -1332,7 +1337,7 @@ class RunTraceRecorder:
         self.flush()
 
     def record_provider_failure(self, provider: str, failure: Any) -> None:
-        payload = {
+        payload: dict[str, str] = {
             "provider": _identifier(provider, 80),
             "action": _identifier(getattr(failure, "action", ""), 80),
             "kind": _identifier(getattr(failure, "kind", ""), 120),
@@ -1354,7 +1359,7 @@ class RunTraceRecorder:
         else:
             return
         subject_ref = _action_ref_or_empty(raw.get("subject_ref"))
-        payload = {
+        payload: dict[str, object] = {
             "kind": _identifier(raw.get("kind"), 80),
             "decision": _identifier(raw.get("decision"), 40),
             "guard_id": _identifier(raw.get("guard_id"), 80),

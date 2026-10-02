@@ -206,7 +206,7 @@ def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tupl
         )
         item = CheckEvidence(
             command, cwd, exit_code=exit_code,
-            workspace_revision=ver_rev, workspace_fingerprint=ver_fp,
+            workspace_revision=valid_workspace_revision(ver_rev), workspace_fingerprint=ver_fp,
         )
         observe(item, succeeded=succeeded)
     return evidence, tuple(gaps)
@@ -288,12 +288,14 @@ def _normalized_scope_and_change(session: Any, context: Any) -> tuple[tuple[str,
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck]:
     try:
         scope, task_changed = _normalized_scope_and_change(session, context)
-        rows = []
+        rows: list[CompletionCheck] = []
         if _task_requires_modification(session):
-            rows.append(completion_check(
+            change_check = completion_check(
                 "project_changes_required", CHECK_PASS if task_changed else CHECK_FAIL,
                 "" if task_changed else "project_changes_required",
-            ))
+            )
+            if change_check is not None:
+                rows.append(change_check)
             if not task_changed:
                 return rows
         return rows + _verification_checks(session, context, scope, task_changed)
@@ -351,9 +353,11 @@ def _verification_checks(
     )
     proof = result.decision.proof
     rows = [row for row in (getattr(proof, "checks", ()) or ()) if isinstance(row, CompletionCheck)]
-    if result.integrity is not None and getattr(result.integrity, "diagnostic_refs", ()):
-        return rows or [completion_check("edit_integrity", CHECK_PASS)]
-    return rows or [completion_check("relevant_verification", CHECK_NOT_RUN, "engine_empty")]
+    if result.integrity is not None and bool(getattr(result.integrity, "diagnostic_refs", ())):
+        fallback = completion_check("edit_integrity", CHECK_PASS)
+    else:
+        fallback = completion_check("relevant_verification", CHECK_NOT_RUN, "engine_empty")
+    return rows or ([fallback] if fallback is not None else [])
 
 
 def project_completion_checks(session: Any, context: Any = None) -> list[CompletionCheck]:

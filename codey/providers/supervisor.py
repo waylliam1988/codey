@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
+from codey.providers.base import ChatProvider
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     FAILURE_CHALLENGE_REQUIRED,
@@ -480,7 +481,7 @@ def _failure_family(kind: str) -> str:
 
 def run_half_open_canary(
     provider_id: str,
-    provider: object,
+    provider: ChatProvider,
     supervisor: ProviderSupervisor,
 ) -> bool:
     """Probe one cooled-down provider without exposing task or project data."""

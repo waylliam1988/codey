@@ -26,6 +26,7 @@ from codey.runtime.core.operation_state import (
     operation_progress_text,
 )
 from codey.storage.local_store import StoreCorruption, backup_corrupt_file, read_json_strict
+from codey.utils.refs import coerce_int
 
 MAX_ROW_VALUE_CHARS = 180
 MAX_WARNING_CHARS = 120
@@ -243,8 +244,9 @@ def _summary_rows(
     if progress:
         rows.append(RunDetailsRow("Progress", progress, "warning"))
 
-    if recovery is not None and getattr(recovery, "explanation_lines", ()):
-        for line in recovery.explanation_lines:
+    recovery_lines = getattr(recovery, "explanation_lines", ()) if recovery is not None else ()
+    if recovery_lines:
+        for line in recovery_lines:
             rows.append(RunDetailsRow("Recovery", line, "warning"))
 
     context = _context_summary(projection, trace)
@@ -371,7 +373,7 @@ def _safe_count(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value))  # type: ignore[arg-type]
+        return max(0, coerce_int(value))
     except (TypeError, ValueError, OverflowError):
         return 0
 

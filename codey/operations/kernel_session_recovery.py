@@ -106,6 +106,8 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
         observation = prior.canonical.get("research_observation")
         if staged_ledger is not None and observation is not None:
             try:
+                if not isinstance(observation, dict):
+                    raise RecoveryFailed("research ledger observation is not a mapping")
                 restore_ledger_observation(staged_ledger, observation)
             except (TypeError, ValueError, KeyError, AttributeError) as exc:
                 raise RecoveryFailed(f"research ledger recovery failed: {exc}") from exc

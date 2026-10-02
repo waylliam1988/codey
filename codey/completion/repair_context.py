@@ -23,7 +23,7 @@ import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from codey.policies.redaction import looks_prompt_visible_secret
 
@@ -490,7 +490,7 @@ def _nonnegative_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value))  # type: ignore[arg-type]
+        return max(0, int(cast(Any, value)))
     except (TypeError, ValueError, OverflowError):
         return 0
 

@@ -15,6 +15,7 @@ from collections.abc import Iterable, Mapping
 from codey.policies.redaction import looks_sensitive_code
 from codey.runs.text_clip import clip_text as _clip
 from codey.runs.trace_schema import MAX_REFS, MAX_TEXT_CHARS, MAX_WARNINGS
+from codey.utils.refs import coerce_float, coerce_int, parse_int
 
 
 def _safe_trace_code(value: object, limit: int) -> str:
@@ -52,7 +53,7 @@ def _nonnegative_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value))  # type: ignore[arg-type]
+        return max(0, coerce_int(value))
     except (TypeError, ValueError, OverflowError):
         return 0
 
@@ -61,7 +62,7 @@ def _bounded_int(value: object, lower: int, upper: int) -> int:
     if isinstance(value, bool):
         return lower
     try:
-        parsed = int(value)  # type: ignore[arg-type]
+        parsed = coerce_int(value, default=lower)
     except (TypeError, ValueError, OverflowError):
         parsed = lower
     return max(lower, min(upper, parsed))
@@ -71,7 +72,7 @@ def _unit_float(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
     try:
-        number = float(value)
+        number = coerce_float(value)
     except (TypeError, ValueError, OverflowError):
         return 0.0
     if not math.isfinite(number):
@@ -89,7 +90,8 @@ def _int_or_none(value: object) -> int | None:
     if isinstance(value, str) and not value.strip().isascii():
         return None
     try:
-        return max(0, int(value))
+        parsed = parse_int(value)
+        return None if parsed is None else max(0, parsed)
     except (TypeError, ValueError, OverflowError):
         return None
 

@@ -69,6 +69,7 @@ def run_web_send(
         if isinstance(exc.__cause__, cancellation.DeadlineExceeded):
             _raise_response_missing(provider, page=page, cause=exc.__cause__)
         raise
+    raise AssertionError("run_web_send returned without a result")
 
 
 def _raise_response_missing(

@@ -33,8 +33,10 @@ import queue
 import sys
 import threading
 import time
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
 from codey import __version__
@@ -481,7 +483,8 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         }
         if icon.is_file():
             start_kwargs["icon"] = str(icon)
-        webview.start(**start_kwargs)
+        webview_start = cast(Callable[..., Any], webview.start)
+        webview_start(**start_kwargs)
 
     try:
         _run_webview()

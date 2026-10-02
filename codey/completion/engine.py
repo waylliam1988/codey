@@ -16,6 +16,7 @@ from codey.completion.edit_integrity import (
     observe_edit_integrity,
 )
 from codey.completion.verification import build_coding_completion_proof
+from codey.completion.verification_policy import VerificationCandidate
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
 COMPLETION_BLOCKED_NOTES = {
@@ -75,7 +76,7 @@ class CompletionEngine:
         stop_reason: str,
         task_changed: bool,
         scope_files: tuple[str, ...],
-        selected_check: object,
+        selected_check: VerificationCandidate | None,
         evidence: ExecutionEvidence,
         analysis_run_payloads: Iterable[Mapping[str, object]] = (),
         project: str | Path | None = None,
@@ -144,7 +145,7 @@ class CompletionEngine:
         stop_reason: str,
         task_changed: bool,
         scope_files: tuple[str, ...],
-        selected_check: object,
+        selected_check: VerificationCandidate | None,
         evidence: ExecutionEvidence,
         analysis_run_payloads: Iterable[Mapping[str, object]],
         project: str | Path | None,
@@ -173,7 +174,7 @@ class CompletionEngine:
         run_id: str,
         stop_reason: str,
         task_changed: bool,
-        selected_check: object,
+        selected_check: VerificationCandidate | None,
         evidence: ExecutionEvidence,
         scope_files: tuple[str, ...],
         project: str | Path | None,

@@ -18,6 +18,7 @@ from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.runtime.observe.terminalizer import terminal_turns
 from codey.task.kind import trace_mode, ui_mode
 from codey.task.model import TaskSubmission
+from codey.utils.refs import coerce_int
 from codey.workspace.revision import INITIAL_WORKSPACE_REVISION, WorkspaceState
 
 logger = logging.getLogger(__name__)
@@ -188,7 +189,7 @@ def start_run_operation(
 def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> None:
     if work.operation is None:
         return
-    max_turns = int(event.get("max_turns") or 0)
+    max_turns = coerce_int(event.get("max_turns") or 0)
     try:
         mutations = getattr(deps, "runtime_mutations", None)
         if mutations is None:

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from codey.agents.handoff import ConversationSnapshot
 from codey.providers import controls as provider_controls
+from codey.providers.base import ChatProvider
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 from codey.utils.text_budget import clip_tail
@@ -245,7 +246,7 @@ def run_consensus(
     provider_ids: Sequence[str],
     provider_labels: Mapping[str, str],
     availability: Callable[[], Mapping[str, bool]],
-    connect_existing: Callable[[str], object],
+    connect_existing: Callable[[str], ChatProvider],
     clear_provider_session: Callable[[str], None] | None = None,
     context: str = "",
     draft: str = "",
@@ -301,7 +302,7 @@ def run_consensus(
     degraded_reasons: list[str] = []
     for advisor_id in candidates:
         cancellation.check()
-        advisor = None
+        advisor: ChatProvider | None = None
         try:
             advisor = connect_existing(advisor_id)
             if clear_provider_session is not None:

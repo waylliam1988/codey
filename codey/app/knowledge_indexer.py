@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from typing import Protocol
 
 from codey.utils.refs import clip, digest_text
+
+
+class _KnowledgeStore(Protocol):
+    def rebuild(self) -> object: ...
 
 
 class KnowledgeIndexer:
     def __init__(
         self,
         *,
-        store: Callable[[], object | None],
+        store: Callable[[], _KnowledgeStore | None],
     ) -> None:
         self.store = store
         self.lock = threading.Lock()

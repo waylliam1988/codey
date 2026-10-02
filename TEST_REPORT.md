@@ -1,5 +1,16 @@
 # Codey Test Report
 
+## Typed boundary closure (2026-10-03)
+
+- Full-tree mypy: **0 errors**, 363 source files checked.
+- Incremental mypy gate: **16 modules**, passed.
+- Ruff and `git diff --check`: passed.
+- The one full pytest run completed with **6651 passed, 12 skipped, 9
+  failed, 1480 subtests passed** in **459.58s**. The failures were
+  deterministic regressions from this typing pass; fixes were applied and
+  the affected scenarios were rechecked with **10 passed, 10 subtests**.
+  The full suite was not rerun, following the execution constraint.
+
 ## Kernel boundary, projection errors, and CI typing (2026-10-03)
 
 This review confirmed three deterministic issues and fixed them with red-first

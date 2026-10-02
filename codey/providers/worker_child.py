@@ -93,7 +93,8 @@ def main(argv: list[str] | None = None) -> int:
                     _reply(request_id, False, error=f"unsupported method: {method}")
             except Exception as exc:
                 failure = getattr(exc, "failure", None)
-                payload = failure.to_dict() if hasattr(failure, "to_dict") else None
+                to_dict = getattr(failure, "to_dict", None)
+                payload = to_dict() if callable(to_dict) else None
                 _reply(request_id, False, error=str(exc), failure=payload)
     finally:
         with _adapter_logs_to_stderr(), contextlib.suppress(Exception):

@@ -4,14 +4,14 @@ from __future__ import annotations
 from collections import deque
 
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
-from codey.agents.state import SeenInfoLRU, seen_info_key
+from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
 
 
 class KernelProgress:
     def __init__(self, stagnant_turns: int | None = None) -> None:
         self.limit = max(1, int(stagnant_turns)) if stagnant_turns is not None else 4
         self.seen = SeenInfoLRU()
-        self.attempts = deque(maxlen=16)
+        self.attempts: deque[ToolAttemptRecord] = deque(maxlen=16)
         self.idle = 0
 
     def observe(self, results, session) -> bool:

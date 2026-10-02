@@ -223,7 +223,7 @@ def _candidate_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
     port_family = _cdp_port_family(preferred)
     with _CDP_PORT_LOCK:
         active = _active_cdp_port
-    remembered = (active, _load_saved_cdp_port())
+    remembered: tuple[int | None, ...] = (active, _load_saved_cdp_port())
     if preferred != DEFAULT_PORT:
         allowed = set(port_family)
         remembered = tuple(item for item in remembered if item in allowed)

@@ -20,6 +20,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
+    "types-PyYAML>=6.0",
 ]
 
 [project.scripts]
@@ -86,7 +87,8 @@ max-statements = 80
 # The full tree remains a migration baseline; CI gates the typed boundary
 # modules below and expands this list as each dependency surface is typed.
 # The frozen 2026-10-03 starting point was 506 errors in 138 files (363
-# source files checked). The current local run is 354 errors in 114 files;
+# source files checked). The current local run is clean (0 errors in 363
+# source files);
 # see the frozen raw output and classification report under
 # `tools/mypy-baseline-2026-10-03.txt` and `docs/mypy-baseline-2026-10-03.md`.
 # New code should add annotations (TaskState-style Protocols over Any);
@@ -108,4 +110,9 @@ modules = [
     "codey/completion/contract.py",
     "codey/runtime/log/entries.py",
     "codey/runtime/core/cancellation.py",
+    "codey/operations/task_loop.py",
+    "codey/operations/project_writer_phase.py",
+    "codey/operations/project_completion_enforcement.py",
+    "codey/research/evidence_ledger.py",
+    "codey/runs/trace.py",
 ]

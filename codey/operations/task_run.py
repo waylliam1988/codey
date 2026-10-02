@@ -333,7 +333,7 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
         if needs_writer:
             try:
                 is_git = deps.is_git_repository
-                if callable(is_git) and is_git(project):
+                if project is not None and callable(is_git) and is_git(project):
                     needs_writer = False
             except Exception:
                 needs_writer = True

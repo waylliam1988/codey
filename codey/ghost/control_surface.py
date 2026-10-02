@@ -6,6 +6,7 @@ import math
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol, cast
 
 from codey.ghost import _common
 from codey.ghost.affinity import GhostAffinityStore
@@ -30,6 +31,11 @@ MAX_SUMMARY_ITEMS = 20
 MAX_CONTEXT_ITEMS = 8
 MAX_UI_TEXT_CHARS = 140
 MAX_EVIDENCE_PREVIEW_CHARS = 120
+
+
+class _ResettableStore(Protocol):
+    def delete_scope(self, scope: str, *, project: str = "", session_id: str = "") -> object: ...
+    def reset_all(self, **kwargs: object) -> object: ...
 
 _ACTIONS = frozenset({
     "propose_preference",
@@ -75,12 +81,14 @@ class GhostControlSurface:
     def summary(self, *, session_id: str = "", project: str = "") -> dict[str, object]:
         if not self.available:
             return _unavailable_payload()
+        inbox = self.inbox
+        assert inbox is not None
         session_ref = clip_signal_text(session_id, 120)
         project_ref = _common.normalize_project(project)
         warnings: list[str] = []
 
         pending = _safe_rows(
-            lambda: self.inbox.applicable_candidates(
+            lambda: inbox.applicable_candidates(
                 status="candidate",
                 session_id=session_ref,
                 project=project_ref,
@@ -95,7 +103,7 @@ class GhostControlSurface:
         )
         active_nodes = _applicable_nodes(all_nodes, session_id=session_ref, project=project_ref)
         accepted = _safe_rows(
-            lambda: self.inbox.applicable_candidates(
+            lambda: inbox.applicable_candidates(
                 status="accepted", session_id=session_ref, project=project_ref,
             ) if self.hebbian is not None else (),
             warnings,
@@ -145,7 +153,10 @@ class GhostControlSurface:
             warnings,
             "observation_read_failed",
         )
-        warning_rows = _ui_warnings((*warnings, *affinity_health.get("warnings", ())))
+        affinity_warnings = affinity_health.get("warnings")
+        warning_rows = _ui_warnings(
+            (*warnings, *(affinity_warnings if isinstance(affinity_warnings, (list, tuple)) else ()))
+        )
         return {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
             "ok": True,
@@ -432,7 +443,7 @@ class GhostControlSurface:
     def _mutate_all_stores(
         self,
         action_name: str,
-        mutate: Callable[[object], object],
+        mutate: Callable[[_ResettableStore], object],
     ) -> tuple[dict[str, object], list[str]]:
         stores: list[tuple[str, object | None]] = [
             ("inbox", self.inbox),
@@ -450,7 +461,7 @@ class GhostControlSurface:
                 results[name] = "unavailable"
                 continue
             try:
-                results[name] = mutate(store)
+                results[name] = mutate(cast(_ResettableStore, store))
             except (OSError, TypeError, ValueError):
                 results[name] = False
                 errors.append(f"{name}_{action_name}_failed")
@@ -517,7 +528,7 @@ def _ui_warnings(warnings: Iterable[object]) -> tuple[str, ...]:
             rows.append("Local context settings could not be read")
         else:
             rows.append("Some local context could not be read")
-    return _bounded_unique(rows)
+    return tuple(_bounded_unique(rows))
 
 
 def _find_candidate(
@@ -750,7 +761,7 @@ def _confidence_label(value: object) -> str:
     if isinstance(value, bool):
         return "Unknown confidence"
     try:
-        confidence = float(value)
+        confidence = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):
         return "Unknown confidence"
     if not math.isfinite(confidence):

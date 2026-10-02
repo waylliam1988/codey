@@ -400,7 +400,9 @@ def locate_response(
         except Exception:
             _response_locator_map().pop(provider_id, None)
     record = load_control(provider_id, CONTROL_RESPONSE)
-    fingerprint = record.get("fingerprint") if isinstance(record, dict) else None
+    if not isinstance(record, dict):
+        return discover_response(page, provider_id)
+    fingerprint = record.get("fingerprint")
     if isinstance(fingerprint, dict) and _host_matches(_page_host(page), str(record.get("host") or "")):
         for selector in selector_candidates(fingerprint, CONTROL_RESPONSE):
             try:
@@ -533,7 +535,10 @@ def request_teaching(
         session_id=str(getattr(_context, "session_id", "") or ""),
         require_enabled=require_enabled,
     )
-    return _handler(request)
+    handler = _handler
+    if handler is None:
+        raise TimeoutError("control teaching is unavailable")
+    return handler(request)
 
 
 def _doctor_selection(
@@ -1109,7 +1114,8 @@ def fingerprint_from_click(data: Any) -> dict[str, Any]:
 
 def selector_candidates(fingerprint: dict[str, Any], action: str = "") -> list[str]:
     tag = _selector_tag(fingerprint.get("tag"))
-    data = fingerprint.get("data") if isinstance(fingerprint.get("data"), dict) else {}
+    raw_data = fingerprint.get("data")
+    data = raw_data if isinstance(raw_data, dict) else {}
     candidates: list[str] = []
     for attr in ("data-testid", "data-test-id", "data-track-id", "data-track-name", "data-qa", "data-role"):
         value = _clean(data.get(attr), 120)
@@ -1129,7 +1135,8 @@ def selector_candidates(fingerprint: dict[str, Any], action: str = "") -> list[s
     if input_type:
         candidates.append(f'{tag}[type={_css_str(input_type)}]')
 
-    classes = [cls for cls in fingerprint.get("classes", []) if _stable_token(cls)]
+    raw_classes = fingerprint.get("classes")
+    classes = [cls for cls in raw_classes if _stable_token(cls)] if isinstance(raw_classes, list) else []
     if classes:
         parts = "".join(f'[class~={_css_str(cls)}]' for cls in classes[:3])
         candidates.append(f"{tag}{parts}")
@@ -1262,7 +1269,11 @@ def _dedupe(items: list[str]) -> list[str]:
 
 
 def _combined_text(fingerprint: dict[str, Any]) -> str:
-    data = fingerprint.get("data") if isinstance(fingerprint.get("data"), dict) else {}
+    raw_data = fingerprint.get("data")
+    data = raw_data if isinstance(raw_data, dict) else {}
+    classes = fingerprint.get("classes")
+    if not isinstance(classes, list):
+        classes = []
     parts = [
         fingerprint.get("tag"),
         fingerprint.get("role"),
@@ -1271,8 +1282,8 @@ def _combined_text(fingerprint: dict[str, Any]) -> str:
         fingerprint.get("title"),
         fingerprint.get("placeholder"),
         fingerprint.get("text"),
-        " ".join(fingerprint.get("classes", [])),
-        " ".join(data.values()),
+        " ".join(str(value) for value in classes),
+        " ".join(str(value) for value in data.values()),
     ]
     return " ".join(_clean(part, 120).lower() for part in parts if part)
 

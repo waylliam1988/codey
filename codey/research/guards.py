@@ -6,7 +6,7 @@ import re
 from collections.abc import Iterable
 
 from codey.policies.redaction import looks_prompt_visible_secret
-from codey.utils.refs import clip, identifier
+from codey.utils.refs import clip, coerce_int, identifier
 
 _SNAKE_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
 
@@ -50,7 +50,7 @@ def bounded_int(
 ) -> int:
     fallback = lower if default is None else default
     try:
-        parsed = int(value)  # type: ignore[arg-type]
+        parsed = coerce_int(value, default=int(fallback))
     except (TypeError, ValueError, OverflowError):
         parsed = int(fallback)
     return max(lower, min(upper, parsed))

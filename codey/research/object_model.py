@@ -38,7 +38,9 @@ from codey.utils.refs import (
     clip as _clip,
 )
 from codey.utils.refs import (
+    coerce_int,
     content_digest,
+    parse_int,
 )
 from codey.utils.refs import (
     digest_json as _digest_json,
@@ -75,7 +77,7 @@ def _safe_nonnegative(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value))  # type: ignore[arg-type]
+        return max(0, coerce_int(value))
     except (TypeError, ValueError, OverflowError):
         return 0
 
@@ -84,7 +86,9 @@ def _safe_positive_page(value: object) -> int | None:
     if isinstance(value, bool):
         return None
     try:
-        number = int(value)  # type: ignore[arg-type]
+        number = parse_int(value)
+        if number is None:
+            return None
     except (TypeError, ValueError, OverflowError):
         return None
     return number if number > 0 else None

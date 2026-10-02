@@ -20,6 +20,7 @@ from codey.research.source_trust import source_trust_warnings as _shared_source_
 from codey.utils.refs import (
     bounded_refs,
     clip,
+    coerce_float,
     digest_json,
     generated_ref,
     identifier,
@@ -214,7 +215,10 @@ def review_research_proof(
     coverage = _answer_coverage(proof_question, claims, evidence)
     trust = _source_trust_warnings(sources)
     overclaim = _overclaim_warnings(claims, relation_review["supported_claim_ids"])
-    missing = list(relation_review["missing_evidence"])
+    missing = [
+        str(item)
+        for item in _sequence_values(relation_review.get("missing_evidence"))
+    ]
     if answer_status == "not_answered":
         missing.append("not_answered")
     elif answer_status == "insufficient_evidence":
@@ -250,7 +254,10 @@ def review_research_proof(
         and answer_status == "answered"
         and nonnegative_int(payload.get("unsupported_claim_count")) == 0
     )
-    missing.extend(str(item) for item in relation_review["hard_failures"])
+    missing.extend(
+        str(item)
+        for item in _sequence_values(relation_review.get("hard_failures"))
+    )
     missing = list(dict.fromkeys(identifier(item, 80) for item in missing if identifier(item, 80)))
     gaps = coverage.gaps
     followups, rewrites = _planner_signals(
@@ -300,17 +307,17 @@ def proof_review_trace_payload(review: ResearchProofReview | Mapping[str, object
         "answers_question": bool(payload.get("answers_question")),
         "answer_status": _status_token(payload.get("answer_status"), ANSWER_STATUSES, default="not_answered"),
         "answer_coverage_score": _bounded_score(payload.get("answer_coverage_score")),
-        "gap_count": min(MAX_GAPS, len(payload.get("coverage_gaps", ()) or ())),
+        "gap_count": min(MAX_GAPS, len(_sequence_values(payload.get("coverage_gaps")))),
         "warning_count": min(
             MAX_WARNINGS,
-            len(payload.get("source_trust_warnings", ()) or ())
-            + len(payload.get("overclaim_warnings", ()) or ())
-            + len(payload.get("stale_warnings", ()) or ()),
+            len(_sequence_values(payload.get("source_trust_warnings")))
+            + len(_sequence_values(payload.get("overclaim_warnings")))
+            + len(_sequence_values(payload.get("stale_warnings"))),
         ),
         "planner_signal_count": min(
             MAX_SIGNALS * 2,
-            len(payload.get("followup_questions", ()) or ())
-            + len(payload.get("query_rewrite_candidates", ()) or ()),
+            len(_sequence_values(payload.get("followup_questions")))
+            + len(_sequence_values(payload.get("query_rewrite_candidates"))),
         ),
         "reason_codes": list(reasons),
     }
@@ -425,6 +432,12 @@ def _list_of_mappings(value: object) -> list[Mapping[str, object]]:
     if not isinstance(value, (list, tuple)):
         return []
     return [item for item in value if isinstance(item, Mapping)]
+
+
+def _sequence_values(value: object) -> tuple[object, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(value)
+    return ()
 
 
 def _append_relation_hard(
@@ -976,7 +989,7 @@ def _bounded_score(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
     try:
-        score = float(value)
+        score = coerce_float(value)
     except (TypeError, ValueError, OverflowError):
         return 0.0
     if not math.isfinite(score):

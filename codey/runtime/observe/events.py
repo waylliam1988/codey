@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
+from codey.utils.refs import coerce_int
 
 MAX_EVENT_TEXT_CHARS = 1_000
 MAX_EVENT_RESULT_CHARS = 200
@@ -30,7 +31,7 @@ def _safe_byte_count(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        number = int(value or 0)
+        number = coerce_int(value or 0)
     except (TypeError, ValueError, OverflowError):
         return 0
     return max(0, number)
