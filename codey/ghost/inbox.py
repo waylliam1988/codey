@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.ghost import _common
 from codey.ghost._warnings import event_read_warnings
@@ -50,6 +51,8 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+
+_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 INBOX_SCHEMA_VERSION = 1
 MAX_GHOST_EVENTS = 5_000
@@ -621,7 +624,10 @@ class GhostInboxStore:
                             "bytes_after": before["bytes"],
                             "warnings": list(self.last_warnings),
                         }
-                if before["events"] <= MAX_GHOST_EVENTS and before["bytes"] <= MAX_EVENTS_BYTES:
+                if (
+                    _int_or_default(before.get("events"), 0) <= MAX_GHOST_EVENTS
+                    and _int_or_default(before.get("bytes"), 0) <= MAX_EVENTS_BYTES
+                ):
                     return {
                         "ok": True,
                         "compacted": False,
@@ -852,7 +858,7 @@ class GhostInboxStore:
         return tuple(read.rows)
 
     def _read_settings_unlocked(self) -> dict[str, object]:
-        default = {
+        default: dict[str, object] = {
             "schema_version": INBOX_SCHEMA_VERSION,
             "learning_enabled": True,
         }
@@ -1169,7 +1175,7 @@ def _int_or_default(value: object, default: int) -> int:
     if isinstance(value, str) and not value.strip().isascii():
         return default
     try:
-        return int(value)  # type: ignore[arg-type]
+        return int(cast(_INT_INPUT, value))
     except (TypeError, ValueError, OverflowError):
         return default
 

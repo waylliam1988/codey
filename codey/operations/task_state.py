@@ -29,7 +29,16 @@ if TYPE_CHECKING:
     from codey.app.provider_registry import ProviderRegistry
     from codey.app.run_registry import RunRegistry, RunSnapshot
     from codey.repairs.self_repair import SelfRepairSupervisor
+    from codey.research.evidence_ledger import EvidenceLedgerStore
+    from codey.runs.ledger import RunLedgerStore
+    from codey.runs.trace import RunTraceStore
+    from codey.runs.work_checkpoint import WorkCheckpointStore
+    from codey.runtime.effects.effect_records import RuntimeEffectStore
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.changes import ChangeTracker
+    from codey.workspace.facts import ProjectFactsStore
+    from codey.workspace.revision import WorkspaceRevisionStore
 
 
 class TaskState(Protocol):
@@ -70,11 +79,50 @@ class TaskState(Protocol):
     def pop_pending_teach(self, teach_id: str) -> dict | None: ...
     def is_busy(self) -> bool: ...
     def wait_for_ghost_sleep(self, timeout: float | None = None) -> bool: ...
-    def acquire_project_writer(self, project: str | object) -> bool: ...
-    def release_project_writer(self, project: str | object) -> None: ...
+    def acquire_project_writer(self, project: str | Path) -> bool: ...
+    def release_project_writer(self, project: str | Path) -> None: ...
     def change_tracker_for(self, project: str | Path, *, persistent: bool) -> ChangeTracker: ...
     @property
     def self_repair(self) -> SelfRepairSupervisor | None: ...
 
 
-__all__ = ["TaskState"]
+class TaskSubmissionState(TaskState, Protocol):
+    """Application stores needed while constructing ``TaskRunDeps``.
+
+    These are read-only protocol properties so the task spine keeps its small
+    coordination contract while the application submission boundary can expose
+    its persistence dependencies explicitly.
+    """
+
+    @property
+    def project_facts(self) -> ProjectFactsStore: ...
+
+    @property
+    def work_checkpoints(self) -> WorkCheckpointStore: ...
+
+    @property
+    def workspace_revisions(self) -> WorkspaceRevisionStore: ...
+
+    @property
+    def run_ledgers(self) -> RunLedgerStore | None: ...
+
+    @property
+    def run_traces(self) -> RunTraceStore | None: ...
+
+    @property
+    def evidence_ledgers(self) -> EvidenceLedgerStore | None: ...
+
+    @property
+    def managed_outputs(self) -> ManagedOutputStore | None: ...
+
+    @property
+    def knowledge_store(self) -> object | None: ...
+
+    @property
+    def runtime_mutations(self) -> RuntimeMutationLine: ...
+
+    @property
+    def runtime_effects(self) -> RuntimeEffectStore: ...
+
+
+__all__ = ["TaskState", "TaskSubmissionState"]

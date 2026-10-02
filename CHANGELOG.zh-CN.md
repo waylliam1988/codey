@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 应用与运行时类型边界收口（未发布）
+
+- 将任务 writer 的 `TaskState` project 参数修正为具体的 `str | Path` 契约，
+  新增 `TaskSubmissionState` 承载构造 `TaskRunDeps` 所需的 stores，保持基础
+  task Protocol 窄小。
+- 在 Git 命令结果、completion proof payload 和 runtime log entry 的动态输入
+  边界完成类型化，避免 `object` 继续向下游传播。
+- 新增 `ProcessTreeOwner` Protocol，将 Windows 进程句柄和 POSIX 进程组信号
+  收束到带类型的平台检查中。
+- 将 CI 增量 mypy 门槛从四个 operations 模块扩展到 11 个 application、
+  workspace、completion、runtime 和 cancellation 边界，并为各组加入红测锁定。
+- 全量 `pytest -q -o faulthandler_timeout=120`：**6633 passed、34 skipped、
+  1488 subtests passed**，耗时 **413.81 秒**。Ruff、compileall、11 模块
+  mypy 门槛和 diff 检查均通过。全树 mypy 当前为 **354 errors / 114 files**
+  （检查 363 个源码文件），相对冻结的 506 错误基线继续下降。未发布、无版本 bump。
+
 ## Unreleased - 内核边界、投影异常与 CI 类型检查（未发布）
 
 - 将生产 `run_task_kernel` 的大参数入口收敛为 transport、execution、

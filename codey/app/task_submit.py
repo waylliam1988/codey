@@ -18,7 +18,7 @@ from collections.abc import Callable
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.operations.project_adapter import run as agent_run
-from codey.operations.task_state import TaskState
+from codey.operations.task_state import TaskSubmissionState
 from codey.providers.diagnostics import capture_provider_failure
 from codey.reviews.review_policy import load_review_policy
 from codey.task.model import TaskSubmission
@@ -44,7 +44,7 @@ def run_task(
     previous_run_id: str = "",
     initial_shell_results: tuple[dict[str, object], ...] = (),
     *,
-    get_state: Callable[[], TaskState],
+    get_state: Callable[[], TaskSubmissionState],
     review_policy: str | None = None,
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
@@ -141,7 +141,7 @@ def submit_task(
     previous_run_id: str = "",
     initial_shell_results: tuple[dict[str, object], ...] = (),
     *,
-    get_state: Callable[[], TaskState],
+    get_state: Callable[[], TaskSubmissionState],
     abort_if_stopped: bool = False,
 ) -> str | None:
     # Fail fast on config error before taking the slot; the validated value is
@@ -199,7 +199,7 @@ def submit_task_after_slot_release(
     provider_id: str,
     intent: str = "auto",
     *,
-    get_state: Callable[[], TaskState],
+    get_state: Callable[[], TaskSubmissionState],
     previous_run_id: str = "",
     timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
     initial_shell_results: tuple[dict[str, object], ...] = (),

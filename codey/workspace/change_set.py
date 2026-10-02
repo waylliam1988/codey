@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.utils.change_paths import (
     change_file_paths as _change_file_paths,
@@ -13,6 +14,8 @@ from codey.utils.change_paths import (
     safe_change_path as _safe_relpath,
 )
 from codey.utils.positive_int import positive_int as _positive_int
+
+_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 MAX_SUMMARY_FILES = 20
 MAX_SUMMARY_HUNKS = 60
@@ -85,7 +88,7 @@ class ChangeSet:
             for file in files
         )
         try:
-            changed_count = int(changes.get("changed_count") or len(files))  # type: ignore[arg-type]
+            changed_count = int(cast(_INT_INPUT, changes.get("changed_count") or len(files)))
         except (TypeError, ValueError, OverflowError):
             changed_count = len(files)
         return cls(
@@ -299,7 +302,7 @@ def _nonnegative_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return max(0, int(value or 0))  # type: ignore[arg-type]
+        return max(0, int(cast(_INT_INPUT, value or 0)))
     except (TypeError, ValueError, OverflowError):
         return 0
 

@@ -26,6 +26,7 @@ them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.completion.edit_integrity import (
     EDIT_INTEGRITY_SEVERITIES,
@@ -60,6 +61,8 @@ MAX_MODE_CHARS = 40
 MAX_PROOF_REFS = 2
 MAX_INTEGRITY_REFS = 4
 MAX_AFFECTED_PATHS = 4
+
+_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 
 @dataclass(frozen=True)
@@ -118,6 +121,14 @@ class TaskReceipt:
     integrity: ReceiptIntegrity = field(default_factory=ReceiptIntegrity)
 
     def to_dict(self) -> dict:
+        verification_payload: dict[str, object] = {
+            "trust": self.verification.trust,
+            "checks_passed": self.verification.checks_passed,
+        }
+        integrity_payload: dict[str, object] = {
+            "status": self.integrity.status,
+            "severity": self.integrity.severity,
+        }
         payload: dict[str, object] = {
             "schema_version": self.schema_version,
             "display": {
@@ -129,32 +140,24 @@ class TaskReceipt:
                 "mode": self.work.mode,
                 "restore_available": self.work.restore_available,
             },
-            "verification": {
-                "trust": self.verification.trust,
-                "checks_passed": self.verification.checks_passed,
-            },
-            "integrity": {
-                "status": self.integrity.status,
-                "severity": self.integrity.severity,
-            },
+            "verification": verification_payload,
+            "integrity": integrity_payload,
         }
-        verification = payload["verification"]
         if self.verification.state:
-            verification["state"] = self.verification.state
+            verification_payload["state"] = self.verification.state
         if self.verification.stance:
-            verification["stance"] = self.verification.stance
-            verification["source"] = self.verification.source
+            verification_payload["stance"] = self.verification.stance
+            verification_payload["source"] = self.verification.source
         if self.verification.proof_refs:
-            verification["proof_refs"] = list(self.verification.proof_refs)
-        integrity = payload["integrity"]
+            verification_payload["proof_refs"] = list(self.verification.proof_refs)
         if self.integrity.reason_codes:
-            integrity["reason_codes"] = list(self.integrity.reason_codes)
+            integrity_payload["reason_codes"] = list(self.integrity.reason_codes)
         if self.integrity.authorized_test_edit:
-            integrity["authorized_test_edit"] = True
+            integrity_payload["authorized_test_edit"] = True
         if self.integrity.affected_paths:
-            integrity["affected_paths"] = list(self.integrity.affected_paths)
+            integrity_payload["affected_paths"] = list(self.integrity.affected_paths)
         if self.integrity.refs:
-            integrity["refs"] = list(self.integrity.refs)
+            integrity_payload["refs"] = list(self.integrity.refs)
         return payload
 
 
@@ -355,6 +358,12 @@ def _receipt_sections_well_formed(display: dict, work: dict, verification: dict,
     return "authorized_test_edit" not in integrity or isinstance(integrity.get("authorized_test_edit"), bool)
 
 
+def _receipt_section(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    return cast(dict[str, object], value)
+
+
 def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
     """Validate a persisted receipt payload; unusable input yields None.
 
@@ -369,12 +378,16 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
         return None
     if type(payload.get("schema_version")) is not int or payload.get("schema_version") != RECEIPT_SCHEMA_VERSION:
         return None
-    display = payload.get("display")
-    work = payload.get("work")
-    verification = payload.get("verification")
-    integrity = payload.get("integrity")
-    if not all(isinstance(section, dict) for section in (display, work, verification, integrity)):
+    display = _receipt_section(payload.get("display"))
+    work = _receipt_section(payload.get("work"))
+    verification = _receipt_section(payload.get("verification"))
+    integrity = _receipt_section(payload.get("integrity"))
+    if any(section is None for section in (display, work, verification, integrity)):
         return None
+    assert display is not None
+    assert work is not None
+    assert verification is not None
+    assert integrity is not None
     if not _receipt_sections_well_formed(display, work, verification, integrity):
         return None
     changed_count = _strict_nonnegative_int(work.get("changed_count"))
@@ -405,7 +418,7 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
     reason_codes = tuple(
         code
         for code in (
-            identifier(item, 80) for item in integrity.get("reason_codes", ()) or ()
+            identifier(item, 80) for item in _string_sequence(integrity, "reason_codes")
         )
         if code
     )[:8]
@@ -430,7 +443,7 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
                 ref
                 for ref in (
                     identifier(item, 120)
-                    for item in verification.get("proof_refs", ()) or ()
+                    for item in _string_sequence(verification, "proof_refs")
                 )
                 if ref
             )[:MAX_PROOF_REFS],
@@ -444,7 +457,7 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
                 path
                 for path in (
                     clip(item, 240)
-                    for item in integrity.get("affected_paths", ()) or ()
+                    for item in _string_sequence(integrity, "affected_paths")
                 )
                 if path and not looks_prompt_visible_secret(path)
             )[:MAX_AFFECTED_PATHS],
@@ -452,7 +465,7 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
                 ref
                 for ref in (
                     identifier(item, 80)
-                    for item in integrity.get("refs", ()) or ()
+                    for item in _string_sequence(integrity, "refs")
                 )
                 if ref
             )[:MAX_INTEGRITY_REFS],
@@ -469,7 +482,7 @@ def _nonnegative_int(value: object) -> int:
     if isinstance(value, str) and not value.strip().isascii():
         return 0
     try:
-        return max(0, int(value))
+        return max(0, int(cast(_INT_INPUT, value)))
     except (TypeError, ValueError, OverflowError):
         return 0
 
@@ -485,6 +498,13 @@ def _optional_string_sequence(payload: dict[str, object], key: str) -> bool:
         return True
     value = payload.get(key)
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _string_sequence(payload: dict[str, object], key: str) -> tuple[str, ...]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))
 
 
 __all__ = [

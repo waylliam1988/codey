@@ -16,8 +16,10 @@ import json
 import math
 import re
 from collections.abc import Iterable
+from typing import SupportsIndex, SupportsInt, TypeAlias, cast
 
 DEFAULT_REF_LIMIT = 12
+_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 
 def clip(value: object, limit: int = 240) -> str:
@@ -35,7 +37,7 @@ def normalize_text(value: object) -> str:
 
 def nonnegative_int(value: object) -> int:
     try:
-        return max(0, int(value))  # type: ignore[arg-type]
+        return max(0, int(cast(_INT_INPUT, value)))
     except (TypeError, ValueError, OverflowError):
         return 0
 
@@ -108,7 +110,7 @@ def identifier(value: object, limit: int = 120) -> str:
     return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
 
 
-def bounded_refs(values: Iterable[object], *, limit: int = DEFAULT_REF_LIMIT) -> tuple[str, ...]:
+def bounded_refs(values: object, *, limit: int = DEFAULT_REF_LIMIT) -> tuple[str, ...]:
     if type(limit) is not int or limit <= 0:
         return ()
     if isinstance(values, str):
@@ -118,7 +120,7 @@ def bounded_refs(values: Iterable[object], *, limit: int = DEFAULT_REF_LIMIT) ->
     refs: list[str] = []
     seen: set[str] = set()
     try:
-        iterator = iter(values)  # type: ignore[arg-type]
+        iterator = iter(values)
     except TypeError:
         return ()
     for value in iterator:

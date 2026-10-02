@@ -499,7 +499,7 @@ def _merge_ref_hashes(
     limit: int = MAX_AFFINITY_REF_HASHES,
 ) -> tuple[str, ...]:
     out: list[str] = []
-    for value in (*tuple(current or ()), *tuple(incoming or ())):  # type: ignore[arg-type]
+    for value in (*_list(current), *_list(incoming)):
         text = clip_signal_text(value, 180)
         digest = text if len(text) == 24 and all(char in "0123456789abcdef" for char in text) else _ref_hash(text)
         if digest and digest not in out:
@@ -509,7 +509,7 @@ def _merge_ref_hashes(
 
 def _merge_refs(current: object, incoming: object, *, limit: int) -> tuple[str, ...]:
     out: list[str] = []
-    for value in (*tuple(current or ()), *tuple(incoming or ())):  # type: ignore[arg-type]
+    for value in (*_list(current), *_list(incoming)):
         text = clip_signal_text(value, 180)
         if not text or contains_sensitive_signal_text(text):
             continue
@@ -521,7 +521,7 @@ def _merge_refs(current: object, incoming: object, *, limit: int) -> tuple[str, 
 
 
 def _bounded_warnings(values: object) -> tuple[str, ...]:
-    return bounded_warnings(values, limit=MAX_AFFINITY_WARNINGS)
+    return bounded_warnings(_list(values), limit=MAX_AFFINITY_WARNINGS)
 
 
 def _valid_affinity_node_payload(payload: object) -> bool:

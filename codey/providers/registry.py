@@ -52,7 +52,7 @@ from codey.providers.web_provider import (
 from codey.providers.worker import WorkerChatProvider
 from codey.repairs.adapter_overrides import load_enabled_override
 
-PROVIDER_TYPES = {
+PROVIDER_TYPES: dict[str, Any] = {
     "deepseek": DeepSeekWebProvider,
     "mimo": MimoWebProvider,
     "stepfun": StepFunWebProvider,

@@ -162,30 +162,30 @@ class GhostAffinityStore:
                 now = _common.now_iso_z()
                 append_events: list[dict[str, object]] = []
                 changed_nodes = 0
-                for spec in node_specs:
+                for node_spec in node_specs:
                     node, changed = _reinforce_node(
-                        node_by_id.get(_node_id(spec.kind, spec.scope, spec.scope_ref, spec.key)),
-                        spec,
+                        node_by_id.get(_node_id(node_spec.kind, node_spec.scope, node_spec.scope_ref, node_spec.key)),
+                        node_spec,
                         now=now,
                     )
                     if not changed:
                         continue
                     node_by_id[node.id] = node
-                    append_events.append(_node_reinforced_event(spec, ts=now))
+                    append_events.append(_node_reinforced_event(node_spec, ts=now))
                     changed_nodes += 1
                 changed_edges = 0
-                for spec in edge_specs:
-                    if spec.source not in node_by_id or spec.target not in node_by_id:
+                for edge_spec in edge_specs:
+                    if edge_spec.source not in node_by_id or edge_spec.target not in node_by_id:
                         continue
                     edge, changed = _reinforce_edge(
-                        edge_by_id.get(_edge_id(spec.source, spec.target, spec.relation, spec.scope, spec.scope_ref)),
-                        spec,
+                        edge_by_id.get(_edge_id(edge_spec.source, edge_spec.target, edge_spec.relation, edge_spec.scope, edge_spec.scope_ref)),
+                        edge_spec,
                         now=now,
                     )
                     if not changed:
                         continue
                     edge_by_id[edge.id] = edge
-                    append_events.append(_edge_reinforced_event(spec, ts=now))
+                    append_events.append(_edge_reinforced_event(edge_spec, ts=now))
                     changed_edges += 1
                 bounded_nodes = _bounded_nodes(node_by_id.values())
                 bounded_edges = _bounded_edges(edge_by_id.values(), node_ids={node.id for node in bounded_nodes})

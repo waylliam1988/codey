@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.shell_approval import shell_command_event_fields
@@ -37,6 +37,7 @@ from codey.workspace.changes import is_git_repository
 
 SCHEMA_VERSION = 1
 HEADLESS_SESSION_PREFIX = "headless_"
+_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,8 @@ def run_headless(
         emit_jsonl=emit_jsonl,
         connect_provider=connect_provider,
     )
+    task_result: HeadlessResult | None = None
+    task_error: BaseException | None = None
     try:
         pre_reserved_run_id = _pre_reserve_run_id(
             state,
@@ -627,7 +630,7 @@ def _int_or_zero(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return int(value)
+        return int(cast(_INT_INPUT, value))
     except (TypeError, ValueError, OverflowError):
         return 0
 

@@ -32,5 +32,5 @@ class ChatProvider(Protocol):
     def send(self, text: str, timeout: float | None = None) -> str:
         """Send one message and return the completed assistant response."""
 
-    def close(self) -> None:
+    def close(self) -> None | bool:
         """Release the local provider connection."""

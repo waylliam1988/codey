@@ -1,0 +1,3909 @@
+{
+  "source": "tools\\mypy-baseline-2026-10-03.txt",
+  "error_count": 506,
+  "file_count": 138,
+  "rows": [
+    {
+      "file": "codey\\utils\\positive_int.py",
+      "line": 14,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runtime\\core\\output_capture.py",
+      "line": 24,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\source_search.py",
+      "line": 30,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\followup_selection.py",
+      "line": 158,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\ghost\\numbers.py",
+      "line": 20,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\ghost\\numbers.py",
+      "line": 33,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\workspace\\paths.py",
+      "line": 244,
+      "code": "arg-type",
+      "message": "Argument \"key\" to \"sorted\" has incompatible type \"Callable[[Path], object]\"; expected \"Callable[[Path], SupportsDunderLT[Any] | SupportsDunderGT[Any]]\" ",
+      "root_pattern": "arg-type: Argument \"key\" to \"sorted\" has incompatible type \"Callable[[Path], object]\"; expected \"Callable[[Path], SupportsDunderLT[Any] | SupportsDunderGT[Any]]\" "
+    },
+    {
+      "file": "codey\\workspace\\change_set.py",
+      "line": 302,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\utils\\refs.py",
+      "line": 38,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\toolchain\\search_page.py",
+      "line": 16,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\toolchain\\search_page.py",
+      "line": 21,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runtime\\observe\\prompt_surface.py",
+      "line": 188,
+      "code": "arg-type",
+      "message": "Argument \"phase\" to \"prompt_surface_id\" has incompatible type \"object\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument \"phase\" to \"prompt_surface_id\" has incompatible type \"object\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\runtime\\observe\\prompt_surface.py",
+      "line": 188,
+      "code": "arg-type",
+      "message": "Argument \"send_ref\" to \"prompt_surface_id\" has incompatible type \"object\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument \"send_ref\" to \"prompt_surface_id\" has incompatible type \"object\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\runtime\\log\\entries.py",
+      "line": 201,
+      "code": "arg-type",
+      "message": "Argument \"schema_version\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"int\" ",
+      "root_pattern": "arg-type: Argument \"schema_version\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"int\" "
+    },
+    {
+      "file": "codey\\runtime\\log\\entries.py",
+      "line": 204,
+      "code": "arg-type",
+      "message": "Argument \"session_id\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument \"session_id\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\runtime\\log\\entries.py",
+      "line": 205,
+      "code": "arg-type",
+      "message": "Argument \"lane\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument \"lane\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\runtime\\log\\entries.py",
+      "line": 206,
+      "code": "arg-type",
+      "message": "Argument \"operation_id\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument \"operation_id\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\runtime\\log\\entries.py",
+      "line": 207,
+      "code": "arg-type",
+      "message": "Argument \"kind\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"Literal['operation_started', 'operation_state', 'operation_effect', 'operation_settled'] | str\" ",
+      "root_pattern": "arg-type: Argument \"kind\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"Literal['operation_started', 'operation_state', 'operation_effect', 'operation_settled'] | str\" "
+    },
+    {
+      "file": "codey\\research\\topic_continuity.py",
+      "line": 195,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"tuple[TopicContinuityItem, ...]\", variable has type \"list[TopicContinuityItem]\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"tuple[TopicContinuityItem, ...]\", variable has type \"list[TopicContinuityItem]\") "
+    },
+    {
+      "file": "codey\\completion\\repair_context.py",
+      "line": 493,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\storage\\file_lock.py",
+      "line": 219,
+      "code": "exit-return",
+      "message": "\"bool\" is invalid as return type for \"__exit__\" that always returns False ",
+      "root_pattern": "exit-return: \"bool\" is invalid as return type for \"__exit__\" that always returns False "
+    },
+    {
+      "file": "codey\\research\\identity.py",
+      "line": 29,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"bool\", target has type \"str\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"bool\", target has type \"str\") "
+    },
+    {
+      "file": "codey\\research\\identity.py",
+      "line": 30,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"dict[str, str]\", expected \"dict[str, object]\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"dict[str, str]\", expected \"dict[str, object]\") "
+    },
+    {
+      "file": "codey\\research\\identity.py",
+      "line": 35,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"bool\", target has type \"str\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"bool\", target has type \"str\") "
+    },
+    {
+      "file": "codey\\research\\identity.py",
+      "line": 36,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"dict[str, str]\", expected \"dict[str, object]\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"dict[str, str]\", expected \"dict[str, object]\") "
+    },
+    {
+      "file": "codey\\research\\identity.py",
+      "line": 47,
+      "code": "no-redef",
+      "message": "Name \"payload\" already defined on line 27 ",
+      "root_pattern": "no-redef: Name \"payload\" already defined on line N "
+    },
+    {
+      "file": "codey\\research\\identity.py",
+      "line": 54,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"bool\", target has type \"str\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"bool\", target has type \"str\") "
+    },
+    {
+      "file": "codey\\research\\identity.py",
+      "line": 57,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"dict[str, str]\", expected \"dict[str, object]\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"dict[str, str]\", expected \"dict[str, object]\") "
+    },
+    {
+      "file": "codey\\research\\guards.py",
+      "line": 53,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\policies\\network.py",
+      "line": 157,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"None\", variable has type \"str\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"None\", variable has type \"str\") "
+    },
+    {
+      "file": "codey\\policies\\network.py",
+      "line": 159,
+      "code": "union-attr",
+      "message": "Item \"int\" of \"str | int\" has no attribute \"split\" ",
+      "root_pattern": "union-attr: Item \"int\" of \"str | int\" has no attribute \"split\" "
+    },
+    {
+      "file": "codey\\knowledge\\note.py",
+      "line": 23,
+      "code": "import-untyped",
+      "message": "Library stubs not installed for \"yaml\" ",
+      "root_pattern": "import-untyped: Library stubs not installed for \"yaml\" "
+    },
+    {
+      "file": "codey\\completion\\edit_integrity.py",
+      "line": 375,
+      "code": "arg-type",
+      "message": "Argument \"findings\" to \"EditIntegrityObservation\" has incompatible type \"list[EditIntegrityFinding]\"; expected \"tuple[EditIntegrityFinding, ...]\" ",
+      "root_pattern": "arg-type: Argument \"findings\" to \"EditIntegrityObservation\" has incompatible type \"list[EditIntegrityFinding]\"; expected \"tuple[EditIntegrityFinding, ...]\" "
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 362,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"to_payload\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 381,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 393,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 395,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 396,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 397,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 398,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 399,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 400,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\contract.py",
+      "line": 401,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\app\\knowledge_indexer.py",
+      "line": 45,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"rebuild\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\app\\http_plumbing.py",
+      "line": 54,
+      "code": "index",
+      "message": "Value of type \"tuple[Any, ...] | str | Buffer\" is not indexable ",
+      "root_pattern": "index: Value of type \"tuple[Any, ...] | str | Buffer\" is not indexable "
+    },
+    {
+      "file": "codey\\app\\http_plumbing.py",
+      "line": 55,
+      "code": "index",
+      "message": "Value of type \"tuple[Any, ...] | str | Buffer\" is not indexable ",
+      "root_pattern": "index: Value of type \"tuple[Any, ...] | str | Buffer\" is not indexable "
+    },
+    {
+      "file": "codey\\app\\http_plumbing.py",
+      "line": 74,
+      "code": "index",
+      "message": "Value of type \"tuple[Any, ...] | str | Buffer\" is not indexable ",
+      "root_pattern": "index: Value of type \"tuple[Any, ...] | str | Buffer\" is not indexable "
+    },
+    {
+      "file": "codey\\app\\http_plumbing.py",
+      "line": 75,
+      "code": "index",
+      "message": "Value of type \"tuple[Any, ...] | str | Buffer\" is not indexable ",
+      "root_pattern": "index: Value of type \"tuple[Any, ...] | str | Buffer\" is not indexable "
+    },
+    {
+      "file": "codey\\workspace\\facts.py",
+      "line": 216,
+      "code": "arg-type",
+      "message": "Argument \"files\" to \"_successful_change\" has incompatible type \"Any | tuple[()] | None\"; expected \"Sequence[object]\" ",
+      "root_pattern": "arg-type: Argument \"files\" to \"_successful_change\" has incompatible type \"Any | tuple[()] | None\"; expected \"Sequence[object]\" "
+    },
+    {
+      "file": "codey\\storage\\ui_state_store.py",
+      "line": 76,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\storage\\ui_state_store.py",
+      "line": 244,
+      "code": "index",
+      "message": "Value of type \"Any | list[Any] | None\" is not indexable ",
+      "root_pattern": "index: Value of type \"Any | list[Any] | None\" is not indexable "
+    },
+    {
+      "file": "codey\\runtime\\core\\cancellation.py",
+      "line": 34,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runtime\\core\\cancellation.py",
+      "line": 137,
+      "code": "attr-defined",
+      "message": "\"Popen[bytes]\" has no attribute \"_handle\" ",
+      "root_pattern": "attr-defined: \"Popen[bytes]\" has no attribute \"_handle\" "
+    },
+    {
+      "file": "codey\\runtime\\core\\cancellation.py",
+      "line": 443,
+      "code": "arg-type",
+      "message": "Argument 2 to \"_terminate_process_tree\" has incompatible type \"object\"; expected \"_WindowsJob | None\" ",
+      "root_pattern": "arg-type: Argument N to \"_terminate_process_tree\" has incompatible type \"object\"; expected \"_WindowsJob | None\" "
+    },
+    {
+      "file": "codey\\runtime\\core\\cancellation.py",
+      "line": 511,
+      "code": "attr-defined",
+      "message": "Module has no attribute \"killpg\" ",
+      "root_pattern": "attr-defined: Module has no attribute \"killpg\" "
+    },
+    {
+      "file": "codey\\runtime\\core\\cancellation.py",
+      "line": 549,
+      "code": "attr-defined",
+      "message": "Module has no attribute \"killpg\" ",
+      "root_pattern": "attr-defined: Module has no attribute \"killpg\" "
+    },
+    {
+      "file": "codey\\runtime\\core\\cancellation.py",
+      "line": 562,
+      "code": "attr-defined",
+      "message": "Module has no attribute \"killpg\" ",
+      "root_pattern": "attr-defined: Module has no attribute \"killpg\" "
+    },
+    {
+      "file": "codey\\runtime\\core\\cancellation.py",
+      "line": 562,
+      "code": "attr-defined",
+      "message": "Module has no attribute \"SIGKILL\"; maybe \"SIGILL\"? ",
+      "root_pattern": "attr-defined: Module has no attribute \"SIGKILL\"; maybe \"SIGILL\"? "
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 143,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"object\") ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 145,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"object\") ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 146,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"object\") ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 148,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"object\") ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 151,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"object\") ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 153,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"object\") ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 155,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"object\") ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 157,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"object\") ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 378,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_receipt_sections_well_formed\" has incompatible type \"Any | None\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"_receipt_sections_well_formed\" has incompatible type \"Any | None\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 378,
+      "code": "arg-type",
+      "message": "Argument 2 to \"_receipt_sections_well_formed\" has incompatible type \"Any | None\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"_receipt_sections_well_formed\" has incompatible type \"Any | None\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 378,
+      "code": "arg-type",
+      "message": "Argument 3 to \"_receipt_sections_well_formed\" has incompatible type \"Any | None\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"_receipt_sections_well_formed\" has incompatible type \"Any | None\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 378,
+      "code": "arg-type",
+      "message": "Argument 4 to \"_receipt_sections_well_formed\" has incompatible type \"Any | None\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"_receipt_sections_well_formed\" has incompatible type \"Any | None\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 380,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 383,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 384,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 385,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 386,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 391,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 403,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 408,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 416,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 420,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 421,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 426,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 427,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 428,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 433,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 442,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 447,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 455,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\receipt.py",
+      "line": 472,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\http_redirects.py",
+      "line": 23,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\analysis_run.py",
+      "line": 95,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\analysis_run.py",
+      "line": 107,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\ghost\\event_projection.py",
+      "line": 82,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\ghost\\event_projection.py",
+      "line": 83,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\ghost\\event_log.py",
+      "line": 309,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\agents\\shell_approval.py",
+      "line": 164,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"object\") ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\agents\\runaway_guard.py",
+      "line": 49,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 633,
+      "code": "no-redef",
+      "message": "Name \"persisted\" already defined on line 618 ",
+      "root_pattern": "no-redef: Name \"persisted\" already defined on line N "
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1032,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout_truncated\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1042,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1056,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout_truncated\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1065,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1066,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1078,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout_truncated\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1080,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1081,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1082,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\workspace\\changes.py",
+      "line": 1083,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"stdout\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\toolchain\\openai_tools.py",
+      "line": 61,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\runtime\\observe\\prompt_envelope.py",
+      "line": 30,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runtime\\effects\\replay_policy.py",
+      "line": 56,
+      "code": "arg-type",
+      "message": "Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" ",
+      "root_pattern": "arg-type: Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" "
+    },
+    {
+      "file": "codey\\runtime\\effects\\replay_policy.py",
+      "line": 61,
+      "code": "arg-type",
+      "message": "Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" ",
+      "root_pattern": "arg-type: Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" "
+    },
+    {
+      "file": "codey\\runtime\\effects\\replay_policy.py",
+      "line": 66,
+      "code": "arg-type",
+      "message": "Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" ",
+      "root_pattern": "arg-type: Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" "
+    },
+    {
+      "file": "codey\\runtime\\effects\\replay_policy.py",
+      "line": 71,
+      "code": "arg-type",
+      "message": "Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" ",
+      "root_pattern": "arg-type: Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" "
+    },
+    {
+      "file": "codey\\runtime\\effects\\replay_policy.py",
+      "line": 75,
+      "code": "arg-type",
+      "message": "Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" ",
+      "root_pattern": "arg-type: Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" "
+    },
+    {
+      "file": "codey\\runtime\\effects\\replay_policy.py",
+      "line": 83,
+      "code": "arg-type",
+      "message": "Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" ",
+      "root_pattern": "arg-type: Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" "
+    },
+    {
+      "file": "codey\\runtime\\effects\\replay_policy.py",
+      "line": 91,
+      "code": "arg-type",
+      "message": "Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" ",
+      "root_pattern": "arg-type: Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" "
+    },
+    {
+      "file": "codey\\runs\\trace_values.py",
+      "line": 55,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runs\\trace_values.py",
+      "line": 64,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runs\\trace_values.py",
+      "line": 74,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\runs\\trace_values.py",
+      "line": 92,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\source_connectors.py",
+      "line": 1108,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\research\\ledger.py",
+      "line": 195,
+      "code": "type-var",
+      "message": "Value of type variable \"SupportsRichComparisonT\" of \"sorted\" cannot be \"int | None\" ",
+      "root_pattern": "type-var: Value of type variable \"SupportsRichComparisonT\" of \"sorted\" cannot be \"int | None\" "
+    },
+    {
+      "file": "codey\\research\\ledger.py",
+      "line": 214,
+      "code": "arg-type",
+      "message": "Argument \"pages_read\" to \"OpenedSource\" has incompatible type \"tuple[int | None, ...]\"; expected \"tuple[int, ...]\" ",
+      "root_pattern": "arg-type: Argument \"pages_read\" to \"OpenedSource\" has incompatible type \"tuple[int | None, ...]\"; expected \"tuple[int, ...]\" "
+    },
+    {
+      "file": "codey\\research\\ledger.py",
+      "line": 598,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\ledger.py",
+      "line": 608,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\providers\\profile_doctor.py",
+      "line": 173,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | dict[Any, Any] | None\" has no attribute \"items\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\providers\\flow.py",
+      "line": 269,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"tuple[tuple[str], ...]\", variable has type \"tuple[tuple[str, str], tuple[str, str], tuple[str, str]]\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"tuple[tuple[str], ...]\", variable has type \"tuple[tuple[str, str], tuple[str, str], tuple[str, str]]\") "
+    },
+    {
+      "file": "codey\\providers\\flow.py",
+      "line": 277,
+      "code": "arg-type",
+      "message": "Argument 1 to \"evaluate\" has incompatible type \"dict[str, tuple[str, str]]\"; expected \"dict[str, tuple[str, ...]] | dict[str, list[str]]\" ",
+      "root_pattern": "arg-type: Argument N to \"evaluate\" has incompatible type \"dict[str, tuple[str, str]]\"; expected \"dict[str, tuple[str, ...]] | dict[str, list[str]]\" "
+    },
+    {
+      "file": "codey\\providers\\flow.py",
+      "line": 319,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\") "
+    },
+    {
+      "file": "codey\\operations\\kernel_progress.py",
+      "line": 14,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"attempts\" ",
+      "root_pattern": "var-annotated: Need type annotation for \"attempts\" "
+    },
+    {
+      "file": "codey\\automation\\browser_worker.py",
+      "line": 47,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"float | None\", variable has type \"float\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"float | None\", variable has type \"float\") "
+    },
+    {
+      "file": "codey\\storage\\conversation_store.py",
+      "line": 85,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\storage\\conversation_store.py",
+      "line": 94,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\tool_contract.py",
+      "line": 23,
+      "code": "valid-type",
+      "message": "Variable \"codey.research.tool_contract.ToolArg.type\" is not valid as a type ",
+      "root_pattern": "valid-type: Variable \"codey.research.tool_contract.ToolArg.type\" is not valid as a type "
+    },
+    {
+      "file": "codey\\research\\tool_contract.py",
+      "line": 206,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\report_quality.py",
+      "line": 350,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Match[str] | None\" has no attribute \"group\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\research\\report_quality.py",
+      "line": 351,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Match[str] | None\" has no attribute \"group\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\research\\report_quality.py",
+      "line": 352,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Match[str] | None\" has no attribute \"group\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\research\\connector_search.py",
+      "line": 576,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\providers\\revival.py",
+      "line": 267,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\providers\\revival.py",
+      "line": 269,
+      "code": "index",
+      "message": "Unsupported target for indexed assignment (\"Any | None\") ",
+      "root_pattern": "index: Unsupported target for indexed assignment (\"Any | None\") "
+    },
+    {
+      "file": "codey\\providers\\revival.py",
+      "line": 272,
+      "code": "arg-type",
+      "message": "Argument 2 to \"_restore_previous\" has incompatible type \"Any | None\"; expected \"dict[str, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"_restore_previous\" has incompatible type \"Any | None\"; expected \"dict[str, Any]\" "
+    },
+    {
+      "file": "codey\\policies\\action.py",
+      "line": 202,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"int\", target has type \"str\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"int\", target has type \"str\") "
+    },
+    {
+      "file": "codey\\policies\\action.py",
+      "line": 203,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"dict[str, str]\", expected \"dict[str, object]\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"dict[str, str]\", expected \"dict[str, object]\") "
+    },
+    {
+      "file": "codey\\toolchain\\tool_spec.py",
+      "line": 256,
+      "code": "arg-type",
+      "message": "Argument 2 to \"_valid_schema_bounds\" has incompatible type \"Mapping[Any, Any]\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"_valid_schema_bounds\" has incompatible type \"Mapping[Any, Any]\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\toolchain\\tool_spec.py",
+      "line": 260,
+      "code": "arg-type",
+      "message": "Argument 2 to \"_valid_schema_nested\" has incompatible type \"Mapping[Any, Any]\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"_valid_schema_nested\" has incompatible type \"Mapping[Any, Any]\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\toolchain\\tool_spec.py",
+      "line": 299,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"example_args\" ",
+      "root_pattern": "var-annotated: Need type annotation for \"example_args\" "
+    },
+    {
+      "file": "codey\\toolchain\\tool_spec.py",
+      "line": 465,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\toolchain\\tool_spec.py",
+      "line": 726,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\toolchain\\runtime.py",
+      "line": 473,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"Match[str] | None\", variable has type \"int\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"Match[str] | None\", variable has type \"int\") "
+    },
+    {
+      "file": "codey\\toolchain\\runtime.py",
+      "line": 476,
+      "code": "attr-defined",
+      "message": "\"int\" has no attribute \"start\" ",
+      "root_pattern": "attr-defined: \"int\" has no attribute \"start\" "
+    },
+    {
+      "file": "codey\\reviews\\impact_map.py",
+      "line": 209,
+      "code": "arg-type",
+      "message": "Argument 1 to \"add\" of \"set\" has incompatible type \"tuple[str, str | Any, int, str | Any]\"; expected \"tuple[str, int, str, str]\" ",
+      "root_pattern": "arg-type: Argument N to \"add\" of \"set\" has incompatible type \"tuple[str, str | Any, int, str | Any]\"; expected \"tuple[str, int, str, str]\" "
+    },
+    {
+      "file": "codey\\reviews\\impact_map.py",
+      "line": 256,
+      "code": "misc",
+      "message": "Cannot infer type of lambda ",
+      "root_pattern": "untyped lambda boundary"
+    },
+    {
+      "file": "codey\\reviews\\impact_map.py",
+      "line": 261,
+      "code": "misc",
+      "message": "Cannot infer type of lambda ",
+      "root_pattern": "untyped lambda boundary"
+    },
+    {
+      "file": "codey\\research\\object_model.py",
+      "line": 78,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\object_model.py",
+      "line": 87,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\providers\\web_driver.py",
+      "line": 44,
+      "code": "return",
+      "message": "Missing return statement ",
+      "root_pattern": "return: Missing return statement "
+    },
+    {
+      "file": "codey\\providers\\supervisor.py",
+      "line": 494,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"new_chat\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\providers\\supervisor.py",
+      "line": 495,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"send\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\providers\\controls.py",
+      "line": 404,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"dict[str, Any] | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\providers\\controls.py",
+      "line": 536,
+      "code": "misc",
+      "message": "\"None\" not callable ",
+      "root_pattern": "misc: \"None\" not callable "
+    },
+    {
+      "file": "codey\\providers\\controls.py",
+      "line": 1115,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | dict[Any, Any] | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\providers\\controls.py",
+      "line": 1275,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | dict[Any, Any] | None\" has no attribute \"values\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\task_session.py",
+      "line": 32,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\operations\\kernel_provenance.py",
+      "line": 82,
+      "code": "misc",
+      "message": "Attributes without a default cannot follow attributes with one ",
+      "root_pattern": "misc: Attributes without a default cannot follow attributes with one "
+    },
+    {
+      "file": "codey\\operations\\kernel_provenance.py",
+      "line": 188,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"object\", expected \"TrustedWorkspaceProof | None\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"object\", expected \"TrustedWorkspaceProof | None\") "
+    },
+    {
+      "file": "codey\\completion\\verification_map.py",
+      "line": 77,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"ObservedCheck\", variable has type \"TestCandidate\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"ObservedCheck\", variable has type \"TestCandidate\") "
+    },
+    {
+      "file": "codey\\completion\\verification_map.py",
+      "line": 78,
+      "code": "attr-defined",
+      "message": "\"TestCandidate\" has no attribute \"cwd\" ",
+      "root_pattern": "attr-defined: \"TestCandidate\" has no attribute \"cwd\" "
+    },
+    {
+      "file": "codey\\completion\\verification_map.py",
+      "line": 79,
+      "code": "attr-defined",
+      "message": "\"TestCandidate\" has no attribute \"command\" ",
+      "root_pattern": "attr-defined: \"TestCandidate\" has no attribute \"command\" "
+    },
+    {
+      "file": "codey\\app\\conversation_registry.py",
+      "line": 45,
+      "code": "misc",
+      "message": "Cannot infer type of lambda ",
+      "root_pattern": "untyped lambda boundary"
+    },
+    {
+      "file": "codey\\runtime\\observe\\events.py",
+      "line": 33,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 270,
+      "code": "index",
+      "message": "Value of type \"object\" is not indexable ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 367,
+      "code": "index",
+      "message": "Value of type \"object\" is not indexable ",
+      "root_pattern": "object-typed value indexed or assigned"
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 418,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_records_integrity_ok\" has incompatible type \"dict[Any, Any] | None\"; expected \"Mapping[str, object]\" ",
+      "root_pattern": "arg-type: Argument N to \"_records_integrity_ok\" has incompatible type \"dict[Any, Any] | None\"; expected \"Mapping[str, object]\" "
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 420,
+      "code": "arg-type",
+      "message": "Argument 1 to \"dict\" has incompatible type \"dict[Any, Any] | None\"; expected \"SupportsKeysAndGetItem[str, object]\" ",
+      "root_pattern": "arg-type: Argument N to \"dict\" has incompatible type \"dict[Any, Any] | None\"; expected \"SupportsKeysAndGetItem[str, object]\" "
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 499,
+      "code": "arg-type",
+      "message": "Argument 1 to \"deepcopy\" has incompatible type \"object\"; expected \"Mapping[str, object]\" ",
+      "root_pattern": "arg-type: Argument N to \"deepcopy\" has incompatible type \"object\"; expected \"Mapping[str, object]\" "
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 679,
+      "code": "arg-type",
+      "message": "Argument 1 to \"append\" of \"list\" has incompatible type \"dict[str, Collection[str]]\"; expected \"dict[str, object]\" ",
+      "root_pattern": "arg-type: Argument N to \"append\" of \"list\" has incompatible type \"dict[str, Collection[str]]\"; expected \"dict[str, object]\" "
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 1006,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"live\" ",
+      "root_pattern": "var-annotated: Need type annotation for \"live\" "
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 1088,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 1111,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 1126,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 1355,
+      "code": "arg-type",
+      "message": "Argument 1 to \"len\" has incompatible type \"object\"; expected \"Sized\" ",
+      "root_pattern": "arg-type: Argument N to \"len\" has incompatible type \"object\"; expected \"Sized\" "
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 1356,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"items\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 1380,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\evidence_ledger.py",
+      "line": 1389,
+      "code": "no-redef",
+      "message": "Name \"rows\" already defined on line 1386 ",
+      "root_pattern": "no-redef: Name \"rows\" already defined on line N "
+    },
+    {
+      "file": "codey\\operations\\kernel_protocol.py",
+      "line": 183,
+      "code": "attr-defined",
+      "message": "\"Collection[str]\" has no attribute \"get\" ",
+      "root_pattern": "attr-defined: \"Collection[str]\" has no attribute \"get\" "
+    },
+    {
+      "file": "codey\\operations\\kernel_protocol.py",
+      "line": 192,
+      "code": "misc",
+      "message": "Generator has incompatible item type \"object\"; expected \"dict[str, Any]\" ",
+      "root_pattern": "misc: Generator has incompatible item type \"object\"; expected \"dict[str, Any]\" "
+    },
+    {
+      "file": "codey\\operations\\kernel_protocol.py",
+      "line": 440,
+      "code": "return",
+      "message": "Missing return statement ",
+      "root_pattern": "return: Missing return statement "
+    },
+    {
+      "file": "codey\\knowledge\\graph.py",
+      "line": 221,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"KnowledgeStore | None\" has no attribute \"index\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\knowledge\\graph.py",
+      "line": 230,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"KnowledgeStore | None\" has no attribute \"index\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\knowledge\\graph.py",
+      "line": 241,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"KnowledgeStore | None\" has no attribute \"index\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\knowledge\\graph.py",
+      "line": 254,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"KnowledgeStore | None\" has no attribute \"index\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\knowledge\\graph.py",
+      "line": 277,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"degree\" ",
+      "root_pattern": "var-annotated: Need type annotation for \"degree\" "
+    },
+    {
+      "file": "codey\\knowledge\\graph.py",
+      "line": 366,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"KnowledgeStore | None\" has no attribute \"index\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\knowledge\\graph.py",
+      "line": 439,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"degree\" ",
+      "root_pattern": "var-annotated: Need type annotation for \"degree\" "
+    },
+    {
+      "file": "codey\\knowledge\\graph.py",
+      "line": 461,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\knowledge\\graph.py",
+      "line": 503,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"lines\" (hint: \"lines: list[<type>] = ...\") ",
+      "root_pattern": "var-annotated: Need type annotation for \"lines\" (hint: \"lines: list[<type>] = ...\") "
+    },
+    {
+      "file": "codey\\app\\approval_registry.py",
+      "line": 126,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"get\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\app\\approval_registry.py",
+      "line": 127,
+      "code": "arg-type",
+      "message": "Argument 1 to \"dict\" has incompatible type \"Any | None\"; expected \"SupportsKeysAndGetItem[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"dict\" has incompatible type \"Any | None\"; expected \"SupportsKeysAndGetItem[Any, Any]\" "
+    },
+    {
+      "file": "codey\\app\\approval_registry.py",
+      "line": 129,
+      "code": "arg-type",
+      "message": "Argument 1 to \"dict\" has incompatible type \"Any | None\"; expected \"SupportsKeysAndGetItem[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"dict\" has incompatible type \"Any | None\"; expected \"SupportsKeysAndGetItem[Any, Any]\" "
+    },
+    {
+      "file": "codey\\agents\\consensus.py",
+      "line": 309,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"new_chat\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\agents\\consensus.py",
+      "line": 324,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"send\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\agents\\consensus.py",
+      "line": 347,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"close\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\runtime\\observe\\execution_evidence.py",
+      "line": 204,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"SearchEvidence\", variable has type \"ReadEvidence\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"SearchEvidence\", variable has type \"ReadEvidence\") "
+    },
+    {
+      "file": "codey\\runtime\\observe\\execution_evidence.py",
+      "line": 212,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"tuple[str, str, str, int]\", variable has type \"tuple[str, str, int, int, int]\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"tuple[str, str, str, int]\", variable has type \"tuple[str, str, int, int, int]\") "
+    },
+    {
+      "file": "codey\\runs\\ledger.py",
+      "line": 212,
+      "code": "no-redef",
+      "message": "Attribute \"disabled_reason\" already defined on line 209 ",
+      "root_pattern": "no-redef: Attribute \"disabled_reason\" already defined on line N "
+    },
+    {
+      "file": "codey\\runs\\ledger.py",
+      "line": 213,
+      "code": "no-redef",
+      "message": "Attribute \"last_error_reason\" already defined on line 210 ",
+      "root_pattern": "no-redef: Attribute \"last_error_reason\" already defined on line N "
+    },
+    {
+      "file": "codey\\runs\\ledger.py",
+      "line": 278,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | list[Any] | None\" has no attribute \"__iter__\" (not iterable) ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\runs\\ledger.py",
+      "line": 299,
+      "code": "arg-type",
+      "message": "Argument 1 to \"len\" has incompatible type \"Any | list[Any] | None\"; expected \"Sized\" ",
+      "root_pattern": "arg-type: Argument N to \"len\" has incompatible type \"Any | list[Any] | None\"; expected \"Sized\" "
+    },
+    {
+      "file": "codey\\runs\\ledger.py",
+      "line": 431,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runs\\ledger.py",
+      "line": 473,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runs\\ledger.py",
+      "line": 491,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\source_trust.py",
+      "line": 317,
+      "code": "arg-type",
+      "message": "Argument 1 to \"strip_www\" has incompatible type \"object\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument N to \"strip_www\" has incompatible type \"object\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\research\\source_trust.py",
+      "line": 322,
+      "code": "arg-type",
+      "message": "Argument 1 to \"strip_www\" has incompatible type \"Any | None\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument N to \"strip_www\" has incompatible type \"Any | None\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\research\\brief_projection.py",
+      "line": 236,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_count_field\" has incompatible type \"dict[str, object] | None\"; expected \"Mapping[str, object]\" ",
+      "root_pattern": "arg-type: Argument N to \"_count_field\" has incompatible type \"dict[str, object] | None\"; expected \"Mapping[str, object]\" "
+    },
+    {
+      "file": "codey\\research\\brief_projection.py",
+      "line": 351,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"str\", variable has type \"ImplementationConstraint\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"str\", variable has type \"ImplementationConstraint\") "
+    },
+    {
+      "file": "codey\\research\\brief_projection.py",
+      "line": 425,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"to_payload\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\brief_projection.py",
+      "line": 445,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"to_payload\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\artifact_lineage.py",
+      "line": 76,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\advisors.py",
+      "line": 76,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\advisors.py",
+      "line": 77,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\advisors.py",
+      "line": 78,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\advisors.py",
+      "line": 79,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\advisors.py",
+      "line": 109,
+      "code": "call-overload",
+      "message": "No overload variant of \"list\" matches argument type \"object\" ",
+      "root_pattern": "call-overload: No overload variant of \"list\" matches argument type \"object\" "
+    },
+    {
+      "file": "codey\\research\\advisors.py",
+      "line": 113,
+      "code": "call-overload",
+      "message": "No overload variant of \"list\" matches argument type \"object\" ",
+      "root_pattern": "call-overload: No overload variant of \"list\" matches argument type \"object\" "
+    },
+    {
+      "file": "codey\\research\\advisors.py",
+      "line": 168,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"new_chat\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\advisors.py",
+      "line": 170,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"send\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\advisors.py",
+      "line": 188,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"close\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\task_context.py",
+      "line": 212,
+      "code": "arg-type",
+      "message": "Argument 1 to \"reconcile\" of \"WorkCheckpointStore\" has incompatible type \"WorkCheckpoint | None\"; expected \"WorkCheckpoint\" ",
+      "root_pattern": "arg-type: Argument N to \"reconcile\" of \"WorkCheckpointStore\" has incompatible type \"WorkCheckpoint | None\"; expected \"WorkCheckpoint\" "
+    },
+    {
+      "file": "codey\\operations\\task_context.py",
+      "line": 219,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"WorkCheckpoint | None\", variable has type \"WorkCheckpoint\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"WorkCheckpoint | None\", variable has type \"WorkCheckpoint\") "
+    },
+    {
+      "file": "codey\\knowledge\\concepts.py",
+      "line": 63,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\knowledge\\concepts.py",
+      "line": 426,
+      "code": "no-redef",
+      "message": "Name \"refs\" already defined on line 413 ",
+      "root_pattern": "no-redef: Name \"refs\" already defined on line N "
+    },
+    {
+      "file": "codey\\agents\\writer_failover.py",
+      "line": 134,
+      "code": "arg-type",
+      "message": "Argument \"provider\" to \"WriterAttempt\" has incompatible type \"ChatProvider | None\"; expected \"ChatProvider\" ",
+      "root_pattern": "arg-type: Argument \"provider\" to \"WriterAttempt\" has incompatible type \"ChatProvider | None\"; expected \"ChatProvider\" "
+    },
+    {
+      "file": "codey\\runs\\ledger_projection.py",
+      "line": 381,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runs\\ledger_projection.py",
+      "line": 392,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 217,
+      "code": "call-overload",
+      "message": "No overload variant of \"list\" matches argument type \"object\" ",
+      "root_pattern": "call-overload: No overload variant of \"list\" matches argument type \"object\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 253,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 293,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 303,
+      "code": "arg-type",
+      "message": "Argument 1 to \"len\" has incompatible type \"object\"; expected \"Sized\" ",
+      "root_pattern": "arg-type: Argument N to \"len\" has incompatible type \"object\"; expected \"Sized\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 306,
+      "code": "arg-type",
+      "message": "Argument 1 to \"len\" has incompatible type \"object\"; expected \"Sized\" ",
+      "root_pattern": "arg-type: Argument N to \"len\" has incompatible type \"object\"; expected \"Sized\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 307,
+      "code": "arg-type",
+      "message": "Argument 1 to \"len\" has incompatible type \"object\"; expected \"Sized\" ",
+      "root_pattern": "arg-type: Argument N to \"len\" has incompatible type \"object\"; expected \"Sized\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 308,
+      "code": "arg-type",
+      "message": "Argument 1 to \"len\" has incompatible type \"object\"; expected \"Sized\" ",
+      "root_pattern": "arg-type: Argument N to \"len\" has incompatible type \"object\"; expected \"Sized\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 312,
+      "code": "arg-type",
+      "message": "Argument 1 to \"len\" has incompatible type \"object\"; expected \"Sized\" ",
+      "root_pattern": "arg-type: Argument N to \"len\" has incompatible type \"object\"; expected \"Sized\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 313,
+      "code": "arg-type",
+      "message": "Argument 1 to \"len\" has incompatible type \"object\"; expected \"Sized\" ",
+      "root_pattern": "arg-type: Argument N to \"len\" has incompatible type \"object\"; expected \"Sized\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 359,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 682,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 683,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 719,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\research\\proof_quality.py",
+      "line": 979,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\operations\\kernel_recovery.py",
+      "line": 336,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"int\", target has type \"str\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"int\", target has type \"str\") "
+    },
+    {
+      "file": "codey\\knowledge\\research_interest.py",
+      "line": 375,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\knowledge\\research_interest.py",
+      "line": 389,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\knowledge\\research_interest.py",
+      "line": 404,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\completion\\verification.py",
+      "line": 306,
+      "code": "arg-type",
+      "message": "Argument 1 to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" ",
+      "root_pattern": "arg-type: Argument N to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" "
+    },
+    {
+      "file": "codey\\completion\\verification.py",
+      "line": 317,
+      "code": "arg-type",
+      "message": "Argument 1 to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" ",
+      "root_pattern": "arg-type: Argument N to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" "
+    },
+    {
+      "file": "codey\\completion\\verification.py",
+      "line": 431,
+      "code": "arg-type",
+      "message": "Argument 1 to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" ",
+      "root_pattern": "arg-type: Argument N to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" "
+    },
+    {
+      "file": "codey\\completion\\verification.py",
+      "line": 447,
+      "code": "arg-type",
+      "message": "Argument \"project\" to \"path_ref\" has incompatible type \"object\"; expected \"str | Path | None\" ",
+      "root_pattern": "arg-type: Argument \"project\" to \"path_ref\" has incompatible type \"object\"; expected \"str | Path | None\" "
+    },
+    {
+      "file": "codey\\completion\\verification.py",
+      "line": 473,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\completion\\verification.py",
+      "line": 491,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\") "
+    },
+    {
+      "file": "codey\\completion\\verification.py",
+      "line": 682,
+      "code": "arg-type",
+      "message": "Argument 1 to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" ",
+      "root_pattern": "arg-type: Argument N to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" "
+    },
+    {
+      "file": "codey\\completion\\verification.py",
+      "line": 705,
+      "code": "arg-type",
+      "message": "Argument 1 to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" ",
+      "root_pattern": "arg-type: Argument N to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" "
+    },
+    {
+      "file": "codey\\runtime\\write\\task_runtime.py",
+      "line": 62,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"TaskSubmission | None\", variable has type \"TaskSubmission\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"TaskSubmission | None\", variable has type \"TaskSubmission\") "
+    },
+    {
+      "file": "codey\\runs\\details.py",
+      "line": 246,
+      "code": "arg-type",
+      "message": "Argument 3 to \"getattr\" has incompatible type \"tuple[()]\"; expected \"bool\" ",
+      "root_pattern": "arg-type: Argument N to \"getattr\" has incompatible type \"tuple[()]\"; expected \"bool\" "
+    },
+    {
+      "file": "codey\\runs\\details.py",
+      "line": 374,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\research\\review_finding.py",
+      "line": 278,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\research\\review_finding.py",
+      "line": 302,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\research\\review_finding.py",
+      "line": 333,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\research\\query_planner.py",
+      "line": 219,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"list[str]\", variable has type \"tuple[str]\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"list[str]\", variable has type \"tuple[str]\") "
+    },
+    {
+      "file": "codey\\research\\query_planner.py",
+      "line": 228,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"list[str]\", variable has type \"tuple[str, ...]\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"list[str]\", variable has type \"tuple[str, ...]\") "
+    },
+    {
+      "file": "codey\\research\\query_planner.py",
+      "line": 541,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\providers\\local_openai.py",
+      "line": 203,
+      "code": "call-overload",
+      "message": "No overload variant of \"dict\" matches argument type \"object\" ",
+      "root_pattern": "call-overload: No overload variant of \"dict\" matches argument type \"object\" "
+    },
+    {
+      "file": "codey\\providers\\local_openai.py",
+      "line": 226,
+      "code": "call-overload",
+      "message": "No overload variant of \"dict\" matches argument type \"object\" ",
+      "root_pattern": "call-overload: No overload variant of \"dict\" matches argument type \"object\" "
+    },
+    {
+      "file": "codey\\ghost\\work_queue_model.py",
+      "line": 383,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\ghost\\inbox.py",
+      "line": 624,
+      "code": "operator",
+      "message": "Unsupported operand types for >= (\"int\" and \"object\") ",
+      "root_pattern": "operator: Unsupported operand types for >= (\"int\" and \"object\") "
+    },
+    {
+      "file": "codey\\ghost\\inbox.py",
+      "line": 860,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"dict[str, int]\", expected \"dict[str, object]\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"dict[str, int]\", expected \"dict[str, object]\") "
+    },
+    {
+      "file": "codey\\ghost\\inbox.py",
+      "line": 1172,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\ghost\\affinity_model.py",
+      "line": 502,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"value\" ",
+      "root_pattern": "var-annotated: Need type annotation for \"value\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity_model.py",
+      "line": 512,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"value\" ",
+      "root_pattern": "var-annotated: Need type annotation for \"value\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity_model.py",
+      "line": 524,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\ghost\\work_queue_sources.py",
+      "line": 196,
+      "code": "arg-type",
+      "message": "Argument \"why_now\" to \"new_item\" has incompatible type \"object\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument \"why_now\" to \"new_item\" has incompatible type \"object\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\ghost\\work_queue_sources.py",
+      "line": 205,
+      "code": "call-overload",
+      "message": "No overload variant of \"list\" matches argument type \"object\" ",
+      "root_pattern": "call-overload: No overload variant of \"list\" matches argument type \"object\" "
+    },
+    {
+      "file": "codey\\ghost\\work_queue_sources.py",
+      "line": 206,
+      "code": "call-overload",
+      "message": "No overload variant of \"list\" matches argument type \"object\" ",
+      "root_pattern": "call-overload: No overload variant of \"list\" matches argument type \"object\" "
+    },
+    {
+      "file": "codey\\ghost\\work_queue_events.py",
+      "line": 354,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | list[Any] | None\" has no attribute \"__iter__\" (not iterable) ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\ghost\\work_queue_events.py",
+      "line": 390,
+      "code": "operator",
+      "message": "Unsupported operand types for > (\"int\" and \"object\") ",
+      "root_pattern": "operator: Unsupported operand types for > (\"int\" and \"object\") "
+    },
+    {
+      "file": "codey\\ghost\\work_queue_events.py",
+      "line": 390,
+      "code": "operator",
+      "message": "Unsupported operand types for + (\"object\" and \"int\") ",
+      "root_pattern": "operator: Unsupported operand types for + (\"object\" and \"int\") "
+    },
+    {
+      "file": "codey\\ghost\\work_queue_events.py",
+      "line": 522,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\ghost\\work_queue_events.py",
+      "line": 523,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\ghost\\work_queue_events.py",
+      "line": 524,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"get\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\ghost\\work_queue_events.py",
+      "line": 661,
+      "code": "operator",
+      "message": "Unsupported operand types for > (\"int\" and \"object\") ",
+      "root_pattern": "operator: Unsupported operand types for > (\"int\" and \"object\") "
+    },
+    {
+      "file": "codey\\ghost\\work_queue_events.py",
+      "line": 667,
+      "code": "arg-type",
+      "message": "Argument \"retry_count\" to \"replace\" of \"GhostWorkItem\" has incompatible type \"object\"; expected \"int\" ",
+      "root_pattern": "arg-type: Argument \"retry_count\" to \"replace\" of \"GhostWorkItem\" has incompatible type \"object\"; expected \"int\" "
+    },
+    {
+      "file": "codey\\ghost\\work_queue_events.py",
+      "line": 768,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\ghost\\hebbian.py",
+      "line": 66,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\ghost\\hebbian.py",
+      "line": 1193,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\ghost\\affinity_sources.py",
+      "line": 107,
+      "code": "arg-type",
+      "message": "Argument 3 to \"getattr\" has incompatible type \"str\"; expected \"bool\" ",
+      "root_pattern": "arg-type: Argument N to \"getattr\" has incompatible type \"str\"; expected \"bool\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity_events.py",
+      "line": 124,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"AffinityEdgeSpec | None\", variable has type \"AffinityNodeSpec | None\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"AffinityEdgeSpec | None\", variable has type \"AffinityNodeSpec | None\") "
+    },
+    {
+      "file": "codey\\ghost\\affinity_events.py",
+      "line": 127,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"source\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"source\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity_events.py",
+      "line": 127,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"target\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"target\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity_events.py",
+      "line": 130,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"source\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"source\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity_events.py",
+      "line": 130,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"target\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"target\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity_events.py",
+      "line": 130,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"relation\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"relation\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity_events.py",
+      "line": 131,
+      "code": "arg-type",
+      "message": "Argument 2 to \"_reinforce_edge\" has incompatible type \"AffinityNodeSpec\"; expected \"AffinityEdgeSpec\" ",
+      "root_pattern": "arg-type: Argument N to \"_reinforce_edge\" has incompatible type \"AffinityNodeSpec\"; expected \"AffinityEdgeSpec\" "
+    },
+    {
+      "file": "codey\\ghost\\continuity.py",
+      "line": 405,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[str]\" ",
+      "root_pattern": "arg-type: Argument N to \"_bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[str]\" "
+    },
+    {
+      "file": "codey\\ghost\\continuity.py",
+      "line": 530,
+      "code": "operator",
+      "message": "Unsupported operand types for >= (\"int\" and \"object\") ",
+      "root_pattern": "operator: Unsupported operand types for >= (\"int\" and \"object\") "
+    },
+    {
+      "file": "codey\\ghost\\affinity.py",
+      "line": 177,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"AffinityEdgeSpec\", variable has type \"AffinityNodeSpec\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"AffinityEdgeSpec\", variable has type \"AffinityNodeSpec\") "
+    },
+    {
+      "file": "codey\\ghost\\affinity.py",
+      "line": 178,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"source\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"source\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity.py",
+      "line": 178,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"target\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"target\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity.py",
+      "line": 181,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"source\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"source\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity.py",
+      "line": 181,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"target\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"target\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity.py",
+      "line": 181,
+      "code": "attr-defined",
+      "message": "\"AffinityNodeSpec\" has no attribute \"relation\" ",
+      "root_pattern": "attr-defined: \"AffinityNodeSpec\" has no attribute \"relation\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity.py",
+      "line": 182,
+      "code": "arg-type",
+      "message": "Argument 2 to \"_reinforce_edge\" has incompatible type \"AffinityNodeSpec\"; expected \"AffinityEdgeSpec\" ",
+      "root_pattern": "arg-type: Argument N to \"_reinforce_edge\" has incompatible type \"AffinityNodeSpec\"; expected \"AffinityEdgeSpec\" "
+    },
+    {
+      "file": "codey\\ghost\\affinity.py",
+      "line": 188,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_edge_reinforced_event\" has incompatible type \"AffinityNodeSpec\"; expected \"AffinityEdgeSpec\" ",
+      "root_pattern": "arg-type: Argument N to \"_edge_reinforced_event\" has incompatible type \"AffinityNodeSpec\"; expected \"AffinityEdgeSpec\" "
+    },
+    {
+      "file": "codey\\ghost\\work_queue.py",
+      "line": 815,
+      "code": "operator",
+      "message": "Unsupported operand types for >= (\"int\" and \"object\") ",
+      "root_pattern": "operator: Unsupported operand types for >= (\"int\" and \"object\") "
+    },
+    {
+      "file": "codey\\ghost\\work_queue.py",
+      "line": 1061,
+      "code": "operator",
+      "message": "Unsupported operand types for >= (\"int\" and \"object\") ",
+      "root_pattern": "operator: Unsupported operand types for >= (\"int\" and \"object\") "
+    },
+    {
+      "file": "codey\\ghost\\sleep.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"_bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\ghost\\sleep.py",
+      "line": 506,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"_bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\ghost\\sleep.py",
+      "line": 703,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | dict[Any, Any] | None\" has no attribute \"items\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\ghost\\sleep.py",
+      "line": 788,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\ghost\\control_surface.py",
+      "line": 83,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"GhostInboxStore | None\" has no attribute \"applicable_candidates\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\ghost\\control_surface.py",
+      "line": 98,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"GhostInboxStore | None\" has no attribute \"applicable_candidates\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\ghost\\control_surface.py",
+      "line": 148,
+      "code": "misc",
+      "message": "Expected iterable as variadic argument ",
+      "root_pattern": "misc: Expected iterable as variadic argument "
+    },
+    {
+      "file": "codey\\ghost\\control_surface.py",
+      "line": 404,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"delete_scope\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\ghost\\control_surface.py",
+      "line": 422,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"reset_all\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\ghost\\control_surface.py",
+      "line": 520,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"list[str]\", expected \"tuple[str, ...]\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"list[str]\", expected \"tuple[str, ...]\") "
+    },
+    {
+      "file": "codey\\ghost\\control_surface.py",
+      "line": 753,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\completion\\decision.py",
+      "line": 40,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runs\\trace_research.py",
+      "line": 400,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"to_payload\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\runs\\trace_research.py",
+      "line": 431,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"to_payload\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\runs\\trace_research.py",
+      "line": 462,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"to_payload\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\context.py",
+      "line": 155,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"to_payload\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\ghost\\directive.py",
+      "line": 126,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"tuple[GhostNode, ...]\", variable has type \"list[GhostNode]\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"tuple[GhostNode, ...]\", variable has type \"list[GhostNode]\") "
+    },
+    {
+      "file": "codey\\ghost\\directive.py",
+      "line": 289,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"tuple[int, int, float, tuple[int, ...]]\", expected \"tuple[int, int, float, str]\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"tuple[int, int, float, tuple[int, ...]]\", expected \"tuple[int, int, float, str]\") "
+    },
+    {
+      "file": "codey\\ghost\\directive.py",
+      "line": 342,
+      "code": "arg-type",
+      "message": "Argument 1 to \"float\" has incompatible type \"object\"; expected \"str | Buffer | SupportsFloat | SupportsIndex\" ",
+      "root_pattern": "numeric coercion: float(object)"
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 650,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 653,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument N to \"_bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 658,
+      "code": "arg-type",
+      "message": "Argument \"schema_version\" to \"PromptSurfaceTrace\" has incompatible type \"object\"; expected \"int\" ",
+      "root_pattern": "arg-type: Argument \"schema_version\" to \"PromptSurfaceTrace\" has incompatible type \"object\"; expected \"int\" "
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 685,
+      "code": "arg-type",
+      "message": "Argument \"source_refs\" to \"_append_prompt_section\" of \"RunTraceRecorder\" has incompatible type \"object\"; expected \"Iterable[object]\" ",
+      "root_pattern": "arg-type: Argument \"source_refs\" to \"_append_prompt_section\" of \"RunTraceRecorder\" has incompatible type \"object\"; expected \"Iterable[object]\" "
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 846,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"review_key\" ",
+      "root_pattern": "var-annotated: Need type annotation for \"review_key\" "
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 849,
+      "code": "arg-type",
+      "message": "Argument 1 to \"tuple\" has incompatible type \"object\"; expected \"Iterable[Never]\" ",
+      "root_pattern": "arg-type: Argument N to \"tuple\" has incompatible type \"object\"; expected \"Iterable[Never]\" "
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 852,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"existing_key\" ",
+      "root_pattern": "var-annotated: Need type annotation for \"existing_key\" "
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 855,
+      "code": "arg-type",
+      "message": "Argument 1 to \"tuple\" has incompatible type \"object\"; expected \"Iterable[Never]\" ",
+      "root_pattern": "arg-type: Argument N to \"tuple\" has incompatible type \"object\"; expected \"Iterable[Never]\" "
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 903,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 1057,
+      "code": "arg-type",
+      "message": "Argument 1 to \"add\" of \"set\" has incompatible type \"tuple[str, str]\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument N to \"add\" of \"set\" has incompatible type \"tuple[str, str]\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 1370,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"int\", target has type \"str\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"int\", target has type \"str\") "
+    },
+    {
+      "file": "codey\\runs\\trace.py",
+      "line": 1387,
+      "code": "arg-type",
+      "message": "Argument 1 to \"append\" of \"list\" has incompatible type \"dict[str, str]\"; expected \"dict[str, object]\" ",
+      "root_pattern": "arg-type: Argument N to \"append\" of \"list\" has incompatible type \"dict[str, str]\"; expected \"dict[str, object]\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_checks.py",
+      "line": 209,
+      "code": "arg-type",
+      "message": "Argument \"workspace_revision\" to \"CheckEvidence\" has incompatible type \"Any | None\"; expected \"int\" ",
+      "root_pattern": "arg-type: Argument \"workspace_revision\" to \"CheckEvidence\" has incompatible type \"Any | None\"; expected \"int\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_checks.py",
+      "line": 298,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"list[CompletionCheck | None]\", expected \"list[CompletionCheck]\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"list[CompletionCheck | None]\", expected \"list[CompletionCheck]\") "
+    },
+    {
+      "file": "codey\\operations\\project_completion_checks.py",
+      "line": 299,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"list[CompletionCheck | None]\", expected \"list[CompletionCheck]\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"list[CompletionCheck | None]\", expected \"list[CompletionCheck]\") "
+    },
+    {
+      "file": "codey\\operations\\project_completion_checks.py",
+      "line": 354,
+      "code": "arg-type",
+      "message": "Argument 3 to \"getattr\" has incompatible type \"tuple[()]\"; expected \"bool\" ",
+      "root_pattern": "arg-type: Argument N to \"getattr\" has incompatible type \"tuple[()]\"; expected \"bool\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_checks.py",
+      "line": 355,
+      "code": "list-item",
+      "message": "List item 0 has incompatible type \"CompletionCheck | None\"; expected \"CompletionCheck\" ",
+      "root_pattern": "list-item: List item N has incompatible type \"CompletionCheck | None\"; expected \"CompletionCheck\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_checks.py",
+      "line": 356,
+      "code": "list-item",
+      "message": "List item 0 has incompatible type \"CompletionCheck | None\"; expected \"CompletionCheck\" ",
+      "root_pattern": "list-item: List item N has incompatible type \"CompletionCheck | None\"; expected \"CompletionCheck\" "
+    },
+    {
+      "file": "codey\\operations\\completion_gate.py",
+      "line": 56,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"__iter__\"; maybe \"__dir__\" or \"__str__\"? (not iterable) ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\kernel_session_recovery.py",
+      "line": 109,
+      "code": "arg-type",
+      "message": "Argument 2 to \"restore_ledger_observation\" has incompatible type \"object | Any\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"restore_ledger_observation\" has incompatible type \"object | Any\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\automation\\browser.py",
+      "line": 229,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"tuple[int, ...]\", variable has type \"tuple[int | None, int | None]\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"tuple[int, ...]\", variable has type \"tuple[int | None, int | None]\") "
+    },
+    {
+      "file": "codey\\providers\\worker.py",
+      "line": 904,
+      "code": "arg-type",
+      "message": "Argument 1 to \"terminate_process_tree\" has incompatible type \"Popen[str]\"; expected \"Popen[bytes]\" ",
+      "root_pattern": "arg-type: Argument N to \"terminate_process_tree\" has incompatible type \"Popen[str]\"; expected \"Popen[bytes]\" "
+    },
+    {
+      "file": "codey\\providers\\worker.py",
+      "line": 908,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"close\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\providers\\worker.py",
+      "line": 999,
+      "code": "arg-type",
+      "message": "Argument \"facts\" to \"ProviderFailure\" has incompatible type \"Any | dict[Any, Any] | None\"; expected \"dict[str, object]\" ",
+      "root_pattern": "arg-type: Argument \"facts\" to \"ProviderFailure\" has incompatible type \"Any | dict[Any, Any] | None\"; expected \"dict[str, object]\" "
+    },
+    {
+      "file": "codey\\providers\\web_drivers\\mimo.py",
+      "line": 780,
+      "code": "misc",
+      "message": "Cannot infer type of lambda ",
+      "root_pattern": "untyped lambda boundary"
+    },
+    {
+      "file": "codey\\providers\\web_drivers\\mimo.py",
+      "line": 820,
+      "code": "misc",
+      "message": "Cannot infer type of lambda ",
+      "root_pattern": "untyped lambda boundary"
+    },
+    {
+      "file": "codey\\research\\source_gateway.py",
+      "line": 104,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"search\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\source_gateway.py",
+      "line": 141,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"fetch\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\source_gateway.py",
+      "line": 266,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"fetch\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\research\\browser_search.py",
+      "line": 160,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"Session\", variable has type \"None\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"Session\", variable has type \"None\") "
+    },
+    {
+      "file": "codey\\research\\browser_search.py",
+      "line": 311,
+      "code": "index",
+      "message": "Value of type \"dict[Any, Any] | None\" is not indexable ",
+      "root_pattern": "index: Value of type \"dict[Any, Any] | None\" is not indexable "
+    },
+    {
+      "file": "codey\\research\\browser_search.py",
+      "line": 316,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_search_engine_host\" has incompatible type \"dict[Any, Any] | None\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"_search_engine_host\" has incompatible type \"dict[Any, Any] | None\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\research\\browser_search.py",
+      "line": 325,
+      "code": "index",
+      "message": "Value of type \"dict[Any, Any] | None\" is not indexable ",
+      "root_pattern": "index: Value of type \"dict[Any, Any] | None\" is not indexable "
+    },
+    {
+      "file": "codey\\research\\browser_search.py",
+      "line": 327,
+      "code": "index",
+      "message": "Value of type \"dict[Any, Any] | None\" is not indexable ",
+      "root_pattern": "index: Value of type \"dict[Any, Any] | None\" is not indexable "
+    },
+    {
+      "file": "codey\\research\\browser_search.py",
+      "line": 333,
+      "code": "arg-type",
+      "message": "Argument 3 to \"_best_result_title\" has incompatible type \"dict[Any, Any] | None\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"_best_result_title\" has incompatible type \"dict[Any, Any] | None\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\research\\browser_search.py",
+      "line": 336,
+      "code": "index",
+      "message": "Value of type \"dict[Any, Any] | None\" is not indexable ",
+      "root_pattern": "index: Value of type \"dict[Any, Any] | None\" is not indexable "
+    },
+    {
+      "file": "codey\\research\\tools.py",
+      "line": 62,
+      "code": "arg-type",
+      "message": "Argument \"store\" to \"ResearchTools\" has incompatible type \"StagedKnowledgeStore | None\"; expected \"KnowledgeStore | None\" ",
+      "root_pattern": "arg-type: Argument \"store\" to \"ResearchTools\" has incompatible type \"StagedKnowledgeStore | None\"; expected \"KnowledgeStore | None\" "
+    },
+    {
+      "file": "codey\\research\\tools.py",
+      "line": 63,
+      "code": "arg-type",
+      "message": "Argument \"changes\" to \"ResearchTools\" has incompatible type \"StagedKnowledgeChanges | None\"; expected \"KnowledgeChanges | None\" ",
+      "root_pattern": "arg-type: Argument \"changes\" to \"ResearchTools\" has incompatible type \"StagedKnowledgeChanges | None\"; expected \"KnowledgeChanges | None\" "
+    },
+    {
+      "file": "codey\\research\\tools.py",
+      "line": 112,
+      "code": "var-annotated",
+      "message": "Need type annotation for \"lines\" (hint: \"lines: list[<type>] = ...\") ",
+      "root_pattern": "var-annotated: Need type annotation for \"lines\" (hint: \"lines: list[<type>] = ...\") "
+    },
+    {
+      "file": "codey\\research\\tools.py",
+      "line": 282,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"record\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\providers\\registry.py",
+      "line": 109,
+      "code": "attr-defined",
+      "message": "\"type\" has no attribute \"connect\" ",
+      "root_pattern": "attr-defined: \"type\" has no attribute \"connect\" "
+    },
+    {
+      "file": "codey\\providers\\registry.py",
+      "line": 113,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"WorkerChatProvider\", expected \"ChatProvider\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"WorkerChatProvider\", expected \"ChatProvider\") "
+    },
+    {
+      "file": "codey\\providers\\registry.py",
+      "line": 118,
+      "code": "attr-defined",
+      "message": "\"type\" has no attribute \"connect\" ",
+      "root_pattern": "attr-defined: \"type\" has no attribute \"connect\" "
+    },
+    {
+      "file": "codey\\providers\\registry.py",
+      "line": 186,
+      "code": "attr-defined",
+      "message": "\"type\" has no attribute \"connect\" ",
+      "root_pattern": "attr-defined: \"type\" has no attribute \"connect\" "
+    },
+    {
+      "file": "codey\\providers\\registry.py",
+      "line": 190,
+      "code": "return-value",
+      "message": "Incompatible return value type (got \"WorkerChatProvider\", expected \"ChatProvider\") ",
+      "root_pattern": "return-value: Incompatible return value type (got \"WorkerChatProvider\", expected \"ChatProvider\") "
+    },
+    {
+      "file": "codey\\providers\\registry.py",
+      "line": 195,
+      "code": "attr-defined",
+      "message": "\"type\" has no attribute \"connect\" ",
+      "root_pattern": "attr-defined: \"type\" has no attribute \"connect\" "
+    },
+    {
+      "file": "codey\\repairs\\self_repair_worker.py",
+      "line": 133,
+      "code": "misc",
+      "message": "Cannot infer type of lambda ",
+      "root_pattern": "untyped lambda boundary"
+    },
+    {
+      "file": "codey\\repairs\\self_repair_worker.py",
+      "line": 180,
+      "code": "attr-defined",
+      "message": "\"type\" has no attribute \"connect\" ",
+      "root_pattern": "attr-defined: \"type\" has no attribute \"connect\" "
+    },
+    {
+      "file": "codey\\repairs\\self_repair_worker.py",
+      "line": 181,
+      "code": "attr-defined",
+      "message": "\"type\" has no attribute \"connect\" ",
+      "root_pattern": "attr-defined: \"type\" has no attribute \"connect\" "
+    },
+    {
+      "file": "codey\\providers\\worker_child.py",
+      "line": 40,
+      "code": "attr-defined",
+      "message": "\"type\" has no attribute \"connect\" ",
+      "root_pattern": "attr-defined: \"type\" has no attribute \"connect\" "
+    },
+    {
+      "file": "codey\\providers\\worker_child.py",
+      "line": 96,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"to_dict\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\task_execution.py",
+      "line": 266,
+      "code": "arg-type",
+      "message": "Argument 1 to \"execute_information_tool_call\" has incompatible type \"Path | None\"; expected \"Path\" ",
+      "root_pattern": "arg-type: Argument N to \"execute_information_tool_call\" has incompatible type \"Path | None\"; expected \"Path\" "
+    },
+    {
+      "file": "codey\\operations\\task_execution.py",
+      "line": 301,
+      "code": "arg-type",
+      "message": "Argument 1 to \"canonical_project_path\" has incompatible type \"Path | None\"; expected \"Path\" ",
+      "root_pattern": "arg-type: Argument N to \"canonical_project_path\" has incompatible type \"Path | None\"; expected \"Path\" "
+    },
+    {
+      "file": "codey\\operations\\task_execution.py",
+      "line": 302,
+      "code": "arg-type",
+      "message": "Argument 1 to \"safe_join\" has incompatible type \"Path | None\"; expected \"str | Path\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_join\" has incompatible type \"Path | None\"; expected \"str | Path\" "
+    },
+    {
+      "file": "codey\\operations\\task_execution.py",
+      "line": 317,
+      "code": "arg-type",
+      "message": "Argument 1 to \"read_before_edit_outcome\" has incompatible type \"Path | None\"; expected \"Path\" ",
+      "root_pattern": "arg-type: Argument N to \"read_before_edit_outcome\" has incompatible type \"Path | None\"; expected \"Path\" "
+    },
+    {
+      "file": "codey\\operations\\task_execution.py",
+      "line": 425,
+      "code": "dict-item",
+      "message": "Dict entry 1 has incompatible type \"str\": \"str\"; expected \"str\": \"dict[Any, Any]\" ",
+      "root_pattern": "dict-item: Dict entry N has incompatible type \"str\": \"str\"; expected \"str\": \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\operations\\task_execution.py",
+      "line": 451,
+      "code": "dict-item",
+      "message": "Dict entry 0 has incompatible type \"str\": \"list[dict[str, str]]\"; expected \"str\": \"dict[Any, Any]\" ",
+      "root_pattern": "dict-item: Dict entry N has incompatible type \"str\": \"list[dict[str, str]]\"; expected \"str\": \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\research\\evidence_rules.py",
+      "line": 272,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\operations\\kernel_execution.py",
+      "line": 313,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\operations\\kernel_execution.py",
+      "line": 317,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\app\\provider_services.py",
+      "line": 69,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"is_available\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 134,
+      "code": "arg-type",
+      "message": "Argument \"stagnant_turns\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"int | None\" ",
+      "root_pattern": "arg-type: Argument \"stagnant_turns\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"int | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 135,
+      "code": "arg-type",
+      "message": "Argument \"delivered\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"Mapping[str, ToolResult] | None\" ",
+      "root_pattern": "arg-type: Argument \"delivered\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"Mapping[str, ToolResult] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 136,
+      "code": "arg-type",
+      "message": "Argument \"start_turn\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"int | None\" ",
+      "root_pattern": "arg-type: Argument \"start_turn\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"int | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 137,
+      "code": "arg-type",
+      "message": "Argument \"initial_results\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"list[ToolResult] | None\" ",
+      "root_pattern": "arg-type: Argument \"initial_results\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"list[ToolResult] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 141,
+      "code": "arg-type",
+      "message": "Argument \"executors\" to \"KernelExecutionDeps\" has incompatible type \"object\"; expected \"Mapping[str, Callable[[ToolCall], Any]] | None\" ",
+      "root_pattern": "arg-type: Argument \"executors\" to \"KernelExecutionDeps\" has incompatible type \"object\"; expected \"Mapping[str, Callable[[ToolCall], Any]] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 155,
+      "code": "arg-type",
+      "message": "Argument \"on_event\" to \"KernelObservationDeps\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" ",
+      "root_pattern": "arg-type: Argument \"on_event\" to \"KernelObservationDeps\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 156,
+      "code": "arg-type",
+      "message": "Argument \"on_shell_request\" to \"KernelObservationDeps\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" ",
+      "root_pattern": "arg-type: Argument \"on_shell_request\" to \"KernelObservationDeps\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 558,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 588,
+      "code": "arg-type",
+      "message": "Argument \"executors\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"Mapping[str, Callable[[ToolCall], Any]] | None\" ",
+      "root_pattern": "arg-type: Argument \"executors\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"Mapping[str, Callable[[ToolCall], Any]] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 593,
+      "code": "arg-type",
+      "message": "Argument \"context_text\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument \"context_text\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 594,
+      "code": "arg-type",
+      "message": "Argument \"initial_results\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"list[ToolResult] | None\" ",
+      "root_pattern": "arg-type: Argument \"initial_results\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"list[ToolResult] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 596,
+      "code": "arg-type",
+      "message": "Argument \"delivered\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"Mapping[str, ToolResult] | None\" ",
+      "root_pattern": "arg-type: Argument \"delivered\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"Mapping[str, ToolResult] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 616,
+      "code": "arg-type",
+      "message": "Argument 1 to \"KernelProgress\" has incompatible type \"object\"; expected \"int | None\" ",
+      "root_pattern": "arg-type: Argument N to \"KernelProgress\" has incompatible type \"object\"; expected \"int | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 621,
+      "code": "arg-type",
+      "message": "Argument \"propagate_provider_failure\" to \"_stop_at_turn_start\" has incompatible type \"object\"; expected \"bool\" ",
+      "root_pattern": "arg-type: Argument \"propagate_provider_failure\" to \"_stop_at_turn_start\" has incompatible type \"object\"; expected \"bool\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 644,
+      "code": "arg-type",
+      "message": "Argument \"stagnant_turns\" to \"_receive_turn_plan\" has incompatible type \"object\"; expected \"int | None\" ",
+      "root_pattern": "arg-type: Argument \"stagnant_turns\" to \"_receive_turn_plan\" has incompatible type \"object\"; expected \"int | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 645,
+      "code": "arg-type",
+      "message": "Argument \"propagate_provider_failure\" to \"_receive_turn_plan\" has incompatible type \"object\"; expected \"bool\" ",
+      "root_pattern": "arg-type: Argument \"propagate_provider_failure\" to \"_receive_turn_plan\" has incompatible type \"object\"; expected \"bool\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 665,
+      "code": "arg-type",
+      "message": "Argument \"identity_ref\" to \"_kernel_handle_done_approval\" has incompatible type \"object\"; expected \"str\" ",
+      "root_pattern": "arg-type: Argument \"identity_ref\" to \"_kernel_handle_done_approval\" has incompatible type \"object\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 677,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_emit_tool_starts\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" ",
+      "root_pattern": "arg-type: Argument N to \"_emit_tool_starts\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 685,
+      "code": "arg-type",
+      "message": "Argument 21 to \"_call_execute_turn\" has incompatible type \"object\"; expected \"bool\" ",
+      "root_pattern": "arg-type: Argument N to \"_call_execute_turn\" has incompatible type \"object\"; expected \"bool\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 692,
+      "code": "arg-type",
+      "message": "Argument 1 to \"_emit_tool_results\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" ",
+      "root_pattern": "arg-type: Argument N to \"_emit_tool_results\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" "
+    },
+    {
+      "file": "codey\\operations\\task_loop.py",
+      "line": 714,
+      "code": "arg-type",
+      "message": "Argument \"propagate_provider_failure\" to \"_finish_after_budget\" has incompatible type \"object\"; expected \"bool\" ",
+      "root_pattern": "arg-type: Argument \"propagate_provider_failure\" to \"_finish_after_budget\" has incompatible type \"object\"; expected \"bool\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_context.py",
+      "line": 329,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"object\", variable has type \"RuntimeOperationState | None\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"object\", variable has type \"RuntimeOperationState | None\") "
+    },
+    {
+      "file": "codey\\app\\sibling_probe.py",
+      "line": 80,
+      "code": "misc",
+      "message": "Cannot infer type of lambda ",
+      "root_pattern": "untyped lambda boundary"
+    },
+    {
+      "file": "codey\\app\\sibling_probe.py",
+      "line": 125,
+      "code": "misc",
+      "message": "Cannot infer type of lambda ",
+      "root_pattern": "untyped lambda boundary"
+    },
+    {
+      "file": "codey\\app\\sibling_probe.py",
+      "line": 179,
+      "code": "arg-type",
+      "message": "Argument 1 to \"emit\" of \"TaskState\" has incompatible type \"object\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "TaskState Protocol implementation mismatch"
+    },
+    {
+      "file": "codey\\app\\sibling_probe.py",
+      "line": 180,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"wait\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\app\\shell_service.py",
+      "line": 309,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"CapturedProcess\", variable has type \"Popen[bytes] | None\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"CapturedProcess\", variable has type \"Popen[bytes] | None\") "
+    },
+    {
+      "file": "codey\\app\\shell_service.py",
+      "line": 354,
+      "code": "attr-defined",
+      "message": "\"IO[bytes]\" has no attribute \"rstrip\" ",
+      "root_pattern": "attr-defined: \"IO[bytes]\" has no attribute \"rstrip\" "
+    },
+    {
+      "file": "codey\\app\\shell_service.py",
+      "line": 356,
+      "code": "attr-defined",
+      "message": "\"IO[bytes]\" has no attribute \"rstrip\" ",
+      "root_pattern": "attr-defined: \"IO[bytes]\" has no attribute \"rstrip\" "
+    },
+    {
+      "file": "codey\\app\\context.py",
+      "line": 86,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TemporaryDirectory[str] | None\" has no attribute \"name\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\app\\context.py",
+      "line": 114,
+      "code": "arg-type",
+      "message": "Argument 1 to \"Path\" has incompatible type \"str | Path | None\"; expected \"str | PathLike[str]\" ",
+      "root_pattern": "arg-type: Argument N to \"Path\" has incompatible type \"str | Path | None\"; expected \"str | PathLike[str]\" "
+    },
+    {
+      "file": "codey\\app\\context.py",
+      "line": 192,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"release\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\app\\context.py",
+      "line": 586,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"restore_result\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\app\\context.py",
+      "line": 694,
+      "code": "arg-type",
+      "message": "Argument 1 to \"open_provider_session\" has incompatible type \"AppContext\"; expected \"TaskState\" ",
+      "root_pattern": "TaskState Protocol implementation mismatch"
+    },
+    {
+      "file": "codey\\operations\\project_review_phase.py",
+      "line": 44,
+      "code": "arg-type",
+      "message": "Argument 2 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[VerifiedCommand, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[VerifiedCommand, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_review_phase.py",
+      "line": 45,
+      "code": "arg-type",
+      "message": "Argument 3 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[CheckpointCheck, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[CheckpointCheck, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_review_phase.py",
+      "line": 46,
+      "code": "arg-type",
+      "message": "Argument 4 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[ProjectVerificationCommand, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[ProjectVerificationCommand, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_review_phase.py",
+      "line": 97,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"emit\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_review_phase.py",
+      "line": 120,
+      "code": "arg-type",
+      "message": "Argument \"changes\" to \"record_review_input_prepared_trace\" has incompatible type \"Any | dict[Any, Any] | None\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument \"changes\" to \"record_review_input_prepared_trace\" has incompatible type \"Any | dict[Any, Any] | None\"; expected \"dict[Any, Any]\" "
+    },
+    {
+      "file": "codey\\operations\\project_review_phase.py",
+      "line": 172,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"run_registry\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 127,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"decision\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 128,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"decision\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 128,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"integrity\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 180,
+      "code": "arg-type",
+      "message": "Argument 2 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[VerifiedCommand, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[VerifiedCommand, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 181,
+      "code": "arg-type",
+      "message": "Argument 3 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[CheckpointCheck, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[CheckpointCheck, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 182,
+      "code": "arg-type",
+      "message": "Argument 4 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[ProjectVerificationCommand, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[ProjectVerificationCommand, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 204,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"run_registry\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 257,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"WriterFailoverRunner | None\" has no attribute \"run\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 300,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"RunResult | None\" has no attribute \"turns\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 330,
+      "code": "arg-type",
+      "message": "Argument 2 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[VerifiedCommand, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[VerifiedCommand, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 331,
+      "code": "arg-type",
+      "message": "Argument 3 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[CheckpointCheck, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[CheckpointCheck, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_completion_enforcement.py",
+      "line": 332,
+      "code": "arg-type",
+      "message": "Argument 4 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[ProjectVerificationCommand, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[ProjectVerificationCommand, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_audit_advisor.py",
+      "line": 219,
+      "code": "arg-type",
+      "message": "Argument \"executors\" to \"KernelExecutionDeps\" has incompatible type \"dict[str, object]\"; expected \"Mapping[str, Callable[[ToolCall], Any]] | None\" ",
+      "root_pattern": "arg-type: Argument \"executors\" to \"KernelExecutionDeps\" has incompatible type \"dict[str, object]\"; expected \"Mapping[str, Callable[[ToolCall], Any]] | None\" "
+    },
+    {
+      "file": "codey\\operations\\project_audit_advisor.py",
+      "line": 283,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"new_chat\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\project_audit_advisor.py",
+      "line": 307,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"close\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\project_adapter.py",
+      "line": 186,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"current_state\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\task_phases\\lifecycle.py",
+      "line": 191,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\operations\\task_phases\\hooks.py",
+      "line": 190,
+      "code": "arg-type",
+      "message": "Argument 1 to \"emit\" of \"TaskState\" has incompatible type \"object\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "TaskState Protocol implementation mismatch"
+    },
+    {
+      "file": "codey\\app\\api.py",
+      "line": 51,
+      "code": "list-item",
+      "message": "List item 0 has incompatible type \"int\"; expected \"str\" ",
+      "root_pattern": "list-item: List item N has incompatible type \"int\"; expected \"str\" "
+    },
+    {
+      "file": "codey\\operations\\research_flow.py",
+      "line": 112,
+      "code": "union-attr",
+      "message": "Item \"object\" of \"object | Any\" has no attribute \"final_result\" ",
+      "root_pattern": "union-attr: Item \"object\" of \"object | Any\" has no attribute \"final_result\" "
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 53,
+      "code": "arg-type",
+      "message": "Argument 2 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[VerifiedCommand, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[VerifiedCommand, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 54,
+      "code": "arg-type",
+      "message": "Argument 3 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[CheckpointCheck, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[CheckpointCheck, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 55,
+      "code": "arg-type",
+      "message": "Argument 4 to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[ProjectVerificationCommand, ...]\" ",
+      "root_pattern": "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[ProjectVerificationCommand, ...]\" "
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 102,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"run_registry\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 214,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"switch_run_provider\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 253,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"set_provider_session\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 257,
+      "code": "arg-type",
+      "message": "Argument 3 to \"run_half_open_canary\" has incompatible type \"Any | None\"; expected \"ProviderSupervisor\" ",
+      "root_pattern": "arg-type: Argument N to \"run_half_open_canary\" has incompatible type \"Any | None\"; expected \"ProviderSupervisor\" "
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 275,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"get_provider\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 293,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"run_registry\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 311,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"run_registry\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 339,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"set_provider_session\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 343,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"set_provider_session\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 382,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"RunResult | None\" has no attribute \"turns\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 383,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"RunResult | None\" has no attribute \"stop_reason\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_writer_phase.py",
+      "line": 411,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"set_provider_session\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_completion_flow.py",
+      "line": 131,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"TaskState | None\" has no attribute \"set_provider_session\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_completion_flow.py",
+      "line": 190,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"ProjectFactsStore | None\" has no attribute \"record_successful_change\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_completion_flow.py",
+      "line": 224,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"RunResult | None\" has no attribute \"stop_reason\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_completion_flow.py",
+      "line": 273,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"RunResult | None\" has no attribute \"checks_passed\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\operations\\project_completion_flow.py",
+      "line": 364,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"command\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\project_completion_flow.py",
+      "line": 364,
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"cwd\" ",
+      "root_pattern": "object-typed value used as a structured object"
+    },
+    {
+      "file": "codey\\operations\\task_run.py",
+      "line": 336,
+      "code": "arg-type",
+      "message": "Argument 1 has incompatible type \"str | None\"; expected \"str | Path\" ",
+      "root_pattern": "arg-type: Argument N has incompatible type \"str | None\"; expected \"str | Path\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 76,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"project_facts\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"project_facts\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 77,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"work_checkpoints\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"work_checkpoints\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 78,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"workspace_revisions\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"workspace_revisions\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 79,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"run_ledgers\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"run_ledgers\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 80,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"run_traces\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"run_traces\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 81,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"evidence_ledgers\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"evidence_ledgers\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 82,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"managed_outputs\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"managed_outputs\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 83,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"knowledge_store\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"knowledge_store\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 87,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"runtime_mutations\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"runtime_mutations\" "
+    },
+    {
+      "file": "codey\\app\\task_submit.py",
+      "line": 88,
+      "code": "attr-defined",
+      "message": "\"TaskState\" has no attribute \"runtime_effects\" ",
+      "root_pattern": "attr-defined: \"TaskState\" has no attribute \"runtime_effects\" "
+    },
+    {
+      "file": "codey\\app\\headless_runner.py",
+      "line": 209,
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"HeadlessResult | None\", variable has type \"HeadlessResult\") ",
+      "root_pattern": "assignment: Incompatible types in assignment (expression has type \"HeadlessResult | None\", variable has type \"HeadlessResult\") "
+    },
+    {
+      "file": "codey\\app\\headless_runner.py",
+      "line": 315,
+      "code": "arg-type",
+      "message": "Argument \"state\" to \"TaskRunDeps\" has incompatible type \"HeadlessAppContext\"; expected \"TaskState\" ",
+      "root_pattern": "TaskState Protocol implementation mismatch"
+    },
+    {
+      "file": "codey\\app\\headless_runner.py",
+      "line": 630,
+      "code": "call-overload",
+      "message": "No overload variant of \"int\" matches argument type \"object\" ",
+      "root_pattern": "numeric coercion: int(object)"
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 81,
+      "code": "arg-type",
+      "message": "Argument 1 to \"bind_provider_handlers\" has incompatible type \"AppContext\"; expected \"TaskState\" ",
+      "root_pattern": "TaskState Protocol implementation mismatch"
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 168,
+      "code": "arg-type",
+      "message": "Argument \"get_state\" to \"submit_task\" has incompatible type \"Callable[[], AppContext]\"; expected \"Callable[[], TaskState]\" ",
+      "root_pattern": "TaskState Protocol implementation mismatch"
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 195,
+      "code": "arg-type",
+      "message": "Argument \"get_state\" to \"submit_task_after_slot_release\" has incompatible type \"Callable[[], AppContext]\"; expected \"Callable[[], TaskState]\" ",
+      "root_pattern": "TaskState Protocol implementation mismatch"
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 295,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"gettimeout\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 299,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"settimeout\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 314,
+      "code": "union-attr",
+      "message": "Item \"None\" of \"Any | None\" has no attribute \"settimeout\" ",
+      "root_pattern": "nullable member access without a guard"
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 471,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start_provider_warmup\" has incompatible type \"AppContext\"; expected \"TaskState\" ",
+      "root_pattern": "TaskState Protocol implementation mismatch"
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"Callable[..., None] | None\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"Callable[..., None] | None\" "
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"Iterable[Any] | None\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"Iterable[Any] | None\" "
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"dict[str, str]\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"dict[str, str]\" "
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"Literal['qt', 'gtk', 'cef', 'mshtml', 'edgechromium', 'android', 'cocoa'] | None\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"Literal['qt', 'gtk', 'cef', 'mshtml', 'edgechromium', 'android', 'cocoa'] | None\" "
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"bool\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"bool\" "
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"int | None\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"int | None\" "
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"str | None\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"str | None\" "
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"list[Menu]\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"list[Menu]\" "
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"type[Never]\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"type[Never]\" "
+    },
+    {
+      "file": "codey\\app\\server.py",
+      "line": 484,
+      "code": "arg-type",
+      "message": "Argument 1 to \"start\" has incompatible type \"**dict[str, object]\"; expected \"dict[Any, Any]\" ",
+      "root_pattern": "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"dict[Any, Any]\" "
+    }
+  ],
+  "by_code": {
+    "arg-type": 161,
+    "attr-defined": 108,
+    "call-overload": 64,
+    "union-attr": 64,
+    "assignment": 29,
+    "index": 21,
+    "return-value": 12,
+    "misc": 12,
+    "var-annotated": 11,
+    "operator": 7,
+    "no-redef": 6,
+    "list-item": 3,
+    "return": 2,
+    "dict-item": 2,
+    "exit-return": 1,
+    "import-untyped": 1,
+    "type-var": 1,
+    "valid-type": 1
+  },
+  "by_file": {
+    "codey\\runs\\receipt.py": 31,
+    "codey\\operations\\task_loop.py": 21,
+    "codey\\app\\server.py": 17,
+    "codey\\operations\\project_writer_phase.py": 15,
+    "codey\\research\\evidence_ledger.py": 14,
+    "codey\\research\\proof_quality.py": 14,
+    "codey\\runs\\trace.py": 12,
+    "codey\\operations\\project_completion_enforcement.py": 12,
+    "codey\\workspace\\changes.py": 11,
+    "codey\\completion\\contract.py": 10,
+    "codey\\app\\task_submit.py": 10,
+    "codey\\knowledge\\graph.py": 9,
+    "codey\\research\\advisors.py": 9,
+    "codey\\ghost\\work_queue_events.py": 9,
+    "codey\\completion\\verification.py": 8,
+    "codey\\ghost\\affinity.py": 8,
+    "codey\\research\\identity.py": 7,
+    "codey\\runtime\\core\\cancellation.py": 7,
+    "codey\\runtime\\effects\\replay_policy.py": 7,
+    "codey\\runs\\ledger.py": 7,
+    "codey\\ghost\\affinity_events.py": 7,
+    "codey\\ghost\\control_surface.py": 7,
+    "codey\\research\\browser_search.py": 7,
+    "codey\\operations\\project_completion_checks.py": 6,
+    "codey\\providers\\registry.py": 6,
+    "codey\\operations\\task_execution.py": 6,
+    "codey\\operations\\project_review_phase.py": 6,
+    "codey\\operations\\project_completion_flow.py": 6,
+    "codey\\runtime\\log\\entries.py": 5,
+    "codey\\toolchain\\tool_spec.py": 5,
+    "codey\\app\\context.py": 5,
+    "codey\\app\\http_plumbing.py": 4,
+    "codey\\runs\\trace_values.py": 4,
+    "codey\\research\\ledger.py": 4,
+    "codey\\providers\\controls.py": 4,
+    "codey\\research\\brief_projection.py": 4,
+    "codey\\ghost\\sleep.py": 4,
+    "codey\\research\\tools.py": 4,
+    "codey\\app\\sibling_probe.py": 4,
+    "codey\\providers\\flow.py": 3,
+    "codey\\research\\report_quality.py": 3,
+    "codey\\providers\\revival.py": 3,
+    "codey\\reviews\\impact_map.py": 3,
+    "codey\\completion\\verification_map.py": 3,
+    "codey\\operations\\kernel_protocol.py": 3,
+    "codey\\app\\approval_registry.py": 3,
+    "codey\\agents\\consensus.py": 3,
+    "codey\\knowledge\\research_interest.py": 3,
+    "codey\\research\\review_finding.py": 3,
+    "codey\\research\\query_planner.py": 3,
+    "codey\\ghost\\inbox.py": 3,
+    "codey\\ghost\\affinity_model.py": 3,
+    "codey\\ghost\\work_queue_sources.py": 3,
+    "codey\\runs\\trace_research.py": 3,
+    "codey\\ghost\\directive.py": 3,
+    "codey\\providers\\worker.py": 3,
+    "codey\\research\\source_gateway.py": 3,
+    "codey\\repairs\\self_repair_worker.py": 3,
+    "codey\\app\\shell_service.py": 3,
+    "codey\\operations\\project_audit_advisor.py": 3,
+    "codey\\app\\headless_runner.py": 3,
+    "codey\\ghost\\numbers.py": 2,
+    "codey\\toolchain\\search_page.py": 2,
+    "codey\\runtime\\observe\\prompt_surface.py": 2,
+    "codey\\policies\\network.py": 2,
+    "codey\\storage\\ui_state_store.py": 2,
+    "codey\\research\\analysis_run.py": 2,
+    "codey\\ghost\\event_projection.py": 2,
+    "codey\\storage\\conversation_store.py": 2,
+    "codey\\research\\tool_contract.py": 2,
+    "codey\\policies\\action.py": 2,
+    "codey\\toolchain\\runtime.py": 2,
+    "codey\\research\\object_model.py": 2,
+    "codey\\providers\\supervisor.py": 2,
+    "codey\\operations\\kernel_provenance.py": 2,
+    "codey\\runtime\\observe\\execution_evidence.py": 2,
+    "codey\\research\\source_trust.py": 2,
+    "codey\\operations\\task_context.py": 2,
+    "codey\\knowledge\\concepts.py": 2,
+    "codey\\runs\\ledger_projection.py": 2,
+    "codey\\runs\\details.py": 2,
+    "codey\\providers\\local_openai.py": 2,
+    "codey\\ghost\\hebbian.py": 2,
+    "codey\\ghost\\continuity.py": 2,
+    "codey\\ghost\\work_queue.py": 2,
+    "codey\\providers\\web_drivers\\mimo.py": 2,
+    "codey\\providers\\worker_child.py": 2,
+    "codey\\operations\\kernel_execution.py": 2,
+    "codey\\utils\\positive_int.py": 1,
+    "codey\\runtime\\core\\output_capture.py": 1,
+    "codey\\research\\source_search.py": 1,
+    "codey\\research\\followup_selection.py": 1,
+    "codey\\workspace\\paths.py": 1,
+    "codey\\workspace\\change_set.py": 1,
+    "codey\\utils\\refs.py": 1,
+    "codey\\research\\topic_continuity.py": 1,
+    "codey\\completion\\repair_context.py": 1,
+    "codey\\storage\\file_lock.py": 1,
+    "codey\\research\\guards.py": 1,
+    "codey\\knowledge\\note.py": 1,
+    "codey\\completion\\edit_integrity.py": 1,
+    "codey\\app\\knowledge_indexer.py": 1,
+    "codey\\workspace\\facts.py": 1,
+    "codey\\research\\http_redirects.py": 1,
+    "codey\\ghost\\event_log.py": 1,
+    "codey\\agents\\shell_approval.py": 1,
+    "codey\\agents\\runaway_guard.py": 1,
+    "codey\\toolchain\\openai_tools.py": 1,
+    "codey\\runtime\\observe\\prompt_envelope.py": 1,
+    "codey\\research\\source_connectors.py": 1,
+    "codey\\providers\\profile_doctor.py": 1,
+    "codey\\operations\\kernel_progress.py": 1,
+    "codey\\automation\\browser_worker.py": 1,
+    "codey\\research\\connector_search.py": 1,
+    "codey\\providers\\web_driver.py": 1,
+    "codey\\operations\\task_session.py": 1,
+    "codey\\app\\conversation_registry.py": 1,
+    "codey\\runtime\\observe\\events.py": 1,
+    "codey\\research\\artifact_lineage.py": 1,
+    "codey\\agents\\writer_failover.py": 1,
+    "codey\\operations\\kernel_recovery.py": 1,
+    "codey\\runtime\\write\\task_runtime.py": 1,
+    "codey\\ghost\\work_queue_model.py": 1,
+    "codey\\ghost\\affinity_sources.py": 1,
+    "codey\\completion\\decision.py": 1,
+    "codey\\research\\context.py": 1,
+    "codey\\operations\\completion_gate.py": 1,
+    "codey\\operations\\kernel_session_recovery.py": 1,
+    "codey\\automation\\browser.py": 1,
+    "codey\\research\\evidence_rules.py": 1,
+    "codey\\app\\provider_services.py": 1,
+    "codey\\operations\\project_completion_context.py": 1,
+    "codey\\operations\\project_adapter.py": 1,
+    "codey\\operations\\task_phases\\lifecycle.py": 1,
+    "codey\\operations\\task_phases\\hooks.py": 1,
+    "codey\\app\\api.py": 1,
+    "codey\\operations\\research_flow.py": 1,
+    "codey\\operations\\task_run.py": 1
+  },
+  "by_root_pattern": {
+    "object-typed value used as a structured object": 70,
+    "nullable member access without a guard": 62,
+    "numeric coercion: int(object)": 57,
+    "numeric coercion: float(object)": 14,
+    "object-typed value indexed or assigned": 11,
+    "untyped lambda boundary": 8,
+    "arg-type: Argument N to \"bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ": 8,
+    "TaskState Protocol implementation mismatch": 8,
+    "arg-type: Argument \"replay_class\" to \"ReplayDecision\" has incompatible type \"str\"; expected \"Literal['safe', 'unsafe']\" ": 7,
+    "arg-type: Argument N to \"len\" has incompatible type \"object\"; expected \"Sized\" ": 7,
+    "attr-defined: \"type\" has no attribute \"connect\" ": 7,
+    "call-overload: No overload variant of \"list\" matches argument type \"object\" ": 5,
+    "arg-type: Argument N to \"check_covers_selected_candidate\" has incompatible type \"object\"; expected \"VerificationCandidate\" ": 5,
+    "return-value: Incompatible return value type (got \"dict[str, str]\", expected \"dict[str, object]\") ": 4,
+    "index: Value of type \"tuple[Any, ...] | str | Buffer\" is not indexable ": 4,
+    "arg-type: Argument N to \"_receipt_sections_well_formed\" has incompatible type \"Any | None\"; expected \"dict[Any, Any]\" ": 4,
+    "operator: Unsupported operand types for >= (\"int\" and \"object\") ": 4,
+    "attr-defined: \"AffinityNodeSpec\" has no attribute \"source\" ": 4,
+    "attr-defined: \"AffinityNodeSpec\" has no attribute \"target\" ": 4,
+    "index: Value of type \"dict[Any, Any] | None\" is not indexable ": 4,
+    "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[VerifiedCommand, ...]\" ": 4,
+    "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[CheckpointCheck, ...]\" ": 4,
+    "arg-type: Argument N to \"safe_verification_candidates\" has incompatible type \"tuple[str, ...]\"; expected \"tuple[ProjectVerificationCommand, ...]\" ": 4,
+    "assignment: Incompatible types in assignment (expression has type \"bool\", target has type \"str\") ": 3,
+    "attr-defined: Module has no attribute \"killpg\" ": 3,
+    "assignment: Incompatible types in assignment (expression has type \"int\", target has type \"str\") ": 3,
+    "assignment: Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\") ": 2,
+    "return: Missing return statement ": 2,
+    "var-annotated: Need type annotation for \"degree\" ": 2,
+    "var-annotated: Need type annotation for \"lines\" (hint: \"lines: list[<type>] = ...\") ": 2,
+    "arg-type: Argument N to \"dict\" has incompatible type \"Any | None\"; expected \"SupportsKeysAndGetItem[Any, Any]\" ": 2,
+    "arg-type: Argument N to \"getattr\" has incompatible type \"tuple[()]\"; expected \"bool\" ": 2,
+    "call-overload: No overload variant of \"dict\" matches argument type \"object\" ": 2,
+    "var-annotated: Need type annotation for \"value\" ": 2,
+    "operator: Unsupported operand types for > (\"int\" and \"object\") ": 2,
+    "attr-defined: \"AffinityNodeSpec\" has no attribute \"relation\" ": 2,
+    "arg-type: Argument N to \"_reinforce_edge\" has incompatible type \"AffinityNodeSpec\"; expected \"AffinityEdgeSpec\" ": 2,
+    "arg-type: Argument N to \"_bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[object]\" ": 2,
+    "arg-type: Argument N to \"tuple\" has incompatible type \"object\"; expected \"Iterable[Never]\" ": 2,
+    "return-value: Incompatible return value type (got \"list[CompletionCheck | None]\", expected \"list[CompletionCheck]\") ": 2,
+    "list-item: List item N has incompatible type \"CompletionCheck | None\"; expected \"CompletionCheck\" ": 2,
+    "return-value: Incompatible return value type (got \"WorkerChatProvider\", expected \"ChatProvider\") ": 2,
+    "attr-defined: \"IO[bytes]\" has no attribute \"rstrip\" ": 2,
+    "arg-type: Argument \"key\" to \"sorted\" has incompatible type \"Callable[[Path], object]\"; expected \"Callable[[Path], SupportsDunderLT[Any] | SupportsDunderGT[Any]]\" ": 1,
+    "arg-type: Argument \"phase\" to \"prompt_surface_id\" has incompatible type \"object\"; expected \"str\" ": 1,
+    "arg-type: Argument \"send_ref\" to \"prompt_surface_id\" has incompatible type \"object\"; expected \"str\" ": 1,
+    "arg-type: Argument \"schema_version\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"int\" ": 1,
+    "arg-type: Argument \"session_id\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"str\" ": 1,
+    "arg-type: Argument \"lane\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"str\" ": 1,
+    "arg-type: Argument \"operation_id\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"str\" ": 1,
+    "arg-type: Argument \"kind\" to \"RuntimeLogEntry\" has incompatible type \"Any | None\"; expected \"Literal['operation_started', 'operation_state', 'operation_effect', 'operation_settled'] | str\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"tuple[TopicContinuityItem, ...]\", variable has type \"list[TopicContinuityItem]\") ": 1,
+    "exit-return: \"bool\" is invalid as return type for \"__exit__\" that always returns False ": 1,
+    "no-redef: Name \"payload\" already defined on line N ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"None\", variable has type \"str\") ": 1,
+    "union-attr: Item \"int\" of \"str | int\" has no attribute \"split\" ": 1,
+    "import-untyped: Library stubs not installed for \"yaml\" ": 1,
+    "arg-type: Argument \"findings\" to \"EditIntegrityObservation\" has incompatible type \"list[EditIntegrityFinding]\"; expected \"tuple[EditIntegrityFinding, ...]\" ": 1,
+    "arg-type: Argument \"files\" to \"_successful_change\" has incompatible type \"Any | tuple[()] | None\"; expected \"Sequence[object]\" ": 1,
+    "index: Value of type \"Any | list[Any] | None\" is not indexable ": 1,
+    "attr-defined: \"Popen[bytes]\" has no attribute \"_handle\" ": 1,
+    "arg-type: Argument N to \"_terminate_process_tree\" has incompatible type \"object\"; expected \"_WindowsJob | None\" ": 1,
+    "attr-defined: Module has no attribute \"SIGKILL\"; maybe \"SIGILL\"? ": 1,
+    "no-redef: Name \"persisted\" already defined on line N ": 1,
+    "type-var: Value of type variable \"SupportsRichComparisonT\" of \"sorted\" cannot be \"int | None\" ": 1,
+    "arg-type: Argument \"pages_read\" to \"OpenedSource\" has incompatible type \"tuple[int | None, ...]\"; expected \"tuple[int, ...]\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"tuple[tuple[str], ...]\", variable has type \"tuple[tuple[str, str], tuple[str, str], tuple[str, str]]\") ": 1,
+    "arg-type: Argument N to \"evaluate\" has incompatible type \"dict[str, tuple[str, str]]\"; expected \"dict[str, tuple[str, ...]] | dict[str, list[str]]\" ": 1,
+    "var-annotated: Need type annotation for \"attempts\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"float | None\", variable has type \"float\") ": 1,
+    "valid-type: Variable \"codey.research.tool_contract.ToolArg.type\" is not valid as a type ": 1,
+    "index: Unsupported target for indexed assignment (\"Any | None\") ": 1,
+    "arg-type: Argument N to \"_restore_previous\" has incompatible type \"Any | None\"; expected \"dict[str, Any]\" ": 1,
+    "arg-type: Argument N to \"_valid_schema_bounds\" has incompatible type \"Mapping[Any, Any]\"; expected \"dict[Any, Any]\" ": 1,
+    "arg-type: Argument N to \"_valid_schema_nested\" has incompatible type \"Mapping[Any, Any]\"; expected \"dict[Any, Any]\" ": 1,
+    "var-annotated: Need type annotation for \"example_args\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"Match[str] | None\", variable has type \"int\") ": 1,
+    "attr-defined: \"int\" has no attribute \"start\" ": 1,
+    "arg-type: Argument N to \"add\" of \"set\" has incompatible type \"tuple[str, str | Any, int, str | Any]\"; expected \"tuple[str, int, str, str]\" ": 1,
+    "misc: \"None\" not callable ": 1,
+    "misc: Attributes without a default cannot follow attributes with one ": 1,
+    "return-value: Incompatible return value type (got \"object\", expected \"TrustedWorkspaceProof | None\") ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"ObservedCheck\", variable has type \"TestCandidate\") ": 1,
+    "attr-defined: \"TestCandidate\" has no attribute \"cwd\" ": 1,
+    "attr-defined: \"TestCandidate\" has no attribute \"command\" ": 1,
+    "arg-type: Argument N to \"_records_integrity_ok\" has incompatible type \"dict[Any, Any] | None\"; expected \"Mapping[str, object]\" ": 1,
+    "arg-type: Argument N to \"dict\" has incompatible type \"dict[Any, Any] | None\"; expected \"SupportsKeysAndGetItem[str, object]\" ": 1,
+    "arg-type: Argument N to \"deepcopy\" has incompatible type \"object\"; expected \"Mapping[str, object]\" ": 1,
+    "arg-type: Argument N to \"append\" of \"list\" has incompatible type \"dict[str, Collection[str]]\"; expected \"dict[str, object]\" ": 1,
+    "var-annotated: Need type annotation for \"live\" ": 1,
+    "no-redef: Name \"rows\" already defined on line N ": 1,
+    "attr-defined: \"Collection[str]\" has no attribute \"get\" ": 1,
+    "misc: Generator has incompatible item type \"object\"; expected \"dict[str, Any]\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"SearchEvidence\", variable has type \"ReadEvidence\") ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"tuple[str, str, str, int]\", variable has type \"tuple[str, str, int, int, int]\") ": 1,
+    "no-redef: Attribute \"disabled_reason\" already defined on line N ": 1,
+    "no-redef: Attribute \"last_error_reason\" already defined on line N ": 1,
+    "arg-type: Argument N to \"len\" has incompatible type \"Any | list[Any] | None\"; expected \"Sized\" ": 1,
+    "arg-type: Argument N to \"strip_www\" has incompatible type \"object\"; expected \"str\" ": 1,
+    "arg-type: Argument N to \"strip_www\" has incompatible type \"Any | None\"; expected \"str\" ": 1,
+    "arg-type: Argument N to \"_count_field\" has incompatible type \"dict[str, object] | None\"; expected \"Mapping[str, object]\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"str\", variable has type \"ImplementationConstraint\") ": 1,
+    "arg-type: Argument N to \"reconcile\" of \"WorkCheckpointStore\" has incompatible type \"WorkCheckpoint | None\"; expected \"WorkCheckpoint\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"WorkCheckpoint | None\", variable has type \"WorkCheckpoint\") ": 1,
+    "no-redef: Name \"refs\" already defined on line N ": 1,
+    "arg-type: Argument \"provider\" to \"WriterAttempt\" has incompatible type \"ChatProvider | None\"; expected \"ChatProvider\" ": 1,
+    "arg-type: Argument \"project\" to \"path_ref\" has incompatible type \"object\"; expected \"str | Path | None\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"TaskSubmission | None\", variable has type \"TaskSubmission\") ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"list[str]\", variable has type \"tuple[str]\") ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"list[str]\", variable has type \"tuple[str, ...]\") ": 1,
+    "return-value: Incompatible return value type (got \"dict[str, int]\", expected \"dict[str, object]\") ": 1,
+    "arg-type: Argument N to \"bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[object]\" ": 1,
+    "arg-type: Argument \"why_now\" to \"new_item\" has incompatible type \"object\"; expected \"str\" ": 1,
+    "operator: Unsupported operand types for + (\"object\" and \"int\") ": 1,
+    "arg-type: Argument \"retry_count\" to \"replace\" of \"GhostWorkItem\" has incompatible type \"object\"; expected \"int\" ": 1,
+    "arg-type: Argument N to \"getattr\" has incompatible type \"str\"; expected \"bool\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"AffinityEdgeSpec | None\", variable has type \"AffinityNodeSpec | None\") ": 1,
+    "arg-type: Argument N to \"_bounded_warnings\" has incompatible type \"object\"; expected \"Iterable[str]\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"AffinityEdgeSpec\", variable has type \"AffinityNodeSpec\") ": 1,
+    "arg-type: Argument N to \"_edge_reinforced_event\" has incompatible type \"AffinityNodeSpec\"; expected \"AffinityEdgeSpec\" ": 1,
+    "misc: Expected iterable as variadic argument ": 1,
+    "return-value: Incompatible return value type (got \"list[str]\", expected \"tuple[str, ...]\") ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"tuple[GhostNode, ...]\", variable has type \"list[GhostNode]\") ": 1,
+    "return-value: Incompatible return value type (got \"tuple[int, int, float, tuple[int, ...]]\", expected \"tuple[int, int, float, str]\") ": 1,
+    "arg-type: Argument N to \"_bounded_refs\" has incompatible type \"object\"; expected \"Iterable[object]\" ": 1,
+    "arg-type: Argument \"schema_version\" to \"PromptSurfaceTrace\" has incompatible type \"object\"; expected \"int\" ": 1,
+    "arg-type: Argument \"source_refs\" to \"_append_prompt_section\" of \"RunTraceRecorder\" has incompatible type \"object\"; expected \"Iterable[object]\" ": 1,
+    "var-annotated: Need type annotation for \"review_key\" ": 1,
+    "var-annotated: Need type annotation for \"existing_key\" ": 1,
+    "arg-type: Argument N to \"add\" of \"set\" has incompatible type \"tuple[str, str]\"; expected \"str\" ": 1,
+    "arg-type: Argument N to \"append\" of \"list\" has incompatible type \"dict[str, str]\"; expected \"dict[str, object]\" ": 1,
+    "arg-type: Argument \"workspace_revision\" to \"CheckEvidence\" has incompatible type \"Any | None\"; expected \"int\" ": 1,
+    "arg-type: Argument N to \"restore_ledger_observation\" has incompatible type \"object | Any\"; expected \"dict[Any, Any]\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"tuple[int, ...]\", variable has type \"tuple[int | None, int | None]\") ": 1,
+    "arg-type: Argument N to \"terminate_process_tree\" has incompatible type \"Popen[str]\"; expected \"Popen[bytes]\" ": 1,
+    "arg-type: Argument \"facts\" to \"ProviderFailure\" has incompatible type \"Any | dict[Any, Any] | None\"; expected \"dict[str, object]\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"Session\", variable has type \"None\") ": 1,
+    "arg-type: Argument N to \"_search_engine_host\" has incompatible type \"dict[Any, Any] | None\"; expected \"dict[Any, Any]\" ": 1,
+    "arg-type: Argument N to \"_best_result_title\" has incompatible type \"dict[Any, Any] | None\"; expected \"dict[Any, Any]\" ": 1,
+    "arg-type: Argument \"store\" to \"ResearchTools\" has incompatible type \"StagedKnowledgeStore | None\"; expected \"KnowledgeStore | None\" ": 1,
+    "arg-type: Argument \"changes\" to \"ResearchTools\" has incompatible type \"StagedKnowledgeChanges | None\"; expected \"KnowledgeChanges | None\" ": 1,
+    "arg-type: Argument N to \"execute_information_tool_call\" has incompatible type \"Path | None\"; expected \"Path\" ": 1,
+    "arg-type: Argument N to \"canonical_project_path\" has incompatible type \"Path | None\"; expected \"Path\" ": 1,
+    "arg-type: Argument N to \"safe_join\" has incompatible type \"Path | None\"; expected \"str | Path\" ": 1,
+    "arg-type: Argument N to \"read_before_edit_outcome\" has incompatible type \"Path | None\"; expected \"Path\" ": 1,
+    "dict-item: Dict entry N has incompatible type \"str\": \"str\"; expected \"str\": \"dict[Any, Any]\" ": 1,
+    "dict-item: Dict entry N has incompatible type \"str\": \"list[dict[str, str]]\"; expected \"str\": \"dict[Any, Any]\" ": 1,
+    "arg-type: Argument \"stagnant_turns\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"int | None\" ": 1,
+    "arg-type: Argument \"delivered\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"Mapping[str, ToolResult] | None\" ": 1,
+    "arg-type: Argument \"start_turn\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"int | None\" ": 1,
+    "arg-type: Argument \"initial_results\" to \"KernelTransportDeps\" has incompatible type \"object\"; expected \"list[ToolResult] | None\" ": 1,
+    "arg-type: Argument \"executors\" to \"KernelExecutionDeps\" has incompatible type \"object\"; expected \"Mapping[str, Callable[[ToolCall], Any]] | None\" ": 1,
+    "arg-type: Argument \"on_event\" to \"KernelObservationDeps\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" ": 1,
+    "arg-type: Argument \"on_shell_request\" to \"KernelObservationDeps\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" ": 1,
+    "arg-type: Argument \"executors\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"Mapping[str, Callable[[ToolCall], Any]] | None\" ": 1,
+    "arg-type: Argument \"context_text\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"str\" ": 1,
+    "arg-type: Argument \"initial_results\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"list[ToolResult] | None\" ": 1,
+    "arg-type: Argument \"delivered\" to \"_kernel_startup\" has incompatible type \"object\"; expected \"Mapping[str, ToolResult] | None\" ": 1,
+    "arg-type: Argument N to \"KernelProgress\" has incompatible type \"object\"; expected \"int | None\" ": 1,
+    "arg-type: Argument \"propagate_provider_failure\" to \"_stop_at_turn_start\" has incompatible type \"object\"; expected \"bool\" ": 1,
+    "arg-type: Argument \"stagnant_turns\" to \"_receive_turn_plan\" has incompatible type \"object\"; expected \"int | None\" ": 1,
+    "arg-type: Argument \"propagate_provider_failure\" to \"_receive_turn_plan\" has incompatible type \"object\"; expected \"bool\" ": 1,
+    "arg-type: Argument \"identity_ref\" to \"_kernel_handle_done_approval\" has incompatible type \"object\"; expected \"str\" ": 1,
+    "arg-type: Argument N to \"_emit_tool_starts\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" ": 1,
+    "arg-type: Argument N to \"_call_execute_turn\" has incompatible type \"object\"; expected \"bool\" ": 1,
+    "arg-type: Argument N to \"_emit_tool_results\" has incompatible type \"object\"; expected \"Callable[[Any], None] | None\" ": 1,
+    "arg-type: Argument \"propagate_provider_failure\" to \"_finish_after_budget\" has incompatible type \"object\"; expected \"bool\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"object\", variable has type \"RuntimeOperationState | None\") ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"CapturedProcess\", variable has type \"Popen[bytes] | None\") ": 1,
+    "arg-type: Argument N to \"Path\" has incompatible type \"str | Path | None\"; expected \"str | PathLike[str]\" ": 1,
+    "arg-type: Argument \"changes\" to \"record_review_input_prepared_trace\" has incompatible type \"Any | dict[Any, Any] | None\"; expected \"dict[Any, Any]\" ": 1,
+    "arg-type: Argument \"executors\" to \"KernelExecutionDeps\" has incompatible type \"dict[str, object]\"; expected \"Mapping[str, Callable[[ToolCall], Any]] | None\" ": 1,
+    "list-item: List item N has incompatible type \"int\"; expected \"str\" ": 1,
+    "union-attr: Item \"object\" of \"object | Any\" has no attribute \"final_result\" ": 1,
+    "arg-type: Argument N to \"run_half_open_canary\" has incompatible type \"Any | None\"; expected \"ProviderSupervisor\" ": 1,
+    "arg-type: Argument N has incompatible type \"str | None\"; expected \"str | Path\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"project_facts\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"work_checkpoints\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"workspace_revisions\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"run_ledgers\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"run_traces\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"evidence_ledgers\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"managed_outputs\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"knowledge_store\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"runtime_mutations\" ": 1,
+    "attr-defined: \"TaskState\" has no attribute \"runtime_effects\" ": 1,
+    "assignment: Incompatible types in assignment (expression has type \"HeadlessResult | None\", variable has type \"HeadlessResult\") ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"Callable[..., None] | None\" ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"Iterable[Any] | None\" ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"dict[str, str]\" ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"Literal['qt', 'gtk', 'cef', 'mshtml', 'edgechromium', 'android', 'cocoa'] | None\" ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"bool\" ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"int | None\" ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"str | None\" ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"list[Menu]\" ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"type[Never]\" ": 1,
+    "arg-type: Argument N to \"start\" has incompatible type \"**dict[str, object]\"; expected \"dict[Any, Any]\" ": 1
+  },
+  "unique_normalized_messages": 249
+}

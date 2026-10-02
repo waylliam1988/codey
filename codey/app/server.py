@@ -290,7 +290,7 @@ class Handler(BaseHTTPRequestHandler):
         connection = getattr(self, "connection", None)
         set_timeout = getattr(connection, "settimeout", None)
         previous_timeout: object = None
-        if callable(set_timeout):
+        if connection is not None and callable(set_timeout):
             try:
                 previous_timeout = connection.gettimeout()
             except Exception:
@@ -309,7 +309,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "request body unreadable"})
                 return None
         finally:
-            if callable(set_timeout):
+            if connection is not None and callable(set_timeout):
                 with contextlib.suppress(Exception):
                     connection.settimeout(previous_timeout)
 

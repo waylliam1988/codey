@@ -359,7 +359,8 @@ def completion_proof_trace_payload(proof: object) -> dict[str, object]:
 
     if proof is None:
         return {}
-    raw = proof.to_payload() if callable(getattr(proof, "to_payload", None)) else proof
+    to_payload = getattr(proof, "to_payload", None)
+    raw = to_payload() if callable(to_payload) else proof
     if not isinstance(raw, dict):
         return {}
     payload = completion_proof_payload(_proof_from_payload(raw))
@@ -370,6 +371,7 @@ def completion_proof_trace_payload(proof: object) -> dict[str, object]:
 
 def _proof_from_payload(payload: dict[str, object]) -> CompletionProof | None:
     try:
+        checks_payload = _sequence_value(payload.get("checks"))
         checks = tuple(
             row
             for row in (
@@ -378,7 +380,7 @@ def _proof_from_payload(payload: dict[str, object]) -> CompletionProof | None:
                     (item or {}).get("status") if isinstance(item, dict) else "",
                     (item or {}).get("reason_code", "") if isinstance(item, dict) else "",
                 )
-                for item in payload.get("checks", ())
+                for item in checks_payload
             )
             if row is not None
         )
@@ -390,18 +392,24 @@ def _proof_from_payload(payload: dict[str, object]) -> CompletionProof | None:
             status=str(payload.get("status") or ""),
             satisfied=identifier(payload.get("status"), 40) in COMPLETION_SATISFIED_STATUSES,
             blocked_reason=str(payload.get("blocked_reason") or ""),
-            reason_codes=tuple(str(item) for item in payload.get("reason_codes", ()) or ()),
+            reason_codes=tuple(str(item) for item in _sequence_value(payload.get("reason_codes"))),
             checks=checks,
-            evidence_refs=tuple(str(item) for item in payload.get("evidence_refs", ()) or ()),
-            limitation_refs=tuple(str(item) for item in payload.get("limitation_refs", ()) or ()),
-            finding_refs=tuple(str(item) for item in payload.get("finding_refs", ()) or ()),
-            analysis_run_refs=tuple(str(item) for item in payload.get("analysis_run_refs", ()) or ()),
-            artifact_refs=tuple(str(item) for item in payload.get("artifact_refs", ()) or ()),
-            external_refs=tuple(str(item) for item in payload.get("external_refs", ()) or ()),
-            diagnostic_refs=tuple(str(item) for item in payload.get("diagnostic_refs", ()) or ()),
+            evidence_refs=tuple(str(item) for item in _sequence_value(payload.get("evidence_refs"))),
+            limitation_refs=tuple(str(item) for item in _sequence_value(payload.get("limitation_refs"))),
+            finding_refs=tuple(str(item) for item in _sequence_value(payload.get("finding_refs"))),
+            analysis_run_refs=tuple(str(item) for item in _sequence_value(payload.get("analysis_run_refs"))),
+            artifact_refs=tuple(str(item) for item in _sequence_value(payload.get("artifact_refs"))),
+            external_refs=tuple(str(item) for item in _sequence_value(payload.get("external_refs"))),
+            diagnostic_refs=tuple(str(item) for item in _sequence_value(payload.get("diagnostic_refs"))),
         )
     except (TypeError, ValueError):
         return None
+
+
+def _sequence_value(value: object) -> tuple[object, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(value)
+    return ()
 
 
 __all__ = [

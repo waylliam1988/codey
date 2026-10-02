@@ -1275,7 +1275,7 @@ def _looks_like_question(value: object) -> bool:
     return "?" in text or "？" in text
 
 
-def _bounded_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
+def _bounded_warnings(warnings: object) -> tuple[str, ...]:
     return bounded_warnings(warnings, limit=MAX_CONTINUITY_WARNINGS)
 
 

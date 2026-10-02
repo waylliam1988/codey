@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings, event_read_warnings
@@ -41,6 +41,8 @@ from codey.storage.local_store import (
     write_json_atomic,
 )
 from codey.workspace.paths import read_text_bounded
+
+_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 SLEEP_SCHEMA_VERSION = 1
 MAX_SLEEP_EVENTS = 1_000
@@ -698,9 +700,11 @@ def _step_from_payload(payload: object) -> GhostSleepStepResult | None:
     name = clip_signal_text(payload.get("name"), 80)
     if not name:
         return None
+    raw_counts = payload.get("counts")
+    counts_source = raw_counts if isinstance(raw_counts, dict) else {}
     counts = {
         clip_signal_text(key, 80): _int(value)
-        for key, value in (payload.get("counts") if isinstance(payload.get("counts"), dict) else {}).items()
+        for key, value in counts_source.items()
     }
     return GhostSleepStepResult(
         name=name,
@@ -767,7 +771,7 @@ def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
         return "unreadable"
 
 
-def _bounded_warnings(warnings: Iterable[object]) -> tuple[str, ...]:
+def _bounded_warnings(warnings: object) -> tuple[str, ...]:
     return bounded_warnings(warnings, limit=MAX_SLEEP_WARNINGS, redact_sensitive=True)
 
 
@@ -785,7 +789,7 @@ def _int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return int(value or 0)
+        return int(cast(_INT_INPUT, value or 0))
     except (TypeError, ValueError, OverflowError):
         return 0
 

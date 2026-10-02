@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Typed application and runtime boundaries (no release)
+
+- Replaced the task writer `TaskState` project argument with the concrete
+  `str | Path` contract and introduced `TaskSubmissionState` for the stores
+  needed while building `TaskRunDeps`, keeping the base task protocol narrow.
+- Typed the Git command result, completion proof payload parsing, and runtime
+  log entry parser at their dynamic input boundaries instead of propagating
+  `object` values downstream.
+- Added the `ProcessTreeOwner` protocol and isolated Windows process handles
+  and POSIX process-group signalling behind typed platform checks.
+- Expanded the incremental mypy CI gate from four operation modules to eleven
+  application, workspace, completion, runtime, and cancellation boundaries.
+  Added red-first boundary tests for each group.
+- Full `pytest -q -o faulthandler_timeout=120`: **6633 passed, 34 skipped,
+  1488 subtests passed** in **413.81s**. Ruff, compileall, the eleven-module
+  mypy gate, and diff checks passed. Full-tree mypy is now **354 errors in 114
+  files** (363 source files checked), down from the frozen 506-error baseline.
+  No release or version bump.
+
 ## Unreleased - Kernel boundary, projection errors, and CI typing (no release)
 
 - Replaced the production `run_task_kernel` fan-in signature with typed

@@ -109,26 +109,26 @@ def apply_affinity_event(state: dict[str, dict[str, Any]], event: Mapping[str, o
         state["edges"] = {edge.id: edge for edge in snapshot_edges}
         return
     if event_type == "ghost_affinity_node_reinforced":
-        spec = _node_spec_from_payload(event.get("spec"))
-        if spec is None:
+        node_spec = _node_spec_from_payload(event.get("spec"))
+        if node_spec is None:
             raise ValueError("invalid affinity node spec")
         node, changed = _reinforce_node(
-            nodes.get(_node_id(spec.kind, spec.scope, spec.scope_ref, spec.key)),
-            spec,
+            nodes.get(_node_id(node_spec.kind, node_spec.scope, node_spec.scope_ref, node_spec.key)),
+            node_spec,
             now=now,
         )
         if changed:
             nodes[node.id] = node
         return
     if event_type == "ghost_affinity_edge_reinforced":
-        spec = _edge_spec_from_payload(event.get("spec"))
-        if spec is None:
+        edge_spec = _edge_spec_from_payload(event.get("spec"))
+        if edge_spec is None:
             raise ValueError("invalid affinity edge spec")
-        if spec.source not in nodes or spec.target not in nodes:
+        if edge_spec.source not in nodes or edge_spec.target not in nodes:
             raise ValueError("orphan affinity edge")
         edge, changed = _reinforce_edge(
-            edges.get(_edge_id(spec.source, spec.target, spec.relation, spec.scope, spec.scope_ref)),
-            spec,
+            edges.get(_edge_id(edge_spec.source, edge_spec.target, edge_spec.relation, edge_spec.scope, edge_spec.scope_ref)),
+            edge_spec,
             now=now,
         )
         if changed:

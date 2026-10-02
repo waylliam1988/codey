@@ -12,7 +12,7 @@ import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Protocol, SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.runtime.core.output_capture import (
     DRAIN_TIMEOUT_SECONDS,
@@ -24,6 +24,18 @@ from codey.runtime.core.output_capture import (
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 0.2
+_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
+
+
+class ProcessTreeOwner(Protocol):
+    """Platform-specific owner for a spawned process tree."""
+
+    def terminate(self) -> None: ...
+    def close(self) -> None: ...
+
+
+class _PopenWithHandle(Protocol):
+    _handle: int
 
 
 def _safe_capture_limit(value: object) -> int:
@@ -31,7 +43,7 @@ def _safe_capture_limit(value: object) -> int:
     if isinstance(value, bool):
         return _default
     try:
-        parsed = int(value)  # type: ignore[arg-type]
+        parsed = int(cast(_INT_INPUT, value))
     except (TypeError, ValueError, OverflowError):
         return _default
     return max(1, parsed)
@@ -134,7 +146,7 @@ class _WindowsJob:
                 raise ctypes.WinError(ctypes.get_last_error())
             if not kernel32.AssignProcessToJobObject(
                 handle,
-                wintypes.HANDLE(proc._handle),
+                wintypes.HANDLE(cast(_PopenWithHandle, proc)._handle),
             ):
                 raise ctypes.WinError(ctypes.get_last_error())
         except Exception:
@@ -256,7 +268,7 @@ def start_process(
     cwd: str | Path,
     env: dict[str, str] | None = None,
     shell: bool = False,
-) -> tuple[subprocess.Popen[bytes], object]:
+) -> tuple[subprocess.Popen[bytes], ProcessTreeOwner | None]:
     """Check cancellation once, then spawn. Callers holding a spawn gate must
     keep the gate across their final Stop check and this call so Stop cannot
     land between check and Popen."""
@@ -356,7 +368,7 @@ def _close_owned_pipes(
 
 def wait_process(
     proc: subprocess.Popen[bytes],
-    job: object,
+    job: ProcessTreeOwner | None,
     args: str | Sequence[str],
     timeout: float,
     *,
@@ -463,7 +475,7 @@ def run_process(
     return wait_process(proc, job, args, timeout, capture_limit_bytes=capture_limit_bytes)
 
 
-def attach_process_tree(proc: subprocess.Popen[bytes]):
+def attach_process_tree(proc: subprocess.Popen[bytes]) -> ProcessTreeOwner | None:
     """Attach a process to the platform process-tree owner, when available."""
     if os.name != "nt":
         return None
@@ -480,7 +492,7 @@ def attach_process_tree(proc: subprocess.Popen[bytes]):
 
 def terminate_process_tree(
     proc: subprocess.Popen[bytes],
-    job=None,
+    job: ProcessTreeOwner | None = None,
 ) -> None:
     """Terminate a process tree started in its own process group.
 
@@ -507,8 +519,11 @@ def terminate_direct_child(proc: subprocess.Popen[bytes]) -> None:
 
 def _process_group_exists(pgid: int) -> bool:
     """Check a process group without touching its (possibly reaped) leader."""
+    killpg = getattr(os, "killpg", None)
+    if not callable(killpg):
+        return False
     try:
-        os.killpg(pgid, 0)
+        killpg(pgid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
@@ -520,7 +535,7 @@ def _process_group_exists(pgid: int) -> bool:
 
 def _terminate_process_tree(
     proc: subprocess.Popen[bytes],
-    job: _WindowsJob | None = None,
+    job: ProcessTreeOwner | None = None,
 ) -> None:
     if os.name == "nt":
         if job is not None:
@@ -536,6 +551,12 @@ def _terminate_process_tree(
             with suppress(Exception):
                 proc.wait(timeout=1)
     else:
+        killpg = getattr(os, "killpg", None)
+        sigterm = getattr(signal, "SIGTERM", None)
+        sigkill = getattr(signal, "SIGKILL", sigterm)
+        if not callable(killpg) or not isinstance(sigterm, int) or not isinstance(sigkill, int):
+            terminate_direct_child(proc)
+            return
         # Processes from start_process() run in a new session, so the known
         # group id is proc.pid: no getpgid() on a possibly reaped parent.
         pgid = proc.pid
@@ -546,7 +567,7 @@ def _terminate_process_tree(
             terminate_direct_child(proc)
             return
         try:
-            os.killpg(pgid, signal.SIGTERM)
+            killpg(pgid, sigterm)
         except ProcessLookupError:
             with suppress(Exception):
                 proc.terminate()
@@ -559,6 +580,6 @@ def _terminate_process_tree(
         # pipes are judged by group existence, never by the parent's wait.
         if _process_group_exists(pgid):
             with suppress(Exception):
-                os.killpg(pgid, signal.SIGKILL)
+                killpg(pgid, sigkill)
             with suppress(Exception):
                 proc.wait(timeout=1)

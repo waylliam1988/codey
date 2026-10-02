@@ -372,7 +372,7 @@ def _observe(
         status=status,
         severity=_severity_for_findings(findings),
         reason_codes=reason_codes[:MAX_REASON_CODES],
-        findings=findings,
+        findings=tuple(findings),
         user_authorized_test_edit=authorized,
         affected_paths=affected,
         verification_refs=verification_refs,

@@ -177,6 +177,13 @@ class RuntimeLogEntry:
         entry_id = payload.get("entry_id")
         if not isinstance(entry_id, str) or not entry_id.strip() or entry_id.strip() != entry_id:
             raise RuntimeLogCorruption("entry_id must be a non-empty string")
+        schema_version = payload.get("schema_version")
+        if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
+            raise RuntimeLogCorruption("unsupported runtime log schema")
+        session_id = _required_text(payload, "session_id")
+        lane = _required_text(payload, "lane")
+        operation_id = _required_text(payload, "operation_id")
+        kind = _required_text(payload, "kind")
         created_at = payload.get("created_at")
         if isinstance(created_at, bool) or not isinstance(created_at, (int, float)):
             raise RuntimeLogCorruption("created_at must be a finite number")
@@ -198,18 +205,25 @@ class RuntimeLogEntry:
         if batch_index >= batch_count:
             raise RuntimeLogCorruption("batch_index must be inside the batch")
         return cls(
-            schema_version=payload.get("schema_version"),
+            schema_version=schema_version,
             entry_id=entry_id,
             created_at=created_at,
-            session_id=payload.get("session_id"),
-            lane=payload.get("lane"),
-            operation_id=payload.get("operation_id"),
-            kind=payload.get("kind"),
+            session_id=session_id,
+            lane=lane,
+            operation_id=operation_id,
+            kind=kind,
             payload=entry_payload,
             batch_id=batch_id,
             batch_index=batch_index,
             batch_count=batch_count,
         )
+
+
+def _required_text(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip() or value.strip() != value:
+        raise RuntimeLogCorruption(f"{key} must be a non-empty string")
+    return value
 
 
 def _forbidden_payload_key(value: object) -> str:

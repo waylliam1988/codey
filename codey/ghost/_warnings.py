@@ -16,12 +16,16 @@ WARNING_TEXT_LIMIT = 180
 
 
 def bounded_warnings(
-    warnings: Iterable[object],
+    warnings: object,
     *,
     limit: int,
     redact_sensitive: bool = False,
 ) -> tuple[str, ...]:
     """Clip, dedupe, and bound user-opaque warning strings."""
+    if isinstance(warnings, str):
+        warnings = (warnings,)
+    if not isinstance(warnings, Iterable):
+        return ()
     out: list[str] = []
     for warning in warnings:
         text = clip_signal_text(warning, WARNING_TEXT_LIMIT)

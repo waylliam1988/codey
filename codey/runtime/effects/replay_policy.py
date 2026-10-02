@@ -26,8 +26,8 @@ def is_replayable_safe_tool(tool_name: str) -> bool:
 
 
 class ReplayClass:
-    SAFE = "safe"
-    UNSAFE = "unsafe"
+    SAFE: Literal["safe"] = "safe"
+    UNSAFE: Literal["unsafe"] = "unsafe"
 
 
 ReplayClassType = Literal["safe", "unsafe"]

@@ -24,16 +24,16 @@ def sanitize_research_url_ref(url: object) -> dict[str, object]:
         host = (parsed.hostname or "").lower().removeprefix("www.")
     except ValueError:
         redacted, changed = _redacted_unparseable_url_for_digest(text)
-        payload = {"url_digest": digest_text(redacted)}
+        invalid_payload: dict[str, object] = {"url_digest": digest_text(redacted)}
         if changed:
-            payload["redacted"] = True
-        return payload
+            invalid_payload["redacted"] = True
+        return invalid_payload
     if not host:
         redacted, changed = _redacted_unparseable_url_for_digest(text)
-        payload = {"url_digest": digest_text(redacted)}
+        fallback_payload: dict[str, object] = {"url_digest": digest_text(redacted)}
         if changed:
-            payload["redacted"] = True
-        return payload
+            fallback_payload["redacted"] = True
+        return fallback_payload
     redacted_query = _redacted_query(parsed.query)
     query_redacted = bool(parsed.query)
     redacted = urlunparse((

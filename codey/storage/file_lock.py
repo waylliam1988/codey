@@ -20,6 +20,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 LOCK_TIMEOUT_SECONDS = 10.0
 LOCK_POLL_INTERVAL = 0.02
@@ -216,7 +217,7 @@ class FileLease:
     def __enter__(self) -> FileLease:
         return self
 
-    def __exit__(self, *exc: object) -> bool:
+    def __exit__(self, *exc: object) -> Literal[False]:
         self.release()
         return False
 

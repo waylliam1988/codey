@@ -189,7 +189,7 @@ class ActionPolicyDecision:
         )
 
     def to_audit_payload(self) -> dict[str, object]:
-        payload = {
+        payload: dict[str, object] = {
             "kind": self.kind,
             "decision": self.decision,
             "guard_id": self.guard_id,

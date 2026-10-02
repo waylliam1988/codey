@@ -9,6 +9,13 @@ CORE_MODULES = (
     "codey/operations/context.py",
     "codey/operations/ghost_context.py",
     "codey/operations/prompting.py",
+    "codey/app/task_submit.py",
+    "codey/app/server.py",
+    "codey/app/headless_runner.py",
+    "codey/workspace/changes.py",
+    "codey/completion/contract.py",
+    "codey/runtime/log/entries.py",
+    "codey/runtime/core/cancellation.py",
 )
 
 

@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from typing import SupportsIndex, SupportsInt, TypeAlias, cast
+
+_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 HEAD_LIMIT_BYTES = 64 * 1024
 TAIL_LIMIT_BYTES = 192 * 1024
@@ -21,7 +24,7 @@ def _safe_limit(value: object, default: int) -> int:
     if isinstance(value, bool):
         return default
     try:
-        parsed = int(value)  # type: ignore[arg-type]
+        parsed = int(cast(_INT_INPUT, value))
     except (TypeError, ValueError, OverflowError):
         return default
     return max(0, parsed)

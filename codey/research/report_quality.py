@@ -347,6 +347,7 @@ def parse_citation_rows(sources_section: str, ledger: ResearchLedger | None = No
             url = _trim_source_url(url_first_match.group(2))
             raw_title = url_first_match.group(3) or ""
         else:
+            assert match is not None
             number = int(match.group(1))
             url = _trim_source_url(match.group(3))
             raw_title = match.group(2)

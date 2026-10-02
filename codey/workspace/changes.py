@@ -10,6 +10,10 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codey.runtime.core.cancellation import CapturedProcess
 
 from codey.storage.atomic_io import write_bytes_atomic, write_text_atomic
 from codey.storage.file_lock import FileLease, LockTimeout, acquire_lease, with_file_lock
@@ -615,8 +619,8 @@ class ChangeTracker:
             # manifest or entry, or a disk value that no longer matches
             # memory, is corruption -- never rebuilt from the working file.
             if store is not None:
-                persisted = store.require_baseline(self.root, rel_posix)
-                if persisted != cached_value:
+                cached_persisted = store.require_baseline(self.root, rel_posix)
+                if cached_persisted != cached_value:
                     raise StoreCorruption(
                         store.path_for(self.root),
                         f"baseline drift: {rel_posix!r}",
@@ -825,7 +829,7 @@ class ChangeTracker:
         return RestoreResult(not conflicts, restored, conflicts, None if not conflicts else "restore conflict")
 
 
-def _run_git(project: Path, args: list[str]):
+def _run_git(project: Path, args: list[str]) -> CapturedProcess:
     """Run git with bounded capture; never buffers output unbounded."""
     from codey.runtime.core import cancellation
 
@@ -963,7 +967,10 @@ def _bounded_stderr_excerpt(stderr: str) -> str:
     return " ".join(text.split())
 
 
-def _run_one_git_command(git_root: Path, args: list[str]) -> tuple[object | None, dict | None]:
+def _run_one_git_command(
+    git_root: Path,
+    args: list[str],
+) -> tuple[CapturedProcess | None, dict[str, object] | None]:
     """Run one git command: (proc, None), or (None, error to return).
 
     A non-zero exit is an explicit failure, never an empty change set,
