@@ -251,13 +251,12 @@ def test_native_duplicate_ids_rejected_before_execution():
 
 
 def test_run_result_never_reports_an_earlier_green_after_a_later_edit():
-    from codey.operations.project_adapter import _session_checks_passed
-    from codey.operations.task_session import TaskSession
+    from codey.operations.task_session import TaskSession, session_checks_passed
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.read", "project.write"})))
     session.edited_files = {"a.py": 2}
     session.verifications = [{"revision": 1, "passed": True, "exit_code": 0}]
-    assert not _session_checks_passed(session)
+    assert not session_checks_passed(session)
 
 
 @pytest.mark.parametrize("wrappers", ["conversation", "recorded", "both"])

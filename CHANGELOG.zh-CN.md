@@ -2,6 +2,17 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 持久恢复与真实 UI 后续收口（未发布）
+
+- 修复 manifest 已替换但目录 fsync 报错后错误删除 baseline：仅确认未发布时清理，发布状态未知时保留正文并继续报错。
+- 恢复拒绝被转换的当前工作区身份；两次存储读取失败不再证明 epoch 稳定。
+- auto 项目编辑接真实持久 ChangeTracker 与共同收据/证明投影，恢复 changed 卡片、账本收据和重启后还原；UI mode 使用既有所有者。
+- 收据显式接收 proof/provenance，共享会话检查投影；删除十八项 project flow 无用重导出，调用者和测试迁移正式模块。
+- 修复托管 3.13 并发测试未回传工作线程异常及二十写者的负载假设：仍执行二十次真实持久写入，以两写者重叠验证并发；补超时/重试边界测试，未增加生产锁超时。
+- 真实 Edge 夹具迁移当前 auto/result 协议，未知提示报错；reload 完成由浏览器确认状态后显式释放，EventSource 观察仅在测试中注入。
+- 启用真实 Edge 的最终两版本全量各 **6522 passed、28 skipped、1488 subtests passed**：3.12.8 为 468.39 秒、3.13.15 为 462.37 秒。手工编辑完整性 self-test 二十例通过；未声称真实模型延迟/token 改善。
+- 完整审查相对 aff30e0 生产净减少 **707 行**，无新内核/日志/缓存。[详细审查及有限证明边界](docs/kernel_review_2026-10-02.zh-CN.md)。无 tag/release/版本 bump。
+
 ## Unreleased - 内核边界、规范编辑与管道完成收口（未发布）
 
 - 纳入工作区原有 edit 修改：唯一 replacements 协议贯通 JSON/native，删除编辑方言修复并迁移真实 EditBlock 消费者。

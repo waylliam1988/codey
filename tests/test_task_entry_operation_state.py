@@ -24,7 +24,7 @@ from codey.completion.decision import (
     BLOCKED_UNOBSERVED,
     completion_blocked_reason,
 )
-from codey.operations.project_completion_flow import COMPLETION_REPAIR_FOLLOWUP
+from codey.operations.project_completion_context import COMPLETION_REPAIR_FOLLOWUP
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure

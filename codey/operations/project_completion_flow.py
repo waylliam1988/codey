@@ -1,10 +1,8 @@
 """Project completion orchestration.
 
-Keeps only orchestration; phase logic lives in
-project_completion_context / project_writer_phase /
-project_review_phase / project_completion_enforcement. Re-exports below
-exist for external API compat only; production code imports from the true
-owner (context for dataclasses/helpers, phase modules for phase entries).
+Keeps only orchestration; phase logic lives in project_completion_context,
+project_writer_phase, project_review_phase and project_completion_enforcement.
+Callers import phase types and helpers from their owner.
 """
 
 from __future__ import annotations
@@ -18,28 +16,10 @@ from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.knowledge.note import KnowledgeNote
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.project_completion_context import (
-    COMPLETION_REPAIR_FOLLOWUP,
-    MAX_COMPLETION_REPAIR_ROUNDS,
-    NEW_PROJECT_IGNORED_DIRS,
-    NEW_PROJECT_IGNORED_FILES,
-    AgentAccess,
-    PersistenceAccess,
     ProjectCompletionDeps,
     ProjectRun,
-    ProjectRuntimeMutationError,
-    ReviewAccess,
-    RuntimeAccess,
-    VerificationAccess,
     _bullet_lines,
-    blocked_result,
-    handle_project_tool_event,
-    managed_tool_fns,
     project_has_user_files,
-    record_analysis_run,
-    record_completion_proof_trace,
-    record_edit_integrity_trace,
-    record_review_input_prepared_trace,
-    safe_verification_map,
 )
 from codey.operations.project_completion_enforcement import enforce_completion
 from codey.operations.project_review_phase import run_review_phase
@@ -61,29 +41,8 @@ from codey.workspace.change_brief import (
 from codey.workspace.config import ProjectConfigLoadResult
 
 __all__ = [
-    "AgentAccess",
-    "COMPLETION_REPAIR_FOLLOWUP",
-    "MAX_COMPLETION_REPAIR_ROUNDS",
-    "NEW_PROJECT_IGNORED_DIRS",
-    "NEW_PROJECT_IGNORED_FILES",
-    "PersistenceAccess",
-    "ProjectCompletionDeps",
-    "ProjectRun",
-    "ProjectRuntimeMutationError",
-    "ReviewAccess",
-    "RuntimeAccess",
-    "VerificationAccess",
-    "blocked_result",
-    "handle_project_tool_event",
-    "managed_tool_fns",
-    "project_has_user_files",
-    "record_analysis_run",
-    "record_completion_proof_trace",
-    "record_edit_integrity_trace",
     "record_project_memory",
-    "record_review_input_prepared_trace",
     "run_project_mode",
-    "safe_verification_map",
 ]
 
 
@@ -303,7 +262,8 @@ def _finalize_project(ctx: ProjectRun) -> ModeOutcome:
     assert ctx.result is not None
     ctx.receipt = build_task_receipt(
         ctx.task_changes,
-        decision=ctx.decision,
+        proof=getattr(ctx.decision, "proof", None),
+        provenance=getattr(ctx.decision, "provenance", None),
         integrity=ctx.integrity,
         checks_passed=ctx.result.checks_passed,
     )

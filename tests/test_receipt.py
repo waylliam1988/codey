@@ -152,7 +152,8 @@ class TaskReceiptTests(unittest.TestCase):
         )
         receipt = build_task_receipt(
             {"mode": "git", "changed_count": 1},
-            decision=_GreenDecision(),
+            proof=_GreenDecision().proof,
+            provenance=_GreenDecision().provenance,
             integrity=observation,
             checks_passed=True,
         )
@@ -304,7 +305,8 @@ class TaskReceiptTests(unittest.TestCase):
         )
         receipt = build_task_receipt(
             {"mode": "snapshot", "changed_count": 2},
-            decision=_GreenDecision(),
+            proof=_GreenDecision().proof,
+            provenance=_GreenDecision().provenance,
             integrity=integrity,
             checks_passed=True,
         )

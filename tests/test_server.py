@@ -26,7 +26,7 @@ from codey.app import task_submit as task_submit
 from codey.completion.verification_policy import VerificationCandidate
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.project_completion_flow import project_has_user_files
+from codey.operations.project_completion_context import project_has_user_files
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow

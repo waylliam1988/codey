@@ -27,8 +27,8 @@ TASK = (
 
 
 def _close_event_stream(page: Page) -> None:
-    page.wait_for_function("typeof evtSrc !== 'undefined' && evtSrc !== null")
-    page.evaluate("evtSrc.close()")
+    page.wait_for_function("window.__codeyE2eStreams && window.__codeyE2eStreams.length > 0")
+    page.evaluate("window.__codeyE2eStreams.forEach(stream => stream.close())")
 
 
 class ScriptedWriter:
@@ -36,76 +36,59 @@ class ScriptedWriter:
     location = "scripted://writer"
 
     def __init__(self) -> None:
-        self.step = 0
+        self.reload_entered = threading.Event()
+        self.reload_release = threading.Event()
 
     def new_chat(self) -> None:
-        self.step = 0
+        pass
 
     def send(self, text: str, timeout: float | None = None) -> str:
         del timeout
-        if "private first-draft answer" in text:
-            if "Explain box breathing without project access" in text:
-                return "Draft box breathing answer from the selected model."
-            return "Draft answer from the selected model."
-        if "private first-draft new-project implementation plan" in text:
-            return "Draft implementation plan from the selected model."
-        if "Synthesize the private advisor notes" in text:
-            if "The user approved and ran this shell command" in text:
-                return "approval continuation completed"
-            if "Stay active across one UI reload" in text:
+        if "Decide how to handle the user request below in one step." in text:
+            auto_prompt = text.partition("Decide how to handle the user request below in one step.")[2]
+            # This fixture's requests are single lines. Prior focus and appended
+            # experience text must not select a different scripted response.
+            request = auto_prompt.partition("\nUser request:\n")[2].partition("\n")[0]
+            if "Explain box breathing without project access" in request:
+                return "Box breathing uses equal inhale, hold, exhale, and hold phases."
+            if "Discuss a breathing app without changing files" in request:
+                return "Start with one guided breathing rhythm.\n\nAdd customization after the basic exercise feels calm."
+            if "Create result.txt containing exactly" in request:
+                return "ACTION: project\nPLAN: Create result.txt with the requested content and run the tests."
+            if "Request a shell command" in request:
+                return "ACTION: project\nPLAN: Request the shell command and wait for approval."
+            if "Stay active across one UI reload" in request:
+                self.reload_entered.set()
+                deadline = time.monotonic() + 60
+                while not self.reload_release.wait(0.1):
+                    cancellation.check()
+                    if time.monotonic() >= deadline:
+                        raise AssertionError("browser did not release the reload probe")
+                cancellation.check()
                 return "reload completed"
-            if "Finish while state reconciliation is delayed" in text:
+            if "Finish while state reconciliation is delayed" in request:
+                cancellation.wait(1.5)
                 return "delayed state completed"
-            if "Request a shell command" in text:
-                return "git status request completed"
-            if "Wait until stopped by the UI" in text:
-                return "stopped"
-            if "Explain box breathing without project access" in text:
-                return "Combined box breathing answer from hidden advisors."
-            if "Discuss a breathing app without changing files" in text:
-                return "Combined project breathing answer without file changes."
-            if "Create result.txt containing exactly" in text:
-                return "browser flow completed"
-            return "Combined answer."
-        if text == "Explain box breathing without project access.":
-            return "Box breathing uses equal inhale, hold, exhale, and hold phases."
         if "Wait until stopped by the UI" in text:
             cancellation.wait(30)
             raise AssertionError("responsive stop did not cancel the provider wait")
-        if "Stay active across one UI reload" in text:
-            cancellation.wait(4)
-            return '{"tool":"done","args":{"summary":"reload completed"}}'
-        if "Finish while state reconciliation is delayed" in text:
-            cancellation.wait(1.5)
-            return '{"tool":"done","args":{"summary":"delayed state completed"}}'
         if "The user approved and ran this shell command" in text:
             return '{"tool":"done","args":{"summary":"approval continuation completed"}}'
-        if "Discuss a breathing app without changing files" in text:
-            if "Private ChangeBrief" in text and "read-only project audit" in text:
-                return (
-                    '{"tool":"done","args":{"summary":"Combined project breathing '
-                    'answer without file changes."}}'
-                )
-            return (
-                '{"tool":"done","args":{"summary":"Start with one guided breathing '
-                'rhythm.\\n\\nAdd customization only after the basic exercise feels calm."}}'
-            )
         if "Request a shell command" in text:
             return (
                 '{"tool":"shell","args":{"command":"git status --short",'
                 '"path":"."}}'
             )
-        if "[tool_result tool=edit" in text:
-            self.step = 2
+        if text.startswith("[result: edit]"):
             return '{"tool":"run","args":{"command":"python -m unittest","path":"."}}'
-        if "[tool_result tool=run" in text:
-            self.step = 3
+        if text.startswith("[result: run]"):
             return '{"tool":"done","args":{"summary":"browser flow completed"}}'
-        self.step = 1
-        return (
-            '{"tool":"edit","args":{"path":"result.txt",'
-            '"content":"browser e2e passed"}}'
-        )
+        if "Create result.txt containing exactly" in text:
+            return (
+                '{"tool":"edit","args":{"path":"result.txt",'
+                '"content":"browser e2e passed"}}'
+            )
+        raise AssertionError("unrecognized browser fixture prompt: " + text[:120])
 
     def close(self) -> None:
         pass
@@ -177,12 +160,13 @@ def _exercise_page(
     base_url: str,
     project: Path,
     artifacts: Path,
+    writer: ScriptedWriter,
 ) -> dict:
     page.goto(base_url, wait_until="domcontentloaded")
     page.locator("#task").fill("Explain box breathing without project access.")
     page.locator("#send").click()
     expect(page.locator(".msg.asst .body")).to_contain_text(
-        "Combined box breathing answer",
+        "Box breathing uses equal inhale",
         timeout=15_000,
     )
     expect(page.locator("#chat")).not_to_contain_text('{"tool"')
@@ -207,7 +191,7 @@ def _exercise_page(
     page.locator("#task").fill("Discuss a breathing app without changing files.")
     page.locator("#send").click()
     expect(page.locator(".msg.asst .body").last).to_contain_text(
-        "Combined project breathing answer",
+        "Start with one guided breathing rhythm",
         timeout=15_000,
     )
     expect(done_prefixes).to_have_count(done_before_discussion)
@@ -226,7 +210,6 @@ def _exercise_page(
     # code change (0.4.13 provenance semantics).
     expect(page.locator("#chat")).to_contain_text("exit 0: python -m unittest")
     expect(page.locator("#chat")).not_to_contain_text("[Completion blocked:")
-    expect(page.locator("#chat")).to_contain_text("DeepSeek approved")
     expect(page.locator("#chat")).not_to_contain_text('{"tool"')
     expect(page.locator("#chat")).not_to_contain_text("[agent]")
 
@@ -391,6 +374,7 @@ def _exercise_page(
     page.reload(wait_until="domcontentloaded")
     expect(page.locator("#stop")).to_be_visible(timeout=3_000)
     expect(page.locator("#status")).to_contain_text("Running")
+    writer.reload_release.set()
     expect(page.locator("#stop")).to_be_hidden(timeout=8_000)
     expect(reload_answers).to_have_count(reload_before + 1)
     page.wait_for_timeout(500)
@@ -433,15 +417,12 @@ def _exercise_page(
         "url": base_url,
         "checks": [
             "plain New Chat without project tools",
-            "plain New Chat hidden consensus",
             "project picker",
             "provider selection",
             "project discussion without file changes",
-            "project hidden consensus",
             "project answer before changed receipt",
             "SSE task lifecycle",
             "agent edit and test",
-            "review status",
             "task receipt",
             "run details inline receipt",
             "diff drawer",
@@ -506,10 +487,20 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
             browser = playwright.chromium.launch(channel="msedge", headless=not headed)
             context = browser.new_context(viewport={"width": 1380, "height": 900})
             page = context.new_page()
+            page.add_init_script("""
+                const OriginalEventSource = window.EventSource;
+                window.__codeyE2eStreams = [];
+                window.EventSource = class extends OriginalEventSource {
+                    constructor(...args) {
+                        super(...args);
+                        window.__codeyE2eStreams.push(this);
+                    }
+                };
+            """)
             page_errors: list[str] = []
             page.on("pageerror", lambda exc: page_errors.append(str(exc)))
             try:
-                result = _exercise_page(page, base_url, project, artifact_dir)
+                result = _exercise_page(page, base_url, project, artifact_dir, writer)
             except Exception as exc:
                 failure_artifact = _save_screenshot(page, artifact_dir / "ui-failure.png")
                 if hasattr(exc, "add_note"):
@@ -521,6 +512,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
             browser.close()
         return result
     finally:
+        writer.reload_release.set()
         if httpd is not None:
             httpd.shutdown()
             httpd.server_close()

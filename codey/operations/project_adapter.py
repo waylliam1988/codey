@@ -13,6 +13,7 @@ from typing import Any
 
 from codey.agents.request import AgentRequest
 from codey.operations.provider_session import ConversationProvider
+from codey.operations.task_session import session_checks_passed
 from codey.runtime.core.run_result import RunResult
 
 
@@ -63,18 +64,6 @@ def _project_context(request: AgentRequest) -> str:
             ]
             candidate_text = "Trusted verification candidates after edits:\n" + "\n".join(lines)
     return f"{rendered.text}\n\n{candidate_text}" if candidate_text else rendered.text
-
-
-def _session_checks_passed(session: Any, proof: Any = None) -> bool:
-    """Project only an exact boolean verification result into the receipt."""
-    if getattr(session, "edited_files", None):
-        return any(row.check_id == "relevant_verification" and row.status == "pass"
-                   for row in getattr(proof, "checks", ()))
-    verifications = getattr(session, "verifications", ()) or ()
-    if not verifications:
-        return False
-    latest = verifications[-1]
-    return isinstance(latest, dict) and type(latest.get("passed")) is bool and latest["passed"]
 
 
 def _open_fresh_chat(request: AgentRequest) -> bool:
@@ -251,7 +240,7 @@ def run(request: AgentRequest) -> RunResult:
         summary=outcome.summary,
         stop_reason=outcome.stop_reason,
         turns=outcome.turns,
-        checks_passed=_session_checks_passed(session, outcome.proof),
+        checks_passed=session_checks_passed(session, outcome.proof),
         changed=bool(session.edited_files),
         checks_ran=bool(session.verifications),
         proof=outcome.proof,

@@ -2,6 +2,17 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Durable recovery and real UI follow-up (no release)
+
+- Preserve baseline bodies when manifest replacement succeeds before fsync reports an error; confirm non-publication before deleting an orphan, and propagate uncertain publication failures.
+- Reject coerced current workspace identities during recovery; two failed store reads no longer count as a stable epoch.
+- Wire auto project edits to the real persistent change tracker and common terminal receipt/proof projection. Preserve changed UI cards, ledger receipts and restore after restart; use the existing UI mode owner.
+- Make receipt proof/provenance inputs explicit and share session check projection. Remove eighteen unused project-flow reexports and migrate consumers to their canonical modules.
+- Fix the hosted 3.13 contention test's unhandled worker errors and load-dependent twenty-writer assumption; retain twenty real durable writes, overlap two writers and check explicit timeout/retry behavior without increasing production lock deadlines.
+- Migrate actual Edge E2E fixtures to current auto/result contracts and synchronize reload completion with the browser. Keep unknown prompts fail-closed and observe EventSource only in the test fixture.
+- Final full suites with real Edge enabled: **6522 passed, 28 skipped, 1488 subtests passed** on Python 3.12.8 (468.39s) and 3.13.15 (462.37s). Manual edit-integrity self-test: 20 cases passed. No new live model performance claim.
+- Complete audit production net **-707 lines** from aff30e0; no additional kernel/log/cache. [Detailed review and finite proof limits](docs/kernel_review_2026-10-02.zh-CN.md). No tag/release/version bump.
+
 ## Unreleased - Kernel boundaries, canonical edits and capture completion (no release)
 
 - Include and review the existing canonical edit changes; remove edit dialect repairs and migrate real EditBlock consumers. JSON/native validation use the same contract.

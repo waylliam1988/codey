@@ -14,7 +14,7 @@ from codey.app import task_submit as task_submit
 from codey.completion.decision import BLOCKED_TURN_BUDGET_EXHAUSTED
 from codey.completion.engine import COMPLETION_BLOCKED_NOTES
 from codey.completion.verification_policy import VerificationCandidate
-from codey.operations.project_completion_flow import (
+from codey.operations.project_completion_context import (
     COMPLETION_REPAIR_FOLLOWUP,
     blocked_result,
 )

@@ -65,8 +65,9 @@ def test_failed_writer_lease_never_executes_or_releases(fault):
 @pytest.mark.parametrize("finish_with_edit", [False, True])
 def test_mixed_direct_rejection_uses_real_kernel_same_session(tmp_path, monkeypatch, finish_with_edit, first_reply):
     from codey.agents.tools import DEFAULT_TOOL_FNS
+    from codey.app.context import AppContext
     from codey.research.ledger import ResearchLedger
-    from codey.workspace.revision import WorkspaceRevisionStore
+    from codey.workspace.changes import collect_changes
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project = tmp_path / "project"
@@ -110,7 +111,9 @@ def test_mixed_direct_rejection_uses_real_kernel_same_session(tmp_path, monkeypa
                         lambda *args: (project, DEFAULT_TOOL_FNS, tools))
     work = RunWork(recent_events=[], evidence=ExecutionEvidence())
     hooks = SimpleNamespace(on_event=lambda _: None, on_shell_request=None)
-    runtime = SimpleNamespace(state=SimpleNamespace(), workspace_revisions=WorkspaceRevisionStore(tmp_path / "state"))
+    app_state = AppContext(tmp_path / "state")
+    runtime = SimpleNamespace(state=app_state, workspace_revisions=app_state.workspace_revisions,
+                              collect_changes=collect_changes)
     seen = []
 
     def continuation(active_frame, active_work, active_hooks, *, followup):

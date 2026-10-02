@@ -1,5 +1,92 @@
 # Codey Test Report
 
+## Durable recovery and real UI follow-up (2026-10-02)
+
+This follows the committed boundary audit `bbfcd99c`. Historical results
+below are preserved. The final production and pytest changes were complete
+before the final suites; these documentation updates were made afterwards.
+
+### Final full verification, with real Edge enabled
+
+| Runtime | Result | Duration |
+| --- | --- | --- |
+| Windows Python 3.12.8 | **6522 passed, 28 skipped, 1488 subtests passed** | 468.39s |
+| Official Windows Python 3.13.15 embed | **6522 passed, 28 skipped, 1488 subtests passed** | 462.37s |
+
+Both used `RUN_BROWSER_E2E=1` and `-q -o faulthandler_timeout=120 -rs`,
+with independent TEMP/TMP directories outside the repository. The 3.13
+bootstrap/dependency limits described in the previous entry still apply.
+Ignored local logs: `.e2e-artifacts/review-20261002-py312-ui-final2.log`
+and `.e2e-artifacts/review-20261002-py313-ui-final2.log`.
+
+- `ruff check .`, compileall and diff checks passed; product JavaScript
+  syntax was checked in the preceding audit and was not changed here.
+- The actual Edge flow covers edit/run/done, durable snapshot restore,
+  receipts, shell approval, disconnected result ordering, reload,
+  reconciliation and cancellation. It uses scripted providers, not a live
+  webpage model. No latency/token or general smoothness claim is made.
+- The 28 skips concern Windows privileges/POSIX capabilities. The real UI
+  test and the external-holder capture regression were not skipped.
+- Finite invariants/crash traces were rerun: **83 passed**. The model still
+  covers 44 delivery states / 134 edges, 512 grant subsets x 2 denial
+  patterns, and 81 length-three crash traces, not arbitrary executions.
+- `tests/manual/edit_integrity_ab.py --self-test`: **20 deterministic
+  cases passed** after migrating two obsolete receipt arguments. This
+  script is outside pytest collection; the migration happened during the
+  preceding full run and was separately verified before the final runs.
+
+### Hosted failure, reproduced counterexamples and corrections
+
+[The first audit CI](https://github.com/waylliam1988/codey/actions/runs/36946735196)
+passed Windows 3.11/3.12 and the Linux file-boundary job, but Windows 3.13
+failed `test_concurrent_put_baseline_does_not_lose_entries`: 12 workers
+raised LockTimeout and only 8/20 writes succeeded. This was not the original
+pipe hang. The test incorrectly assumed all 20 durable transactions would
+acquire a default ten-second lock under hosted load; worker exceptions were
+not returned to the main test. It now overlaps two real writers and awaits
+all 20 futures, retaining every persistence/content assertion. Production
+lock deadlines, fsync and atomic writes were not relaxed. A new contention
+test verifies explicit timeout, preservation of committed data and retry.
+The log does not establish which filesystem syscall consumed the time.
+
+New behavioral counterexamples and cold-start locks cover:
+
+- A manifest can be replaced before directory fsync raises. Error cleanup
+  now removes a baseline only after confirming it is unpublished; it keeps
+  a referenced body or an uncertain publication and propagates the error.
+  Both restart and retry retain the original baseline.
+- Recovery rejects coerced current revisions (`True`, `"1"`, `1.0`), and
+  two failed store reads cannot prove a stable workspace epoch.
+- Auto edits use the real project change tracker and common receipt/proof
+  projection. Tests cover existing/new files, actual run ledger records,
+  and restore after AppContext restart. UI mode uses the existing owner.
+- Receipt construction takes explicit proof/provenance, with one shared
+  session check projection. Eighteen unused project-flow reexports are
+  deleted; tests and production imports use their real owners.
+- The real browser fixture was migrated from retired auto/reviewer prompts
+  and result markers. Its unknown prompt now fails instead of inventing an
+  edit. A test-only EventSource observer closes actual streams. Reload
+  completion is held until the browser confirms the restored running UI.
+  No product test endpoint/global or second model loop was introduced.
+
+Key new bug counterexamples were confirmed red before the production fixes:
+2 snapshot-publication failures, 16 invalid-identity/failed-read failures,
+both auto receipt scenarios, and obsolete reexport/fixture cases. Existing
+content, restore, denial and protocol assertions were retained. A previous
+full run found a stale reexport lock on both versions, plus a 3.13 UI fixture
+race (a four-second provider wait ended before Running was observed). The
+lock now asserts canonical ownership and the race uses explicit events;
+the synchronized fixture regression was confirmed red before repair.
+
+Production diff from `aff30e0` across the complete audit: **+384/-1091,
+net -707 lines**. `run_task_kernel` remains 165 lines with one loop and no
+complexity exemption. AST/name-reference inspection found no obvious
+unreferenced candidates among 3244 top-level production functions; this is
+a heuristic, not a whole-program dead-code or no-bug proof.
+See [the detailed follow-up](docs/kernel_review_2026-10-02.zh-CN.md#9-托管-ci-与真实-ui-后续审查).
+No tag, release or version bump. Per the user's instruction, the follow-up
+is pushed without waiting for hosted CI; no hosted success is claimed.
+
 ## Kernel boundary and cold-start audit (2026-10-02)
 
 Baseline: `aff30e0`, including the existing uncommitted canonical edit work.

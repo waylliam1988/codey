@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -645,16 +646,21 @@ class ChangeTrackerTests(unittest.TestCase):
             root = Path(td)
             store = SnapshotStore(state_td)
             num_files = 20
+            start = threading.Barrier(2)
 
             def writer(idx: int) -> None:
+                if idx < 2:
+                    start.wait(timeout=10)
                 rel = f"file_{idx}.txt"
                 store.put_baseline(root, rel, f"content_{idx}")
 
-            threads = [threading.Thread(target=writer, args=(i,)) for i in range(num_files)]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join()
+            # Two writers exercise the read/modify/write race without assuming
+            # twenty durable transactions fit inside one acquisition deadline.
+            # Futures propagate every worker error to the test thread.
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(writer, i) for i in range(num_files)]
+                for future in futures:
+                    future.result(timeout=60)
 
             before, _ = store.load(root)
             self.assertEqual(len(before), num_files)

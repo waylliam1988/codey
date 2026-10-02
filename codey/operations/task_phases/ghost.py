@@ -11,7 +11,7 @@ from codey.operations.ghost_post_turn import (
     GhostTaskPolicyDeps,
     maybe_claim_work_item,
 )
-from codey.operations.project_completion_flow import record_completion_proof_trace
+from codey.operations.project_completion_context import record_completion_proof_trace
 from codey.operations.review_flow import ReviewFlowDeps, has_reviewable_diff
 from codey.task.model import TaskSubmission
 

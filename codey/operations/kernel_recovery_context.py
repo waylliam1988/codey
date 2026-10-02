@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.operations.kernel_errors import RecoveryFailed
+from codey.workspace.revision import WorkspaceIdentity
 
 __all__ = [
     "RecoveryContext",
@@ -22,6 +23,16 @@ __all__ = [
     "strict_receipt_text",
     "verified_persisted_identity",
 ]
+
+
+def _state_identity(state: Any) -> WorkspaceIdentity:
+    try:
+        fingerprint = getattr(state, "fingerprint", None)
+        identity = WorkspaceIdentity.trusted_pair(getattr(state, "revision", None), fingerprint)
+        # Preserve the store's actual identity; do not normalize its types/text.
+        return identity if type(fingerprint) is str and fingerprint == identity.fingerprint else WorkspaceIdentity()
+    except Exception:
+        return WorkspaceIdentity()
 
 
 @dataclass
@@ -55,18 +66,9 @@ class RecoveryContext:
             return True
         initial = self._cached_state
         latest = self.current_state(refresh=True)
-        if initial is None or latest is None:
-            return initial is latest
-        try:
-            return (
-                int(getattr(initial, "revision", 0) or 0),
-                str(getattr(initial, "fingerprint", "") or ""),
-            ) == (
-                int(getattr(latest, "revision", 0) or 0),
-                str(getattr(latest, "fingerprint", "") or ""),
-            )
-        except Exception:
-            return False
+        initial_identity = _state_identity(initial)
+        latest_identity = _state_identity(latest)
+        return initial_identity.trusted and latest_identity.trusted and initial_identity == latest_identity
 
 
 def verified_persisted_identity(
@@ -87,7 +89,6 @@ def verified_persisted_identity(
         persisted_rev = record.get("workspace_revision", None)
         persisted_fp = record.get("workspace_fingerprint", None)
         from codey.operations.kernel_provenance import _is_trusted_identity
-        from codey.workspace.revision import WorkspaceIdentity
 
         persisted_identity = WorkspaceIdentity.trusted_pair(persisted_rev, persisted_fp)
     except Exception:
@@ -104,16 +105,8 @@ def verified_persisted_identity(
             current = revision_store.current_state(project_path, ignored_paths=ignores)
     except Exception:
         return None
-    if current is None:
-        return None
-    try:
-        current_revision = int(getattr(current, "revision", 0) or 0)
-        current_fingerprint = str(getattr(current, "fingerprint", "") or "")
-    except Exception:
-        return None
-    if current_revision != int(persisted_identity.revision) or current_fingerprint != str(
-        persisted_identity.fingerprint
-    ):
+    current_identity = _state_identity(current)
+    if not current_identity.trusted or current_identity != persisted_identity:
         return None
     return persisted_identity
 

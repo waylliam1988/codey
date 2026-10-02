@@ -134,6 +134,7 @@ def test_task_entry_research_builds_default_search_provider(tmp_path) -> None:
 
 
 def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
+    from codey.app.context import AppContext
     from codey.operations.task_entry import run_entry_kernel
     from codey.operations.task_loop import KernelResult
     from codey.task.model import TaskSubmission
@@ -153,7 +154,7 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     mutations = SimpleNamespace(mark_writer_running=lambda *_args, **_kwargs: None)
     deps = SimpleNamespace(
         knowledge_store=None, search_factory=None, runtime_mutations=mutations,
-        managed_outputs=managed, state=None,
+        managed_outputs=managed, state=AppContext(tmp_path / ".codey"),
     )
     with (patch("codey.operations.task_loop.run_task_kernel",
                 return_value=KernelResult(True, "done", 1, "done")) as kernel,
@@ -171,6 +172,7 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
 
 
 def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
+    from codey.app.context import AppContext
     from codey.operations.task_entry import run_entry_kernel
     from codey.operations.task_loop import KernelResult
     from codey.task.model import TaskSubmission
@@ -186,7 +188,7 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
         settled_tool_outcomes=(), recovered_tool_result_batch_id="",
     )
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
-    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=None)
+    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=AppContext(tmp_path / "state"))
     with patch("codey.operations.task_loop.run_task_kernel",
                return_value=KernelResult(True, "done", 1, "done")) as kernel:
         run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),

@@ -167,14 +167,15 @@ def _file_count_text(count: int) -> str:
 def build_task_receipt(
     changes: dict | None,
     *,
-    decision: object = None,
+    proof: object = None,
+    provenance: object = None,
     integrity: EditIntegrityObservation | None = None,
     checks_passed: bool = False,
 ) -> TaskReceipt:
     """Build the schema-v1 receipt from collected changes and projections.
 
-    ``decision`` (a CompletionDecision) contributes the proof state, the
-    provenance shown in Details, and the proof refs; ``integrity`` (an
+    ``proof`` and ``provenance`` contribute the state, Details and refs;
+    ``integrity`` (an
     EditIntegrityObservation) contributes the trust downgrade for
     high-confidence findings and for monitor errors. A receipt that
     claims passing checks without a vouching observation is ``limited``
@@ -189,8 +190,6 @@ def build_task_receipt(
     mode = clip(changes.get("mode"), MAX_MODE_CHARS)
     restore_available = mode == "snapshot" and changed_count > 0
 
-    proof = getattr(decision, "proof", None)
-    provenance = getattr(decision, "provenance", None)
     state = identifier(getattr(proof, "status", ""), 40)
     stance = identifier(getattr(provenance, "stance", ""), 40)
     source = identifier(getattr(provenance, "source", ""), 40)

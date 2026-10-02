@@ -116,3 +116,88 @@ python -m pytest tests/test_kernel_finite_state_invariants.py tests/test_recover
 确定减少了每轮被丢弃的初始 prompt 渲染，移除旧状态/执行链与无用包装。没有新增跨轮工作区扫描缓存、新日志或通用框架。
 
 测试证明本轮受审查边界继续统一，不能从行数和假 provider 测试推断真实模型延迟、token、浏览器顺滑度或所有端到端验收百分之百通过。当前最准确的结论是：**本轮确认问题已修复，结构更紧凑，回归通过；完整程序仍不能被宣称无 bug。**
+
+## 9. 托管 CI 与真实 UI 后续审查
+
+以上第 1—8 节记录第一次审查结果，已提交为 `bbfcd99c`。推送后继续等待托管 CI、启用真实 Edge，并检查存储异常路径，发现以下问题。这里的结果是本次工作最终状态；旧结果保留为历史。
+
+### 9.1 并发测试：区分锁拒绝与丢失已提交数据
+
+[bbfcd99c 的 CI](https://github.com/waylliam1988/codey/actions/runs/36946735196) 中，Windows 3.11/3.12 与 Linux 文件边界检查通过，3.13 失败于 `test_concurrent_put_baseline_does_not_lose_entries`。二十个线程中的十二个抛出 LockTimeout，只有八个成功；这些线程异常未由主测试显式接收。原管道测试没有再次卡死。
+
+修复 `tests/test_changes.py` 的这个函数：用 `ThreadPoolExecutor(max_workers=2)` 执行全部二十次真实写入；首批两个写者以 Barrier 同时进入，每个 future 必须 `.result()`。保留二十项文件/内容检查。两个重叠写者足以覆盖丢失更新风险，测试不应假定二十个耐久事务在 hosted runner 上都能在默认十秒内获得锁。
+
+新增 `test_snapshot_contention_preserves_committed_baselines`：事件保持第一个写者，第二个以零锁预算被明确拒绝；释放后第一个 baseline 不丢失，重试第二个写入成功，后续写入不得覆盖首次 baseline。未 mock fsync、未放宽生产超时。日志只能证明锁超时，不能证明是哪一个文件系统调用耗时，也不能据此认定 CPython 缺陷。
+
+### 9.2 SnapshotStore：发布后异常不能删除已引用正文
+
+`atomic_io` 的顺序是写临时文件 → replace → 目录 fsync。最后一步可在 replace 成功后失败。旧 `SnapshotStore.put_baseline()` 在所有异常上删除正文，会把已发布 manifest 留成坏引用。
+
+先用真实 atomic write、仅在 manifest 目录 fsync 注入错误写出两条红测：正常重新读取，以及错误后重新读取也失败。两者都必须继续抛出原错误、保留原正文，重启加载与重试不能用新内容覆盖原 baseline。
+
+生产修改仅在 `put_baseline()` 的异常清理处调用 `_discard_unpublished_baseline_locked()`。它在原锁内读取并验证 manifest；明确不含该路径才删除正文，含引用或发布状态未知时保留。后者是安全的异常处理，不是旧协议兼容或伪造成功。已有“确实未发布时清理孤儿”测试继续通过。
+
+### 9.3 恢复：当前身份同样严格，两次失败不是稳定
+
+旧 `verified_persisted_identity()` 对当前 revision 使用 `int()`，会把 `True`、`"1"`、`1.0` 变成合法的 1；`RecoveryContext.workspace_epoch_stable()` 还把两次读取失败的 `None == None` 当作稳定。
+
+新增 `test_recovery_current_identity_never_coerces_revision`，初轮十六失败、一条合法观察通过。`_state_identity()` 复用现有 WorkspaceIdentity 校验，保持当前 fingerprint 的真实类型和文本；非法观察成为不可信身份。持久收据必须由当前可信身份精确佐证。
+
+在已配置项目存储、已有初次观察的前提下，稳定判断为：
+
+```text
+stable = trusted(initial) AND trusted(latest) AND initial == latest
+```
+
+因此“两次失败”不满足 stable。未配置项目、未开始读取的上下文不凭空建立项目身份；危险结果的身份佐证仍必须经过正式存储。这没有新增第二个证明系统。
+
+### 9.4 auto：持久项目恢复与收据必须贯通
+
+真实 Edge 首次运行揭示了生产问题：auto 可以编辑文件、执行验证并回答，但入口未传 ChangeTracker，也没有完整 changed 收据；界面缺少 Done/View diff，无法靠持久 baseline 还原。
+
+函数级修改：
+
+1. `task_entry._entry_project_tracker()` 在项目写授权下，从实际 AppContext 创建正式 tracker；非 Git 项目启用持久快照。缺少或失败明确拒绝，不创建测试替代存储。
+2. `_run_entry_kernel()` 将同一个 tracker 交给唯一 `run_task_kernel()`，不新增循环。
+3. `_entry_project_receipt()` 在实际编辑后调用正式 collect_changes，生成共同收据、登记已有 run ledger 的变更，返回有限显示投影。读取失败不冒充“未改动”。
+4. `task_session.session_checks_passed()` 成为已有收据检查投影的唯一所有者；project adapter 与 auto 共用它。它投影共同 gate 的检查，不再次作完成判定。
+5. `runs.receipt.build_task_receipt()` 接显式 proof/provenance，删除对 CompletionDecision 的隐式抽取。项目流程和手工基准迁移参数，不保留旧 decision 兜底。
+6. terminal mode 调既有 `task.kind.ui_mode()`，保持 agent UI 契约。事件保留完整完成证明，持久 schema-v1 收据存正式 proof refs。
+
+新增 `test_auto_kernel_keeps_project_receipt_and_restore`：现有/新文件两场景，实际 auto → edit → run → done、AppContext、RunLedgerStore 和 restart restore；断言真实文件内容、changed/count、可信度、proof refs、重新创建 AppContext 后的还原。既有异常测试补断言 kernel 确实被调用，避免因缺 tracker 提前失败而“错误地绿”。
+
+### 9.5 冷启动卫生与 UI 测试卫生
+
+- `project_completion_flow` 删除十八项只为重导出而存在的进口；正式入口和内部使用的类型保留。ghost、服务测试和完成测试导入真实 context 所有者，无转发 alias。删除锁与 split lock 都验证正式所有权。
+- `tools/ui_e2e.ScriptedWriter` 按当前 auto 请求头提取本夹具的一行请求，避免历史焦点误选响应；识别正式 `[result: edit/run]`，未知 prompt 报错，不默认编辑。删除废弃 reviewer prompt 分支和 step 字段。
+- 重连测试原来寻找已不存在的全局 evtSrc，现以 page init script 观察真实 EventSource 实例，只在测试关闭它们，产品代码未加测试后门。
+- reload 测试原来等 provider 四秒，在高负载下观察 Running 前就完成；先补红测，再用 entered/release Events 保持任务，浏览器确认还原的 Running 后释放。保留 watchdog 和取消检查，失败清理也会释放，未删除 Running 断言。
+- 手工 `edit_integrity_ab.py --self-test` 的二十个确定性完整性场景全部通过。它不由 pytest 收集，两个旧收据调用在前一轮全量期间发现并单独修复；最终全量开始前已完成全部生产与测试迁移。
+
+六个新测试文件合计四十六场景，包含既有合法行为与关键红测反例；不能把原实现已经通过的边界测试也说成先红。首次 UI 全量又发现 split lock 的旧重导出断言，以及 3.13 reload 时间窗口竞争；都明确修复后再完整重跑，没有跳过或放松内容断言。
+
+### 9.6 最终验收及可以证明的范围
+
+在全部生产、pytest 和手工脚本修改完成后，启用 `RUN_BROWSER_E2E=1`：
+
+| 环境 | 最终全量 | 时间 |
+| --- | --- | --- |
+| Windows / Python 3.12.8 | **6522 passed，28 skipped，1488 subtests passed** | 468.39 秒 |
+| Windows / 官方 Python 3.13.15 embed | **6522 passed，28 skipped，1488 subtests passed** | 462.37 秒 |
+
+均零失败，分别使用仓库外独立 TEMP/TMP。真实 Edge 的十八项流程检查通过，但模型是 scripted provider；没有测试真实网页模型时延、token 或泛化的流畅度。Ruff、compileall、diff 检查通过，产品 JavaScript 未改变。二十八项 skip 是 Windows 权限/POSIX 能力，不含 UI 或原超时测试。
+
+有限不变量与真实 crash 轨迹再次八十三项通过，范围仍是第 7 节的有限模型。精确的结论是：
+
+```text
+I(s0)
+对该有限抽象每条可达边 s → s'，I(s) ⇒ I(s')
+BFS 已遍历到固定点
+所以对该抽象所有可达状态，I 成立
+```
+
+仍缺少把实际 Python、文件系统、任意 provider 输入和线程调度全部精化到该抽象的证明；因此不能把这个结论扩大成“全程序无 bug”或“任意执行都终止”。本轮新测试锁定的是身份不被转换、读取失败不证明稳定、已发布 baseline 不被错误清除，以及真实 auto 收据/恢复链等可观察性质。
+
+完整生产差异相对 aff30e0 为 **+384/-1091，净 -707 行**；`run_task_kernel` 保持单循环、一百六十五行，无复杂度豁免。三千二百四十四个顶层函数的引用扫描无明显未引用候选，但名称扫描无法证明无死字段、动态死分支或同名误判。没有新增日志、通用框架或跨轮缓存。
+
+可以确认本次发现的缺陷已收口、重复入口已减少、实测行为通过；不能确认百分之百完成所有未来需求，不能承诺没有未知 bug。文档在最终全量结束后更新；按用户最新要求，推送后不等待托管 CI，不声称本次托管通过；不 release、不打 tag、不 bump 版本。

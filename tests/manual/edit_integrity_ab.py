@@ -243,9 +243,10 @@ def _receipt_for(
         truncated=truncated,
         status=status,
     )
+    decision = _green_decision() if green else None
     receipt = build_task_receipt(
         _changes(*paths, truncated=truncated, status=status),
-        decision=_green_decision() if green else None,
+        provenance=decision.provenance if decision is not None else None,
         integrity=integrity,
         checks_passed=green,
     )
@@ -513,9 +514,10 @@ def _expect_monitor_error_receipt() -> None:
         files=_ExplodingFiles(),
         green=True,
     )
+    decision = _green_decision()
     receipt = build_task_receipt(
         _changes("tests/test_mod.py"),
-        decision=_green_decision(),
+        provenance=decision.provenance,
         integrity=integrity,
         checks_passed=True,
     )

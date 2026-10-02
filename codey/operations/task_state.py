@@ -22,11 +22,14 @@ import threading
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codey.agents.handoff import ConversationContext
     from codey.app.approval_registry import ApprovalRegistry
     from codey.app.provider_registry import ProviderRegistry
     from codey.app.run_registry import RunRegistry, RunSnapshot
     from codey.repairs.self_repair import SelfRepairSupervisor
+    from codey.workspace.changes import ChangeTracker
 
 
 class TaskState(Protocol):
@@ -69,6 +72,7 @@ class TaskState(Protocol):
     def wait_for_ghost_sleep(self, timeout: float | None = None) -> bool: ...
     def acquire_project_writer(self, project: str | object) -> bool: ...
     def release_project_writer(self, project: str | object) -> None: ...
+    def change_tracker_for(self, project: str | Path, *, persistent: bool) -> ChangeTracker: ...
     @property
     def self_repair(self) -> SelfRepairSupervisor | None: ...
 

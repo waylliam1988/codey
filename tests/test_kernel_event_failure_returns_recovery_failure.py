@@ -58,8 +58,10 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
         self.assertEqual([event.kind for event in events], ["turn", "tool_start", "tool"])
 
     def test_entry_converts_projection_recovery_failure_to_task_done(self) -> None:
+        import tempfile
         from types import SimpleNamespace
 
+        from codey.app.context import AppContext
         from codey.operations.kernel_errors import RecoveryFailed
         from codey.operations.task_entry import run_entry_kernel
         from codey.task.model import TaskSubmission
@@ -78,10 +80,12 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
         )
         hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
         deps = SimpleNamespace(knowledge_store=None, search_factory=None, runtime_mutations=None, state=None)
-        with mock.patch(
-            "codey.operations.task_loop.run_task_kernel",
-            side_effect=RecoveryFailed("event proof unavailable"),
+        with (
+            tempfile.TemporaryDirectory() as state_home,
+            mock.patch("codey.operations.task_loop.run_task_kernel",
+                       side_effect=RecoveryFailed("event proof unavailable")) as kernel,
         ):
+            deps.state = AppContext(state_home)
             result = run_entry_kernel(
                 frame,
                 SimpleNamespace(evidence=None, analysis_run_payloads=[]),
@@ -91,6 +95,8 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
 
         self.assertEqual(result.event["type"], "task_done")
         self.assertEqual(result.event["stop_reason"], "recovery_failure")
+        kernel.assert_called_once()
+        self.assertIn("event proof unavailable", result.event["summary"])
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ from unittest import mock
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.operations.context import RunWork
-from codey.operations.project_completion_flow import (
+from codey.operations.project_completion_context import (
     AgentAccess,
     PersistenceAccess,
     ProjectCompletionDeps,

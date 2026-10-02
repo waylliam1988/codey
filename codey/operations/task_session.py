@@ -9,6 +9,18 @@ from codey.runtime.core.models import ToolResult
 from codey.utils.refs import stable_ref
 
 
+def session_checks_passed(session: Any, proof: Any = None) -> bool:
+    """Project the common proof/facts into a receipt without a new decision."""
+    if getattr(session, "edited_files", None):
+        return any(row.check_id == "relevant_verification" and row.status == "pass"
+                   for row in getattr(proof, "checks", ()))
+    verifications = getattr(session, "verifications", ()) or ()
+    if not verifications:
+        return False
+    latest = verifications[-1]
+    return isinstance(latest, dict) and type(latest.get("passed")) is bool and latest["passed"]
+
+
 def turn_effect_id(run_id: object, turn: object, tool_index: object) -> str:
     """Call identity for intents: run + turn + index, never tool name+args.
 

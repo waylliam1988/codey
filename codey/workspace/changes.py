@@ -298,8 +298,19 @@ class SnapshotStore:
                 return content
             except Exception:
                 if written_body:
-                    _remove_file(body_path)
+                    self._discard_unpublished_baseline_locked(manifest_path, rel, body_path)
                 raise
+
+    def _discard_unpublished_baseline_locked(self, manifest_path: Path, rel: str, body_path: Path) -> None:
+        # Atomic replacement may succeed before directory fsync raises. Never
+        # delete a referenced body, or guess when publication cannot be read.
+        try:
+            payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+            files = _manifest_files_or_raise(payload, manifest_path) if payload is not None else {}
+        except (OSError, ValueError):
+            return
+        if rel not in files:
+            _remove_file(body_path)
 
     def require_baseline(self, root: str | Path, rel: str) -> str | None:
         """Read-only recovery basis; never writes.

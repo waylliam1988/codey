@@ -170,9 +170,9 @@ def test_project_receipt_projects_final_verification_without_rechecking_workspac
     from unittest import mock
 
     from codey.completion.contract import completion_check
-    from codey.operations.project_adapter import _session_checks_passed
+    from codey.operations.task_session import session_checks_passed
 
     session = SimpleNamespace(edited_files={"app.py": 1})
     proof = SimpleNamespace(checks=(completion_check("relevant_verification", "pass"),))
     with mock.patch("codey.operations.project_completion_checks.project_completion_checks", side_effect=AssertionError("duplicate gate")):
-        assert _session_checks_passed(session, proof)
+        assert session_checks_passed(session, proof)

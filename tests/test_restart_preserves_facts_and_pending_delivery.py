@@ -133,8 +133,12 @@ def test_real_entry_delivers_recovered_batch_before_done(tmp_path):
     frame.recovered_tool_result_batch_id = recovery.recovered_tool_result_batch_id
     work = RunWork([], ExecutionEvidence(workspace_revision=fresh.workspace_revision,
                                          workspace_fingerprint=fresh.workspace_fingerprint))
-    deps = SimpleNamespace(state=SimpleNamespace(), runtime_mutations=mutations,
-                           workspace_revisions=WorkspaceRevisionStore(state), managed_outputs=ManagedOutputStore(state))
+    from codey.app.context import AppContext
+    from codey.workspace.changes import collect_changes
+
+    deps = SimpleNamespace(state=AppContext(state), runtime_mutations=mutations,
+                           workspace_revisions=WorkspaceRevisionStore(state), managed_outputs=ManagedOutputStore(state),
+                           collect_changes=collect_changes)
     result = run_entry_kernel(frame, work, SimpleNamespace(on_event=lambda _: None, on_shell_request=None), deps,
                               task_kind="project")
     assert result.event["stop_reason"] == "done"

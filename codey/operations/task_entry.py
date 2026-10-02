@@ -16,6 +16,7 @@ from typing import Any
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.kernel_session_recovery import restore_task_session
 from codey.operations.result import ModeOutcome
+from codey.task.kind import ui_mode
 from codey.task.model import TaskSubmission, execution_task
 
 _TASK_KINDS = frozenset({"project", "research", "hybrid", "planning", "planning_readonly", "readonly"})
@@ -198,6 +199,42 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
     return active_provider, intent_sink, stop_flag
 
 
+def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any) -> Any:
+    if project_path is None or not policy.allows("project.write"):
+        return None
+    from codey.operations.kernel_errors import RecoveryFailed
+    from codey.workspace.changes import is_git_repository
+
+    try:
+        tracker = deps.state.change_tracker_for(project_path, persistent=not is_git_repository(project_path))
+        if tracker is None:
+            raise ValueError("project change tracker is missing")
+        return tracker
+    except Exception as exc:
+        raise RecoveryFailed(f"project change tracking unavailable: {exc}") from exc
+
+
+def _entry_project_receipt(frame: Any, work: Any, hooks: Any, deps: Any,
+                           session: Any, result: Any, tracker: Any) -> tuple[dict, dict | None]:
+    from codey.operations.task_session import session_checks_passed
+    from codey.runs.receipt import build_task_receipt
+
+    if tracker is None or not session.edited_files:
+        return {"display": {"summary": str(result.summary or "")[:2000]}}, None
+    changes = deps.collect_changes(frame.project_text, tracker)
+    if not isinstance(changes, dict) or changes.get("ok") is not True:
+        raise RuntimeError("project change collection failed; cannot publish its receipt")
+    checks_passed = session_checks_passed(session, result.proof)
+    receipt = build_task_receipt(changes, proof=result.proof, checks_passed=checks_passed).to_dict()
+    if work.ledger is not None:
+        hooks.append_ledger(lambda ledger: ledger.append_changes_collected(
+            changes, checks_passed=checks_passed, receipt=receipt))
+    payload = {"changed_count": changes.get("changed_count", 0),
+               "files": changes.get("files", [])[:3], "mode": changes.get("mode"),
+               "project": frame.project_text}
+    return receipt, payload
+
+
 def run_entry_kernel(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: Any,
                      *, task_kind: str = "", config_result: Any = None, continuation_followup: str = "") -> ModeOutcome:
     from codey.operations.task_execution import close_research_tools
@@ -298,6 +335,7 @@ def _run_entry_kernel(
     except Exception:
         ignored = ()
     try:
+        tracker = _entry_project_tracker(project_path, deps, policy)
         result = run_task_kernel(
             session,
             provider=active_provider,
@@ -307,6 +345,7 @@ def _run_entry_kernel(
             provider_id=frame.provider_id,
             project_path=project_path,
             tool_fns=tool_fns,
+            change_tracker=tracker,
             research_tools=research_tools,
             managed_outputs=getattr(deps, "managed_outputs", None),
             session_id=request.session_id,
@@ -380,14 +419,14 @@ def _run_entry_kernel(
         )
         frame.conversation.update_snapshot(snapshot)
     summary = str(result.summary or "")
-    receipt = {"display": {"summary": summary[:2000]}}
+    receipt, changes = _entry_project_receipt(frame, work, hooks, deps, session, result, tracker)
     proof = getattr(result, "proof", None)
     if proof is not None:
         to_payload = getattr(proof, "to_payload", None)
         if callable(to_payload):
             with _contextlib.suppress(Exception):
                 receipt["completion_proof"] = to_payload()
-    return ModeOutcome({
+    event = {
         "type": "task_done",
         "run_id": frame.run_id,
         "session_id": request.session_id,
@@ -396,9 +435,13 @@ def _run_entry_kernel(
         "turns": max(result.turns, session.turn),
         "max_turns": request.max_turns,
         "provider": frame.provider_id,
-        "mode": kind,
+        "mode": ui_mode(kind, frame.project_text),
         "receipt": receipt,
-    })
+    }
+    if changes is not None:
+        event["changed"] = changes["changed_count"] > 0
+        event["changes"] = changes
+    return ModeOutcome(event)
 
 
 def evaluate_direct_answer_candidate(frame: Any, answer: str, *, work: Any = None) -> Any:

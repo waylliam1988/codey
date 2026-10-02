@@ -140,20 +140,20 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
     def test_string_false_verification_never_reports_success(self) -> None:
         from types import SimpleNamespace
 
-        from codey.operations.project_adapter import _session_checks_passed
+        from codey.operations.task_session import session_checks_passed
 
         illegal = {"command": "pytest", "revision": 1, "passed": "false"}
 
         # Gate view blocks: illegal never reports success, and fail-closed
         # False stays blocked (never becomes success).
-        self.assertFalse(_session_checks_passed(SimpleNamespace(verifications=[illegal])))
+        self.assertFalse(session_checks_passed(SimpleNamespace(verifications=[illegal])))
         self.assertFalse(
-            _session_checks_passed(
+            session_checks_passed(
                 SimpleNamespace(verifications=[{"command": "pytest", "revision": 1, "passed": False}])
             )
         )
         self.assertTrue(
-            _session_checks_passed(
+            session_checks_passed(
                 SimpleNamespace(verifications=[{"command": "pytest", "revision": 1, "passed": True}])
             )
         )
@@ -179,13 +179,13 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
     def test_project_adapter_does_not_report_string_false_checks_as_passed(self) -> None:
         from types import SimpleNamespace
 
-        from codey.operations.project_adapter import _session_checks_passed
+        from codey.operations.task_session import session_checks_passed
 
         self.assertFalse(
-            _session_checks_passed(SimpleNamespace(verifications=[{"passed": "false"}]))
+            session_checks_passed(SimpleNamespace(verifications=[{"passed": "false"}]))
         )
         self.assertTrue(
-            _session_checks_passed(SimpleNamespace(verifications=[{"passed": True}]))
+            session_checks_passed(SimpleNamespace(verifications=[{"passed": True}]))
         )
 
 

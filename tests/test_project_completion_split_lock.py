@@ -64,11 +64,14 @@ class ProjectCompletionSplitLockTests(unittest.TestCase):
         for token in ("run_writer_phase(", "run_review_phase(", "enforce_completion("):
             self.assertIn(token, main, f"main must call {token.rstrip('(')}")
 
-    def test_public_orchestration_still_importable_from_flow(self) -> None:
+    def test_orchestration_and_helpers_are_importable_from_their_owners(self) -> None:
+        from codey.operations import project_completion_context as context
         from codey.operations import project_completion_flow as flow
 
-        for name in ("run_project_mode", "handle_project_tool_event", "blocked_result", "safe_verification_map"):
-            self.assertTrue(callable(getattr(flow, name, None)), f"flow must keep {name}")
+        self.assertTrue(callable(flow.run_project_mode))
+        for name in ("handle_project_tool_event", "blocked_result", "safe_verification_map"):
+            self.assertTrue(callable(getattr(context, name)), f"context must own {name}")
+            self.assertFalse(hasattr(flow, name), f"flow must not re-export {name}")
 
     def test_patch_paths_point_at_actual_owner(self) -> None:
         # Import-time check: patch targets must resolve to the owning module,
