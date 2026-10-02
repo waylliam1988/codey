@@ -46,6 +46,35 @@ def codey_python_files(*parts: str) -> tuple[Path, ...]:
     return tuple(sorted((ROOT / "codey" / Path(*parts)).glob("*.py")))
 
 
+def _vacuous_test_functions() -> list[str]:
+    """Return test functions whose only executable statement is ``assert True``."""
+    offenders: list[str] = []
+    for path in sorted((ROOT / "tests").glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not node.name.startswith("test"):
+                continue
+            executable = [
+                statement
+                for statement in node.body
+                if not (
+                    isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Constant)
+                    and isinstance(statement.value.value, str)
+                )
+            ]
+            if (
+                len(executable) == 1
+                and isinstance(executable[0], ast.Assert)
+                and isinstance(executable[0].test, ast.Constant)
+                and executable[0].test.value is True
+            ):
+                offenders.append(f"{path.relative_to(ROOT).as_posix()}:{node.lineno}")
+    return offenders
+
+
 def imports_with_forbidden_prefixes(path: Path, prefixes: set[str]) -> list[str]:
     return sorted(
         name
@@ -73,6 +102,9 @@ def event_matrix_capability_ids() -> set[str]:
 
 
 class ArchitectureBoundaryTests(unittest.TestCase):
+    def test_tests_have_no_vacuous_assert_true_functions(self) -> None:
+        self.assertEqual(_vacuous_test_functions(), [])
+
     def test_agent_runtime_has_no_browser_or_deepseek_dependency(self) -> None:
         path = ROOT / "codey" / "operations" / "task_loop.py"
         imports = imported_modules(path)

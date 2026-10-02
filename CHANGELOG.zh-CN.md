@@ -2,6 +2,17 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 完整代码与测试卫生审查（未发布）
+
+- 审查生产入口、架构边界、冷启动兼容锁、fallback、异常处理、资源路径、
+  测试收集及 skip/xfail 使用。未复现确定性的生产 bug，也未删除生产兼容层。
+- 新增 AST 架构锁定，禁止只含 `assert True` 的已收集测试函数。
+- 删除九个无法验证行为的 vacuous `assert True` 测试；原有行为测试继续覆盖
+  已确认的设计取舍。
+- 最终 `pytest -q`：**6642 passed、12 skipped、1488 subtests passed**，耗时
+  **408.51 秒**；无 failed、xfailed 或 xpassed。Ruff、compileall、测试收集和
+  diff 检查通过。跳过项仍是环境门槛，未放宽断言或超时。
+
 ## Unreleased - Research 发布门槛收口（未发布）
 
 - 修复本地门槛的隔离 research 配置：headless research 现在接收显式

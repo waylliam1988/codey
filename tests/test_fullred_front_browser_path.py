@@ -30,21 +30,3 @@ def test_safe_project_cwd_empty_project_must_reject() -> None:
     except (ValueError, OSError):
         return
     raise AssertionError("empty project silently resolved to CWD instead of rejecting")
-
-
-def test_static_cache_signature_collision_is_negligible() -> None:
-    # http_plumbing mtime/size signature collision within 1s same-size rewrite
-    # is negligible (no-cache/immutable + version query). Not a deterministic bug.
-    assert True
-
-
-def test_windows_dir_fsync_missing_is_platform_limitation() -> None:
-    # atomic_io Windows dir fsync missing is platform limitation, not logic bug.
-    # Cannot deterministically repro without power loss. Not a bug per rule.
-    assert True
-
-
-def test_toctou_symlink_race_is_nondeterministic() -> None:
-    # check-then-use symlink swap between resolve and open/Popen requires
-    # concurrent attacker timing; cannot deterministically repro. Not a bug per rule.
-    assert True

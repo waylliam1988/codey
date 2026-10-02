@@ -2,6 +2,21 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Complete code and test hygiene audit (no release)
+
+- Audited production entry points, architecture boundaries, cold-start
+  compatibility locks, fallbacks, exception handling, resource paths, test
+  collection, and skip/xfail usage. No deterministic production bug was
+  reproduced and no production compatibility layer was removed.
+- Added an AST architecture guard against collected test functions whose only
+  executable statement is `assert True`.
+- Removed nine vacuous `assert True` tests that could never verify behavior;
+  existing behavioral coverage for the documented design choices remains.
+- Final `pytest -q`: **6642 passed, 12 skipped, 1488 subtests passed** in
+  **408.51s**; no failed, xfailed, or xpassed tests. Ruff, compileall,
+  collection, and diff checks passed. Skips remain environment-gated and no
+  test assertion or timeout was weakened.
+
 ## Unreleased - Research release gate closure (no release)
 
 - Fixed the local gate's isolated research setup by giving headless research

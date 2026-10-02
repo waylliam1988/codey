@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## Complete code and test hygiene audit (2026-10-02)
+
+This audit reviewed the project entry points, architecture and cold-start
+locks, test collection, skip/xfail usage, fallback and compatibility markers,
+exception boundaries, and the shell/browser/trace/recovery paths covered by the
+existing regression suite. No deterministic production defect was reproduced;
+no production code, compatibility layer, fallback, or resource lifecycle path
+was removed.
+
+One deterministic test-hygiene defect was confirmed with a red AST regression:
+nine collected tests contained only `assert True` and therefore could never
+fail or verify the behavior described in their comments. The tests were
+removed, while existing behavioral tests for the intentional design choices
+remain. The AST guard now rejects future vacuous test functions.
+
+Verification before the final suite:
+
+- Targeted regression and affected tests: **156 passed, 381 subtests passed**.
+- `ruff check codey tests`: passed.
+- `python -m compileall -q codey tests`: passed.
+- `pytest --collect-only -q`: **6654 tests collected**.
+- `git diff --check`: passed before documentation edits.
+
+Final full command: `pytest -q` (Python environment in the working tree,
+pytest configuration from `pyproject.toml`, `faulthandler_timeout=120`).
+Result: **6642 passed, 12 skipped, 1488 subtests passed, 0 failed,
+0 xfailed/xpassed**, elapsed **408.51s (0:06:48)**.
+
+The 12 skips were environment-gated tests already present before this audit:
+Windows-only Job Object tests on this non-Windows host, POSIX-only process
+group tests on Windows, symlink/O_NOFOLLOW tests where the host cannot create
+or safely inspect the link, Node.js-dependent JavaScript checks when Node is
+unavailable, and opt-in real-browser E2E checks when browser E2E is disabled.
+No skip or xfail was added, and no assertion or timeout was weakened.
+
+Residual risk: static review and the local suite cannot prove behavior for
+every provider, OS, model, power-loss timing, browser installation, or complex
+external project. Those paths remain covered by their existing environment
+gates and stress tests.
+
 ## Research gate closure and final release verification (2026-10-02)
 
 This cycle completed the TDD loop for the local release gate's research lane.

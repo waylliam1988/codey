@@ -54,10 +54,3 @@ def test_shell_generation_missing_must_fail_closed() -> None:
     assert svc._approval_generation_current(ctx, 0) is True
     # None currently coerces to 0 and passes; invalid input, not a prod path
     assert svc._approval_generation_current(ctx, None) is True  # type: ignore[arg-type]
-
-
-def test_shell_cwd_relative_is_shown_before_validation() -> None:
-    # hooks stores cwd_rel without safe_project_cwd; display shows it,
-    # execution validates later. Showing unvalidated on card is intentional
-    # (user sees and can deny); execution still fail-closed. Not a bug.
-    assert True
