@@ -1585,6 +1585,7 @@ async function approveCommand(id, approved, approveBtn, denyBtn, errorEl) {
     if (approved && data.continuation_requested && !data.continued && !data.stopped) {
       showCommandContinuationError(errorEl, data.retry_after);
     }
+    await reconcileRunState();
   } catch (err) {
     showCommandApprovalError(errorEl);
     approveBtn.disabled = false;

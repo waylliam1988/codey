@@ -130,7 +130,6 @@ def _take_answered_reply(
 def _drain_native_budget(
     provider: Any,
     messages: list[dict[str, Any]],
-    native_tools: Any,
     *,
     error: str = "turn budget exhausted; tool call was not executed",
 ) -> None:
@@ -142,7 +141,9 @@ def _drain_native_budget(
     NativeBudgetExhausted; the caller maps both to terminal results.
     """
     for _ in range(4):
-        reply = call_provider_send_results(provider, messages, native_tools)
+        # The task has ended: close ids without inviting another tool call.
+        # Still bound and receipt calls from an endpoint ignoring withdrawal.
+        reply = call_provider_send_results(provider, messages, [])
         ids = [str(getattr(call, "id", "") or "") for call in (getattr(reply, "tool_calls", ()) or ())]
         ids = list(dict.fromkeys(item for item in ids if item))
         if not ids:
@@ -188,7 +189,7 @@ def repair_native_dangling(
     )
 
 
-def close_native_reply(provider: Any, reply: Any, native_tools: Any, error: str) -> None:
+def close_native_reply(provider: Any, reply: Any, error: str) -> None:
     """Close a terminal reply and bounded follow-on calls without executing them."""
     if isinstance(reply, str):
         return
@@ -197,7 +198,7 @@ def close_native_reply(provider: Any, reply: Any, native_tools: Any, error: str)
     messages = [{"role": "tool", "tool_call_id": key, "content": f"ERROR: {error}"}
                 for key in ids if key]
     if messages:
-        _drain_native_budget(provider, messages, native_tools, error=error)
+        _drain_native_budget(provider, messages, error=error)
 
 
 __all__ = [

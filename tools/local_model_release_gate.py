@@ -687,7 +687,10 @@ def _metadata(target: attempts.GateTarget) -> dict:
         },
         "production_hashes": {
             path: hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
-            for path in ("codey/operations/planning_flow.py", "codey/operations/project_writer_phase.py",
+            for path in ("codey/toolchain/constants.py", "codey/toolchain/definition.py", "codey/toolchain/runtime.py",
+                         "codey/providers/local_openai.py", "codey/operations/kernel_transport.py",
+                         "codey/operations/task_loop.py", "codey/operations/kernel_prompt.py",
+                         "codey/operations/planning_flow.py", "codey/operations/project_writer_phase.py",
                          "codey/operations/project_completion_enforcement.py", "codey/operations/task_execution.py",
                          "codey/research/tools.py", "codey/operations/project_completion_checks.py",
                          "codey/toolchain/tool_spec.py", "codey/operations/kernel_protocol.py",
@@ -695,7 +698,8 @@ def _metadata(target: attempts.GateTarget) -> dict:
         },
         "server_observations": _server_observations(target.base_url),
         "chat_template": "not_reported", "quantization": "model_name_only; not independently verified",
-        "sampling_seed": "not_sent", "output_budget": "server_default; max_tokens is not sent",
+        "sampling_seed": "not_sent",
+        "output_budget": "active turns: server_default; terminal receipts: max_tokens=1",
     }
 
 

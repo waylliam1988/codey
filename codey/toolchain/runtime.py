@@ -31,7 +31,7 @@ from codey.runtime.core.models import (
     normalized_managed_output,
 )
 from codey.storage.atomic_io import write_text_atomic
-from codey.toolchain.constants import MAX_REPLACEMENTS
+from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.utils.references import find_reference_hints
 from codey.utils.scan_report import byte_limit_label, render_scan_coverage
@@ -562,7 +562,7 @@ def _render_multiple_match_context(
     lines = ["Exact matches start at lines: " + ", ".join(map(str, positions)) + "."]
     if match_count > len(positions):
         lines.append("Additional matches omitted.")
-    lines.append("Add surrounding lines to old_string so it matches one location uniquely.")
+    lines.append(EXACT_REPLACEMENT_CONTEXT_HINT)
     return _bounded_failure_output(lines)
 
 
@@ -625,7 +625,7 @@ def _multiple_matches(
         lines.append("")
         lines.extend(context.splitlines())
     else:
-        lines.append("Add surrounding lines to old_string so it matches one location uniquely.")
+        lines.append(EXACT_REPLACEMENT_CONTEXT_HINT)
     return ToolOutcome.error(_bounded_failure_output(lines))
 
 

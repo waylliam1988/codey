@@ -344,6 +344,26 @@ class LocalOpenAIProvider:
             )
         return candidate
 
+    def _request_payload(self, messages: list[dict], tools: list[dict[str, object]] | None) -> dict:
+        """One wire contract, also used by the diagnostic request recorder."""
+        payload: dict[str, object] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "stream": False,
+        }
+        if tools:
+            payload["tools"] = tools
+            # Kernel turns require a call (including done). Ordinary answers
+            # belong to send(), or terminal receipts with tools withdrawn.
+            payload["tool_choice"] = "required"
+            payload["parallel_tool_calls"] = False
+        elif tools is not None and messages and messages[-1].get("role") == "tool":
+            # Terminal receipt: the answer and completion proof already exist.
+            # Await transport acknowledgement, not another generated answer.
+            payload["max_tokens"] = 1
+        return payload
+
     def _post_chat(
         self,
         messages: list[dict],
@@ -354,15 +374,7 @@ class LocalOpenAIProvider:
         from codey.providers import error_classification as errors
 
         endpoint = f"{self.base_url}/chat/completions"
-        payload: dict[str, object] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-            "stream": False,
-        }
-        if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+        payload = self._request_payload(messages, tools)
         data = json.dumps(payload).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.api_key:

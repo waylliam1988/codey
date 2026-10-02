@@ -95,7 +95,7 @@ def _receive_turn_plan(
         )
     except Exception as exc:
         return _provider_failure(exc, turn, propagate=propagate_provider_failure)
-    cancelled = _cancel_after_send(stop_flag, provider, reply, native, native_tools, turn,
+    cancelled = _cancel_after_send(stop_flag, provider, reply, native, turn,
                                    propagate=propagate_provider_failure)
     if cancelled is not None:
         return cancelled
@@ -269,7 +269,7 @@ def _kernel_handle_protocol(
         if native and not isinstance(reply, str):
             try:
                 _transport.close_native_reply(
-                    provider, reply, native_tools,
+                    provider, reply,
                     str(getattr(plan, "protocol_error", "") or "protocol error"),
                 )
             except Exception as exc:
@@ -479,7 +479,7 @@ def run_task_kernel(
     prev_contract = startup.snapshot.contract_text
     for turn in range(resume_start, startup.max_turns + 1):
         stopped = _stop_at_turn_start(
-            stop_flag, provider, state.pending_reply, state.pending_messages, native_tools,
+            stop_flag, provider, state.pending_reply, state.pending_messages,
             turns_used, propagate_provider_failure=propagate_provider_failure,
         )
         if stopped is not None:
@@ -563,7 +563,7 @@ def run_task_kernel(
         if isinstance(advance, KernelResult):
             return advance
         state.pending_messages, state.prompt = advance
-        stopped = _stop_no_progress(progress, results, session, provider, state.pending_messages, native_tools,
+        stopped = _stop_no_progress(progress, results, session, provider, state.pending_messages,
                                     turns_used, stop_flag=stop_flag, propagate=propagate_provider_failure)
         if stopped is not None:
             return stopped
@@ -571,14 +571,14 @@ def run_task_kernel(
         session,
         provider,
         state.pending_messages,
-        native_tools,
+        state.pending_reply,
         turns_used,
         propagate_provider_failure=propagate_provider_failure,
     )
 
 
 def _stop_at_turn_start(
-    stop_flag: Any, provider: Any, pending_reply: Any, pending_messages: Any, native_tools: Any,
+    stop_flag: Any, provider: Any, pending_reply: Any, pending_messages: Any,
     turns_used: int, *, propagate_provider_failure: bool,
 ) -> KernelResult | None:
     """Turn-start stop: deliver pending native results, then report stopped.
@@ -590,40 +590,40 @@ def _stop_at_turn_start(
         return None
     if pending_messages:
         try:
-            _transport._drain_native_budget(provider, pending_messages, native_tools)
+            _transport._drain_native_budget(provider, pending_messages)
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
         return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
     if pending_reply is not None and not isinstance(pending_reply, str):
         try:
             _transport.close_native_reply(
-                provider, pending_reply, native_tools, "task stopped; call not executed",
+                provider, pending_reply, "task stopped; call not executed",
             )
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
     return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
 
 
-def _cancel_after_send(stop_flag, provider, reply, native, native_tools, turns_used, *, propagate):
+def _cancel_after_send(stop_flag, provider, reply, native, turns_used, *, propagate):
     if not _stop_requested(stop_flag):
         return None
     # A cancellation arriving during a slow send wins over returned tool calls.
     if native:
         try:
-            _transport.close_native_reply(provider, reply, native_tools, "task stopped; call not executed")
+            _transport.close_native_reply(provider, reply, "task stopped; call not executed")
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate)
     return KernelResult(False, "stopped", turns_used, "stopped")
 
 
-def _stop_no_progress(progress, results, session, provider, messages, native_tools, turns_used, *, propagate,
+def _stop_no_progress(progress, results, session, provider, messages, turns_used, *, propagate,
                       stop_flag=None):
     cancelled = _stop_requested(stop_flag)
     if not cancelled and not progress.observe(results, session):
         return None
     if messages:
         try:
-            _transport._drain_native_budget(provider, messages, native_tools)
+            _transport._drain_native_budget(provider, messages)
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate)
     if cancelled:
@@ -720,16 +720,21 @@ def _finish_after_budget(
     session: TaskSession,
     provider: Any,
     pending_native_messages: list[dict[str, Any]] | None,
-    native_tools: Any,
+    pending_reply: Any,
     turns_used: int,
     *,
     propagate_provider_failure: bool,
 ) -> KernelResult:
-    if pending_native_messages:
+    if pending_native_messages or pending_reply is not None:
         # Native APIs require a reply for every emitted tool-call id. Deliver
         # the final batch even when the turn budget stops further work.
         try:
-            _transport._drain_native_budget(provider, pending_native_messages, native_tools)
+            if pending_native_messages:
+                _transport._drain_native_budget(provider, pending_native_messages)
+            if pending_reply is not None:
+                _transport.close_native_reply(
+                    provider, pending_reply, "turn budget exhausted; tool call was not executed",
+                )
         except _transport.NativeBudgetExhausted:
             return KernelResult(
                 False, "native tool chain exceeded budget drain limit", turns_used, "protocol")
@@ -784,14 +789,13 @@ def _handle_done_reply(
                     provider,
                     reply,
                     native=True,
-                    native_tools=native_tools,
+                    native_tools=[],
                     followup=f"OK: done accepted: {session.last_done_text[:500]}",
                 )
                 if followup is not None and not isinstance(followup, str):
                     _transport.close_native_reply(
                         provider,
                         followup,
-                        native_tools,
                         "task already completed; tool call was not executed",
                     )
             except Exception as exc:

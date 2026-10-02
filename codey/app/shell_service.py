@@ -450,14 +450,25 @@ def build_shell_approval_continuation(
     followup_block = f"{followup_hints.strip()}\n\n" if followup_hints.strip() else ""
     deferred = render_deferred_tool_calls(deferred_tool_calls)
     deferred_block = f"{deferred}\n\n" if deferred else ""
+    decision = (
+        "The user denied this shell command; it was not executed:\n"
+        if result.get("status") == "denied"
+        else "The user approved and ran this shell command:\n"
+    )
+    denial_note = (
+        "Do not retry the denied command without new user authorization.\n\n"
+        if result.get("status") == "denied"
+        else ""
+    )
     return (
         "Continue the interrupted task in this same conversation.\n"
-        "The user approved and ran this shell command:\n"
+        f"{decision}"
         f"{command}\n\n"
         f"Exit code: {result.get('exit_code')}\n"
         "Output:\n"
         f"{result.get('output') or result.get('error') or '(no output)'}\n\n"
         f"{truncation_note}"
+        f"{denial_note}"
         f"{setup_block}"
         f"{checklist_block}"
         f"{followup_block}"

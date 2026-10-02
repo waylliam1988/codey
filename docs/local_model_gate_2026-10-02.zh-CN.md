@@ -1,5 +1,8 @@
 # KoboldCpp 12B 实机门槛测试（2026-10-02）
 
+> 本文保留原始实验结果，包括原生协议 2/4 的失败。后续已重放原始请求、修复并完成
+> 原生 12/12 复测，见[原生协议根因与修复报告](local_native_protocol_2026-10-02.zh-CN.md)。
+
 ## 范围与实验条件
 
 测试使用 `tools/local_model_release_gate.py`，agent 走正式 `run_headless` 和共同内核，

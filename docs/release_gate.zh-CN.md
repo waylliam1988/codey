@@ -69,7 +69,8 @@ python tools/local_model_release_gate.py --cases chat,read,create,edit,reference
   设置 `LOCAL_OPENAI_BASE_URL` 时只探测该地址。先探 `/models`，`reason=ok` 才开跑。
 - 每次运行创建唯一目录，每次尝试分别保存 JSONL、provider 请求/解析后的响应、最终项目和隔离状态、独立验证结果。已有 `--run-dir` 拒绝覆盖。原始产物留在忽略目录，只提交脱敏的文字报告。
 - 首次探测后固定 endpoint/model，聊天与 agent 均用同一生产 provider 配置；采样 temperature 固定 0，但未发送 seed，不能宣称完全确定性。`--protocol native/json` 分别测原生/文本 JSON 路径。
-- `--timeout` 是单个案例的总进程截止时间，包含工具和独立验证；到期终止 owned process tree。请求 timeout 不超过该预算。生成长度仍由服务端默认决定，未发送 `max_tokens`，不把服务端报告的默认值当作请求硬上限。
+- `--timeout` 是单个案例的总进程截止时间，包含工具和独立验证；到期终止 owned process tree。请求 timeout 不超过该预算。活动轮次生成长度由服务端默认决定，不把服务端报告的默认值当作请求硬上限。原生终止收据撤回工具，显式 `max_tokens=1`；该确认不替代已验证的最终回答。
+- 原生活动轮次使用 `tool_choice=required`、`parallel_tool_calls=false`，提示每轮一个调用并等待结果；仍校验服务端实际返回的所有调用，不假定它执行了单调用字段。完成/取消/预算终止时撤回工具，关闭 call id 且不执行后续调用。[实机根因与 12/12 复测](local_native_protocol_2026-10-02.zh-CN.md)。
 - 元数据保存客户端上下文预算、服务端可查询信息、Python、Git commit 和脚本哈希；未报告的聊天模板/量化明确标为未知。usage 和 finish_reason 从实际响应记录，不凭模型总结估算。
 - summary 每完成一个尝试就更新，异常和超时也计入分母。`objective_tasks.passed` 与 `artifacts_correct/artifacts_observed` 分开：代码正确、但协议未结束时不能计为任务完成。
 - `python3 -m unittest` 在 Windows 策略里会被拒，门槛任务一律写 `python -m unittest [discover]`。

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from codey.runtime.core.models import ToolCall
-from codey.toolchain.constants import MAX_REPLACEMENTS
+from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS
 
 MAX_ACCIDENTAL_TOOL_CALLS = 8
 MAX_PARALLEL_CALLS = 4
@@ -161,13 +161,13 @@ TOOL_DEFINITIONS = (
         permission="project_write",
         examples=(
             '{"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}',
-            '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old exact text","new_string":"new text"}]}}',
+            '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"def process():\\n    return old_value\\n","new_string":"def process():\\n    return new_value\\n"}]}}',
             '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}',
         ),
         description=(
             f"Create a new file with content, or edit an existing file with exact "
             f"replacements. Up to {MAX_REPLACEMENTS} replacements are validated "
-            "together and written atomically."
+            "together and written atomically. " + EXACT_REPLACEMENT_CONTEXT_HINT
         ),
         output_facts=("file_changed",),
         render_hint="edit",

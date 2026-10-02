@@ -2,6 +2,15 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Native tool lifecycle and failure reproduction (no release)
+
+- Reproduce Gemma/KoboldCpp post-check truncation from original requests. Require a native call on active tool turns, request sequential calls and keep normal chat unchanged. Share wire payload construction with the diagnostic recorder; record production source hashes.
+- Withdraw tools for terminal receipts, cap acknowledgement to one token and preserve the validated final answer. Close late call ids returned by rejected done or protocol repair on the last turn without executing them.
+- Explain unique contextual replacements in the shared tool definition and ambiguity errors, with a complete multiline example. Preserve strict schemas, unique matching and atomic edits.
+- Reconcile state after approval HTTP results; report denied commands as unexecuted. Synchronize real browser checks with continued task termination and update reviewed prompt fixtures. Add 22 behavioral regressions.
+- Final native project live gate **12/12 complete, 12/12 artifacts correct**; six other entry checks passed, including real hybrid. Preserve intermediate 10/12 and 11/12 failures; no universal success-rate or speed claim. [Root cause report](docs/local_native_protocol_2026-10-02.zh-CN.md).
+- Final full suite with real Edge: **6640 passed, 6 skipped, 1488 subtests passed in 464.01s**; first full run's three failures documented and fixed. Python 3.13.15 targeted 83 passed. Ruff, compileall and diff checks passed. No release/tag/version bump; do not wait for hosted CI.
+
 ## Unreleased - Truthful local model gate and shared completion wiring (no release)
 
 - Pin the probed endpoint/model and explicitly select native or text JSON. Record unique attempts, real provider exchanges/usage, final projects/state, failures and process deadlines; preserve all failed attempts. Keep objective completion separate from correct artifacts, conversation safety and Ghost control checks.

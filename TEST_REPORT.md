@@ -1,5 +1,58 @@
 # Codey Test Report
 
+## Native protocol root cause and terminal receipts (2026-10-02)
+
+Baseline: `6ff8cbd2ce3dd1c6f6c32a8a8d0a2804e2f240cb`. Each live batch records
+working-tree source hashes. Historical results below remain unchanged.
+This section was written after the final full suite finished.
+
+- Replayed the actual KoboldCpp 1.117.1 (`jinja=false`) Gemma4 12B failure.
+  The identical post-check request reproduced 1536-token marker repetition
+  with auto; changing only tool_choice to required returned real done.
+  A separate probe showed parallel_tool_calls=false was ignored; explicit
+  sequential native instructions prevented the observed mixed-argument batch.
+- Shared contextual replacement guidance resolves ambiguous edit misuse;
+  uniqueness, schema validation and atomicity stay strict. Terminal receipts
+  withdraw tools and cap acknowledgement at one token; the user answer comes
+  from validated done. Close late native ids returned on the final turn.
+- Three new files contain **22 behavioral cases**. Lifecycle tests first
+  had six reds and one already-correct case; further new behaviors were made
+  red before fixing. All six contextual-edit and three denial/UI tests were
+  red before fixes. Existing correct behaviors and assertions retained.
+- Final project live batch: **12/12 complete, 12/12 artifacts correct**,
+  create/edit/references/auto each three times, 444.740s total case wall time.
+  Intermediate **10/12** and **11/12** batches and failures remain archived.
+  Six other entry checks passed; only hybrid is an objective modification
+  task (1/1); Ghost does not call the model. Discussion/planning quality was
+  not rated. No cross-version aggregate rate or controlled speed claim.
+- Trace audit: **57 project ids + 10 other-path ids**, each answered once;
+  zero active-turn truncations. One-token terminal length stops are expected;
+  no truncated active calls execute. HTTP/protocol errors still fail.
+- First full run: **3 failed, 6634 passed, 6 skipped, 1488 subtests passed
+  in 417.20s**. Two reviewed edit-prompt fixtures needed updating. Real Edge
+  exposed denial continuation still running after its shell receipt. Added
+  three reds, reconciled HTTP approval state and waited for real continuation
+  termination in E2E. Corrected denial falsely claiming approval/execution;
+  approved prompt text preserved. No skips added to hide failures.
+- Final Windows Python 3.12.8 full suite with `RUN_BROWSER_E2E=1`, independent
+  external TEMP/TMP, outside sandbox: **6640 passed, 6 skipped, 1488 subtests
+  passed in 464.01s**, zero failures. Command:
+  `python -m pytest -q -o faulthandler_timeout=120 -rs`.
+  Six skips are Windows POSIX/O_NOFOLLOW limitations. Both full logs retained
+  in `.e2e-artifacts/native-root-cause/`: `full-pytest-20261002.log` and
+  `full-pytest-final-20261002.log`.
+- Relevant 44-file regression: 1173 passed, 4 skipped, 458 subtests (46.96s).
+  Approval/fixture checks: 359 passed, 1 skipped, 61 subtests (39.15s); real
+  Edge separately 2 passed (16.84s). These overlap the full suite.
+  Final Python 3.13.15 bootstrap targeted run: **83 passed in 4.27s**, seven
+  files including all 22 new cases; full 3.13 was not rerun this round.
+  Ruff, compileall and diff checks passed before the final full run.
+
+[Native root cause, batch paths and reproduction commands](docs/local_native_protocol_2026-10-02.zh-CN.md).
+Ignored raw artifacts are not committed. No release/tag/version bump;
+push does not wait for hosted CI. This sample does not prove all-model
+reliability, answer quality or an absence of all bugs.
+
 ## KoboldCpp 12B live gate and completion wiring (2026-10-02)
 
 Baseline: `4404c033`. Production and pytest changes were finished before

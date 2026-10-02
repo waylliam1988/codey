@@ -74,6 +74,8 @@ class ScriptedWriter:
             raise AssertionError("responsive stop did not cancel the provider wait")
         if "The user approved and ran this shell command" in text:
             return '{"tool":"done","args":{"summary":"approval continuation completed"}}'
+        if "The user denied this shell command; it was not executed:" in text:
+            return '{"tool":"done","args":{"summary":"denial continuation completed"}}'
         if "Request a shell command" in text:
             return (
                 '{"tool":"shell","args":{"command":"git status --short",'
@@ -153,6 +155,17 @@ def _save_screenshot(page: Page, path: Path, *, full_page: bool = True) -> str:
             encoding="utf-8",
         )
         return str(marker)
+
+
+def _wait_for_continuation(page: Page, base_url: str, summary: str) -> None:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        snapshot = page.request.get(base_url + "api/state").json()
+        terminal = snapshot.get("last_terminal_event") or {}
+        if not snapshot.get("busy") and terminal.get("summary") == summary:
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError("continuation did not finish: " + json.dumps(snapshot, ensure_ascii=False))
 
 
 def _exercise_page(
@@ -291,6 +304,7 @@ def _exercise_page(
     deny.click()
     expect(page.locator("#chat")).to_contain_text("Denied")
     expect(page.locator("#chat")).to_contain_text("git status --short")
+    _wait_for_continuation(page, base_url, "denial continuation completed")
     page.reload(wait_until="domcontentloaded")
     expect(page.get_by_role("button", name="Deny", exact=True)).to_have_count(0)
     expect(page.get_by_role("button", name="Allow", exact=True)).to_have_count(0)
@@ -312,6 +326,7 @@ def _exercise_page(
     deny.click()
     expect(deny).to_be_enabled()
     page.unroute("**/api/shell_approval", drop_approval_response)
+    _wait_for_continuation(page, base_url, "denial continuation completed")
     page.reload(wait_until="domcontentloaded")
     expect(page.locator(".shell-output")).to_have_count(2)
     expect(page.get_by_role("button", name="Deny", exact=True)).to_have_count(0)
@@ -328,21 +343,7 @@ def _exercise_page(
     page.route("**/api/shell_approval", drop_approval_response)
     allow.click()
 
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        snapshot = page.request.get(base_url + "api/state").json()
-        terminal = snapshot.get("last_terminal_event") or {}
-        if (
-            not snapshot.get("busy")
-            and terminal.get("summary") == "approval continuation completed"
-        ):
-            break
-        page.wait_for_timeout(100)
-    else:
-        raise AssertionError(
-            "approved continuation did not finish while disconnected: "
-            + json.dumps(snapshot, ensure_ascii=False)
-        )
+    _wait_for_continuation(page, base_url, "approval continuation completed")
 
     page.unroute("**/api/shell_approval", drop_approval_response)
     page.reload(wait_until="domcontentloaded")

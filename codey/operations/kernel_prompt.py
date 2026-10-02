@@ -80,7 +80,10 @@ def kernel_prompt_for_session(
         else:
             parts.append(f"Tool contract (use exactly these shapes):\n{contract_text}")
     if native:
-        parts.append("Use the provided native tools for this turn; do not reply with raw JSON.")
+        parts.append(
+            "Call exactly one native tool per turn and wait for its result before choosing the next tool. "
+            "Call done separately, only after the required checks have passed. Do not reply with raw JSON."
+        )
     else:
         parts.append("Reply with exactly one JSON tool call per turn, or done.")
     return "\n\n".join(parts)

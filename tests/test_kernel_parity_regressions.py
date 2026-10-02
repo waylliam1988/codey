@@ -314,7 +314,7 @@ def test_native_cancellation_closes_followon_ids_without_executing():
                 if len(receipts) == 1 else AssistantTurn(text="closed", tool_calls=()))
 
     reply = AssistantTurn(text="", tool_calls=(ProviderToolCall(id="c1", name="edit", arguments={}),))
-    result = _cancel_after_send(stop, SimpleNamespace(send_tool_results=send_results), reply, True, [], 1,
+    result = _cancel_after_send(stop, SimpleNamespace(send_tool_results=send_results), reply, True, 1,
                                propagate=False)
     assert result.stop_reason == "stopped"
     assert [row["tool_call_id"] for row in receipts] == ["c1", "c2"]

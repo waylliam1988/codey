@@ -64,9 +64,7 @@ class RecordingProvider(LocalOpenAIProvider):
     def _post_chat(self, messages, tools=None, *, timeout=None):
         self.exchange_number += 1
         number = self.exchange_number
-        request = {"model": self.model, "messages": messages, "temperature": self.temperature, "stream": False}
-        if tools:
-            request.update(tools=tools, tool_choice="auto")
+        request = self._request_payload(messages, tools)
         self._record({"type": "request", "exchange": number, "payload": request})
         started = time.perf_counter()
         try:
@@ -122,7 +120,7 @@ def _provider_metrics(directory: Path) -> dict:
         "reported_models": sorted({str(body["model"]) for body in responses if body.get("model")}),
         "usage": dict(usage) if any("usage" in body for body in responses) else None,
         "finish_reasons": [choice.get("finish_reason") for body in responses for choice in body.get("choices", [])],
-        "output_budget": "server_default (max_tokens is not sent)",
+        "output_budget": "active turns: server_default; terminal receipts: max_tokens=1",
     }
 
 

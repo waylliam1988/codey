@@ -60,10 +60,10 @@ runtime_name: edit
 aliases: -
 read_only: false
 parallel_safe: false
-description: Create a new file with content, or edit an existing file with exact replacements. Up to 8 replacements are validated together and written atomically.
+description: Create a new file with content, or edit an existing file with exact replacements. Up to 8 replacements are validated together and written atomically. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
 examples:
 - {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
-- {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old exact text","new_string":"new text"}]}}
+- {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"def process():\n    return old_value\n","new_string":"def process():\n    return new_value\n"}]}}
 - {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}
 
 [8] run
@@ -114,9 +114,9 @@ examples:
     Batch at most 4 independent read-only list_dir, read_file, or grep calls. Local results are returned in request order.
 
   {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
-  {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old exact text","new_string":"new text"}]}}
+  {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"def process():\n    return old_value\n","new_string":"def process():\n    return new_value\n"}]}}
   {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}
-    Create a new file with content, or edit an existing file with exact replacements. Up to 8 replacements are validated together and written atomically.
+    Create a new file with content, or edit an existing file with exact replacements. Up to 8 replacements are validated together and written atomically. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
 
   {"tool":"run","args":{"command":"python -m unittest","path":"."}}
     Run an allowed test, build, lint, or check command.
