@@ -52,7 +52,9 @@ TIMEOUT = 600.0
 
 CASES = (
     "chat", "read", "create", "edit", "references", "hybrid", "discussion", "planning", "auto", "ghost",
+    "tests", "research", "recovery",
 )
+DEFAULT_CASES = tuple(case for case in CASES if case != "research")
 
 
 def _log(text: str) -> None:
@@ -76,7 +78,14 @@ def probe_endpoint() -> tuple[str, tuple[str, ...]]:
 
 
 def _make_fixture(root: Path, case: str) -> None:
-    if case in {"create", "discussion", "auto"}:
+    if case in {"create", "discussion", "auto", "research", "recovery"}:
+        return
+    if case == "tests":
+        (root / "calculator.py").write_text(
+            "def multiply(left, right):\n    return left * right\n", encoding="utf-8",
+        )
+        (root / "tests").mkdir(exist_ok=True)
+        (root / "tests" / "__init__.py").write_text("", encoding="utf-8")
         return
     if case == "planning":
         _make_fixture(root, "references")
@@ -211,6 +220,21 @@ def _task_for(case: str) -> tuple[str, str, int]:
             "auto",
             8,
         )
+    if case == "tests":
+        return (
+            "Add tests/test_calculator.py with unittest tests for calculator.multiply. "
+            "Cover positive, zero, negative, and decimal inputs. Use edit with content; "
+            "do not change calculator.py or create shell commands. Run python -m unittest discover "
+            "and finish with done.", "project", 8,
+        )
+    if case == "research":
+        return (
+            "Research the official Python pathlib documentation. First use web_search, then open_url "
+            "on a result, then finish with done summarizing the source. Do not create or edit files.",
+            "research", 8,
+        )
+    if case == "recovery":
+        return ("Complete a recovery control check and finish with done. Do not create or edit files.", "planning_readonly", 4)
     raise ValueError(f"unknown agent case: {case}")
 
 
@@ -331,6 +355,30 @@ def check_hybrid_tool_order(rows: list[dict]) -> dict:
     return {"ok": True, "tool_names": names, "detail": "search->open->read->edit->run->done"}
 
 
+def check_research_tool_order(rows: list[dict]) -> dict:
+    """Require successful web search, source opening, and terminal done evidence."""
+    relevant = [r for r in (rows or []) if str(r.get("type") or "") in {"tool", "task_done"}]
+    identities = {(str(r.get("run_id") or ""), str(r.get("session_id") or "")) for r in relevant}
+    if not relevant or any(not run or not session for run, session in identities) or len(identities) != 1:
+        return {"ok": False, "tool_names": _tool_names_in_order(rows), "detail": "invalid task identity"}
+    successful: list[str] = []
+    for row in relevant:
+        if str(row.get("type") or "") == "task_done":
+            if str(row.get("stop_reason") or "") == "done":
+                successful.append("done")
+        elif row.get("ok") is True:
+            name = _normalize_hybrid_step(_canonical_tool_name(row))
+            if name:
+                successful.append(name)
+    try:
+        search = successful.index("web_search")
+        opened = successful.index("open", search + 1)
+        done = successful.index("done", opened + 1)
+    except ValueError:
+        return {"ok": False, "tool_names": _tool_names_in_order(rows), "detail": f"missing search/open/done in {successful}"}
+    return {"ok": True, "tool_names": _tool_names_in_order(rows), "detail": "search->open->done", "positions": [search, opened, done]}
+
+
 def check_single_session_identity(rows: list[dict]) -> dict:
     """Task-run rows must share one run_id/session_id (same Codey run/session).
 
@@ -395,13 +443,19 @@ def _verify_fixture(
         changed = [name for name, digest in baseline_tests.items() if current.get(name) != digest]
         if changed:
             return {"ok": False, "exit_code": None, "output": f"existing tests changed: {changed}"}
-    if case in {"discussion", "planning", "read"}:
+    if case in {"discussion", "planning", "read", "research", "recovery"}:
         unchanged = baseline_files is not None and fixture_file_hashes(root) == baseline_files
         return {
             "ok": unchanged, "exit_code": 0 if unchanged else 1,
             "output": "no files changed" if unchanged else "read-only files changed or baseline missing",
         }
-    if case == "create":
+    if case == "tests":
+        test_path = root / "tests" / "test_calculator.py"
+        if not test_path.exists():
+            return {"ok": False, "exit_code": 1, "output": "tests/test_calculator.py missing"}
+        commands = ([sys.executable, "-B", "-m", "unittest", "discover"],)
+        assertion = ""
+    elif case == "create":
         assertion = (
             "from math_utils import add; "
             "assert all(add(a, b) == a + b for a, b in "
@@ -435,10 +489,11 @@ def _verify_fixture(
         return {"ok": ok, "exit_code": 0 if ok else 1, "output": content[:500]}
     else:
         raise ValueError(f"unknown fixture: {case}")
-    commands = (
-        [sys.executable, "-I", "-B", "-c", "import sys; sys.path.insert(0, sys.argv[1]); " + assertion, str(root)],
-        [sys.executable, "-B", "-m", "unittest", "discover"],
-    )
+    if case != "tests":
+        commands = (
+            [sys.executable, "-I", "-B", "-c", "import sys; sys.path.insert(0, sys.argv[1]); " + assertion, str(root)],
+            [sys.executable, "-B", "-m", "unittest", "discover"],
+        )
     outputs: list[str] = []
     for command in commands:
         try:
@@ -460,6 +515,19 @@ def _verify_fixture(
         meaningful = _verify_generated_tests(root)
         if meaningful is not None:
             return meaningful
+    if case == "tests":
+        with tempfile.TemporaryDirectory(prefix="codey-gate-tests-mutant-") as temporary:
+            mutant = Path(temporary) / "project"
+            shutil.copytree(root, mutant, symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
+            (mutant / "calculator.py").write_text(
+                "def multiply(left, right):\n    return left + right\n", encoding="utf-8",
+            )
+            mutant_run = subprocess.run(
+                [sys.executable, "-B", "-m", "unittest", "discover"], cwd=mutant,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False,
+            )
+            if mutant_run.returncode == 0 or _ran_zero_tests(mutant_run.stdout + mutant_run.stderr):
+                return {"ok": False, "exit_code": mutant_run.returncode, "output": "generated tests accept wrong multiply"}
     return {"ok": True, "exit_code": 0, "output": combined}
 
 
@@ -542,15 +610,25 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
         hybrid_order: dict | None = None
         if case == "hybrid":
             hybrid_order = check_hybrid_tool_order(rows)
+        research_order: dict | None = None
+        if case == "research":
+            research_order = check_research_tool_order(rows)
+        order = hybrid_order or research_order
         ok = (
             stop_reason == "done"
             and result.exit_code == 0
             and done is not None
             and verification["ok"]
             and single_session["ok"]
-            and (hybrid_order is None or bool(hybrid_order.get("ok")))
+            and (order is None or bool(order.get("ok")))
             and (case != "read" or any(r.get("tool_name") == "read_file" and r.get("ok") is True for r in rows))
         )
+        failure_stage = _agent_failure_stage(ok, verification, single_session, order, stop_reason)
+        if (
+            case == "research" and not any(r.get("tool_name") == "web_search" for r in rows)
+            and "not configured" in str((done or {}).get("summary") or "").lower()
+        ):
+            failure_stage = "research_environment_unavailable"
         data = {
             "case": case, "ok": ok, "seconds": dt,
             "stop_reason": stop_reason, "turns": int((done or {}).get("turns") or 0),
@@ -558,12 +636,12 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
             "summary": str((done or {}).get("summary") or "")[:1000],
             "verification": verification,
             "work_correct": verification["ok"],
-            "failure_stage": _agent_failure_stage(ok, verification, single_session, hybrid_order, stop_reason),
+            "failure_stage": failure_stage,
             "project": str(root),
             "run_id": result.run_id, "session_id": result.session_id,
             "jsonl_rows": len(rows),
             "tool_names": tool_names,
-            "tool_order": hybrid_order,
+            "tool_order": order,
             "single_session": single_session,
         }
     except Exception as exc:  # noqa: BLE001 - gate must report, not raise
@@ -592,7 +670,7 @@ def _agent_failure_stage(ok, verification, identity, order, stop_reason):
     return "completion:" + stop_reason
 
 
-def run_ghost_case() -> dict:
+def run_ghost_case(case: str = "ghost") -> dict:
     """Ghost control-plane roundtrip inside an isolated state home.
 
     Writes one observation for this run, reads it back by run_id, checks
@@ -612,25 +690,25 @@ def run_ghost_case() -> dict:
             assistant_text="gate reply about breathing",
             stop_reason="done", provider_id="local",
         ):
-            return {"case": "ghost", "ok": False, "error": "roundtrip append failed"}
+            return {"case": case, "ok": False, "error": "roundtrip append failed"}
         committed = store.read_committed(session_id=session_id)
         seen = [row for row in committed if str(row.get("run_id") or "") == run_id]
         if not seen:
-            return {"case": "ghost", "ok": False, "error": "roundtrip read by run_id failed"}
+            return {"case": case, "ok": False, "error": "roundtrip read by run_id failed"}
         picked = retrieve_relevant_observations(
             committed, "breathing plan", exclude_run_id="other-run",
         )
         if not any(str(row.get("run_id") or "") == run_id for row in picked):
-            return {"case": "ghost", "ok": False, "error": "roundtrip retrieval missed"}
+            return {"case": case, "ok": False, "error": "roundtrip retrieval missed"}
         removed = store.delete_scope("session", session_id=session_id)
         if removed < 1:
             return {"case": "ghost", "ok": False, "error": "roundtrip delete removed nothing"}
         after = [row for row in store.read_committed(session_id=session_id)
                  if str(row.get("run_id") or "") == run_id]
         if after:
-            return {"case": "ghost", "ok": False, "error": "deleted observation still retrievable"}
+            return {"case": case, "ok": False, "error": "deleted observation still retrievable"}
         return {
-            "case": "ghost", "ok": True, "observations": len(committed),
+            "case": case, "ok": True, "observations": len(committed),
             "roundtrip": "write->read->retrieve->delete->gone",
         }
     except Exception as exc:  # noqa: BLE001
@@ -648,8 +726,8 @@ def _worker(case: str, directory: Path) -> int:
     try:
         if case == "chat":
             data = run_chat_case(target, directory)
-        elif case == "ghost":
-            data = run_ghost_case()
+        elif case in {"ghost", "recovery"}:
+            data = run_ghost_case(case)
         else:
             data = run_agent_case(case, target=target, case_dir=directory)
     except Exception as exc:
@@ -728,7 +806,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.worker_dir is None:
             ap.error("worker directory required")
         return _worker(args.worker_case, args.worker_dir.resolve())
-    selected = args.cases.split(",") if args.cases else (list(CASES) if args.case == "all" else [args.case])
+    selected = args.cases.split(",") if args.cases else (list(DEFAULT_CASES) if args.case == "all" else [args.case])
     if any(case not in CASES for case in selected):
         ap.error("unknown case in --cases")
     directory = args.run_dir.resolve() if args.run_dir else attempts.create_run_dir(ARTIFACT_DIR)

@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from tools import local_model_gate_attempts as runner
 from tools import local_model_release_gate as gate
 
@@ -67,6 +69,144 @@ def test_correct_artifact_is_counted_separately_from_terminal_completion():
     ])
     assert summary["objective_tasks"]["passed"] == 0
     assert summary["objective_tasks"]["artifacts_correct"] == 1
+
+
+def test_summary_preserves_task_failure_matrix_and_root_cause_class():
+    summary = runner.summarize([
+        {
+            "case": "edit",
+            "ok": False,
+            "scope": "objective_task",
+            "task_kind": "bug_fix",
+            "failure_kind": "truncation",
+            "root_cause_class": "provider_boundary",
+            "root_cause_evidence": {"provider": "provider.jsonl"},
+        },
+        {
+            "case": "edit",
+            "ok": True,
+            "scope": "objective_task",
+            "task_kind": "bug_fix",
+            "failure_kind": "none",
+            "root_cause_class": "none",
+        },
+    ])
+
+    assert summary["matrix"] == {
+        "bug_fix": {
+            "truncation": {"attempts": 1, "passed": 0},
+            "none": {"attempts": 1, "passed": 1},
+        },
+    }
+    assert summary["root_causes"] == {"provider_boundary": 1}
+
+
+def test_gate_result_classification_keeps_observation_separate_from_root_cause():
+    assert runner.case_task_kind("edit") == "bug_fix"
+    assert runner.case_task_kind("create") == "feature"
+    assert runner.case_task_kind("references") == "refactor"
+    assert runner.case_task_kind("hybrid") == "browser"
+
+    truncated = runner.annotate_result({
+        "case": "edit",
+        "ok": False,
+        "failure_stage": "completion:provider_failure",
+        "provider_metrics": {"finish_reasons": ["length"]},
+    })
+    assert truncated["failure_kind"] == "truncation"
+    assert truncated["root_cause_class"] == "undetermined"
+
+    timed_out = runner.annotate_result({
+        "case": "edit",
+        "ok": False,
+        "failure_stage": "case_timeout",
+    })
+    assert timed_out["failure_kind"] == "timeout"
+    assert timed_out["root_cause_class"] == "undetermined"
+
+    passed = runner.annotate_result({"case": "edit", "ok": True})
+    assert passed["failure_kind"] == "none"
+    assert passed["root_cause_class"] == "none"
+
+
+def test_matrix_labels_are_restricted_and_keep_evidence_source():
+    result = runner.annotate_result({
+        "case": "hybrid",
+        "ok": False,
+        "failure_stage": "tool_order",
+        "failure_evidence": {"events": "events.jsonl", "provider": "provider.jsonl"},
+    })
+    assert result["task_kind"] == "browser"
+    assert result["failure_kind"] == "tool_error"
+    assert result["root_cause_class"] == "undetermined"
+    assert result["failure_evidence"] == {"events": "events.jsonl", "provider": "provider.jsonl"}
+
+    with pytest.raises(ValueError, match="failure_kind"):
+        runner.summarize([{
+            "case": "edit", "ok": False, "task_kind": "bug_fix",
+            "failure_kind": "made_up_failure", "root_cause_class": "undetermined",
+        }])
+
+
+def test_task_axis_covers_release_matrix_vocabulary():
+    assert runner.case_task_kind("tests") == "tests"
+    assert runner.case_task_kind("research") == "research"
+    assert runner.case_task_kind("recovery") == "recovery"
+
+
+def test_tests_is_objective_and_recovery_is_control_plane():
+    assert runner.case_scope("tests") == "objective_task"
+    assert runner.case_scope("recovery") == "control_plane"
+
+
+def test_failure_axis_detects_restart_duplicate_and_resume_evidence():
+    assert runner.annotate_result({
+        "case": "recovery", "ok": False, "failure_stage": "provider_restart",
+    })["failure_kind"] == "provider_restart"
+    assert runner.annotate_result({
+        "case": "edit", "ok": False, "failure_stage": "duplicate_event",
+    })["failure_kind"] == "duplicate_event"
+    assert runner.annotate_result({
+        "case": "recovery", "ok": False, "failure_stage": "resume_failed",
+    })["failure_kind"] == "resume"
+
+
+def test_root_cause_requires_explicit_evidence_reference():
+    with pytest.raises(ValueError, match="root_cause_evidence"):
+        runner.summarize([{
+            "case": "edit", "ok": False, "task_kind": "bug_fix",
+            "failure_kind": "tool_error", "root_cause_class": "production_defect",
+        }])
+
+
+def test_summary_can_require_a_complete_matrix_without_marking_missing_cells_passed():
+    summary = runner.summarize([
+        {"case": "edit", "ok": True, "scope": "objective_task"},
+    ], expected_cases=("edit", "create"), repeat=1)
+    assert summary["matrix_complete"] is False
+    assert summary["missing_attempts"] == [{"case": "create", "attempt": 1}]
+    assert summary["ok"] is False
+
+
+def test_unconfigured_research_is_environment_with_evidence():
+    result = runner.annotate_result({
+        "case": "research", "ok": False,
+        "failure_stage": "research_environment_unavailable",
+        "error": "ERROR: Research is not configured",
+        "root_cause_evidence": {"events": "events.jsonl"},
+    })
+    assert result["failure_kind"] == "tool_error"
+    assert result["root_cause_class"] == "environment"
+
+
+def test_environment_result_gets_evidence_paths_before_summary(tmp_path):
+    result = runner.annotate_result({
+        "case": "research", "ok": False,
+        "failure_stage": "research_environment_unavailable",
+    })
+    result["root_cause_evidence"] = {"events": "events.jsonl", "provider": "provider.jsonl"}
+    summary = runner.summarize([result])
+    assert summary["root_causes"] == {"environment": 1}
 
 
 def test_timeout_does_not_become_artifact_error_on_partial_provider_record(tmp_path):

@@ -18,14 +18,26 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
         _task, intent, _turns = gate._task_for("hybrid")
         self.assertEqual(intent, "hybrid")
 
+    def test_cases_include_tests_research_and_recovery_axes(self) -> None:
+        for case in ("tests", "research", "recovery"):
+            self.assertIn(case, gate.CASES)
+            gate._task_for(case)
+
+    def test_default_cases_exclude_unconfigured_exploratory_research(self) -> None:
+        self.assertNotIn("research", gate.DEFAULT_CASES)
+        self.assertIn("research", gate.CASES)
+
     def test_all_agent_cases_have_fixtures(self) -> None:
-        for case in ("create", "edit", "references", "hybrid", "discussion", "planning", "auto"):
+        for case in (
+            "create", "edit", "references", "hybrid", "discussion", "planning",
+            "auto", "tests", "research", "recovery",
+        ):
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 gate._make_fixture(root, case)  # must not raise
 
     def test_empty_cases_create_no_files(self) -> None:
-        for case in ("create", "discussion", "auto"):
+        for case in ("create", "discussion", "auto", "research", "recovery"):
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 gate._make_fixture(root, case)
@@ -49,6 +61,22 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
             gate._make_fixture(root, "hybrid")
             candidates = discover_verification_candidates(str(root))
             self.assertIn("python -m unittest discover", [item.command for item in candidates])
+
+    def test_tests_fixture_starts_without_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            gate._make_fixture(root, "tests")
+            self.assertTrue((root / "calculator.py").is_file())
+            self.assertFalse((root / "tests" / "test_calculator.py").exists())
+
+    def test_research_order_requires_open_source_before_done(self) -> None:
+        rows = [
+            {"type": "tool", "tool_name": "web_search", "ok": True, "run_id": "r", "session_id": "s"},
+            {"type": "task_done", "stop_reason": "done", "run_id": "r", "session_id": "s"},
+        ]
+        self.assertFalse(gate.check_research_tool_order(rows)["ok"])
+        rows.insert(1, {"type": "tool", "tool_name": "open_url", "ok": True, "run_id": "r", "session_id": "s"})
+        self.assertTrue(gate.check_research_tool_order(rows)["ok"])
 
     def test_discussion_and_planning_verify_rejects_files(self) -> None:
         for case in ("discussion", "planning"):
@@ -81,6 +109,11 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
         self.assertTrue(gate._ran_zero_tests("Ran 0 tests in 0.001s\nOK"))
         self.assertFalse(gate._ran_zero_tests("Ran 3 tests in 0.001s\nOK"))
         self.assertFalse(gate._ran_zero_tests(""))
+
+    def test_recovery_roundtrip_preserves_case_identity(self) -> None:
+        result = gate.run_ghost_case("recovery")
+        self.assertEqual(result["case"], "recovery")
+        self.assertTrue(result["ok"])
 
 
 if __name__ == "__main__":

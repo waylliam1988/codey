@@ -45,7 +45,13 @@ python -m pytest tests/test_cli.py tests/test_headless_runner.py tests/test_rele
 工具：`tools/local_model_release_gate.py`（自动抓 JSONL + 独立校验，不依赖模型自评）。
 
 ```powershell
-python tools/local_model_release_gate.py --cases chat,read,create,edit,references,hybrid --repeat 3 --timeout 600 --json
+python tools/local_model_release_gate.py --case all --repeat 1 --timeout 600 --protocol native --json
+```
+
+`--case all` 使用当前可配置的默认门槛集合；研究联网 case 需要连接器，未配置时不会被默认集合假装为通过。可显式运行：
+
+```powershell
+python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 600 --json
 ```
 
 覆盖范围（不等同于所有任务正确性或所有模型兼容性）：
@@ -62,6 +68,8 @@ python tools/local_model_release_gate.py --cases chat,read,create,edit,reference
 | `planning` | `planning_readonly`：对实际源码给方案 | 原文件哈希不变且 `done`；方案质量待评审 |
 | `auto` | `auto`：小任务自动选路 | 文件内容精确等于 `hello auto`（仅容忍末尾换行）+ `done` + exit 0 |
 | `ghost` | 隔离 state 下写→按 run_id 读→检索→删→不可检索 | roundtrip 完整；独立控制面检查，不计入模型任务成功率，不读取默认用户状态 |
+| `tests` | 为已有实现补充测试 | 测试通过、原实现未改动、变异实现必须被测试拒绝 |
+| `recovery` | 隔离 state 下恢复控制面 roundtrip | case 身份保持一致；写→读→检索→删完整 |
 
 实机要求：
 
@@ -97,3 +105,4 @@ python tools/local_model_release_gate.py --cases chat,read,create,edit,reference
 - `python -m unittest test_pricing.py`（带具体文件名）不算 full-family 命令，不会替代候选；必须跑候选原命令或同 family 的 full 命令。
 - 模型必须选自 `/models` 的实际 ID，固定到每个案例，不依赖服务端忽略错误模型名，也不修改用户保存的配置。
 - 12B 的参数量不能独自解释失败。先区别程序接线/判定错误、模型生成的错误代码、协议或输出预算问题、联网环境问题；证据不足时保持未归因。测试授权与完成门不放宽。
+- 每个结果同时记录任务轴、失败轴和根因类别。`production_defect`、`provider_boundary`、`model_boundary`、`gate_defect`、`environment` 等人工裁决类别必须带 `root_cause_evidence`；没有证据时保持 `undetermined`。

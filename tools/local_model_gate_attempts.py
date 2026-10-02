@@ -20,7 +20,48 @@ from codey.providers.local_openai import LocalOpenAIProvider
 from codey.runtime.core.cancellation import start_process, wait_process
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-OBJECTIVE_CASES = frozenset({"create", "edit", "references", "hybrid", "auto"})
+OBJECTIVE_CASES = frozenset({"create", "edit", "references", "hybrid", "auto", "tests"})
+
+# These labels are deliberately about the task contract, not implementation
+# details. Unknown/new cases stay visible as their own kind until the matrix
+# explicitly assigns them a stable category.
+CASE_TASK_KINDS = {
+    "chat": "chat",
+    "read": "read_only",
+    "create": "feature",
+    "edit": "bug_fix",
+    "references": "refactor",
+    "hybrid": "browser",
+    "discussion": "conversation",
+    "planning": "long_horizon",
+    "auto": "feature",
+    "ghost": "recovery",
+    "tests": "tests",
+    "research": "research",
+    "recovery": "recovery",
+}
+FAILURE_KINDS = frozenset({
+    "none",
+    "timeout",
+    "truncation",
+    "tool_error",
+    "process_kill",
+    "provider_restart",
+    "duplicate_event",
+    "resume",
+    "provider_error",
+    "unclassified",
+})
+ROOT_CAUSE_CLASSES = frozenset({
+    "none",
+    "undetermined",
+    "model_boundary",
+    "provider_boundary",
+    "gate_defect",
+    "production_defect",
+    "environment",
+    "unclassified",
+})
 
 
 @dataclass(frozen=True)
@@ -91,7 +132,61 @@ def case_scope(case: str) -> str:
         return "objective_task"
     if case in {"discussion", "planning"}:
         return "conversation_safety"
-    return "control_plane" if case == "ghost" else "protocol"
+    return "control_plane" if case in {"ghost", "recovery"} else "protocol"
+
+
+def case_task_kind(case: str) -> str:
+    """Return the stable task-axis label for a gate case."""
+    return CASE_TASK_KINDS.get(str(case), str(case) or "unclassified")
+
+
+def _has_truncation(result: dict) -> bool:
+    metrics = result.get("provider_metrics")
+    if not isinstance(metrics, dict):
+        return False
+    return any(str(reason or "").lower() == "length" for reason in metrics.get("finish_reasons", ()))
+
+
+def _failure_kind(result: dict) -> str:
+    if result.get("ok") is True:
+        return "none"
+    stage = str(result.get("failure_stage") or "")
+    if stage == "case_timeout":
+        return "timeout"
+    if "provider_restart" in stage:
+        return "provider_restart"
+    if "duplicate_event" in stage:
+        return "duplicate_event"
+    if "resume" in stage or "recovery" in stage:
+        return "resume"
+    if "process" in stage or "kill" in stage:
+        return "process_kill"
+    if _has_truncation(result):
+        return "truncation"
+    if "tool" in stage:
+        return "tool_error"
+    if "provider" in stage:
+        return "provider_error"
+    if "research_environment" in stage:
+        return "tool_error"
+    return "unclassified"
+
+
+def annotate_result(result: dict) -> dict:
+    """Attach observed matrix labels without guessing a root cause.
+
+    A truncation can be caused by model behavior, provider limits, or an
+    integration mistake. Until a deterministic comparison proves which one,
+    the root cause remains ``undetermined``.
+    """
+    annotated = dict(result)
+    annotated.setdefault("task_kind", case_task_kind(str(result.get("case") or "")))
+    annotated.setdefault("failure_kind", _failure_kind(annotated))
+    inferred = "none" if annotated["failure_kind"] == "none" else "undetermined"
+    if annotated.get("failure_stage") == "research_environment_unavailable":
+        inferred = "environment"
+    annotated.setdefault("root_cause_class", inferred)
+    return annotated
 
 
 def _provider_metrics(directory: Path) -> dict:
@@ -176,18 +271,66 @@ def run_case_process(case: str, directory: Path, target: GateTarget, *, timeout:
             result["artifact_errors"] = artifact_errors
             if not result.get("failure_stage"):
                 result["failure_stage"] = "artifact_error"
+        result = annotate_result(result)
         result.update(case=case, scope=case_scope(case), model=target.model, base_url=target.base_url,
                       seconds=round(time.perf_counter() - started, 3), project=str(directory / "project"),
                       artifacts=str(directory))
+        if result.get("root_cause_class") == "environment":
+            result.setdefault("root_cause_evidence", {
+                "events": "events.jsonl", "provider": "provider.jsonl", "result": "result.json",
+            })
         write_json(directory / "result.json", result)
     return result
 
 
-def summarize(results: list[dict]) -> dict:
+def summarize(
+    results: list[dict], *, expected_cases: tuple[str, ...] | None = None,
+    repeat: int | None = None,
+) -> dict:
     objective = [row for row in results if row.get("scope") == "objective_task"]
+    expected = (
+        {(str(case), attempt) for attempt in range(1, int(repeat) + 1) for case in expected_cases}
+        if expected_cases is not None and repeat is not None
+        else None
+    )
+    observed = {
+        (str(row.get("case") or ""), int(row.get("attempt") or 1))
+        for row in results
+    }
+    missing_attempts = (
+        [{"case": case, "attempt": attempt} for case, attempt in sorted(expected - observed)]
+        if expected is not None else []
+    )
+    matrix_complete = not missing_attempts
+    matrix: dict[str, dict[str, dict[str, int]]] = {}
+    root_causes: Counter = Counter()
+    for row in results:
+        task_kind = str(row.get("task_kind") or "unclassified")
+        failure_kind = str(row.get("failure_kind") or "unclassified")
+        if failure_kind not in FAILURE_KINDS:
+            raise ValueError(f"unsupported failure_kind: {failure_kind}")
+        cell = matrix.setdefault(task_kind, {}).setdefault(
+            failure_kind, {"attempts": 0, "passed": 0},
+        )
+        cell["attempts"] += 1
+        if row.get("ok") is True:
+            cell["passed"] += 1
+        root_cause = str(row.get("root_cause_class") or "unclassified")
+        if root_cause not in ROOT_CAUSE_CLASSES:
+            raise ValueError(f"unsupported root_cause_class: {root_cause}")
+        if root_cause not in {"none", "undetermined", "unclassified"}:
+            evidence = row.get("root_cause_evidence")
+            if not evidence:
+                raise ValueError("root_cause_evidence is required for an adjudicated root cause")
+        if root_cause != "none":
+            root_causes[root_cause] += 1
     return {
-        "ok": bool(results) and all(row.get("ok") is True for row in results),
+        "ok": bool(results) and matrix_complete and all(row.get("ok") is True for row in results),
         "attempts": len(results), "passed": sum(row.get("ok") is True for row in results),
+        "matrix_complete": matrix_complete,
+        "missing_attempts": missing_attempts,
+        "matrix": matrix,
+        "root_causes": dict(root_causes),
         "objective_tasks": {
             "attempts": len(objective), "passed": sum(row.get("ok") is True for row in objective),
             "artifacts_correct": sum(row.get("work_correct") is True for row in objective),
@@ -211,12 +354,16 @@ def run_attempts(cases, directory: Path, target: GateTarget, *, repeat: int, tim
                 case_dir.mkdir(exist_ok=True)
                 result = {"case": case, "ok": False, "scope": case_scope(case), "failure_stage": "harness_error",
                           "error": f"{type(exc).__name__}: {exc}", "model": target.model, "base_url": target.base_url}
+                result = annotate_result(result)
                 write_json(case_dir / "result.json", result)
             result["attempt"] = attempt
             results.append(result)
             # Save progress after every attempt; a later interruption cannot
             # discard already completed failures or successes.
-            write_json(directory / "summary.json", summarize(results))
+            write_json(
+                directory / "summary.json",
+                summarize(results, expected_cases=tuple(cases), repeat=repeat),
+            )
             print(f"[gate] {case}: {'PASS' if result.get('ok') is True else 'FAIL'} "
                   f"{result.get('failure_stage', '')}", flush=True)
     return results

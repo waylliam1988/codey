@@ -1,5 +1,35 @@
 # Codey Test Report
 
+## Local gate matrix expansion and live baseline (2026-10-02)
+
+The release gate now records a stable matrix of task kind, observed failure kind,
+and evidence-backed root cause. Added task cases are `tests`, `research`, and
+`recovery`; default `--case all` excludes research when the research connector is
+not configured. Adjudicated root causes require evidence paths; partial runs are
+marked incomplete instead of passing.
+
+- Offline TDD regression: **51 passed** for gate classification, matrix
+  completeness, case identity, research ordering, fixture sensitivity, and
+  evidence requirements.
+- KoboldCpp live target: `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`
+  at `http://127.0.0.1:5001/v1`, native protocol, temperature 0.
+- Default complete matrix: **12/12 passed**, objective tasks **6/6**, artifacts
+  independently correct **6/6**. Cases: chat, read, create, edit, references,
+  hybrid, discussion, planning, auto, ghost, tests, recovery.
+- Explicit research probe: **environment unavailable**, because Codey reported
+  `ERROR: Research is not configured` before any provider request. It is recorded
+  as `failure_kind=tool_error`, `root_cause_class=environment`, with
+  `events.jsonl`, `provider.jsonl`, and `result.json` evidence paths. It is not
+  counted as a model-intelligence failure.
+- First live recovery attempt exposed a gate defect: the worker returned
+  `case=ghost` for a requested `recovery` case. A red regression reproduced it;
+  the worker now preserves the requested case identity and the recovery rerun
+  passed. Raw artifacts remain under `.e2e-artifacts/`.
+
+This batch covers small Python fixtures and the configured local model only. It
+does not claim all-model reliability, research answer quality, complex-project
+completion, or absence of unrelated bugs.
+
 ## Native protocol root cause and terminal receipts (2026-10-02)
 
 Baseline: `6ff8cbd2ce3dd1c6f6c32a8a8d0a2804e2f240cb`. Each live batch records
