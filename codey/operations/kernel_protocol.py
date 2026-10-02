@@ -176,7 +176,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
                     "type": "function",
                     "function": {
                         "name": name,
-                        "description": getattr(spec, "description", "") or getattr(spec, "json_example", ""),
+                        "description": spec.description or "\n".join(spec.json_examples),
                         "parameters": _schema_fn(spec),
                     },
                 })

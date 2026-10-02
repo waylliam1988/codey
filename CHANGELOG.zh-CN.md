@@ -2,6 +2,16 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 诚实的本地模型门槛与共同完成接线（未发布）
+
+- 固定探测到的 endpoint/model，显式选择 native 或文本 JSON。每次尝试独立记录真实请求/响应、usage、项目/state、异常和进程截止时间；失败不覆盖。正常完成、产物正确、只读安全与 Ghost 控制面分开统计。
+- 独立判定拒绝标记子串、常量实现、改写原测试和无意义生成测试；新增四十三项回归，仍使用生产 provider 与一个共同任务循环。
+- 修复只读 planning 的持久运行状态、审批/取消时 writer/repair 错误结算，以及网页执行资源错误依赖知识库。项目/网络 guard、shell 审批和无知识库时的拒绝保持。
+- 必须修改的要求同时产生通过/失败检查；ToolSpec 快照保留全部规范 edit 示例，删除单数示例字段，不加旧别名或方言 fallback。
+- 两条搜索途径均不可用时传播失败，避免变成空成功；已有真实 connector 部分结果仍可使用，取消与截止时间不吞掉。
+- Gemma 12B 实机：JSON 纯项目任务 **12/12**，沙盒外真实混合任务 **3/3**；沙盒 CDP 启动失败单独保留。原生复测正常完成 **2/4**、产物正确 **4/4**，两次仍连续截断；不声称该路径通过，不合并不同条件成为总体成功率。[完整报告](docs/local_model_gate_2026-10-02.zh-CN.md)。
+- 启用真实 Edge 的最终全量：3.12.8 **6618 passed、6 skipped、1488 subtests passed，424.86 秒**；新增四十三项在 3.13.15 也通过。Ruff、compileall、diff 检查通过。无 tag/release/版本 bump，不等待托管 CI。
+
 ## Unreleased - 可读性收尾与本地产物忽略（未发布）
 
 - 在原模块内拆清 pending 状态决策、收据形状校验与文本/native 解包；共同校验和恢复优先级保持，无新框架或 facade。

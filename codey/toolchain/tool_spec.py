@@ -44,7 +44,7 @@ class ToolSpec:
     grant: str = ""
     parameters: tuple[tuple[str, object], ...] = ()
     required: tuple[str, ...] = ()
-    json_example: str = ""
+    json_examples: tuple[str, ...] = ()
     description: str = ""
     executor: str = ""
     replay_class: str = "unsafe"
@@ -103,7 +103,7 @@ def _coding_specs() -> dict[str, ToolSpec]:
             grant=grant,
             parameters=tuple(definition.parameters),
             required=() if definition.name == "list_dir" else tuple(definition.required),
-            json_example=definition.examples[0] if definition.examples else "",
+            json_examples=definition.examples,
             description=definition.description,
             executor="project",
             replay_class="safe" if definition.read_only else "unsafe",
@@ -140,7 +140,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             grant=grant,
             parameters=tuple(params),
             required=tuple(sorted(contract.required.keys())),
-            json_example=contract.example,
+            json_examples=(contract.example,),
             description=contract.description,
             executor="source" if grant == "web.read" else "knowledge",
             replay_class="safe" if grant in {"web.read", "knowledge.read"} else "unsafe",
@@ -152,7 +152,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             grant="web.read",
             parameters=((id_arg, {"type": "string"}),),
             required=(id_arg,),
-            json_example=f'{{"tool":"{alias}","args":{{"{id_arg}":"..."}}}}',
+            json_examples=(f'{{"tool":"{alias}","args":{{"{id_arg}":"..."}}}}',),
             description=f"controller alias lowering to {canonical}",
             executor="source",
             replay_class="safe",
@@ -310,7 +310,7 @@ def register_custom_tool(
         grant=grant_text,
         parameters=tuple(parameters),
         required=tuple(required),
-        json_example=example,
+        json_examples=(example,),
         description=str(description or ""),
         executor=str(executor or "custom"),
         replay_class="unsafe",
@@ -458,7 +458,7 @@ def native_tools_for_snapshot(policy: Any, controller_allowed: Any = None) -> li
             "type": "function",
             "function": {
                 "name": name,
-                "description": spec.description or spec.json_example,
+                "description": spec.description or "\n".join(spec.json_examples),
                 "parameters": _schema_for_spec(spec),
             },
         })
@@ -834,8 +834,8 @@ def json_contract_text(
         spec = source.get(name)
         if spec is None:
             continue
-        if spec.json_example:
-            lines.append(f"- {spec.json_example}  {spec.description}".rstrip())
+        if spec.json_examples:
+            lines.extend(f"- {example}  {spec.description}".rstrip() for example in spec.json_examples)
         else:
             lines.append(f"- {name}")
     return "\n".join(lines)

@@ -288,18 +288,19 @@ def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
                 remaining_turns=repair_remaining_turns,
                 repair_rounds=1,
             )
-        _commit_runtime_operation(
-            ctx,
-            "mark_repair_settled",
-            lambda mutations, session_id, run_id: mutations.mark_repair_settled(
-                session_id,
-                run_id,
-                provider_id=ctx.frame.provider_id,
-                stop_reason=repair_result.stop_reason,
-                turns_used=ctx.result.turns + repair_result.turns,
-                blocked_reason=repair_blocked_reason,
-            ),
-        )
+        if repair_result.stop_reason not in {"approval", "stopped"}:
+            _commit_runtime_operation(
+                ctx,
+                "mark_repair_settled",
+                lambda mutations, session_id, run_id: mutations.mark_repair_settled(
+                    session_id,
+                    run_id,
+                    provider_id=ctx.frame.provider_id,
+                    stop_reason=repair_result.stop_reason,
+                    turns_used=ctx.result.turns + repair_result.turns,
+                    blocked_reason=repair_blocked_reason,
+                ),
+            )
         if repair_blocked_reason:
             ctx.blocked_reason = repair_blocked_reason
     finally:

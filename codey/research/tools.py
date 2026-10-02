@@ -41,8 +41,8 @@ class ResearchToolOutput:
 @dataclass
 class ResearchTools:
     search: object
-    store: KnowledgeStore
-    changes: KnowledgeChanges
+    store: KnowledgeStore | None
+    changes: KnowledgeChanges | None
     diagnostics: object | None = None
     session_id: str = ""
     project: str = ""
@@ -55,8 +55,8 @@ class ResearchTools:
     ledger: ResearchLedger = field(default_factory=ResearchLedger)
 
     def create_staged(self) -> ResearchTools:
-        staged_store = StagedKnowledgeStore(self.store)
-        staged_changes = StagedKnowledgeChanges(self.changes)
+        staged_store = StagedKnowledgeStore(self.store) if self.store is not None else None
+        staged_changes = StagedKnowledgeChanges(self.changes) if self.changes is not None else None
         return ResearchTools(
             search=self.search,
             store=staged_store,
@@ -75,6 +75,8 @@ class ResearchTools:
 
     def commit_staged(self, staged: ResearchTools) -> None:
         if isinstance(staged.store, StagedKnowledgeStore):
+            if self.store is None:
+                raise ValueError("cannot commit knowledge into an unavailable store")
             staged.store.commit_to(self.store, changes=self.changes)
         self.sources_read.update(staged.sources_read)
         self.search_result_urls.update(staged.search_result_urls)
@@ -165,6 +167,8 @@ class ResearchTools:
         return render_results(list(outcome.hits))
 
     def knowledge_search(self, query: str) -> str:
+        if self.store is None:
+            return "ERROR: knowledge store is unavailable"
         query = (query or "").strip()
         if not query:
             return "ERROR: knowledge_search needs a query"
@@ -180,6 +184,8 @@ class ResearchTools:
         return "\n".join(lines)
 
     def knowledge_read(self, note_id: str) -> str:
+        if self.store is None:
+            return "ERROR: knowledge store is unavailable"
         note = self.store.read_note((note_id or "").strip())
         if note is None:
             return f"ERROR: no note with id {note_id}"
@@ -188,6 +194,8 @@ class ResearchTools:
         return note.to_markdown()
 
     def knowledge_write(self, args: dict) -> str:
+        if self.store is None:
+            return "ERROR: knowledge store is unavailable"
         existing_id, existing_note, updating, identity_error = _resolve_write_target(self.store, args)
         if identity_error:
             return identity_error
@@ -244,6 +252,8 @@ class ResearchTools:
         )
 
     def knowledge_link(self, src: str, dst: str, kind: str = "relates") -> str:
+        if self.store is None:
+            return "ERROR: knowledge store is unavailable"
         src = (src or "").strip()
         dst = (dst or "").strip()
         if not src or not dst:

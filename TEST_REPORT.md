@@ -1,5 +1,88 @@
 # Codey Test Report
 
+## KoboldCpp 12B live gate and completion wiring (2026-10-02)
+
+Baseline: `4404c033`. Production and pytest changes were finished before
+the final full run. This section and both changelogs were updated after it
+finished. Historical baselines below are preserved.
+
+- Final Windows Python 3.12.8 full suite, with `RUN_BROWSER_E2E=1`:
+  **6618 passed, 6 skipped, 1488 subtests passed in 424.86s**. First full
+  run passed; no failed full run was discarded. Command:
+  `python -m pytest -q -o faulthandler_timeout=120 -rs`.
+- Run outside the filesystem sandbox so Edge can start; use an independent
+  external TEMP/TMP directory. The 22 former privilege/symlink skips now
+  ran and passed. Remaining six are Windows POSIX/O_NOFOLLOW limitations.
+  Log: `.e2e-artifacts/local-gate-py312-full-20261002.log`.
+- New eight regression files: **43 passed** on 3.12 (7.05s), and final
+  official 3.13.15 embed bootstrap (6.95s). The full 3.13 suite was not
+  rerun this round; its earlier full result below remains historical.
+- Relevant architecture/integration checks: **127 passed, 381 subtests**;
+  frozen parity/schema/snapshot checks: **753 passed, 2 subtests**;
+  finite invariants/recovery and gate tests: **135 passed**. These overlap
+  and are not added to the full-suite total. Ruff, compileall and diff
+  checks passed before the full run.
+
+### TDD scope and actual fixes
+
+New tests lock exact chat markers, independent formula inputs, immutable
+fixture tests, sensitivity of generated tests to one wrong implementation,
+unique attempt records, real process deadlines, pinned providers, read-only
+headless lifecycle, shell rejection, repair pause, web without a vault,
+positive must-change checks, complete edit examples and search failures.
+Some new supervision tests initially failed because the new helper module
+did not yet exist; this is an interface red step, not an old-production bug
+reproduction. Existing correct behaviors were kept green.
+
+- Planning now enters writer_running before durable provider sends.
+  Approval/stopped writer and repair results are terminalized by the outer
+  lifecycle without claiming pending intents have settled.
+- Web tools no longer require a knowledge store. Knowledge operations
+  explicitly reject an absent store; network and project guards stay intact.
+- Required modification emits pass/fail independently of verification;
+  real edit + fresh verification no longer loops on a missing required row.
+  Seven counterexamples: **3 failed / 4 passed before**, then all passed.
+- ToolSpec keeps every declared immutable JSON example instead of only
+  the create-file example. Both snapshots advertise canonical replacements;
+  aliases still fail validation. Two behavioral reds after correcting test
+  author's wrong API calls. No compatibility field or editor dialect added.
+- Browser failure no longer becomes empty search success when connectors
+  have no hits. Real partial connector hits remain usable. Cancellation and
+  deadline exceptions propagate through search. Seven tests:
+  **3 failed / 4 passed before**, then all passed.
+
+The headless rejection test author's initial approval expectation was also
+corrected to stopped; the actual old failure was an illegal state transition.
+Do not count test-author mistakes as production defects.
+
+### Live observations, never substituted with mocks
+
+Actual target:
+`koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`, KoboldCpp
+1.117.1, temperature 0, no seed/max_tokens sent, client budget
+32768/8192/12000. Server reports context 262144/default length 1024; the
+effective request cap and template are not independently established.
+
+- Initial native baseline: **5/18**; project/hybrid completion **2/12**,
+  independently correct artifacts **6/12**. Wiring failures were retained.
+- After example/completion fixes, JSON all × 3: **27/30**, with four pure
+  project kinds **12/12**. Hybrid failed **0/3** in the sandbox.
+- Independent search diagnosed browser/CDP startup failure; outside the
+  sandbox the real factory returned official Python results. Final JSON
+  hybrid outside sandbox: **3/3**, true search/open/read/edit/run/done with
+  one run/session. Keep this separate from the sandbox batch, not 30/30.
+- Native project follow-up: **2/4** complete and **4/4** artifacts correct;
+  edit/references still produced length twice. This lane has not passed.
+- Seven archived batches contain **76 attempts**, including Ghost control
+  cases. Conditions/versions differ; no aggregate success-rate claim.
+
+Unique raw JSONL, provider exchanges, projects/state, checks and metadata are
+ignored locally. Curated report and paths:
+[KoboldCpp live gate](docs/local_model_gate_2026-10-02.zh-CN.md).
+No claim about all models, complex projects, answer quality, arbitrary UX,
+or whole-program bug freedom. Commit/push without tag/release/version bump;
+do not wait for hosted CI.
+
 ## Readability closeout and local artifact exclusion (2026-10-02)
 
 Baseline: `d5bf1a94`. Production and test changes finished before the final

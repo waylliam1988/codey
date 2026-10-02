@@ -3,7 +3,7 @@
 Runs chat + agent (create/edit/references/hybrid/discussion/planning/auto) + ghost
 against a local OpenAI-compatible endpoint (KoboldCpp is the default
 http://127.0.0.1:5001/v1), captures headless JSONL per case into
-.e2e-artifacts/local-model-release-<case>.jsonl, and verifies independently of the
+.e2e-artifacts/local-model-release-<unique-run>/<attempt>-<case>/, and verifies independently of the
 model's own claims (like tools/live_smoke.py does for web providers).
 
 Verified scope (and only this scope):
@@ -25,6 +25,7 @@ Exit 0 only when every selected case passes.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -34,6 +35,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.request import urlopen
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -41,6 +43,7 @@ if __package__ in (None, ""):
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
 from codey.providers.local_discovery import LOCAL_BASE_URL_CANDIDATES, probe_local_endpoint_detail
+from tools import local_model_gate_attempts as attempts
 
 ARTIFACT_DIR = Path(__file__).resolve().parents[1] / ".e2e-artifacts"
 DEFAULT_BASE_URLS = LOCAL_BASE_URL_CANDIDATES
@@ -48,7 +51,7 @@ PROVIDER_ID = "local"
 TIMEOUT = 600.0
 
 CASES = (
-    "chat", "create", "edit", "references", "hybrid", "discussion", "planning", "auto", "ghost",
+    "chat", "read", "create", "edit", "references", "hybrid", "discussion", "planning", "auto", "ghost",
 )
 
 
@@ -73,7 +76,15 @@ def probe_endpoint() -> tuple[str, tuple[str, ...]]:
 
 
 def _make_fixture(root: Path, case: str) -> None:
-    if case in {"create", "discussion", "planning", "auto"}:
+    if case in {"create", "discussion", "auto"}:
+        return
+    if case == "planning":
+        _make_fixture(root, "references")
+        return
+    if case == "read":
+        (root / "pricing.py").write_text(
+            "def discounted_price(price, percent):\n    return price * (1 - percent / 100)\n", encoding="utf-8",
+        )
         return
     if case in {"edit", "hybrid"}:
         # Discoverable shape: tests/ dir so verification discovery finds
@@ -134,19 +145,25 @@ def _make_fixture(root: Path, case: str) -> None:
 
 
 def _task_for(case: str) -> tuple[str, str, int]:
+    if case == "read":
+        return (
+            "Use read_file to inspect pricing.py. Explain its formula without changing any files. "
+            "Finish with done whose summary contains your explanation.", "planning_readonly", 4,
+        )
     if case == "create":
         return (
             "Create math_utils.py with add(a, b) returning a + b. "
-            "Create tests/test_math_utils.py with a unittest for add(2, 3) == 5. "
-            "Use edit with content to create the files, then run python -m unittest discover "
-            "and finish with done.",
+            "Create tests/__init__.py (empty) and tests/test_math_utils.py with a unittest for add(2, 3) == 5. "
+            "Use edit with content to create the files; edit creates parent directories automatically. "
+            "Do not run mkdir or request shell commands. Run python -m unittest discover "
+            "and finish with done. Do not remove or weaken tests.",
             "project",
             10,
         )
     if case == "edit":
         return (
-            "Fix the LIVE_SMOKE_BUG in pricing.py by using search, read, edit, "
-            "then run python -m unittest discover and finish with done.",
+            "Fix the LIVE_SMOKE_BUG in pricing.py. Use grep and read_file before edit, "
+            "then run python -m unittest discover and finish with done. Do not modify the existing tests.",
             "project",
             10,
         )
@@ -154,19 +171,21 @@ def _task_for(case: str) -> tuple[str, str, int]:
         return (
             "Update calculate_total(amount, tax_rate, discount=0) so it subtracts "
             "discount before tax, i.e. (amount - discount) * (1 + tax_rate). "
-            "Update all callers that should use the discount. Before editing, use "
+            "Keep checkout_total() unchanged; discounted_checkout_total() must pass discount=10. Before editing, use "
             "find_references for calculate_total, then read_file for the real source "
-            "near each affected location. Run python -m unittest discover and finish.",
+            "near each affected location. Run python -m unittest discover and finish with done. "
+            "Do not modify the existing tests.",
             "project",
             12,
         )
     if case == "hybrid":
         return (
             "Use the shared hybrid task path. First web_search for the pricing "
-            "discount context, then open_url/open_result the relevant source, "
+            "discount context, then open_url the relevant source, "
             "then read_file pricing.py, fix LIVE_SMOKE_BUG with edit, "
             "run python -m unittest discover, and finish with done. "
-            "Do the steps in order: search -> open -> read -> edit -> verify -> done.",
+            "Do the steps in order: web_search -> open_url -> read_file -> edit -> run -> done. "
+            "Do not modify the existing tests.",
             "hybrid",
             12,
         )
@@ -353,25 +372,57 @@ def check_single_session_identity(rows: list[dict]) -> dict:
     return {"ok": ok, "run_ids": sorted(run_ids), "session_ids": sorted(sess_ids), "detail": detail}
 
 
-def _verify_fixture(root: Path, case: str) -> dict:
-    if case == "discussion" or case == "planning":
-        files = sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+def fixture_test_hashes(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted((root / "tests").rglob("*.py"))
+    }
+
+
+def fixture_file_hashes(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*")) if path.is_file() and "__pycache__" not in path.parts
+    }
+
+
+def _verify_fixture(
+    root: Path, case: str, *, baseline_tests: dict[str, str] | None = None,
+    baseline_files: dict[str, str] | None = None,
+) -> dict:
+    if baseline_tests is not None:
+        current = fixture_test_hashes(root)
+        changed = [name for name, digest in baseline_tests.items() if current.get(name) != digest]
+        if changed:
+            return {"ok": False, "exit_code": None, "output": f"existing tests changed: {changed}"}
+    if case in {"discussion", "planning", "read"}:
+        unchanged = baseline_files is not None and fixture_file_hashes(root) == baseline_files
         return {
-            "ok": not files,
-            "exit_code": 0 if not files else 1,
-            "output": "no files changed" if not files else f"unexpected files: {files}",
+            "ok": unchanged, "exit_code": 0 if unchanged else 1,
+            "output": "no files changed" if unchanged else "read-only files changed or baseline missing",
         }
     if case == "create":
-        assertion = "from math_utils import add; assert add(2, 3) == 5"
+        assertion = (
+            "from math_utils import add; "
+            "assert all(add(a, b) == a + b for a, b in "
+            "[(2, 3), (0, 0), (-3, 8), (17, 24), (-5, -7), (1.25, 2.5)])"
+        )
     elif case in {"edit", "hybrid"}:
-        assertion = "from pricing import discounted_price; assert discounted_price(100, 20) == 80"
+        assertion = (
+            "from math import isclose; from pricing import discounted_price; "
+            "assert all(isclose(discounted_price(price, percent), price * (1 - percent / 100)) "
+            "for price, percent in [(100, 20), (50, 10), (0, 25), (80, 0), (42, 100), (12.5, 12.5)])"
+        )
     elif case == "references":
         assertion = (
             "from checkout import checkout_total, discounted_checkout_total; "
             "from pricing import calculate_total; "
             "assert checkout_total() == 120; "
             "assert calculate_total(100, 0.2, discount=10) == 108; "
-            "assert discounted_checkout_total() == 108"
+            "assert discounted_checkout_total() == 108; "
+            "from math import isclose; "
+            "assert all(isclose(calculate_total(a, t, discount=d), (a - d) * (1 + t)) "
+            "for a, t, d in [(50, 0, 5), (240, 0.1, 20), (0, 0.2, 0), (12.5, 0.05, 1.25)])"
         )
     elif case == "auto":
         target = root / "hello_auto.txt"
@@ -385,7 +436,7 @@ def _verify_fixture(root: Path, case: str) -> dict:
     else:
         raise ValueError(f"unknown fixture: {case}")
     commands = (
-        [sys.executable, "-B", "-c", assertion],
+        [sys.executable, "-I", "-B", "-c", "import sys; sys.path.insert(0, sys.argv[1]); " + assertion, str(root)],
         [sys.executable, "-B", "-m", "unittest", "discover"],
     )
     outputs: list[str] = []
@@ -405,47 +456,83 @@ def _verify_fixture(root: Path, case: str) -> dict:
     combined = "\n\n".join(outputs)[-4000:]
     if _ran_zero_tests(combined):
         return {"ok": False, "exit_code": 1, "output": combined}
+    if case == "create":
+        meaningful = _verify_generated_tests(root)
+        if meaningful is not None:
+            return meaningful
     return {"ok": True, "exit_code": 0, "output": combined}
 
 
-def run_chat_case() -> dict:
-    from codey.providers.local_openai import LocalOpenAIProvider
+def _verify_generated_tests(root: Path) -> dict | None:
+    """Require the generated suite to distinguish addition from subtraction.
 
-    base_url, models = probe_endpoint()
-    model = models[0] if models else "local-model"
-    provider = LocalOpenAIProvider(base_url, model, timeout=TIMEOUT)
-    t0 = time.time()
+    Mutate an isolated copy, never the project the agent just completed.
+    This establishes sensitivity to one wrong implementation, not coverage.
+    """
+    with tempfile.TemporaryDirectory(prefix="codey-gate-mutant-") as temporary:
+        mutant = Path(temporary) / "project"
+        shutil.copytree(root, mutant, symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
+        (mutant / "math_utils.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+        try:
+            result = subprocess.run(
+                [sys.executable, "-B", "-m", "unittest", "discover"], cwd=mutant,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "exit_code": None, "output": "generated test sensitivity check timed out"}
+        if result.returncode == 0 or _ran_zero_tests(result.stdout + result.stderr):
+            return {"ok": False, "exit_code": None, "output": "generated tests accept wrong addition"}
+    return None
+
+
+def run_chat_case(target: attempts.GateTarget, case_dir: Path) -> dict:
+    provider = attempts.make_provider(target, case_dir)
+    t0 = time.perf_counter()
     try:
-        reply = provider.send("Reply with exactly: KOBOLD_OK", timeout=TIMEOUT)
+        reply = provider.send("Reply with exactly: KOBOLD_OK", timeout=target.request_timeout)
     finally:
         provider.close()
-    dt = round(time.time() - t0, 1)
-    ok = "KOBOLD_OK" in str(reply)
+    dt = round(time.perf_counter() - t0, 1)
+    ok = str(reply).strip() == "KOBOLD_OK"
     return {
         "case": "chat", "ok": ok, "seconds": dt,
-        "base_url": base_url, "model": model,
+        "base_url": target.base_url, "model": target.model,
+        "failure_stage": "" if ok else "chat_marker_mismatch",
         "reply_preview": str(reply)[:500],
     }
 
 
-def run_agent_case(case: str) -> dict:
+def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) -> dict:
     task, intent, max_turns = _task_for(case)
-    root = Path(tempfile.mkdtemp(prefix=f"codey-kobold-gate-{case}-")).resolve()
-    # Isolated state: live runs must never pollute the user's default Ghost
-    # state, and Ghost assertions below observe this run's own records.
-    state_home = Path(tempfile.mkdtemp(prefix=f"codey-kobold-gate-state-{case}-")).resolve()
+    input_path = case_dir / "input.json"
+    config = json.loads(input_path.read_text(encoding="utf-8"))
+    root = Path(config["project"])
+    state_home = Path(config["state"])
     rows: list[dict] = []
+    def record_event(row):
+        rows.append(row)
+        with (case_dir / "events.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(row, ensure_ascii=False) + "\n")
+
     try:
         _make_fixture(root, case)
+        baseline_tests = fixture_test_hashes(root)
+        baseline_files = fixture_file_hashes(root)
+        attempts.write_json(case_dir / "baseline-files.json", baseline_files)
         request = HeadlessRequest(
             project=root, task=task, provider_id=PROVIDER_ID,
             max_turns=max_turns, intent=intent, state_home=state_home,
+            sources_open_required=(case == "hybrid"),
+            project_changes_required=(case in attempts.OBJECTIVE_CASES),
         )
-        t0 = time.time()
-        result = run_headless(request, emit_jsonl=rows.append)
-        dt = round(time.time() - t0, 1)
+        t0 = time.perf_counter()
+        result = run_headless(
+            request, emit_jsonl=record_event,
+            connect_provider=lambda provider_id, **kwargs: _connect_gate_provider(provider_id, target, case_dir),
+        )
+        dt = round(time.perf_counter() - t0, 1)
         done = next((r for r in reversed(rows) if str(r.get("type") or "") == "task_done"), None)
-        verification = _verify_fixture(root, case)
+        verification = _verify_fixture(root, case, baseline_tests=baseline_tests, baseline_files=baseline_files)
         stop_reason = str((done or {}).get("stop_reason") or result.stop_reason)
         tool_names = _tool_names_in_order(rows)
         single_session = check_single_session_identity(rows)
@@ -462,6 +549,7 @@ def run_agent_case(case: str) -> dict:
             and verification["ok"]
             and single_session["ok"]
             and (hybrid_order is None or bool(hybrid_order.get("ok")))
+            and (case != "read" or any(r.get("tool_name") == "read_file" and r.get("ok") is True for r in rows))
         )
         data = {
             "case": case, "ok": ok, "seconds": dt,
@@ -469,6 +557,8 @@ def run_agent_case(case: str) -> dict:
             "exit_code": result.exit_code,
             "summary": str((done or {}).get("summary") or "")[:1000],
             "verification": verification,
+            "work_correct": verification["ok"],
+            "failure_stage": _agent_failure_stage(ok, verification, single_session, hybrid_order, stop_reason),
             "project": str(root),
             "run_id": result.run_id, "session_id": result.session_id,
             "jsonl_rows": len(rows),
@@ -477,20 +567,29 @@ def run_agent_case(case: str) -> dict:
             "single_session": single_session,
         }
     except Exception as exc:  # noqa: BLE001 - gate must report, not raise
-        data = {"case": case, "ok": False, "error": f"{type(exc).__name__}: {exc}", "project": str(root)}
+        data = {"case": case, "ok": False, "failure_stage": "agent_exception",
+                "error": f"{type(exc).__name__}: {exc}", "project": str(root)}
     finally:
-        ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-        try:
-            with open(ARTIFACT_DIR / f"local-model-release-{case}.jsonl", "w", encoding="utf-8") as fh:
-                for row in rows:
-                    fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        except OSError as exc:
-            data = dict(data)
-            data["ok"] = False
-            data["artifact_error"] = f"could not archive JSONL: {exc}"
-        shutil.rmtree(root, ignore_errors=True)
-        shutil.rmtree(state_home, ignore_errors=True)
+        (case_dir / "events.jsonl").touch(exist_ok=True)
     return data
+
+
+def _connect_gate_provider(provider_id: str, target: attempts.GateTarget, directory: Path):
+    if provider_id != PROVIDER_ID:
+        raise RuntimeError(f"gate pins provider {PROVIDER_ID}; refusing failover to {provider_id}")
+    return attempts.make_provider(target, directory)
+
+
+def _agent_failure_stage(ok, verification, identity, order, stop_reason):
+    if ok:
+        return ""
+    if verification.get("ok") is not True:
+        return "independent_verification"
+    if identity.get("ok") is not True:
+        return "session_identity"
+    if order is not None and order.get("ok") is not True:
+        return "tool_order"
+    return "completion:" + stop_reason
 
 
 def run_ghost_case() -> dict:
@@ -498,23 +597,10 @@ def run_ghost_case() -> dict:
 
     Writes one observation for this run, reads it back by run_id, checks
     retrieval surfaces it, deletes the session scope, and asserts it is
-    no longer retrievable. Also asserts the default user state is reachable
-    (list/export) without mutating it.
+    no longer retrievable. The user's default state is not part of this test.
     """
-    from codey.ghost.control_surface import GhostControlSurface
     from codey.ghost.observation_index import retrieve_relevant_observations
     from codey.ghost.observations import GhostObservationStore
-    from codey.storage.local_store import DEFAULT_STATE_HOME
-
-    default_surface = GhostControlSurface.from_state_home(DEFAULT_STATE_HOME)
-    if not default_surface.available or default_surface.inbox is None:
-        return {"case": "ghost", "ok": False, "error": "default ghost store unavailable"}
-    try:
-        listed = default_surface.inbox.list_candidates()
-        exported = default_surface.export_state()
-        default_ok = bool(exported.get("ok"))
-    except Exception as exc:  # noqa: BLE001
-        return {"case": "ghost", "ok": False, "error": f"default state read failed: {exc}"}
     state_home = Path(tempfile.mkdtemp(prefix="codey-kobold-gate-ghost-")).resolve()
     try:
         store = GhostObservationStore(state_home)
@@ -544,10 +630,7 @@ def run_ghost_case() -> dict:
         if after:
             return {"case": "ghost", "ok": False, "error": "deleted observation still retrievable"}
         return {
-            "case": "ghost", "ok": default_ok,
-            "candidates": len(listed),
-            "observations": len(((exported or {}).get("observations") or {}).get("observations") or []),
-            "learning_enabled": default_surface.inbox.learning_enabled(),
+            "case": "ghost", "ok": True, "observations": len(committed),
             "roundtrip": "write->read->retrieve->delete->gone",
         }
     except Exception as exc:  # noqa: BLE001
@@ -556,36 +639,123 @@ def run_ghost_case() -> dict:
         shutil.rmtree(state_home, ignore_errors=True)
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--case", choices=(*CASES, "all"), default="all")
-    ap.add_argument("--json", action="store_true")
-    args = ap.parse_args(argv)
+def _worker(case: str, directory: Path) -> int:
+    from codey.env_names import NATIVE_TOOLS_ENV
 
-    selected = list(CASES) if args.case == "all" else [args.case]
-    base_url, models = probe_endpoint()
-    _log(f"[gate] local model {base_url} models={list(models)[:3]}")
-    results: list[dict] = []
-    for case in selected:
-        _log(f"[gate] case={case} ...")
+    config = json.loads((directory / "input.json").read_text(encoding="utf-8"))
+    target = attempts.GateTarget(**config["target"])
+    os.environ[NATIVE_TOOLS_ENV] = "1" if target.protocol == "native" else "0"
+    try:
         if case == "chat":
-            data = run_chat_case()
+            data = run_chat_case(target, directory)
         elif case == "ghost":
             data = run_ghost_case()
         else:
-            data = run_agent_case(case)
-        data.setdefault("case", case)
-        results.append(data)
-        _log(f"[gate] case={case} {'PASS' if data.get('ok') else 'FAIL'} {json.dumps(data, ensure_ascii=False)[:1000]}")
+            data = run_agent_case(case, target=target, case_dir=directory)
+    except Exception as exc:
+        data = {"case": case, "ok": False, "failure_stage": "worker_exception",
+                "error": f"{type(exc).__name__}: {exc}"}
+    attempts.write_json(directory / "worker-result.json", data)
+    return 0  # Transport succeeded; data.ok owns the case verdict.
 
-    payload = {"ok": all(r.get("ok") for r in results), "base_url": base_url, "results": results}
-    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(ARTIFACT_DIR / "local-model-release-summary.json", "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
+
+def _server_observations(base_url: str) -> dict:
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    observations = {}
+    for path in ("/api/extra/version", "/api/v1/config/max_context_length", "/api/v1/config/max_length"):
+        try:
+            with urlopen(origin + path, timeout=5) as response:
+                observations[path] = json.loads(response.read(8192))
+        except Exception as exc:
+            observations[path] = {"unavailable": type(exc).__name__}
+    return observations
+
+
+def _metadata(target: attempts.GateTarget) -> dict:
+    from dataclasses import asdict
+
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=attempts.REPO_ROOT,
+                            capture_output=True, text=True, check=False, timeout=10)
+    return {
+        "target": asdict(target), "python": sys.version, "git_commit": commit.stdout.strip(),
+        "harness_hashes": {
+            name: hashlib.sha256((attempts.REPO_ROOT / "tools" / name).read_bytes()).hexdigest()
+            for name in ("local_model_release_gate.py", "local_model_gate_attempts.py")
+        },
+        "production_hashes": {
+            path: hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
+            for path in ("codey/operations/planning_flow.py", "codey/operations/project_writer_phase.py",
+                         "codey/operations/project_completion_enforcement.py", "codey/operations/task_execution.py",
+                         "codey/research/tools.py", "codey/operations/project_completion_checks.py",
+                         "codey/toolchain/tool_spec.py", "codey/operations/kernel_protocol.py",
+                         "codey/research/connector_search.py", "codey/research/source_gateway.py")
+        },
+        "server_observations": _server_observations(target.base_url),
+        "chat_template": "not_reported", "quantization": "model_name_only; not independently verified",
+        "sampling_seed": "not_sent", "output_budget": "server_default; max_tokens is not sent",
+    }
+
+
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number <= 0:
+        raise argparse.ArgumentTypeError("must be positive")
+    return number
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser()
+    selection = ap.add_mutually_exclusive_group()
+    selection.add_argument("--case", choices=(*CASES, "all"), default="all")
+    selection.add_argument("--cases", help="comma-separated cases, run in the given order")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--repeat", type=_positive_int, default=1)
+    ap.add_argument("--timeout", type=_positive_int, default=600, help="whole-case wall deadline in seconds")
+    ap.add_argument("--protocol", choices=("native", "json"), default="native")
+    ap.add_argument("--model", default="", help="exact /models id; otherwise use its first id")
+    ap.add_argument("--run-dir", type=Path, help="new artifact directory; existing directories are rejected")
+    ap.add_argument("--worker-case", choices=CASES, help=argparse.SUPPRESS)
+    ap.add_argument("--worker-dir", type=Path, help=argparse.SUPPRESS)
+    args = ap.parse_args(argv)
+    if args.worker_case:
+        if args.worker_dir is None:
+            ap.error("worker directory required")
+        return _worker(args.worker_case, args.worker_dir.resolve())
+    selected = args.cases.split(",") if args.cases else (list(CASES) if args.case == "all" else [args.case])
+    if any(case not in CASES for case in selected):
+        ap.error("unknown case in --cases")
+    directory = args.run_dir.resolve() if args.run_dir else attempts.create_run_dir(ARTIFACT_DIR)
+    if args.run_dir:
+        directory.mkdir(parents=True, exist_ok=False)
+    _log(f"[gate] artifacts={directory}")
+    try:
+        from codey.providers.local_config import load_local_config, resolve_local_context_budget
+
+        base_url, models = probe_endpoint()
+        model = args.model or (models[0] if models else "")
+        if not model or model not in models:
+            raise ValueError(f"selected model is not in /models: {model!r}")
+        budget = resolve_local_context_budget(load_local_config())
+        target = attempts.GateTarget(
+            base_url, model, budget.context_window_tokens, budget.context_reserve_tokens,
+            budget.context_keep_recent_tokens, protocol=args.protocol, request_timeout=min(args.timeout, TIMEOUT),
+        )
+        attempts.write_json(directory / "metadata.json", _metadata(target))
+        _log(f"[gate] model={model} protocol={args.protocol} repeat={args.repeat}")
+        results = attempts.run_attempts(selected, directory, target, repeat=args.repeat, timeout=args.timeout)
+        payload = attempts.summarize(results)
+    except Exception as exc:
+        payload = {"ok": False, "attempts": 0, "results": [], "failure_stage": "preflight_error",
+                   "error": f"{type(exc).__name__}: {exc}"}
+    payload["artifacts"] = str(directory)
+    attempts.write_json(directory / "summary.json", payload)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False))
     else:
-        for item in results:
+        for item in payload["results"]:
             print(f"{item['case']}: {'PASS' if item.get('ok') else 'FAIL'}")
     return 0 if payload["ok"] else 1
 

@@ -286,70 +286,74 @@ def _normalized_scope_and_change(session: Any, context: Any) -> tuple[tuple[str,
 
 
 def _engine_checks(session: Any, context: Any) -> list[CompletionCheck]:
-    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
-    # A precomputed project_evaluation is never a bypass: mandatory
-    # requirements are always recomputed from current session facts and the
-    # current context. Reuse (evidence_refs merging) happens in the gate
-    # after the fresh checks pass, never as an early return here.
     try:
         scope, task_changed = _normalized_scope_and_change(session, context)
-        # A failed candidate refresh leaves the requirement untrustworthy:
-        # block explicitly instead of falling back to the latest run.
-        if getattr(session, "verification_candidates_refresh_failed", False) is True:
-            row = completion_check(
-                "relevant_verification", CHECK_FAIL, "verification_candidates_refresh_failed",
-            )
-            return [row] if row is not None else []
-        # Modification is its own requirement: forbidding verification never
-        # excuses a missing edit, and review-trusted change facts arrive via
-        # scope_files/task_changed so a resumed green is not mis-rejected.
-        if _task_requires_modification(session) and not task_changed:
-            row = completion_check("project_changes_required", CHECK_FAIL, "project_changes_required")
-            return [row] if row is not None else []
-        if not scope and not task_changed:
-            row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE)
-            return [row] if row is not None else []
-        evidence = get("execution_evidence")
-        if evidence is None:
-            evidence = ExecutionEvidence(
-                workspace_revision=getattr(session, "workspace_revision", 0) or 0,
-                workspace_fingerprint=str(getattr(session, "workspace_fingerprint", "") or ""),
-            )
-        changes = _synthesize_changes(scope, get("changes"))
-        selected = _resolve_selected_check(session, context)
-        # Single engine call over the complete projection: session facts fill
-        # the gaps the unified production context does not carry, so the same
-        # edit+fresh-pass passes with or without an evidence-only context.
-        # An incomplete latest observation is an explicit projection gap:
-        # block without consulting older success for the same check.
-        effective_evidence, projection_gaps = _evidence_with_session_facts(evidence, session)
-        if projection_gaps:
-            reason = str(projection_gaps[0] or "verification_identity_missing")
-            row = completion_check("relevant_verification", CHECK_NOT_RUN, reason)
-            return [row] if row is not None else []
-        engine = CompletionEngine()
-        result = engine.evaluate(
-            run_id=str(get("run_id") or ""),
-            task=str(get("task") or ""),
-            changes=changes,
-            stop_reason="done",
-            task_changed=task_changed,
-            scope_files=scope,
-            selected_check=selected,
-            evidence=effective_evidence,
-            analysis_run_payloads=get("analysis_run_payloads") or (),
-            project=get("project"),
-            checkpoint_green=bool(get("checkpoint_green")),
-            verification_forbidden=_effective_verification_forbidden(session),
-        )
-        proof = result.decision.proof
-        rows = [row for row in (getattr(proof, "checks", ()) or ()) if isinstance(row, CompletionCheck)]
-        if result.integrity is not None and getattr(result.integrity, "diagnostic_refs", ()):
-            return rows or [completion_check("edit_integrity", CHECK_PASS)]
-        return rows or [completion_check("relevant_verification", CHECK_NOT_RUN, "engine_empty")]
+        rows = []
+        if _task_requires_modification(session):
+            rows.append(completion_check(
+                "project_changes_required", CHECK_PASS if task_changed else CHECK_FAIL,
+                "" if task_changed else "project_changes_required",
+            ))
+            if not task_changed:
+                return rows
+        return rows + _verification_checks(session, context, scope, task_changed)
     except Exception as exc:
         row = completion_check("completion_engine", CHECK_FAIL, f"engine_error:{type(exc).__name__}")
         return [row] if row is not None else []
+
+
+def _verification_checks(
+    session: Any, context: Any, scope: tuple[str, ...], task_changed: bool,
+) -> list[CompletionCheck]:
+    get = context.get if isinstance(context, dict) else lambda key: getattr(context, key, None)
+    # A failed candidate refresh leaves the requirement untrustworthy:
+    # block explicitly instead of falling back to the latest run.
+    if getattr(session, "verification_candidates_refresh_failed", False) is True:
+        row = completion_check(
+            "relevant_verification", CHECK_FAIL, "verification_candidates_refresh_failed",
+        )
+        return [row] if row is not None else []
+    if not scope and not task_changed:
+        row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE)
+        return [row] if row is not None else []
+    evidence = get("execution_evidence")
+    if evidence is None:
+        evidence = ExecutionEvidence(
+            workspace_revision=getattr(session, "workspace_revision", 0) or 0,
+            workspace_fingerprint=str(getattr(session, "workspace_fingerprint", "") or ""),
+        )
+    changes = _synthesize_changes(scope, get("changes"))
+    selected = _resolve_selected_check(session, context)
+    # Single engine call over the complete projection: session facts fill
+    # the gaps the unified production context does not carry, so the same
+    # edit+fresh-pass passes with or without an evidence-only context.
+    # An incomplete latest observation is an explicit projection gap:
+    # block without consulting older success for the same check.
+    effective_evidence, projection_gaps = _evidence_with_session_facts(evidence, session)
+    if projection_gaps:
+        reason = str(projection_gaps[0] or "verification_identity_missing")
+        row = completion_check("relevant_verification", CHECK_NOT_RUN, reason)
+        return [row] if row is not None else []
+    engine = CompletionEngine()
+    result = engine.evaluate(
+        run_id=str(get("run_id") or ""),
+        task=str(get("task") or ""),
+        changes=changes,
+        stop_reason="done",
+        task_changed=task_changed,
+        scope_files=scope,
+        selected_check=selected,
+        evidence=effective_evidence,
+        analysis_run_payloads=get("analysis_run_payloads") or (),
+        project=get("project"),
+        checkpoint_green=bool(get("checkpoint_green")),
+        verification_forbidden=_effective_verification_forbidden(session),
+    )
+    proof = result.decision.proof
+    rows = [row for row in (getattr(proof, "checks", ()) or ()) if isinstance(row, CompletionCheck)]
+    if result.integrity is not None and getattr(result.integrity, "diagnostic_refs", ()):
+        return rows or [completion_check("edit_integrity", CHECK_PASS)]
+    return rows or [completion_check("relevant_verification", CHECK_NOT_RUN, "engine_empty")]
 
 
 def project_completion_checks(session: Any, context: Any = None) -> list[CompletionCheck]:

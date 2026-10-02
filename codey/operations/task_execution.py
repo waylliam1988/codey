@@ -26,14 +26,12 @@ def close_research_tools(tools: Any) -> None:
             close()
 
 
-def build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | None:
+def build_research_tools(deps: Any, *, session_id: str, project: str) -> Any:
     """Build the execution resources; configuration errors propagate to entry."""
     from codey.knowledge.changes import KnowledgeChanges
     from codey.research.tools import ResearchTools
 
     knowledge_store = getattr(deps, "knowledge_store", None)
-    if knowledge_store is None:
-        return None
     search_factory = getattr(deps, "search_factory", None)
     if search_factory is None:
         from codey.research.search_factory import default_research_search_provider
@@ -43,7 +41,7 @@ def build_research_tools(deps: Any, *, session_id: str, project: str) -> Any | N
     try:
         return ResearchTools(
             search=search, store=knowledge_store,
-            changes=KnowledgeChanges(root=knowledge_store.root),
+            changes=KnowledgeChanges(root=knowledge_store.root) if knowledge_store is not None else None,
             diagnostics=None, session_id=session_id, project=project,
         )
     except BaseException:

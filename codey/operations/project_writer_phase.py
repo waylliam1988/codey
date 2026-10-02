@@ -369,17 +369,20 @@ def _run_writer_phase(ctx: ProjectRun) -> None:
         )
     finally:
         _sync_failover_frame(ctx)
-    _commit_runtime_operation(
-        ctx,
-        "mark_writer_settled",
-        lambda mutations, session_id, run_id: mutations.mark_writer_settled(
-            session_id,
-            run_id,
-            provider_id=ctx.frame.provider_id,
-            turns_used=ctx.result.turns,
-            stop_reason=ctx.result.stop_reason,
-        ),
-    )
+    # Approval and cancellation can retain an unexecuted or uncertain intent.
+    # The outer lifecycle terminalizes them without claiming tool settlement.
+    if ctx.result.stop_reason not in {"approval", "stopped"}:
+        _commit_runtime_operation(
+            ctx,
+            "mark_writer_settled",
+            lambda mutations, session_id, run_id: mutations.mark_writer_settled(
+                session_id,
+                run_id,
+                provider_id=ctx.frame.provider_id,
+                turns_used=ctx.result.turns,
+                stop_reason=ctx.result.stop_reason,
+            ),
+        )
     ctx.inherited_green = bool(
         ctx.project_context.checkpoint.resumed
         and ctx.work.work_checkpoint is not None

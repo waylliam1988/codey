@@ -102,11 +102,12 @@ class ResearchSourceGateway:
         cancellation.check()
         try:
             results = self.search_provider.search(query, limit=limit)
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             self._fail("search", "search", exc)
-            return SearchedSources(query=query, error=f"search failed: {exc}")
+            detail = str(exc) or type(exc).__name__
+            return SearchedSources(query=query, error=f"search failed: {detail}")
         cancellation.check()
         self.ledger.record_search(query, results)
         return SearchedSources(query=query, hits=tuple(results or ()))

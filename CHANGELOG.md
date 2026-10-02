@@ -2,6 +2,16 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Truthful local model gate and shared completion wiring (no release)
+
+- Pin the probed endpoint/model and explicitly select native or text JSON. Record unique attempts, real provider exchanges/usage, final projects/state, failures and process deadlines; preserve all failed attempts. Keep objective completion separate from correct artifacts, conversation safety and Ghost control checks.
+- Harden independent checks against marker substrings, constant implementations, changed fixture tests and meaningless generated tests. Add 43 regressions; retain the production provider and one shared task loop.
+- Fix planning's durable running transition, writer/repair settlement on approval/cancellation, and web execution without a knowledge vault. Preserve path/network guards, shell approvals and absent-store denials.
+- Produce the positive required-modification check as well as its failure. Preserve all canonical edit examples in ToolSpec snapshots; remove the singular example field without aliases or dialect fallback.
+- Propagate total search failure instead of reporting empty success, preserving real partial connector hits and cancellation/deadline semantics.
+- Gemma 12B live results: JSON pure project tasks **12/12**; real hybrid outside sandbox **3/3**. Sandbox CDP failures remain separately archived. Native follow-up **2/4** complete, **4/4** artifacts correct, with two repeated truncations; do not claim that lane passed or merge conditions into a universal rate. [Detailed report](docs/local_model_gate_2026-10-02.zh-CN.md).
+- Final full suite with real Edge: **6618 passed, 6 skipped, 1488 subtests passed in 424.86s** on 3.12.8; new 43 tests also pass on 3.13.15. Ruff, compileall and diff checks pass. No tag/release/version bump; do not wait for hosted CI.
+
 ## Unreleased - Readability closeout and local artifact exclusion (no release)
 
 - Extract pending-state decisions, receipt shape checks and text/native unwrapping within their existing modules. Keep final validation and recovery priorities unchanged; no new framework or facade.

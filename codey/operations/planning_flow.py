@@ -117,6 +117,9 @@ def run_planning_readonly_mode(
         deps, entry_policy, session_id=request.session_id, project=project,
     )
     try:
+        mutations = getattr(state, "runtime_mutations", None)
+        if mutations is not None and request.session_id and frame.run_id:
+            mutations.mark_writer_running(request.session_id, frame.run_id, provider_id=frame.provider_id)
         result = deps.agent_run(AgentRequest(
             provider=frame.provider,
             project=Path(project),

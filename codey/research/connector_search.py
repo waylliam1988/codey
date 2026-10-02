@@ -115,7 +115,14 @@ class ConnectorAwareSearchProvider:
         )
         if len(connector_results) >= min(CONNECTOR_MIN_RESULTS, result_limit):
             return _merge_results(connector_results, [], limit=result_limit)
-        base_results = self._base_search(query, limit=result_limit)
+        try:
+            base_results = self._base_search(query, limit=result_limit)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception:
+            if not connector_results:
+                raise
+            base_results = []  # Real connector hits survive a browser failure.
         return _merge_results(connector_results, base_results, limit=result_limit)
 
     def fetch(self, url: str) -> dict:
@@ -144,7 +151,7 @@ class ConnectorAwareSearchProvider:
     def _base_search(self, query: str, *, limit: int) -> list[dict]:
         try:
             return list(self.base_provider.search(query, limit=limit))
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             failures = getattr(self.base_provider, "last_search_errors", ())
@@ -155,7 +162,7 @@ class ConnectorAwareSearchProvider:
                         self.last_search_failures.append(failure)
                         self.last_search_failure = failure
             self._record_error("browser", "search", exc)
-            return []
+            raise
 
     def _connector_search_results(
         self,

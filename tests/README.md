@@ -52,8 +52,11 @@ one research entry.
 ## Live Gates
 
 - `tools/local_model_release_gate.py`: release-blocking local OpenAI-compatible
-  model gate. It covers chat, create/edit/references, the shared `hybrid`
-  entry, read-only planning, discussion, auto routing, and Ghost state.
+  model gate. It covers chat/read, create/edit/references, the shared `hybrid`
+  entry, read-only planning, discussion, auto routing, and Ghost state. Each
+  attempt has a process deadline and a unique artifact directory. Objective
+  completion, independently correct artifacts, conversation safety and Ghost
+  control-plane checks are reported separately; answer quality is not automated.
 - `tools/local_model_diagnostic_probe.py`: non-blocking local-model diagnostic
   probe for hostile fixtures, work queues, search, and shell/reporting edges.
 - `tests/multi_model_snake_smoke.py`: browser-provider multi-model smoke for

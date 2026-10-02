@@ -50,7 +50,7 @@ def _planning_request(*, requested=(), entry_policy=None, recovered=(), settled=
     )
     state = SimpleNamespace(
         run_registry=SimpleNamespace(stop_flag=SimpleNamespace(is_set=lambda: False)),
-        runtime_mutations="MUT",
+        runtime_mutations=mock.Mock(spec=["mark_writer_running"]),
         managed_outputs="OUT",
         emit=lambda _e: None,
         set_provider_session=lambda *a, **k: None,
@@ -79,7 +79,7 @@ def test_planning_reuses_entry_policy_and_full_run_identity():
     assert req.task_policy is policy, "不得重新构造 planning policy"
     assert req.session_id == "s-plan"
     assert req.run_id == "r-plan"
-    assert req.runtime_mutations == "MUT"
+    req.runtime_mutations.mark_writer_running.assert_called_once_with("s-plan", "r-plan", provider_id="local")
     assert req.managed_outputs == "OUT"
     assert req.permission_profile == "planning_readonly"
     assert req.task_policy.allows("project.write") is False

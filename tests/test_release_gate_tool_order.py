@@ -129,22 +129,5 @@ class ReleaseGateToolOrderTests(unittest.TestCase):
         self.assertTrue(gate.check_hybrid_tool_order(rows)["ok"], rows)
         self.assertTrue(gate.check_single_session_identity(rows)["ok"])
 
-    def test_run_agent_case_result_must_carry_tool_order(self) -> None:
-        import inspect
-
-        from tools import local_model_release_gate as gate
-
-        source = inspect.getsource(gate.run_agent_case)
-        # The gate currently only checks stop_reason/files/exit_code; it must
-        # also assert tool events and single-session identity for hybrid.
-        # This lock fails until the gate records and checks the order.
-        self.assertIn("tool", source.lower())
-        # Require explicit order assertion hook (checked in code, not just fixture).
-        self.assertTrue(
-            "order" in source.lower() or "sequence" in source.lower() or "tool_names" in source.lower(),
-            "run_agent_case must assert hybrid tool order, not just files+done",
-        )
-
-
 if __name__ == "__main__":
     unittest.main()

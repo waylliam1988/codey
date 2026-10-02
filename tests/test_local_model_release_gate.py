@@ -25,7 +25,7 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
                 gate._make_fixture(root, case)  # must not raise
 
     def test_empty_cases_create_no_files(self) -> None:
-        for case in ("create", "discussion", "planning", "auto"):
+        for case in ("create", "discussion", "auto"):
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 gate._make_fixture(root, case)
@@ -54,9 +54,17 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
         for case in ("discussion", "planning"):
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
-                self.assertTrue(gate._verify_fixture(root, case)["ok"])
+                gate._make_fixture(root, case)
+                baseline = gate.fixture_file_hashes(root)
+                self.assertTrue(gate._verify_fixture(root, case, baseline_files=baseline)["ok"])
                 (root / "unexpected.txt").write_text("changed", encoding="utf-8")
-                self.assertFalse(gate._verify_fixture(root, case)["ok"])
+                self.assertFalse(gate._verify_fixture(root, case, baseline_files=baseline)["ok"])
+
+    def test_planning_has_real_source_to_inspect(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            gate._make_fixture(root, "planning")
+            self.assertIn("def calculate_total", (root / "pricing.py").read_text(encoding="utf-8"))
 
     def test_auto_verify_requires_exact_content(self) -> None:
         with tempfile.TemporaryDirectory() as td:
