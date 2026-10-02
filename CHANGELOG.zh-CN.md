@@ -2,6 +2,18 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Research 发布门槛收口（未发布）
+
+- 修复本地门槛的隔离 research 配置：headless research 现在接收显式
+  `research_store_root`，门槛使用隔离 state 目录下的 vault，并把 research
+  纳入默认矩阵。
+- 新增显式 knowledge root 隔离回归测试，并更新发布门槛文档，要求搜索、
+  打开来源、写入知识库和终态证据全部成功。
+- Gemma 12B + KoboldCpp native research 门槛 **3/3 通过**；完整默认门槛
+  **13/13 通过**，目标任务 **6/6**，产物 **6/6**。
+- 最终全量 pytest：**6650 passed、12 skipped、1488 subtests passed，
+  419.21 秒**。跳过项均为环境限制；未发布、无版本 bump。
+
 ## Unreleased - 原生工具生命周期与失败复现（未发布）
 
 - 从原始请求复现 Gemma/KoboldCpp 验证通过后的截断。原生活动轮次要求工具调用并指导逐步调用，普通聊天保持原方式。诊断记录器共用真实请求构造，记录生产模块哈希。

@@ -54,7 +54,7 @@ CASES = (
     "chat", "read", "create", "edit", "references", "hybrid", "discussion", "planning", "auto", "ghost",
     "tests", "research", "recovery",
 )
-DEFAULT_CASES = tuple(case for case in CASES if case != "research")
+DEFAULT_CASES = CASES
 
 
 def _log(text: str) -> None:
@@ -592,6 +592,7 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
             max_turns=max_turns, intent=intent, state_home=state_home,
             sources_open_required=(case == "hybrid"),
             project_changes_required=(case in attempts.OBJECTIVE_CASES),
+            research_store_root=(state_home / "research-vault" if case == "research" else None),
         )
         t0 = time.perf_counter()
         result = run_headless(

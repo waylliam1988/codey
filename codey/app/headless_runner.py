@@ -54,6 +54,9 @@ class HeadlessRequest:
     strict_research: bool = False
     sources_open_required: bool = False
     project_changes_required: bool | None = None
+    # Research runs may opt into an isolated vault outside the user's default
+    # state home. The caller owns the path; headless still closes the store.
+    research_store_root: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -300,6 +303,14 @@ def _run_headless_task(
 ) -> tuple[HeadlessResult | None, BaseException | None]:
     """Run the submission; the caller owns shutdown so close never masks this."""
     try:
+        if (
+            _request_intent(request.intent) == "research"
+            and request.research_store_root is not None
+            and state.knowledge_store is None
+        ):
+            from codey.knowledge.store import KnowledgeStore
+
+            state.knowledge_store = KnowledgeStore(request.research_store_root)
         deps = TaskRunDeps(
             state=state,
             agent_run=agent_run or default_agent_run,

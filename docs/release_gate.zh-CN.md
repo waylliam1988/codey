@@ -48,7 +48,7 @@ python -m pytest tests/test_cli.py tests/test_headless_runner.py tests/test_rele
 python tools/local_model_release_gate.py --case all --repeat 1 --timeout 600 --protocol native --json
 ```
 
-`--case all` 使用当前可配置的默认门槛集合；研究联网 case 需要连接器，未配置时不会被默认集合假装为通过。可显式运行：
+`--case all` 使用当前默认门槛集合，包含带隔离 research vault 的网页研究 case。可单独运行：
 
 ```powershell
 python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 600 --json
@@ -84,7 +84,7 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 - `python3 -m unittest` 在 Windows 策略里会被拒，门槛任务一律写 `python -m unittest [discover]`。
 - agent case 必须同时满足：`stop_reason=done`、`exit_code=0`、`task_done` 事件存在、独立文件验证通过；`unittest discover` 输出 `Ran 0 tests` 也算 FAIL。
 - agent 实机一律使用位于 Codey Git 仓库之外的隔离项目/`state_home`，不得污染默认 Ghost 状态；保存诊断材料后清理临时运行目录，存档失败即 FAIL。
-- research 的完整联网实机不在阻塞门内（需要搜索连接器+长生成，等连接器准备好后单独加入）。
+- research 使用仓库外隔离的 `research_store_root`，不会读取或污染用户默认 vault；完整联网实机现在属于默认门槛，结果必须有成功的搜索、来源打开和终态证据。
 - 600s 非流式超时仍是有限预算：实机的 1 POST、零客户端异常只证明**被观测的请求**正常送达，不能代替 Kobold 服务端日志，也不能证明今后绝无 `10053`。
 
 ## 5. Gate 4：记录（必须写）

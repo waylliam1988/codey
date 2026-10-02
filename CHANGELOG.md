@@ -2,6 +2,19 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Research release gate closure (no release)
+
+- Fixed the local gate's isolated research setup by giving headless research
+  runs an explicit `research_store_root`; the gate now uses a vault under its
+  isolated state directory and includes research in the default matrix.
+- Added a regression for explicit knowledge-root isolation and updated the
+  release-gate documentation with the required search, source-open,
+  knowledge-write, and terminal evidence.
+- Gemma 12B + KoboldCpp native research gate: **3/3 passed**. Complete default
+  gate: **13/13 passed**, objective tasks **6/6**, artifacts **6/6**.
+- Final full pytest: **6650 passed, 12 skipped, 1488 subtests passed in
+  419.21s**. Skips are environment limitations; no release or version bump.
+
 ## Unreleased - Native tool lifecycle and failure reproduction (no release)
 
 - Reproduce Gemma/KoboldCpp post-check truncation from original requests. Require a native call on active tool turns, request sequential calls and keep normal chat unchanged. Share wire payload construction with the diagnostic recorder; record production source hashes.

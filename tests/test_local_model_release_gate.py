@@ -23,8 +23,8 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
             self.assertIn(case, gate.CASES)
             gate._task_for(case)
 
-    def test_default_cases_exclude_unconfigured_exploratory_research(self) -> None:
-        self.assertNotIn("research", gate.DEFAULT_CASES)
+    def test_default_cases_include_configured_research(self) -> None:
+        self.assertIn("research", gate.DEFAULT_CASES)
         self.assertIn("research", gate.CASES)
 
     def test_all_agent_cases_have_fixtures(self) -> None:

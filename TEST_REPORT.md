@@ -1,5 +1,38 @@
 # Codey Test Report
 
+## Research gate closure and final release verification (2026-10-02)
+
+This cycle completed the TDD loop for the local release gate's research lane.
+The first isolated live run failed before any provider request with `Research is
+not configured`. A focused red regression established the root cause: the gate
+isolated `state_home` but did not provide an isolated research vault. This was a
+gate setup defect, not a Gemma 12B capability failure, browser failure, or
+research production logic failure.
+
+The fix adds an explicit `HeadlessRequest.research_store_root`, initializes the
+knowledge store only for research requests that opt into it, and passes
+`state_home/research-vault` from the gate. A regression test locks the explicit
+isolated root, and the default matrix now includes research. The gate
+documentation also records the isolation and evidence requirements.
+
+- Research live gate, Gemma 12B + KoboldCpp native: **3/3 passed**. Every run
+  completed `web_search -> open_url -> knowledge_write -> done` in one
+  session, with no project-file changes. Artifact:
+  `.e2e-artifacts/local-model-release-20261002-200759-511e974b54`.
+- Complete default live gate: **13/13 passed**, objective tasks **6/6**,
+  independently checked artifacts **6/6**. Artifact:
+  `.e2e-artifacts/local-model-release-20261002-202148-80d74d420c`.
+- Final full pytest after the code changes: **6650 passed, 12 skipped,
+  1488 subtests passed in 419.21s**. Command:
+  `python -m pytest -q -o faulthandler_timeout=120 -rs`.
+- The 12 skips are environment limits (Windows POSIX/O_NOFOLLOW behavior,
+  missing Node.js, and disabled browser E2E); no skip was added to conceal a
+  failure.
+
+The final result supports the fixed local matrix under the observed Gemma 12B
+and KoboldCpp configuration. It does not claim all models, complex projects,
+research answer quality, arbitrary UX, or absence of unrelated bugs.
+
 ## Local gate matrix expansion and live baseline (2026-10-02)
 
 The release gate now records a stable matrix of task kind, observed failure kind,

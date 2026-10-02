@@ -47,6 +47,19 @@ class _RouteProvider:
 
 
 class HeadlessRunnerTests(unittest.TestCase):
+    def test_research_request_can_use_an_explicit_isolated_knowledge_root(self) -> None:
+        from codey.knowledge.store import KnowledgeStore
+
+        with tempfile.TemporaryDirectory() as td:
+            request = HeadlessRequest(
+                project=Path(td, "project"), task="research", intent="research",
+                state_home=Path(td, "state"), research_store_root=Path(td, "vault"),
+            )
+            self.assertEqual(request.research_store_root, Path(td, "vault"))
+            store = KnowledgeStore(request.research_store_root)
+            self.assertEqual(store.root, Path(td, "vault").resolve())
+            store.close()
+
     def test_project_task_emits_jsonl_and_writes_ledger(self) -> None:
         rows: list[dict[str, object]] = []
 
