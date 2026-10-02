@@ -16,12 +16,14 @@ from typing import Any
 
 from codey.ghost.continuity import build_ghost_continuity
 from codey.ghost.directive import build_ghost_directive
+from codey.ghost.inbox import GhostSettingsError
 from codey.ghost.observation_index import (
     MAX_RETRIEVED_ITEMS,
     RETRIEVAL_BUDGET_CHARS,
     render_retrieved_block,
     retrieve_relevant_observations,
 )
+from codey.ghost.observations import GhostObservationCorruptedError
 
 
 def ghost_affinity_store(state: Any):
@@ -33,7 +35,7 @@ def ghost_affinity_store(state: Any):
         try:
             if not inbox_store.learning_enabled():
                 return None
-        except Exception:
+        except (GhostSettingsError, OSError, ValueError):
             return None
     return store
 
@@ -47,15 +49,12 @@ def ghost_directive(
     store = getattr(state, "ghost_hebbian", None)
     if store is None:
         return build_ghost_directive(None)
-    try:
-        return build_ghost_directive(
-            store,
-            project=project,
-            session_id=session_id,
-            affinity_store=ghost_affinity_store(state),
-        )
-    except Exception:
-        return build_ghost_directive(None)
+    return build_ghost_directive(
+        store,
+        project=project,
+        session_id=session_id,
+        affinity_store=ghost_affinity_store(state),
+    )
 
 
 def ghost_continuity(
@@ -67,14 +66,11 @@ def ghost_continuity(
     store = getattr(state, "ghost_continuity", None)
     if store is None:
         return build_ghost_continuity(None)
-    try:
-        return build_ghost_continuity(
-            store,
-            project=project,
-            session_id=session_id,
-        )
-    except Exception:
-        return build_ghost_continuity(None)
+    return build_ghost_continuity(
+        store,
+        project=project,
+        session_id=session_id,
+    )
 
 
 def ghost_experiences(
@@ -105,7 +101,7 @@ def ghost_experiences(
         inbox = getattr(state, "ghost_inbox", None)
         if inbox is not None and not bool(inbox.learning_enabled()):
             return ""
-    except Exception:
+    except (GhostSettingsError, OSError, ValueError):
         _emit_settings_warning(state, session_id=session_id)
         return ""
     try:
@@ -113,7 +109,7 @@ def ghost_experiences(
         if store is None:
             return ""
         rows = store.read_committed(session_id=session_id, project=project or "", scope=scope)
-    except Exception:
+    except (GhostObservationCorruptedError, OSError):
         return ""
     try:
         picked = retrieve_relevant_observations(
@@ -123,7 +119,7 @@ def ghost_experiences(
             max_items=max_items,
             budget_chars=budget_chars,
         )
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return ""
     if not picked:
         return ""

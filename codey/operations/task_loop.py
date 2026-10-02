@@ -36,6 +36,10 @@ if TYPE_CHECKING:  # Annotations only; the loop never re-exports TaskSession.
 
 __all__ = [
     "KernelResult",
+    "KernelExecutionDeps",
+    "KernelObservationDeps",
+    "KernelRunRequest",
+    "KernelTransportDeps",
     "run_task_kernel",
 ]
 
@@ -47,6 +51,152 @@ class KernelResult:
     turns: int
     stop_reason: str
     proof: Any | None = None
+
+
+@dataclass(frozen=True)
+class KernelTransportDeps:
+    """Provider and turn transport state owned by the kernel boundary."""
+
+    provider: Any
+    run_id: object = ""
+    effect_scope: str = ""
+    provider_id: object = ""
+    user_task: object = ""
+    context_text: str = ""
+    stop_flag: Any = None
+    stagnant_turns: int | None = None
+    delivered: Mapping[str, ToolResult] | None = None
+    start_turn: int | None = None
+    initial_results: list[ToolResult] | None = None
+    provider_session_changed: bool = False
+
+
+@dataclass(frozen=True)
+class KernelExecutionDeps:
+    """Tool, project, and workspace resources for one kernel run."""
+
+    executors: Mapping[str, Callable[[ToolCall], Any]] | None = None
+    project_path: Any = None
+    tool_fns: Any = None
+    research_tools: Any = None
+    change_tracker: Any = None
+    managed_outputs: Any = None
+    session_id: str = ""
+    permission_profile: str = "coding_writer"
+    workspace_ignored_paths: Any = ()
+    workspace_revision_store: Any = None
+
+
+@dataclass(frozen=True)
+class KernelObservationDeps:
+    """Completion, recovery, and event sinks for one kernel run."""
+
+    intent_sink: Any = None
+    completion_context: Any = None
+    on_event: Callable[[Any], None] | None = None
+    on_shell_request: Callable[[Any], None] | None = None
+    trace_recorder: Any = None
+    propagate_provider_failure: bool = False
+
+
+@dataclass(frozen=True)
+class KernelRunRequest:
+    """Single typed boundary for the shared task kernel.
+
+    The old keyword shape is accepted only by ``from_legacy`` while callers
+    migrate; production paths construct this request explicitly.
+    """
+
+    transport: KernelTransportDeps
+    execution: KernelExecutionDeps = KernelExecutionDeps()
+    observation: KernelObservationDeps = KernelObservationDeps()
+
+    @classmethod
+    def from_legacy(cls, values: Mapping[str, object]) -> KernelRunRequest:
+        """Build the typed request for existing direct kernel tests."""
+        raw = dict(values)
+        try:
+            provider = raw.pop("provider")
+        except KeyError as exc:
+            raise TypeError("run_task_kernel requires request or provider") from exc
+
+        def take(name: str, default: object = None) -> object:
+            return raw.pop(name, default)
+
+        transport = KernelTransportDeps(
+            provider=provider,
+            run_id=take("run_id", ""),
+            effect_scope=str(take("effect_scope", "") or ""),
+            provider_id=take("provider_id", ""),
+            user_task=take("user_task", ""),
+            context_text=str(take("context_text", "") or ""),
+            stop_flag=take("stop_flag"),
+            stagnant_turns=take("stagnant_turns"),
+            delivered=take("delivered"),
+            start_turn=take("start_turn"),
+            initial_results=take("initial_results"),
+            provider_session_changed=bool(take("provider_session_changed", False)),
+        )
+        execution = KernelExecutionDeps(
+            executors=take("executors"),
+            project_path=take("project_path"),
+            tool_fns=take("tool_fns"),
+            research_tools=take("research_tools"),
+            change_tracker=take("change_tracker"),
+            managed_outputs=take("managed_outputs"),
+            session_id=str(take("session_id", "") or ""),
+            permission_profile=str(take("permission_profile", "coding_writer") or "coding_writer"),
+            workspace_ignored_paths=take("workspace_ignored_paths", ()),
+            workspace_revision_store=take("workspace_revision_store"),
+        )
+        observation = KernelObservationDeps(
+            intent_sink=take("intent_sink"),
+            completion_context=take("completion_context"),
+            on_event=take("on_event"),
+            on_shell_request=take("on_shell_request"),
+            trace_recorder=take("trace_recorder"),
+            propagate_provider_failure=bool(take("propagate_provider_failure", False)),
+        )
+        if raw:
+            unknown = ", ".join(sorted(raw))
+            raise TypeError(f"unknown run_task_kernel options: {unknown}")
+        return cls(transport=transport, execution=execution, observation=observation)
+
+
+def _bind_run_request(request: KernelRunRequest) -> tuple[object, ...]:
+    transport = request.transport
+    execution = request.execution
+    observation = request.observation
+    return (
+        transport.provider,
+        execution.executors,
+        transport.run_id,
+        transport.effect_scope,
+        transport.provider_id,
+        execution.project_path,
+        execution.tool_fns,
+        execution.research_tools,
+        execution.change_tracker,
+        execution.managed_outputs,
+        execution.session_id,
+        execution.permission_profile,
+        transport.user_task,
+        transport.context_text,
+        transport.stop_flag,
+        transport.stagnant_turns,
+        transport.delivered,
+        observation.intent_sink,
+        observation.completion_context,
+        observation.on_event,
+        observation.on_shell_request,
+        observation.propagate_provider_failure,
+        transport.start_turn,
+        transport.initial_results,
+        transport.provider_session_changed,
+        execution.workspace_ignored_paths,
+        execution.workspace_revision_store,
+        observation.trace_recorder,
+    )
 
 
 @dataclass
@@ -413,35 +563,23 @@ def _resume_start(value: object) -> int:
 def run_task_kernel(
     session: TaskSession,
     *,
-    provider: Any,
-    executors: Mapping[str, Callable[[ToolCall], Any]] | None = None,
-    run_id: object = "",
-    effect_scope: str = "",
-    provider_id: object = "",
-    project_path: Any = None,
-    tool_fns: Any = None,
-    research_tools: Any = None,
-    change_tracker: Any = None,
-    managed_outputs: Any = None,
-    session_id: str = "",
-    permission_profile: str = "coding_writer",
-    user_task: object = "",
-    context_text: str = "",
-    stop_flag: Any = None,
-    stagnant_turns: int | None = None,
-    delivered: Mapping[str, ToolResult] | None = None,
-    intent_sink: Any = None,
-    completion_context: Any = None,
-    on_event: Callable[[Any], None] | None = None,
-    on_shell_request: Callable[[Any], None] | None = None,
-    propagate_provider_failure: bool = False,
-    start_turn: int | None = None,
-    initial_results: list[ToolResult] | None = None,
-    provider_session_changed: bool = False,
-    workspace_ignored_paths: Any = (),
-    workspace_revision_store: Any = None,
-    trace_recorder: Any = None,
+    request: KernelRunRequest | None = None,
+    **legacy_options: object,
 ) -> KernelResult:
+    if request is None:
+        request = KernelRunRequest.from_legacy(legacy_options)
+    elif legacy_options:
+        unknown = ", ".join(sorted(legacy_options))
+        raise TypeError(f"request cannot be combined with legacy options: {unknown}")
+    (
+        provider, executors, run_id, effect_scope, provider_id, project_path,
+        tool_fns, research_tools, change_tracker, managed_outputs, session_id,
+        permission_profile, user_task, context_text, stop_flag, stagnant_turns,
+        delivered, intent_sink, completion_context, on_event, on_shell_request,
+        propagate_provider_failure, start_turn, initial_results,
+        provider_session_changed, workspace_ignored_paths,
+        workspace_revision_store, trace_recorder,
+    ) = _bind_run_request(request)
     completion_context = _completion_context_with_ignores(completion_context, workspace_ignored_paths)
     try:
         startup = _kernel_startup(

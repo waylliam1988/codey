@@ -13,6 +13,12 @@ from typing import Any
 
 from codey.agents.request import AgentRequest
 from codey.operations.provider_session import ConversationProvider
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+)
 from codey.operations.task_session import session_checks_passed
 from codey.runtime.core.run_result import RunResult
 
@@ -203,38 +209,46 @@ def run(request: AgentRequest) -> RunResult:
     )
     outcome = run_task_kernel(
         session,
-        provider=provider,
-        run_id=request.run_id,
-        effect_scope=effect_scope,
-        provider_id=request.provider_id,
-        project_path=request.project,
-        tool_fns=request.tool_fns,
-        change_tracker=request.change_tracker,
-        research_tools=request.research_tools,
-        managed_outputs=request.managed_outputs,
-        session_id=request.session_id,
-        permission_profile=request.permission_profile,
-        user_task=request.task,
-        context_text=_project_context(request),
-        stop_flag=request.stop_flag,
-        stagnant_turns=request.stagnant_turns,
-        delivered=delivered,
-        intent_sink=intent_sink,
-        workspace_revision_store=request.workspace_revision_store,
-        workspace_ignored_paths=request.workspace_ignored_paths,
-        trace_recorder=request.trace_recorder,
-        on_event=request.on_event,
-        on_shell_request=request.on_shell_request,
-        propagate_provider_failure=True,
-        start_turn=resume_start,
-        initial_results=initial_results or None,
-        completion_context={
-            **(request.completion_context or {}),
-            "run_id": request.run_id,
-            "task": request.task,
-            "question": request.task,
-            "project": str(request.project),
-        },
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=provider,
+                run_id=request.run_id,
+                effect_scope=effect_scope,
+                provider_id=request.provider_id,
+                user_task=request.task,
+                context_text=_project_context(request),
+                stop_flag=request.stop_flag,
+                stagnant_turns=request.stagnant_turns,
+                delivered=delivered,
+                start_turn=resume_start,
+                initial_results=initial_results or None,
+            ),
+            execution=KernelExecutionDeps(
+                project_path=request.project,
+                tool_fns=request.tool_fns,
+                change_tracker=request.change_tracker,
+                research_tools=request.research_tools,
+                managed_outputs=request.managed_outputs,
+                session_id=request.session_id,
+                permission_profile=request.permission_profile,
+                workspace_revision_store=request.workspace_revision_store,
+                workspace_ignored_paths=request.workspace_ignored_paths,
+            ),
+            observation=KernelObservationDeps(
+                intent_sink=intent_sink,
+                completion_context={
+                    **(request.completion_context or {}),
+                    "run_id": request.run_id,
+                    "task": request.task,
+                    "question": request.task,
+                    "project": str(request.project),
+                },
+                on_event=request.on_event,
+                on_shell_request=request.on_shell_request,
+                propagate_provider_failure=True,
+                trace_recorder=request.trace_recorder,
+            ),
+        ),
     )
     result = RunResult(
         summary=outcome.summary,

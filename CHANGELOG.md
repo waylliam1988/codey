@@ -2,6 +2,23 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Kernel boundary, projection errors, and CI typing (no release)
+
+- Replaced the production `run_task_kernel` fan-in signature with typed
+  transport, execution, and observation dependency groups. Migrated every
+  production caller to `KernelRunRequest`; direct legacy calls remain only in
+  the existing kernel test migration boundary.
+- Removed broad exception fallbacks from Ghost directive and continuity
+  projections. Unexpected projection failures propagate, while documented
+  settings and storage corruption remains fail-closed. Added deterministic
+  exception-boundary regressions.
+- Added pinned mypy 1.18.2 to CI with an incremental four-module boundary gate.
+  The full tree's 482 historical errors remain documented and are not hidden
+  by weakening assertions or adding skips.
+- Final `pytest -q`: **6627 passed, 34 skipped, 1488 subtests passed** in
+  **420.65s**; no failed, xfailed, or xpassed tests. Ruff, incremental mypy,
+  compileall, collection, and diff checks passed. No release or version bump.
+
 ## Unreleased - Complete code and test hygiene audit (no release)
 
 - Audited production entry points, architecture boundaries, cold-start

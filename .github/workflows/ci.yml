@@ -40,6 +40,12 @@ jobs:
       - name: Ruff
         run: python -m ruff check .
 
+      - name: Incremental mypy boundary
+        run: >-
+          python -m mypy --follow-imports=skip --ignore-missing-imports
+          codey/operations/task_state.py codey/operations/context.py
+          codey/operations/ghost_context.py codey/operations/prompting.py
+
       - name: Pytest
         run: python -m pytest -q -o faulthandler_timeout=120
 
@@ -77,6 +83,12 @@ jobs:
 
       - name: Ruff
         run: python -m ruff check .
+
+      - name: Incremental mypy boundary
+        run: >-
+          python -m mypy --follow-imports=skip --ignore-missing-imports
+          codey/operations/task_state.py codey/operations/context.py
+          codey/operations/ghost_context.py codey/operations/prompting.py
 
       - name: POSIX file-boundary regressions
         run: python -m pytest -q -o faulthandler_timeout=120 tests/test_changes.py tests/test_workspace_paths.py tests/test_bounded_capture_and_context.py tests/test_coldstart_hardening.py

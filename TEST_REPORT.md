@@ -1,5 +1,63 @@
 # Codey Test Report
 
+## Kernel boundary, projection errors, and CI typing (2026-10-03)
+
+This review confirmed three deterministic issues and fixed them with red-first
+coverage:
+
+- `run_task_kernel` exposed transport, execution, workspace, recovery, and
+  observation state as one large keyword signature. `KernelTransportDeps`,
+  `KernelExecutionDeps`, `KernelObservationDeps`, and `KernelRunRequest` now
+  form the single production boundary. All production callers pass
+  `request=`; the remaining legacy adapter is used only by direct historical
+  kernel tests while those tests migrate. The boundary and production call
+  graph are locked by `tests/test_kernel_dependency_boundary.py` and
+  `tests/test_production_kernel_calls_use_typed_request.py`.
+- `codey/operations/ghost_context.py` converted unexpected projection errors
+  into empty context. `RuntimeError` now propagates from directive and
+  continuity projection. Settings corruption (`GhostSettingsError`,
+  `ValueError`, `OSError`) and corrupt observation storage retain their
+  fail-closed behavior. Regression coverage is in
+  `tests/test_ghost_projection_exception_boundaries.py` and the existing
+  learning-switch tests.
+- Mypy was absent from CI. `requirements-ci.txt` pins mypy 1.18.2 and both CI
+  jobs run the incremental core boundary. The full tree still reports 482
+  pre-existing errors, so the gate uses `--follow-imports=skip` over
+  `task_state`, `context`, `ghost_context`, and `prompting`. The workflow and
+  module list are locked by `tests/test_ci_mypy_incremental_gate.py`.
+
+Root cause classification: the first two were production boundary and error
+handling bugs; the third was a CI configuration gap. No compatibility layer,
+fallback, skip, xfail, assertion, or timeout was weakened to obtain a green
+result. The typed request adapter remains a documented migration boundary for
+direct kernel tests; production code has no legacy call site.
+
+Pre-final verification:
+
+- Core boundary and affected entry tests: **124 passed**; the Ghost projection
+  batch: **77 passed, 36 subtests passed**.
+- Incremental mypy: passed for all four modules.
+- `ruff check .`: passed.
+- `python -m compileall -q codey tests`: passed.
+- `pytest --collect-only -q`: **6661 tests collected**.
+- `git diff --check`: passed before documentation edits.
+
+Final full command: `pytest -q`, with `PYTHONHASHSEED=0` and the repository
+pytest configuration. Result: **6627 passed, 34 skipped, 1488 subtests
+passed, 0 failed, 0 xfailed, 0 xpassed**, elapsed **420.65s (0:07:00)**.
+
+Skip reasons observed in this Windows environment were platform or optional
+dependency gates already present in the suite: POSIX permission/process-group
+and O_NOFOLLOW tests; platform-specific path tests; Node.js UI checks when
+Node is unavailable; live model artifacts absent; browser/UI E2E checks without
+the opt-in browser environment; and git-history probes when a repository
+capability is unavailable. No skip was added in this cycle.
+
+Remaining risks are the historical full-tree mypy debt, provider/model-specific
+behavior outside the local suite, and the direct-test legacy adapter pending
+test migration. The final suite cannot prove behavior for every OS, browser,
+provider, model, or power-loss timing.
+
 ## Complete code and test hygiene audit (2026-10-02)
 
 This audit reviewed the project entry points, architecture and cold-start

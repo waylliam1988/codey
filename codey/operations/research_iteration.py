@@ -6,6 +6,12 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+)
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult
 
@@ -182,27 +188,35 @@ def run_research_iteration(
         active_provider = KernelRecordedProvider(provider, intent_sink)
     outcome = run_task_kernel(
         session,
-        provider=active_provider,
-        run_id=run_id,
-        effect_scope="research:1",
-        provider_id=provider_id,
-        project_path=project or None,
-        research_tools=tools,
-        managed_outputs=getattr(deps, "managed_outputs", None),
-        session_id=session_id,
-        permission_profile="coding_writer" if policy.allows("project.write") else "research",
-        user_task=task,
-        stop_flag=stop_flag,
-        intent_sink=intent_sink,
-        trace_recorder=trace_recorder,
-        on_event=on_event,
-        completion_context={
-            "run_id": run_id,
-            "question": task,
-            "project": project,
-            "research_ledger": tools.ledger,
-            "source_ids": session.source_ids,
-        },
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=active_provider,
+                run_id=run_id,
+                effect_scope="research:1",
+                provider_id=provider_id,
+                user_task=task,
+                stop_flag=stop_flag,
+            ),
+            execution=KernelExecutionDeps(
+                project_path=project or None,
+                research_tools=tools,
+                managed_outputs=getattr(deps, "managed_outputs", None),
+                session_id=session_id,
+                permission_profile="coding_writer" if policy.allows("project.write") else "research",
+            ),
+            observation=KernelObservationDeps(
+                intent_sink=intent_sink,
+                trace_recorder=trace_recorder,
+                on_event=on_event,
+                completion_context={
+                    "run_id": run_id,
+                    "question": task,
+                    "project": project,
+                    "research_ledger": tools.ledger,
+                    "source_ids": session.source_ids,
+                },
+            ),
+        ),
     )
     ledger = tools.ledger
     synthesis_id = ""

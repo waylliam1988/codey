@@ -16,6 +16,12 @@ from typing import Any
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.kernel_session_recovery import restore_task_session
 from codey.operations.result import ModeOutcome
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+)
 from codey.task.kind import ui_mode
 from codey.task.model import TaskSubmission, execution_task
 
@@ -258,7 +264,6 @@ def _run_entry_kernel(
     continuation_followup: str = "",
 ) -> ModeOutcome:
     from codey.operations.task_loop import run_task_kernel
-
     request = frame.request
     kind = _task_kind(task_kind or frame.task_kind)
     policy = _entry_policy_with_recovery(frame, deps, kind)
@@ -338,40 +343,48 @@ def _run_entry_kernel(
         tracker = _entry_project_tracker(project_path, deps, policy)
         result = run_task_kernel(
             session,
-            provider=active_provider,
-            executors={},
-            run_id=frame.run_id,
-            effect_scope="task",
-            provider_id=frame.provider_id,
-            project_path=project_path,
-            tool_fns=tool_fns,
-            change_tracker=tracker,
-            research_tools=research_tools,
-            managed_outputs=getattr(deps, "managed_outputs", None),
-            session_id=request.session_id,
-            permission_profile="research" if kind == "research" else "coding_writer",
-            user_task=execution_task(request),
-            stop_flag=stop_flag,
-            delivered=delivered or None,
-            intent_sink=intent_sink,
-            on_event=hooks.on_event,
-            on_shell_request=hooks.on_shell_request,
-            completion_context={
-                "run_id": frame.run_id,
-                "task": request.task,
-                "question": request.task,
-                "project": frame.project_text,
-                "execution_evidence": work.evidence,
-                "analysis_run_payloads": work.analysis_run_payloads,
-                "research_ledger": getattr(research_tools, "ledger", None),
-            },
-            start_turn=max(resume_start, session.turn + 1) if continuation_followup else resume_start,
-            context_text=continuation_followup,
-            initial_results=initial_results or None,
-            provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
-            workspace_ignored_paths=ignored,
-            workspace_revision_store=getattr(deps, "workspace_revisions", None),
-            trace_recorder=getattr(frame, "trace", None),
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=active_provider,
+                    run_id=frame.run_id,
+                    effect_scope="task",
+                    provider_id=frame.provider_id,
+                    user_task=execution_task(request),
+                    stop_flag=stop_flag,
+                    delivered=delivered or None,
+                    start_turn=max(resume_start, session.turn + 1) if continuation_followup else resume_start,
+                    context_text=continuation_followup,
+                    initial_results=initial_results or None,
+                    provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
+                ),
+                execution=KernelExecutionDeps(
+                    executors={},
+                    project_path=project_path,
+                    tool_fns=tool_fns,
+                    change_tracker=tracker,
+                    research_tools=research_tools,
+                    managed_outputs=getattr(deps, "managed_outputs", None),
+                    session_id=request.session_id,
+                    permission_profile="research" if kind == "research" else "coding_writer",
+                    workspace_ignored_paths=ignored,
+                    workspace_revision_store=getattr(deps, "workspace_revisions", None),
+                ),
+                observation=KernelObservationDeps(
+                    intent_sink=intent_sink,
+                    on_event=hooks.on_event,
+                    on_shell_request=hooks.on_shell_request,
+                    completion_context={
+                        "run_id": frame.run_id,
+                        "task": request.task,
+                        "question": request.task,
+                        "project": frame.project_text,
+                        "execution_evidence": work.evidence,
+                        "analysis_run_payloads": work.analysis_run_payloads,
+                        "research_ledger": getattr(research_tools, "ledger", None),
+                    },
+                    trace_recorder=getattr(frame, "trace", None),
+                ),
+            ),
         )
     except Exception as exc:
         from codey.operations.kernel_errors import RecoveryFailed

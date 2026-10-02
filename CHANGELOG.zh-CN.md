@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 内核边界、投影异常与 CI 类型检查（未发布）
+
+- 将生产 `run_task_kernel` 的大参数入口收敛为 transport、execution、
+  observation 三组类型化依赖和 `KernelRunRequest`；所有生产调用点已迁移，
+  旧关键字仅保留在现有内核直调测试的迁移边界。
+- 删除 Ghost directive/continuity 投影的宽泛异常 fallback。意外投影错误
+  现在传播；已定义的设置损坏和观测存储损坏仍 fail-closed。新增确定性异常
+  边界回归测试。
+- CI 固定安装 mypy 1.18.2，并对四个核心模块启用增量门槛。全量 mypy
+  仍有 482 个历史错误，已明确记录，未通过弱化断言或增加 skip 隐藏。
+- 最终 `pytest -q`：**6627 passed、34 skipped、1488 subtests passed**，
+  耗时 **420.65 秒**；无 failed、xfailed 或 xpassed。Ruff、增量 mypy、
+  compileall、测试收集和 diff 检查均通过。未发布、无版本 bump。
+
 ## Unreleased - 完整代码与测试卫生审查（未发布）
 
 - 审查生产入口、架构边界、冷启动兼容锁、fallback、异常处理、资源路径、

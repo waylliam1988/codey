@@ -165,10 +165,11 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     assert result.event["stop_reason"] == "done"
     sink_type.assert_called_once()
     recorded.assert_called_once()
-    assert kernel.call_args.kwargs["intent_sink"] is sink_type.return_value
-    assert kernel.call_args.kwargs["on_event"] is hooks.on_event
-    assert kernel.call_args.kwargs["on_shell_request"] is hooks.on_shell_request
-    assert kernel.call_args.kwargs["managed_outputs"] is managed
+    request = kernel.call_args.kwargs["request"]
+    assert request.observation.intent_sink is sink_type.return_value
+    assert request.observation.on_event is hooks.on_event
+    assert request.observation.on_shell_request is hooks.on_shell_request
+    assert request.execution.managed_outputs is managed
 
 
 def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
@@ -194,7 +195,7 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
         run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
                          hooks, deps)
     assert project.is_dir()
-    assert kernel.call_args.kwargs["project_path"] == project.resolve()
+    assert kernel.call_args.kwargs["request"].execution.project_path == project.resolve()
 
 
 def test_unified_kernel_passes_authoritative_research_ledger_to_gate() -> None:

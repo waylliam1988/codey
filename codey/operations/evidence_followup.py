@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from codey.operations.task_loop import run_task_kernel
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.evidence_rules import (
@@ -87,15 +93,26 @@ def run_evidence_followup(
             )
             active_provider = KernelRecordedProvider(provider, sink)
         outcome = run_task_kernel(
-            session, provider=active_provider, run_id=run_id,
-            effect_scope=f"research:followup:{round_index}:attempt:{attempt}",
-            provider_id=provider_id, executors={"knowledge_write": write},
-            user_task=prompt, intent_sink=sink, on_event=on_event,
-            completion_context={
-                "run_id": run_id,
-                "task": question,
-                "question": question,
-            },
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=active_provider,
+                    run_id=run_id,
+                    effect_scope=f"research:followup:{round_index}:attempt:{attempt}",
+                    provider_id=provider_id,
+                    user_task=prompt,
+                ),
+                execution=KernelExecutionDeps(executors={"knowledge_write": write}),
+                observation=KernelObservationDeps(
+                    intent_sink=sink,
+                    on_event=on_event,
+                    completion_context={
+                        "run_id": run_id,
+                        "task": question,
+                        "question": question,
+                    },
+                ),
+            ),
         )
         last_summary = outcome.summary
         new_count = max(0, len(getattr(tools.ledger, "evidence_items", ()) or ()) - prior_evidence)

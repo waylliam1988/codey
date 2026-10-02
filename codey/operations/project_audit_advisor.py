@@ -29,7 +29,13 @@ from codey.agents.consensus import (
 )
 from codey.agents.project_audit_tools import execute_read_only_call, visible_entries
 from codey.operations.provider_session import DeadlineProvider
-from codey.operations.task_loop import run_task_kernel
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import controls as provider_controls
@@ -201,19 +207,27 @@ def run_project_audit_advisor(
         with provider_controls.suppress_assistance():
             outcome = run_task_kernel(
                 session,
-                provider=DeadlineProvider(provider, deadline),
-                executors=_audit_kernel_executors(project_path),
-                run_id=run_id,
-                effect_scope="audit",
-                project_path=project_path,
-                user_task=prompt,
-                stop_flag=stop,
-                completion_context={
-                    "run_id": run_id,
-                    "task": task,
-                    "question": task,
-                    "project": str(project_path),
-                },
+                request=KernelRunRequest(
+                    transport=KernelTransportDeps(
+                        provider=DeadlineProvider(provider, deadline),
+                        run_id=run_id,
+                        effect_scope="audit",
+                        user_task=prompt,
+                        stop_flag=stop,
+                    ),
+                    execution=KernelExecutionDeps(
+                        executors=_audit_kernel_executors(project_path),
+                        project_path=project_path,
+                    ),
+                    observation=KernelObservationDeps(
+                        completion_context={
+                            "run_id": run_id,
+                            "task": task,
+                            "question": task,
+                            "project": str(project_path),
+                        },
+                    ),
+                ),
             )
     finally:
         timer.cancel()

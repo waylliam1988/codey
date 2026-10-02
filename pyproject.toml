@@ -83,9 +83,19 @@ max-statements = 80
 "tools/**" = ["PLR0912", "PLR0915", "C901"]
 
 [tool.mypy]
-# Baseline only, not a CI gate (CI runs ruff + pytest + node --check):
+# The full tree remains a migration baseline; CI gates the typed boundary
+# modules below and expands this list as each dependency surface is typed.
 # `python -m mypy codey` reports 493 errors in 106 files as of 2026-09-21.
 # New code should add annotations (TaskState-style Protocols over Any);
 # ratchet the count down, never up.
 python_version = "3.11"
 ignore_missing_imports = true
+
+[tool.codey.typecheck]
+gate = "incremental-core"
+modules = [
+    "codey/operations/task_state.py",
+    "codey/operations/context.py",
+    "codey/operations/ghost_context.py",
+    "codey/operations/prompting.py",
+]
