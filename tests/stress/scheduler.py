@@ -678,7 +678,7 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolResult
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
-    from codey.workspace.revision import workspace_fingerprint
+    from codey.workspace.revision import WorkspaceRevisionStore, workspace_fingerprint
 
     seq = step.get("seq", 0)
     if type(seq) is not int or seq <= 0:
@@ -706,7 +706,7 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
                 json.dumps({"tool": "read_file", "args": {"path": relpath}}),
                 json.dumps({"tool": "edit", "args": {
                     "path": relpath,
-                    "replacements": [{"search": old_content, "replace": content}],
+                    "replacements": [{"old_string": old_content, "new_string": content}],
                 }}),
                 json.dumps({"tool": "run", "args": {"command": run_command, "path": "."}}),
                 json.dumps({"tool": "done", "args": {"summary": "done"}}),
@@ -729,6 +729,9 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
         project=str(project_dir),
         max_turns=6,
     )
+    store = WorkspaceRevisionStore(Path(ctx.state_home) / "completion-revisions")
+    current = store.current_state(str(project_dir))
+    session.set_workspace_state(current.revision, current.fingerprint)
     executors: dict = {}
     if outcome == "unknown":
         real_fns = DEFAULT_TOOL_FNS
@@ -750,6 +753,7 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
     result = run_task_kernel(
         session,
         provider=_DeterministicWeb(),
+        workspace_revision_store=store,
         provider_id="web",
         executors=executors or None,
         run_id=f"completion-{seq:06d}",

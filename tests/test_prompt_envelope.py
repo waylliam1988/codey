@@ -420,10 +420,10 @@ class PromptEnvelopeTests(unittest.TestCase):
 
         self.assertTrue(any("record_permission_profile" in line for line in logs.output))
 
-    def testbuild_kernel_fixture_survives_broken_trace_recorder(self) -> None:
+    def test_real_project_adapter_survives_broken_trace_recorder(self) -> None:
 
         from codey.agents.request import AgentRequest
-        from tests.support.kernel_harness import build_kernel_fixture
+        from codey.operations.project_adapter import run
 
         class _ExplodingTrace:
             def __getattr__(self, _name):
@@ -438,19 +438,23 @@ class PromptEnvelopeTests(unittest.TestCase):
             def new_chat(self) -> None:
                 return None
 
+            def send(self, prompt, timeout=None):
+                return '{"tool":"done","args":{"summary":"completed"}}'
+
         with tempfile.TemporaryDirectory() as td:
             request = AgentRequest(
                 provider=_Provider(),  # type: ignore[arg-type]
                 project=Path(td),
-                task="do it",
+                task="read-only planning",
+                provider_id="fake",
                 trace_recorder=_ExplodingTrace(),
             )
             with self.assertLogs(
                 "codey.runtime.observe.prompt_envelope", level="DEBUG"
             ) as logs:
-                session = build_kernel_fixture(request)
+                result = run(request)
 
-        self.assertIsNotNone(session)
+        self.assertEqual(result.stop_reason, "done")
         self.assertTrue(any("record_" in line for line in logs.output))
 
 

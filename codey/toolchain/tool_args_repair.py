@@ -6,7 +6,6 @@ task runners, or ghost.
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -18,8 +17,8 @@ PATH_ARG_KEYS = ("path", "cwd")
 SEARCH_QUERY_KEYS = ("query", "pattern")
 REFERENCES_SYMBOL_KEYS = ("symbol", "name")
 COMMAND_KEYS = ("command", "cmd")
-EDIT_OLD_KEYS = ("old_string", "search", "old", "before")
-EDIT_NEW_KEYS = ("new_string", "replace", "replacement", "after", "new")
+EDIT_OLD_KEYS = ("old_string",)
+EDIT_NEW_KEYS = ("new_string",)
 
 
 @dataclass(frozen=True)
@@ -255,154 +254,38 @@ def _normalize_edit(
     args: Mapping[str, Any],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
-    single_old_keys = EDIT_OLD_KEYS
-    single_new_keys = EDIT_NEW_KEYS
-    _reject_unknown_args(
-        args,
-        {"path", "cwd", "content", "replacements", *single_old_keys, *single_new_keys},
-        context="edit",
-    )
+    _reject_unknown_args(args, {"path", "cwd", "content", "replacements"}, context="edit")
     norm_path, rewrites, counts = _resolve_path_arg(
-        args,
-        missing_msg="edit requires a top-level path and can only edit one file",
+        args, missing_msg="edit requires a top-level path and can only edit one file",
     )
     call_args: dict[str, Any] = {"path": norm_path}
-
-    has_content = "content" in args
-    has_replacements = "replacements" in args
-
-    has_single = any(k in args for k in (*single_old_keys, *single_new_keys))
-
-    if sum((has_content, has_replacements, has_single)) != 1:
-        raise ToolArgsRepairError(
-            "edit requires exactly one mode: content, old_string/new_string, or replacements",
-            repair_kind="invalid_args",
-        )
-
-    if has_content:
-        raw_content = args["content"]
-        if not isinstance(raw_content, str):
-            raise ToolArgsRepairError(
-                "edit content must be a string",
-                repair_kind="invalid_args",
-            )
-        call_args["content"] = raw_content
-        return ToolArgsRepairResult(
-            args=call_args,
-            alias_rewrite_count=rewrites,
-            arg_repair_counts=counts,
-        )
-
-    if has_replacements:
-        raw_replacements = args.get("replacements")
-
-        if isinstance(raw_replacements, str):
-            try:
-                parsed_replacements = json.loads(raw_replacements)
-            except (json.JSONDecodeError, ValueError) as exc:
-                raise ToolArgsRepairError(
-                    "edit replacements JSON string could not be parsed",
-                    repair_kind="invalid_args",
-                ) from exc
-            _record_repair(counts, "json_replacements_parsed")
-            rewrites += 1
-            raw_replacements = parsed_replacements
-
-        if isinstance(raw_replacements, dict):
-            raw_replacements = [raw_replacements]
-            _record_repair(counts, "replacement_object_wrapped")
-            rewrites += 1
-
-        if not isinstance(raw_replacements, list) or not raw_replacements:
-            raise ToolArgsRepairError(
-                "edit replacements must be a non-empty list",
-                repair_kind="invalid_args",
-            )
-
-        if len(raw_replacements) > limits.max_replacements:
-            raise ToolArgsRepairError(
-                f"edit supports at most {limits.max_replacements} replacements",
-                repair_kind="invalid_args",
-            )
-
-        normalized_replacements: list[dict[str, str]] = []
-        for item in raw_replacements:
+    if ("content" in args) == ("replacements" in args):
+        raise ToolArgsRepairError("edit requires exactly one mode: content or replacements", repair_kind="invalid_args")
+    if "content" in args:
+        if not isinstance(args["content"], str):
+            raise ToolArgsRepairError("edit content must be a string", repair_kind="invalid_args")
+        call_args["content"] = args["content"]
+    else:
+        replacements = args["replacements"]
+        if not isinstance(replacements, list) or not replacements:
+            raise ToolArgsRepairError("edit replacements must be a non-empty list", repair_kind="invalid_args")
+        if len(replacements) > limits.max_replacements:
+            raise ToolArgsRepairError(f"edit supports at most {limits.max_replacements} replacements", repair_kind="invalid_args")
+        normalized: list[dict[str, str]] = []
+        for item in replacements:
             if not isinstance(item, dict):
-                raise ToolArgsRepairError(
-                    "every edit replacement must be an object",
-                    repair_kind="invalid_args",
-                )
+                raise ToolArgsRepairError("every edit replacement must be an object", repair_kind="invalid_args")
             if "path" in item or "cwd" in item:
                 raise ToolArgsRepairError(
-                    "edit replacements apply to the top-level path only; "
-                    "use separate edit calls for different files",
+                    "edit replacements apply to the top-level path only; use separate edit calls for different files",
                     repair_kind="invalid_args",
                 )
-            _reject_unknown_args(
-                item,
-                {*single_old_keys, *single_new_keys},
-                context="edit replacement",
-            )
-
-            old_val, old_alias = _require_text_arg(
-                item,
-                single_old_keys,
-                "old_string",
-                allow_blank=False,
-            )
-            if old_alias:
-                _record_repair(counts, "edit_field_alias")
-                rewrites += 1
-
-            new_val, new_alias = _require_text_arg(
-                item,
-                single_new_keys,
-                "new_string",
-                allow_blank=True,
-            )
-            if new_alias:
-                _record_repair(counts, "edit_field_alias")
-                rewrites += 1
-
-            normalized_replacements.append({
-                "search": old_val,
-                "replace": new_val,
-            })
-
-        call_args["replacements"] = normalized_replacements
-        return ToolArgsRepairResult(
-            args=call_args,
-            alias_rewrite_count=rewrites,
-            arg_repair_counts=counts,
-        )
-
-    # Single replacement mode
-    old_val, old_alias = _require_text_arg(
-        args,
-        single_old_keys,
-        "old_string",
-        allow_blank=False,
-    )
-    if old_alias:
-        _record_repair(counts, "edit_field_alias")
-        rewrites += 1
-
-    new_val, new_alias = _require_text_arg(
-        args,
-        single_new_keys,
-        "new_string",
-        allow_blank=True,
-    )
-    if new_alias:
-        _record_repair(counts, "edit_field_alias")
-        rewrites += 1
-
-    call_args["replacements"] = [{"search": old_val, "replace": new_val}]
-    return ToolArgsRepairResult(
-        args=call_args,
-        alias_rewrite_count=rewrites,
-        arg_repair_counts=counts,
-    )
+            _reject_unknown_args(item, {"old_string", "new_string"}, context="edit replacement")
+            old, _ = _require_text_arg(item, EDIT_OLD_KEYS, "old_string", allow_blank=False)
+            new, _ = _require_text_arg(item, EDIT_NEW_KEYS, "new_string", allow_blank=True)
+            normalized.append({"old_string": old, "new_string": new})
+        call_args["replacements"] = normalized
+    return ToolArgsRepairResult(args=call_args, alias_rewrite_count=rewrites, arg_repair_counts=counts)
 
 
 def _normalize_read(

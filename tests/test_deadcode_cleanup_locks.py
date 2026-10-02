@@ -255,7 +255,6 @@ def test_old_agent_execution_entries_are_deleted() -> None:
         "evaluate_tool_call_policy_for",
         "execute_information_tool_call",
         "read_before_edit_outcome",
-        "maybe_externalize_large_tool_output",
     ):
         assert hasattr(te, name), f"具体工具实现必须保留：{name}"
 

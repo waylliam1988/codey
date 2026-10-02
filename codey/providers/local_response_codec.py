@@ -12,7 +12,6 @@ import ast
 import hashlib
 import json
 import re
-from collections.abc import Mapping
 from typing import Any
 
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -25,7 +24,6 @@ _GEMMA_REASONING_RE = re.compile(
     re.DOTALL,
 )
 _GEMMA_METADATA_LIMIT = 64 * 1024
-_OLLAMA_ID_LIMIT = 64
 
 
 def _quote_bare_keys(source: str) -> str:
@@ -137,62 +135,6 @@ def parse_gemma_tool_reasoning(text: str) -> AssistantTurn | None:
     )
 
 
-def _stable_ollama_call_id(item: Mapping[str, object], index: int) -> str:
-    raw = json.dumps(item, sort_keys=True, ensure_ascii=False, default=str)
-    digest = hashlib.sha256(f"{index}:{raw}".encode()).hexdigest()[:16]
-    return f"ollama-{digest}"[:_OLLAMA_ID_LIMIT]
-
-
-def normalize_ollama_response(response: Mapping[str, object]) -> AssistantTurn:
-    """Normalize one Ollama ``/api/chat`` response into ``AssistantTurn``.
-
-    This adapter accepts only Ollama's response envelope.  ``done_reason`` is
-    retained as provider metadata; only actual ``message.tool_calls`` become
-    calls.  Missing or malformed calls are ignored rather than inferred from
-    ordinary text or model-specific decision fields.
-    """
-    if not isinstance(response, Mapping):
-        raise TypeError("Ollama response must be an object")
-    message = response.get("message")
-    if not isinstance(message, Mapping):
-        raise ValueError("Ollama response missing message object")
-    text = str(message.get("content") or "")
-    raw_calls = message.get("tool_calls")
-    calls: list[ProviderToolCall] = []
-    if raw_calls is not None:
-        if not isinstance(raw_calls, list):
-            raise ValueError("Ollama message.tool_calls must be a list")
-        for index, item in enumerate(raw_calls):
-            if not isinstance(item, Mapping):
-                continue
-            function = item.get("function")
-            if not isinstance(function, Mapping):
-                continue
-            name = str(function.get("name") or "").strip()
-            if not name:
-                continue
-            arguments = function.get("arguments")
-            if isinstance(arguments, str):
-                try:
-                    arguments = json.loads(arguments)
-                except json.JSONDecodeError:
-                    continue
-            if not isinstance(arguments, Mapping):
-                continue
-            call_id = str(item.get("id") or "").strip() or _stable_ollama_call_id(item, index)
-            calls.append(ProviderToolCall(id=call_id, name=name, arguments=dict(arguments)))
-    finish_reason = str(response.get("done_reason") or ("stop" if response.get("done") else "") or "")
-    return AssistantTurn(
-        text=text,
-        tool_calls=tuple(calls),
-        raw={
-            "codec": "ollama-native",
-            "finish_reason": finish_reason,
-            "done": response.get("done") is True,
-        },
-    )
-
-
 def normalize_local_reply(reply: str) -> str | AssistantTurn:
     """Convert a complete local text frame into the canonical provider turn."""
     reasoning = parse_gemma_tool_reasoning(reply)
@@ -206,7 +148,6 @@ def normalize_local_reply(reply: str) -> str | AssistantTurn:
 
 __all__ = [
     "normalize_local_reply",
-    "normalize_ollama_response",
     "parse_gemma_tool_reasoning",
     "parse_local_tool_markup",
 ]

@@ -58,7 +58,7 @@ class WorkspaceFingerprintStaleTests(unittest.TestCase):
 
             calls = [
                 '{"tool":"read_file","args":{"path":"a.txt"}}',
-                '{"tool":"edit","args":{"path":"a.txt","replacements":[{"search":"hello","replace":"hello world"}]}}',
+        '{"tool":"edit","args":{"path":"a.txt","replacements":[{"old_string":"hello","new_string":"hello world"}]}}',
                 '{"tool":"run","args":{"path":".","command":"python -m py_compile a.txt"}}',
                 '{"tool":"done","args":{"summary":"fixed"}}',
             ]

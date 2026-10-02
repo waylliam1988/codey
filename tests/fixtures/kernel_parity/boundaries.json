@@ -118,6 +118,16 @@
         "tests/test_task_kernel_unification.py",
         "tests/test_kernel_legacy_parity.py"
       ]
+    },
+    "codey/agents/verification_driver.py": {
+      "current_owners": [
+        "codey/operations/kernel_facts.py",
+        "codey/operations/project_completion_checks.py"
+      ],
+      "tests": [
+        "tests/test_no_unreferenced_pre_kernel_facades.py",
+        "tests/test_session_log_receipt_recovery_preserves_facts.py"
+      ]
     }
   },
   "entry_chains": {

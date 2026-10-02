@@ -186,6 +186,16 @@ class LocalOpenAIProvider:
         if isinstance(metadata_turn, AssistantTurn):
             provider_metadata = dict(metadata_turn.raw)
             text = metadata_turn.text
+            if not parsed and not dropped and not message.get("_continuable_length") and metadata_turn.tool_calls:
+                parsed = [
+                    {"id": call.id, "name": call.name, "arguments": dict(call.arguments)}
+                    for call in metadata_turn.tool_calls
+                ]
+                message = {**message, "content": text, "tool_calls": [
+                    {"id": call["id"], "type": "function", "function": {
+                        "name": call["name"], "arguments": json.dumps(call["arguments"], ensure_ascii=False),
+                    }} for call in parsed
+                ]}
         if generation is not None and generation != self._generation:
             return AssistantTurn(
                 text=text,
@@ -200,8 +210,8 @@ class LocalOpenAIProvider:
             self._messages = (
                 [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
             )
-            if not text:
-                text = f"ERROR: local model returned {dropped} malformed tool call(s) without ids"
+            # Content cannot rescue a malformed native batch as a JSON call.
+            text = f"ERROR: local model returned {dropped} malformed tool call(s)"
             return AssistantTurn(
                 text=text,
                 tool_calls=(),

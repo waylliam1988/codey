@@ -11,7 +11,6 @@ from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 from codey.agents.request import AgentRequest
-from codey.agents.state import AgentLoopSession, RunResult
 from codey.agents.tool_execution import (
     evaluate_tool_call_policy_for,
     policy_denied,
@@ -31,6 +30,7 @@ from codey.runtime.core.operation_state import (
     mark_tool_effect_pending,
     operation_id_for_run,
 )
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     SETTLEMENT_STATUS_ERROR,
@@ -52,7 +52,6 @@ from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
-from tests.support.kernel_harness import build_kernel_fixture
 
 
 def _commit_log_entry(
@@ -126,8 +125,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def _create_session(self, provider: MockProvider) -> AgentLoopSession:
-        return build_kernel_fixture(AgentRequest(
+    def _create_request(self, provider: MockProvider) -> AgentRequest:
+        return AgentRequest(
             provider=provider,
             project=self.project_dir,
             task="do something",
@@ -148,7 +147,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 find_references=lambda *a, **kw: ToolOutcome("refs", True),
                 run_command=lambda *a, **kw: ToolOutcome("command output", True),
             ),
-        ))
+        )
 
     def _begin_sink_turn(self, call: ToolCall, *, turn: int, tool_index: int) -> str:
         """生产入口：经 KernelEffectSink 提交本轮意图（含交付 envelope）。"""
@@ -238,7 +237,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         from codey.operations.task_effects import KernelEffectSink
         from codey.runtime.core.models import ToolResult
 
-        session = self._create_session(MockProvider())
+        request = self._create_request(MockProvider())
         call = ToolCall(name="read", args={"path": "foo.py"})
         effect_id = self._begin_sink_turn(call, turn=1, tool_index=0)
         self.assertTrue(bool(effect_id))
@@ -250,7 +249,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         # Execute the real tool (production information-tool path)
         outcome = execute_information_tool_call(
-            self.project_dir, session.request.tool_fns, call,
+            self.project_dir, request.tool_fns, call,
         )
         self.assertTrue(outcome.ok)
 

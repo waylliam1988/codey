@@ -72,13 +72,17 @@ def test_kernel_consumes_one_local_length_continuation_before_done():
     assert "truncated" in provider.prompts[1]
 
 
-def test_non_local_native_provider_does_not_get_local_length_continuation():
-    from codey.operations.task_loop import _local_length_continuation_prompt
+def test_non_local_native_provider_does_not_get_local_length_continuation(monkeypatch):
+    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
 
-    reply = AssistantTurn(text="partial", raw={"continuable_length": True})
-    assert _local_length_continuation_prompt(
-        reply, native=True, provider_id="web", used=False,
-    ) is None
+    monkeypatch.setenv("NATIVE_TOOLS", "1")
+    provider = _AlwaysLengthProvider()
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=2)
+    result = run_task_kernel(session, provider=provider, provider_id="web", run_id="web-length")
+    assert not result.completed
+    assert all("Your previous response was truncated" not in prompt for prompt in provider.prompts)
 
 
 def test_second_local_length_stop_is_provider_failure() -> None:

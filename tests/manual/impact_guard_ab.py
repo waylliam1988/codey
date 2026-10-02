@@ -33,13 +33,11 @@ from codey.toolchain.runtime import EditBlock, ToolOutcome
 from codey.toolchain.runtime import edit_file as runtime_edit_file
 from codey.utils.references import REFERENCE_EXCLUDED_DIRS, find_reference_hints
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
+from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map
 
 ARMS = ("current", "impact_guard")
 
-
-def run_agent(provider, project, task, **kwargs):
-    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 DEFAULT_PROVIDERS = ("deepseek", "qwen")
 ALL_WEB_PROVIDERS = ("deepseek", "stepfun", "qwen", "glm")
 SOURCE_SUFFIXES = {
@@ -173,8 +171,8 @@ def _changed_definitions_from_blocks(
     changed: list[ChangedDefinition] = []
     seen: set[tuple[str, str, str | None]] = set()
     for block in blocks:
-        old_defs = _line_defs(str(block.search))
-        new_defs = _line_defs(str(block.replace))
+        old_defs = _line_defs(str(block.old_string))
+        new_defs = _line_defs(str(block.new_string))
         old_by_kind = {}
         for kind, name in old_defs:
             old_by_kind.setdefault(kind, []).append(name)
@@ -188,7 +186,7 @@ def _changed_definitions_from_blocks(
             for index in range(paired):
                 old_name = old_names[index]
                 new_name = new_names[index]
-                if old_name == new_name and block.search == block.replace:
+                if old_name == new_name and block.old_string == block.new_string:
                     continue
                 key = (rel, new_name, old_name)
                 if key in seen:
@@ -598,19 +596,23 @@ CASES = {
 def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str, Any]:
     events: list[RunEvent] = []
     with tempfile.TemporaryDirectory(prefix="codey-impact-guard-ab-") as td:
-        root = Path(td)
+        root = Path(td) / "project"
+        root.mkdir()
         _write_project(root, case.files)
         probe = _ImpactGuardProbe(arm=arm)
-        result = run_agent(
-            provider,
-            root,
-            case.task,
-            max_turns=max_turns,
-            on_event=events.append,
-            fresh_chat=True,
-            provider_id=getattr(provider, "id", ""),
-            project_map=render_production_project_map(root, task=case.task),
-            tool_fns=AgentToolFns(edit_file=probe),
+        result = _agent_kernel_request(
+            AgentRequest(
+                provider=provider,
+                project=root,
+                task=case.task,
+                workspace_revision_store=WorkspaceRevisionStore(Path(td) / "state"),
+                max_turns=max_turns,
+                on_event=events.append,
+                fresh_chat=True,
+                provider_id=getattr(provider, "id", ""),
+                project_map=render_production_project_map(root, task=case.task),
+                tool_fns=AgentToolFns(edit_file=probe),
+            )
         )
         final_success = case.check(root)
         missed_callers = case.missed(root)

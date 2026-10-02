@@ -21,10 +21,7 @@ EXPECTED_ARG_REPAIR_KINDS = {
     "search_field_alias",
     "references_field_alias",
     "command_field_alias",
-    "edit_field_alias",
     "numeric_coerced",
-    "json_replacements_parsed",
-    "replacement_object_wrapped",
 }
 
 
@@ -35,8 +32,8 @@ class ToolContractDriftTests(unittest.TestCase):
         self.assertEqual(SEARCH_QUERY_KEYS, ("query", "pattern"))
         self.assertEqual(REFERENCES_SYMBOL_KEYS, ("symbol", "name"))
         self.assertEqual(COMMAND_KEYS, ("command", "cmd"))
-        self.assertEqual(EDIT_OLD_KEYS, ("old_string", "search", "old", "before"))
-        self.assertEqual(EDIT_NEW_KEYS, ("new_string", "replace", "replacement", "after", "new"))
+        self.assertEqual(EDIT_OLD_KEYS, ("old_string",))
+        self.assertEqual(EDIT_NEW_KEYS, ("new_string",))
 
     def test_parser_aliases_are_known_repair_kinds(self) -> None:
         codec = JsonToolCodec()
@@ -44,7 +41,6 @@ class ToolContractDriftTests(unittest.TestCase):
         cases = [
             ('{"tool":"grep","args":{"pattern":"x","path":"."}}', "search_field_alias"),
             ('{"tool":"read_file","args":{"path":"app.py","offset":"5"}}', "numeric_coerced"),
-            ('{"tool":"edit","args":{"path":"app.py","old":"old","new":"new"}}', "edit_field_alias"),
         ]
         for payload, expected_kind in cases:
             with self.subTest(payload=payload):

@@ -20,7 +20,6 @@ only; hooks adopt only ``event_proof``.
 
 from __future__ import annotations
 
-import contextlib
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -28,7 +27,7 @@ from codey.runtime.core.models import ToolResult
 
 # Kernel-owned workspace provenance travels outside the executor-controlled
 # audit dict. Executor-provided ``workspace_revision``/``workspace_fingerprint``
-# are stripped at the kernel boundary; only ``with_trusted_workspace_state`` /
+# are stripped at the kernel boundary; only ``_with_trusted_workspace_state`` /
 # ``attach_trusted_workspace`` may attach the authoritative pair via both
 # audit keys (for durable display) and the private side-channel attribute
 # read by the event projection.
@@ -55,18 +54,15 @@ __all__ = [
     "_EXECUTOR_STRIPPED_AUDIT_KEYS",
     "_KERNEL_WORKSPACE_ATTR",
     "_TRUSTED_PROOF_SOURCES",
-    "_disk_workspace_fingerprint",
     "_is_trusted_identity",
     "_kernel_workspace_identity_of",
     "_session_workspace_identity",
-    "_sync_workspace_after_edit",
     "_trusted_workspace_proof",
     "_with_trusted_workspace_state",
     "attach_proof_to_event",
     "attach_trusted_workspace",
     "event_proof",
     "sync_workspace_state_after_edit",
-    "with_trusted_workspace_state",
 ]
 
 
@@ -251,16 +247,11 @@ def _with_trusted_workspace_state(
     return attach_trusted_workspace(result, _trusted_workspace_proof(identity, "bump_state"))
 
 
-def with_trusted_workspace_state(
-    result: ToolResult, *, revision: int, fingerprint: str
-) -> ToolResult:
-    """Public alias for the trusted attach (fail-closed on failure)."""
-    return _with_trusted_workspace_state(result, revision=revision, fingerprint=fingerprint)
-
-
 def _session_workspace_identity(session: Any) -> tuple[int, str]:
+    from codey.workspace.revision import valid_workspace_revision
+
     try:
-        rev = int(getattr(session, "workspace_revision", 0) or 0)
+        rev = valid_workspace_revision(getattr(session, "workspace_revision", 0))
     except Exception:
         rev = 0
     try:
@@ -268,30 +259,6 @@ def _session_workspace_identity(session: Any) -> tuple[int, str]:
     except Exception:
         fp = ""
     return rev, fp
-
-
-def _disk_workspace_fingerprint(project_path: Any, *, ignored_paths: Any = ()) -> str:
-    """Real post-edit file identity; empty when it cannot be observed."""
-    try:
-        if project_path is None:
-            return ""
-        from pathlib import Path
-
-        from codey.workspace.revision import workspace_fingerprint
-
-        candidate = Path(str(project_path)).expanduser() if not isinstance(project_path, Path) else project_path
-        try:
-            if not candidate.is_dir():
-                return ""
-        except Exception:
-            return ""
-        try:
-            ignores = tuple(str(p) for p in (ignored_paths or ())) if ignored_paths else ()
-        except Exception:
-            ignores = ()
-        return str(workspace_fingerprint(candidate, ignored_paths=ignores) or "")
-    except Exception:
-        return ""
 
 
 def sync_workspace_state_after_edit(
@@ -311,11 +278,8 @@ def sync_workspace_state_after_edit(
     When ``revision_store`` is supplied, the durable ``bump_state`` is the
     single authority (one atomic scan inside the store lock) and the trusted
     pair is returned so result events can carry it to hooks; hooks must adopt
-    it without a second bump. Otherwise only the observed fingerprint is
-    aligned and the outer hooks bump owns the revision (compat path retained
-    for tests only: it scans once here for session alignment and hooks scan
-    again for the revision; production must pass a durable store to avoid the
-    double scan; the no-store case never emits trusted state).
+    it without a second bump. A missing store returns an untrusted pair and
+    changes neither session nor evidence. There is no guessed revision path.
 
     A supplied store that fails (exception, invalid revision, or empty
     fingerprint) never falls back to the session-guess path: the session
@@ -355,51 +319,4 @@ def sync_workspace_state_after_edit(
 
             raise RecoveryFailed(f"execution evidence workspace state sync failed: {exc}") from exc
         return rev, fp
-    _sync_workspace_after_edit(session, project_path, execution_evidence, ignored_paths=ignores)
     return 0, ""
-
-
-def _sync_workspace_after_edit(
-    session: Any,
-    project_path: Any,
-    execution_evidence: Any = None,
-    *,
-    ignored_paths: Any = (),
-) -> None:
-    """Write the same real WorkspaceState to session and outer evidence.
-
-    Called after a confirmed edit result, before any later run receipt.
-    The revision counter itself is owned by the outer
-    WorkspaceRevisionStore (hooks bump exactly once); here we only sync the
-    observed file fingerprint so verification never carries the stale
-    pre-edit identity. No inference from the startup-cached fingerprint,
-    no second revision bump. ``ignored_paths`` must match the outer store
-    config so both scans describe the same files.
-    """
-    try:
-        ignores = tuple(str(p) for p in (ignored_paths or ())) if ignored_paths else ()
-    except Exception:
-        ignores = ()
-    try:
-        fp = _disk_workspace_fingerprint(project_path, ignored_paths=ignores)
-    except Exception:
-        fp = ""
-    if not fp:
-        return
-    try:
-        rev = int(getattr(session, "workspace_revision", 0) or 0) or 1
-    except Exception:
-        rev = 1
-    with contextlib.suppress(Exception):
-        session.set_workspace_state(rev, fp)
-    try:
-        if execution_evidence is not None and hasattr(execution_evidence, "set_workspace_state"):
-            try:
-                outer_rev = int(getattr(execution_evidence, "workspace_revision", 0) or 0) or rev
-            except Exception:
-                outer_rev = rev
-            if outer_rev < rev:
-                outer_rev = rev
-            execution_evidence.set_workspace_state(outer_rev, fp)
-    except Exception:
-        pass

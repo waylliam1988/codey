@@ -12,7 +12,7 @@ import unittest
 
 class DelegateAuditOnlyNonzeroExitIsFailureTests(unittest.TestCase):
     def test_audit_exit_1_with_none_param_is_not_ok(self) -> None:
-        from codey.operations.kernel_result import _normalize_delegate_result, _result_ok
+        from codey.operations.kernel_result import _normalize_delegate_result, result_ok
         from codey.runtime.core.models import ToolCall, ToolResult
 
         call = ToolCall(name="run", args={"command": "x", "path": "."}, call_id="c1")
@@ -20,7 +20,7 @@ class DelegateAuditOnlyNonzeroExitIsFailureTests(unittest.TestCase):
         normalized, ok, _code = _normalize_delegate_result("run", result, True, None)
         self.assertFalse(ok, f"audit exit 1 must force ok=False, got ok={ok!r} audit={dict(normalized.audit)!r}")
         self.assertFalse(
-            _result_ok("run", normalized),
+            result_ok("run", normalized),
             "normalized run result with audit exit 1 must not be ok",
         )
 

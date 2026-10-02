@@ -2,6 +2,17 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 内核边界、规范编辑与管道完成收口（未发布）
+
+- 纳入工作区原有 edit 修改：唯一 replacements 协议贯通 JSON/native，删除编辑方言修复并迁移真实 EditBlock 消费者。
+- 修复 provider 文本工具帧在 native 路径丢失，保持真实 call id 与历史一致；截断和畸形 native 批次不能借 JSON done 放行。
+- 管道排空改由 pump 完成事件与共同 deadline 管理，移除 native Thread.join 依赖；补生命周期红测和外部持有者子进程 watchdog。原 GitHub 3.13 卡死未在本地确定性重现，解释器底层原因仍未确认。
+- run_task_kernel 228→165 行，删除复杂度豁免和每轮无用初始 prompt 渲染；完成只接受精确 True。
+- 删除缺存储时伪造工作区身份的路径；未确认编辑结算一次、清空实时身份、恢复保留真实编辑事实。恢复的 read 通过现有 canonical 名称解析器记录已读事实。
+- 删除旧编程状态/执行/验证 facade、未使用 /api/chat codec、旧测试内核夹具和四份退役工具修复 benchmark；有效写入基准和 soak 接真实版本存储，删除失效 read-before-edit baseline 臂。
+- 最终两版本全量各 **6475 passed、29 skipped、1488 subtests passed**：Python 3.12.8 为 447.36 秒，3.13.15 为 441.12 秒。Ruff、compileall、JS syntax、diff 检查通过；相对 aff30e0 生产净减少 **718 行**。
+- [完整审查与证明边界](docs/kernel_review_2026-10-02.zh-CN.md)：有限模型验证不等于全程序无 bug；本轮未测真实 UI/模型性能，无 tag/release/版本 bump。
+
 ## Unreleased - 本地模型 canonical edit 协议与实机复测（未发布）
 
 - 将 edit 的唯一规范形状收敛为 `replacements[{old_string,new_string}]`；native schema、prompt、codec、repair、ToolSpec 和 kernel validator 使用同一协议，kernel 不再处理模型方言或历史别名。

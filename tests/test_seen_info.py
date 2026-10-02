@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from codey.agents.state import LoopStagnation, SeenInfoLRU, seen_info_key
+from codey.agents.state import SeenInfoLRU, seen_info_key
+from codey.operations.kernel_progress import KernelProgress
 
 
 class SeenInfoTests(unittest.TestCase):
@@ -27,9 +28,9 @@ class SeenInfoTests(unittest.TestCase):
         self.assertIn(keys[3], seen)
 
     def test_stagnation_defaults_to_bounded_lru(self) -> None:
-        stag = LoopStagnation()
-        self.assertIsInstance(stag.seen_info, SeenInfoLRU)
-        self.assertEqual(len(stag.seen_info), 0)
+        progress = KernelProgress()
+        self.assertIsInstance(progress.seen, SeenInfoLRU)
+        self.assertEqual(len(progress.seen), 0)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import json
 import unittest
 from pathlib import Path
 
@@ -107,21 +106,26 @@ class ToolArgsRepairTests(unittest.TestCase):
         with self.assertRaises(ToolArgsRepairError):
             normalize_tool_args("read", {"path": "app.py", "limit": self.limits.read_max_lines + 1}, limits=self.limits)
 
-    def test_edit_old_and_new_field_aliases_in_single_mode(self) -> None:
-        cases = (
-            ({"path": "a.py", "old": "x", "new": "y"}, ("x", "y")),
-            ({"path": "a.py", "search": "x", "replace": "y"}, ("x", "y")),
-            ({"path": "a.py", "before": "x", "after": "y"}, ("x", "y")),
-            ({"path": "a.py", "old_string": "x", "replacement": "y"}, ("x", "y")),
+    def test_edit_rejects_noncanonical_single_replacement_aliases(self) -> None:
+        for args in (
+            {"path": "a.py", "old": "x", "new": "y"},
+            {"path": "a.py", "search": "x", "replace": "y"},
+            {"path": "a.py", "before": "x", "after": "y"},
+            {"path": "a.py", "old_string": "x", "replacement": "y"},
+        ):
+            with self.subTest(args=args), self.assertRaises(ToolArgsRepairError):
+                normalize_tool_args("edit", args, limits=self.limits)
+
+    def test_edit_canonical_replacement_preserves_protocol_field_names(self) -> None:
+        result = normalize_tool_args(
+            "edit",
+            {"path": "a.py", "replacements": [{"old_string": "x", "new_string": "y"}]},
+            limits=self.limits,
         )
-        for args, (expected_search, expected_replace) in cases:
-            with self.subTest(args=args):
-                res = normalize_tool_args("edit", args, limits=self.limits)
-                self.assertEqual(
-                    res.args["replacements"],
-                    [{"search": expected_search, "replace": expected_replace}],
-                )
-                self.assertGreater(res.alias_rewrite_count, 0)
+        self.assertEqual(
+            result.args["replacements"],
+            [{"old_string": "x", "new_string": "y"}],
+        )
 
     def test_edit_missing_new_string_fails_closed(self) -> None:
         cases = (
@@ -132,38 +136,15 @@ class ToolArgsRepairTests(unittest.TestCase):
             with self.subTest(args=args), self.assertRaises(ToolArgsRepairError):
                 normalize_tool_args("edit", args, limits=self.limits)
 
-    def test_edit_explicit_empty_new_string_aliases_are_deletions(self) -> None:
-        cases = (
-            {"path": "a.py", "old_string": "x", "new_string": ""},
-            {"path": "a.py", "old_string": "x", "replace": ""},
-            {"path": "a.py", "old_string": "x", "after": ""},
-            {"path": "a.py", "old_string": "x", "new": ""},
-            {"path": "a.py", "replacements": [{"old_string": "x", "new_string": ""}]},
-        )
-        for args in cases:
-            with self.subTest(args=args):
-                res = normalize_tool_args("edit", args, limits=self.limits)
-                self.assertEqual(res.args["replacements"], [{"search": "x", "replace": ""}])
+    def test_edit_explicit_empty_new_string_is_deletion(self) -> None:
+        args = {"path": "a.py", "replacements": [{"old_string": "x", "new_string": ""}]}
+        result = normalize_tool_args("edit", args, limits=self.limits)
+        self.assertEqual(result.args, args)
 
-    def test_edit_json_string_replacements(self) -> None:
-        raw_json = json.dumps([{"old_string": "foo", "new_string": "bar"}])
-        res = normalize_tool_args("edit", {"path": "a.py", "replacements": raw_json}, limits=self.limits)
-        self.assertEqual(res.args["replacements"], [{"search": "foo", "replace": "bar"}])
-        self.assertIn("json_replacements_parsed", res.arg_repair_counts)
-
-    def test_edit_invalid_json_string_replacements_fails_closed(self) -> None:
-        with self.assertRaises(ToolArgsRepairError) as ctx:
-            normalize_tool_args("edit", {"path": "a.py", "replacements": "{invalid json"}, limits=self.limits)
-        self.assertIn("could not be parsed", str(ctx.exception))
-
-    def test_edit_single_dict_wrapped_in_replacements(self) -> None:
-        res = normalize_tool_args(
-            "edit",
-            {"path": "a.py", "replacements": {"old_string": "foo", "new_string": "bar"}},
-            limits=self.limits,
-        )
-        self.assertEqual(res.args["replacements"], [{"search": "foo", "replace": "bar"}])
-        self.assertIn("replacement_object_wrapped", res.arg_repair_counts)
+    def test_edit_rejects_string_and_object_replacements(self) -> None:
+        for value in ('[{"old_string":"x","new_string":"y"}]', {"old_string": "x", "new_string": "y"}):
+            with self.subTest(value=value), self.assertRaises(ToolArgsRepairError):
+                normalize_tool_args("edit", {"path": "a.py", "replacements": value}, limits=self.limits)
 
     def test_edit_mode_conflict_rejects(self) -> None:
         with self.assertRaises(ToolArgsRepairError):
@@ -251,7 +232,7 @@ class ToolArgsRepairTests(unittest.TestCase):
             with self.subTest(tool=tool, args=args):
                 with self.assertRaises(ToolArgsRepairError) as ctx:
                     normalize_tool_args(tool, args, limits=self.limits)
-                self.assertIn("conflicting", str(ctx.exception))
+                self.assertTrue(str(ctx.exception))
 
     def test_optional_paths_default_only_when_missing(self) -> None:
         defaults = (

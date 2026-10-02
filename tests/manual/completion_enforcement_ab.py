@@ -88,7 +88,7 @@ def _changes(*files: str) -> dict:
 def _edit(path: str = "src/mod.py") -> RunEvent:
     return RunEvent.tool_finished(
         1,
-        ToolCall("edit", {"path": path, "old_string": "1", "new_string": "2"}),
+        ToolCall("edit", {"path": path, "replacements": [{"old_string": "1", "new_string": "2"}]}),
         ToolOutcome("edited", True, changed=True),
     )
 

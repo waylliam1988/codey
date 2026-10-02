@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,19 +14,16 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents.request import AgentRequest
-from codey.operations import task_loop as agent_loop
 from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map
 
 GUARD_MESSAGE = "read_file required before editing existing file:"
-ARMS = ("baseline", "guard")
+ARMS = ("guard",)
 
-
-def run_agent(provider, project, task, **kwargs):
-    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 @dataclass(frozen=True)
@@ -177,38 +173,23 @@ def _run_check(root: Path, command: tuple[str, ...]) -> bool:
     return completed.returncode == 0
 
 
-def _disabled_guard(_root: Path, _rel: str, _known_file_paths: set[str]) -> None:
-    return None
-
-
-def _with_guard(arm: str) -> Callable:
-    if arm != "baseline":
-        return agent_loop._read_before_edit_outcome
-    original = agent_loop._read_before_edit_outcome
-    agent_loop._read_before_edit_outcome = _disabled_guard
-    return original
-
-
-def _restore_guard(original: Callable) -> None:
-    agent_loop._read_before_edit_outcome = original
-
-
 def _run_case(provider, root: Path, case: GuardCase, arm: str, max_turns: int) -> dict[str, Any]:
     events: list[RunEvent] = []
-    original_guard = _with_guard(arm)
-    try:
-        result = run_agent(
-            provider,
-            root,
-            case.task,
+    if arm != "guard":
+        raise ValueError("only the production guard probe is supported")
+    result = _agent_kernel_request(
+        AgentRequest(
+            provider=provider,
+            project=root,
+            task=case.task,
+            workspace_revision_store=WorkspaceRevisionStore(root.parent / (root.name + ".state")),
             max_turns=max_turns,
             on_event=events.append,
             fresh_chat=True,
             provider_id=getattr(provider, "id", ""),
             project_map=render_production_project_map(root, task=case.task),
         )
-    finally:
-        _restore_guard(original_guard)
+    )
 
     rendered = [render_run_event(event) for event in events]
     guard_blocks = sum(1 for line in rendered if GUARD_MESSAGE in line)
@@ -307,7 +288,7 @@ def write_report_output(path: Path, text: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Live A/B for read-before-edit guard.")
+    parser = argparse.ArgumentParser(description="Live probe for the production read-before-edit guard.")
     parser.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--case", choices=[case.name for case in CASES], action="append")

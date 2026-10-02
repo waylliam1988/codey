@@ -145,7 +145,7 @@ class JsonToolCodecTests(unittest.TestCase):
         normalized = " ".join(prompt.split())
 
         self.assertIn("content only when creating a new file", normalized)
-        self.assertIn("Existing files must use exact old_string/new_string", normalized)
+        self.assertIn("Existing files must use exact old_string/new_string pairs", normalized)
         self.assertIn("never use content to replace an existing file", normalized)
         self.assertNotIn("substantial rewrite", normalized)
         self.assertNotIn("use content with the full file instead", normalized)
@@ -366,8 +366,8 @@ class JsonToolCodecTests(unittest.TestCase):
 
         self.assertEqual(plan.protocol_error, "")
         self.assertEqual(plan.calls[0].args["replacements"], [
-            {"search": "one", "replace": "ONE"},
-            {"search": "two", "replace": ""},
+            {"old_string": "one", "new_string": "ONE"},
+            {"old_string": "two", "new_string": ""},
         ])
 
     def test_replacements_limit_and_edit_modes_are_protocol_errors(self) -> None:
@@ -387,8 +387,7 @@ class JsonToolCodecTests(unittest.TestCase):
             "args": {
                 "path": "app.py",
                 "content": "new",
-                "old_string": "old",
-                "new_string": "new",
+                "replacements": [{"old_string": "old", "new_string": "new"}],
             },
         }))
 
@@ -413,23 +412,23 @@ class JsonToolCodecTests(unittest.TestCase):
 
         self.assertEqual(single.calls, [])
         self.assertEqual(batch.calls, [])
-        self.assertIn("new_string requires a value", single.protocol_error)
+        self.assertIn("unsupported fields", single.protocol_error)
         self.assertIn("new_string requires a value", batch.protocol_error)
         self.assertEqual(single.protocol_error_kind, PROTOCOL_INVALID_ARGS)
         self.assertEqual(batch.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_explicit_empty_new_string_is_valid_delete(self) -> None:
-        for key in ("new_string", "replace", "after", "new"):
+        for key in ("new_string",):
             with self.subTest(key=key):
                 plan = JsonToolCodec().parse(json.dumps({
                     "tool": "edit",
-                    "args": {"path": "app.py", "old_string": "old", key: ""},
+                    "args": {"path": "app.py", "replacements": [{"old_string": "old", key: ""}]},
                 }))
 
                 self.assertEqual(plan.protocol_error, "")
                 self.assertEqual(
                     plan.calls[0].args["replacements"],
-                    [{"search": "old", "replace": ""}],
+                    [{"old_string": "old", "new_string": ""}],
                 )
 
     def test_edit_requires_top_level_path_and_single_file_replacements(self) -> None:
@@ -523,12 +522,12 @@ class JsonToolCodecTests(unittest.TestCase):
         codec = JsonToolCodec()
         plan = codec.parse(
             '已深度思考（用时 1 秒）\n'
-            '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
+            '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old","new_string":"new"}]}}'
         )
 
         self.assertEqual(len(plan.calls), 1)
         self.assertEqual(plan.calls[0].name, "edit")
-        self.assertEqual(plan.calls[0].args["replacements"], [{"search": "old", "replace": "new"}])
+        self.assertEqual(plan.calls[0].args["replacements"], [{"old_string": "old", "new_string": "new"}])
 
     def test_parse_accidental_multiple_tool_objects_as_parallel_calls(self) -> None:
         codec = JsonToolCodec()

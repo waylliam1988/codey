@@ -9,6 +9,7 @@ from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _s
 from codey.operations.kernel_result import strict_exit_code_or_none
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.tool_spec import canonical_tool_name
 
 __all__ = [
     "record_facts_for_result",
@@ -143,10 +144,19 @@ def record_facts_for_result(
     ok: bool,
     exit_code: int | None = None,
 ) -> None:
-    name = str(call.name or "").strip().lower()
+    # Effect intents use executor names (read/ls/search); live turns use the
+    # model contract. Both observations must project through the same name.
+    name = canonical_tool_name(call.name)
     args = call.args if isinstance(call.args, dict) else {}
     text = str(result.model_text or "")
     sess_rev, sess_fp = _session_workspace_identity(session)
+    if name == "edit" and _canonical_mapping(result).get("workspace_unconfirmed") is True:
+        # A failed identity bump does not undo the file effect. This fact is
+        # persisted in the ordinary receipt and replayed even when ok=False.
+        session.record_edit(str(args.get("path", "") or "file"))
+        if text:
+            session.transcript_notes.append(f"edit: {text[:500]}")
+        return
     if name == "run":
         # Single record path: every executed run is an observation, known or
         # unknown. Unknown (missing/invalid exit) records passed=False with

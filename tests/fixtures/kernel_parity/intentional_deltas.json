@@ -3177,7 +3177,7 @@
   "loop/read-edit-no-check": {
     "status": "INTENTIONAL_DENY",
     "category": "fresh-verification",
-    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution. A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored.",
+    "reason": "Canonical edit uses replacements with old_string/new_string; legacy search/replace aliases are rejected before execution. A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored.",
     "tests": [
       "tests/test_task_kernel_remaining.py",
       "tests/test_kernel_parity_regressions.py",
@@ -3265,7 +3265,7 @@
   "loop/failed-check": {
     "status": "INTENTIONAL_DENY",
     "category": "fresh-verification",
-    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution. A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored.",
+    "reason": "Canonical edit uses replacements with old_string/new_string; legacy search/replace aliases are rejected before execution. A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored.",
     "tests": [
       "tests/test_task_kernel_remaining.py",
       "tests/test_kernel_parity_regressions.py",
@@ -4550,7 +4550,7 @@
   "protocol/coding/coding_writer/json/edit/example-2": {
     "status": "INTENTIONAL_DENY",
     "category": "strict-arguments",
-    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "reason": "Canonical edit uses replacements with old_string/new_string; legacy search/replace aliases are rejected before execution.",
     "tests": [
       "tests/test_edit_rejects_legacy_aliases_before_execution.py",
       "tests/test_kernel_legacy_parity.py"
@@ -4580,15 +4580,33 @@
       "done": null
     },
     "after": {
-      "accepted": false,
-      "calls": [],
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "app.py",
+            "replacements": [
+              {
+                "old_string": "old1",
+                "new_string": "new1"
+              },
+              {
+                "old_string": "old2",
+                "new_string": "new2"
+              }
+            ]
+          },
+          "id": "",
+          "name": "edit"
+        }
+      ],
       "done": null
     }
   },
   "protocol/coding/coding_writer/native/edit/example-2": {
     "status": "INTENTIONAL_DENY",
     "category": "strict-arguments",
-    "reason": "Canonical edit uses replacements with search/replace; legacy old_string/new_string aliases are rejected before execution.",
+    "reason": "Canonical edit uses replacements with old_string/new_string; legacy search/replace aliases are rejected before execution.",
     "tests": [
       "tests/test_edit_rejects_legacy_aliases_before_execution.py",
       "tests/test_kernel_legacy_parity.py"
@@ -4618,8 +4636,26 @@
       "done": null
     },
     "after": {
-      "accepted": false,
-      "calls": [],
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "app.py",
+            "replacements": [
+              {
+                "old_string": "old1",
+                "new_string": "new1"
+              },
+              {
+                "old_string": "old2",
+                "new_string": "new2"
+              }
+            ]
+          },
+          "id": "c1",
+          "name": "edit"
+        }
+      ],
       "done": null
     }
   },
@@ -5284,6 +5320,40 @@
         "turns": 3
       },
       "snapshot": null
+    }
+  },
+  "protocol/coding/coding_writer/json/repair/edit": {
+    "status": "INTENTIONAL_DENY",
+    "category": "strict-arguments",
+    "reason": "Canonical edit uses replacements with old_string/new_string; legacy search/replace aliases are rejected before execution.",
+    "tests": [
+      "tests/test_edit_rejects_legacy_aliases_before_execution.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "a.py",
+            "replacements": [
+              {
+                "replace": "y",
+                "search": "x"
+              }
+            ]
+          },
+          "id": "",
+          "name": "edit"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
     }
   }
 }

@@ -25,13 +25,11 @@ from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.toolchain import runtime as tool_runtime
+from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map
 
 ARMS = ("baseline", "context")
 
-
-def run_agent(provider, project, task, **kwargs):
-    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 TARGET = "config.py"
 ORIGINAL_LINE = "    timeout = settings.get('request_timeout', 10)\n"
 STALE_BLOCK = (
@@ -103,23 +101,27 @@ def _run_check(root: Path) -> bool:
 def _run_arm(provider, arm: str, max_turns: int) -> dict[str, Any]:
     events: list[RunEvent] = []
     with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
+        root = Path(td) / "project"
+        root.mkdir()
         _write_project(root)
         probe = _EditProbe(root)
         original_context = tool_runtime._render_edit_failure_context
         if arm == "baseline":
             tool_runtime._render_edit_failure_context = lambda _content, _search: ""
         try:
-            result = run_agent(
-                provider,
-                root,
-                TASK,
-                max_turns=max_turns,
-                on_event=events.append,
-                fresh_chat=True,
-                provider_id=getattr(provider, "id", ""),
-                project_map=render_production_project_map(root, task=TASK),
-                tool_fns=AgentToolFns(edit_file=probe),
+            result = _agent_kernel_request(
+                AgentRequest(
+                    provider=provider,
+                    project=root,
+                    task=TASK,
+                    workspace_revision_store=WorkspaceRevisionStore(Path(td) / "state"),
+                    max_turns=max_turns,
+                    on_event=events.append,
+                    fresh_chat=True,
+                    provider_id=getattr(provider, "id", ""),
+                    project_map=render_production_project_map(root, task=TASK),
+                    tool_fns=AgentToolFns(edit_file=probe),
+                )
             )
         finally:
             tool_runtime._render_edit_failure_context = original_context

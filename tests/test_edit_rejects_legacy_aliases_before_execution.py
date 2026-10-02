@@ -1,8 +1,8 @@
-"""Edit rejects legacy aliases before execution; canonical search/replace works.
+"""Edit rejects legacy aliases before execution; canonical old/new works.
 
-Old top-level old_string/new_string and replacement old_string/new_string
+Old top-level old_string/new_string and replacement search/replace
 must be rejected by validation/execution before touching files. Canonical
-replacements with search/replace still edit, and no-change edits report
+replacements with old_string/new_string still edit, and no-change edits report
 changed=False.
 """
 from __future__ import annotations
@@ -44,7 +44,7 @@ def test_legacy_replacement_alias_rejected(tmp_path):
     from codey.runtime.core.models import ToolCall
 
     _session, delegate = _delegate(tmp_path)
-    call = ToolCall("edit", {"path": "a.py", "replacements": [{"old_string": "hello", "new_string": "hi"}]})
+    call = ToolCall("edit", {"path": "a.py", "replacements": [{"search": "hello", "replace": "hi"}]})
     result, ok, _x = delegate.execute(call)
     assert ok is False
     assert str(result.model_text).startswith("ERROR:")
@@ -54,7 +54,7 @@ def test_canonical_replacement_edits(tmp_path):
     from codey.runtime.core.models import ToolCall
 
     _session, delegate = _delegate(tmp_path)
-    call = ToolCall("edit", {"path": "a.py", "replacements": [{"search": "hello", "replace": "hi"}]})
+    call = ToolCall("edit", {"path": "a.py", "replacements": [{"old_string": "hello", "new_string": "hi"}]})
     result, ok, _x = delegate.execute(call)
     assert ok is True
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "hi\n"
@@ -64,7 +64,7 @@ def test_no_change_reports_unchanged(tmp_path):
     from codey.runtime.core.models import ToolCall
 
     _session, delegate = _delegate(tmp_path)
-    call = ToolCall("edit", {"path": "a.py", "replacements": [{"search": "missing", "replace": "hi"}]})
+    call = ToolCall("edit", {"path": "a.py", "replacements": [{"old_string": "missing", "new_string": "hi"}]})
     result, ok, _x = delegate.execute(call)
     # Missing search either errors or reports unchanged without writing.
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "hello\n"
@@ -75,7 +75,7 @@ def test_validation_rejects_legacy_before_execution():
 
     for args in (
         {"path": "a.py", "old_string": "x", "new_string": "y"},
-        {"path": "a.py", "replacements": [{"old_string": "x", "new_string": "y"}]},
+        {"path": "a.py", "replacements": [{"search": "x", "replace": "y"}]},
         {"path": "a.py", "search": "x", "replace": "y"},
     ):
         _clean, error = _validate_tool_args("edit", args)

@@ -256,13 +256,12 @@ class PipeCleanupDiagnosisTests(unittest.TestCase):
         proc = mock.Mock()
         live_stream = _io.BytesIO(b"")
         dead_stream = _io.BytesIO(b"")
-        live_thread = mock.Mock()
-        live_thread.is_alive.return_value = True
-        dead_thread = mock.Mock()
-        dead_thread.is_alive.return_value = False
+        live_state = cancellation._StreamPump(cancellation.BoundedByteCapture(head_limit=10, tail_limit=10))
+        dead_state = cancellation._StreamPump(cancellation.BoundedByteCapture(head_limit=10, tail_limit=10))
+        dead_state.finished.set()
         proc.stdout = live_stream
         proc.stderr = dead_stream
-        owned = [(live_stream, live_thread), (dead_stream, dead_thread)]
+        owned = [(live_stream, live_state), (dead_stream, dead_state)]
         abandoned = cancellation._close_owned_pipes(proc, owned)
         self.assertEqual(abandoned, 1)
         # Dead pipe closed, live pipe left open for its owner.
@@ -280,11 +279,11 @@ class PipeCleanupDiagnosisTests(unittest.TestCase):
             read_file = _os.fdopen(read_fd, "rb", buffering=0)
             # External holder keeps the write end open: the reader blocks.
             started = threading.Event()
+            state = cancellation._StreamPump(cancellation.BoundedByteCapture(head_limit=10, tail_limit=10))
 
-            def _block(stream=read_file, started=started) -> None:
+            def _block(stream=read_file, started=started, state=state) -> None:
                 started.set()
-                with _contextlib.suppress(Exception):
-                    stream.read(1)
+                cancellation._pump_stream(stream, state)
 
             thread = threading.Thread(target=_block, daemon=True)
             thread.start()
@@ -294,7 +293,7 @@ class PipeCleanupDiagnosisTests(unittest.TestCase):
             proc.stderr = None
             proc.args = ["external-holder"]
             proc.pid = 12345
-            abandoned = cancellation._close_owned_pipes(proc, [(read_file, thread)])
+            abandoned = cancellation._close_owned_pipes(proc, [(read_file, state)])
             abandoned_total += abandoned
             live_pairs.append((read_file, thread, write_fd))
         # Each external holder abandons exactly one daemon reader by design;

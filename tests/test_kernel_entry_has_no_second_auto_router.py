@@ -43,14 +43,10 @@ def test_removed_router_and_recovery_facades_cannot_regrow():
 
 
 
-def test_verification_driver_has_no_retired_candidate_decision_or_forwarders():
-    from codey.agents import verification_driver
+def test_retired_verification_driver_is_removed():
+    from pathlib import Path
 
-    for name in ("initial_verification_state", "ensure_verification_candidates", "selected_verification_candidate",
-                 "verification_is_fresh", "verification_attempted_after_latest_edit", "mark_policy_denied_run",
-                 "requires_verification", "forbids_verification", "requested_verification_reminder",
-                 "default_candidate_reminder"):
-        assert not hasattr(verification_driver, name), name
+    assert not (Path(__file__).resolve().parents[1] / "codey/agents/verification_driver.py").exists()
 
 
 

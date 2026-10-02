@@ -570,8 +570,9 @@ write/write_file/create_file -> 保持 unknown tool 并在 repair prompt 中引�
 - A/B 要拆成两类：自然 live provider A/B 衡量 provider 是否真实输出偏差；dialect-pressure
   或 forced-alias 只能验证生产 loop 对 `pattern`、`old/new`、`cmd`、数字字符串等形态的
   吸收能力，不能当作自然生产省 turn 结论。0.5.3 使用
-  `tests/manual/tool_args_repair_live_ab.py` 记录自然 live A/B，使用
-  `tests/manual/tool_args_repair_dialect_pressure_ab.py` 记录 pressure A/B。
+  当时的两份 live 脚本已经于 2026-10-02 退役：统一内核后两臂没有实际
+  实验变量，不能用于比较修复收益。当前使用共同内核行为测试锁定规范参数，
+  `tests/manual/real_local_ab.py` 比较 Codey/Pi；历史记录不作为当前协议的证明。
 
 ### P2: Tool Prompt Decoupling
 

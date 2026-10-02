@@ -89,15 +89,15 @@ LONG_LINE_MARKER = "\n[... middle of overlong line omitted; not a complete old_s
 
 
 def retry_replacement_without_line_numbers(content: str, block: EditBlock) -> EditBlock | None:
-    stripped_search, changed_search = _strip_line_number_prefixes(block.search)
-    stripped_replace, changed_replace = _strip_line_number_prefixes(block.replace)
+    stripped_search, changed_search = _strip_line_number_prefixes(block.old_string)
+    stripped_replace, changed_replace = _strip_line_number_prefixes(block.new_string)
     if not changed_search and not changed_replace:
         return None
-    candidate = EditBlock(search=stripped_search, replace=stripped_replace if changed_replace else block.replace)
-    if not candidate.search:
+    candidate = EditBlock(old_string=stripped_search, new_string=stripped_replace if changed_replace else block.new_string)
+    if not candidate.old_string:
         return None
     # Stripped search must match exactly once, otherwise refuse (atomicity).
-    if content.count(candidate.search) != 1:
+    if content.count(candidate.old_string) != 1:
         return None
     # Never write line numbers into the file: the replacement must not start
     # with a stripped prefix shape that we just removed.
@@ -250,8 +250,8 @@ def _first_model_line(text: object, limit: int) -> str:
 
 @dataclass(frozen=True)
 class EditBlock:
-    search: str
-    replace: str
+    old_string: str
+    new_string: str
 
 
 def _symlink_path_error(root: Path, rel: str, *, tool: str) -> ToolOutcome | None:
@@ -674,7 +674,7 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         return ToolOutcome.error(
             f"edit supports at most {MAX_REPLACEMENTS} replacements"
         )
-    if any(not block.search for block in blocks):
+    if any(not block.old_string for block in blocks):
         return ToolOutcome.error("edit SEARCH text cannot be empty")
 
     path, error = _checked_tool_path(root, rel, tool="edit")
@@ -692,21 +692,21 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
 
     updated = content
     for index, block in enumerate(blocks, start=1):
-        exact_count = updated.count(block.search)
+        exact_count = updated.count(block.old_string)
         crlf_count = 0
-        if exact_count == 0 and "\r\n" in updated and "\r\n" not in block.search:
-            crlf_count = updated.count(block.search.replace("\n", "\r\n"))
+        if exact_count == 0 and "\r\n" in updated and "\r\n" not in block.old_string:
+            crlf_count = updated.count(block.old_string.replace("\n", "\r\n"))
         total = exact_count or crlf_count
         if total == 0:
             retried = retry_replacement_without_line_numbers(updated, block)
             if retried is not None:
-                updated, replaced = _replace_unique(updated, retried.search, retried.replace)
+                updated, replaced = _replace_unique(updated, retried.old_string, retried.new_string)
                 if replaced:
                     continue
             return _search_not_found(
                 rel,
                 original_content=content,
-                search=block.search,
+                search=block.old_string,
                 replacement_index=index,
                 replacement_count=len(blocks),
             )
@@ -715,16 +715,16 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
                 rel,
                 total,
                 original_content=content,
-                search=block.search,
+                search=block.old_string,
                 replacement_index=index,
                 replacement_count=len(blocks),
             )
-        updated, replaced = _replace_unique(updated, block.search, block.replace)
+        updated, replaced = _replace_unique(updated, block.old_string, block.new_string)
         if not replaced:
             return _search_not_found(
                 rel,
                 original_content=content,
-                search=block.search,
+                search=block.old_string,
                 replacement_index=index,
                 replacement_count=len(blocks),
             )

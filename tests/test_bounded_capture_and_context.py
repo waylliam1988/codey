@@ -757,6 +757,23 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
         self.assertEqual(job_calls, ["close"])
 
     def test_external_holder_does_not_pin_close(self) -> None:
+        # A broken timeout must fail this test, not pin the whole CI runner.
+        root = Path(__file__).resolve().parents[1]
+        probe = (
+            "import faulthandler, runpy, sys; "
+            "sys.path.insert(0, sys.argv[1]); "
+            "faulthandler.dump_traceback_later(10, exit=True); "
+            "ns = runpy.run_path(sys.argv[2]); "
+            "ns['WaitProcessCleanupOwnershipTests']()._assert_external_holder_does_not_pin_close(); "
+            "faulthandler.cancel_dump_traceback_later()"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe, str(root), str(Path(__file__).resolve())],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def _assert_external_holder_does_not_pin_close(self) -> None:
         # Write end outlives the owned tree: terminate cannot reap it, so
         # readers stay blocked. The caller must still return on time with
         # PipeDrainTimeout, and live readers' pipes must stay open instead
@@ -784,7 +801,7 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
                     cancellation, "DRAIN_TIMEOUT_SECONDS", 0.5
                 ),
                 mock.patch.object(
-                    cancellation, "READER_JOIN_TIMEOUT_SECONDS", 0.5
+                    cancellation, "READER_CLEANUP_TIMEOUT_SECONDS", 0.5
                 ),
                 self.assertRaises(cancellation.PipeDrainTimeout),
             ):
@@ -810,10 +827,11 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
         write_file = os.fdopen(write_fd, "wb")
         release = threading.Event()
         observed: list[str] = []
+        state = cancellation._StreamPump(BoundedByteCapture(head_limit=1024, tail_limit=1024))
 
         def _blocking_read() -> None:
             with contextlib.suppress(Exception):
-                read_file.read(8192)
+                cancellation._pump_stream(read_file, state)
             observed.append("done")
 
         reader = threading.Thread(target=_blocking_read, daemon=True)
@@ -824,7 +842,7 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
         proc = SimpleNamespace(stdout=read_file, stderr=None)
         try:
             started = time.monotonic()
-            cancellation._close_owned_pipes(proc, [(read_file, reader)])
+            cancellation._close_owned_pipes(proc, [(read_file, state)])
             elapsed = time.monotonic() - started
             self.assertLess(elapsed, 5.0)
             self.assertTrue(reader.is_alive())

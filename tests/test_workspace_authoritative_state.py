@@ -7,7 +7,6 @@ Locks:
 """
 from __future__ import annotations
 
-import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,26 +14,60 @@ from pathlib import Path
 
 class WorkspaceAuthoritativeStateTests(unittest.TestCase):
     def test_sync_uses_configured_ignored_paths(self) -> None:
-        from codey.operations import kernel_provenance as kp
+        from unittest.mock import patch
 
-        source = inspect.getsource(kp._sync_workspace_after_edit)
-        # Must not compute a fingerprint without the configured ignore set.
-        # Either it accepts ignored_paths or it delegates to the revision store.
-        self.assertTrue(
-            "ignored_paths" in source or "bump_state" in source or "current_state" in source,
-            f"_sync_workspace_after_edit must honor ignored_paths:\n{source}",
-        )
-        # Direct bare workspace_fingerprint(project) without ignores is forbidden.
-        self.assertNotIn("workspace_fingerprint(project_path)", source)
+        from codey.operations.kernel_provenance import sync_workspace_state_after_edit
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from codey.workspace.revision import WorkspaceRevisionStore
 
-    def test_hooks_and_kernel_share_single_scan_helper(self) -> None:
-        from codey.operations import kernel_provenance as kp
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            (project / "a.py").write_text("x = 2\n", encoding="utf-8")
+            store = WorkspaceRevisionStore(root / "state")
+            session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write"})))
+            with patch.object(store, "bump_state", wraps=store.bump_state) as bump:
+                revision, fingerprint = sync_workspace_state_after_edit(
+                    session, project, ignored_paths=("gen",), revision_store=store,
+                )
+            bump.assert_called_once_with(project, ignored_paths=("gen",))
+            self.assertEqual((session.workspace_revision, session.workspace_fingerprint), (revision, fingerprint))
+            self.assertGreater(revision, 0)
+            self.assertTrue(fingerprint.startswith("sha256:"))
 
-        self.assertTrue(
-            hasattr(kp, "sync_workspace_state_after_edit")
-            or "ignored_paths" in inspect.getsource(kp._sync_workspace_after_edit),
-            "kernel sync must expose a single-scan helper honoring ignored_paths",
-        )
+    def test_kernel_edit_and_following_run_share_one_store_bump(self) -> None:
+        from unittest.mock import patch
+
+        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from codey.runtime.core.models import ToolCall, ToolResult
+        from codey.workspace.revision import WorkspaceRevisionStore
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            store = WorkspaceRevisionStore(root / "state")
+            session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write", "project.verify"})))
+
+            def edit(call):
+                (project / "a.py").write_text("x = 2\n", encoding="utf-8")
+                return ToolResult(call, "edited", audit={"changed": True})
+
+            with patch.object(store, "bump_state", wraps=store.bump_state) as bump:
+                results = execute_turn(session, [
+                    ToolCall("edit", {"path": "a.py", "content": "x = 2\n"}),
+                    ToolCall("run", {"path": ".", "command": "python -m pytest"}),
+                ], executors={"edit": edit, "run": lambda call: ToolResult(call, "passed", audit={"exit_code": 0})},
+                   project_path=project, workspace_revision_store=store, run_id="one-bump")
+            bump.assert_called_once()
+            self.assertEqual(len(results), 2)
+            self.assertTrue(session.verifications[-1]["passed"])
+            self.assertEqual(results[0].audit["workspace_revision"], results[1].audit["workspace_revision"])
+            self.assertEqual(results[0].audit["workspace_fingerprint"], results[1].audit["workspace_fingerprint"])
 
     def test_ignored_file_does_not_change_fingerprint(self) -> None:
         from codey.workspace.revision import workspace_fingerprint

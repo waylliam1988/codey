@@ -234,12 +234,11 @@ def test_research_dispatch_passes_turn_and_index(tmp_path: Path) -> None:
 
 
 def test_managed_output_wording_is_generic() -> None:
-    from codey.agents.tool_execution import _head_tail_clip
-    from codey.runtime.core.models import TRUNCATED_RESULT_NOTICE
+    from codey.runtime.core.models import TRUNCATED_RESULT_NOTICE, model_text_with_audit_markers
 
     assert "grep/read_file" not in TRUNCATED_RESULT_NOTICE
     assert "narrower offsets" in TRUNCATED_RESULT_NOTICE
-    clipped, _ = _head_tail_clip("z" * 30_000)
+    clipped = model_text_with_audit_markers("z" * 100, truncated=True)
     assert "grep/read_file" not in clipped
     assert "narrower offsets" in clipped
 

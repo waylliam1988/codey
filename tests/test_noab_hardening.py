@@ -78,53 +78,34 @@ def test_overflow_classification() -> None:
     assert errors.is_context_overflow_message("context window exceeded")
 
 
-def _ephemeral_session() -> object:
-    from types import SimpleNamespace
+def test_receipts_keep_small_results_inline_and_reject_unstored_large_results() -> None:
+    import pytest
 
-    return SimpleNamespace(
-        request=SimpleNamespace(managed_outputs=None),
-        session_id="",
-        run_id="",
-        profile=SimpleNamespace(name="coding_writer"),
-    )
+    from codey.operations.kernel_receipts import result_receipt_fields
 
-
-def test_externalize_clips_only_oversize() -> None:
-    from codey.agents.tool_execution import maybe_externalize_large_tool_output
-    from codey.toolchain.runtime import ToolOutcome
-
-    session = _ephemeral_session()
-    small = ToolOutcome("ok", True)
-    assert maybe_externalize_large_tool_output(session, ToolCall(name="read", args={}), small, turn=1, tool_index=0) is small
-    big = ToolOutcome("z" * 30_000, True)
-    clipped = maybe_externalize_large_tool_output(session, ToolCall(name="read", args={}), big, turn=1, tool_index=0)
-    assert clipped.truncated
-    assert "externalized" in clipped.model_text
-    assert len(clipped.model_text.encode("utf-8")) < 30_000
+    call = ToolCall("read", {"path": "a.py"})
+    small = result_receipt_fields(ToolResult(call, "ok"), store=None, session_id="s", run_id="r", effect_id="e")
+    assert small["result_text"] == "ok"
+    assert small["result_ref"] == ""
+    with pytest.raises(ValueError, match="durable managed receipt"):
+        result_receipt_fields(ToolResult(call, "z" * 30_000), store=None, session_id="s", run_id="r", effect_id="e")
 
 
-def test_externalize_persists_durable_receipt(tmp_path: Path) -> None:
-    from types import SimpleNamespace
+def test_receipts_persist_complete_large_results(tmp_path: Path) -> None:
+    import json
 
-    from codey.agents.tool_execution import maybe_externalize_large_tool_output
+    from codey.operations.kernel_receipts import result_receipt_fields, text_digest
     from codey.storage.managed_outputs import ManagedOutputStore
-    from codey.toolchain.runtime import ToolOutcome
 
     store = ManagedOutputStore(tmp_path / "state")
-    session = SimpleNamespace(
-        request=SimpleNamespace(managed_outputs=store, session_id="session-1", run_id="run-1"),
-        config=SimpleNamespace(profile=SimpleNamespace(name="coding_writer")),
-    )
-    outcome = maybe_externalize_large_tool_output(
-        session, ToolCall(name="search", args={"query": "q"}), ToolOutcome("z" * 30_000, True),
-        turn=2, tool_index=0,
-    )
-    assert outcome.truncated
-    managed = outcome.managed_output()
-    assert managed["handle"].startswith("out_")
-    assert managed["original_bytes"] == 30_000
-    assert len(managed["sha256"]) == 64
-    assert store.path_for("session-1", "run-1", str(managed["handle"])).is_file()
+    result = result_receipt_fields(ToolResult(ToolCall("search", {"query": "q"}), "z" * 30_000),
+                                   store=store, session_id="s", run_id="r", effect_id="e")
+    assert result["result_payload"] == ""
+    assert result["result_ref"].startswith("out_")
+    payload, metadata = store.read_tool_output("s", "r", result["result_ref"])
+    assert text_digest(payload) == result["result_payload_sha256"]
+    assert json.loads(payload)["model_text"] == "z" * 30_000
+    assert metadata["stored_truncated"] is False
 
 
 def test_edit_line_prefix_retry(tmp_path: Path) -> None:
@@ -133,16 +114,16 @@ def test_edit_line_prefix_retry(tmp_path: Path) -> None:
     stripped, changed = strip_line_number_prefixes("42 | def foo():\n42 |     return 1")
     assert changed
     assert stripped == "def foo():\n    return 1"
-    block = EditBlock(search="42 | def foo():", replace="42 | def bar():")
+    block = EditBlock(old_string="42 | def foo():", new_string="42 | def bar():")
     retried = retry_replacement_without_line_numbers("def foo():\n", block)
     assert retried is not None
-    outcome = edit_file(tmp_path, "app.py", [EditBlock(search="1 | def foo():", replace="1 | def bar():")])
+    outcome = edit_file(tmp_path, "app.py", [EditBlock(old_string="1 | def foo():", new_string="1 | def bar():")])
     assert outcome.ok
     assert "def bar():" in target.read_text(encoding="utf-8")
     assert "1 |" not in target.read_text(encoding="utf-8")
     # Ambiguous after strip must refuse.
     target.write_text("x = 1\nx = 1\n", encoding="utf-8")
-    bad = edit_file(tmp_path, "app.py", [EditBlock(search="9 | x = 1", replace="9 | x = 2")])
+    bad = edit_file(tmp_path, "app.py", [EditBlock(old_string="9 | x = 1", new_string="9 | x = 2")])
     assert not bad.ok
 
 

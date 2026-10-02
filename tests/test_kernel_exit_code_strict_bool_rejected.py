@@ -1,6 +1,6 @@
 """Kernel exit_code accepts only real int zero (bool/str rejected).
 
-Repro: _result_ok(), _record_run_verification() and record_facts audit
+Repro: result_ok(), _record_run_verification() and record_facts audit
 parsing used int(exit_code)==0, so bool False passed as success and "0"
 strings passed. Structured verification must be int-only.
 
@@ -13,27 +13,27 @@ import unittest
 
 
 class KernelExitCodeStrictBoolRejectedTests(unittest.TestCase):
-    def test_result_ok_rejects_bool_and_str(self) -> None:
-        from codey.operations.kernel_result import _result_ok
+    def testresult_ok_rejects_bool_and_str(self) -> None:
+        from codey.operations.kernel_result import result_ok
         from codey.runtime.core.models import ToolCall, ToolResult
 
         call = ToolCall(name="run", args={"command": "x"})
         res = ToolResult(call=call, model_text="ok")
-        self.assertTrue(_result_ok("run", res, exit_code=0))
-        self.assertFalse(_result_ok("run", res, exit_code=False), "bool False must not be ok")
-        self.assertFalse(_result_ok("run", res, exit_code=True))
-        self.assertFalse(_result_ok("run", res, exit_code="0"), "str must not be ok")
+        self.assertTrue(result_ok("run", res, exit_code=0))
+        self.assertFalse(result_ok("run", res, exit_code=False), "bool False must not be ok")
+        self.assertFalse(result_ok("run", res, exit_code=True))
+        self.assertFalse(result_ok("run", res, exit_code="0"), "str must not be ok")
         # Run without a structured exit never reports success, even for plain text.
-        self.assertFalse(_result_ok("run", res, exit_code=None))
+        self.assertFalse(result_ok("run", res, exit_code=None))
         err = ToolResult(call=call, model_text="ERROR: boom")
-        self.assertFalse(_result_ok("run", err, exit_code=None))
-        self.assertFalse(_result_ok("run", res, exit_code=1))
+        self.assertFalse(result_ok("run", err, exit_code=None))
+        self.assertFalse(result_ok("run", res, exit_code=1))
         # Audit-carried exits are strict as well: bool/str audit never passes.
         for bad in (False, True, "0", 1.0):
             bad_res = ToolResult(call=call, model_text="ok", audit={"exit_code": bad})
-            self.assertFalse(_result_ok("run", bad_res), f"audit exit {bad!r} must not be ok")
+            self.assertFalse(result_ok("run", bad_res), f"audit exit {bad!r} must not be ok")
         # Missing audit exit is also failure for run.
-        self.assertFalse(_result_ok("run", res))
+        self.assertFalse(result_ok("run", res))
 
     def test_record_facts_rejects_bool_exit_in_audit(self) -> None:
         from codey.operations.kernel_facts import record_facts_for_result

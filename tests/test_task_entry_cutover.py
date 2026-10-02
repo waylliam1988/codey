@@ -594,7 +594,7 @@ def test_noop_edit_does_not_create_false_freshness(tmp_path) -> None:
     execute_turn(session, [ToolCall("read_file", {"path": "a.txt"})],
                  project_path=tmp_path, run_id="r", turn=1)
     result = execute_turn(session, [ToolCall("edit", {
-        "path": "a.txt", "replacements": [{"search": "same", "replace": "same"}],
+        "path": "a.txt", "replacements": [{"old_string": "same", "new_string": "same"}],
     })], project_path=tmp_path, run_id="r", turn=2)[0]
     assert "no changes" in result.model_text
     assert not session.edited_files
@@ -1086,14 +1086,17 @@ def test_unified_edit_keeps_existing_file_guard_and_read_before_edit(tmp_path) -
     assert overwrite.model_text.startswith("ERROR:")
     assert target.read_text(encoding="utf-8") == "old\n"
     replace = ToolCall("edit", {"path": "app.py", "replacements": [
-        {"search": "old", "replace": "new"},
+        {"old_string": "old", "new_string": "new"},
     ]})
     unseen = execute_turn(session, [replace], project_path=tmp_path, run_id="r", turn=2)[0]
     assert unseen.model_text.startswith("ERROR:")
     assert target.read_text(encoding="utf-8") == "old\n"
     execute_turn(session, [ToolCall("read_file", {"path": "app.py"})],
                  project_path=tmp_path, run_id="r", turn=3)
-    seen = execute_turn(session, [replace], project_path=tmp_path, run_id="r", turn=4)[0]
+    from codey.workspace.revision import WorkspaceRevisionStore
+
+    seen = execute_turn(session, [replace], project_path=tmp_path, run_id="r", turn=4,
+                        workspace_revision_store=WorkspaceRevisionStore(tmp_path / ".codey"))[0]
     assert not seen.model_text.startswith("ERROR:")
     assert target.read_text(encoding="utf-8") == "new\n"
 

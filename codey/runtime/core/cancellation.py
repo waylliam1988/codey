@@ -17,7 +17,7 @@ from typing import Any, BinaryIO
 from codey.runtime.core.output_capture import (
     DRAIN_TIMEOUT_SECONDS,
     READ_CHUNK_BYTES,
-    READER_JOIN_TIMEOUT_SECONDS,
+    READER_CLEANUP_TIMEOUT_SECONDS,
     BoundedByteCapture,
 )
 
@@ -170,10 +170,11 @@ class ProcessOutputReadError(RuntimeError):
 
 @dataclasses.dataclass
 class _StreamPump:
-    """Per-stream reader state: capture plus a sticky read error."""
+    """A finished pump no longer accesses its stream or capture."""
 
     capture: BoundedByteCapture
     error: Exception | None = None
+    finished: threading.Event = dataclasses.field(default_factory=threading.Event)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -289,14 +290,16 @@ def _pump_stream(stream: BinaryIO, state: _StreamPump) -> None:
             state.capture.feed(chunk)
     except Exception as exc:
         state.error = exc
+    finally:
+        state.finished.set()
 
 
-def _join_readers(threads: list[threading.Thread], *, timeout: float) -> None:
+def _wait_readers(states: list[_StreamPump], *, timeout: float) -> None:
     budget = max(0.0, float(timeout))
     deadline = time.monotonic() + budget
-    for thread in threads:
+    for state in states:
         remaining = deadline - time.monotonic()
-        thread.join(timeout=max(0.0, remaining))
+        state.finished.wait(timeout=max(0.0, remaining))
 
 
 def _close_pipes(proc: subprocess.Popen[bytes]) -> None:
@@ -312,9 +315,9 @@ def _close_pipes(proc: subprocess.Popen[bytes]) -> None:
 
 def _close_owned_pipes(
     proc: subprocess.Popen[bytes],
-    owned: list[tuple[object, threading.Thread]],
+    owned: list[tuple[object, _StreamPump]],
 ) -> int:
-    """Close only pipes whose reader already stopped; never block on live reads.
+    """Close only pipes whose pump finished; never block on live reads.
 
     Returns the number of abandoned pipes (live readers). A live reader
     owns its pipe: another process may still hold the write end, so
@@ -325,18 +328,13 @@ def _close_owned_pipes(
     readers by design; normal subtrees die with the process group and
     leave zero abandoned.
     """
-    by_stream: dict[int, threading.Thread] = {}
-    for stream, thread in owned:
-        try:
-            by_stream[id(stream)] = thread
-        except Exception:
-            continue
+    by_stream = {id(stream): state for stream, state in owned}
     abandoned = 0
     for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
         if stream is None:
             continue
-        thread = by_stream.get(id(stream))
-        if thread is not None and thread.is_alive():
+        state = by_stream.get(id(stream))
+        if state is not None and not state.finished.is_set():
             abandoned += 1
             continue
         try:
@@ -371,13 +369,12 @@ def wait_process(
     run completed. Failure branches only raise; they never clean up
     themselves, so cleanup can neither be skipped nor mask the error.
 
-    Cleanup order is terminate-then-join-then-close-stopped: the owned
-    process tree dies first, readers get a bounded join, and only stopped
-    readers' pipes are closed. A live reader keeps its pipe (abandoned
-    daemon) so ``close()`` can never pin the caller past the join budget.
+    Cleanup terminates the owned tree, waits for pump completion within one
+    shared budget, then closes finished pumps' pipes. Native thread teardown
+    is not evidence of EOF and does not own the output drain deadline.
     """
-    readers: list[threading.Thread] = []
-    owned: list[tuple[object, threading.Thread]] = []
+    readers: list[_StreamPump] = []
+    owned: list[tuple[object, _StreamPump]] = []
     completed = False
     try:
         limit = _safe_capture_limit(capture_limit_bytes)
@@ -396,8 +393,8 @@ def wait_process(
                 target=_pump_stream, args=(stream, state), daemon=True
             )
             thread.start()
-            readers.append(thread)
-            owned.append((stream, thread))
+            readers.append(state)
+            owned.append((stream, state))
         deadline = time.monotonic() + _safe_timeout(timeout)
         while True:
             for state in (stdout_state, stderr_state):
@@ -415,10 +412,8 @@ def wait_process(
                 break
             except subprocess.TimeoutExpired:
                 continue
-        drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
-        for thread in readers:
-            thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
-        if any(thread.is_alive() for thread in readers):
+        _wait_readers(readers, timeout=DRAIN_TIMEOUT_SECONDS)
+        if any(not state.finished.is_set() for state in readers):
             raise PipeDrainTimeout(
                 "output pipe drain timed out: parent exited but a child "
                 "still holds stdout/stderr; output is incomplete"
@@ -446,7 +441,7 @@ def wait_process(
     finally:
         if not completed:
             _terminate_process_tree(proc, job)
-            _join_readers(readers, timeout=READER_JOIN_TIMEOUT_SECONDS)
+            _wait_readers(readers, timeout=READER_CLEANUP_TIMEOUT_SECONDS)
         _close_owned_pipes(proc, owned)
         close = getattr(job, "close", None)
         if callable(close):

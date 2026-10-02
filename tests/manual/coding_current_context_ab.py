@@ -32,13 +32,11 @@ from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map
 
 ARMS = ("baseline", "context")
 
-
-def run_agent(provider, project, task, **kwargs):
-    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 IGNORED_CHANGED_PARTS = frozenset({
     ".pytest_cache",
@@ -286,24 +284,28 @@ def _run_arm(
 ) -> dict[str, Any]:
     events: list[RunEvent] = []
     with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
+        root = Path(td) / "project"
+        root.mkdir()
         _write_case(root, case)
         candidates = discover_verification_candidates(root)
         selected = select_verification_candidate(candidates, case.expected_changed)
         prompts_before = len(provider.prompts)
         started = time.time()
-        result = run_agent(
-            provider,
-            root,
-            case.task,
-            max_turns=max_turns,
-            on_event=events.append,
-            fresh_chat=True,
-            provider_id=getattr(provider, "id", ""),
-            project_map=render_production_project_map(root, task=case.task),
-            verification_candidates=candidates,
-            verification_candidate_loader=lambda: discover_verification_candidates(root),
-            coding_context_enabled=arm == "context",
+        result = _agent_kernel_request(
+            AgentRequest(
+                provider=provider,
+                project=root,
+                task=case.task,
+                workspace_revision_store=WorkspaceRevisionStore(Path(td) / "state"),
+                max_turns=max_turns,
+                on_event=events.append,
+                fresh_chat=True,
+                provider_id=getattr(provider, "id", ""),
+                project_map=render_production_project_map(root, task=case.task),
+                verification_candidates=candidates,
+                verification_candidate_loader=lambda: discover_verification_candidates(root),
+                coding_context_enabled=arm == "context",
+            )
         )
         elapsed = round(time.time() - started, 3)
         changed = _changed_files(root, case.files)

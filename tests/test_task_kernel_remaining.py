@@ -10,6 +10,20 @@ from __future__ import annotations
 import unittest
 
 
+def _project_runtime(case):
+    import tempfile
+    from pathlib import Path
+
+    from codey.workspace.revision import WorkspaceRevisionStore
+
+    temporary = tempfile.TemporaryDirectory()
+    case.addCleanup(temporary.cleanup)
+    root = Path(temporary.name)
+    project = root / "project"
+    project.mkdir()
+    return project, WorkspaceRevisionStore(root / "state")
+
+
 def _policy(**kwargs):
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
@@ -205,14 +219,15 @@ class WebOnlyLoopTests(unittest.TestCase):
             return ToolResult(call=call, model_text="old code")
 
         def fake_edit(call):
+            (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
             return ToolResult(call=call, model_text="edited app.py")
 
         def fake_run(call):
             # Structured exit code only; text never implies pass.
             return ToolResult(call=call, model_text="1 passed", audit={"exit_code": 0})
 
-        session = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=12)
-        session.set_workspace_state(1, "sha256:" + "a" * 64)
+        project, store = _project_runtime(self)
+        session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=12)
         outcome = run_task_kernel(
             session,
             provider=provider,
@@ -223,6 +238,7 @@ class WebOnlyLoopTests(unittest.TestCase):
                 "edit": fake_edit,
                 "run": fake_run,
             },
+            project_path=project, workspace_revision_store=store,
         )
         self.assertTrue(outcome.completed)
         self.assertIn("fixed", outcome.summary)
@@ -369,13 +385,15 @@ class HybridAndPlanningTests(unittest.TestCase):
         def make(name, text, exit_code=None):
             def fn(call):
                 order.append(name)
+                if name == "edit":
+                    (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
                 audit = {"exit_code": exit_code} if exit_code is not None else {}
                 return ToolResult(call=call, model_text=text, audit=audit)
 
             return fn
 
-        session = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=12)
-        session.set_workspace_state(1, "sha256:" + "a" * 64)
+        project, store = _project_runtime(self)
+        session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=12)
         outcome = run_task_kernel(
             session,
             provider=FakeWeb(),
@@ -386,6 +404,7 @@ class HybridAndPlanningTests(unittest.TestCase):
                 "edit": make("edit", "edited"),
                 "run": make("run", "passed", exit_code=0),
             },
+            project_path=project, workspace_revision_store=store,
         )
         self.assertTrue(outcome.completed)
         self.assertEqual(order, ["web_search", "open_url", "read_file", "edit", "run"])
@@ -463,9 +482,20 @@ class RecoveryTests(unittest.TestCase):
     def test_resume_does_not_repeat_dangerous_actions(self) -> None:
         # Call identity is run+turn+index (durable intent slots), never
         # tool+args: same-slot retries reuse, new turns re-execute.
+        import tempfile
+        from pathlib import Path
+
         from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
+        from codey.workspace.revision import WorkspaceRevisionStore
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        project = root / "project"
+        project.mkdir()
+        store = WorkspaceRevisionStore(root / "state")
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -476,7 +506,9 @@ class RecoveryTests(unittest.TestCase):
         def counting(name):
             def fn(call):
                 calls_made.append(name)
-                return ToolResult(call=call, model_text=f"{name} ok")
+                if name == "edit":
+                    (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
+                return ToolResult(call=call, model_text=f"{name} ok", audit={"exit_code": 0} if name == "run" else {})
 
             return fn
 
@@ -486,20 +518,22 @@ class RecoveryTests(unittest.TestCase):
             "knowledge_write": counting("knowledge_write"),
             "open_url": counting("open_url"),
         }
-        session = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=8)
+        session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=8)
         calls = [
             ToolCall("edit", {"path": "a.py", "content": "x"}),
             ToolCall("run", {"command": "pytest -q"}),
             ToolCall("knowledge_write", {"type": "fact", "title": "t", "body": "b"}),
             ToolCall("open_url", {"url": "https://example.com/a"}),
         ]
-        first = execute_turn(session, calls, executors=executors, run_id="run-1", turn=1)
+        first = execute_turn(session, calls, executors=executors, run_id="run-1", turn=1,
+                             project_path=project, workspace_revision_store=store)
         self.assertEqual(len(first), 4)
         self.assertEqual(calls_made, ["edit", "run", "knowledge_write", "open_url"])
 
         # Same turn slot retried (crash before delivery): no re-execution.
         calls_made.clear()
-        second = execute_turn(session, calls, executors=executors, run_id="run-1", turn=1)
+        second = execute_turn(session, calls, executors=executors, run_id="run-1", turn=1,
+                              project_path=project, workspace_revision_store=store)
         self.assertEqual(len(second), 4)
         self.assertEqual(calls_made, [])
         self.assertEqual([r.model_text for r in second], [r.model_text for r in first])
@@ -507,7 +541,8 @@ class RecoveryTests(unittest.TestCase):
         # New turn with identical args is a new call: reads and post-edit
         # verifications legitimately run again.
         calls_made.clear()
-        third = execute_turn(session, calls, executors=executors, run_id="run-1", turn=2)
+        third = execute_turn(session, calls, executors=executors, run_id="run-1", turn=2,
+                             project_path=project, workspace_revision_store=store)
         self.assertEqual(calls_made, ["edit", "run", "knowledge_write", "open_url"])
         self.assertEqual(len(third), 4)
 

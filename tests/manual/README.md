@@ -652,8 +652,9 @@ python -B tests\manual\qwen_submit_probe.py --timeout 45
 It can reuse the Project Map/Symbol overview benchmark prompts with `--case`
 and `--arm` when diagnosing Qwen-specific stalls.
 
-`read_before_edit_ab.py` compares live task completion with the read-before-edit
-guard disabled and enabled:
+`read_before_edit_ab.py` probes the current production read-before-edit guard.
+The old baseline patch point disappeared with the retired loop; it is no longer
+a supported A/B arm:
 
 ```powershell
 python -B tests\manual\read_before_edit_ab.py `
@@ -666,8 +667,8 @@ python -B tests\manual\read_before_edit_ab.py `
 
 It uses temporary projects and records guard blocks, whether the model reads
 after a block, final local test success, turns, tool calls, and changed files.
-Omit `--arm` for the full baseline/guard A/B; select one arm for a lightweight
-provider smoke.
+Only `--arm guard` is supported. The probe uses the real revision store and
+records current guard behavior; historical baseline results remain historical.
 
 `edit_failure_context_ab.py` simulates a file changing after the model reads it,
 then compares the existing generic replacement error with the same error plus a
@@ -678,8 +679,8 @@ edit behavior:
 python -B tests\manual\edit_failure_context_ab.py --provider stepfun --port 9222
 ```
 
-`default_verification_ab.py` compares the pre-0.1.35 completion behavior with
-the bounded production policy for trusted post-edit verification. Run one
+`default_verification_ab.py` compares generic completion requirements with
+explicit discovered verification candidates, both on the current kernel. Run one
 case/arm at a time to avoid provider rate limits:
 
 ```powershell
@@ -1189,39 +1190,12 @@ python -B tests\manual\coding_repair_prompt_ab.py `
   --keep-open
 ```
 
-`tool_args_repair_smoke.py`, `tool_args_repair_simulated_ab.py`, and
-`tool_args_repair_live_ab.py` cover 0.5.3 tool argument repair. The smoke
-harness is deterministic dialect/fail-closed coverage. The simulated A/B
-compares 0.5.2-shaped strict parsing with 0.5.3 canonicalization on recorded
-or synthetic model turns. The live A/B runs the production coding agent loop
-against a real provider on tiny temporary projects.
-
-```powershell
-python -B tests\manual\tool_args_repair_smoke.py
-python -B tests\manual\tool_args_repair_simulated_ab.py
-python -B tests\manual\tool_args_repair_live_ab.py --self-test
-python -B tests\manual\tool_args_repair_live_ab.py `
-  --provider mimo `
-  --port 9222 `
-  --max-turns 8 `
-  --keep-open
-```
-
-`tool_args_repair_dialect_pressure_ab.py` is the matching live provider
-pressure probe. It also runs the production coding agent loop, but the tasks
-deliberately ask the model to emit common provider-shaped argument variants
-(`pattern`, `old`/`new`, `cmd`, and numeric-string read offsets). Keep its
-results separate from natural live A/B: this harness proves absorption when
-dialect arguments appear, not natural production turn savings.
-
-```powershell
-python -B tests\manual\tool_args_repair_dialect_pressure_ab.py --self-test
-python -B tests\manual\tool_args_repair_dialect_pressure_ab.py `
-  --provider mimo `
-  --port 9222 `
-  --max-turns 8 `
-  --keep-open
-```
+The four historical tool-argument repair benchmarks were retired on 2026-10-02.
+Their parser cases described the 0.5.2/0.5.3 contract, and the live baseline and
+candidate both invoked the same current kernel. Use the canonical edit and
+provider contract pytest scenarios for deterministic coverage, and
+`real_local_ab.py` for the current Codey/Pi comparison. Historical measured
+reports remain historical; they do not establish current repair effectiveness.
 
 `safe_tool_replay_smoke.py` covers 0.5.4 Safe Tool Replay. The offline
 self-test uses deterministic crash/resume state: two replayable safe intents

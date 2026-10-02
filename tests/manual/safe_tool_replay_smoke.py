@@ -41,6 +41,7 @@ from codey.runtime.effects.effect_records import (
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.workspace.revision import WorkspaceRevisionStore
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 LIVE_TASK = (
@@ -85,7 +86,7 @@ class _ScriptedResumeProvider:
     def __init__(self) -> None:
         self.prompts: list[str] = []
         self.replies = [
-            '{"tool":"edit","args":{"path":"config.py","old_string":"FEATURE_FLAG = False","new_string":"FEATURE_FLAG = True"}}',
+            '{"tool":"edit","args":{"path":"config.py","replacements":[{"old_string":"FEATURE_FLAG = False","new_string":"FEATURE_FLAG = True"}]}}',
             '{"tool":"run","args":{"command":"python -m py_compile config.py","path":"."}}',
             '{"tool":"done","args":{"summary":"same-run resume smoke completed"}}',
         ]
@@ -181,7 +182,7 @@ def _record_pending_read_batch(
     run_id: str,
     project_dir: Path,
 ) -> str:
-    call_read = ToolCall(name="read", args={"path": "config.py"})
+    call_read = ToolCall(name="read_file", args={"path": "config.py"})
     return _record_pending_tool_batch(
         mutations,
         session_id=session_id,
@@ -251,8 +252,8 @@ def run_self_test() -> bool:
             run_id=run_id,
             project_dir=project_dir,
             calls=(
-                ToolCall(name="read", args={"path": "target.py", "offset": 1}),
-                ToolCall(name="search", args={"path": ".", "query": "helper_fn"}),
+                ToolCall(name="read_file", args={"path": "target.py", "offset": 1}),
+                ToolCall(name="grep", args={"path": ".", "query": "helper_fn"}),
             ),
         )
 
@@ -319,6 +320,7 @@ def run_self_test() -> bool:
         agent_req = AgentRequest(
             provider=provider,
             project=project_dir,
+            workspace_revision_store=WorkspaceRevisionStore(state_home),
             task="finish project task after crash",
             provider_id=provider.name,
             session_id=session_id,
@@ -429,6 +431,7 @@ def run_same_run_self_test() -> bool:
             AgentRequest(
                 provider=provider,
                 project=project_dir,
+                workspace_revision_store=WorkspaceRevisionStore(state_home),
                 task=SAME_RUN_TASK,
                 max_turns=8,
                 fresh_chat=False,
@@ -515,9 +518,10 @@ def _run_live_resume_case(
             run_agent_loop(AgentRequest(
                 provider=provider,
                 project=project_dir,
+                workspace_revision_store=WorkspaceRevisionStore(state_home),
                 task=(
                     "For this Codey smoke, first respond with exactly one local JSON "
-                    'tool call: {"tool":"read","args":{"path":"config.py"}}. '
+                    'tool call: {"tool":"read_file","args":{"path":"config.py"}}. '
                     "After the tool result is returned, continue the task: change "
                     "FEATURE_FLAG from False to True in config.py, run python -m "
                     "py_compile config.py, and finish."
@@ -577,6 +581,7 @@ def _run_live_resume_case(
         result = run_agent_loop(AgentRequest(
             provider=provider,
             project=project_dir,
+            workspace_revision_store=WorkspaceRevisionStore(state_home),
             task=LIVE_TASK,
             max_turns=max_turns,
             fresh_chat=False,

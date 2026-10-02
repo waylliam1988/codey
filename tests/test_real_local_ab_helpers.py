@@ -5,8 +5,10 @@ import sys
 from pathlib import Path
 
 from tests.manual.real_local_ab import (
+    TASK_CASES,
     _content_length,
     _event_rows,
+    _experiment_succeeded,
     _metrics,
     _new_project_root,
     _run_verification,
@@ -16,6 +18,71 @@ from tests.manual.real_local_ab import (
     _working_directory,
     _write_pi_config,
 )
+
+
+def test_real_local_ab_cases_have_closed_fixture_and_path_contracts() -> None:
+    assert {case.case_id for case in TASK_CASES} == {"normalize-name"}
+    for case in TASK_CASES:
+        assert case.fixture_files
+        assert case.task.strip()
+        assert all(path == path.replace("\\", "/") and not path.startswith("../")
+                   for path in case.allowed_paths)
+
+
+def test_real_local_ab_verifier_rejects_forbidden_file_changes(tmp_path: Path) -> None:
+    case = next(case for case in TASK_CASES if case.case_id == "normalize-name")
+    from tests.manual.real_local_ab import _fixture, _run_verification, _snapshot_files
+
+    _fixture(tmp_path, case)
+    baseline = _snapshot_files(tmp_path)
+    (tmp_path / "test_app.py").write_text("changed", encoding="utf-8")
+    verification = _run_verification(tmp_path, case=case, baseline_hashes=baseline)
+    assert verification["visible_tests"] is False
+    assert verification["scope_ok"] is False
+    assert verification["passed"] is False
+
+
+def test_real_local_ab_verifier_ignores_runtime_bytecode_artifacts(tmp_path: Path) -> None:
+    case = TASK_CASES[0]
+    from tests.manual.real_local_ab import _fixture, _run_verification, _snapshot_files
+
+    _fixture(tmp_path, case)
+    baseline = _snapshot_files(tmp_path)
+    (tmp_path / "__pycache__").mkdir()
+    (tmp_path / "__pycache__" / "app.cpython-312.pyc").write_bytes(b"runtime")
+    verification = _run_verification(tmp_path, case=case, baseline_hashes=baseline)
+    assert verification["scope_ok"] is True
+
+
+def test_real_local_ab_trace_analyzer_reports_tool_and_usage_metrics() -> None:
+    rows = [
+        {"type": "tool_started", "tool": "read_file", "tool_id": "r1"},
+        {"type": "tool", "tool": "read_file", "tool_id": "r1", "ok": False},
+        {"type": "tool_started", "tool": "edit", "tool_id": "e1", "args": {"path": "app.py"}},
+        {"type": "tool", "tool": "edit", "tool_id": "e1", "ok": True, "changed": True},
+        {"type": "task_done", "stop_reason": "done"},
+    ]
+    records = [{"path": "/v1/chat/completions", "response": {
+        "usage": {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14}}}]
+    metrics = _metrics(rows, records, {"passed": True}, 0)
+    assert metrics["failed_tool_calls"] == 1
+    assert metrics["read_calls"] == 1
+    assert metrics["edit_calls"] == 1
+    assert metrics["llm_rounds"] == 1
+    assert metrics["input_tokens"] == 10
+    assert metrics["output_tokens"] == 4
+
+
+def test_real_local_ab_trace_analyzer_counts_each_tool_id_once() -> None:
+    rows = [
+        {"type": "tool_started", "tool": "edit", "tool_id": "e1"},
+        {"type": "tool", "tool": "edit", "tool_id": "e1", "ok": True, "changed": True},
+        {"type": "tool_finished", "tool": "edit", "tool_id": "e1", "ok": True},
+    ]
+    metrics = _metrics(rows, [], {"passed": True}, 0)
+    assert metrics["edit_calls"] == 1
+    assert metrics["successful_tool_calls"] == 1
+    assert metrics["failed_tool_calls"] == 0
 
 
 def test_real_local_ab_projects_are_created_outside_runner_checkout() -> None:
@@ -122,6 +189,12 @@ def test_real_local_ab_metrics_reject_false_completion_when_verification_fails(t
     assert verification["passed"] is False
     assert metrics["false_completion"] is True
     assert metrics["task_success"] is False
+
+
+def test_real_local_ab_exit_contract_rejects_completed_but_unsuccessful_case() -> None:
+    assert _experiment_succeeded({"status": "completed", "metrics": {"task_success": True}}) is True
+    assert _experiment_succeeded({"status": "completed", "metrics": {"task_success": False}}) is False
+    assert _experiment_succeeded({"status": "environment_error"}) is False
 
 
 def test_real_local_ab_verifier_does_not_reuse_cached_app_module(tmp_path: Path) -> None:

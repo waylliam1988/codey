@@ -596,23 +596,13 @@ def _check_object_value(spec_name: str, key: str, schema: object, value: Any, *,
         required = schema.get("required", ())
         if isinstance(required, (list, tuple)):
             for required_key in required:
-                # 通用层不混入 edit 别名：仅 edit 自身的规范化入口可处理别名，
-                # 且处理后必须再次验证。此处严格按声明检查。
-                if not strict and str(spec_name or "").strip().lower() == "edit":
-                    aliases = {"old_string": "search", "new_string": "replace"}
-                    if required_key not in value and aliases.get(str(required_key)) not in value:
-                        return f"{spec_name} arg '{key}' missing required property '{required_key}'"
-                elif required_key not in value:
+                # 通用层严格按声明检查，不接受 edit 的历史别名。
+                if required_key not in value:
                     return f"{spec_name} arg '{key}' missing required property '{required_key}'"
         properties = schema.get("properties", {})
         if isinstance(properties, Mapping):
             for child_key, child_value in value.items():
-                if not strict and str(spec_name or "").strip().lower() == "edit":
-                    canonical_child_key = {"search": "old_string", "replace": "new_string"}.get(
-                        str(child_key), str(child_key)
-                    )
-                else:
-                    canonical_child_key = str(child_key)
+                canonical_child_key = str(child_key)
                 child_schema = properties.get(canonical_child_key)
                 if child_schema is None:
                     if schema.get("additionalProperties", True) is False:

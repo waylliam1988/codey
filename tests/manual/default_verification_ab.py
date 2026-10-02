@@ -27,13 +27,11 @@ from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map
 
 ARMS = ("baseline", "current")
 
-
-def run_agent(provider, project, task, **kwargs):
-    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 @dataclass(frozen=True)
 class Case:
     name: str
@@ -163,26 +161,28 @@ def _changed_files(root: Path, original: dict[str, str]) -> tuple[str, ...]:
 def _run_arm(provider, case: Case, arm: str, max_turns: int) -> dict[str, Any]:
     events: list[RunEvent] = []
     with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
+        root = Path(td) / "project"
+        root.mkdir()
         _write_case(root, case)
         candidates = discover_verification_candidates(root, case.facts)
         selected = select_verification_candidate(candidates, case.expected_changes)
         gate = arm == "current" and selected is not None
-        result = run_agent(
-            provider,
-            root,
-            case.task,
-            max_turns=max_turns,
-            on_event=events.append,
-            fresh_chat=True,
-            provider_id=getattr(provider, "id", ""),
-            project_map=render_production_project_map(root, task=case.task),
-            verification_candidates=candidates if arm == "current" else (),
-            verification_candidate_loader=(
-                (lambda: discover_verification_candidates(root, case.facts))
+        result = _agent_kernel_request(
+            AgentRequest(
+                provider=provider,
+                project=root,
+                task=case.task,
+                workspace_revision_store=WorkspaceRevisionStore(Path(td) / "state"),
+                max_turns=max_turns,
+                on_event=events.append,
+                fresh_chat=True,
+                provider_id=getattr(provider, "id", ""),
+                project_map=render_production_project_map(root, task=case.task),
+                verification_candidates=candidates if arm == "current" else (),
+                verification_candidate_loader=(lambda: discover_verification_candidates(root, case.facts))
                 if arm == "current"
-                else None
-            ),
+                else None,
+            )
         )
         changed = _changed_files(root, case.files)
         correct = case.independent_check(root)

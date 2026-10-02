@@ -31,13 +31,11 @@ from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.toolchain.runtime import SEARCH_EXCLUDED_DIRS, ToolOutcome
 from codey.toolchain.runtime import edit_file as runtime_edit_file
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
+from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map
 
 ARMS = ("baseline", "hint")
 
-
-def run_agent(provider, project, task, **kwargs):
-    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 SOURCE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
 MIN_SYMBOL_LEN = 5
@@ -103,7 +101,7 @@ def _candidate_pairs(blocks: list[Any]) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for block in blocks:
-        pair = _rename_pair(str(block.search), str(block.replace))
+        pair = _rename_pair(str(block.old_string), str(block.new_string))
         if pair is None or pair in seen:
             continue
         seen.add(pair)
@@ -426,19 +424,23 @@ CASES = {
 def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str, Any]:
     events: list[RunEvent] = []
     with tempfile.TemporaryDirectory(prefix="codey-refactor-hint-ab-") as td:
-        root = Path(td)
+        root = Path(td) / "project"
+        root.mkdir()
         _write_project(root, case.files)
         probe = _RefactorHintProbe(arm=arm)
-        result = run_agent(
-            provider,
-            root,
-            case.task,
-            max_turns=max_turns,
-            on_event=events.append,
-            fresh_chat=True,
-            provider_id=getattr(provider, "id", ""),
-            project_map=render_production_project_map(root, task=case.task),
-            tool_fns=AgentToolFns(edit_file=probe),
+        result = _agent_kernel_request(
+            AgentRequest(
+                provider=provider,
+                project=root,
+                task=case.task,
+                workspace_revision_store=WorkspaceRevisionStore(Path(td) / "state"),
+                max_turns=max_turns,
+                on_event=events.append,
+                fresh_chat=True,
+                provider_id=getattr(provider, "id", ""),
+                project_map=render_production_project_map(root, task=case.task),
+                tool_fns=AgentToolFns(edit_file=probe),
+            )
         )
 
         final_success = case.check(root)

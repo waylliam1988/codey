@@ -4,7 +4,8 @@ Step-1 red tests for the task_loop state-flow cleanup (then fix behavior):
 
 - Snapshot failures fail closed: persistent failure means controller_failure
   with no further provider send and no stale contract delivery. Post-execution
-  snapshot rebuilds and old-contract fallbacks are removed (source locks).
+  snapshot rebuilds and old-contract fallbacks are blocked by real turn order
+  and failure assertions.
 - Shell approval uses the same effective project profile as real project
   execution, after TaskPolicy shell.approval authorization. Read-only and
   unauthorized Research never pause; explicit auth + engine approval pauses.
@@ -80,20 +81,35 @@ class SnapshotFailClosedTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "controller_failure")
         self.assertEqual(len(sends), 1, "no provider send after snapshot failure")
 
-    def test_no_postexec_snapshot_rebuild_in_source(self) -> None:
+    def test_each_round_builds_snapshot_before_send_without_postexec_rebuild(self) -> None:
         from codey.operations import task_loop as kernel
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from codey.runtime.core.models import ToolResult
 
-        source = inspect.getsource(kernel.run_task_kernel)
-        post = source.split("results = _execute_turn(")[-1]
-        self.assertNotIn("_snapshot_for_turn_state(", post,
-                         "each round builds its snapshot once at round start")
+        events = []
+        replies = iter(['{"tool":"read_file","args":{"path":"a.py"}}',
+                        '{"tool":"done","args":{"summary":"done"}}'])
+        build = kernel._build_turn_snapshot
 
-    def test_no_old_contract_fallback_in_source(self) -> None:
-        from codey.operations import task_loop as kernel
+        def snapshot(*args, **kwargs):
+            events.append("snapshot")
+            return build(*args, **kwargs)
 
-        source = inspect.getsource(kernel.run_task_kernel)
-        self.assertNotIn("next_contract = prev_contract", source)
-        self.assertNotIn("except Exception:\n                    pass", source)
+        def send(prompt):
+            events.append("send")
+            return next(replies)
+
+        def read(call):
+            events.append("execute")
+            return ToolResult(call=call, model_text="a.py content")
+
+        session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"})), max_turns=2)
+        with mock.patch.object(kernel, "_build_turn_snapshot", snapshot):
+            result = kernel.run_task_kernel(session, provider=SimpleNamespace(send=send),
+                                            executors={"read_file": read}, run_id="snapshot-order")
+        self.assertTrue(result.completed)
+        self.assertEqual(events, ["snapshot", "send", "execute", "snapshot", "send"])
 
     def test_web_drift_notice_still_announced_on_success(self) -> None:
         from codey.operations.task_loop import run_task_kernel

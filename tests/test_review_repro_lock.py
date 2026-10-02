@@ -156,7 +156,7 @@ def test_issue3_unified_completion_uses_session_facts_with_evidence():
     assert not v_stale.complete, "old-version verification must not complete"
 
 
-def test_issue4_same_slot_different_args_must_not_reuse():
+def test_issue4_same_slot_different_args_must_not_reuse(tmp_path):
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
@@ -164,15 +164,24 @@ def test_issue4_same_slot_different_args_must_not_reuse():
     session = TaskSession(
         policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.write"})),
         task_kind="project", project="p")
+    from codey.workspace.revision import WorkspaceRevisionStore
+
+    store = WorkspaceRevisionStore(tmp_path / "state")
+    project = tmp_path / "project"
+    project.mkdir()
     def exec_a(call):
-        return ToolResult(call=call, model_text="edited a.py")
+        (project / "a.py").write_text("x", encoding="utf-8")
+        return ToolResult(call=call, model_text="edited a.py", audit={"changed": True})
     def exec_b(call):
-        return ToolResult(call=call, model_text="edited b.py")
+        (project / "b.py").write_text("y", encoding="utf-8")
+        return ToolResult(call=call, model_text="edited b.py", audit={"changed": True})
     r1 = execute_turn(session, [ToolCall("edit", {"path": "a.py", "content": "x"})],
-                      executors={"edit": exec_a}, run_id="r", turn=1)
+                      executors={"edit": exec_a}, run_id="r", turn=1,
+                      project_path=project, workspace_revision_store=store)
     assert "a.py" in r1[0].model_text
     r2 = execute_turn(session, [ToolCall("edit", {"path": "b.py", "content": "y"})],
-                      executors={"edit": exec_b}, run_id="r", turn=1)
+                      executors={"edit": exec_b}, run_id="r", turn=1,
+                      project_path=project, workspace_revision_store=store)
     # Must NOT return stale a.py result; must error or execute b.py
     assert "a.py" not in r2[0].model_text, f"stale reuse: {r2[0].model_text}"
     assert ("b.py" in r2[0].model_text) or r2[0].model_text.startswith("ERROR:")

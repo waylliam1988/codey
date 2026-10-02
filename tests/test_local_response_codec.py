@@ -9,7 +9,6 @@ from codey.providers.base import AssistantTurn
 from codey.providers.local_openai import LocalOpenAIProvider
 from codey.providers.local_response_codec import (
     normalize_local_reply,
-    normalize_ollama_response,
     parse_local_tool_markup,
 )
 
@@ -113,35 +112,4 @@ def test_unknown_final_decision_is_not_a_tool_call() -> None:
     )
 
     assert isinstance(turn, AssistantTurn)
-    assert turn.tool_calls == ()
-
-
-def test_ollama_native_response_normalizes_to_assistant_turn() -> None:
-    turn = normalize_ollama_response({
-        "message": {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [{
-                "function": {"name": "done", "arguments": {"summary": "finished"}},
-            }],
-        },
-        "done": True,
-        "done_reason": "stop",
-    })
-
-    assert isinstance(turn, AssistantTurn)
-    assert turn.tool_calls[0].name == "done"
-    assert turn.tool_calls[0].id.startswith("ollama-")
-    assert turn.raw["finish_reason"] == "stop"
-
-
-def test_ollama_plain_text_is_not_completion() -> None:
-    turn = normalize_ollama_response({
-        "message": {"role": "assistant", "content": "Tests passed."},
-        "done": True,
-        "done_reason": "stop",
-    })
-
-    assert isinstance(turn, AssistantTurn)
-    assert turn.text == "Tests passed."
     assert turn.tool_calls == ()

@@ -161,7 +161,7 @@ TOOL_DEFINITIONS = (
         permission="project_write",
         examples=(
             '{"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}',
-            '{"tool":"edit","args":{"path":"app.py","old_string":"old exact text","new_string":"new text"}}',
+            '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old exact text","new_string":"new text"}]}}',
             '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}',
         ),
         description=(
@@ -175,8 +175,6 @@ TOOL_DEFINITIONS = (
         parameters=(
             ("path", {"type": "string"}),
             ("content", {"type": "string"}),
-            ("old_string", {"type": "string"}),
-            ("new_string", {"type": "string"}),
             (
                 "replacements",
                 {

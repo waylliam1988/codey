@@ -106,14 +106,13 @@ CASES = (
             "tool": "edit",
             "args": {
                 "path": "app.py",
-                "old_string": "VALUE = 1\n",
-                "new_string": "VALUE = 2\n",
+                "replacements": [{"old_string": "VALUE = 1\n", "new_string": "VALUE = 2\n"}],
             },
         },
         expected=_expected_call(
             "edit",
             path="app.py",
-            replacements=[{"search": "VALUE = 1\n", "replace": "VALUE = 2\n"}],
+            replacements=[{"old_string": "VALUE = 1\n", "new_string": "VALUE = 2\n"}],
         ),
     ),
     RepairCase(

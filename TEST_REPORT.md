@@ -1,5 +1,91 @@
 # Codey Test Report
 
+## Kernel boundary and cold-start audit (2026-10-02)
+
+Baseline: `aff30e0`, including the existing uncommitted canonical edit work.
+All behavioral production/test changes were finished before the final full
+runs. Staging removed one trailing blank line from a new provider test; its
+AST was checked identical. Documentation was updated afterwards; historical
+entries below remain historical results.
+
+### Final full verification
+
+| Runtime | Result | Duration |
+| --- | --- | --- |
+| Windows Python 3.12.8 | **6475 passed, 29 skipped, 1488 subtests passed** | 447.36s |
+| Official Windows Python 3.13.15 embed | **6475 passed, 29 skipped, 1488 subtests passed** | 441.12s |
+
+Both use `-q -o faulthandler_timeout=120 -rs`; 3.13 uses a local bootstrap
+with existing pure-Python dependencies and matching compiled wheels. It is
+not an exact recreation of the hosted runner. Final suites had independent
+TEMP/TMP directories outside the Git checkout. Local ignored logs:
+`.e2e-artifacts/review-20261002-py312-final-clean.log` and
+`.e2e-artifacts/review-20261002-py313-final-clean.log`.
+
+- Prechecks: `ruff check .`, `compileall -q codey tests tools`, JavaScript
+  `node --check`, and `git diff --check` passed.
+- Relevant final recovery/architecture checks: **205 passed / 381 subtests**;
+  manual entry/parity checks: **52 passed**. These overlap the full suite.
+- Finite invariants and real crash traces: **83 passed**, with 44 reachable
+  delivery states / 134 accepted edges; 512 grant subsets x 2 denial patterns;
+  81 length-three crash traces. These also overlap the full suite.
+- Skips cover Windows symlink privileges/POSIX capabilities and opt-in real
+  UI browser E2E. No timeout test was skipped or its deadline increased.
+  No new live model latency/token or UI smoothness experiment was run.
+
+### Regressions and test changes
+
+New locks cover capture completion vs thread teardown, provider canonical
+text frames, exact completion acceptance, canonical-only edit normalization,
+real EditBlock consumers, truthful A/B metrics, uncertain mutation identity
+and real receipt recovery, obsolete facade/benchmark deletion, and active
+write benchmark identities. `test_manual_write_benchmarks_have_real_identity`
+was red for the missing storage, broken old guard patch point, and actual
+resume/edit failure. Correcting the old edit fixture did not resolve resume:
+the real fact projector also needed canonical executor-name handling.
+
+Earlier failures were kept and repaired rather than hidden:
+
+- Earlier broad runs exposed stale coding-repair and malformed-native text
+  expectations. They were migrated to the intentional canonical/error contract.
+- A subsequent full run on each version had **10 failed, 6456 passed**:
+  missing real storage in completion generators/manual callers and a deleted
+  clipping helper import, plus affected recovery/soak scenarios. Real stores
+  and current owners replaced those fixtures; original behavior assertions remain.
+- An intermediate shared-TEMP parallel run produced one 3.12 repair-cleanup
+  assertion failure (**1 failed, 6465 passed**); 3.13 had **6466 passed**.
+  Those results preceded the final manual/fact changes and are not final evidence.
+- I initially placed isolated TEMP directories inside the checkout. Both
+  runs then had **13 failed, 6462 passed** because non-Git fixture projects
+  were Git descendants and benchmark output was no longer outside the repo.
+  This was a test environment mistake. With external directories the 13
+  affected scenarios and the final full suites passed, without production
+  changes for that configuration.
+
+No weakened truth/identity assertions, added skips, regenerated frozen parity
+baseline or restored legacy edit alias paths. Canonical edit breaking deltas
+remain explicit in the existing parity fixture. The old 479-line kernel test
+facade and four retired tool-repair scripts were removed; current execution,
+receipt, codec and provider tests own their supported behaviors.
+
+### Hosted timeout and conclusion limits
+
+The original [0144e54 CI run](https://github.com/waylliam1988/codey/actions/runs/36865863825)
+shows a read-blocked pump and the main thread in native Thread.join until job
+cancellation; 3.11/3.12 succeeded. The subsequent
+[aff30e0 run](https://github.com/waylliam1988/codey/actions/runs/36936058724)
+succeeded with unchanged cancellation/test/workflow files. Original scenario,
+file and CI-order prefix passed locally on 3.13.15; the native hang itself was
+not deterministically reproduced. This review removes that join dependency,
+fixes a separately reproduced EOF/thread-lifecycle defect and bounds the test
+with a subprocess watchdog. It does not claim an established CPython root cause.
+
+Production diff: **+281 / -999, net -718 lines**. One kernel loop without
+complexity exemptions; no new production framework/log/cache. Repository-wide
+AST/name-reference scanning found no unreferenced top-level function candidates,
+which does not prove absence of all dead fields/branches or dynamic paths.
+[Function-level review, deleted-file rationale and mathematical limits](docs/kernel_review_2026-10-02.zh-CN.md).
+
 ## Original policy, durable fact projection and same-window auto convergence (2026-10-01)
 
 Reviewed from `cac74c9`, including the final compatibility/dead-helper audit.

@@ -77,7 +77,7 @@ def test_mixed_direct_rejection_uses_real_kernel_same_session(tmp_path, monkeypa
     if finish_with_edit:
         replies += [
             json.dumps({"tool": "read_file", "args": {"path": "a.py"}}),
-            json.dumps({"tool": "edit", "args": {"path": "a.py", "replacements": [{"search": "x = 1", "replace": "x = 2"}]}}),
+            json.dumps({"tool": "edit", "args": {"path": "a.py", "replacements": [{"old_string": "x = 1", "new_string": "x = 2"}]}}),
             json.dumps({"tool": "run", "args": {"command": "python -m py_compile a.py", "path": "."}}),
         ]
     replies += [json.dumps({"tool": "done", "args": {"summary": "finished"}})]

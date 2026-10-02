@@ -320,9 +320,9 @@ class ExecutionDelegate:
         )
         if guard is not None:
             return guard
-        # Canonical protocol only: replacements with search/replace. Legacy
-        # old_string/new_string aliases are rejected before any file write.
-        for legacy in ("old_string", "new_string", "search", "replace"):
+        # Canonical protocol only: replacements with old_string/new_string.
+        # Top-level aliases are rejected before any file write.
+        for legacy in ("search", "replace"):
             if legacy in args:
                 return ToolOutcome.error(f"edit rejects legacy alias: {legacy}")
         replacements = args.get("replacements")
@@ -332,16 +332,16 @@ class ExecutionDelegate:
         for item in replacements:
             if not isinstance(item, dict):
                 return ToolOutcome.error("edit replacement must be a mapping")
-            if set(item) != {"search", "replace"}:
-                return ToolOutcome.error("edit replacement must be exactly search/replace")
-            search = str(item.get("search") or "")
-            replace = str(item.get("replace") or "")
+            if set(item) != {"old_string", "new_string"}:
+                return ToolOutcome.error("edit replacement must be exactly old_string/new_string")
+            search = str(item.get("old_string") or "")
+            replace = str(item.get("new_string") or "")
             if not search:
                 return ToolOutcome.error("edit replacement search must be non-empty")
-            blocks.append({"search": search, "replace": replace})
+            blocks.append({"old_string": search, "new_string": replace})
         if not blocks:
             return ToolOutcome.error("edit needs content or exact replacements")
-        edit_blocks = [EditBlock(search=b["search"], replace=b["replace"]) for b in blocks]
+        edit_blocks = [EditBlock(old_string=b["old_string"], new_string=b["new_string"]) for b in blocks]
         if self.change_tracker is not None:
             self.change_tracker.capture_before(path)
         outcome = self.tool_fns.edit_file(self.project_path, path, edit_blocks)

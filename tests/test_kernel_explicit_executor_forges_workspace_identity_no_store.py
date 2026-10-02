@@ -3,11 +3,11 @@
 Repro: an explicit ``edit`` executor returns audit with
 ``workspace_revision=999`` and a well-formed fingerprint. With
 ``workspace_revision_store=None`` the kernel must strip executor-provided
-identity; the emitted event must carry no trusted workspace state and hooks
-must bump the real store exactly once instead of adopting 999.
+identity; the edit settles as unconfirmed and hooks cannot turn its failed
+event into a successful workspace bump.
 
 Lock: forged audit never becomes event metadata; session revision stays at
-the real value; hooks bump once with the real revision.
+the real value; hooks never adopt or invent an identity for an unconfirmed edit.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _policy():
 
 
 class ExplicitExecutorForgesWorkspaceIdentityNoStoreTests(unittest.TestCase):
-    def test_forged_audit_stripped_and_hooks_bump_once(self) -> None:
+    def test_forged_audit_stripped_and_unconfirmed_edit_cannot_trigger_hook_bump(self) -> None:
         from codey.operations import kernel_events as kev
         from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
@@ -76,6 +76,7 @@ class ExplicitExecutorForgesWorkspaceIdentityNoStoreTests(unittest.TestCase):
                 workspace_revision_store=None,
             )
             self.assertEqual(len(results), 1)
+            self.assertTrue(results[0].model_text.startswith("ERROR:"))
             # Executor identity must be stripped at the kernel boundary.
             self.assertNotEqual(
                 results[0].audit.get("workspace_revision"), 999,
@@ -123,7 +124,7 @@ class ExplicitExecutorForgesWorkspaceIdentityNoStoreTests(unittest.TestCase):
                     hooks.on_event, session, results,
                     run_id="r-forge-1:task", turn=1,
                 )
-            self.assertEqual(len(bump_calls), 1, f"hooks must bump once, got {bump_calls}")
+            self.assertEqual(bump_calls, [], "hooks cannot rescue an unconfirmed kernel edit")
             self.assertNotEqual(
                 work.workspace_revision, 999,
                 f"hooks adopted forged revision: {work.workspace_revision}",

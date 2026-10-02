@@ -29,13 +29,11 @@ from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.toolchain.runtime import ToolOutcome, _python_syntax_regression_hint
 from codey.toolchain.runtime import edit_file as runtime_edit_file
+from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map
 
 ARMS = ("baseline", "hint")
 
-
-def run_agent(provider, project, task, **kwargs):
-    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 TARGET = "limits.py"
 VALID_DEF = "def clamp(value):\n"
 BROKEN_DEF = "def clamp(value)\n"
@@ -136,19 +134,23 @@ def _run_arm(
 ) -> dict[str, Any]:
     events: list[RunEvent] = []
     with tempfile.TemporaryDirectory(prefix="codey-syntax-ab-") as td:
-        root = Path(td)
+        root = Path(td) / "project"
+        root.mkdir()
         _write_project(root)
         probe = _EditProbe(root, arm=arm, inject_fault=inject_fault)
-        result = run_agent(
-            provider,
-            root,
-            TASK,
-            max_turns=max_turns,
-            on_event=events.append,
-            fresh_chat=True,
-            provider_id=getattr(provider, "id", ""),
-            project_map=render_production_project_map(root, task=TASK),
-            tool_fns=AgentToolFns(edit_file=probe),
+        result = _agent_kernel_request(
+            AgentRequest(
+                provider=provider,
+                project=root,
+                task=TASK,
+                workspace_revision_store=WorkspaceRevisionStore(Path(td) / "state"),
+                max_turns=max_turns,
+                on_event=events.append,
+                fresh_chat=True,
+                provider_id=getattr(provider, "id", ""),
+                project_map=render_production_project_map(root, task=TASK),
+                tool_fns=AgentToolFns(edit_file=probe),
+            )
         )
 
         final_content = (root / TARGET).read_text(encoding="utf-8")

@@ -89,27 +89,6 @@ def format_project_instructions(docs: list[ProjectInstruction]) -> str:
     return "\n\n".join(chunks)
 
 
-def render_completion_repair_sources(
-    profile,
-    completion_repair_context: str,
-) -> tuple[RenderedContextSource, ...]:
-    if not completion_repair_context:
-        return ()
-    if not allows_context_source(profile, COMPLETION_REPAIR_CONTEXT_SOURCE_KEY):
-        return ()
-    return render_context_sources_with_metadata((
-        ContextSource(
-            key=COMPLETION_REPAIR_CONTEXT_SOURCE_KEY,
-            loader=lambda: completion_repair_context,
-            budget=DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
-            freshness="after_tool_result",
-            why_included="bounded failure facts from the previous completion proof",
-            capability_id="completion_repair_context",
-            admission_reason="after_tool_result",
-        ),
-    )).sources
-
-
 def build_agent_context(
     *,
     project: Path,

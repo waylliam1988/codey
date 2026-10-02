@@ -74,10 +74,10 @@ _RULE_READFILE_TRAILING = (
     "    include it in old_string. Continue with the stated offset when needed.",
 )
 _RULE_EDIT_MODES = (
-    "  - Use edit for all file changes. Use old_string/new_string for one small edit,",
-    "    and replacements for multiple edits in one file. Use content only when",
-    "    creating a new file. Existing files must use exact old_string/new_string or",
-    "    replacements. Never mix these edit modes.",
+    "  - Use edit for all file changes. Use one replacements item for a small edit,",
+    "    and multiple items for multiple edits in one file. Use content only when",
+    "    creating a new file. Existing files must use exact old_string/new_string pairs.",
+    "    Never mix these edit modes.",
 )
 _RULE_OLD_STRING = (
     "  - old_string must be copied exactly from the latest complete file/tool result.",

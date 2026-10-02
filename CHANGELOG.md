@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Kernel boundaries, canonical edits and capture completion (no release)
+
+- Include and review the existing canonical edit changes; remove edit dialect repairs and migrate real EditBlock consumers. JSON/native validation use the same contract.
+- Preserve complete provider text tool frames and their call IDs in native history; prevent truncated or malformed native batches from being rescued as JSON done.
+- Replace pipe-drain native Thread.join waits with explicit pump completion and shared deadlines. Add deterministic lifecycle regressions and a subprocess watchdog for the external-holder case. The original hosted Python 3.13 native hang was not reproduced locally; its interpreter-level cause remains unconfirmed.
+- Reduce run_task_kernel from 228 to 165 lines, remove complexity exemptions and redundant per-turn initial prompt rendering, and require exact True at completion.
+- Delete no-store identity fabrication. Persist uncertain edits, invalidate their live identity, and preserve their edit facts across real restart. Project recovered executor read names through the existing canonical fact owner.
+- Remove obsolete coding state/execution/verification facades, the unused /api/chat codec, the old test kernel harness and four retired tool-repair benchmarks. Wire active write benchmarks and soak producers to real revision storage; retire the broken read-before-edit baseline arm.
+- Final Windows full suites: **6475 passed, 29 skipped, 1488 subtests passed** on both Python 3.12.8 (447.36s) and 3.13.15 (441.12s). Ruff, compileall, JavaScript syntax and diff checks passed. Production net **-718 lines** from aff30e0.
+- [Detailed review and proof limits](docs/kernel_review_2026-10-02.zh-CN.md). Finite model checks support bounded invariants, not whole-program freedom from bugs. No new live UI/model performance claim; no release/tag/version bump.
+
+## Unreleased - Canonical local edit protocol and live A/B rerun (no release)
+
+- Converge the only edit shape to `replacements[{old_string,new_string}]` across native schema, prompts, codecs, repair, ToolSpec and kernel validation. The kernel does not parse model dialects or historical aliases.
+- Add protocol-drift regression coverage proving legacy `search/replace`, `old/new` and `before/after` aliases are rejected before execution; provider adapters remain the boundary for model templates.
+- Re-run Pi vs Codey with the same KoboldCpp Gemma 12B model and isolated projects. Both produced the correct edit and passing tests; Codey completed the mutation but its final model completion response was truncated at 2048/4096 tokens, so it correctly reported provider failure without false completion or duplicate mutation. The 8192-token run was aborted after unbounded local generation and is excluded from results.
+- See [LOCAL_MODEL_PI_AB_REPORT.zh-CN.md](tests/manual/LOCAL_MODEL_PI_AB_REPORT.zh-CN.md) for the Chinese evidence report.
+
 ## Unreleased - Original authorization, durable fact recovery and same-window auto (no release)
 
 - Persist the original policy before tools; reject missing/invalid recovery and replacement of an existing snapshot. Preserve denials, source requirements, explicit must-change and verification prohibition without schema/type laundering.

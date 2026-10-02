@@ -1,4 +1,4 @@
-"""Agent JSON protocol repair, edit parsing, and verification text helpers."""
+"""Coding protocol repair, project paths, and verification request text."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import json
 import re
 from pathlib import Path
 
-from codey.completion.verification_policy import VerificationCandidate
 from codey.protocols import ProtocolCodec
 from codey.protocols.json_codec import (
     PROTOCOL_DIRECT_ANSWER,
@@ -19,7 +18,7 @@ from codey.protocols.json_codec import (
     _balanced_json_objects,
 )
 from codey.runtime.core.models import ToolCall, ToolPlan
-from codey.toolchain.runtime import EditBlock, safe_join
+from codey.toolchain.runtime import safe_join
 
 VERIFICATION_REQUEST_RE = re.compile(
     r"\b("
@@ -57,20 +56,6 @@ VERIFICATION_FORBID_RE = re.compile(
 )
 
 
-def edit_blocks_from_call(call: ToolCall) -> list[EditBlock]:
-    replacements = call.args.get("replacements")
-    if not isinstance(replacements, list):
-        return []
-    blocks: list[EditBlock] = []
-    for item in replacements:
-        if not isinstance(item, dict):
-            continue
-        search = str(item.get("search") or "")
-        replace = str(item.get("replace") or "")
-        blocks.append(EditBlock(search, replace))
-    return blocks
-
-
 def edit_has_content(call: ToolCall) -> bool:
     return "content" in call.args
 
@@ -98,32 +83,6 @@ def task_requests_verification(task: str) -> bool:
 def task_forbids_verification(task: str) -> bool:
     text = str(task or "")
     return bool(VERIFICATION_FORBID_RE.search(text)) and not task_requests_verification(text)
-
-
-def verification_reminder(task: str) -> str:
-    return (
-        "The user asked for verification, and files were changed, but no run "
-        "tool call after the latest edit has been observed yet. Reply with "
-        "exactly one JSON object that calls run now, such as "
-        '{"tool":"run","args":{"command":"python -m unittest","path":"."}}. '
-        "After the run result is green, call done. Original task:\n"
-        f"{task}"
-    )
-
-
-def default_verification_reminder(candidate: VerificationCandidate) -> str:
-    call = json.dumps(
-        {
-            "tool": "run",
-            "args": {"command": candidate.command, "path": candidate.cwd},
-        },
-        separators=(",", ":"),
-    )
-    return (
-        "Files changed and a trusted local check is available. Run this check "
-        "after the latest edit before completing:\n\n"
-        f"{call}"
-    )
 
 
 def protocol_repair_prompt(
@@ -156,7 +115,7 @@ def protocol_repair_prompt(
                 "The previous reply used an unknown write tool. Coding has no "
                 f"{tool} tool.",
                 "Create a new file with edit(content=...), or modify an existing "
-                "file with edit(old_string/new_string).",
+                "file with edit(replacements=[{old_string,new_string}]).",
             ))
             if example:
                 lines.extend(("", "Example preserving your previous intent:", example))

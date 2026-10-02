@@ -26,6 +26,7 @@ from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import build_turn_snapshot as _build_turn_snapshot
 from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
+from codey.operations.kernel_trace import record_turn
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.toolchain.tool_spec import thaw_schema_value
@@ -48,15 +49,81 @@ class KernelResult:
     proof: Any | None = None
 
 
-def _is_native_provider(provider: Any, *, provider_id: object = "") -> bool:
-    return _transport.provider_uses_native(provider, provider_id=provider_id)
+@dataclass
+class _ProviderTurnState:
+    """Pending transport slots and bounded reply repair counters."""
+
+    prompt: str
+    pending_reply: Any = None
+    pending_messages: list[dict[str, Any]] | None = None
+    invalid_turns: int = 0
+    length_continuation_used: bool = False
 
 
-def _local_length_continuation_prompt(reply: Any, *, native: bool, provider_id: object, used: bool) -> str | None:
-    if used or not native or str(provider_id or "") != "local":
+@dataclass(frozen=True)
+class _ReceivedPlan:
+    plan: ToolPlan
+    reply: Any
+
+
+@dataclass(frozen=True)
+class _KernelStartup:
+    executors: dict[str, Any]
+    delivered: dict[str, ToolResult]
+    max_turns: int
+    native: bool
+    identity_ref: object
+    state: _ProviderTurnState
+    native_tools: list[dict[str, Any]]
+    snapshot: Any
+    pending_recovery: bool
+
+
+def _receive_turn_plan(
+    session: TaskSession, provider: Any, state: _ProviderTurnState, snapshot: Any, native_tools: Any,
+    *, native: bool, provider_id: object, turn: int, stop_flag: Any, on_event: Any,
+    stagnant_turns: int | None, propagate_provider_failure: bool, trace_recorder: Any,
+) -> _ReceivedPlan | KernelResult | None:
+    """Receive once; cancellation, truncation and protocol repair precede execution.
+
+    None requests the next turn using the updated transport state. This helper
+    never loops, executes tools, or accepts completion.
+    """
+    try:
+        reply, state.pending_reply, state.pending_messages = _transport.send_kernel_reply(
+            provider, native, state.prompt, native_tools, state.pending_reply, state.pending_messages,
+        )
+    except Exception as exc:
+        return _provider_failure(exc, turn, propagate=propagate_provider_failure)
+    cancelled = _cancel_after_send(stop_flag, provider, reply, native, native_tools, turn,
+                                   propagate=propagate_provider_failure)
+    if cancelled is not None:
+        return cancelled
+    _events._emit_turn_event(on_event, turn, reply)
+    length_action = _local_length_reply_action(
+        reply, native=native, provider_id=provider_id, used=state.length_continuation_used, turns=turn,
+    )
+    if isinstance(length_action, KernelResult):
+        return length_action
+    if length_action is not None:
+        state.length_continuation_used = True
+        state.prompt = length_action
+        state.pending_reply = None
         return None
-    action = _local_length_reply_action(reply, used=False, turns=0)
-    return action if isinstance(action, str) else None
+    plan = _normalize_turn(reply, snapshot=snapshot)
+    record_turn(trace_recorder, phase=session.task_kind, turn=turn,
+                snapshot=snapshot, plan=plan, native=native)
+    protocol_action = _kernel_handle_protocol(
+        plan, provider, reply, native, native_tools, stagnant_turns=stagnant_turns,
+        invalid_turns=state.invalid_turns, turn=turn,
+    )
+    if isinstance(protocol_action, KernelResult):
+        return protocol_action
+    if protocol_action is not None:
+        state.prompt, state.pending_reply, state.invalid_turns = protocol_action
+        return None
+    state.invalid_turns = 0
+    return _ReceivedPlan(plan, reply)
 
 
 def _local_length_reply_action(
@@ -82,17 +149,6 @@ def _local_length_reply_action(
         "done(summary) if the verified task is complete. Do not output "
         "ordinary explanation."
     )
-
-
-def _consume_local_length_reply(
-    reply: Any, *, native: bool, provider_id: object, used: bool, turns: int,
-) -> tuple[KernelResult | None, str | None]:
-    action = _local_length_reply_action(
-        reply, native=native, provider_id=provider_id, used=used, turns=turns,
-    )
-    if isinstance(action, KernelResult):
-        return action, None
-    return None, action if isinstance(action, str) else None
 
 
 def _provider_failure(exc: Exception, turns_used: int, *, propagate: bool) -> KernelResult:
@@ -190,32 +246,6 @@ def _stop_requested(stop_flag: Any) -> bool:
         return bool(stop_flag.is_set())
     except Exception:
         return False
-
-
-def _snapshot_for_turn_state(
-    session: TaskSession,
-    *,
-    native: bool,
-    user_task: object,
-    context_text: str,
-) -> tuple[Any, str, list[dict[str, Any]], str, Any]:
-    """One snapshot per turn: policy ∩ current facts for prompt/schemas/parse.
-
-    Prompt, native schemas, parsing, and execution share this single built
-    object. Any build failure raises and the kernel terminates the turn as
-    controller_failure (fail-closed), never a stale fallback list.
-    """
-    snapshot = _build_turn_snapshot(session, native=native)
-    prompt_now = _prompt.kernel_prompt_for_session(
-        session,
-        user_task=str(user_task or ""),
-        contract_text=snapshot.contract_text,
-        context_text=context_text,
-        controller_allowed=snapshot.allowed,
-        native=native,
-        tool_names=snapshot.tool_names,
-    )
-    return snapshot.allowed, snapshot.contract_text, [thaw_schema_value(row) for row in snapshot.native_tools], prompt_now, snapshot
 
 
 def _kernel_handle_protocol(
@@ -331,26 +361,23 @@ def _kernel_startup(
     provider_id: object,
     user_task: object,
     context_text: str,
-    start_turn: int | None,
     initial_results: list[ToolResult] | None,
     provider_session_changed: bool,
     delivered: Mapping[str, ToolResult] | None,
-) -> tuple[dict[str, Any], dict[str, ToolResult], int, bool, str, str, list[dict[str, Any]], str, Any, Any, Any, Any]:
+) -> _KernelStartup:
     runnable = dict(executors or {})
     delivered_map = dict(delivered or {})
     max_turns = max(1, int(getattr(session, "max_turns", 8) or 8))
     pending_initial = list(initial_results or [])
-    native = _is_native_provider(provider, provider_id=provider_id)
+    native = _transport.provider_uses_native(provider, provider_id=provider_id)
     identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
-    initial_allowed, initial_contract, initial_native, initial_prompt, initial_snapshot = _snapshot_for_turn_state(
-        session,
-        native=native,
-        user_task=user_task,
-        context_text=context_text,
+    initial_snapshot = _build_turn_snapshot(session, native=native)
+    prompt = _prompt.kernel_prompt_for_session(
+        session, user_task=str(user_task or ""), contract_text=initial_snapshot.contract_text,
+        context_text=context_text, controller_allowed=initial_snapshot.allowed,
+        native=native, tool_names=initial_snapshot.tool_names,
     )
-    prompt: str = initial_prompt
-    native_tools: list[dict[str, Any]] = initial_native
-    pending_reply: Any = None
+    native_tools = [thaw_schema_value(row) for row in initial_snapshot.native_tools]
     pending_native_messages: list[dict[str, Any]] | None = None
     prompt, pending_native_messages = _apply_recovery_first(
         session,
@@ -362,19 +389,11 @@ def _kernel_startup(
         format_results=_prompt._format_results,
         native_tool_messages=_transport._native_tool_messages,
     )
-    return (
-        runnable,
-        delivered_map,
-        max_turns,
-        native,
-        identity_ref,
-        str(initial_contract or ""),
-        native_tools,
-        prompt,
-        pending_reply,
-        pending_native_messages,
-        initial_allowed,
-        initial_snapshot,
+    return _KernelStartup(
+        executors=runnable, delivered=delivered_map, max_turns=max_turns,
+        native=native, identity_ref=identity_ref,
+        state=_ProviderTurnState(prompt=prompt, pending_messages=pending_native_messages),
+        native_tools=native_tools, snapshot=initial_snapshot, pending_recovery=bool(pending_initial),
     )
 
 
@@ -391,7 +410,7 @@ def _resume_start(value: object) -> int:
         return 1
 
 
-def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machine
+def run_task_kernel(
     session: TaskSession,
     *,
     provider: Any,
@@ -425,20 +444,7 @@ def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machin
 ) -> KernelResult:
     completion_context = _completion_context_with_ignores(completion_context, workspace_ignored_paths)
     try:
-        (
-            runnable,
-            delivered_map,
-            max_turns,
-            native,
-            identity_ref,
-            initial_contract,
-            native_tools,
-            prompt,
-            pending_reply,
-            pending_native_messages,
-            initial_allowed,
-            initial_snapshot,
-        ) = _kernel_startup(
+        startup = _kernel_startup(
             session,
             provider,
             executors=executors,
@@ -447,7 +453,6 @@ def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machin
             provider_id=provider_id,
             user_task=user_task,
             context_text=context_text,
-            start_turn=start_turn,
             initial_results=initial_results,
             provider_session_changed=bool(provider_session_changed),
             delivered=delivered,
@@ -466,18 +471,15 @@ def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machin
             completed=False, summary=f"controller configuration error: {exc}", turns=0, stop_reason="controller_failure"
         )
     resume_start = _resume_start(start_turn)
-    try:
-        pending_initial = list(initial_results or [])
-    except Exception:
-        pending_initial = []
     turns_used = 0
-    invalid_turns = 0
-    length_continuations = 0
+    state = startup.state
+    native = startup.native
+    native_tools = startup.native_tools
     progress = KernelProgress(stagnant_turns)
-    prev_contract: str = str(initial_contract or "")
-    for turn in range(resume_start, max_turns + 1):
+    prev_contract = startup.snapshot.contract_text
+    for turn in range(resume_start, startup.max_turns + 1):
         stopped = _stop_at_turn_start(
-            stop_flag, provider, pending_reply, pending_native_messages, native_tools,
+            stop_flag, provider, state.pending_reply, state.pending_messages, native_tools,
             turns_used, propagate_provider_failure=propagate_provider_failure,
         )
         if stopped is not None:
@@ -487,74 +489,28 @@ def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machin
         # First round reuses the startup snapshot (same session facts); later
         # rounds rebuild once per round. Saves one snapshot build per run.
         # 同一 TurnSnapshot 贯穿发送、解析与执行，注册表变化下一轮生效。
-        if turn == resume_start and pending_reply is None and pending_native_messages is None and not pending_initial:
-            controller, turn_contract, turn_native_tools, turn_prompt, turn_snapshot = (
-                initial_allowed,
-                initial_contract,
-                native_tools,
-                prompt,
-                initial_snapshot,
-            )
-            prev_contract = str(turn_contract or "")
+        if turn == resume_start and state.pending_reply is None and state.pending_messages is None and not startup.pending_recovery:
+            turn_snapshot = startup.snapshot
+            controller = turn_snapshot.allowed
         else:
             snapshot_out = _rebuild_turn_snapshot(
-                session, native=native, user_task=user_task, context_text=context_text,
-                prompt=prompt, prev_contract=prev_contract,
+                session, native=native,
+                prompt=state.prompt, prev_contract=prev_contract,
             )
             if isinstance(snapshot_out, KernelResult):
                 return snapshot_out
-            controller, turn_contract, turn_native_tools, turn_prompt, prompt, prev_contract, turn_snapshot = snapshot_out
-            native_tools = turn_native_tools
-        try:
-            reply, pending_reply, pending_native_messages = _transport.send_kernel_reply(
-                provider,
-                native,
-                prompt,
-                native_tools,
-                pending_reply,
-                pending_native_messages,
-            )
-        except Exception as exc:
-            return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
-        cancelled = _cancel_after_send(stop_flag, provider, reply, native, native_tools, turns_used,
-                                      propagate=propagate_provider_failure)
-        if cancelled is not None:
-            return cancelled
-        _events._emit_turn_event(on_event, turn, reply)
-        length_failure, continuation = _consume_local_length_reply(
-            reply, native=native, provider_id=provider_id,
-            used=length_continuations > 0, turns=turns_used,
+            controller, native_tools, state.prompt, prev_contract, turn_snapshot = snapshot_out
+        received = _receive_turn_plan(
+            session, provider, state, turn_snapshot, native_tools,
+            native=native, provider_id=provider_id, turn=turn,
+            stop_flag=stop_flag, on_event=on_event, stagnant_turns=stagnant_turns,
+            propagate_provider_failure=propagate_provider_failure, trace_recorder=trace_recorder,
         )
-        if length_failure is not None:
-            return length_failure
-        if continuation is not None:
-            length_continuations = 1
-            prompt = continuation
-            pending_reply = None
+        if isinstance(received, KernelResult):
+            return received
+        if received is None:
             continue
-        plan = _normalize_turn(reply, snapshot=turn_snapshot)
-        from codey.operations.kernel_trace import record_turn
-
-        record_turn(trace_recorder, phase=session.task_kind, turn=turn,
-                    snapshot=turn_snapshot, plan=plan, native=native)
-        protocol_action = _kernel_handle_protocol(
-            plan,
-            provider,
-            reply,
-            native,
-            native_tools,
-            stagnant_turns=stagnant_turns,
-            invalid_turns=invalid_turns,
-            turn=turn,
-        )
-        # protocol_action is None (continue to tools), KernelResult (return),
-        # or tuple (prompt, pending_reply, invalid_turns) to continue.
-        if isinstance(protocol_action, KernelResult):
-            return protocol_action
-        if protocol_action is not None:
-            prompt, pending_reply, invalid_turns = protocol_action
-            continue
-        invalid_turns = 0
+        plan, reply = received.plan, received.reply
         calls = list(plan.calls or ())
         done_action, approval, calls = _kernel_handle_done_approval(
             session,
@@ -568,7 +524,7 @@ def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machin
             project_path=project_path,
             on_shell_request=on_shell_request,
             turn=turn,
-            identity_ref=identity_ref,
+            identity_ref=startup.identity_ref,
             intent_sink=intent_sink,
             permission_profile=permission_profile,
             provider_id=provider_id,
@@ -576,17 +532,17 @@ def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machin
         if isinstance(done_action, KernelResult):
             return done_action
         if done_action is not None:
-            prompt, pending_reply = done_action
+            state.prompt, state.pending_reply = done_action
             continue
         if approval is not None:
             return approval
         _events._emit_tool_starts(on_event, session, turn, calls)
         _outer_evidence = _outer_evidence_for_context(completion_context)
         results_or_failure = _call_execute_turn(
-            session, calls, runnable, run_id, effect_scope, turn,
+            session, calls, startup.executors, run_id, effect_scope, turn,
             project_path, tool_fns, research_tools, change_tracker,
             managed_outputs, session_id, permission_profile,
-            delivered_map, intent_sink, controller, _outer_evidence,
+            startup.delivered, intent_sink, controller, _outer_evidence,
             workspace_ignored_paths, workspace_revision_store,
             turns_used, propagate_provider_failure, stop_flag,
             snapshot=turn_snapshot,
@@ -595,7 +551,7 @@ def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machin
             return results_or_failure
         results = results_or_failure
         try:
-            _events._emit_tool_results(on_event, session, results, run_id=identity_ref, turn=turn)
+            _events._emit_tool_results(on_event, session, results, run_id=startup.identity_ref, turn=turn)
         except RecoveryFailed as exc:
             return KernelResult(
                 completed=False,
@@ -603,18 +559,18 @@ def run_task_kernel(  # noqa: C901, PLR0912 - bounded provider/task state machin
                 turns=turns_used,
                 stop_reason="recovery_failure",
             )
-        advance = _advance_after_results(native, results, session, pending_native_messages)
+        advance = _advance_after_results(native, results, session, state.pending_messages)
         if isinstance(advance, KernelResult):
             return advance
-        pending_native_messages, prompt = advance
-        stopped = _stop_no_progress(progress, results, session, provider, pending_native_messages, native_tools,
+        state.pending_messages, state.prompt = advance
+        stopped = _stop_no_progress(progress, results, session, provider, state.pending_messages, native_tools,
                                     turns_used, stop_flag=stop_flag, propagate=propagate_provider_failure)
         if stopped is not None:
             return stopped
     return _finish_after_budget(
         session,
         provider,
-        pending_native_messages,
+        state.pending_messages,
         native_tools,
         turns_used,
         propagate_provider_failure=propagate_provider_failure,
@@ -676,14 +632,13 @@ def _stop_no_progress(progress, results, session, provider, messages, native_too
 
 
 def _rebuild_turn_snapshot(
-    session: Any, *, native: bool, user_task: Any, context_text: Any,
+    session: Any, *, native: bool,
     prompt: str, prev_contract: str,
 ) -> Any:
     """Rebuild one per-round snapshot; KernelResult on controller failure."""
     try:
-        controller, turn_contract, turn_native_tools, turn_prompt, snapshot = _snapshot_for_turn_state(
-            session, native=native, user_task=user_task, context_text=context_text,
-        )
+        snapshot = _build_turn_snapshot(session, native=native)
+        turn_native_tools = [thaw_schema_value(row) for row in snapshot.native_tools]
     except Exception as exc:
         return KernelResult(
             completed=False, summary=f"controller configuration error: {exc}",
@@ -693,19 +648,16 @@ def _rebuild_turn_snapshot(
     # round's. Web text chains have no per-turn schema, so a changed contract
     # is prepended to the carried prompt here; native chains get the fresh
     # schema via send_turn/send_tool_results.
-    fresh_text = str(turn_contract or "")
+    fresh_text = snapshot.contract_text
     if (not native) and fresh_text and fresh_text != prev_contract and prompt:
-        try:
-            names = ", ".join(_prompt._snapshot_names(session.policy, controller)) or "none"
-        except Exception:
-            names = "none"
+        names = ", ".join(snapshot.tool_names) or "none"
         prompt = (
             f"Visible tools changed (controller state advanced): {names}\n"
             f"Tool contract (use exactly these shapes):\n{fresh_text}\n\n{prompt}"
         )
     if fresh_text:
         prev_contract = fresh_text
-    return controller, turn_contract, turn_native_tools, turn_prompt, prompt, prev_contract, snapshot
+    return snapshot.allowed, turn_native_tools, prompt, prev_contract, snapshot
 
 
 def _call_execute_turn(
@@ -805,18 +757,6 @@ def _handle_done_reply(
     session.last_done_args = dict(plan.control_args)
     try:
         from codey.operations.completion_gate import evaluate as gate_evaluate
-    except Exception:
-        # Fail closed: a missing gate never completes.
-        prompt = "Completion gate unavailable; cannot complete yet. Continue the task."
-        try:
-            pending = _transport._take_answered_reply(provider, reply, native, native_tools, prompt)
-        except Exception as exc:
-            return KernelResult(
-                completed=False, summary=f"provider failed: {exc}",
-                turns=int(session.turn or 0), stop_reason="provider_failure",
-            )
-        return prompt, pending
-    try:
         from codey.operations.project_verification import refresh_verification_candidates
 
         refresh_verification_candidates(session)
@@ -831,7 +771,7 @@ def _handle_done_reply(
                 turns=int(session.turn or 0), stop_reason="provider_failure",
             )
         return prompt, pending
-    if verdict.complete:
+    if verdict.complete is True:
         session.last_done_text = str(getattr(verdict, "final_text", "") or session.last_done_text)
         # Native chains require every call id closed, including an accepted
         # done. Answer the done id with success before returning so the same

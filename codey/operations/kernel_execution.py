@@ -11,7 +11,6 @@ never import ``execute_turn`` back (no cycles).
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -530,10 +529,8 @@ def _settle_edit_with_workspace_bump(
     if isinstance(result.audit, dict) and "changed" in result.audit:
         raw_changed = result.audit.get("changed")
         if type(raw_changed) is not bool:
-            failed = _error_result(call, "edit result changed flag must be a boolean")
-            settle(identity, call, failed, ok=False)
-            results.append(failed)
-            return "unconfirmed"
+            return _settle_unconfirmed_edit(session, identity, call, "edit result changed flag must be a boolean",
+                                             execution_evidence=execution_evidence, settle=settle, results=results)
         changed = raw_changed
     else:
         changed = True
@@ -553,44 +550,33 @@ def _settle_edit_with_workspace_bump(
         try:
             trusted = _with_trusted_workspace_state(result, revision=rev, fingerprint=fp)
         except Exception:
-            # Edit happened but provenance attach failed: record the edit
-            # fact, settle ONCE as error, block same-batch work.
-            with contextlib.suppress(Exception):
-                from codey.operations.kernel_facts import _record_edit_fact as _edit_fact
-
-                _edit_fact(session, call.args if isinstance(call.args, dict) else {}, result)
-            with contextlib.suppress(Exception):
-                session.transcript_notes.append(f"edit: {str(result.model_text or '')[:500]}")
-            failed = _error_result(
-                call,
-                "edit happened but workspace identity unconfirmed (provenance attach failed); "
-                "re-check workspace before verifying, do not re-apply the edit",
-            )
-            settle(identity, call, failed, ok=False)
-            results.append(failed)
-            return "unconfirmed"
+            return _settle_unconfirmed_edit(session, identity, call, "provenance attach failed",
+                                             execution_evidence=execution_evidence, settle=settle, results=results)
         settle(identity, call, trusted, ok=True)
         record_facts_for_result(session, call, trusted, ok=True, exit_code=exit_code)
         results.append(trusted)
         return "trusted"
-    if workspace_revision_store is not None:
-        # Edit happened but identity unconfirmed: record the edit fact (file
-        # did change), then settle ONCE as error and block same-batch work.
-        with contextlib.suppress(Exception):
-            from codey.operations.kernel_facts import _record_edit_fact as _edit_fact
+    return _settle_unconfirmed_edit(session, identity, call, "revision store missing or bump failed",
+                                     execution_evidence=execution_evidence, settle=settle, results=results)
 
-            _edit_fact(session, call.args if isinstance(call.args, dict) else {}, result)
-        with contextlib.suppress(Exception):
-            session.transcript_notes.append(f"edit: {str(result.model_text or '')[:500]}")
-        failed = _error_result(
-            call,
-            "edit happened but workspace identity unconfirmed (revision bump failed); "
-            "re-check workspace before verifying, do not re-apply the edit",
-        )
-        settle(identity, call, failed, ok=False)
-        results.append(failed)
-        return "unconfirmed"
-    return None
+
+def _settle_unconfirmed_edit(session: TaskSession, identity: str, call: ToolCall, reason: str,
+                             *, execution_evidence: Any, settle: Any, results: list[ToolResult]) -> str:
+    """Persist an uncertain mutation once and invalidate its live identity."""
+    failed = _error_result(
+        call,
+        f"edit happened but workspace identity unconfirmed ({reason}); "
+        "re-check workspace before verifying, do not re-apply the edit",
+    )
+    failed = ToolResult(call=call, model_text=failed.model_text, audit=failed.audit,
+                        canonical={"workspace_unconfirmed": True})
+    settle(identity, call, failed, ok=False)
+    record_facts_for_result(session, call, failed, ok=False)
+    session.set_workspace_state(0, "")
+    if execution_evidence is not None:
+        execution_evidence.set_workspace_state(0, "")
+    results.append(failed)
+    return "unconfirmed"
 
 
 def _settle_slot(

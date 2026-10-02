@@ -45,6 +45,7 @@ from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.utils.text_budget import clip_middle
+from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual import ab_harness_common as common
 from tests.manual.ab_harness_common import (
     ArmRunLayout,
@@ -61,9 +62,6 @@ from tests.manual.ab_journal import ABJournalWriter
 # the alias keeps the historical name for existing tests and callers.
 TracingProvider = common.TracingProvider
 
-
-def run_agent(provider, project, task, **kwargs):
-    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 ARMS = ("baseline", "projection")
@@ -368,19 +366,22 @@ def _run_arm(
     events: list[RunEvent] = []
     started = time.time()
     with tempfile.TemporaryDirectory() as td:
-        root = Path(td).resolve()
+        home = Path(td).resolve()
+        root = home / "project"
+        root.mkdir()
         _write_case(root)
         prompts_before = len(provider.prompts)
-        result = run_agent(
-            provider,
-            root,
-            TASK,
+        result = _agent_kernel_request(AgentRequest(
+            provider=provider,
+            project=root,
+            task=TASK,
+            workspace_revision_store=WorkspaceRevisionStore(home / "state"),
             max_turns=max_turns,
             on_event=events.append,
             fresh_chat=True,
             provider_id=getattr(provider, "id", ""),
             research_context=brief_text,
-        )
+        ))
         elapsed = round(time.time() - started, 3)
         changed = _changed_files(root)
         independent_check = _run_process(root, (sys.executable, "-B", "-m", "pytest", "-q"))
@@ -698,12 +699,12 @@ def _self_test() -> None:
                     "path": "pricing.py",
                     "replacements": [
                         {
-                            "search": (
+                            "old_string": (
                                 "def discounted_total(amount, discount, tax_rate):\n"
                                 "    # RESEARCH_BRIEF_AB_BUG: wrong order, applies tax first.\n"
                                 "    return amount * (1 + tax_rate) - discount"
                             ),
-                            "replace": (
+                            "new_string": (
                                 "def discounted_total(amount, discount, tax_rate):\n"
                                 "    return (amount - discount) * (1 + tax_rate)"
                             ),

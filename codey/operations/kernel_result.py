@@ -14,7 +14,6 @@ __all__ = [
     "_normalize_audit_exit_code",
     "_normalize_delegate_result",
     "_normalize_explicit_result",
-    "_result_ok",
     "_strip_executor_workspace_audit",
     "build_recovered_tool_result",
     "result_ok",
@@ -30,11 +29,6 @@ def strict_exit_code_or_none(value: object) -> int | None:
 
 
 def result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) -> bool:
-    """Public result verdict: structured exits decide, else ERROR/SKIPPED text."""
-    return _result_ok(name, result, exit_code=exit_code)
-
-
-def _result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) -> bool:
     # Explicit exit_code param wins (delegate structured exit); otherwise the
     # audit exit_code is authoritative when present. Any present-but-invalid
     # exit (bool/str/float) fails closed. Valid run exits decide by code==0.
@@ -125,7 +119,7 @@ def build_recovered_tool_result(
     Missing/``None`` audit/presentation/canonical use ``{}``. Present-but-
     non-mapping or unreadable fields raise ``RecoveryFailed`` instead of
     silently becoming ``{}``. Executor-forgeable workspace keys are never
-    added here: only ``with_trusted_workspace_state`` may attach provenance
+    added here: only ``attach_trusted_workspace`` may attach provenance
     via the side-channel.
     """
     from codey.operations.kernel_errors import RecoveryFailed
@@ -284,7 +278,7 @@ def _normalize_explicit_result(name: str, result: ToolResult) -> tuple[ToolResul
                 audit=cleaned_audit,
                 canonical=dict(result.canonical) if isinstance(result.canonical, dict) else {},
             )
-    ok = _result_ok(name, result)
+    ok = result_ok(name, result)
     if audit_invalid:
         ok = False
     if str(result.model_text or "").startswith("ERROR: tool call"):
@@ -324,9 +318,9 @@ def _normalize_delegate_result(
             result = rebuilt
         ok = False
         return result, ok, exit_code
-    if name == "run" and exit_code is not None and not _result_ok(name, result, exit_code=exit_code):
+    if name == "run" and exit_code is not None and not result_ok(name, result, exit_code=exit_code):
         ok = False
-    elif name == "run" and exit_code is None and audit_code is not None and not _result_ok(name, result):
+    elif name == "run" and exit_code is None and audit_code is not None and not result_ok(name, result):
         # Audit-only structured exit is authoritative for run.
         ok = False
     elif name == "run" and exit_code is None and audit_code is None:

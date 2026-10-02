@@ -193,26 +193,40 @@ def test_synthesis_persists_bounded_open_questions(tmp_path):
         store.close()
 
 
-def test_cancellation_between_tools_settles_remaining_slots_without_executing(monkeypatch):
+def test_cancellation_between_tools_settles_remaining_slots_without_executing(monkeypatch, tmp_path):
     import threading
 
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolResult
+    from codey.workspace.revision import WorkspaceRevisionStore
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
+    project = tmp_path / "project"
+    project.mkdir()
     stop = threading.Event()
     calls = []
     reply = json_call("edit", path="a.py", content="a") + "\n" + json_call("edit", path="b.py", content="b")
 
     def edit(call):
         calls.append(call.args["path"])
-        stop.set()
+        (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
         return ToolResult(call, "wrote file", audit={"changed": True})
+
+    store = WorkspaceRevisionStore(tmp_path / "state")
+    bump = store.bump_state
+
+    def bump_then_stop(*args, **kwargs):
+        state = bump(*args, **kwargs)
+        stop.set()
+        return state
+
+    monkeypatch.setattr(store, "bump_state", bump_then_stop)
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.write"})))
     outcome = run_task_kernel(session, provider=SimpleNamespace(send=lambda _p: reply),
-                              stop_flag=stop, executors={"edit": edit})
+                              stop_flag=stop, executors={"edit": edit}, project_path=project,
+                              workspace_revision_store=store)
     assert calls == ["a.py"]
     assert outcome.stop_reason == "stopped"
     assert len(session.executed) == 2

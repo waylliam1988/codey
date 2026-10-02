@@ -24,7 +24,6 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
-from codey.toolchain.runtime import ToolOutcome
 
 
 class FakeStructuredProvider:
@@ -537,7 +536,8 @@ def test_local_malformed_tool_calls_fail_closed(monkeypatch) -> None:
     }))
     turn = provider.send_turn("do it", None)
     assert turn.tool_calls == ()
-    assert turn.text == "here"
+    assert "malformed" in turn.text
+    assert "here" not in turn.text
     assert all("tool_calls" not in m for m in provider._messages)
 
     _install(_body({"content": "", "tool_calls": [{"id": "", "type": "function"}]}))
@@ -755,10 +755,11 @@ def test_voided_only_batch_stays_recoverable(tmp_path: Path) -> None:
     assert batch.can_recover_before_provider_send is True
 
 
-def test_store_failure_is_audited(tmp_path: Path) -> None:
-    from types import SimpleNamespace
+def test_large_receipt_store_failure_never_creates_an_inline_success() -> None:
+    import pytest
 
-    from codey.agents.tool_execution import maybe_externalize_large_tool_output
+    from codey.operations.kernel_receipts import result_receipt_fields
+    from codey.runtime.core.models import ToolResult
 
     class RefusingStore:
         def write_tool_output(self, **kwargs):
@@ -768,15 +769,7 @@ def test_store_failure_is_audited(tmp_path: Path) -> None:
         def write_tool_output(self, **kwargs):
             raise OSError("disk gone")
 
-    for store, kind in ((RefusingStore(), "store_refused"), (ExplodingStore(), "OSError")):
-        session = SimpleNamespace(
-            request=SimpleNamespace(managed_outputs=store, session_id="s", run_id="r"),
-            config=SimpleNamespace(profile=SimpleNamespace(name="coding_writer")),
-        )
-        outcome = maybe_externalize_large_tool_output(
-            session, ToolCall(name="search", args={"query": "q"}), ToolOutcome("z" * 30_000, True),
-            turn=1, tool_index=0,
-        )
-        assert outcome.truncated
-        assert outcome.audit.get("managed_output_failed") is True
-        assert outcome.audit.get("managed_output_failure") == kind
+    result = ToolResult(ToolCall("search", {"query": "q"}), "z" * 30_000)
+    for store, error in ((RefusingStore(), ValueError), (ExplodingStore(), OSError)):
+        with pytest.raises(error):
+            result_receipt_fields(result, store=store, session_id="s", run_id="r", effect_id="e")
