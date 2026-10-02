@@ -331,6 +331,30 @@ def _display_text(
     return clip(summary, MAX_SUMMARY_CHARS), clip(detail, MAX_DETAIL_CHARS)
 
 
+def _receipt_sections_well_formed(display: dict, work: dict, verification: dict, integrity: dict) -> bool:
+    """Check field shapes before any normalization or trust recomputation."""
+    if not isinstance(display.get("summary"), str) or not isinstance(display.get("detail"), str):
+        return False
+    if not isinstance(work.get("mode"), str) or not isinstance(work.get("restore_available"), bool):
+        return False
+    if not isinstance(verification.get("trust"), str) or not isinstance(verification.get("checks_passed"), bool):
+        return False
+    for key in ("state", "stance", "source"):
+        if key in verification and not isinstance(verification.get(key), str):
+            return False
+    if not isinstance(integrity.get("status"), str) or not isinstance(integrity.get("severity"), str):
+        return False
+    if not _optional_string_sequence(verification, "proof_refs"):
+        return False
+    if not _optional_string_sequence(integrity, "reason_codes"):
+        return False
+    if not _optional_string_sequence(integrity, "affected_paths"):
+        return False
+    if not _optional_string_sequence(integrity, "refs"):
+        return False
+    return "authorized_test_edit" not in integrity or isinstance(integrity.get("authorized_test_edit"), bool)
+
+
 def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
     """Validate a persisted receipt payload; unusable input yields None.
 
@@ -351,26 +375,7 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
     integrity = payload.get("integrity")
     if not all(isinstance(section, dict) for section in (display, work, verification, integrity)):
         return None
-    if not isinstance(display.get("summary"), str) or not isinstance(display.get("detail"), str):
-        return None
-    if not isinstance(work.get("mode"), str) or not isinstance(work.get("restore_available"), bool):
-        return None
-    if not isinstance(verification.get("trust"), str) or not isinstance(verification.get("checks_passed"), bool):
-        return None
-    for key in ("state", "stance", "source"):
-        if key in verification and not isinstance(verification.get(key), str):
-            return None
-    if not isinstance(integrity.get("status"), str) or not isinstance(integrity.get("severity"), str):
-        return None
-    if not _optional_string_sequence(verification, "proof_refs"):
-        return None
-    if not _optional_string_sequence(integrity, "reason_codes"):
-        return None
-    if not _optional_string_sequence(integrity, "affected_paths"):
-        return None
-    if not _optional_string_sequence(integrity, "refs"):
-        return None
-    if "authorized_test_edit" in integrity and not isinstance(integrity.get("authorized_test_edit"), bool):
+    if not _receipt_sections_well_formed(display, work, verification, integrity):
         return None
     changed_count = _strict_nonnegative_int(work.get("changed_count"))
     if changed_count is None:

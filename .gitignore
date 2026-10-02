@@ -8,6 +8,8 @@ __pycache__/
 build/
 dist/
 .e2e-artifacts/
+# Local model probes, runtime receipts and pre-review backups.
+/artifacts/
 .repo-map-probe*.json
 .read-before-edit*.json
 .scoped-task-plan-ab*.json

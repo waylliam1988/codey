@@ -590,6 +590,58 @@ def _plan_from_tool_objects(
     return ToolPlan(calls=calls, control=Control(kind="continue", body=body))
 
 
+def _text_tool_objects(text: str) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+    """Unwrap text JSON; authorization and argument validation stay shared."""
+    objects = _extract_json_objects(text)
+    if not objects:
+        return _invalid_plan("no JSON tool call found", kind="no_json")
+    items: list[tuple[str, dict[str, Any], str]] = []
+    for obj in objects[:MAX_NATIVE_CALLS_PER_TURN]:
+        if not isinstance(obj, dict):
+            continue
+        tool, args = _tool_and_args(obj)
+        items.append((tool, args, ""))
+    if len(objects) > MAX_NATIVE_CALLS_PER_TURN:
+        return _invalid_plan(
+            f"too many native tool calls in one turn ({len(objects)}); "
+            f"send at most {MAX_NATIVE_CALLS_PER_TURN}",
+            kind="too_many_tools",
+        )
+    return items
+
+
+def _native_tool_objects(calls: list[Any]) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+    """Unwrap native calls without losing or inventing provider call ids."""
+    if len(calls) > MAX_NATIVE_CALLS_PER_TURN:
+        return _invalid_plan(
+            f"too many native tool calls in one turn ({len(calls)}); send at most {MAX_NATIVE_CALLS_PER_TURN}",
+            kind="too_many_tools",
+        )
+    missing = [str(getattr(c, "name", "") or "?") for c in calls if not str(getattr(c, "id", "") or "")]
+    if missing:
+        return _invalid_plan(
+            "native tool call without an id cannot be answered: " + ", ".join(missing),
+            kind="invalid_args",
+        )
+    ids = [getattr(call, "id", "") for call in calls]
+    if any(not isinstance(value, str) or not value.strip() or len(value) > 256 for value in ids):
+        return _invalid_plan("native tool call ids must be nonempty strings of at most 256 characters", kind="invalid_args")
+    if len(ids) != len(set(ids)):
+        return _invalid_plan("duplicate native tool call ids cannot be answered unambiguously", kind="invalid_args")
+    names = [str(getattr(c, "name", "") or "").strip().lower() for c in calls]
+    if "done" in names and len(calls) != 1:
+        return _invalid_plan("done must be the only call in a turn", tool="done", kind="too_many_tools")
+    items = []
+    for item in calls:
+        name = str(getattr(item, "name", "") or "").strip().lower()
+        args = getattr(item, "arguments", {})
+        call_id = str(getattr(item, "id", "") or "")
+        if not isinstance(args, dict):
+            return _invalid_plan(f"{name} args must be an object", tool=name)
+        items.append((name, dict(args), call_id))
+    return items
+
+
 def normalize_turn(
     reply: str | object,
     *,
@@ -615,59 +667,16 @@ def normalize_turn(
     tool_calls = getattr(reply, "tool_calls", None) if not isinstance(reply, str) else None
     if isinstance(reply, str) or tool_calls is None:
         text = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or "")
-        objects = _extract_json_objects(text)
-        if not objects:
-            folded = str(text or "").strip().lower()
-            if not folded:
-                return _invalid_plan("no JSON tool call found", kind="no_json")
-            return _invalid_plan("no JSON tool call found", kind="no_json")
-        items: list[tuple[str, dict[str, Any], str]] = []
-        for obj in objects[:MAX_NATIVE_CALLS_PER_TURN]:
-            if not isinstance(obj, dict):
-                continue
-            tool, args = _tool_and_args(obj)
-            items.append((tool, args, ""))
-            if len(items) >= MAX_NATIVE_CALLS_PER_TURN:
-                break
-        if len(objects) > MAX_NATIVE_CALLS_PER_TURN:
-            return _invalid_plan(
-                f"too many native tool calls in one turn ({len(objects)}); "
-                f"send at most {MAX_NATIVE_CALLS_PER_TURN}",
-                kind="too_many_tools",
-            )
-        return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed, snapshot_names=snapshot_names, frozen_specs=frozen)
-    calls = list(tool_calls or ())
-    if len(calls) > MAX_NATIVE_CALLS_PER_TURN:
-        return _invalid_plan(
-            f"too many native tool calls in one turn ({len(calls)}); send at most {MAX_NATIVE_CALLS_PER_TURN}",
-            kind="too_many_tools",
-        )
-    missing = [str(getattr(c, "name", "") or "?") for c in calls if not str(getattr(c, "id", "") or "")]
-    if missing:
-        return _invalid_plan(
-            "native tool call without an id cannot be answered: " + ", ".join(missing),
-            kind="invalid_args",
-        )
-    ids = [getattr(call, "id", "") for call in calls]
-    if any(not isinstance(value, str) or not value.strip() or len(value) > 256 for value in ids):
-        return _invalid_plan("native tool call ids must be nonempty strings of at most 256 characters", kind="invalid_args")
-    if len(ids) != len(set(ids)):
-        return _invalid_plan("duplicate native tool call ids cannot be answered unambiguously", kind="invalid_args")
-    names = [str(getattr(c, "name", "") or "").strip().lower() for c in calls]
-    if "done" in names and len(calls) != 1:
-        return _invalid_plan("done must be the only call in a turn", tool="done", kind="too_many_tools")
-    if not calls:
-        text = str(getattr(reply, "text", "") or "")
-        return normalize_turn(text, policy=policy, controller_allowed=controller_allowed, snapshot=snapshot)
-    items = []
-    for item in calls:
-        name = str(getattr(item, "name", "") or "").strip().lower()
-        args = getattr(item, "arguments", {})
-        call_id = str(getattr(item, "id", "") or "")
-        if not isinstance(args, dict):
-            return _invalid_plan(f"{name} args must be an object", tool=name)
-        items.append((name, dict(args), call_id))
-    return _plan_from_tool_objects(items, policy=policy, controller_allowed=allowed, snapshot_names=snapshot_names, frozen_specs=frozen)
+        items = _text_tool_objects(text)
+    else:
+        calls = list(tool_calls or ())
+        items = _native_tool_objects(calls) if calls else _text_tool_objects(str(getattr(reply, "text", "") or ""))
+    if isinstance(items, ToolPlan):
+        return items
+    return _plan_from_tool_objects(
+        items, policy=policy, controller_allowed=allowed,
+        snapshot_names=snapshot_names, frozen_specs=frozen,
+    )
 
 
 __all__ = [

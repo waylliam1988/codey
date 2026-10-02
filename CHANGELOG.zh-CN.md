@@ -2,6 +2,14 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 可读性收尾与本地产物忽略（未发布）
+
+- 在原模块内拆清 pending 状态决策、收据形状校验与文本/native 解包；共同校验和恢复优先级保持，无新框架或 facade。
+- 圈复杂度：next_runtime_action 19→8、task_receipt_from_payload 20→10、normalize_turn 19→6。单循环 run_task_kernel 保留一百六十五行、复杂度十六，全项目阈值仍为二十。
+- 修复 native 空调用回复转文本时漏传显式 snapshot_names；删除两处文本解析重复分支。重构前锁住公开行为，并确认三条结构红测。
+- 根 artifacts 的本地探针/运行记录/修改前备份纳入忽略，文件保留本地，不提交运行数据。
+- 启用真实 Edge 的最终两版本全量各 **6553 passed、28 skipped、1488 subtests passed**：3.12.8 为 469.19 秒、3.13.15 为 463.51 秒。Ruff、compileall、diff 检查通过。[可读性决定与边界](docs/kernel_review_2026-10-02.zh-CN.md#10-可读性收尾与拆分停止条件)。无 tag/release/版本 bump，按要求不等待托管 CI。
+
 ## Unreleased - 持久恢复与真实 UI 后续收口（未发布）
 
 - 修复 manifest 已替换但目录 fsync 报错后错误删除 baseline：仅确认未发布时清理，发布状态未知时保留正文并继续报错。

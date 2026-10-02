@@ -2,6 +2,14 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Readability closeout and local artifact exclusion (no release)
+
+- Extract pending-state decisions, receipt shape checks and text/native unwrapping within their existing modules. Keep final validation and recovery priorities unchanged; no new framework or facade.
+- Reduce McCabe complexity: next_runtime_action 19→8, task_receipt_from_payload 20→10, normalize_turn 19→6. Keep the readable single-loop run_task_kernel at 165 lines / complexity 16; retain the project-wide limit of 20.
+- Fix explicit snapshot_names being lost when a native reply with no calls is interpreted as text. Remove two redundant text-parser branches; lock the public behavior and three local readability budgets before refactoring.
+- Ignore root artifacts containing local probe/runtime output and pre-review backups, preserving files locally and excluding them from commits.
+- Final full suites with real Edge: **6553 passed, 28 skipped, 1488 subtests passed** on 3.12.8 (469.19s) and 3.13.15 (463.51s). Ruff, compileall and diff checks passed. [Readability decision and limits](docs/kernel_review_2026-10-02.zh-CN.md#10-可读性收尾与拆分停止条件). No tag/release/version bump; do not wait for hosted CI.
+
 ## Unreleased - Durable recovery and real UI follow-up (no release)
 
 - Preserve baseline bodies when manifest replacement succeeds before fsync reports an error; confirm non-publication before deleting an orphan, and propagate uncertain publication failures.

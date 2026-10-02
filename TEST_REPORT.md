@@ -1,5 +1,83 @@
 # Codey Test Report
 
+## Readability closeout and local artifact exclusion (2026-10-02)
+
+Baseline: `d5bf1a94`. Production and test changes finished before the final
+full runs. The user requested artifact handling during those runs; only the
+root `/artifacts/` Git exclusion was added then, with separate Git checks.
+Documentation was updated after both full runs finished.
+
+| Runtime | Final full result, real Edge enabled | Duration |
+| --- | --- | --- |
+| Windows Python 3.12.8 | **6553 passed, 28 skipped, 1488 subtests passed** | 469.19s |
+| Official Windows Python 3.13.15 embed | **6553 passed, 28 skipped, 1488 subtests passed** | 463.51s |
+
+The same bootstrap/dependency limits and independent external TEMP/TMP
+directories apply. Commands used `RUN_BROWSER_E2E=1` and
+`-q -o faulthandler_timeout=120 -rs`. Ignored local logs:
+`.e2e-artifacts/aesthetic-py312-full.log` and
+`.e2e-artifacts/aesthetic-py313-full.log`.
+
+- Relevant regression: **319 passed, 414 subtests passed**, including
+  architecture, public protocol, receipt, reducer, delivery/recovery,
+  frozen parity and the existing finite invariant/crash suites.
+- New 31 cases: after correcting a test author's mistaken dereference of
+  an absent control, **27 passed / 4 failed before production edits**.
+  Three failures were explicit structural complexity budgets; the fourth
+  reproduced an actual lost snapshot-name restriction. All 31 passed after
+  extraction, also independently on 3.13. Existing behaviors were locked
+  green before moving them; they are not claimed as new red bug tests.
+- `ruff check .`, compileall and `git diff --check` passed before full tests.
+  Product JavaScript was not changed. Skips remain Windows privilege/POSIX
+  capability cases, not real UI or timeout regressions. No live model
+  latency/token measurement was performed.
+
+### Scope and measured readability
+
+Ruff C901 was inspected with `--isolated --ignore-noqa` across production:
+
+| Function | McCabe before → after | Lines before → after |
+| --- | --- | --- |
+| next_runtime_action | 19 → 8 | 161 → 34 |
+| task_receipt_from_payload | 20 → 10 | 122 → 103 |
+| normalize_turn | 19 → 6 | 78 → 35 |
+| run_task_kernel (retained) | 16 → 16 | 165 → 165 |
+
+The extracted helpers have complexities 3/7/4 (pending decisions), 11
+(receipt field validation), and 5/8 (text/native unwrapping). All remain
+inside their existing owner modules. There is no new framework, context
+object, dispatch registry or facade. Production adds 41 physical lines for
+explicit helper signatures/boundaries; overall production remains net
+**-666 lines from aff30e0**. Physical line count is not the readability goal.
+
+Global counts: **>10: 197 → 195; >15: 52 → 49; >20: 0 → 0**.
+The project-wide gate remains 20; only three reviewed orchestration entries
+have local tests enforcing 10. Complexity is a review signal, not a count
+of all execution paths or a no-bug proof. The one kernel loop keeps visible
+termination checks instead of moving them behind more wiring solely to
+cross the threshold of 15.
+
+Native replies with no calls now unwrap text without recursive
+normalization, preserving explicit snapshot_names as well as captured
+policy/controller/specs. The complete-snapshot production route was already
+protected; the directly callable explicit-name route was inconsistent.
+Empty text still fails, invalid native frames still fail, and call IDs,
+batch limits and final common argument validation are unchanged. Remove the
+identical empty/nonempty error branch and redundant sliced-loop break.
+
+The root artifacts directory contains probe records/logs/locks/text and a
+pre-review patch backup, with no standalone source/executable candidates or
+tracked files. `/artifacts/` is now ignored; files and backups are retained
+locally. `git check-ignore` and `git ls-files -- artifacts` verified the
+exclusion. Curated reports and frozen fixtures retain their existing paths.
+
+Large Store/ledger/trace/control/runtime modules were considered and retained
+where their current ownership and explicit validation are clearer than more
+cross-module wiring. This is a scoped readability judgment, not a claim that
+every function is optimal. Details: [review closeout](docs/kernel_review_2026-10-02.zh-CN.md#10-可读性收尾与拆分停止条件).
+Commit/push without release/tag/version bump; per user request, do not wait
+for hosted CI or claim a hosted result for this change.
+
 ## Durable recovery and real UI follow-up (2026-10-02)
 
 This follows the committed boundary audit `bbfcd99c`. Historical results

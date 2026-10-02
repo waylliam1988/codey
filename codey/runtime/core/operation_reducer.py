@@ -22,6 +22,7 @@ from codey.runtime.core.operation_state import (
     LEAF_WRITER_RUNNING,
     LEAF_WRITER_SETTLED,
     LEAVES,
+    RuntimeOperationState,
 )
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
@@ -30,7 +31,7 @@ from codey.runtime.effects.effect_records import (
 )
 from codey.runtime.effects.replay_policy import ReplayClass, is_replayable_safe_tool
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection
-from codey.runtime.log.session_view import SessionView, pending_for
+from codey.runtime.log.session_view import PendingRuntimeFacts, SessionView, pending_for
 
 ACTION_CONTINUE = "continue_operation"
 ACTION_FAIL_INVARIANT = "fail_invariant"
@@ -66,140 +67,13 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
         return RuntimeAction(ACTION_TERMINAL, leaf=state.leaf)
 
     if state.leaf == LEAF_PROVIDER_EFFECT_PENDING:
-        if len(pending.effect_ids) != 1:
-            stale = tuple(
-                effect.intent.effect_id
-                for effect in effects
-                if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
-                and effect.intent.turn == state.turn
-                and effect.settlement is not None
-            )
-            if stale:
-                return RuntimeAction(
-                    ACTION_FAIL_INVARIANT,
-                    leaf=state.leaf,
-                    reason="settled_provider_effect_still_pending",
-                    effect_id=stale[0],
-                    driver=state.driver,
-                )
-            return RuntimeAction(
-                ACTION_FAIL_INVARIANT,
-                leaf=state.leaf,
-                reason="missing_provider_effect_intent",
-                effect_id="",
-            )
-        effect_id = pending.effect_ids[0]
-        return RuntimeAction(
-            ACTION_SETTLE_PROVIDER_UNKNOWN,
-            leaf=state.leaf,
-            effect_id=effect_id,
-            delivery_batch_id=pending.delivery_batch_id,
-            driver=state.driver,
-        )
+        return _provider_pending_action(state, effects, pending)
 
     if state.leaf == LEAF_TOOL_EFFECT_PENDING:
-        if not pending.effect_ids:
-            stale_settled = tuple(
-                effect.intent.effect_id
-                for effect in effects
-                if effect.intent.effect_category == EFFECT_CATEGORY_TOOL_CALL
-                and effect.intent.turn == state.turn
-                and effect.settlement is not None
-            )
-            if stale_settled:
-                return RuntimeAction(
-                    ACTION_FAIL_INVARIANT,
-                    leaf=state.leaf,
-                    reason="settled_tool_effect_still_pending",
-                    effect_ids=stale_settled,
-                    delivery_batch_id=pending.delivery_batch_id,
-                    driver=state.driver,
-                )
-            return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="empty_tool_pending")
-        projections = tuple(_effect_by_id(effects, effect_id) for effect_id in pending.effect_ids)
-        live_pending = tuple(projection for projection in projections if projection is not None)
-        if len(live_pending) != len(pending.effect_ids):
-            return RuntimeAction(
-                ACTION_FAIL_INVARIANT,
-                leaf=state.leaf,
-                reason="missing_tool_effect_intent",
-                effect_ids=pending.effect_ids,
-                delivery_batch_id=pending.delivery_batch_id,
-                driver=state.driver,
-            )
-        if state.task_kind not in {"project", "hybrid"}:
-            return RuntimeAction(
-                ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
-                leaf=state.leaf,
-                effect_ids=pending.effect_ids,
-                delivery_batch_id=pending.delivery_batch_id,
-                driver=state.driver,
-                reason="task_kind_not_replayable",
-            )
-        batch = _batch_by_id(delivery_batches, pending.delivery_batch_id)
-        if batch is None:
-            return RuntimeAction(
-                ACTION_FAIL_INVARIANT,
-                leaf=state.leaf,
-                reason="missing_delivery_batch",
-                delivery_batch_id=pending.delivery_batch_id,
-                driver=state.driver,
-            )
-        if batch.can_recover_before_provider_send and all(
-            _safe_tool_projection(item) for item in live_pending
-        ):
-            return RuntimeAction(
-                ACTION_REPLAY_SAFE_TOOL_BATCH,
-                leaf=state.leaf,
-                effect_ids=pending.effect_ids,
-                delivery_batch_id=batch.intent.batch_id,
-                driver=state.driver,
-            )
-        return RuntimeAction(
-            ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
-            leaf=state.leaf,
-            effect_ids=pending.effect_ids,
-            delivery_batch_id=pending.delivery_batch_id,
-            driver=state.driver,
-            reason="tool_effect_not_replayable_as_batch",
-        )
+        return _tool_pending_action(state, effects, delivery_batches, pending)
 
     if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
-        batch = _batch_by_id(delivery_batches, pending.delivery_batch_id)
-        if batch is None:
-            return RuntimeAction(
-                ACTION_FAIL_INVARIANT,
-                leaf=state.leaf,
-                reason="missing_delivery_batch",
-                delivery_batch_id=pending.delivery_batch_id,
-                driver=state.driver,
-            )
-        if _batch_fully_settled(batch, effects):
-            # 已结算结果的重发优先于重放：有原结果就不重新执行，
-            # 不调用执行器，不依赖 ReplayClass.SAFE（与未结算工具的
-            # 执行恢复严格分离）。
-            return RuntimeAction(
-                ACTION_REDELIVER_SETTLED_BATCH,
-                leaf=state.leaf,
-                effect_ids=batch.intent.tool_refs,
-                delivery_batch_id=batch.intent.batch_id,
-                driver=state.driver,
-            )
-        if batch.can_recover_before_provider_send:
-            return RuntimeAction(
-                ACTION_REPLAY_SAFE_TOOL_BATCH,
-                leaf=state.leaf,
-                effect_ids=batch.intent.tool_refs,
-                delivery_batch_id=batch.intent.batch_id,
-                driver=state.driver,
-            )
-        return RuntimeAction(
-            ACTION_CONTINUE,
-            leaf=state.leaf,
-            reason="tool_delivery_not_recoverable",
-            delivery_batch_id=pending.delivery_batch_id,
-            driver=state.driver,
-        )
+        return _delivery_pending_action(state, effects, delivery_batches, pending)
 
     if state.leaf in {
         LEAF_ACCEPTED,
@@ -213,6 +87,159 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
         return RuntimeAction(ACTION_CONTINUE, leaf=state.leaf)
 
     return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="unhandled_leaf")
+
+
+def _provider_pending_action(
+    state: RuntimeOperationState,
+    effects: tuple[RuntimeEffectProjection, ...],
+    pending: PendingRuntimeFacts,
+) -> RuntimeAction:
+    if len(pending.effect_ids) != 1:
+        stale = tuple(
+            effect.intent.effect_id
+            for effect in effects
+            if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
+            and effect.intent.turn == state.turn
+            and effect.settlement is not None
+        )
+        if stale:
+            return RuntimeAction(
+                ACTION_FAIL_INVARIANT,
+                leaf=state.leaf,
+                reason="settled_provider_effect_still_pending",
+                effect_id=stale[0],
+                driver=state.driver,
+            )
+        return RuntimeAction(
+            ACTION_FAIL_INVARIANT,
+            leaf=state.leaf,
+            reason="missing_provider_effect_intent",
+            effect_id="",
+        )
+    effect_id = pending.effect_ids[0]
+    return RuntimeAction(
+        ACTION_SETTLE_PROVIDER_UNKNOWN,
+        leaf=state.leaf,
+        effect_id=effect_id,
+        delivery_batch_id=pending.delivery_batch_id,
+        driver=state.driver,
+    )
+
+
+def _tool_pending_action(
+    state: RuntimeOperationState,
+    effects: tuple[RuntimeEffectProjection, ...],
+    delivery_batches: tuple[DeliveryBatchProjection, ...],
+    pending: PendingRuntimeFacts,
+) -> RuntimeAction:
+    if not pending.effect_ids:
+        stale_settled = tuple(
+            effect.intent.effect_id
+            for effect in effects
+            if effect.intent.effect_category == EFFECT_CATEGORY_TOOL_CALL
+            and effect.intent.turn == state.turn
+            and effect.settlement is not None
+        )
+        if stale_settled:
+            return RuntimeAction(
+                ACTION_FAIL_INVARIANT,
+                leaf=state.leaf,
+                reason="settled_tool_effect_still_pending",
+                effect_ids=stale_settled,
+                delivery_batch_id=pending.delivery_batch_id,
+                driver=state.driver,
+            )
+        return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="empty_tool_pending")
+    projections = tuple(_effect_by_id(effects, effect_id) for effect_id in pending.effect_ids)
+    live_pending = tuple(projection for projection in projections if projection is not None)
+    if len(live_pending) != len(pending.effect_ids):
+        return RuntimeAction(
+            ACTION_FAIL_INVARIANT,
+            leaf=state.leaf,
+            reason="missing_tool_effect_intent",
+            effect_ids=pending.effect_ids,
+            delivery_batch_id=pending.delivery_batch_id,
+            driver=state.driver,
+        )
+    if state.task_kind not in {"project", "hybrid"}:
+        return RuntimeAction(
+            ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
+            leaf=state.leaf,
+            effect_ids=pending.effect_ids,
+            delivery_batch_id=pending.delivery_batch_id,
+            driver=state.driver,
+            reason="task_kind_not_replayable",
+        )
+    batch = _batch_by_id(delivery_batches, pending.delivery_batch_id)
+    if batch is None:
+        return RuntimeAction(
+            ACTION_FAIL_INVARIANT,
+            leaf=state.leaf,
+            reason="missing_delivery_batch",
+            delivery_batch_id=pending.delivery_batch_id,
+            driver=state.driver,
+        )
+    if batch.can_recover_before_provider_send and all(
+        _safe_tool_projection(item) for item in live_pending
+    ):
+        return RuntimeAction(
+            ACTION_REPLAY_SAFE_TOOL_BATCH,
+            leaf=state.leaf,
+            effect_ids=pending.effect_ids,
+            delivery_batch_id=batch.intent.batch_id,
+            driver=state.driver,
+        )
+    return RuntimeAction(
+        ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
+        leaf=state.leaf,
+        effect_ids=pending.effect_ids,
+        delivery_batch_id=pending.delivery_batch_id,
+        driver=state.driver,
+        reason="tool_effect_not_replayable_as_batch",
+    )
+
+
+def _delivery_pending_action(
+    state: RuntimeOperationState,
+    effects: tuple[RuntimeEffectProjection, ...],
+    delivery_batches: tuple[DeliveryBatchProjection, ...],
+    pending: PendingRuntimeFacts,
+) -> RuntimeAction:
+    batch = _batch_by_id(delivery_batches, pending.delivery_batch_id)
+    if batch is None:
+        return RuntimeAction(
+            ACTION_FAIL_INVARIANT,
+            leaf=state.leaf,
+            reason="missing_delivery_batch",
+            delivery_batch_id=pending.delivery_batch_id,
+            driver=state.driver,
+        )
+    if _batch_fully_settled(batch, effects):
+        # 已结算结果的重发优先于重放：有原结果就不重新执行，
+        # 不调用执行器，不依赖 ReplayClass.SAFE（与未结算工具的
+        # 执行恢复严格分离）。
+        return RuntimeAction(
+            ACTION_REDELIVER_SETTLED_BATCH,
+            leaf=state.leaf,
+            effect_ids=batch.intent.tool_refs,
+            delivery_batch_id=batch.intent.batch_id,
+            driver=state.driver,
+        )
+    if batch.can_recover_before_provider_send:
+        return RuntimeAction(
+            ACTION_REPLAY_SAFE_TOOL_BATCH,
+            leaf=state.leaf,
+            effect_ids=batch.intent.tool_refs,
+            delivery_batch_id=batch.intent.batch_id,
+            driver=state.driver,
+        )
+    return RuntimeAction(
+        ACTION_CONTINUE,
+        leaf=state.leaf,
+        reason="tool_delivery_not_recoverable",
+        delivery_batch_id=pending.delivery_batch_id,
+        driver=state.driver,
+    )
 
 
 def _effect_by_id(
