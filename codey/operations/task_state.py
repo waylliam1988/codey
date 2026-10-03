@@ -19,6 +19,7 @@ reduplicate ``AppContext``.
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
     from codey.app.approval_registry import ApprovalRegistry
     from codey.app.provider_registry import ProviderRegistry
     from codey.app.run_registry import RunRegistry, RunSnapshot
+    from codey.knowledge.store import KnowledgeStore
     from codey.repairs.self_repair import SelfRepairSupervisor
     from codey.research.evidence_ledger import EvidenceLedgerStore
     from codey.runs.ledger import RunLedgerStore
@@ -39,6 +41,22 @@ if TYPE_CHECKING:
     from codey.workspace.changes import ChangeTracker
     from codey.workspace.facts import ProjectFactsStore
     from codey.workspace.revision import WorkspaceRevisionStore
+
+
+@dataclass(frozen=True)
+class TaskSubmissionStores:
+    """Resources captured when a task submission is assembled."""
+
+    project_facts: ProjectFactsStore
+    work_checkpoints: WorkCheckpointStore
+    workspace_revisions: WorkspaceRevisionStore
+    run_ledgers: RunLedgerStore | None
+    run_traces: RunTraceStore | None
+    evidence_ledgers: EvidenceLedgerStore | None
+    managed_outputs: ManagedOutputStore | None
+    knowledge_store: KnowledgeStore | None
+    runtime_mutations: RuntimeMutationLine
+    runtime_effects: RuntimeEffectStore
 
 
 class TaskState(Protocol):
@@ -87,42 +105,10 @@ class TaskState(Protocol):
 
 
 class TaskSubmissionState(TaskState, Protocol):
-    """Application stores needed while constructing ``TaskRunDeps``.
-
-    These are read-only protocol properties so the task spine keeps its small
-    coordination contract while the application submission boundary can expose
-    its persistence dependencies explicitly.
-    """
+    """State plus resources needed to assemble a task run."""
 
     @property
-    def project_facts(self) -> ProjectFactsStore: ...
-
-    @property
-    def work_checkpoints(self) -> WorkCheckpointStore: ...
-
-    @property
-    def workspace_revisions(self) -> WorkspaceRevisionStore: ...
-
-    @property
-    def run_ledgers(self) -> RunLedgerStore | None: ...
-
-    @property
-    def run_traces(self) -> RunTraceStore | None: ...
-
-    @property
-    def evidence_ledgers(self) -> EvidenceLedgerStore | None: ...
-
-    @property
-    def managed_outputs(self) -> ManagedOutputStore | None: ...
-
-    @property
-    def knowledge_store(self) -> object | None: ...
-
-    @property
-    def runtime_mutations(self) -> RuntimeMutationLine: ...
-
-    @property
-    def runtime_effects(self) -> RuntimeEffectStore: ...
+    def task_submission_stores(self) -> TaskSubmissionStores: ...
 
 
-__all__ = ["TaskState", "TaskSubmissionState"]
+__all__ = ["TaskState", "TaskSubmissionState", "TaskSubmissionStores"]

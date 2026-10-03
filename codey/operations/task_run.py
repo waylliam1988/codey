@@ -46,7 +46,7 @@ from codey.operations.task_phases import (
     settle_error_run,
     start_run_operation,
 )
-from codey.operations.task_state import TaskState
+from codey.operations.task_state import TaskState, TaskSubmissionStores
 from codey.providers import controls as provider_controls
 from codey.runtime.core import cancellation
 from codey.runtime.core.outcome import OperationOutcome
@@ -87,6 +87,50 @@ class TaskRunDeps:
     review_log_lines: int = 80
     runtime_mutations: RuntimeMutationLine | None = None
     runtime_effects: RuntimeEffectStore | None = None
+
+    @classmethod
+    def from_submission_stores(
+        cls,
+        *,
+        state: TaskState,
+        stores: TaskSubmissionStores,
+        agent_run: Callable,
+        collect_changes: Callable,
+        run_review: Callable,
+        capture_provider_failure: Callable,
+        run_consensus: Callable | None = None,
+        run_project_audit: Callable | None = None,
+        run_research_advisors: Callable | None = None,
+        search_factory: Callable[[], object] | None = None,
+        is_git_repository: Callable[[str | Path], bool] | None = None,
+        review_fix_turns: int = 12,
+        review_log_lines: int = 80,
+    ) -> TaskRunDeps:
+        """Assemble task dependencies from one explicit resource bundle."""
+        return cls(
+            state=state,
+            agent_run=agent_run,
+            collect_changes=collect_changes,
+            run_review=run_review,
+            capture_provider_failure=capture_provider_failure,
+            run_consensus=run_consensus,
+            run_project_audit=run_project_audit,
+            run_research_advisors=run_research_advisors,
+            workspace_revisions=stores.workspace_revisions,
+            project_facts=stores.project_facts,
+            work_checkpoints=stores.work_checkpoints,
+            run_ledgers=stores.run_ledgers,
+            run_traces=stores.run_traces,
+            evidence_ledgers=stores.evidence_ledgers,
+            managed_outputs=stores.managed_outputs,
+            knowledge_store=stores.knowledge_store,
+            search_factory=search_factory,
+            is_git_repository=is_git_repository,
+            review_fix_turns=review_fix_turns,
+            review_log_lines=review_log_lines,
+            runtime_mutations=stores.runtime_mutations,
+            runtime_effects=stores.runtime_effects,
+        )
 
 
 def prepare_submission(state: TaskState, request: TaskSubmission) -> TaskSubmission | None:

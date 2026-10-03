@@ -2101,7 +2101,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("from codey.agents.runner import", server_source)
         self.assertNotIn("from codey.operations.task_entry import", server_source)
         submit_source = (ROOT / "codey" / "app" / "task_submit.py").read_text(encoding="utf-8")
-        self.assertIn("TaskRunDeps(", submit_source)
+        self.assertIn("TaskRunDeps.from_submission_stores(", submit_source)
         self.assertIn("run_task_submission(", submit_source)
 
     def test_only_kernel_provenance_writes_trusted_side_channel(self) -> None:

@@ -2,6 +2,19 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Explicit task submission resources (no release)
+
+- Introduced the typed `TaskSubmissionStores` bundle and an `AppContext`
+  factory that captures current store handles, including late-bound knowledge
+  storage.
+- Added `TaskRunDeps.from_submission_stores()` and routed HTTP/headless task
+  submission through it. `TaskSubmissionState` now exposes one bundle instead
+  of nine persistence/runtime properties.
+- Full pytest run: **6663 passed, 12 skipped, 1 failed, 1488 subtests
+  passed** in **419.89s**. The failure was a stale architecture assertion for
+  the old constructor spelling; the assertion was updated and targeted tests
+  passed. No release or version bump.
+
 ## Unreleased - Full-tree typing closure (no release)
 
 - Completed the staged TaskState, task-loop, structured verification,

@@ -37,6 +37,7 @@ from codey.ghost.observations import GhostObservationStore
 from codey.ghost.sleep import GhostSleepStore
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.task_state import TaskSubmissionStores
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceStore
@@ -296,7 +297,7 @@ class AppContext:
         self._ghost_observations = value
 
     @property
-    def knowledge_store(self) -> object | None:
+    def knowledge_store(self) -> KnowledgeStore | None:
         with self.lock:
             if not self._knowledge_store_enabled:
                 return self._knowledge_store
@@ -316,12 +317,31 @@ class AppContext:
         return winner
 
     @knowledge_store.setter
-    def knowledge_store(self, value: object | None) -> None:
+    def knowledge_store(self, value: KnowledgeStore | None) -> None:
         with self.lock:
             self._knowledge_store = cast(KnowledgeStore, value) if value is not None else None
             self._knowledge_store_enabled = value is not None
             if value is not None and self._knowledge_root is None and self.state_home is not None:
                 self._knowledge_root = self.state_home / "vault"
+
+    def build_task_submission_stores(self) -> TaskSubmissionStores:
+        """Capture the current resources for one task-run assembly."""
+        return TaskSubmissionStores(
+            project_facts=self.project_facts,
+            work_checkpoints=self.work_checkpoints,
+            workspace_revisions=self.workspace_revisions,
+            run_ledgers=self.run_ledgers,
+            run_traces=self.run_traces,
+            evidence_ledgers=self.evidence_ledgers,
+            managed_outputs=self.managed_outputs,
+            knowledge_store=self.knowledge_store,
+            runtime_mutations=self.runtime_mutations,
+            runtime_effects=self.runtime_effects,
+        )
+
+    @property
+    def task_submission_stores(self) -> TaskSubmissionStores:
+        return self.build_task_submission_stores()
 
     @property
     def self_repair(self) -> SelfRepairSupervisor:

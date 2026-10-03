@@ -314,25 +314,16 @@ def _run_headless_task(
             from codey.knowledge.store import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(request.research_store_root)
-        deps = TaskRunDeps(
+        deps = TaskRunDeps.from_submission_stores(
             state=state,
+            stores=state.task_submission_stores,
             agent_run=agent_run or default_agent_run,
             collect_changes=collect_changes or default_collect_changes,
             run_review=_no_headless_review,
             capture_provider_failure=capture_provider_failure or default_capture_provider_failure,
-            project_facts=state.project_facts,
-            work_checkpoints=state.work_checkpoints,
-            workspace_revisions=state.workspace_revisions,
-            run_ledgers=state.run_ledgers,
-            run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
-            managed_outputs=state.managed_outputs,
-            knowledge_store=state.knowledge_store,
             is_git_repository=is_git_repository,
             review_fix_turns=REVIEW_FIX_TURNS,
             review_log_lines=REVIEW_LOG_LINES,
-            runtime_mutations=state.runtime_mutations,
-            runtime_effects=state.runtime_effects,
         )
         entry_requested = tuple(getattr(request, "requested_capabilities", ()) or ())
         entry_strict = bool(getattr(request, "strict_research", False))

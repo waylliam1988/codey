@@ -2,6 +2,16 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 显式任务提交资源（未发布）
+
+- 新增类型化 `TaskSubmissionStores` bundle 和 `AppContext` 工厂，按提交时
+  的当前句柄构造资源，也覆盖延迟初始化的 knowledge store。
+- 新增 `TaskRunDeps.from_submission_stores()`，HTTP/headless 提交统一通过该
+  装配入口；`TaskSubmissionState` 从 9 个 store/runtime 属性收敛为一个 bundle。
+- 全量 pytest：**6663 passed、12 skipped、1 failed、1488 subtests passed**，
+  耗时 **419.89 秒**。唯一失败是旧构造器文本的架构断言，已更新断言并通过
+  定向复测。未发布、无版本 bump。
+
 ## Unreleased - 全树类型检查收口（未发布）
 
 - 完成 TaskState、task loop、结构化 verification、动态 payload、trace 和

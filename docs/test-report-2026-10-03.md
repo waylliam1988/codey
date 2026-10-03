@@ -1,5 +1,20 @@
 # Test Report (2026-10-03)
 
+## Explicit TaskSubmissionStores
+
+- Added `TaskSubmissionStores`, `AppContext.build_task_submission_stores()`,
+  and `TaskRunDeps.from_submission_stores()`.
+- HTTP and headless submission now use the same typed assembly path; the
+  `TaskSubmissionState` protocol exposes one resource bundle instead of nine
+  store properties.
+- Full-tree mypy: **0 errors**, 363 source files checked; ruff and diff checks
+  passed before pytest.
+- Full command: `python -m pytest -q -o faulthandler_timeout=120`
+- Full result: **6663 passed, 12 skipped, 1 failed, 1488 subtests passed** in
+  **419.89s**. The single failure was a stale architecture assertion for the
+  old constructor spelling. It was corrected and the affected tests passed in
+  targeted recheck; the full suite was not repeated.
+
 ## Final typing boundary pass
 
 The staged cleanup now covers 16 incremental mypy modules, including the

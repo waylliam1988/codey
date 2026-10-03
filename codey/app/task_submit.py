@@ -62,8 +62,9 @@ def run_task(
         state = get_state()
         if review_policy is None:
             review_policy = load_review_policy()
-        deps = TaskRunDeps(
+        deps = TaskRunDeps.from_submission_stores(
             state=state,
+            stores=state.task_submission_stores,
             agent_run=agent_run,
             collect_changes=collect_changes,
             run_review=lambda **kwargs: review_service.run_review(
@@ -73,19 +74,9 @@ def run_task(
             run_consensus=lambda **kwargs: consensus_service.run_consensus(state, **kwargs),
             run_project_audit=lambda **kwargs: consensus_service.run_project_audit(state, **kwargs),
             run_research_advisors=lambda **kwargs: consensus_service.run_research_advisors(state, **kwargs),
-            project_facts=state.project_facts,
-            work_checkpoints=state.work_checkpoints,
-            workspace_revisions=state.workspace_revisions,
-            run_ledgers=state.run_ledgers,
-            run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
-            managed_outputs=state.managed_outputs,
-            knowledge_store=state.knowledge_store,
             is_git_repository=is_git_repository,
             review_fix_turns=REVIEW_FIX_TURNS,
             review_log_lines=REVIEW_LOG_LINES,
-            runtime_mutations=state.runtime_mutations,
-            runtime_effects=state.runtime_effects,
         )
     except Exception:
         # Init-phase failure happens before TaskRuntime owns the slot: release

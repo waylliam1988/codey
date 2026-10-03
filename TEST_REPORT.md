@@ -1,5 +1,18 @@
 # Codey Test Report
 
+## Explicit TaskSubmissionStores (2026-10-03)
+
+- Added the typed `TaskSubmissionStores` bundle and `AppContext` factory.
+- `TaskRunDeps.from_submission_stores()` is now the single HTTP/headless
+  assembly path; the coordination `TaskState` no longer exposes nine store
+  properties.
+- Pre-suite checks: full-tree mypy **0 errors** across 363 files, ruff and
+  `git diff --check` passed.
+- The one full pytest run completed with **6663 passed, 12 skipped, 1 failed,
+  1488 subtests passed** in **419.89s**. The only failure was an architecture
+  assertion naming the old `TaskRunDeps(` constructor; it was updated to the
+  new factory and passed in targeted recheck. The full suite was not rerun.
+
 ## Typed boundary closure (2026-10-03)
 
 - Full-tree mypy: **0 errors**, 363 source files checked.
