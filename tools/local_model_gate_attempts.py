@@ -103,6 +103,7 @@ class RecordingProvider(LocalOpenAIProvider):
         )
         self.directory = directory
         self.exchange_number = 0
+        self.recorder_id = uuid.uuid4().hex
 
     def _post_chat(self, messages, tools=None, *, timeout=None):
         self.exchange_number += 1
@@ -128,6 +129,7 @@ class RecordingProvider(LocalOpenAIProvider):
         })
 
     def _record(self, row: dict) -> None:
+        row = {**row, "recorder_id": self.recorder_id}
         with (self.directory / "provider.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
 
@@ -141,7 +143,9 @@ def case_scope(case: str) -> str:
         return "objective_task"
     if case in {"discussion", "planning"}:
         return "conversation_safety"
-    return "control_plane" if case in {"ghost", "recovery"} else "protocol"
+    if case == "recovery":
+        return "recovery_safety"
+    return "control_plane" if case == "ghost" else "protocol"
 
 
 def case_task_kind(case: str) -> str:
@@ -212,12 +216,12 @@ def _provider_metrics(directory: Path) -> dict:
                 incomplete = True  # The owned worker was interrupted mid-write.
             else:
                 raise
-    requests = {row["exchange"]: row["payload"] for row in rows if row["type"] == "request"}
+    requests = {(row.get("recorder_id"), row["exchange"]): row["payload"] for row in rows if row["type"] == "request"}
     response_rows = [row for row in rows if row["type"] == "response"]
     responses = [row["payload"] for row in response_rows]
     active_reasons, terminal_reasons = [], []
     for row in response_rows:
-        request = requests.get(row.get("exchange"), {})
+        request = requests.get((row.get("recorder_id"), row.get("exchange")), {})
         messages = request.get("messages") or []
         terminal = (not request.get("tools") and request.get("max_tokens") == 1
                     and bool(messages) and messages[-1].get("role") == "tool")

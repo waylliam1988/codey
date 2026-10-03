@@ -21,7 +21,8 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
     def test_cases_include_tests_research_and_recovery_axes(self) -> None:
         for case in ("tests", "research", "recovery"):
             self.assertIn(case, gate.CASES)
-            gate._task_for(case)
+            if case != "recovery":
+                gate._task_for(case)
 
     def test_default_cases_include_configured_research(self) -> None:
         self.assertIn("research", gate.DEFAULT_CASES)
@@ -30,14 +31,14 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
     def test_all_agent_cases_have_fixtures(self) -> None:
         for case in (
             "create", "edit", "references", "hybrid", "discussion", "planning",
-            "auto", "tests", "research", "recovery",
+            "auto", "tests", "research",
         ):
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 gate._make_fixture(root, case)  # must not raise
 
     def test_empty_cases_create_no_files(self) -> None:
-        for case in ("create", "discussion", "auto", "research", "recovery"):
+        for case in ("create", "discussion", "auto", "research"):
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 gate._make_fixture(root, case)
@@ -110,9 +111,9 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
         self.assertFalse(gate._ran_zero_tests("Ran 3 tests in 0.001s\nOK"))
         self.assertFalse(gate._ran_zero_tests(""))
 
-    def test_recovery_roundtrip_preserves_case_identity(self) -> None:
-        result = gate.run_ghost_case("recovery")
-        self.assertEqual(result["case"], "recovery")
+    def test_ghost_roundtrip_preserves_case_identity(self) -> None:
+        result = gate.run_ghost_case()
+        self.assertEqual(result["case"], "ghost")
         self.assertTrue(result["ok"])
 
 

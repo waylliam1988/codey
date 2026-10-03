@@ -2,13 +2,13 @@
 
 **让你已经能用的网页 AI，安全地在本地帮你写代码、查资料、跑验证。**
 
-[![版本](https://img.shields.io/badge/version-0.5.10-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.5.11-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全边界)
 
 [English](README.md)
 
-版本：`0.5.10`
+版本：`0.5.11`
 
 Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、StepFun、Qwen 和
 GLM，也可以连接本地 OpenAI-compatible 模型，然后把它们接到你电脑上的受控工作区。
@@ -68,13 +68,16 @@ python -m codey agent --provider qwen --project E:\my-project --max-turns 10 "�
 python -m codey agent --json --provider qwen --project E:\my-project "修复失败的测试"
 ```
 
+CLI、网页事件和 headless JSONL 共用运行身份与工具状态。恢复保留原任务要求；
+已结算结果可继续交付，未结算的危险写操作不会被盲目重试。
+
 ## 文档
 
 - [详细能力说明](docs/codey_capabilities.zh-CN.md)
 - [路线图](ROADMAP.zh-CN.md)
 - [版本更新记录](CHANGELOG.zh-CN.md)
 - [项目结构与职责地图](docs/project_structure.zh-CN.md)
-- [0.5.10 版本验收记录](docs/release_0.5.10.zh-CN.md)
+- [0.5.11 发布验收](docs/release_0.5.11.zh-CN.md)（[早期版本提交记录](docs/release_0.5.10.zh-CN.md)）
 - [Ghost 未来方向](docs/ghost_future_direction.zh-CN.md)
 
 ## 安全边界

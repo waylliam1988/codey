@@ -1,5 +1,122 @@
 # Codey Test Report
 
+## 0.5.11 event publication and real recovery release (2026-10-03)
+
+Baseline: `42f528a1`, initially clean. The implementation and full matrices were
+validated with source version `0.5.10`; the user's final instruction changed the
+release to `0.5.11` and explicitly requested **no further full pytest**.
+This release includes commit/push, `v0.5.11` and a GitHub Release, with no installer.
+
+### Behavior and TDD
+
+Twelve new test files contain **48 cases**: 47 were included in the passing full
+suite, and one UTF-8 journal regression was added afterward and run in scoped
+verification. Defect regressions were observed red before fixes; existing correct
+failure behavior and valid controls were also locked, without claiming all cases
+were initially red.
+
+- Publish run/session identity, mode and exact tool status once at `AppContext`.
+  CLI uses canonical names; actual SSE wire and JSONL share core fields. Pure,
+  bounded machine-event/receipt projection moves to `app/event_payloads.py`;
+  old headless projection exports/duplicate run-field wiring are removed.
+- Preserve the original task prompt during recovery. The project adapter passes
+  the real fresh-window signal: new native windows receive original goals and
+  settled facts as text, while retained native windows close original call IDs.
+- Exact boolean verification status and authoritative recorded exits cannot be
+  rescued by truthy text or an audit fallback. Terminal events release mode data.
+- Real headless connection/cancel/delivery failures match durable terminal state,
+  close the connected provider and never announce `done` or duplicate the edit.
+- Replace recovery's Ghost roundtrip with two owned processes and the formal
+  entry: real edit settlement, `os._exit(75)`, disk recovery, original result
+  delivery, verification and `done`. Check exact requested content independently
+  of tests/hashes, preserve original policy and call ID receipts, and count one edit.
+- Associate diagnostic exchanges by recorder instance plus exchange number;
+  restart numbering cannot misclassify active responses as terminal receipts.
+- Gate 2 uses one fixed CI/local list; missing tests, failures and skips fail it.
+  Authentication, grants, native pairing, source state, SSE, diagnostics and
+  recovery are deterministic contract checks, independent of the live model.
+
+The added UTF-8 test injected a non-UTF-8 default decoder into real Unicode
+journal reads and failed with `UnicodeDecodeError` before explicit UTF-8 reads.
+An initial missing test import was corrected first and is not defect evidence.
+This late change affects only the gate's journal reader, not task authorization,
+execution or completion semantics. No new fallback, skip/xfail, threshold increase
+or historical parity-baseline rewrite was introduced.
+
+### Failures retained and final full result
+
+Affected-area preflight first produced `7 failed, 1370 passed, 232 subtests`:
+old private projection/fixture references and a worker test leaking `NATIVE_TOOLS`
+into later native tests. Formal-owner migrations and environment isolation fixed
+these; the wider rerun passed `1400 cases, 232 subtests`. Architecture/invariant
+and scoped checks passed `182 cases, 381 subtests`.
+
+First full run: **1 failed, 7010 passed, 6 skipped, 1497 subtests in 462.18s**.
+The lone failure was another old `_int_or_zero` headless import. Its overflow
+assertion now exercises the formal machine-event projection; `83` scoped tests
+passed. The failure was not hidden by restoring a compatibility export.
+
+Last full run, Windows/Python 3.12.8, `RUN_BROWSER_E2E=1`, real Edge with scripted
+providers, full local permissions:
+`python -u -m pytest -q -o faulthandler_timeout=120 -rs`
+→ **7011 passed, 6 skipped, 1497 subtests passed in 485.38s**, zero failures.
+The six skips are two Windows-inapplicable POSIX permission-bit cases, one POSIX
+process-group case, one POSIX absolute-path case and two `O_NOFOLLOW` cases.
+Raw full logs (ignored):
+`.e2e-artifacts/release-0.5.10-events-full-pytest-20261003.log` and
+`.e2e-artifacts/release-0.5.10-events-final-full-pytest-20261003.log`.
+
+After that full run, explicit UTF-8 gate reads, their new regression and the
+`0.5.11` version marker were verified only with scoped checks, per user direction:
+`python -m tools.machine_contract_gate` → **206 passed, no skips in 28.38s**;
+the focused recovery/oracle/UTF-8 suite → **6 passed**. The final state is not
+misreported as a newly rerun full suite or as including all 48 cases in that full.
+Ruff, mypy under the repository configuration (365 files), compileall and diff
+checks passed. Mypy retains its informational untyped-body note; it is not a
+strict whole-program proof. The release-doc/version smoke passed `1` case. Static-serving, packaging and
+adapter-version checks initially passed `87 cases, 3 privilege skips, 6 subtests`
+under the restricted sandbox. The same scoped modules with full permissions
+passed **90 cases, 6 subtests, no skips in 8.21s**. No further full suite was run.
+
+### Live provider evidence
+
+Endpoint: `http://127.0.0.1:5001/v1`; actual reported model ID:
+`koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`.
+Quantization/weights/template are not independently verified; temperature is 0,
+no seed was sent, and server-default active output budgets are not client caps.
+
+| Scope | JSON | Native |
+| --- | --- | --- |
+| Complete pre-version/UTF-8 matrix | 13/13 | 13/13 |
+| Objective artifact tasks in those matrices | 6/6, independent artifacts 6/6 | 6/6, independent artifacts 6/6 |
+| Post-change real recovery recheck, source 0.5.11 | 1/1 | 1/1 |
+
+Both final recovery rechecks preserve the original policy/result, retain the
+original call ID in receipts, execute the edit once, independently verify exact
+content and tests, and end `done` in a second process. New-window text handoff is
+not claimed as an old native call ID closed in a new remote history. Retained
+history ID closure and failed/unknown-result recovery are separate mandatory checks.
+
+Ignored artifacts: `release-0.5.10-events-accepted-json-20261003/`,
+`release-0.5.10-events-accepted-native-20261003/`,
+`release-0.5.11-recovery-json-20261003/`,
+`release-0.5.11-recovery-native-20261003/` under `.e2e-artifacts/`.
+Earlier exploratory full JSON attempts also passed 13/13 but are not treated as
+frozen final evidence. Runtime metadata records the baseline HEAD and selected
+working-file hashes; final recovery metadata records the later reader.
+
+### Proof and remaining limits
+
+Existing real-transition BFS reached a fixed point: **44 states, 134 accepted
+edges**, with one safe batch and two provider-effect IDs. Permission enumeration
+checked **512 grant subsets × 2 denial patterns** (none or all granted denied).
+The real-log recovery test covers 27 three-action traces for each of three exit
+sequences. These bounded invariants and observed crash points do not prove the
+whole program free of bugs/dead code, arbitrary OS schedules safe, or all models
+reliable. No cross-model success rate, answer-quality, latency/token improvement
+or new Windows Python 3.13 full-run result is claimed. Historical records below
+remain unchanged. See [release review](docs/release_0.5.11.zh-CN.md).
+
 ## Operator and result boundary hardening (2026-10-03, no release)
 
 Baseline: `5999b63a`, initially clean; version remains `0.5.10`. Scope is the

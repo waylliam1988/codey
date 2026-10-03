@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.app.headless_runner import headless_event_payload
+from codey.app.event_payloads import machine_event_payload
 from codey.app.http_plumbing import write_sse_event
 from codey.operations.kernel_events import _emit_tool_results
 from codey.operations.kernel_execution import execute_turn
@@ -34,7 +34,7 @@ def test_real_tool_execution_has_identical_stream_semantics(name, ok, text, audi
     assert write_sse_event(handler, ui, event_id=1)
     line = next(line for line in handler.wfile.getvalue().decode().splitlines() if line.startswith("data: "))
     sse = json.loads(line[6:])
-    headless = headless_event_payload(ui)
+    headless = machine_event_payload(ui)
     for key in ("run_id", "session_id", "tool_id", "tool_name", "ok", "status", "changed", "truncated", "result"):
         assert headless[key] == sse[key]
     assert headless["ok"] is ok

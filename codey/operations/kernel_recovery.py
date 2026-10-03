@@ -94,7 +94,7 @@ def apply_recovery_first(
     try:
         if provider_session_changed:
             return (
-                "Continue the unfinished task using the latest local tool results below.\n\n"
+                prompt + "\n\nContinue the unfinished task using the latest local tool results below.\n\n"
                 + format_results(pending_initial, session),
                 None,
             )
@@ -103,7 +103,7 @@ def apply_recovery_first(
             if recovered_messages:
                 return prompt, recovered_messages
         return (
-            "Continue the unfinished task using the latest local tool results below.\n\n"
+            prompt + "\n\nContinue the unfinished task using the latest local tool results below.\n\n"
             + format_results(pending_initial, session),
             pending_native_messages,
         )

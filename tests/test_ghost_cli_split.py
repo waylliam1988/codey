@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 import codey.app.cli as cli
-from codey.app.headless_runner import _bounded_receipt, headless_event_payload
+from codey.app.event_payloads import bounded_receipt, machine_event_payload
 
 
 def _run_ghost(action, **kwargs):
@@ -138,7 +138,7 @@ class HeadlessPayloadParityTests(unittest.TestCase):
               "exit_code": 1}, "exit_code"),
         ]
         for event, key in cases:
-            payload = headless_event_payload({**base, **event})
+            payload = machine_event_payload({**base, **event})
             self.assertIsNotNone(payload, event["type"])
             assert payload is not None
             self.assertEqual(payload["type"], event["type"])
@@ -146,11 +146,11 @@ class HeadlessPayloadParityTests(unittest.TestCase):
             self.assertIn(key, payload)
 
     def test_unknown_returns_none(self) -> None:
-        self.assertIsNone(headless_event_payload({"type": "nope"}))
-        self.assertIsNone(headless_event_payload("bad"))  # type: ignore[arg-type]
+        self.assertIsNone(machine_event_payload({"type": "nope"}))
+        self.assertIsNone(machine_event_payload("bad"))  # type: ignore[arg-type]
 
-    def test_task_done_nests_bounded_receipt(self) -> None:
-        payload = headless_event_payload({
+    def test_task_done_nestsbounded_receipt(self) -> None:
+        payload = machine_event_payload({
             "type": "task_done", "run_id": "r", "session_id": "s",
             "receipt": {"schema_version": 1,
                         "display": {"summary": "ok"},
@@ -167,10 +167,10 @@ class HeadlessPayloadParityTests(unittest.TestCase):
 
 class BoundedReceiptParityTests(unittest.TestCase):
     def test_empty_receipt(self) -> None:
-        self.assertEqual(_bounded_receipt({}), {})
+        self.assertEqual(bounded_receipt({}), {})
 
     def test_all_sections(self) -> None:
-        out = _bounded_receipt({
+        out = bounded_receipt({
             "schema_version": 1,
             "display": {"summary": "s", "detail": "d"},
             "work": {"changed_count": "3", "mode": "m", "restore_available": 1},

@@ -43,6 +43,9 @@ jobs:
       - name: Full-tree mypy
         run: python -m mypy codey
 
+      - name: Required machine contracts (no skips)
+        run: python -m tools.machine_contract_gate
+
       - name: Pytest
         run: python -m pytest -q -o faulthandler_timeout=120
 
@@ -86,6 +89,9 @@ jobs:
 
       - name: POSIX file-boundary regressions
         run: python -m pytest -q -o faulthandler_timeout=120 tests/test_changes.py tests/test_workspace_paths.py tests/test_bounded_capture_and_context.py tests/test_coldstart_hardening.py
+
+      - name: Required machine contracts (no skips)
+        run: python -m tools.machine_contract_gate
 
       - name: JavaScript syntax
         run: |

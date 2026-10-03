@@ -2,7 +2,29 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
-## Unreleased - Operator and Result Boundary Hardening
+## 0.5.11 - Common Events and Real Recovery
+
+- Publish common run/session identity, mode and strict status once; CLI, SSE
+  and headless consume it. Move bounded machine projections to one pure module.
+- Preserve the original recovery goal and distinguish retained/fresh native
+  windows; deliver settled results without repeating writes.
+- Replace the recovery storage roundtrip with real execute/crash/restart/resume;
+  independently check exact content, verification, policy and receipt identity.
+- Add required CI/local machine checks that reject skips, restarted-request
+  diagnostic identity and explicit UTF-8 journal reads. No legacy exports added.
+- Includes the operator/result/SSE hardening checkpoint below.
+- Last full suite: **7011 passed, 6 skipped, 1497 subtests passed in 485.38s**, including real Edge UI E2E.
+  Later UTF-8/version changes were scoped only as requested: **206 required
+  checks, no skips**; full model matrices **13/13 each**, affected recovery
+  rechecks **1/1 each**. Scope and earlier failures stay in [TEST_REPORT](TEST_REPORT.md).
+- Release `v0.5.11` with no installer; update source version, README, source maps,
+  gate instructions and [release review](docs/release_0.5.11.zh-CN.md).
+
+## Development checkpoint included in 0.5.11
+
+The following record retains its earlier validation and no-release status.
+
+### Operator and result boundary checkpoint (before release)
 
 - Authenticate the local HTTP/SSE operator with a single-use, expiring launch
   credential and a process-local cookie; exchange it before UI state requests.

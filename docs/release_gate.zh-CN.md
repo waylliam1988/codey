@@ -35,10 +35,11 @@ python -m pytest -q -o faulthandler_timeout=120
 对应 opencode 的 `test:httpapi --mode coverage/auth/effect --fail-on-missing --fail-on-skip`。
 
 ```powershell
-python -m pytest tests/test_cli.py tests/test_headless_runner.py tests/test_release_gate_tool_order.py tests/test_headless_real_kernel_lifecycle.py -q
+python -m tools.machine_contract_gate
 ```
 
-- 这里用脚本 provider 检查入口与事件，不需要运行模型。实际聊天与 agent 执行属于 Gate 3。
+- 必跑清单由 `tools/machine_contract_gate.py` 维护；文件缺失、失败或任何 skip 均关闭此门，CI 与本地使用同一命令。需要 Node.js 执行实际 SSE JavaScript 回归。
+- 用脚本 provider 与真实存储检查认证、授权、取消/连接/交付失败、原生 ID 配对、来源状态、SSE 游标与输出身份、实际请求诊断及恢复。实际模型行为属于 Gate 3。
 - JSONL 每行必须合法；任务事件有一致的 `schema_version/type/run_id/session_id`，全局连接状态按自己的事件契约检查；终态事件必须与实际结果一致。
 
 ## 4. Gate 3：本地模型实机（发布前必须全过）
@@ -72,7 +73,7 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 | `ghost` | 隔离 state 下写→按 run_id 读→检索→删→不可检索 | roundtrip 完整；独立控制面检查，不计入模型任务成功率，不读取默认用户状态 |
 | `tests` | 为已有实现补充测试 | 测试通过、原实现未改动、变异实现必须被测试拒绝 |
 | `research` | 显式 Research：查官方 pathlib 文档 | 实际搜索和打开来源、隔离账本/报告要求通过、正常 `done` |
-| `recovery` | 隔离 state 下恢复控制面 roundtrip | case 身份保持一致；写→读→检索→删完整 |
+| `recovery` | 两个独立进程：真实编辑结算后强制退出，再从正式日志恢复 | 原结果已交付、编辑只执行一次、原策略保持、文件精确符合请求、独立测试通过、最终 `done` |
 
 实机要求：
 
@@ -82,6 +83,8 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 - 首次探测后固定 endpoint/model，聊天与 agent 均用同一生产 provider 配置；采样 temperature 固定 0，但未发送 seed，不能宣称完全确定性。`--protocol native/json` 分别测原生/文本 JSON 路径。
 - `--timeout` 是单个案例的总进程截止时间，包含工具和独立验证；到期终止 owned process tree。请求 timeout 不超过该预算。活动轮次生成长度由服务端默认决定，不把服务端报告的默认值当作请求硬上限。原生终止收据撤回工具，显式 `max_tokens=1`；该确认不替代已验证的最终回答。
 - 原生活动轮次使用 `tool_choice=required`、`parallel_tool_calls=false`，提示每轮一个调用并等待结果；仍校验服务端实际返回的所有调用，不假定它执行了单调用字段。完成/取消/预算终止时撤回工具，关闭 call id 且不执行后续调用。[实机根因与 12/12 复测](local_native_protocol_2026-10-02.zh-CN.md)。
+- recovery 确定性预检走同一正式入口与存储，仅脚本化 HTTP 响应；实机使用真实模型。新 provider 窗口接收原任务与恢复事实文本，原 call ID 保留在收据中，不向新窗口发送孤立的旧 tool result。同窗口 ID 关闭、失败保持失败、未结算危险动作不重放由机器契约验证。
+- 重启后 exchange 可能从 1 开始，请求/响应按 recorder 实例 ID 与 exchange 共同关联；诊断 hash 不能替代完成证明。
 - 元数据保存客户端上下文预算、服务端可查询信息、Python、Git commit 和脚本哈希；未报告的聊天模板/量化明确标为未知。usage 和 finish_reason 从实际响应记录，不凭模型总结估算。
 - summary 每完成一个尝试就更新，异常和超时也计入分母。`objective_tasks.passed` 与 `artifacts_correct/artifacts_observed` 分开：代码正确、但协议未结束时不能计为任务完成。
 - `python3 -m unittest` 在 Windows 策略里会被拒，门槛任务一律写 `python -m unittest [discover]`。
@@ -95,8 +98,8 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 - `TEST_REPORT.md` 追加一条：范围、验证命令、实际 `/models` ID、JSONL 路径、全量 suite 数字，不沿用上一次模型名。
 - 开发验证更新 `Unreleased`；版本发布更新源码版本、README、中英文 changelog、必要的
   当前架构/能力文档与 TEST_REPORT。全量数字必须等实际测试结束后记录。
-- tag 与 GitHub Release 按用户明确选择执行，不从版本提交自动推导。本次 0.5.10
-  沿用版本 commit + push，不创建 tag 或 GitHub Release。
+- tag 与 GitHub Release 按用户明确选择执行，不从版本提交自动推导。本次 0.5.11
+  按本轮明确授权创建 `v0.5.11` tag 与 GitHub Release，不制作安装包。早先仅版本提交的验收记录保留为历史。
 
 ## 6. Bug 闭环（本次已在用）
 

@@ -86,7 +86,7 @@ class ReleaseGateToolOrderTests(unittest.TestCase):
 
     def test_full_projection_chain_passes_gate(self) -> None:
         import tools.local_model_release_gate as gate
-        from codey.app.headless_runner import headless_event_payload
+        from codey.app.event_payloads import machine_event_payload
         from codey.operations import kernel_events as kev
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.policies.task_policy import TaskPolicy
@@ -122,7 +122,7 @@ class ReleaseGateToolOrderTests(unittest.TestCase):
         for ev in events:
             ui = run_event_ui_payload("r1", "s1", ev)
             self.assertIsNotNone(ui)
-            payload = headless_event_payload(ui)  # type: ignore[arg-type]
+            payload = machine_event_payload(ui)  # type: ignore[arg-type]
             self.assertIsNotNone(payload)
             rows.append(payload)  # type: ignore[arg-type]
         rows.append({"type": "task_done", "run_id": "r1", "session_id": "s1", "stop_reason": "done"})

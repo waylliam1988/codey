@@ -16,9 +16,9 @@ import unittest
 
 class HeadlessMissingToolNameStaysMissingTests(unittest.TestCase):
     def test_tool_started_without_canonical_stays_missing(self) -> None:
-        from codey.app.headless_runner import headless_event_payload
+        from codey.app.event_payloads import machine_event_payload
 
-        payload = headless_event_payload(
+        payload = machine_event_payload(
             {"type": "tool_started", "run_id": "r1", "session_id": "s1", "kind": "read", "turn": 1}
         )
         assert payload is not None
@@ -26,9 +26,9 @@ class HeadlessMissingToolNameStaysMissingTests(unittest.TestCase):
         self.assertFalse(str(payload.get("tool_name") or "").strip(), f"tool_name must stay missing: {payload}")
 
     def test_tool_without_canonical_stays_missing(self) -> None:
-        from codey.app.headless_runner import headless_event_payload
+        from codey.app.event_payloads import machine_event_payload
 
-        payload = headless_event_payload(
+        payload = machine_event_payload(
             {"type": "tool", "run_id": "r1", "session_id": "s1", "kind": "search", "turn": 1, "result": "x"}
         )
         assert payload is not None

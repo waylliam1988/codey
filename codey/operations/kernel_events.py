@@ -12,6 +12,7 @@ from typing import Any
 
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.utils.refs import strict_exit_code
 
 __all__: list[str] = []
 
@@ -115,23 +116,15 @@ def _emit_tool_results(
         ok = raw_ok if type(raw_ok) is bool else False
         # Strict exit projection: only real ints pass. A present-but-invalid
         # audit/receipt exits (bool/str/float) are omitted, never coerced to 0.
-        exit_code = None
-        try:
-            from codey.utils.refs import strict_exit_code as _strict_exit
-        except Exception:
-            _strict_exit = None  # type: ignore[assignment]
-        record_exit = record.get("exit_code")
-        if record_exit is not None:
-            try:
-                exit_code = _strict_exit(record_exit) if _strict_exit is not None else None
-            except Exception:
-                exit_code = None
-        if exit_code is None and isinstance(result.audit, dict) and result.audit.get("exit_code") is not None:
-            try:
-                raw_exit = result.audit.get("exit_code")
-                exit_code = _strict_exit(raw_exit) if _strict_exit is not None else None
-            except Exception:
-                exit_code = None
+        # A present record is authoritative even when its exit is unknown.
+        # Only absent exits may use the current result's structured audit.
+        raw_exit = record["exit_code"] if "exit_code" in record else result.audit.get("exit_code")
+        exit_code = strict_exit_code(raw_exit)
+        audit = dict(result.audit)
+        if exit_code is None:
+            audit.pop("exit_code", None)
+        else:
+            audit["exit_code"] = exit_code
         display = str(result.model_text or "")
         if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"}:
             display = next(
@@ -146,7 +139,7 @@ def _emit_tool_results(
             exit_code=exit_code,
             truncated=result.truncated,
             canonical=result.canonical,
-            audit=result.audit,
+            audit=audit,
             presentation={"result": display[:500], **dict(result.presentation)},
         )
         canonical_name = str(getattr(result.call, "name", "") or "").strip().lower()

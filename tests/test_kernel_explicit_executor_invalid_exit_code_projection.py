@@ -42,7 +42,7 @@ class ExplicitExecutorInvalidExitCodeProjectionTests(unittest.TestCase):
         return session, results[0]
 
     def test_invalid_exits_fail_closed_through_all_projections(self) -> None:
-        from codey.app import headless_runner as hr
+        from codey.app.event_payloads import machine_event_payload
         from codey.operations import kernel_events as kev
         from codey.runtime.observe.events import run_event_ui_payload
 
@@ -72,7 +72,7 @@ class ExplicitExecutorInvalidExitCodeProjectionTests(unittest.TestCase):
                 "exit_code", payload,
                 f"UI payload must omit invalid exit {bad!r}: {payload!r}",
             )
-            headless = hr._payload_tool({"run_id": "r", "session_id": "s"}, payload)
+            headless = machine_event_payload(payload)
             self.assertNotIn(
                 "exit_code", headless,
                 f"headless payload must omit invalid exit {bad!r}: {headless!r}",
@@ -80,7 +80,7 @@ class ExplicitExecutorInvalidExitCodeProjectionTests(unittest.TestCase):
             self.assertFalse(headless.get("ok", True))
 
     def test_valid_int_zero_still_passes(self) -> None:
-        from codey.app import headless_runner as hr
+        from codey.app.event_payloads import machine_event_payload
         from codey.operations import kernel_events as kev
         from codey.runtime.observe.events import run_event_ui_payload
 
@@ -98,7 +98,7 @@ class ExplicitExecutorInvalidExitCodeProjectionTests(unittest.TestCase):
         payload = run_event_ui_payload("r", "s", event)
         assert payload is not None
         self.assertEqual(payload.get("exit_code"), 0)
-        headless = hr._payload_tool({"run_id": "r", "session_id": "s"}, payload)
+        headless = machine_event_payload(payload)
         self.assertEqual(headless.get("exit_code"), 0)
 
 

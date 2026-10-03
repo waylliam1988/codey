@@ -125,9 +125,10 @@ class OverflowSweepTests(unittest.TestCase):
         from codey.knowledge.graph import _as_int
         self.assertEqual(_as_int(float("inf"), 0), 0)
 
-    def test_headless_int_or_zero_inf(self):
-        from codey.app.headless_runner import _int_or_zero
-        self.assertEqual(_int_or_zero(float("inf")), 0)
+    def test_machine_event_turn_count_inf_stays_bounded(self):
+        from codey.app.event_payloads import machine_event_payload
+        payload = machine_event_payload({"type": "task_start", "max_turns": float("inf")})
+        self.assertEqual(payload["max_turns"], 0)
 
     def test_knowledge_note_as_float_huge(self):
         from codey.knowledge.note import _as_float
@@ -232,13 +233,13 @@ class SchemaStrictTests(unittest.TestCase):
         self.assertFalse(_valid_ledger_payload({**base, "schema_version": 1.0}))
         self.assertTrue(_valid_ledger_payload({**base, "schema_version": 1}))
 
-    def test_bounded_receipt_only_v1(self):
-        from codey.app.headless_runner import _bounded_receipt
+    def testbounded_receipt_only_v1(self):
+        from codey.app.event_payloads import bounded_receipt
         good = {"schema_version": 1, "display": {"summary": "s", "detail": "d"}}
-        self.assertEqual(_bounded_receipt(good).get("schema_version"), 1)
+        self.assertEqual(bounded_receipt(good).get("schema_version"), 1)
         for bad in (True, 0, 2, 1.0, "1", None):
             payload = {"schema_version": bad, "display": {"summary": "s", "detail": "d"}}
-            self.assertNotIn("schema_version", _bounded_receipt(payload),
+            self.assertNotIn("schema_version", bounded_receipt(payload),
                              msg=f"bad version {bad!r} must not echo")
 
 

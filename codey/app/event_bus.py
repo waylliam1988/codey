@@ -14,6 +14,7 @@ RUN_EVENT_TYPES = {
     "task_start",
     "turn",
     "tool",
+    "tool_started",
     "info",
     "reply",
     "review",
@@ -35,11 +36,13 @@ def stamp_run_scope(payload: dict, active) -> dict:
     if (
         active is not None
         and payload.get("type") in RUN_EVENT_TYPES
-        and not payload.get("run_id")
-        and payload.get("session_id") in (None, active.session_id)
+        and payload.get("run_id") in (None, "", active.run_id)
+        and payload.get("session_id") in (None, "", active.session_id)
     ):
-        payload["run_id"] = active.run_id
-        payload.setdefault("session_id", active.session_id)
+        if not payload.get("run_id"):
+            payload["run_id"] = active.run_id
+        if not payload.get("session_id"):
+            payload["session_id"] = active.session_id
     return payload
 
 

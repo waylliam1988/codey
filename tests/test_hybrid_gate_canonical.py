@@ -10,7 +10,7 @@ import unittest
 
 
 def _full_chain_rows(testcase, run_id="r1", session_id="s1"):
-    from codey.app.headless_runner import headless_event_payload
+    from codey.app.event_payloads import machine_event_payload
     from codey.operations import kernel_events as kev
     from codey.operations.task_session import TaskSession
     from codey.operations.task_session import turn_effect_id as _tid
@@ -52,7 +52,7 @@ def _full_chain_rows(testcase, run_id="r1", session_id="s1"):
     for ev in events:
         ui = run_event_ui_payload(run_id, session_id, ev)
         testcase.assertIsNotNone(ui)
-        payload = headless_event_payload(ui)  # type: ignore[arg-type]
+        payload = machine_event_payload(ui)  # type: ignore[arg-type]
         testcase.assertIsNotNone(payload)
         rows.append(payload)  # type: ignore[arg-type]
     rows.append(

@@ -70,7 +70,10 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/providers/local_response_codec.py` | Local response envelopes and model dialects, before the kernel |
 | `codey/agents/context_compaction.py`, `providers/local_openai.py` | Exact native history pairing before compaction/request; actual serialized-request diagnostic hook |
 | `codey/research/source_gateway.py`, `tools.py` | Explicit acquisition/tool outcomes; cancellation/deadlines propagate without fallback acquisition |
-| `codey/app/event_bus.py`, `web/assets/sse.js`, `app/headless_runner.py` | Replay cursors, reconciliation and consistent structured event projections |
+| `codey/app/context.py`, `event_bus.py`, `event_payloads.py` | Common run identity/mode and strict status publication; replay bus and pure bounded machine-event/receipt projection |
+| `codey/app/headless_runner.py`, `cli.py`, `web/assets/sse.js` | Consume common events as JSONL, CLI text and browser reconciliation without inferring success |
+| `tools/machine_contract_gate.py` | Shared CI/local required checks; missing tests, failures and skips close the gate |
+| `tools/local_model_gate_recovery.py` | Gate-only process interruption and independent recovery verification using the formal entry, with no model loop of its own |
 | `codey/operations/research_iteration.py` | `run_research_iteration`, the pipeline's shared-kernel adapter |
 
 ## Durable runtime and storage
@@ -80,6 +83,8 @@ Using web tools in ordinary coding does not automatically require research notes
 and `runtime/observe` read-only observations. The runtime layer does not depend
 on task orchestration. See [runtime architecture](runtime_architecture.zh-CN.md).
 
+A fresh provider window retains the original task prompt and appends settled
+facts; a retained native window receives results with their original IDs.
 Task facts are reconstructed from original log/receipts. Research evidence is a
 domain projection, not a competing task log. Managed outputs and recovery
 receipts may retain source text/tool output locally; audit summaries and model

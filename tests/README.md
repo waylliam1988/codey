@@ -6,6 +6,37 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+## Required event and recovery contracts
+
+`python -m tools.machine_contract_gate` runs the fixed CI/local selection;
+missing checks, failures and skips fail this gate. Node.js is required.
+Live release checks stay separate from deterministic contract checks.
+
+- `test_event_outputs_share_run_identity.py`,
+  `test_cli_tool_progress_uses_canonical_name.py`: run identity and strict tool
+  fields agree in published events, SSE wire bytes, JSONL and CLI text.
+- `test_event_receipt_verification_requires_exact_boolean.py`,
+  `test_tool_event_exit_uses_authoritative_record.py`: malformed truthy status
+  and invalid recorded exits cannot appear as success.
+- `test_published_run_modes_are_released_at_terminal.py`: terminal publication
+  releases per-run metadata even with an explicit mode.
+- `test_headless_failure_events_match_durable_lifecycle.py`: connection failure,
+  cancellation and delivery failure match durable state, close the connected
+  provider and do not duplicate writes.
+- `test_recovery_handoff_preserves_original_task_prompt.py`: append recovered
+  facts to the original prompt; retain same-window native result delivery.
+- `test_release_gate_recovery_interrupts_and_resumes.py`: two real child
+  processes execute, crash after settlement, restore and finish through the
+  formal task entry in JSON/native; the edit runs once.
+- `test_recovery_gate_requires_exact_checkpoint_content.py`: matching hashes
+  and passing tests cannot replace independent requested-content checks.
+- `test_recovery_gate_reads_utf8_receipts.py`: UTF-8 journals remain readable
+  under non-UTF-8 default locales.
+- `test_gate_diagnostics_separate_restarted_exchanges.py`: recorder instances
+  keep restarted exchange numbers and terminal budgets distinct.
+- `test_machine_contract_gate_rejects_skipped_checks.py`: required checks
+  cannot silently pass by being skipped.
+
 ## Kernel
 
 - `test_task_kernel_remaining.py`: JSON/native parity, policy snapshots,

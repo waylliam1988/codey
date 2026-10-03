@@ -222,6 +222,7 @@ def run(request: AgentRequest) -> RunResult:
                 delivered=delivered,
                 start_turn=resume_start,
                 initial_results=initial_results or None,
+                provider_session_changed=opened_fresh_chat,
             ),
             execution=KernelExecutionDeps(
                 project_path=request.project,

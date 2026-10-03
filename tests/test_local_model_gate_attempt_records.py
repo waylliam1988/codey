@@ -154,9 +154,9 @@ def test_task_axis_covers_release_matrix_vocabulary():
     assert runner.case_task_kind("recovery") == "recovery"
 
 
-def test_tests_is_objective_and_recovery_is_control_plane():
+def test_tests_is_objective_and_recovery_is_restart_safety():
     assert runner.case_scope("tests") == "objective_task"
-    assert runner.case_scope("recovery") == "control_plane"
+    assert runner.case_scope("recovery") == "recovery_safety"
 
 
 def test_failure_axis_detects_restart_duplicate_and_resume_evidence():

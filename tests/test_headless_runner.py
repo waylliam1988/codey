@@ -8,7 +8,8 @@ from unittest import mock
 
 from codey.agents.request import AgentRequest, ShellApprovalRequest
 from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS
-from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, headless_event_payload, run_headless
+from codey.app.event_payloads import machine_event_payload
+from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, run_headless
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.core.run_result import RunResult
@@ -316,8 +317,8 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertIn("READONLY_KERNEL_MARKER", main_provider.prompts[-1])
         self.assertNotIn("Ghost", main_provider.prompts[0])
 
-    def test_headless_event_payload_clips_large_fields(self) -> None:
-        payload = headless_event_payload({
+    def test_machine_event_payload_clips_large_fields(self) -> None:
+        payload = machine_event_payload({
             "type": "tool",
             "run_id": "run-1",
             "session_id": "session-1",
@@ -410,9 +411,9 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertEqual(closing["session_id"], result.session_id)
 
     def test_headless_close_payload_is_bounded(self) -> None:
-        from codey.app.headless_runner import headless_event_payload
+        from codey.app.event_payloads import machine_event_payload
 
-        payload = headless_event_payload({
+        payload = machine_event_payload({
             "type": "headless_close",
             "run_id": "run-1",
             "session_id": "session-1",

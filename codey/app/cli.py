@@ -116,14 +116,14 @@ def _human_cli_line(row: dict[str, object]) -> str:
         text = str(row.get("status") or row.get("text") or "").strip()
         return f"[codey] {text}" if text else ""
     if kind in {"tool_started", "tool"}:
-        tool = str(row.get("tool") or "")
+        tool = str(row.get("tool_name") or row.get("tool") or "")
         path = str(row.get("path") or "")
         extra = f" {path}" if path else ""
         command = str(row.get("command") or "")
         if command:
             extra += f" $ {command[:120]}"
         status = "" if kind == "tool_started" else (
-            "ok" if row.get("ok") else "failed")
+            "ok" if row.get("ok") is True else "failed")
         return f"[turn {row.get('turn', '')}] {tool}{extra} {status}".rstrip()
     if kind in {"shell_request", "shell_rejected"}:
         return "[codey] shell commands need approval; denied headlessly."

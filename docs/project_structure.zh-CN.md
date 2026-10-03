@@ -68,7 +68,10 @@ HTTP / CLI → task submission → task_run + task_phases
 | `codey/providers/local_response_codec.py` | 本地响应信封与模型方言，在进入内核前归一 |
 | `codey/agents/context_compaction.py`、`providers/local_openai.py` | 压缩/发送前精确配对原生历史；实际序列化请求的诊断观察点 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |
-| `codey/app/event_bus.py`、`web/assets/sse.js`、`app/headless_runner.py` | 重放游标、状态协调及一致的结构化事件投影 |
+| `codey/app/context.py`、`event_bus.py`、`event_payloads.py` | 公共出口补全运行身份和模式、严格状态；总线负责重放，纯投影模块生成有界机器事件与收据 |
+| `codey/app/headless_runner.py`、`cli.py`、`web/assets/sse.js` | 消费公共事件，负责 JSONL、CLI 文字与网页协调，不另行推断成功 |
+| `tools/machine_contract_gate.py` | CI/本地必跑契约，缺失、失败或 skip 都不通过 |
+| `tools/local_model_gate_recovery.py` | 发布门专用进程中断注入与独立校验；使用正式入口，不拥有另一个模型循环 |
 | `codey/operations/research_iteration.py` | 函数 `run_research_iteration`，pipeline 对共同内核的适配入口 |
 
 ## 持久 runtime 与存储
@@ -77,6 +80,7 @@ HTTP / CLI → task submission → task_run + task_phases
 管 effect/结果交付，`runtime/write` 管获准变更，`runtime/observe` 管只读观察。
 runtime 不依赖任务编排层。细节见 [runtime 架构](runtime_architecture.zh-CN.md)。
 
+新 provider 窗口恢复时保留原任务提示并追加结算事实；同窗口原生结果仍按原 ID 交付。
 任务事实从原日志/收据重建，Research 证据是领域投影，不竞争成为第二任务日志。
 受管输出和恢复收据可能在本地保留来源正文/工具输出；审计摘要与模型窗口另行限长。
 

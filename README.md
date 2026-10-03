@@ -2,13 +2,13 @@
 
 **Local-first AI coding and research for people who already have web AI access.**
 
-[![Version](https://img.shields.io/badge/version-0.5.10-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.11-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
 [中文说明](README.zh-CN.md)
 
-Version: `0.5.10`
+Version: `0.5.11`
 
 Codey connects browser AI accounts you already use, such as DeepSeek, MiMo,
 StepFun, Qwen, and GLM, or a local OpenAI-compatible model, to a controlled
@@ -74,13 +74,17 @@ python -m codey agent --provider qwen --project E:\my-project --max-turns 10 "Fi
 python -m codey agent --json --provider qwen --project E:\my-project "Fix the failing tests"
 ```
 
+CLI, browser events and headless JSONL share run identity and tool status.
+Recovery retains the original requirements and can deliver settled results;
+unsettled dangerous writes are not blindly retried.
+
 ## Documentation
 
 - [Detailed capabilities](docs/codey_capabilities.md)
 - [Roadmap](ROADMAP.zh-CN.md)
 - [Changelog](CHANGELOG.md)
 - [Project structure and ownership](docs/project_structure.md)
-- [0.5.10 verification record (Chinese)](docs/release_0.5.10.zh-CN.md)
+- [0.5.11 release review (Chinese)](docs/release_0.5.11.zh-CN.md)
 - [Ghost future direction](docs/ghost_future_direction.zh-CN.md)
 
 ## Safety Model

@@ -44,6 +44,7 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
 from codey.providers.local_discovery import LOCAL_BASE_URL_CANDIDATES, probe_local_endpoint_detail
 from tools import local_model_gate_attempts as attempts
+from tools.local_model_gate_recovery import run_recovery_case
 
 ARTIFACT_DIR = Path(__file__).resolve().parents[1] / ".e2e-artifacts"
 DEFAULT_BASE_URLS = LOCAL_BASE_URL_CANDIDATES
@@ -78,7 +79,7 @@ def probe_endpoint() -> tuple[str, tuple[str, ...]]:
 
 
 def _make_fixture(root: Path, case: str) -> None:
-    if case in {"create", "discussion", "auto", "research", "recovery"}:
+    if case in {"create", "discussion", "auto", "research"}:
         return
     if case == "tests":
         (root / "calculator.py").write_text(
@@ -233,8 +234,6 @@ def _task_for(case: str) -> tuple[str, str, int]:
             "on a result, then finish with done summarizing the source. Do not create or edit files.",
             "research", 8,
         )
-    if case == "recovery":
-        return ("Complete a recovery control check and finish with done. Do not create or edit files.", "planning_readonly", 4)
     raise ValueError(f"unknown agent case: {case}")
 
 
@@ -443,7 +442,7 @@ def _verify_fixture(
         changed = [name for name, digest in baseline_tests.items() if current.get(name) != digest]
         if changed:
             return {"ok": False, "exit_code": None, "output": f"existing tests changed: {changed}"}
-    if case in {"discussion", "planning", "read", "research", "recovery"}:
+    if case in {"discussion", "planning", "read", "research"}:
         unchanged = baseline_files is not None and fixture_file_hashes(root) == baseline_files
         return {
             "ok": unchanged, "exit_code": 0 if unchanged else 1,
@@ -671,7 +670,7 @@ def _agent_failure_stage(ok, verification, identity, order, stop_reason):
     return "completion:" + stop_reason
 
 
-def run_ghost_case(case: str = "ghost") -> dict:
+def run_ghost_case() -> dict:
     """Ghost control-plane roundtrip inside an isolated state home.
 
     Writes one observation for this run, reads it back by run_id, checks
@@ -691,25 +690,25 @@ def run_ghost_case(case: str = "ghost") -> dict:
             assistant_text="gate reply about breathing",
             stop_reason="done", provider_id="local",
         ):
-            return {"case": case, "ok": False, "error": "roundtrip append failed"}
+            return {"case": "ghost", "ok": False, "error": "roundtrip append failed"}
         committed = store.read_committed(session_id=session_id)
         seen = [row for row in committed if str(row.get("run_id") or "") == run_id]
         if not seen:
-            return {"case": case, "ok": False, "error": "roundtrip read by run_id failed"}
+            return {"case": "ghost", "ok": False, "error": "roundtrip read by run_id failed"}
         picked = retrieve_relevant_observations(
             committed, "breathing plan", exclude_run_id="other-run",
         )
         if not any(str(row.get("run_id") or "") == run_id for row in picked):
-            return {"case": case, "ok": False, "error": "roundtrip retrieval missed"}
+            return {"case": "ghost", "ok": False, "error": "roundtrip retrieval missed"}
         removed = store.delete_scope("session", session_id=session_id)
         if removed < 1:
             return {"case": "ghost", "ok": False, "error": "roundtrip delete removed nothing"}
         after = [row for row in store.read_committed(session_id=session_id)
                  if str(row.get("run_id") or "") == run_id]
         if after:
-            return {"case": case, "ok": False, "error": "deleted observation still retrievable"}
+            return {"case": "ghost", "ok": False, "error": "deleted observation still retrievable"}
         return {
-            "case": case, "ok": True, "observations": len(committed),
+            "case": "ghost", "ok": True, "observations": len(committed),
             "roundtrip": "write->read->retrieve->delete->gone",
         }
     except Exception as exc:  # noqa: BLE001
@@ -727,8 +726,10 @@ def _worker(case: str, directory: Path) -> int:
     try:
         if case == "chat":
             data = run_chat_case(target, directory)
-        elif case in {"ghost", "recovery"}:
-            data = run_ghost_case(case)
+        elif case == "ghost":
+            data = run_ghost_case()
+        elif case == "recovery":
+            data = run_recovery_case(target, directory)
         else:
             data = run_agent_case(case, target=target, case_dir=directory)
     except Exception as exc:
@@ -762,12 +763,15 @@ def _metadata(target: attempts.GateTarget) -> dict:
         "target": asdict(target), "python": sys.version, "git_commit": commit.stdout.strip(),
         "harness_hashes": {
             name: hashlib.sha256((attempts.REPO_ROOT / "tools" / name).read_bytes()).hexdigest()
-            for name in ("local_model_release_gate.py", "local_model_gate_attempts.py")
+            for name in ("local_model_release_gate.py", "local_model_gate_attempts.py", "local_model_gate_recovery.py")
         },
         "production_hashes": {
             path: hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
             for path in ("codey/toolchain/constants.py", "codey/toolchain/definition.py", "codey/toolchain/runtime.py",
                          "codey/providers/local_openai.py", "codey/operations/kernel_transport.py",
+                         "codey/app/event_payloads.py", "codey/app/event_bus.py", "codey/app/context.py",
+                         "codey/app/headless_runner.py", "codey/operations/kernel_recovery.py",
+                         "codey/operations/project_adapter.py",
                          "codey/operations/task_loop.py", "codey/operations/kernel_prompt.py",
                          "codey/operations/planning_flow.py", "codey/operations/project_writer_phase.py",
                          "codey/operations/project_completion_enforcement.py", "codey/operations/task_execution.py",

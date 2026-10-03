@@ -36,7 +36,7 @@ class MissingExitCodeReportsFailureTests(unittest.TestCase):
         return session, results[0]
 
     def test_missing_exit_is_failure_everywhere(self) -> None:
-        from codey.app import headless_runner as hr
+        from codey.app.event_payloads import machine_event_payload
         from codey.operations import kernel_events as kev
         from codey.operations.kernel_result import result_ok
         from codey.runtime.observe.events import run_event_ui_payload
@@ -60,7 +60,8 @@ class MissingExitCodeReportsFailureTests(unittest.TestCase):
         assert payload is not None
         self.assertNotIn("exit_code", payload)
         self.assertFalse(payload.get("ok", True))
-        headless = hr._payload_tool({"run_id": "r", "session_id": "s"}, payload)
+        headless = machine_event_payload(payload)
+        assert headless is not None
         self.assertNotIn("exit_code", headless)
         self.assertFalse(headless.get("ok", True))
 

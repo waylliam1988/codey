@@ -25,6 +25,7 @@ from codey.app import event_bus
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.conversation_registry import ConversationRegistry
 from codey.app.event_bus import EventBus, EventSubscriber
+from codey.app.event_payloads import SCHEMA_VERSION
 from codey.app.ghost_daemon import GhostSleepDaemon
 from codey.app.knowledge_indexer import KnowledgeIndexer
 from codey.app.provider_registry import ProviderRegistry
@@ -50,6 +51,7 @@ from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.storage.ui_state_store import UiStateStore
+from codey.utils.refs import strict_exit_code
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import WorkspaceRevisionStore
@@ -96,6 +98,7 @@ class AppContext:
             replay_limit=SSE_REPLAY_LIMIT if replay_limit is None else replay_limit
         )
         self.run_registry = RunRegistry()
+        self._run_modes: dict[str, str] = {}
         self.approvals = ApprovalRegistry()
         self.research_changes: dict[str, object] = {}
         self._research_change_sessions: dict[str, str] = {}
@@ -688,7 +691,47 @@ class AppContext:
                 dict(event),
                 self.run_registry.current(),
             )
+        payload = self._event_with_run_fields(payload)
+        payload["schema_version"] = SCHEMA_VERSION
+        if payload.get("type") == "tool":
+            payload["ok"] = payload.get("ok") is True
+            if strict_exit_code(payload.get("exit_code")) is None:
+                payload.pop("exit_code", None)
         self.event_bus.emit(payload)
+        self._on_event_emitted(payload)
+
+    def _on_event_emitted(self, payload: dict) -> None:
+        """Transport hook: the bus and additional sinks receive the same scoped event."""
+
+    def _event_with_run_fields(self, event: dict) -> dict:
+        payload = dict(event)
+        event_type = str(payload.get("type") or "")
+        run_id = str(payload.get("run_id") or "")
+        if event_type == "task_start" and run_id:
+            mode = str(payload.get("mode") or "").strip()
+            if mode:
+                self._run_modes[run_id] = mode
+            return payload
+        if event_type != "task_done":
+            return payload
+        mode = self._run_modes.pop(run_id, "")
+        if mode and not str(payload.get("mode") or "").strip():
+            payload["mode"] = mode
+        if payload.get("ledger_path"):
+            return payload
+        if self.run_ledgers is None:
+            return payload
+        session_id = str(payload.get("session_id") or "")
+        if not run_id or not session_id:
+            return payload
+        try:
+            path = self.run_ledgers.path_for(session_id, run_id)
+            if path.exists():
+                payload["ledger_path"] = str(path)
+        except Exception:
+            pass
+        return payload
+
 
     def subscribe(self) -> EventSubscriber:
         return self.event_bus.subscribe()
