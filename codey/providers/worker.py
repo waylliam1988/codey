@@ -13,6 +13,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 from urllib.request import urlopen
 
@@ -38,6 +39,13 @@ READER_JOIN_TIMEOUT = 2.0
 # Bounded drain after the child exits: a reply already in the pipe still
 # counts, but a silent exit never pins the waiter past this grace.
 EXIT_DRAIN_GRACE = 2.0
+
+
+if os.name == "nt":
+    # The Windows-only subprocess constant is absent from Linux typeshed.
+    # Keep the platform-specific API behind a dynamic adapter boundary so
+    # full-tree mypy passes under both CI platforms.
+    _windows_subprocess: Any = subprocess
 
 
 @dataclass
@@ -175,8 +183,8 @@ class WorkerChatProvider:
             "--profile",
             str(worker_profile),
         ]
-        group_args: dict = (
-            {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        group_args: dict[str, Any] = (
+            {"creationflags": _windows_subprocess.CREATE_NEW_PROCESS_GROUP}
             if os.name == "nt"
             else {"start_new_session": True}
         )

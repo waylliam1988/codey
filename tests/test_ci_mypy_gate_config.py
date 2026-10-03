@@ -13,3 +13,8 @@ def test_ci_declares_full_tree_mypy_gate() -> None:
     assert "mypy==" in requirements
     assert "python -m mypy codey" in workflow
     assert pyproject["tool"]["codey"]["typecheck"]["gate"] == "full-tree"
+
+
+def test_ci_declares_yaml_type_stubs_for_clean_mypy_install() -> None:
+    requirements = (ROOT / "requirements-ci.txt").read_text(encoding="utf-8")
+    assert "types-PyYAML==" in requirements

@@ -1,5 +1,48 @@
 # Codey Test Report
 
+## Mypy clean-install and cross-platform gate fix (2026-10-03)
+
+The reported `python -m mypy codey` failures were reproduced in two focused
+checks before any production edit:
+
+- A clean CI dependency contract omitted `types-PyYAML`, so the lazy YAML import
+  in `codey/knowledge/note.py` produced `import-untyped` when the environment
+  did not happen to have the stub package preinstalled. This was a CI dependency
+  declaration issue, not a runtime fallback issue.
+- Linux-platform mypy reported `subprocess.CREATE_NEW_PROCESS_GROUP` in
+  `codey/providers/worker.py`, even though the runtime branch is Windows-only.
+  This was a production cross-platform typing boundary issue.
+
+TDD evidence: the new CI requirements test and Linux worker boundary test both
+failed first (`2 failed, 9 passed`), then passed after the minimal fixes.
+`requirements-ci.txt` now pins `types-PyYAML==6.0.12.20260906`; the worker
+uses the same dynamic Windows subprocess adapter pattern already used by
+`runtime/core/cancellation.py`. No `type: ignore`, missing-import suppression,
+assertion weakening, skip, or xfail was added.
+
+Verification before the final run:
+
+- Focused CI/mypy tests: `11 passed`.
+- Affected provider/cold-start tests: `169 passed, 6 subtests passed`.
+- Linux and Windows platform mypy checks for `worker.py`: passed.
+- Full-tree `python -m mypy codey`: no errors in 363 source files.
+- Ruff, compileall, collection, and `git diff --check`: passed.
+
+Final full command (Windows 11, Python 3.12.8):
+`python -u -m pytest -q -o faulthandler_timeout=120 -rs`
+→ **6732 passed, 12 skipped, 1497 subtests passed in 439.96s (0:07:19)**;
+zero failed, xfailed, or xpassed tests.
+
+The 12 skips were: two Windows POSIX permission-bit cases, one POSIX
+process-group case, two local-context Node.js cases, one POSIX absolute-path
+case, two shell-continuation Node.js cases, one UI Node.js case, one opt-in
+browser E2E case, and two Windows `O_NOFOLLOW` cases. No skip or xfail was
+added by this change.
+
+Residual risk: this run does not exercise POSIX permission/process-group or
+`O_NOFOLLOW` behavior on Windows, and Node.js/browser behavior remains limited
+by local tool availability and the explicit E2E opt-in.
+
 ## Architecture and lifecycle audit (2026-10-03)
 
 Scope: production Python under `codey/`, test collection/configuration, cold-start

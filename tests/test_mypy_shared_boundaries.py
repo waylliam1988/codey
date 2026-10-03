@@ -82,6 +82,15 @@ def test_process_tree_adapter_is_clean_on_linux_stubs() -> None:
     assert "Module has no attribute \"CREATE_NEW_PROCESS_GROUP\"" not in output
 
 
+def test_worker_process_group_adapter_is_clean_on_linux_stubs() -> None:
+    output = _mypy(
+        "codey/providers/worker.py",
+        follow_imports="skip",
+        platform="linux",
+    )
+    assert "Module has no attribute \"CREATE_NEW_PROCESS_GROUP\"" not in output
+
+
 def test_kernel_and_evidence_boundaries_are_clean() -> None:
     output = _mypy(
         "codey/operations/task_loop.py",

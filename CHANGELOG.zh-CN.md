@@ -2,6 +2,16 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Mypy 干净安装与跨平台门禁修复（未发布）
+
+- 在 CI pinned 依赖中加入 `types-PyYAML`，确保干净环境检查懒加载 YAML
+  笔记序列化模块时不会缺少 stub。
+- 复用现有动态平台适配边界隔离 worker 的 Windows-only 进程组常量，Linux
+  与 Windows 两个平台模型的 mypy 均通过。
+- 新增依赖契约与跨平台边界的失败优先回归测试。最终全量：**6732 passed、
+  12 skipped、1497 subtests passed，439.96 秒**，无失败。详细 skip 原因见
+  [`TEST_REPORT.md`](TEST_REPORT.md)。
+
 ## Unreleased - 架构与资源生命周期审查（未发布）
 
 - 修复两个已确认的资源生命周期问题：HTTP 服务构造、线程启动或 provider

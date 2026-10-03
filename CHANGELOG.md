@@ -2,6 +2,16 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Mypy clean-install and cross-platform gate fix (no release)
+
+- Added the pinned `types-PyYAML` CI stub dependency so a clean mypy install
+  checks the lazy YAML note serializer consistently.
+- Isolated the Windows-only worker process-group constant behind the existing
+  dynamic platform adapter, keeping Linux and Windows mypy checks clean.
+- Added red-first dependency and platform boundary regressions. Final full run:
+  **6732 passed, 12 skipped, 1497 subtests passed in 439.96s**, zero failures.
+  Details and environment-limited skips are recorded in [`TEST_REPORT.md`](TEST_REPORT.md).
+
 ## Unreleased - Architecture and lifecycle audit (no release)
 
 - Fixed two confirmed resource lifecycle bugs: server startup now releases its
