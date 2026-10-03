@@ -145,14 +145,16 @@ class ResearchSourceGateway:
         cancellation.check()
         try:
             page = self.search_provider.fetch(url)
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             self._fail("browser", "open", exc, url)
             return OpenedSource(status="error", detail=f"open failed: {exc}")
         cancellation.check()
         page_url = str(page.get("url") or url)
-        page_text = str(page.get("text") or "")
+        status = page.get("status")
+        if type(status) is not str or status not in {"ok", "error", "skipped"}:
+            return OpenedSource(status="error", detail="fetch returned an invalid structured status")
         skip_reason = source_candidate_skip_reason(page_url)
         if skip_reason:
             self._fail("browser", "open", skip_reason + " after redirect", url)
@@ -160,17 +162,12 @@ class ResearchSourceGateway:
                 status="skipped",
                 detail=f"{skip_reason} after redirect. Choose a specific article, document, or readable source page.",
             )
-        if page_text.startswith("SKIPPED:"):
-            return OpenedSource(status="skipped", detail=page_text[len("SKIPPED:") :].strip())
-        if page_text.startswith("ERROR:"):
-            message = page_text[len("ERROR:") :].strip()
-            if message.lower().startswith("unsupported content type:"):
-                return OpenedSource(
-                    status="skipped",
-                    detail=f"{message}. Choose an HTML source or another readable page.",
-                )
+        if status != "ok":
+            message = page.get("detail")
+            if type(message) is not str or not message:
+                return OpenedSource(status="error", detail="fetch returned an invalid failure detail")
             self._fail("browser", "open", message, url)
-            return OpenedSource(status="error", detail=message)
+            return OpenedSource(status=status, detail=message)
         reason = check_fetch_url(page_url, use_cache=True)
         if reason:
             self._fail("browser", "open", f"{reason} (after redirect)", page_url or url)

@@ -52,7 +52,7 @@ class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
 
             def fake_edit(call: ToolCall):
                 (project / "b.py").write_text("y=2\n", encoding="utf-8")
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             results = ke.execute_turn(
                 session,
@@ -98,7 +98,7 @@ class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
 
             def fake_edit(call: ToolCall):
                 (project / "b.py").write_text("y=2\n", encoding="utf-8")
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             results = ke.execute_turn(
                 session,
@@ -144,11 +144,11 @@ class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
 
             def fake_edit(call: ToolCall):
                 (project / "b.py").write_text("y=2\n", encoding="utf-8")
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             def fake_run(call: ToolCall):
                 run_calls.append(str(call.args.get("command") or "run"))
-                return ToolResult(call=call, model_text="ok", audit={"exit_code": 0})
+                return ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": 0})
 
             results = ke.execute_turn(
                 session,
@@ -191,7 +191,7 @@ class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
                 (project / str(call.args.get("path") or "x.py")).write_text(
                     str(call.args.get("content") or "x"), encoding="utf-8"
                 )
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             seen: list[tuple[int, str]] = []
             for turn, name in ((1, "n1.py"), (2, "n2.py")):

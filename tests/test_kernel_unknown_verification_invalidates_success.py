@@ -73,7 +73,7 @@ def test_latest_unknown_blocks_real_kernel(tmp_path, monkeypatch, bad_exit, with
         audit = {"exit_code": 0}
         if len(executions) == 2:
             audit = {} if bad_exit is None else {"exit_code": bad_exit}
-        return ToolResult(call=call, model_text="run output", audit=audit)
+        return ToolResult(ok=True, call=call, model_text="run output", audit=audit)
 
     context = None
     if with_evidence:
@@ -139,8 +139,8 @@ def test_success_then_unknown_then_new_success_allows_completion(tmp_path, monke
     def execute_run(call):
         executions.append(call)
         if len(executions) == 2:
-            return ToolResult(call=call, model_text="unknown", audit={})
-        return ToolResult(call=call, model_text="ok", audit={"exit_code": 0})
+            return ToolResult(ok=True, call=call, model_text="unknown", audit={})
+        return ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": 0})
 
     run_task_kernel(
         session,

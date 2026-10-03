@@ -18,19 +18,19 @@ class KernelExitCodeStrictBoolRejectedTests(unittest.TestCase):
         from codey.runtime.core.models import ToolCall, ToolResult
 
         call = ToolCall(name="run", args={"command": "x"})
-        res = ToolResult(call=call, model_text="ok")
+        res = ToolResult(ok=True, call=call, model_text="ok")
         self.assertTrue(result_ok("run", res, exit_code=0))
         self.assertFalse(result_ok("run", res, exit_code=False), "bool False must not be ok")
         self.assertFalse(result_ok("run", res, exit_code=True))
         self.assertFalse(result_ok("run", res, exit_code="0"), "str must not be ok")
         # Run without a structured exit never reports success, even for plain text.
         self.assertFalse(result_ok("run", res, exit_code=None))
-        err = ToolResult(call=call, model_text="ERROR: boom")
+        err = ToolResult(ok=False, call=call, model_text="ERROR: boom")
         self.assertFalse(result_ok("run", err, exit_code=None))
         self.assertFalse(result_ok("run", res, exit_code=1))
         # Audit-carried exits are strict as well: bool/str audit never passes.
         for bad in (False, True, "0", 1.0):
-            bad_res = ToolResult(call=call, model_text="ok", audit={"exit_code": bad})
+            bad_res = ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": bad})
             self.assertFalse(result_ok("run", bad_res), f"audit exit {bad!r} must not be ok")
         # Missing audit exit is also failure for run.
         self.assertFalse(result_ok("run", res))
@@ -47,7 +47,7 @@ class KernelExitCodeStrictBoolRejectedTests(unittest.TestCase):
                 task_kind="project", project="", max_turns=2,
             )
             call = ToolCall(name="run", args={"command": "make check"})
-            result = ToolResult(call=call, model_text="ok", audit={"exit_code": bad})
+            result = ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": bad})
             record_facts_for_result(session, call, result, ok=False)
             self.assertEqual(len(session.verifications), 1)
             self.assertFalse(session.verifications[0]["passed"])
@@ -57,7 +57,7 @@ class KernelExitCodeStrictBoolRejectedTests(unittest.TestCase):
             task_kind="project", project="", max_turns=2,
         )
         call = ToolCall(name="run", args={"command": "make check"})
-        result = ToolResult(call=call, model_text="ok", audit={"exit_code": 0})
+        result = ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": 0})
         record_facts_for_result(session, call, result, ok=True)
         self.assertEqual(len(session.verifications), 1)
         self.assertTrue(session.verifications[0].get("passed"))

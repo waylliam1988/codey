@@ -353,13 +353,13 @@ class FixtureSearchProvider:
         self.fetches.append(str(url or ""))
         doc = self.document_for_url(url)
         if doc is None:
-            return {
+            return {"status": "error", "detail": ("ERROR: fixture URL not found").removeprefix("ERROR:").strip(),
                 "url": url,
                 "title": "",
                 "text": "ERROR: fixture URL not found",
                 "truncated": False,
             }
-        return {
+        return {"status": "ok",
             "url": doc.url,
             "title": doc.title,
             "text": "",
@@ -406,7 +406,7 @@ class ProbeResearchTools(ResearchTools):
         if offset + limit < len(document.text):
             body += f"\n\n[more text available: open with offset={offset + limit}]"
         full = f"{header}\n\n{document.text}".strip()
-        return ResearchToolOutput(model_text=_clip(body, OPEN_MAX_LIMIT), receipt_text=full)
+        return ResearchToolOutput(model_text=_clip(body, OPEN_MAX_LIMIT), receipt_text=full, ok=True)
 
     def _source_document_from_fetch(
         self,
@@ -429,20 +429,20 @@ class ProbeResearchTools(ResearchTools):
         url: str,
         query: str,
         limit: int = 6,
-    ) -> str:
+    ) -> ResearchToolOutput:
         url = str(url or "").strip()
         query = str(query or "").strip()
         if not url:
-            return "ERROR: source_search needs a url"
+            return ResearchToolOutput("ERROR: source_search needs a url", ok=False)
         if not query:
-            return "ERROR: source_search needs a query"
+            return ResearchToolOutput("ERROR: source_search needs a query", ok=False)
         final_url = self.ledger.canonical_opened_url(url)
         if not final_url:
-            return "NEEDS_OPEN: open_url before source_search: " + url
+            return ResearchToolOutput("NEEDS_OPEN: open_url before source_search: " + url, ok=False)
         search_doc = getattr(self.search, "document_for_url", lambda _url: None)
         doc = search_doc(final_url) or search_doc(url)
         if doc is None:
-            return "ERROR: source_search fixture document is unavailable"
+            return ResearchToolOutput("ERROR: source_search fixture document is unavailable", ok=False)
         hit_limit = bounded_limit(limit)
         if doc.pages:
             hits = search_pages(
@@ -457,8 +457,8 @@ class ProbeResearchTools(ResearchTools):
             hits = search_text(doc.text, query, hit_limit)
         self.ledger.record_source_search(final_url, query, [hit.to_dict() for hit in hits])
         if not hits:
-            return "no source_search matches"
-        return render_results(hits)
+            return ResearchToolOutput("no source_search matches", ok=True)
+        return ResearchToolOutput(render_results(hits), ok=True)
 
 
 def _fixture_document_header(document: SourceDocument) -> str:
@@ -1952,11 +1952,11 @@ def self_test() -> int:
         store = KnowledgeStore(Path(td))
         search = FixtureSearchProvider(case)
         tools = ProbeResearchTools(search, store, KnowledgeChanges(store.root))
-        before = tools.source_search(PDF_METHOD_URL, "bootstrap", 3)
+        before = tools.source_search(PDF_METHOD_URL, "bootstrap", 3).model_text
         assert before.startswith("NEEDS_OPEN:")
         opened = tools.open_url(PDF_METHOD_URL)
         assert "[page 1]" in opened.model_text
-        located = tools.source_search(PDF_METHOD_URL, "stratified bootstrap", 3)
+        located = tools.source_search(PDF_METHOD_URL, "stratified bootstrap", 3).model_text
         assert "p.9" in located
         assert "stratified bootstrap validation" in located
         page = tools.open_url(PDF_METHOD_URL, pages="9")

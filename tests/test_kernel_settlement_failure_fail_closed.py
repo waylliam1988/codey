@@ -25,7 +25,7 @@ class KernelSettlementFailureFailClosedTests(unittest.TestCase):
 
         session = TaskSession(policy=_policy(), task_kind="project", project="p", max_turns=4)
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
-        result = ToolResult(call=call, model_text="content")
+        result = ToolResult(ok=True, call=call, model_text="content")
 
         class BoomDict(dict):
             def __setitem__(self, key, value):
@@ -46,7 +46,7 @@ class KernelSettlementFailureFailClosedTests(unittest.TestCase):
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
 
         def fake_read(_c: ToolCall):
-            return ToolResult(call=_c, model_text="content")
+            return ToolResult(ok=True, call=_c, model_text="content")
 
         class BoomDict(dict):
             def __setitem__(self, key, value):
@@ -73,7 +73,7 @@ class KernelSettlementFailureFailClosedTests(unittest.TestCase):
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
 
         def fake_read(_c: ToolCall):
-            return ToolResult(call=_c, model_text="content")
+            return ToolResult(ok=True, call=_c, model_text="content")
 
         class BoomMemory(dict):
             def __setitem__(self, key, value):

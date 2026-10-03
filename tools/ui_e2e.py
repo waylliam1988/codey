@@ -174,8 +174,10 @@ def _exercise_page(
     project: Path,
     artifacts: Path,
     writer: ScriptedWriter,
+    *,
+    launch_url: str,
 ) -> dict:
-    page.goto(base_url, wait_until="domcontentloaded")
+    page.goto(launch_url, wait_until="domcontentloaded")
     page.locator("#task").fill("Explain box breathing without project access.")
     page.locator("#send").click()
     expect(page.locator(".msg.asst .body")).to_contain_text(
@@ -503,7 +505,8 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
             page_errors: list[str] = []
             page.on("pageerror", lambda exc: page_errors.append(str(exc)))
             try:
-                result = _exercise_page(page, base_url, project, artifact_dir, writer)
+                result = _exercise_page(page, base_url, project, artifact_dir, writer,
+                                        launch_url=httpd.launch_url(base_url))
             except Exception as exc:
                 failure_artifact = _save_screenshot(page, artifact_dir / "ui-failure.png")
                 if hasattr(exc, "add_note"):

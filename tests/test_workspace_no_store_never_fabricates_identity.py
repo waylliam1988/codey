@@ -29,11 +29,11 @@ def test_missing_store_blocks_same_batch_verification_after_edit(tmp_path):
 
     def edit(call):
         (tmp_path / "a.py").write_text("x = 2\n", encoding="utf-8")
-        return ToolResult(call, "edited", audit={"changed": True})
+        return ToolResult(call, "edited", ok=True, audit={"changed": True})
 
     def run(call):
         ran.append(call)
-        return ToolResult(call, "passed", audit={"exit_code": 0})
+        return ToolResult(call, "passed", ok=True, audit={"exit_code": 0})
 
     results = execute_turn(session, [
         ToolCall("edit", {"path": "a.py", "content": "x = 2\n"}),
@@ -68,7 +68,7 @@ def test_unconfirmed_edit_invalidates_identity_across_following_turns(tmp_path, 
 
     def edit(call):
         (tmp_path / "a.py").write_text("x = 2\n", encoding="utf-8")
-        return ToolResult(call, "edited", audit={"changed": True})
+        return ToolResult(call, "edited", ok=True, audit={"changed": True})
 
     def fail_bump(*args, **kwargs):
         raise OSError("unavailable")
@@ -79,7 +79,7 @@ def test_unconfirmed_edit_invalidates_identity_across_following_turns(tmp_path, 
                  run_id="unconfirmed", turn=1)
     assert session.workspace_fingerprint == ""
     result = execute_turn(session, [ToolCall("run", {"path": ".", "command": "python -m pytest"})],
-                          executors={"run": lambda call: ToolResult(call, "passed", audit={"exit_code": 0})},
+                          executors={"run": lambda call: ToolResult(call, "passed", ok=True, audit={"exit_code": 0})},
                           project_path=tmp_path, workspace_revision_store=store, run_id="unconfirmed", turn=2)[0]
     assert kernel_provenance._kernel_workspace_identity_of(result) is None
     assert session.verifications[-1].get("workspace_fingerprint") != workspace_fingerprint(tmp_path)
@@ -104,12 +104,12 @@ def test_unconfirmed_edit_fact_survives_real_receipt_recovery(tmp_path):
 
     def edit(call):
         (project / "a.py").write_text("x = 2\n", encoding="utf-8")
-        return ToolResult(call, "edited", audit={"changed": True})
+        return ToolResult(call, "edited", ok=True, audit={"changed": True})
 
     execute_turn(session, [
         ToolCall("run", {"path": ".", "command": "python -m pytest"}),
         ToolCall("edit", {"path": "a.py", "content": "x = 2\n"}),
-    ], executors={"edit": edit, "run": lambda call: ToolResult(call, "passed", audit={"exit_code": 0})},
+    ], executors={"edit": edit, "run": lambda call: ToolResult(call, "passed", ok=True, audit={"exit_code": 0})},
        project_path=project, workspace_revision_store=None, intent_sink=sink,
        run_id="r", effect_scope="task", turn=1)
     for _ in range(2):

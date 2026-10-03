@@ -226,7 +226,7 @@ def test_session_projection_never_shortens_native_call_id():
     # In-memory: real execute_turn keeps the long native call id verbatim.
     session = TaskSession(policy=policy)
     def _fake_run(call):
-        return ToolResult(call=call, model_text="ok", audit={"exit_code": 0})
+        return ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": 0})
     calls = [ToolCall(name="run", args={"command": "echo hi", "path": "."}, call_id=LONG_CALL_ID)]
     results = execute_turn(session, calls, executors={"run": _fake_run}, run_id="r-long", turn=1)
     assert results[0].call.call_id == LONG_CALL_ID
@@ -275,9 +275,9 @@ def test_session_projection_never_shortens_native_call_id():
             (project / str(call.args.get("path") or "a.py")).write_text(
                 str(call.args.get("content") or "x = 1\n"), encoding="utf-8"
             )
-            return ToolResult(call=call, model_text="edited", audit={"changed": True})
+            return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
         def _fake_logged_run(call):
-            return ToolResult(call=call, model_text="run out", audit={"exit_code": 0})
+            return ToolResult(ok=True, call=call, model_text="run out", audit={"exit_code": 0})
         edit_call = ToolCall(name="edit", args={"path": "a.py", "content": "x = 1\n"})
         run_call = ToolCall(name="run", args={"command": "echo hi", "path": "."}, call_id=LONG_CALL_ID)
         snapshot = build_turn_snapshot(logged)

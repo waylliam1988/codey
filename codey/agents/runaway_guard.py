@@ -39,7 +39,7 @@ def tool_fingerprint(call: ToolCall) -> str:
 def result_fingerprint(result: ToolResult) -> str:
     text = str(result.model_text or "")
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-    status = "ok" if "ERROR:" not in text[:7] else "error"
+    status = "ok" if result.ok else "error"
     return f"{status}:{digest}"
 
 
@@ -56,14 +56,13 @@ def attempt_record(
     turn: int,
     edit_epoch: int = 0,
 ) -> ToolAttemptRecord:
-    text = str(result.model_text or "")
     audit = getattr(result, "audit", {})
     changed = bool(audit.get("changed")) if isinstance(audit, dict) else False
     return ToolAttemptRecord(
         tool=str(call.name or ""),
         call_fp=tool_fingerprint(call),
         result_fp=result_fingerprint(result),
-        ok="ERROR:" not in text[:7],
+        ok=result.ok,
         changed=changed,
         turn=_safe_int(turn),
         edit_epoch=_safe_int(edit_epoch),

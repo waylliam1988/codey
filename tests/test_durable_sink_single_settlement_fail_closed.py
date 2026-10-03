@@ -43,7 +43,7 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
             tmp = Path(td)
             sink, _log = self._sink(tmp, "sess-durable-1", "run-durable-1")
             identity = "run-durable-1:task#1#0"
-            result = ToolResult(ToolCall("read_file", {"path": "a.py"}, "c1"), "hello")
+            result = ToolResult(ToolCall("read_file", {"path": "a.py"}, "c1"), "hello", ok=True)
             # First settlement ok=True commits.
             sink.settle(identity, True, result=result)
             # Identical retry is idempotent (no raise).
@@ -82,7 +82,7 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
             results = execute_turn(
                 session,
                 [ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")],
-                executors={"read_file": lambda c: ToolResult(call=c, model_text="hello")},
+                executors={"read_file": lambda c: ToolResult(ok=True, call=c, model_text="hello")},
                 run_id=run_id, effect_scope="task", turn=1,
                 project_path=None, intent_sink=sink,
             )

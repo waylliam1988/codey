@@ -262,7 +262,7 @@ def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
             return [{"title": "Evidence", "url": url, "snippet": "claim"}]
 
         def fetch(self, target):
-            return {"url": target, "title": "Evidence", "text": "claim text"}
+            return {"status": "ok", "url": target, "title": "Evidence", "text": "claim text"}
 
     prompts: list[str] = []
     replies = iter([
@@ -300,17 +300,22 @@ def test_search_result_ids_remain_stable_across_searches() -> None:
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from codey.research.tools import ResearchTools
     from codey.runtime.core.models import ToolCall
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "web.read"})),
                           task_kind="project")
     urls = iter(("https://example.com/a", "https://example.com/b"))
-    def execute(_call):
-        return f"1. Result\n   {next(urls)}"
+
+    class Search:
+        def search(self, _query, limit=8):
+            return [{"title": "Result", "url": next(urls), "snippet": ""}]
+
+    tools = ResearchTools(search=Search(), store=None, changes=None)
     execute_turn(session, [ToolCall("web_search", {"query": "a"})],
-                 executors={"web_search": execute}, run_id="r", turn=1)
+                 research_tools=tools, run_id="r", turn=1)
     execute_turn(session, [ToolCall("web_search", {"query": "b"})],
-                 executors={"web_search": execute}, run_id="r", turn=2)
+                 research_tools=tools, run_id="r", turn=2)
     assert session.search_results == {
         "r1": "https://example.com/a", "r2": "https://example.com/b",
     }
@@ -320,6 +325,7 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from codey.research.tools import ResearchToolOutput
     from codey.runtime.core.models import ToolCall
 
     url = "https://example.com/long"
@@ -331,11 +337,11 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
     class Tools:
         def source_search(self, target, _query, _limit):
             assert target == url
-            return "source_search results\n1. offset 123: relevant excerpt"
+            return ResearchToolOutput("source_search results\n1. offset 123: relevant excerpt", ok=True)
 
         def open_url(self, target, offset=0, limit=6000, pages=""):
             opened.append((target, offset))
-            return SimpleNamespace(model_text="Title: Long\nrelevant excerpt", receipt_text="")
+            return ResearchToolOutput(model_text="Title: Long\nrelevant excerpt", ok=True)
 
     tools = Tools()
     search = execute_turn(session, [ToolCall("source_search", {"url": url, "query": "relevant"})],
@@ -343,7 +349,7 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
     assert "h1" in search.model_text
     opened_result = execute_turn(session, [ToolCall("open_hit", {"hit_id": "h1"})],
                                  research_tools=tools, run_id="r", turn=2)[0]
-    assert not opened_result.model_text.startswith("ERROR:")
+    assert opened_result.ok is True
     assert opened == [(url, 123)]
 
 
@@ -698,7 +704,7 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> 
             return [{"title": "Pipeline source", "url": url, "snippet": "Pipeline source text."}]
 
         def fetch(self, target):
-            return {"url": target, "title": "Pipeline source",
+            return {"status": "ok", "url": target, "title": "Pipeline source",
                     "text": "Pipeline source text says the fact.", "truncated": False}
 
     class Provider:
@@ -1381,7 +1387,7 @@ def test_unified_research_externalizes_large_opened_source(tmp_path) -> None:
 
     class Search:
         def fetch(self, target):
-            return {"url": target, "title": "Large source", "text": "A" * 30_000,
+            return {"status": "ok", "url": target, "title": "Large source", "text": "A" * 30_000,
                     "truncated": False}
 
     knowledge = KnowledgeStore(tmp_path / "knowledge")

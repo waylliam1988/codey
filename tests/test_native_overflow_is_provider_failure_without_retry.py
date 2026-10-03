@@ -88,7 +88,7 @@ def test_native_overflow_is_provider_failure_without_retry(tmp_path: Path) -> No
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),
@@ -156,7 +156,7 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
                 observation=KernelObservationDeps(

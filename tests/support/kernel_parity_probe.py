@@ -259,7 +259,7 @@ def research_loop(case, legacy):
 
         def fetch(self, url):
             operations.append(["fetch", url])
-            return {"url": url, "title": "Helium article", "text": "Helium is separated from natural gas streams.",
+            return {"status": "ok", "url": url, "title": "Helium article", "text": "Helium is separated from natural gas streams.",
                     "truncated": False}
 
     replies = case["replies"] if legacy else case.get("current_replies", case["replies"])

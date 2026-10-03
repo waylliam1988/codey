@@ -65,7 +65,7 @@ class ToolSpecSingleSourceTests(unittest.TestCase):
             session = TaskSession(policy=sess_policy, task_kind="project", project=td, max_turns=2)
             results = execute_turn(
                 session, [ToolCall("read_file", {"path": "../escape"}, "c1")],
-                executors={"read_file": lambda c: ToolResult(call=c, model_text="should not run")},
+                executors={"read_file": lambda c: ToolResult(ok=True, call=c, model_text="should not run")},
                 run_id="r", turn=1, project_path=Path(td),
             )
             self.assertIn("ERROR", results[0].model_text)
@@ -138,10 +138,10 @@ class ToolSpecSingleSourceTests(unittest.TestCase):
 
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
-        ok = ToolResult(call=ToolCall(name="read_file", args={"path": "a"}, call_id="call_1"), model_text="hi")
+        ok = ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "a"}, call_id="call_1"), model_text="hi")
         messages = t._native_tool_messages([ok], session)
         self.assertEqual(messages[0]["tool_call_id"], "call_1")
-        missing = ToolResult(call=ToolCall(name="read_file", args={"path": "b"}), model_text="hi")
+        missing = ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "b"}), model_text="hi")
         with self.assertRaises(ValueError):
             t._native_tool_messages([ok, missing], session)
 

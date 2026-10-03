@@ -115,7 +115,7 @@ class EventBus:
                 cutoff = self._sequence
             else:
                 try:
-                    cutoff = max(0, int(max_event_id))  # type: ignore[arg-type]
+                    cutoff = min(self._sequence, max(0, int(max_event_id)))  # type: ignore[arg-type]
                 except (TypeError, ValueError, OverflowError):
                     cutoff = self._sequence
             rows = [
@@ -123,17 +123,20 @@ class EventBus:
                 for event_id, payload in self._replay
                 if start < event_id <= cutoff
             ]
-            if start > 0 and self._replay and start < self._replay[0][0]:
+            if start > cutoff:
+                return [(cutoff, {"type": "resync_required", "reason": "sse_cursor_ahead", "cursor": cutoff})]
+            if start > 0 and self._replay and start < self._replay[0][0] - 1:
                 # Expired window: force a full reconcile. Return only the
                 # marker (no retained rows) stamped past the caller's cursor,
                 # so adopting it strictly advances Last-Event-ID and the same
                 # marker is never replayed twice.
                 return [(
-                    max(cutoff, start + 1),
+                    cutoff,
                     {
                         "type": "resync_required",
                         "reason": "sse_replay_window_expired",
-                        "dropped": self._replay[0][0] - start,
+                        "dropped": self._replay[0][0] - start - 1,
+                        "cursor": cutoff,
                     },
                 )]
             return rows

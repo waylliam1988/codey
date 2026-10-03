@@ -15,7 +15,7 @@ class KernelSettlementProvenanceFailureTests(unittest.TestCase):
 
         session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.read", "control"})))
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
-        result = ToolResult(call=call, model_text="content")
+        result = ToolResult(ok=True, call=call, model_text="content")
 
         with mock.patch(
             "codey.operations.kernel_execution._kernel_workspace_identity_of",

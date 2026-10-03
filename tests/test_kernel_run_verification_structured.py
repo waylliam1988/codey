@@ -36,7 +36,7 @@ class StructuredRunVerificationTests(unittest.TestCase):
         session = _session()
         session.record_edit("a.py", revision=1)
         call = ToolCall(name="run", args={"command": "python -m unittest discover"}, call_id="c1")
-        result = ToolResult(call=call, model_text="1 passed, all pass OK")
+        result = ToolResult(ok=True, call=call, model_text="1 passed, all pass OK")
         ke.record_facts_for_result(session, call, result, ok=True, exit_code=None)
         # Must not record a passing verification without a structured exit code.
         passing = [v for v in session.verifications if bool(v.get("passed"))]
@@ -74,7 +74,7 @@ class StructuredRunVerificationTests(unittest.TestCase):
         session.record_edit("a.py", revision=1)
         session.set_workspace_state(1, session.workspace_fingerprint or "")
         call = ToolCall(name="run", args={"command": "python -m unittest discover"}, call_id="c3")
-        result = ToolResult(call=call, model_text="OK")
+        result = ToolResult(ok=True, call=call, model_text="OK")
         ke.record_facts_for_result(session, call, result, ok=True, exit_code=0)
         passing = [v for v in session.verifications if bool(v.get("passed"))]
         self.assertTrue(passing, "exit_code 0 must record a passing verification")
@@ -85,7 +85,7 @@ class StructuredRunVerificationTests(unittest.TestCase):
         session = _session()
         session.record_edit("a.py", revision=1)
         call = ToolCall(name="run", args={"command": "python -m unittest discover"}, call_id="c4")
-        result = ToolResult(call=call, model_text="1 passed but exit 1")
+        result = ToolResult(ok=True, call=call, model_text="1 passed but exit 1")
         ke.record_facts_for_result(session, call, result, ok=False, exit_code=1)
         # ok=False path records nothing for run? Either way no passing verification.
         passing = [v for v in session.verifications if bool(v.get("passed"))]

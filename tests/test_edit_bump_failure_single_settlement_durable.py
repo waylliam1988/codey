@@ -56,11 +56,11 @@ class EditBumpFailureSingleSettlementDurableTests(unittest.TestCase):
 
             def fake_edit(call: ToolCall):
                 (project / "b.py").write_text("y=2\n", encoding="utf-8")
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             def fake_run(call: ToolCall):
                 run_calls.append(str(call.args.get("command") or "run"))
-                return ToolResult(call=call, model_text="ok", audit={"exit_code": 0})
+                return ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": 0})
 
             # Must not raise RuntimeEffectError("effect already settled").
             results = ke.execute_turn(
@@ -114,7 +114,7 @@ class EditBumpFailureSingleSettlementDurableTests(unittest.TestCase):
                     raise OSError("disk gone")
 
             def fake_edit(call: ToolCall):
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             results = ke.execute_turn(
                 session,

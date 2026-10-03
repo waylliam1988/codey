@@ -39,7 +39,7 @@ def test_research_tool_messages_roundtrip() -> None:
     from codey.runtime.core.models import ToolCall, ToolResult
 
     codec = JsonToolCodec()
-    result = ToolResult(call=ToolCall(name="web_search", args={"query": "x"}, call_id="c1"), model_text="hits")
+    result = ToolResult(ok=True, call=ToolCall(name="web_search", args={"query": "x"}, call_id="c1"), model_text="hits")
     messages = codec.tool_messages([result])
     assert messages == [{"role": "tool", "tool_call_id": "c1", "content": "hits"}]
 
@@ -60,7 +60,7 @@ def test_research_native_executes_all_calls() -> None:
     from codey.runtime.core.models import ToolResult
 
     messages = codec.tool_messages([
-        ToolResult(call=call, model_text=f"out-{call.call_id}")
+        ToolResult(ok=True, call=call, model_text=f"out-{call.call_id}")
         for call in plan.calls
     ])
     assert [m["tool_call_id"] for m in messages] == ["c1", "c2"]
@@ -97,6 +97,6 @@ def test_research_tool_messages_missing_id_fails_closed() -> None:
     from tests.support.research_protocol import NativeToolResultError
 
     codec = JsonToolCodec()
-    result = ToolResult(call=ToolCall(name="web_search", args={"query": "x"}), model_text="hits")
+    result = ToolResult(ok=True, call=ToolCall(name="web_search", args={"query": "x"}), model_text="hits")
     with pytest.raises(NativeToolResultError):
         codec.tool_messages([result])

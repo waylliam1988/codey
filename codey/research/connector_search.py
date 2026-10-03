@@ -131,7 +131,7 @@ class ConnectorAwareSearchProvider:
         if hit is None:
             try:
                 hit = self._fetchable_hit_for_url(target)
-            except cancellation.TaskCancelled:
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 raise
             except Exception as exc:
                 self._record_error(_connector_id_for_url(target), "fetch_lookup", exc)
@@ -139,6 +139,8 @@ class ConnectorAwareSearchProvider:
         if hit is not None:
             try:
                 return _page_from_fetched(fetch_recorded_hit(hit))
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                raise
             except Exception as exc:
                 self._record_error(hit.connector_id, "fetch", exc)
         return self.base_provider.fetch(target)
@@ -418,7 +420,7 @@ def _result_from_hit(hit: SourceHit) -> dict:
 
 def _page_from_fetched(fetched: FetchedSource) -> dict:
     document = fetched.to_source_document()
-    return {
+    return {"status": "ok",
         "url": document.final_url,
         "title": document.title,
         "text": document.text,

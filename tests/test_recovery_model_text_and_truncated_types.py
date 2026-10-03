@@ -10,7 +10,7 @@ class RecoveryModelTextAndTruncatedTypesTests(unittest.TestCase):
         from codey.runtime.core.models import ToolCall
 
         return RecoveredResultSpec(
-            call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"),
+            ok=True, call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"),
             audit={},
             **kwargs,
         )

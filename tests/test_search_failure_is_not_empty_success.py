@@ -18,7 +18,7 @@ def tools_for(base):
 def test_browser_timeout_is_an_error_tool_result_without_search_fact():
     base = SimpleNamespace(search=mock.Mock(side_effect=TimeoutError()))
     tools = tools_for(base)
-    result = tools.web_search("pricing discount context")
+    result = tools.web_search("pricing discount context").model_text
     assert result.startswith("ERROR:"), result
     assert "TimeoutError" in result
     assert not tools.search_result_urls
@@ -27,7 +27,7 @@ def test_browser_timeout_is_an_error_tool_result_without_search_fact():
 
 def test_actual_empty_response_is_still_a_valid_no_results():
     tools = tools_for(SimpleNamespace(search=lambda *a, **kw: []))
-    assert tools.web_search("no matching document") == "no results"
+    assert tools.web_search("no matching document").model_text == "no results"
 
 
 def test_browser_failure_preserves_real_partial_connector_hits():

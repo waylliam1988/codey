@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Mapping
+from dataclasses import replace
 
 from codey.operations.kernel_provenance import _EXECUTOR_STRIPPED_AUDIT_KEYS
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -29,47 +29,19 @@ def strict_exit_code_or_none(value: object) -> int | None:
 
 
 def result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) -> bool:
-    # Explicit exit_code param wins (delegate structured exit); otherwise the
-    # audit exit_code is authoritative when present. Any present-but-invalid
-    # exit (bool/str/float) fails closed. Valid run exits decide by code==0.
-    audit_code: int | None = None
-    audit_present_invalid = False
-    try:
-        audit = getattr(result, "audit", None)
-        if isinstance(audit, dict) and "exit_code" in audit:
-            raw = audit.get("exit_code")
-            if raw is not None:
-                parsed = strict_exit_code_or_none(raw)
-                if parsed is None:
-                    audit_present_invalid = True
-                else:
-                    audit_code = parsed
-    except Exception:
-        audit_present_invalid = False
-    if exit_code is not None:
-        code = strict_exit_code_or_none(exit_code)
-        if code is None:
-            return False
-        if str(name or "").strip().lower() == "run":
-            text = str(result.model_text or "")
-            if text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"):
-                return False
-            return code == 0
-        text = str(result.model_text or "")
-        return not (text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"))
-    if audit_present_invalid:
+    """Structured status plus strict exit identity; display text has no authority."""
+    if not result.ok:
         return False
-    if audit_code is not None and str(name or "").strip().lower() == "run":
-        text = str(result.model_text or "")
-        if text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"):
-            return False
-        return audit_code == 0
-    if str(name or "").strip().lower() == "run":
-        # A run without any structured exit never reports success: ordinary
-        # output text must not become ok=True, and unknown exits block.
+    audit_raw = result.audit.get("exit_code")
+    audit_code = strict_exit_code_or_none(audit_raw)
+    explicit_code = strict_exit_code_or_none(exit_code)
+    if ((audit_raw is not None and audit_code is None)
+            or (exit_code is not None and explicit_code is None)):
         return False
-    text = str(result.model_text or "")
-    return not (text.startswith("ERROR:") or text.startswith("SKIPPED:") or text.startswith("NEEDS_OPEN:"))
+    if explicit_code is not None and audit_code is not None and explicit_code != audit_code:
+        return False
+    code = explicit_code if explicit_code is not None else audit_code
+    return code == 0 if str(name or "").strip().lower() == "run" else True
 
 
 def _strip_executor_workspace_audit(audit: object) -> dict:
@@ -108,6 +80,7 @@ def _normalize_audit_exit_code(audit: dict) -> tuple[dict, int | None, bool]:
 def build_recovered_tool_result(
     call: ToolCall,
     *,
+    ok: bool,
     model_text: object = "",
     audit: object = None,
     presentation: object = None,
@@ -176,7 +149,7 @@ def build_recovered_tool_result(
         truncated_flag = truncated
     try:
         return ToolResult(
-            call=call,
+            ok=ok, call=call,
             model_text=text,
             truncated=truncated_flag,
             presentation=presentation_dict,
@@ -188,7 +161,7 @@ def build_recovered_tool_result(
 
 
 def _error_result(call: ToolCall, message: str) -> ToolResult:
-    return ToolResult(call=call, model_text=f"ERROR: {message}")
+    return ToolResult(ok=False, call=call, model_text=f"ERROR: {message}")
 
 
 def _call_args_digest(call: ToolCall) -> str:
@@ -250,7 +223,7 @@ def _consistent_tool_result(requested: ToolCall, produced: ToolResult) -> ToolRe
             dict(produced.audit) if isinstance(getattr(produced, "audit", None), dict) else {}
         )
         return ToolResult(
-            call=requested,
+            ok=produced.ok, call=requested,
             model_text=produced.model_text,
             truncated=bool(produced.truncated),
             presentation=dict(produced.presentation) if isinstance(produced.presentation, dict) else {},
@@ -262,68 +235,20 @@ def _consistent_tool_result(requested: ToolCall, produced: ToolResult) -> ToolRe
 
 
 def _normalize_explicit_result(name: str, result: ToolResult) -> tuple[ToolResult, bool]:
-    """Strip invalid audit exits; invalid forces ok=False (never 0)."""
-    try:
-        audit_dict = dict(result.audit) if isinstance(result.audit, dict) else {}
-    except Exception:
-        audit_dict = {}
-    cleaned_audit, _strict_code, audit_invalid = _normalize_audit_exit_code(audit_dict)
-    if audit_invalid:
-        with contextlib.suppress(Exception):
-            result = ToolResult(
-                call=result.call,
-                model_text=result.model_text,
-                truncated=bool(result.truncated),
-                presentation=dict(result.presentation) if isinstance(result.presentation, dict) else {},
-                audit=cleaned_audit,
-                canonical=dict(result.canonical) if isinstance(result.canonical, dict) else {},
-            )
-    ok = result_ok(name, result)
-    if audit_invalid:
-        ok = False
-    if str(result.model_text or "").startswith("ERROR: tool call"):
-        ok = False
-    return result, ok
+    """Finalize status before settlement and trusted workspace attachment."""
+    cleaned_audit, _code, invalid = _normalize_audit_exit_code(dict(result.audit))
+    ok = not invalid and result_ok(name, result)
+    result = replace(result, audit=cleaned_audit, ok=ok)
+    return result, result.ok
 
 
 def _normalize_delegate_result(
-    name: str, result: ToolResult, ok: bool, exit_code: int | None
+    name: str, result: ToolResult, ok: bool, exit_code: int | None,
 ) -> tuple[ToolResult, bool, int | None]:
-    """Strict delegate exits: non-int structured/audit exits fail closed.
-
-    The structured ``exit_code`` parameter wins when present; otherwise an
-    audit-only strict exit decides ``run`` verdicts. Present-but-invalid
-    exits (bool/str/float) force ``ok=False`` and are stripped from audit.
-    """
-    if str(result.model_text or "").startswith("ERROR: tool call"):
-        ok = False
-    if name == "run" and exit_code is not None and strict_exit_code_or_none(exit_code) is None:
-        exit_code = None
-        ok = False
-    try:
-        delegate_audit = dict(result.audit) if isinstance(result.audit, dict) else {}
-    except Exception:
-        delegate_audit = {}
-    cleaned_audit, audit_code, invalid = _normalize_audit_exit_code(delegate_audit)
-    if invalid:
-        with contextlib.suppress(Exception):
-            rebuilt = ToolResult(
-                call=result.call,
-                model_text=result.model_text,
-                truncated=bool(result.truncated),
-                presentation=dict(result.presentation) if isinstance(result.presentation, dict) else {},
-                audit=cleaned_audit,
-                canonical=dict(result.canonical) if isinstance(result.canonical, dict) else {},
-            )
-            result = rebuilt
-        ok = False
-        return result, ok, exit_code
-    if name == "run" and exit_code is not None and not result_ok(name, result, exit_code=exit_code):
-        ok = False
-    elif name == "run" and exit_code is None and audit_code is not None and not result_ok(name, result):
-        # Audit-only structured exit is authoritative for run.
-        ok = False
-    elif name == "run" and exit_code is None and audit_code is None:
-        # No structured exit anywhere: unknown run result fails closed.
-        ok = False
-    return result, ok, exit_code
+    """A delegate's status must agree with its result; unknown exits fail closed."""
+    audit, _audit_code, invalid_audit = _normalize_audit_exit_code(dict(result.audit))
+    valid_exit = strict_exit_code_or_none(exit_code)
+    invalid_exit = exit_code is not None and valid_exit is None
+    final_ok = (type(ok) is bool and ok and result.ok and not invalid_audit and not invalid_exit
+                and result_ok(name, result, exit_code=exit_code))
+    return replace(result, audit=audit, ok=final_ok), final_ok, valid_exit

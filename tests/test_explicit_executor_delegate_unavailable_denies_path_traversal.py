@@ -39,7 +39,7 @@ class ExplicitExecutorDelegateUnavailableDeniesPathTraversalTests(unittest.TestC
             def fake_read(_c: ToolCall):
                 called.append(1)
                 from codey.runtime.core.models import ToolResult
-                return ToolResult(call=_c, model_text="ok")
+                return ToolResult(ok=True, call=_c, model_text="ok")
 
             with mock.patch.object(
                 ke, "_build_delegate", return_value=None

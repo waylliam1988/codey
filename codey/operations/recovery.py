@@ -303,7 +303,7 @@ def _try_replay_safe_tool(
 
             exit_code = outcome.exit_code if type(outcome.exit_code) is int else None
             result = ToolResult(
-                call=candidate.call, model_text=outcome.model_text,
+                ok=outcome.ok, call=candidate.call, model_text=outcome.model_text,
                 audit=outcome.audit, canonical=outcome.canonical,
                 presentation=outcome.presentation, truncated=outcome.truncated,
             )

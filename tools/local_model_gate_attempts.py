@@ -5,6 +5,7 @@ Every case uses the production provider and headless entry in a child process.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -89,8 +90,9 @@ def create_run_dir(parent: Path) -> Path:
 class RecordingProvider(LocalOpenAIProvider):
     """Observe parsed provider exchanges, including failed logical sends.
 
-    Internal HTTP retries remain production behavior. Records are logical
-    sends, not a count of wire requests. No authorization headers are saved.
+    Internal HTTP retries remain production behavior. Logical sends and
+    physical HTTP attempts are recorded separately from the actual wire
+    bytes. No authorization headers are saved.
     """
     def __init__(self, target: GateTarget, directory: Path):
         super().__init__(
@@ -105,8 +107,6 @@ class RecordingProvider(LocalOpenAIProvider):
     def _post_chat(self, messages, tools=None, *, timeout=None):
         self.exchange_number += 1
         number = self.exchange_number
-        request = self._request_payload(messages, tools)
-        self._record({"type": "request", "exchange": number, "payload": request})
         started = time.perf_counter()
         try:
             body = super()._post_chat(messages, tools, timeout=timeout)
@@ -117,6 +117,15 @@ class RecordingProvider(LocalOpenAIProvider):
         self._record({"type": "response", "exchange": number, "payload": body,
                       "seconds": time.perf_counter() - started})
         return body
+
+    def _observe_http_attempt(self, *, attempt, data, phase, response_bytes, seconds):
+        if phase == "request" and attempt == 1:
+            self._record({"type": "request", "exchange": self.exchange_number, "payload": json.loads(data)})
+        self._record({
+            "type": "wire_attempt", "exchange": self.exchange_number, "attempt": attempt, "phase": phase,
+            "request_sha256": hashlib.sha256(data).hexdigest(), "request_bytes": len(data),
+            "response_bytes": response_bytes, "seconds": seconds,
+        })
 
     def _record(self, row: dict) -> None:
         with (self.directory / "provider.jsonl").open("a", encoding="utf-8") as stream:
@@ -221,6 +230,8 @@ def _provider_metrics(directory: Path) -> dict:
                 usage[key] += value
     return {
         "logical_sends": sum(row["type"] == "request" for row in rows),
+        "http_attempts": sum(row["type"] == "wire_attempt" and row.get("phase") == "request" for row in rows),
+        "http_retries": sum(row["type"] == "wire_attempt" and row.get("phase") == "request" and row.get("attempt", 0) > 1 for row in rows),
         "capture_incomplete": incomplete,
         "reported_models": sorted({str(body["model"]) for body in responses if body.get("model")}),
         "usage": dict(usage) if any("usage" in body for body in responses) else None,

@@ -25,7 +25,7 @@ def test_read_intent_persists_canonical_replay_args(tmp_path) -> None:
 
     effects = RuntimeEffectStore(log).load_effects("s1", "r1")
     assert effects[0].intent.replay_args == {"path": "a.py"}
-    sink.settle("effect-1", True, result=ToolResult(ToolCall("read_file", {"path": "a.py"}), "file contents"))
+    sink.settle("effect-1", True, result=ToolResult(ToolCall("read_file", {"path": "a.py"}), "file contents", ok=True))
     settled = RuntimeEffectStore(log).load_effects("s1", "r1")[0].settlement
     assert settled is not None
     assert settled.result_excerpt == "file contents"

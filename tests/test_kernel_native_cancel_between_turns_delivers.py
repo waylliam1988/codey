@@ -74,7 +74,7 @@ def test_cancel_between_turns_delivers_executed_result(tmp_path):
     provider, orig = _native_provider(None, delivered)
     try:
         def execute_read(call):
-            return ToolResult(call=call, model_text="file-content")
+            return ToolResult(ok=True, call=call, model_text="file-content")
 
         # Drive two turns manually via run_task_kernel with a provider that
         # cancels after the first execution: use stop_flag checked at turn
@@ -134,7 +134,7 @@ def test_delivery_failure_reports_provider_failure(tmp_path):
         call = __import__("codey.runtime.core.models", fromlist=["ToolCall"]).ToolCall(
             "read_file", {"path": "a.py"}, "c9"
         )
-        initial = [ToolResult(call=call, model_text="content")]
+        initial = [ToolResult(ok=True, call=call, model_text="content")]
         result = run_task_kernel(
             session,
             request=KernelRunRequest(

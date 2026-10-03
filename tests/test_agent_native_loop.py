@@ -82,7 +82,7 @@ def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),

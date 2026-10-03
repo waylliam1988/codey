@@ -113,7 +113,7 @@ class SnapshotFailClosedTests(unittest.TestCase):
 
         def read(call):
             events.append("execute")
-            return ToolResult(call=call, model_text="a.py content")
+            return ToolResult(ok=True, call=call, model_text="a.py content")
 
         session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"})), max_turns=2)
         with mock.patch.object(kernel, "_build_turn_snapshot", snapshot):
@@ -150,10 +150,10 @@ class SnapshotFailClosedTests(unittest.TestCase):
                 return replies.pop(0)
 
         def fake_search(call):
-            return ToolResult(call=call, model_text="found https://example.com/docs")
+            return ToolResult(ok=True, call=call, model_text="found https://example.com/docs")
 
         def fake_open(call):
-            return ToolResult(call=call, model_text="page text")
+            return ToolResult(ok=True, call=call, model_text="page text")
 
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
@@ -387,7 +387,7 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
 
         session = SimpleNamespace()
         call = ToolCall("web_search", {"query": "q"}, "")
-        result = ToolResult(call=call, model_text="found")
+        result = ToolResult(ok=True, call=call, model_text="found")
         self.assertEqual(transport._native_tool_messages([result], session), [])
 
 

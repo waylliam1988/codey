@@ -171,8 +171,8 @@ class FreshMaterialPlanExecutor:
             with fixture_material_phase(runtime.search):
                 result = runtime.web_search(query)
             queries.append(query)
-            if str(result or "").startswith("ERROR:"):
-                errors.append(_clip(result, 180))
+            if not result.ok:
+                errors.append(_clip(result.model_text, 180))
                 stop_reason = "search_error"
                 continue
             search = runtime.ledger.searches[-1] if len(runtime.ledger.searches) > before_searches else None
@@ -193,9 +193,9 @@ class FreshMaterialPlanExecutor:
                     continue
                 seen.add(url)
                 before_opened = _opened_url_set(runtime)
-                body = runtime.open_url_text(url, limit=self.config.max_source_preview_chars)
-                text = str(body or "")
-                if text.startswith(("ERROR:", "SKIPPED:")):
+                source_output = runtime.open_url(url, limit=self.config.max_source_preview_chars)
+                text = source_output.model_text
+                if not source_output.ok:
                     skipped += 1
                     errors.append(_clip(text, 180))
                     continue

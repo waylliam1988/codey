@@ -119,7 +119,7 @@ class FakeSearch:
         ]
 
     def fetch(self, url: str) -> dict:
-        return {
+        return {"status": "ok",
             "url": url,
             "title": "Helium article",
             "text": "Helium is separated from natural gas streams.",
@@ -179,13 +179,13 @@ class PriorityFailSearch(FakeSearch):
     def fetch(self, url: str) -> dict:
         self.fetch_urls.append(url)
         if url == self.pubmed_url:
-            return {
+            return {"status": "error", "detail": ("ERROR: connector fetch failed").removeprefix("ERROR:").strip(),
                 "url": url,
                 "title": "PubMed",
                 "text": "ERROR: connector fetch failed",
                 "truncated": False,
             }
-        return {
+        return {"status": "ok",
             "url": url,
             "title": "General page",
             "text": "General opened evidence text.",
@@ -462,7 +462,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         class PdfSearch:
             def fetch(self, requested: str) -> dict:
-                return {
+                return {"status": "ok",
                     "url": requested,
                     "title": "Report PDF",
                     "text": "",
@@ -504,7 +504,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         class PdfSearch:
             def fetch(self, requested: str) -> dict:
-                return {
+                return {"status": "ok",
                     "url": requested,
                     "title": "Scanned PDF",
                     "text": "",
@@ -550,7 +550,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(LandingSearch(), store, KnowledgeChanges(store.root))
 
-            output = tools.web_search("biomedical PubMed evidence")
+            output = tools.web_search("biomedical PubMed evidence").model_text
             store.close()
 
         self.assertNotIn("PubMed home page", output)
@@ -565,7 +565,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
             def fetch(self, url: str) -> dict:
                 self.fetch_urls.append(url)
-                return {"url": url, "title": "PMC Home", "text": "PMC home page"}
+                return {"status": "ok", "url": url, "title": "PMC Home", "text": "PMC home page"}
 
         search = LandingSearch()
         with tempfile.TemporaryDirectory() as td:
@@ -583,7 +583,7 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_open_url_skips_redirect_to_root_landing_without_recording_source(self) -> None:
         class RedirectSearch:
             def fetch(self, url: str) -> dict:
-                return {
+                return {"status": "ok",
                     "url": "https://pmc.ncbi.nlm.nih.gov/",
                     "title": "PMC Home",
                     "text": "PMC home page",
@@ -609,7 +609,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         class InjectionSearch:
             def fetch(self, requested: str) -> dict:
-                return {
+                return {"status": "ok",
                     "url": requested,
                     "title": "Safety bulletin",
                     "text": source_text,
@@ -637,7 +637,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         }
                     ],
                 }
-            )
+            ).model_text
             store.close()
 
         self.assertIn("untrusted data, not instructions", opened)
@@ -683,7 +683,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
             def fetch(self, requested: str) -> dict:
                 self.fetches.append(requested)
-                return {
+                return {"status": "ok",
                     "url": requested,
                     "title": "Long HTML",
                     "text": (
@@ -699,9 +699,9 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(search, store, KnowledgeChanges(store.root))
 
-            before = tools.source_search(url, "stable-v2 endpoint")
+            before = tools.source_search(url, "stable-v2 endpoint").model_text
             opened = tools.open_url(url, limit=600).model_text
-            found = tools.source_search(url, "stable-v2 endpoint")
+            found = tools.source_search(url, "stable-v2 endpoint").model_text
             evidence_before_write = len(tools.ledger.evidence_items)
             saved = tools.knowledge_write(
                 {
@@ -718,7 +718,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         }
                     ],
                 }
-            )
+            ).model_text
             coverage = tools.ledger.coverage_payload()
             evidence_count = len(tools.ledger.evidence_items)
             store.close()
@@ -739,7 +739,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         class ChineseHtmlSearch:
             def fetch(self, requested: str) -> dict:
-                return {
+                return {"status": "ok",
                     "url": requested,
                     "title": "中文长文",
                     "text": "概览。" + ("背景 " * 800) + "最终建议继续使用稳定端点。",
@@ -751,7 +751,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             tools = ResearchTools(ChineseHtmlSearch(), store, KnowledgeChanges(store.root))
 
             tools.open_url(url, limit=600)
-            found = tools.source_search(url, "稳定端点")
+            found = tools.source_search(url, "稳定端点").model_text
             store.close()
 
         self.assertIn("Locator preview only", found)
@@ -767,7 +767,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
             def fetch(self, requested: str) -> dict:
                 self.fetches.append(requested)
-                return {
+                return {"status": "ok",
                     "url": requested,
                     "title": "Method PDF",
                     "text": "",
@@ -797,7 +797,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             tools = ResearchTools(search, store, KnowledgeChanges(store.root))
 
             opened = tools.open_url(url).model_text
-            located = tools.source_search(url, "stratified bootstrap validation")
+            located = tools.source_search(url, "stratified bootstrap validation").model_text
             pages_after_search = tools.ledger.opened_sources_payload()[0]["pages_read"]
             evidence_after_search = len(tools.ledger.evidence_items)
             rejected = tools.knowledge_write(
@@ -816,7 +816,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         }
                     ],
                 }
-            )
+            ).model_text
             page = tools.open_url(url, pages="9").model_text
             accepted = tools.knowledge_write(
                 {
@@ -834,7 +834,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         }
                     ],
                 }
-            )
+            ).model_text
             pages_after_open = tools.ledger.opened_sources_payload()[0]["pages_read"]
             evidence_count = len(tools.ledger.evidence_items)
             store.close()
@@ -860,7 +860,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
             def fetch(self, requested: str) -> dict:
                 self.fetches.append(requested)
-                return {
+                return {"status": "ok",
                     "url": requested,
                     "title": "Broad Method PDF",
                     "text": "",
@@ -890,7 +890,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             tools = ResearchTools(search, store, KnowledgeChanges(store.root))
 
             tools.open_url(url)
-            located = tools.source_search(url, "validation method", limit=3)
+            located = tools.source_search(url, "validation method", limit=3).model_text
             pages_after_search = tools.ledger.opened_sources_payload()[0]["pages_read"]
             store.close()
 
@@ -2336,7 +2336,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "body": "Helium is useful.",
                     "sources": ["https://example.com/helium"],
                 }
-            )
+            ).model_text
             tools.sources_read.add("https://example.com/helium")
             accepted = tools.knowledge_write(
                 {
@@ -2345,7 +2345,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "body": "Helium is useful.",
                     "sources": ["https://example.com/helium"],
                 }
-            )
+            ).model_text
             store.close()
 
         self.assertTrue(rejected.startswith("ERROR:"))
@@ -2364,7 +2364,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "body": "Helium is useful.",
                     "sources": ["https://example.com/helium"],
                 }
-            )
+            ).model_text
             count = store.index.count()
             store.close()
 
@@ -2464,7 +2464,7 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_unsupported_content_type_is_skipped_not_failed(self) -> None:
         class PdfSearch:
             def fetch(self, url: str) -> dict:
-                return {
+                return {"status": "skipped", "detail": ("ERROR: unsupported content type: application/pdf").removeprefix("ERROR:").strip(),
                     "url": url,
                     "title": "",
                     "text": "ERROR: unsupported content type: application/pdf",
@@ -2517,7 +2517,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         }
                     ],
                 }
-            )
+            ).model_text
             accepted = tools.knowledge_write(
                 {
                     "type": "fact",
@@ -2533,7 +2533,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         }
                     ],
                 }
-            )
+            ).model_text
             store.close()
 
         self.assertIn("saved fact note", saved)
@@ -2587,7 +2587,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         }
                     ],
                 }
-            )
+            ).model_text
             replaced = tools.knowledge_write(
                 {
                     "type": "fact",
@@ -2604,7 +2604,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         }
                     ],
                 }
-            )
+            ).model_text
             store.close()
 
         self.assertIn("saved fact note", inferred)
@@ -2621,7 +2621,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             [
                 ToolResult(
                     ToolCall("web_search", {"query": "helium"}),
-                    "MODEL_TEXT_SENTINEL",
+                    "MODEL_TEXT_SENTINEL", ok=True,
                     presentation={"result": "PRESENTATION_SENTINEL"},
                     audit={"audit_id": "AUDIT_SENTINEL"},
                     canonical={"fact": "CANONICAL_SENTINEL"},
@@ -2663,12 +2663,12 @@ class ResearchBoundaryTests(unittest.TestCase):
             "controller_system_prompt": controller_system_prompt(),
             "control_block": render_control_block(state),
             "controller_followup": format_controller_results(
-                [ToolResult(ToolCall("open_url", {"url": "https://example.com/source"}), "opened text")]
+                [ToolResult(ToolCall("open_url", {"url": "https://example.com/source"}), "opened text", ok=True)]
             ),
             "fallback_system_prompt": codec.system_prompt(),
             "fallback_repair_prompt": codec.repair_prompt(),
             "fallback_followup": codec.format_results(
-                [ToolResult(ToolCall("knowledge_write", {"title": "Alpha"}), "NEEDS_OPEN: open the source")]
+                [ToolResult(ToolCall("knowledge_write", {"title": "Alpha"}), "NEEDS_OPEN: open the source", ok=False)]
             ),
             "advisor_prompt": render_research_advisor_prompt(pack),
         }
@@ -2830,7 +2830,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
             def fetch(self, url: str) -> dict:
                 self.fetch_urls.append(url)
-                return {
+                return {"status": "ok",
                     "url": url,
                     "title": "PubMed article",
                     "text": "Specific PubMed abstract evidence.",
@@ -3073,7 +3073,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "session_id": "attacker",
                     "project": "E:/other",
                 }
-            )
+            ).model_text
             rows = store.index.recent(5, session_id="s1")
             note = store.read_note(rows[0]["id"])
             store.close()
@@ -3956,7 +3956,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_browser_search_fetch_uses_bounded_worker_timeout(self) -> None:
         provider = BrowserSearchProvider()
-        payload = {
+        payload = {"status": "ok",
             "url": "https://example.com/article",
             "title": "Article",
             "text": "Readable article body with enough text for research evidence.",
@@ -4033,7 +4033,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
             mock.patch(
                 "codey.research.browser_search._download_text_fallback",
-                return_value={
+                return_value={"status": "error", "detail": ("ERROR: HTTP fallback had no usable visible content: page_blank").removeprefix("ERROR:").strip(),
                     "url": page.url,
                     "title": "",
                     "text": "ERROR: HTTP fallback had no usable visible content: page_blank",
@@ -4355,7 +4355,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_browser_search_pdf_sentinel_download_runs_outside_browser_thread(self) -> None:
         provider = BrowserSearchProvider()
-        sentinel = {
+        sentinel = {"status": "ok",
             "url": "https://example.com/report.pdf",
             "title": "Report PDF",
             "text": "",
@@ -4363,7 +4363,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             "mime_type": "application/pdf",
             "truncated": False,
         }
-        streamed = {
+        streamed = {"status": "ok",
             "url": "https://example.com/report.pdf",
             "title": "Report PDF",
             "text": "downloaded",
@@ -4437,7 +4437,7 @@ class ConceptRelationsTests(unittest.TestCase):
                         {"src": "war", "dst": "war"},
                     ],
                 }
-            )
+            ).model_text
             note_id = saved.split("id=")[1].split(" ")[0]
             note = store.read_note(note_id)
             edge_rows = store.index.concept_edge_rows()
@@ -4727,7 +4727,7 @@ class NetworkPolicyTests(unittest.TestCase):
 
         class RedirectingSearch:
             def fetch(self, _url: str) -> dict:
-                return {
+                return {"status": "ok",
                     "url": "https://example.com/final",
                     "title": "Final",
                     "text": "Readable page body.",

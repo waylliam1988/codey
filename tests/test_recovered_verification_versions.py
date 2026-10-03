@@ -17,7 +17,7 @@ def test_recovered_run_without_verified_provenance_cannot_prove_current_files(tm
     session.set_workspace_state(2, workspace_fingerprint(tmp_path))
     session.record_edit("app.py", revision=1)
     call = ToolCall("run", {"command": "pytest", "path": "."})
-    result = ToolResult(call, "original pass", audit={"exit_code": 0})
+    result = ToolResult(call, "original pass", ok=True, audit={"exit_code": 0})
     record_facts_for_result(session, call, result, ok=True, exit_code=0)
     assert not evaluate(session, "done", context={"run_id": "resumed"}).complete
 
@@ -38,7 +38,7 @@ def test_done_rechecks_files_changed_outside_the_tool_loop(tmp_path):
 def test_failed_run_with_exit_zero_cannot_record_passing_verification():
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
     call = ToolCall("run", {"command":"pytest", "path":"."})
-    record_facts_for_result(session, call, ToolResult(call, "ERROR: execution failed", audit={"exit_code":0}),
+    record_facts_for_result(session, call, ToolResult(call, "ERROR: execution failed", ok=False, audit={"exit_code":0}),
                             ok=False, exit_code=0)
     assert session.verifications[-1]["passed"] is False
 
@@ -80,7 +80,7 @@ def test_production_recovery_restores_version_proof_only_for_same_workspace(tmp_
     _accept_and_mark(mutations, "s", "r", str(project))
     outputs = ManagedOutputStore(tmp_path / "outputs")
     call = ToolCall("run", {"command":"python -m pytest", "path":"."}, "original-call")
-    result = _with_trusted_workspace_state(ToolResult(call, "original pass", audit={"exit_code":0}),
+    result = _with_trusted_workspace_state(ToolResult(call, "original pass", ok=True, audit={"exit_code":0}),
                                            revision=version.revision, fingerprint=version.fingerprint)
     sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", managed_outputs=outputs)
     sink.begin_turn([("run-effect", call, 0)], turn=1)
@@ -117,7 +117,7 @@ def test_explicit_run_executor_receives_kernel_workspace_proof(tmp_path):
     session.set_workspace_state(1, workspace_fingerprint(tmp_path))
     call = ToolCall("run", {"command": "python -m pytest", "path": "."})
     results = execute_turn(session, [call], project_path=tmp_path,
-                           executors={"run": lambda call: ToolResult(call, "passed", audit={"exit_code": 0})},
+                           executors={"run": lambda call: ToolResult(call, "passed", ok=True, audit={"exit_code": 0})},
                            snapshot=build_turn_snapshot(session), run_id="r", turn=1)
     assert _kernel_workspace_identity_of(results[0]).trusted
     assert session.verifications[-1]["workspace_fingerprint"] == session.workspace_fingerprint

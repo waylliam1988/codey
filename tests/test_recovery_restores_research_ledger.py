@@ -11,6 +11,7 @@ from codey.operations.task_effects import KernelRecordedProvider
 from codey.operations.task_entry import run_entry_kernel
 from codey.operations.task_session import TaskSession
 from codey.research.ledger import ResearchLedger
+from codey.research.tools import ResearchToolOutput
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from tests.stress.test_completion_truthful_oracle_real_run import _real_research_gate
@@ -32,15 +33,15 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     def search(query):
         calls.append("search")
         ledger.record_search(query, [{"title": "Helium article", "url": url, "snippet": "Helium supply."}])
-        return f"1. Helium article\n   {url}"
+        return ResearchToolOutput(f"1. Helium article\n   {url}", ok=True)
     def opened(actual, **kwargs):
         calls.append("open")
         ledger.record_open(actual, url, "Helium article", expected_ledger.source_text_for_url(url))
-        return SimpleNamespace(model_text="Helium article\nbody")
+        return ResearchToolOutput(model_text="Helium article\nbody", ok=True)
     def write(args):
         calls.append("write")
         ledger.add_evidence_items(list(expected_ledger.evidence_items))
-        return "saved note-1"
+        return ResearchToolOutput("saved note-1", ok=True)
     tools = SimpleNamespace(ledger=ledger, web_search=search, open_url=opened, knowledge_write=write)
     for turn, call in enumerate([
         ToolCall("web_search", {"query": "helium supply"}),
@@ -50,7 +51,7 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
         result = execute_turn(live, [call], run_id="r", turn=turn, effect_scope="task",
                               research_tools=tools, managed_outputs=managed,
                               session_id="s", intent_sink=sink)[0]
-        assert not result.model_text.startswith("ERROR:"), result.model_text
+        assert result.ok is True, result.model_text
         if turn < 3 or acknowledged:
             KernelRecordedProvider(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
     recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project="", task_kind="research")

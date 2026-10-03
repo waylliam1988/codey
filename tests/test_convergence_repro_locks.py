@@ -38,7 +38,7 @@ class BatchMismatchTests(unittest.TestCase):
         def _exec(call):
             executed.append(call.name)
             from codey.runtime.core.models import ToolResult
-            return ToolResult(call=call, model_text="ok")
+            return ToolResult(ok=True, call=call, model_text="ok")
 
         results = execute_turn(
             session, [bad_call, second_call],
@@ -180,7 +180,7 @@ class CustomToolTests(unittest.TestCase):
             # Execute via injected executor must succeed.
             session = TaskSession(policy=policy, task_kind="project", project="demo", max_turns=2)
             from codey.runtime.core.models import ToolResult
-            results = execute_turn(session, [ToolCall(name=tool_name, args={"q": "hi"}, call_id="c0")], executors={tool_name: lambda c: ToolResult(call=c, model_text="custom ok")}, run_id="r-custom", turn=1)
+            results = execute_turn(session, [ToolCall(name=tool_name, args={"q": "hi"}, call_id="c0")], executors={tool_name: lambda c: ToolResult(ok=True, call=c, model_text="custom ok")}, run_id="r-custom", turn=1)
             self.assertEqual(results[0].model_text, "custom ok")
         finally:
             specs.pop(tool_name, None)
@@ -215,11 +215,12 @@ class SecondRoundWebPromptTests(unittest.TestCase):
                 self.search_result_urls = set()
 
             def web_search(self, q):
-                return "r1: https://example.com/a\nr2: https://example.com/b"
+                from codey.research.tools import ResearchToolOutput
+                return ResearchToolOutput("r1: https://example.com/a\nr2: https://example.com/b", ok=True)
 
             def open_url(self, url, **kwargs):
                 from types import SimpleNamespace as SN
-                return SN(model_text=f"Title: T\nBody for {url}", receipt_text=f"Body for {url}")
+                return SN(model_text=f"Title: T\nBody for {url}", receipt_text=f"Body for {url}", ok=True)
 
         # Provide executors via research_tools through delegate? Use direct executors for simplicity:
         # run_task_kernel with research_tools FakeTools will handle web_search/open via delegate.
@@ -302,7 +303,7 @@ class CrossProviderRecoveryTests(unittest.TestCase):
 
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
-        pending = [ToolResult(call=ToolCall(name="web_search", args={"query": "hi"}, call_id="old-id-1"), model_text="old result")]
+        pending = [ToolResult(ok=True, call=ToolCall(name="web_search", args={"query": "hi"}, call_id="old-id-1"), model_text="old result")]
         prompt, messages = apply_recovery_first(
             session,
             True,

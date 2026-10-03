@@ -53,6 +53,8 @@ HTTP / CLI → task submission → task_run + task_phases
 
 | 所有者 | 职责 |
 | --- | --- |
+| `codey/app/operator_auth.py`、`web/assets/operator_auth.js` | 进程内 HTTP/SSE 操作者凭据及 UI 启动认证；独立于模型/任务授权 |
+| `codey/runtime/core/models.py` | 不可变 `ToolResult`，必须携带精确布尔状态；展示文字不决定状态 |
 | `codey/operations/task_state.py` | `TaskState` 与类型化提交资源包 |
 | `codey/operations/task_run.py`、`task_phases/` | 运行资源生命周期、provider 接入、回调与终态结算 |
 | `codey/operations/task_entry.py`、`task_session.py` | 入口策略与任务事实 |
@@ -64,6 +66,9 @@ HTTP / CLI → task submission → task_run + task_phases
 | `codey/operations/project_completion_checks.py`、`research_completion_checks.py` | 项目、来源与严格 Research 检查提供者 |
 | `codey/operations/kernel_session_recovery.py`、`kernel_receipts.py` | 恢复原策略/事实/结算结果，并验证收据身份 |
 | `codey/providers/local_response_codec.py` | 本地响应信封与模型方言，在进入内核前归一 |
+| `codey/agents/context_compaction.py`、`providers/local_openai.py` | 压缩/发送前精确配对原生历史；实际序列化请求的诊断观察点 |
+| `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |
+| `codey/app/event_bus.py`、`web/assets/sse.js`、`app/headless_runner.py` | 重放游标、状态协调及一致的结构化事件投影 |
 | `codey/operations/research_iteration.py` | 函数 `run_research_iteration`，pipeline 对共同内核的适配入口 |
 
 ## 持久 runtime 与存储
@@ -74,6 +79,15 @@ runtime 不依赖任务编排层。细节见 [runtime 架构](runtime_architectu
 
 任务事实从原日志/收据重建，Research 证据是领域投影，不竞争成为第二任务日志。
 受管输出和恢复收据可能在本地保留来源正文/工具输出；审计摘要与模型窗口另行限长。
+
+工具状态贯通结算与恢复，包括失败结果；收据状态必须与 settlement 一致。
+Research fetch 适配器返回 `status`（`ok/error/skipped`），失败时还须提供 `detail`；
+`ResearchToolOutput.ok` 保持显式，直到转换为共同 `ToolResult`。
+每组原生工具历史要求：每个唯一 call ID 恰有一个配对结果。
+
+手工 gate recorder 在本地 provider 请求边界观察实际字节。请求 hash 用于诊断变化，
+不授予权限、不证明语义等价或任务完成。逻辑 exchange 与显式 `urlopen` 尝试分别计数，
+后者包含现有 transport retry。
 
 Ghost 工作队列与 affinity 已分别拆成 `*_model`、`*_sources`、`*_events` 和
 Store 模块；它们是领域所有者，不是新的通用框架。continuity 与 Hebbian 保留

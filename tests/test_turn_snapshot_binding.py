@@ -10,7 +10,7 @@ from __future__ import annotations
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.runtime.core.models import ToolCall
+from codey.runtime.core.models import ToolCall, ToolResult
 
 
 def _bind_policy() -> TaskPolicy:
@@ -27,11 +27,11 @@ def test_snapshot_freezes_executor_binding_across_registry_swap():
 
     def fn_a(call):
         calls_a.append(str(getattr(call, "args", {}).get("echo", "")))
-        return "A-RESULT"
+        return ToolResult(call, "A-RESULT", ok=True)
 
     def fn_b(call):
         calls_b.append(str(getattr(call, "args", {}).get("echo", "")))
-        return "B-RESULT"
+        return ToolResult(call, "B-RESULT", ok=True)
 
     assert spec_module.register_custom_tool(
         "snapbind_probe", grant="knowledge.read",
@@ -75,7 +75,7 @@ def test_registry_grant_change_only_affects_the_next_turn():
 
     name = "snapshot_grant_probe"
     assert tool_spec.register_custom_tool(name, grant="control")
-    assert tool_spec.register_custom_executor(name, lambda _: "old binding")
+    assert tool_spec.register_custom_executor(name, lambda call: ToolResult(call, "old binding", ok=True))
     try:
         session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
         snapshot = build_turn_snapshot(session)
@@ -145,7 +145,7 @@ def test_execute_turn_without_snapshot_still_runs():
     session = TaskSession(policy=_bind_policy(), task_kind="research", max_turns=2)
     results = execute_turn(
         session, [ToolCall(name="knowledge_search", args={"query": "q"})],
-        executors={"knowledge_search": lambda call: "ok"},
+        executors={"knowledge_search": lambda call: ToolResult(call, "ok", ok=True)},
         run_id="run-nosnap", turn=1,
     )
     assert "ok" in str(results[0].model_text)

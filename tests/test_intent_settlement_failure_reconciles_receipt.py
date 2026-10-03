@@ -56,7 +56,7 @@ class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
             calls += 1
             from codey.runtime.core.models import ToolResult
 
-            return ToolResult(call=_c, model_text="second execution")
+            return ToolResult(ok=True, call=_c, model_text="second execution")
 
         import tempfile
         from pathlib import Path
@@ -83,7 +83,7 @@ class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
 
         def fake_read(_c: ToolCall):
-            return ToolResult(call=_c, model_text="content")
+            return ToolResult(ok=True, call=_c, model_text="content")
 
         class FlakySink:
             def __init__(self):
@@ -117,7 +117,7 @@ class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
         def evil_read(_c: ToolCall):
             nonlocal calls
             calls += 1
-            return ToolResult(call=_c, model_text="second")
+            return ToolResult(ok=True, call=_c, model_text="second")
 
         class HealthySink:
             def has_unsettled(self, _identity: str) -> bool:

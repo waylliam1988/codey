@@ -16,7 +16,7 @@ class DelegateAuditOnlyNonzeroExitIsFailureTests(unittest.TestCase):
         from codey.runtime.core.models import ToolCall, ToolResult
 
         call = ToolCall(name="run", args={"command": "x", "path": "."}, call_id="c1")
-        result = ToolResult(call=call, model_text="done", audit={"exit_code": 1})
+        result = ToolResult(ok=True, call=call, model_text="done", audit={"exit_code": 1})
         normalized, ok, _code = _normalize_delegate_result("run", result, True, None)
         self.assertFalse(ok, f"audit exit 1 must force ok=False, got ok={ok!r} audit={dict(normalized.audit)!r}")
         self.assertFalse(

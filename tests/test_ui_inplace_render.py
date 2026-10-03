@@ -175,7 +175,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
                 diag = _attach_page_diagnostics(page)
                 try:
-                    response = page.goto(self.base_url)
+                    response = page.goto(self.httpd.launch_url(self.base_url))
                     diag["goto_status"] = response.status if response else None
                     page.wait_for_function("typeof window.renderChat === 'function'")
                 except Exception as exc:
@@ -320,7 +320,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
                 diag = _attach_page_diagnostics(page)
                 try:
-                    response = page.goto(self.base_url)
+                    response = page.goto(self.httpd.launch_url(self.base_url))
                     diag["goto_status"] = response.status if response else None
                     page.wait_for_function("typeof window.appendMessageNode === 'function'")
                 except Exception as exc:
@@ -391,7 +391,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
                 diag = _attach_page_diagnostics(page)
                 try:
-                    response = page.goto(self.base_url)
+                    response = page.goto(self.httpd.launch_url(self.base_url))
                     diag["goto_status"] = response.status if response else None
                     page.wait_for_function("typeof window.CodeyProviderUI !== 'undefined'")
                 except Exception as exc:

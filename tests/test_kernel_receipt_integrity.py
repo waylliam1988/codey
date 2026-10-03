@@ -15,7 +15,7 @@ def test_long_model_result_and_metadata_survive_restart(tmp_path):
     sink = KernelEffectSink(mutations, session_id="session", run_id="run",
                             provider_id="local", managed_outputs=store)
     call = ToolCall("run", {"command": "pytest", "path": "."}, call_id="call-1")
-    result = ToolResult(call, "完整输出\r\n" * 1800,
+    result = ToolResult(call, "完整输出\r\n" * 1800, ok=True,
                         canonical={"ok": True}, audit={"exit_code": 0, "capture_truncated": False},
                         presentation={"summary": "验证通过"})
     sink.begin_turn([("effect-1", call, 0)], turn=1)

@@ -21,7 +21,7 @@ class RecoveryFormatErrorTests(unittest.TestCase):
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
         pending = [
-            ToolResult(call=ToolCall(name="read_file", args={"path": "a.py"}), model_text="content")
+            ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "a.py"}), model_text="content")
         ]
 
         def boom(rows, _sess):
@@ -55,7 +55,7 @@ class RecoveryFormatErrorTests(unittest.TestCase):
 
         provider = NoCallProvider()
         pending = [
-            ToolResult(call=ToolCall(name="read_file", args={"path": "a.py"}), model_text="content")
+            ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "a.py"}), model_text="content")
         ]
         import codey.operations.kernel_prompt as kp
 
@@ -67,7 +67,7 @@ class RecoveryFormatErrorTests(unittest.TestCase):
 
         def fake_tool(call):
             executed.append(str(getattr(call, "name", "")))
-            return ToolResult(call=call, model_text="re-executed")
+            return ToolResult(ok=True, call=call, model_text="re-executed")
 
         try:
             if orig is not None:

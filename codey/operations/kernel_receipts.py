@@ -26,6 +26,7 @@ def result_receipt_fields(result: ToolResult, *, store: Any,
 
     identity = _kernel_workspace_identity_of(result)
     payload = json.dumps({
+        "ok": result.ok,
         "args": result.call.args,
         "model_text": result.model_text,
         "canonical": result.canonical,
@@ -79,9 +80,11 @@ def restore_result_receipt(projection: Any, *, store: Any,
         raise ValueError("tool result receipt digest mismatch")
     data = json.loads(payload)
     if not isinstance(data, dict) or set(data) != {
-        "args", "model_text", "canonical", "presentation", "audit", "truncated", "workspace_identity",
+        "ok", "args", "model_text", "canonical", "presentation", "audit", "truncated", "workspace_identity",
     }:
         raise ValueError("invalid tool result receipt fields")
+    if type(data["ok"]) is not bool or data["ok"] != (settlement.status == "ok"):
+        raise ValueError("tool result status differs from settlement")
     if not isinstance(data["args"], dict) or compute_args_digest(data["args"]) != intent.args_digest:
         raise ValueError("tool result arguments differ from intent")
     text = data["model_text"]
@@ -103,7 +106,7 @@ def restore_result_receipt(projection: Any, *, store: Any,
         if artifact.get("sha256") != metadata.get("sha256"):
             raise ValueError("tool output artifact differs from receipt")
     result = ToolResult(
-        call=ToolCall(intent.tool_name, data["args"], call_id=intent.call_id),
+        ok=data["ok"], call=ToolCall(intent.tool_name, data["args"], call_id=intent.call_id),
         model_text=text, canonical=data["canonical"], presentation=data["presentation"],
         audit=data["audit"], truncated=data["truncated"],
     )

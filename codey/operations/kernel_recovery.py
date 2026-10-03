@@ -254,7 +254,6 @@ def replay_slot_typed(
     identity: str,
     call: ToolCall,
     name: str,
-    active_turn: int,
     *,
     project_path: Any = None,
     revision_store: Any = None,
@@ -284,6 +283,8 @@ def replay_slot_typed(
         stored_digest = strict_receipt_text(record, "args_digest", default="")
         call_id = strict_receipt_text(record, "call_id", default=str(getattr(call, "call_id", "") or ""))
         excerpt = strict_receipt_text(record, "excerpt", default="")
+        if "ok" not in record:
+            raise RecoveryFailed("persisted replay ok must be a boolean")
         was_ok = strict_receipt_bool(record, "ok", default=False)
         exit_code = strict_receipt_exit_code(record)
     except RecoveryFailed as exc:
@@ -316,13 +317,6 @@ def replay_slot_typed(
             disposition="FAILED",
             result=_recovery_failed_result(call, f"settled replay rebuild failed: {exc}"),
         )
-    if not was_ok:
-        return RecoverySlotResult(
-            disposition="RECOVERED",
-            result=_recovery_failed_result(
-                want, f"already settled in turn {active_turn}; see prior delivery"
-            ),
-        )
     try:
         from codey.operations.kernel_recovery_result import (
             build_recovered_result as _build,
@@ -331,7 +325,7 @@ def replay_slot_typed(
             spec_from_persisted_record as _spec_persisted,
         )
 
-        persisted_payload: dict[str, object] = {"excerpt": excerpt, "name": stored_name}
+        persisted_payload: dict[str, object] = {"ok": was_ok, "excerpt": excerpt, "name": stored_name}
         if exit_code is not None:
             persisted_payload["exit_code"] = exit_code
         spec = _spec_persisted(
@@ -443,7 +437,7 @@ def _check_batch_recovery(
             return RecoveryCheckResult(kind="MISMATCH", message=text or "delivered mismatch")
         try:
             replayed_slot = replay_slot_typed(
-                session, identity, call, name, active_turn,
+                session, identity, call, name,
                 project_path=project_path, revision_store=revision_store,
                 ignored_paths=ignores, recovery_ctx=ctx,
             )
@@ -510,7 +504,7 @@ def _guarded_slot_result(
 
     try:
         replayed_slot = replay_slot_typed(
-            session, identity, call, name, active_turn,
+            session, identity, call, name,
             project_path=project_path, revision_store=revision_store,
             ignored_paths=ignored_paths, recovery_ctx=recovery_ctx,
         )

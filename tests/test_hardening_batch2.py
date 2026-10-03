@@ -150,10 +150,15 @@ class PostBodyCoercionTests(unittest.TestCase):
 
     def test_post_route_exception_is_json_500(self) -> None:
         from codey.app import server as server_module
+        from codey.app.operator_auth import OperatorAuth
 
         handler = server_module.Handler.__new__(server_module.Handler)
         handler.path = "/api/stop"
-        handler.headers = {}
+        auth = OperatorAuth(8080)
+        cookie = auth.exchange(auth.issue_bootstrap())
+        assert cookie is not None
+        handler.server = SimpleNamespace(operator_auth=auth)
+        handler.headers = {"Cookie": cookie.split(";", 1)[0]}
         sent: list[tuple[int, dict]] = []
         handler._send_json = lambda status, payload: sent.append((status, payload))  # type: ignore[method-assign]
         handler._request_origin_allowed = lambda: True  # type: ignore[method-assign]
@@ -574,7 +579,7 @@ class BrowserFetchAbandonTests(unittest.TestCase):
         def _slow_fetch(url):
             provider._fetch_page = fake_page
             self.assertTrue(release.wait(10))
-            return {"url": url, "title": "", "text": "late", "truncated": False}
+            return {"status": "ok", "url": url, "title": "", "text": "late", "truncated": False}
 
         with (
             mock.patch.object(

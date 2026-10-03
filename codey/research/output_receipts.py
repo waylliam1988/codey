@@ -9,53 +9,25 @@ clip-only. Never changes execution semantics.
 
 from __future__ import annotations
 
-from codey.runtime.core.models import normalized_managed_output
-
 RESEARCH_OUTPUT_BUDGET_BYTES = 24_000
 RESEARCH_OUTPUT_HEAD_BYTES = 12_000
 RESEARCH_OUTPUT_TAIL_BYTES = 8_000
 
 
 class _Outcome:
-    def __init__(self, model_text: str, *, changed: bool = False, presentation_result: str = "") -> None:
+    def __init__(self, model_text: str, *, ok: bool, presentation_result: str = "") -> None:
         self.model_text = model_text
-        self.status = _outcome_status(model_text)
-        self.ok = self.status != "error"
+        self.ok = ok
+        self.status = "ok" if ok else "error"
         self.exit_code = None
-        self.changed = changed and self.status == "ok"
+        self.changed = False
         self.truncated = False
         self.presentation = {"status": self.status, "result": (presentation_result or self.first_model_line(200))[:200]}
         self.audit: dict[str, object] = {}
         self.canonical: dict[str, object] = {}
 
-    @classmethod
-    def error(cls, message: str) -> _Outcome:
-        text = message if message.startswith("ERROR:") else f"ERROR: {message}"
-        return cls(text)
-
     def first_model_line(self, limit: int) -> str:
         return next(iter(self.model_text.splitlines()), "")[:limit]
-
-    def presentation_result(self, limit: int) -> str:
-        value = self.presentation.get("result")
-        text = str(value or "") or self.first_model_line(limit)
-        return text[:limit]
-
-    def presentation_status(self) -> str:
-        value = self.presentation.get("status")
-        return str(value or "") or ("ok" if self.ok else "error")
-
-    def managed_output(self) -> dict[str, object]:
-        value = self.audit.get("managed_output")
-        return normalized_managed_output(value)
-
-
-def _outcome_status(output: str) -> str:
-    if output.startswith("ERROR:"):
-        return "error"
-    if output.startswith(("NEEDS_OPEN:", "SKIPPED:")):
-        return "needs_action"
-    return "ok"
 
 
 def head_tail_clip(text: str) -> tuple[str, int]:
@@ -94,6 +66,7 @@ def maybe_externalize_output(
     permission_profile: str,
     call,
     output: str,
+    ok: bool,
     turn: int,
     tool_index: int,
     presentation_result: str = "",
@@ -107,10 +80,8 @@ def maybe_externalize_output(
     """
     text = str(output or "")
     model_text = str(model_text_override or text)
-    if text.startswith(("ERROR:", "NEEDS_OPEN:", "SKIPPED:")):
-        return _Outcome(model_text, presentation_result=presentation_result) if presentation_result else _Outcome(model_text)
     if len(text.encode("utf-8")) <= RESEARCH_OUTPUT_BUDGET_BYTES:
-        return _Outcome(model_text, presentation_result=presentation_result) if presentation_result else _Outcome(model_text)
+        return _Outcome(model_text, ok=ok, presentation_result=presentation_result)
     audit: dict[str, object] = {}
     if store is not None and session_id and run_id:
         try:
@@ -142,7 +113,7 @@ def maybe_externalize_output(
         visible = model_text
     else:
         visible, _ = head_tail_clip(text)
-    outcome = _Outcome(visible, presentation_result=presentation_result) if presentation_result else _Outcome(visible)
+    outcome = _Outcome(visible, ok=ok, presentation_result=presentation_result)
     outcome.truncated = True
     outcome.audit.update(audit)
     outcome.audit["externalized"] = True
@@ -153,7 +124,6 @@ __all__ = [
     "RESEARCH_OUTPUT_BUDGET_BYTES",
     "RESEARCH_OUTPUT_HEAD_BYTES",
     "RESEARCH_OUTPUT_TAIL_BYTES",
-    "_Outcome",
     "display_ref_for_call",
     "head_tail_clip",
     "maybe_externalize_output",

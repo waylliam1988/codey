@@ -25,7 +25,7 @@ class KernelEventExitCodeEffectLocalTests(unittest.TestCase):
         _emit_tool_results(
             events.append,
             session,
-            [ToolResult(call=call, model_text="current output")],
+            [ToolResult(ok=True, call=call, model_text="current output")],
             run_id="run:task",
             turn=1,
         )

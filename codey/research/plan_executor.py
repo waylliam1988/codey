@@ -112,8 +112,8 @@ class PlanExecutor:
             before_searches = len(runtime.ledger.searches)
             result = runtime.web_search(query)
             state.queries.append(query)
-            if str(result or "").startswith("ERROR:"):
-                state.errors.append(_safe_error(result))
+            if not result.ok:
+                state.errors.append(_safe_error(result.model_text))
                 state.stop_reason = "search_error"
                 continue
             search = runtime.ledger.searches[-1] if len(runtime.ledger.searches) > before_searches else None
@@ -220,7 +220,7 @@ class PlanExecutor:
                 continue
             before_opened = set(runtime.ledger.final_url_set())
             try:
-                body = runtime.open_url_text(
+                opened = runtime.open_url(
                     url,
                     limit=self.config.max_source_preview_chars,
                 )
@@ -229,8 +229,8 @@ class PlanExecutor:
             if self._is_stopped():
                 state.stop_reason = "stopped"
                 break
-            text = str(body or "")
-            if text.startswith(("ERROR:", "SKIPPED:")):
+            text = opened.model_text
+            if not opened.ok:
                 state.skipped += 1
                 state.errors.append(_safe_error(text))
                 continue

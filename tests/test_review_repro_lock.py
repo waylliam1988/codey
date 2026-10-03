@@ -95,16 +95,16 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
 
     def edit(call):
         (project / call.args["path"]).write_text(call.args["content"])
-        return ToolResult(call, "edited new.py", audit={"changed": True})
+        return ToolResult(call, "edited new.py", ok=True, audit={"changed": True})
 
     def verify(call):
         assert (project / "new.py").read_text() == "x = 2"
-        return ToolResult(call, "1 passed", audit={"exit_code": 0})
+        return ToolResult(call, "1 passed", ok=True, audit={"exit_code": 0})
 
     executors = {
-        "web_search": lambda call: ToolResult(call, "1. Docs\n   https://example.com/docs"),
-        "open_url": lambda call: ToolResult(call, "Official documentation"),
-        "read_file": lambda call: ToolResult(call, (project / call.args["path"]).read_text()),
+        "web_search": lambda call: ToolResult(call, "1. Docs\n   https://example.com/docs", ok=True),
+        "open_url": lambda call: ToolResult(call, "Official documentation", ok=True),
+        "read_file": lambda call: ToolResult(call, (project / call.args["path"]).read_text(), ok=True),
         "edit": edit, "run": verify,
     }
     result = run_task_kernel(
@@ -185,10 +185,10 @@ def test_issue4_same_slot_different_args_must_not_reuse(tmp_path):
     project.mkdir()
     def exec_a(call):
         (project / "a.py").write_text("x", encoding="utf-8")
-        return ToolResult(call=call, model_text="edited a.py", audit={"changed": True})
+        return ToolResult(ok=True, call=call, model_text="edited a.py", audit={"changed": True})
     def exec_b(call):
         (project / "b.py").write_text("y", encoding="utf-8")
-        return ToolResult(call=call, model_text="edited b.py", audit={"changed": True})
+        return ToolResult(ok=True, call=call, model_text="edited b.py", audit={"changed": True})
     r1 = execute_turn(session, [ToolCall("edit", {"path": "a.py", "content": "x"})],
                       executors={"edit": exec_a}, run_id="r", turn=1,
                       project_path=project, workspace_revision_store=store)

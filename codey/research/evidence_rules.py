@@ -14,7 +14,7 @@ from typing import Any
 
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.query_planner import ResearchPlan
-from codey.research.tools import ResearchTools
+from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.utils.refs import clip, coerce_int
 
 _SOURCE_ID_FORBIDDEN_RE = re.compile(r"\b(?:s\d+|source_id|result_id|hit_id)\b", re.IGNORECASE)
@@ -235,24 +235,24 @@ class EvidenceFollowupController:
         self.tools = tools
         self.allowed_urls = set(str(u).strip() for u in allowed_urls if str(u).strip())
 
-    def execute_tool_call(self, name: str, args: dict[str, Any]) -> str:
+    def execute_tool_call(self, name: str, args: dict[str, Any]) -> ResearchToolOutput:
         tool_name = str(name or "").strip().lower()
         if error := _reject_forbidden_tool(tool_name):
-            return error
+            return ResearchToolOutput(error, ok=False)
         if error := _reject_extra_write_args(args):
-            return error
+            return ResearchToolOutput(error, ok=False)
         if error := _reject_bad_note_type(args):
-            return error
+            return ResearchToolOutput(error, ok=False)
         source_list, error = _extract_source_list(args)
         if error:
-            return error
+            return ResearchToolOutput(error, ok=False)
         if error := _check_source_allowlist(source_list, self.allowed_urls):
-            return error
+            return ResearchToolOutput(error, ok=False)
         evidence_items, error = _extract_evidence_items(args)
         if error:
-            return error
+            return ResearchToolOutput(error, ok=False)
         if error := _check_evidence_allowlist(evidence_items, self.allowed_urls, source_list):
-            return error
+            return ResearchToolOutput(error, ok=False)
         return self.tools.knowledge_write(args)
 
 

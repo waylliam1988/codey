@@ -42,7 +42,7 @@ class _Search:
         return []
 
     def fetch(self, url: str) -> dict:
-        return {"url": url, "title": "t", "text": "body", "truncated": False}
+        return {"status": "ok", "url": url, "title": "t", "text": "body", "truncated": False}
 
     def close(self) -> None:
         return None

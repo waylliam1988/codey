@@ -35,7 +35,7 @@ class ExecutorPrecedenceOverDelegateTests(unittest.TestCase):
 
             def fake_edit(call: ToolCall):
                 calls.append(str(call.args.get("path") or ""))
-                return ToolResult(call=call, model_text="fake-edited", audit={"changed": False})
+                return ToolResult(ok=True, call=call, model_text="fake-edited", audit={"changed": False})
 
             results = ke.execute_turn(
                 session,
@@ -63,7 +63,7 @@ class ExecutorPrecedenceOverDelegateTests(unittest.TestCase):
 
             def fake_run(call: ToolCall):
                 calls.append(str(call.args.get("command") or ""))
-                return ToolResult(call=call, model_text="fake-run", audit={"exit_code": 0})
+                return ToolResult(ok=True, call=call, model_text="fake-run", audit={"exit_code": 0})
 
             ke.execute_turn(
                 session,

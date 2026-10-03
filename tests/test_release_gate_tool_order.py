@@ -107,7 +107,7 @@ class ReleaseGateToolOrderTests(unittest.TestCase):
             audit: dict = {"changed": (c.name == "edit")}
             if c.name == "run":
                 audit["exit_code"] = 0
-            results.append(ToolResult(call=c, model_text="ok", audit=audit))
+            results.append(ToolResult(ok=True, call=c, model_text="ok", audit=audit))
         for idx, call in enumerate(calls):
             ident = turn_effect_id("r1:task", 1, idx)
             session.executed[ident] = {"name": call.name, "ok": True, "call_id": "", "excerpt": "ok", "args_digest": ""}

@@ -80,7 +80,7 @@ def test_shared_kernel_repairs_json_without_executing_malformed_reply(tmp_path):
     def edit(call):
         executions.append(call)
         (tmp_path / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
-        return ToolResult(call=call, model_text="created")
+        return ToolResult(ok=True, call=call, model_text="created")
 
     # Stop after execution: this transport fixture supplies no verification
     # evidence and must not pretend a real edited project is complete.

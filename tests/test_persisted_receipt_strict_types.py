@@ -22,7 +22,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
             _memory_results = {}
 
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
-        slot = replay_slot_typed(Session(), "effect", call, "read_file", 1)
+        slot = replay_slot_typed(Session(), "effect", call, "read_file")
         self.assertEqual(slot.disposition, "FAILED")
 
     def test_numeric_zero_ok_does_not_replay_as_success(self) -> None:
@@ -42,7 +42,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
             _memory_results = {}
 
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
-        slot = replay_slot_typed(Session(), "effect", call, "read_file", 1)
+        slot = replay_slot_typed(Session(), "effect", call, "read_file")
         self.assertEqual(slot.disposition, "FAILED")
 
     def test_present_non_string_receipt_fields_fail_closed(self) -> None:
@@ -64,7 +64,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
                 _memory_results = {}
 
             call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
-            slot = replay_slot_typed(Session(), "effect", call, "read_file", 1)
+            slot = replay_slot_typed(Session(), "effect", call, "read_file")
             self.assertEqual(slot.disposition, "FAILED", field)
 
     def test_recovery_exception_does_not_treat_string_ok_as_successful_intent(self) -> None:
@@ -78,7 +78,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
         session = SimpleNamespace(executed={"effect": {"ok": "false"}})
         reconcile = mock.Mock()
         settle = mock.Mock()
-        guarded = ToolResult(call=call, model_text="ERROR: guarded")
+        guarded = ToolResult(ok=False, call=call, model_text="ERROR: guarded")
 
         with mock.patch(
             "codey.operations.kernel_recovery.replay_slot_typed",
@@ -89,7 +89,6 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
                 "effect",
                 call,
                 "read_file",
-                1,
                 None,
                 None,
                 (),
@@ -113,7 +112,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
         session = SimpleNamespace(executed={"effect": {}})
         reconcile = mock.Mock()
         settle = mock.Mock()
-        guarded = ToolResult(call=call, model_text="ERROR: guarded")
+        guarded = ToolResult(ok=False, call=call, model_text="ERROR: guarded")
 
         with mock.patch(
             "codey.operations.kernel_recovery.replay_slot_typed",
@@ -124,7 +123,6 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
                 "effect",
                 call,
                 "read_file",
-                1,
                 None,
                 None,
                 (),
@@ -168,7 +166,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         identity = turn_effect_id("run", 1, 0)
         session.executed[identity] = {"ok": "false", "name": "read_file"}
-        result = ToolResult(call=call, model_text="content")
+        result = ToolResult(ok=True, call=call, model_text="content")
         events = []
 
         kernel_events._emit_tool_results(events.append, session, [result], run_id="run", turn=1)

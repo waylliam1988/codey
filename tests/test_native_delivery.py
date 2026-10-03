@@ -117,7 +117,7 @@ def test_native_delivery_records_effect_and_batch(tmp_path: Path) -> None:
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
                 observation=KernelObservationDeps(
@@ -194,7 +194,7 @@ def test_native_overflow_fails_closed_without_fallback(tmp_path: Path) -> None:
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),
@@ -239,7 +239,7 @@ def test_native_protocol_error_answers_chain(tmp_path: Path) -> None:
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),
@@ -307,7 +307,7 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
                 observation=KernelObservationDeps(
@@ -339,7 +339,7 @@ def test_recovered_native_delivery_marks_delivered(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("hello\n", encoding="utf-8")
     session = _native_session(tmp_path)
     pending = [
-        ToolResult(call=ToolCall(name="read_file", args={"path": "app.py"}, call_id="c1"), model_text="hello"),
+        ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "app.py"}, call_id="c1"), model_text="hello"),
     ]
     messages = kernel_transport._native_tool_messages(pending, session)
     assert len(messages) == 1 and messages[0]["tool_call_id"] == "c1"
@@ -373,7 +373,7 @@ def test_recovered_native_delivery_marks_delivered(tmp_path: Path) -> None:
                     initial_results=pending,
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),
@@ -406,7 +406,7 @@ def test_native_success_leaves_no_pending_context_rows(tmp_path: Path) -> None:
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),
@@ -445,7 +445,7 @@ def test_native_too_many_calls_answered_in_full(tmp_path: Path) -> None:
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),
@@ -479,7 +479,7 @@ def test_idless_turn_restarts_fresh_chat_instead_of_dangling(tmp_path: Path) -> 
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),
@@ -519,7 +519,7 @@ def test_native_mixed_done_answered_in_full(tmp_path: Path) -> None:
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),
@@ -538,7 +538,7 @@ def test_native_helpers_execute_and_format(tmp_path: Path) -> None:
     results = execute_turn(
         session,
         [ToolCall(name="read_file", args={"path": "app.py"}, call_id="c0")],
-        executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+        executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
         run_id="r-helper-1",
         turn=1,
     )
@@ -555,8 +555,8 @@ def test_native_helpers_execute_and_format(tmp_path: Path) -> None:
     import pytest as _pytest
 
     mixed = [
-        ToolResult(call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"), model_text="a"),
-        ToolResult(call=ToolCall(name="read_file", args={"path": "b.py"}, call_id=""), model_text="b"),
+        ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"), model_text="a"),
+        ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "b.py"}, call_id=""), model_text="b"),
     ]
     with _pytest.raises(ValueError):
         kernel_transport._native_tool_messages(mixed, session)
@@ -837,7 +837,7 @@ def test_large_receipt_store_failure_never_creates_an_inline_success() -> None:
         def write_tool_output(self, **kwargs):
             raise OSError("disk gone")
 
-    result = ToolResult(ToolCall("search", {"query": "q"}), "z" * 30_000)
+    result = ToolResult(ToolCall("search", {"query": "q"}), "z" * 30_000, ok=True)
     for store, error in ((RefusingStore(), ValueError), (ExplodingStore(), OSError)):
         with pytest.raises(error):
             result_receipt_fields(result, store=store, session_id="s", run_id="r", effect_id="e")

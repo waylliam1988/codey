@@ -54,5 +54,5 @@ def test_kernel_fixture_keeps_real_edit_run_done_sequence():
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
     assert json.loads(writer.send(TASK))["tool"] == "edit"
     for name, text, expected in (("edit", "changed", "run"), ("run", "exit 0", "done")):
-        result = ToolResult(call=ToolCall(name=name, args={}), model_text=text)
+        result = ToolResult(ok=True, call=ToolCall(name=name, args={}), model_text=text)
         assert json.loads(writer.send(_format_results([result], session)))["tool"] == expected

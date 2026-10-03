@@ -55,13 +55,13 @@ class WorkspaceAuthoritativeStateTests(unittest.TestCase):
 
             def edit(call):
                 (project / "a.py").write_text("x = 2\n", encoding="utf-8")
-                return ToolResult(call, "edited", audit={"changed": True})
+                return ToolResult(call, "edited", ok=True, audit={"changed": True})
 
             with patch.object(store, "bump_state", wraps=store.bump_state) as bump:
                 results = execute_turn(session, [
                     ToolCall("edit", {"path": "a.py", "content": "x = 2\n"}),
                     ToolCall("run", {"path": ".", "command": "python -m pytest"}),
-                ], executors={"edit": edit, "run": lambda call: ToolResult(call, "passed", audit={"exit_code": 0})},
+                ], executors={"edit": edit, "run": lambda call: ToolResult(call, "passed", ok=True, audit={"exit_code": 0})},
                    project_path=project, workspace_revision_store=store, run_id="one-bump")
             bump.assert_called_once()
             self.assertEqual(len(results), 2)

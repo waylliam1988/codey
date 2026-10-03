@@ -55,7 +55,7 @@ class PersistedExecutedTamperedProvenanceRejectedTests(unittest.TestCase):
             # Current contract requires the verified replay signature
             # (project_path/revision_store); no legacy-signature fallback.
             replayed = _replay_settled_slot(
-                session, identity, call, "edit", 1,
+                session, identity, call, "edit",
                 project_path=project, revision_store=store,
             )
             self.assertIsNotNone(replayed)
@@ -98,7 +98,7 @@ class PersistedExecutedTamperedProvenanceRejectedTests(unittest.TestCase):
             def fake_edit(_c: ToolCall):
                 calls[0] = True
                 from codey.runtime.core.models import ToolResult
-                return ToolResult(call=_c, model_text="edited again")
+                return ToolResult(ok=True, call=_c, model_text="edited again")
 
             kwargs = dict(
                 executors={"edit": fake_edit},

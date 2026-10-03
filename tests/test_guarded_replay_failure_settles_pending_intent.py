@@ -13,7 +13,7 @@ class GuardedReplayFailureSettlesPendingIntentTests(unittest.TestCase):
 
         session = object()
         call = ToolCall(name="shell", args={"command": "echo hi"}, call_id="c1")
-        guarded = ToolResult(call=call, model_text="ERROR: recovery failed")
+        guarded = ToolResult(ok=False, call=call, model_text="ERROR: recovery failed")
         settled = []
 
         with mock.patch(
@@ -25,7 +25,6 @@ class GuardedReplayFailureSettlesPendingIntentTests(unittest.TestCase):
                 "effect-1",
                 call,
                 "shell",
-                1,
                 None,
                 None,
                 (),
@@ -44,7 +43,7 @@ class GuardedReplayFailureSettlesPendingIntentTests(unittest.TestCase):
 
         session = object()
         call = ToolCall(name="shell", args={"command": "echo hi"}, call_id="c1")
-        guarded = ToolResult(call=call, model_text="ERROR: recovery failed")
+        guarded = ToolResult(ok=False, call=call, model_text="ERROR: recovery failed")
 
         def fail_settle(*_args, **_kwargs):
             raise EffectSettlementFailed("receipt unavailable")
@@ -58,7 +57,6 @@ class GuardedReplayFailureSettlesPendingIntentTests(unittest.TestCase):
                 "effect-1",
                 call,
                 "shell",
-                1,
                 None,
                 None,
                 (),

@@ -249,7 +249,7 @@ def test_real_pytest_assertion_failure_blocks_with_failed_observation(tmp_path, 
         (project / str(call.args.get("path") or "a.py")).write_text(
             str(call.args.get("content") or ""), encoding="utf-8"
         )
-        return ToolResult(call=call, model_text="edited", audit={"changed": True})
+        return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
     run_task_kernel(
         session,

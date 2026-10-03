@@ -7,6 +7,7 @@
   let reconnectTimer = null;
   let reconcilePromise = null;
   let bufferedServerEvents = [];
+  let bufferedGap = false;
   const BUFFER_LIMIT = 100;
   let lastKnownEventId = 0;
 
@@ -37,6 +38,7 @@ function scheduleReconnectStatus() {
 function reconcileRunState() {
   if (reconcilePromise) return reconcilePromise;
   bufferedServerEvents = [];
+  bufferedGap = false;
   reconcilePromise = (async () => {
     try {
       const response = await fetch('/api/state', { cache: 'no-store' });
@@ -49,7 +51,12 @@ function reconcileRunState() {
       const events = bufferedServerEvents;
       bufferedServerEvents = [];
       reconcilePromise = null;
-      for (const event of events) deps.handleServerEvent(event);
+      if (bufferedGap) {
+        bufferedGap = false;
+        reconcileRunState();
+      } else {
+        for (const event of events) deps.handleServerEvent(event);
+      }
     }
   })();
   return reconcilePromise;
@@ -57,7 +64,10 @@ function reconcileRunState() {
 
 function ingestServerEvent(data) {
   if (reconcilePromise) {
-    if (bufferedServerEvents.length >= BUFFER_LIMIT) bufferedServerEvents.shift();
+    if (bufferedServerEvents.length >= BUFFER_LIMIT) {
+      bufferedGap = true;
+      bufferedServerEvents.shift();
+    }
     bufferedServerEvents.push(data);
     return;
   }
@@ -89,12 +99,13 @@ function connect() {
   evtSrc.onmessage = (e) => {
     let data;
     try { data = JSON.parse(e.data); } catch { return; }
-    const eventId = Number.parseInt(e.lastEventId || '', 10);
-    if (Number.isFinite(eventId) && eventId > 0) {
+    const eventId = Number(e.lastEventId || data.event_id || 0);
+    if (data.type === 'resync_required' && Number.isSafeInteger(data.cursor) && data.cursor >= 0) {
+      lastKnownEventId = data.cursor;
+    } else if (Number.isSafeInteger(eventId) && eventId > 0) {
+      if (eventId <= lastKnownEventId) return;
       lastKnownEventId = eventId;
       if (data.event_id == null) data.event_id = eventId;
-    } else if (Number.isFinite(data.event_id) && data.event_id > 0) {
-      lastKnownEventId = data.event_id;
     }
     if (data.type === 'hello') {
       clearReconnectTimer();

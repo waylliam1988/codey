@@ -41,7 +41,7 @@ def _gateway(pages=None, results=(), errors=None):
     return gateway, ledger, failures
 
 
-_HTML_PAGE = {
+_HTML_PAGE = {"status": "ok",
     "url": "https://example.com/article",
     "title": "Example",
     "text": "Evidence text about aluminum supply.",
@@ -109,7 +109,8 @@ class GatewayOpenTests(unittest.TestCase):
         self.assertTrue(any(item[0] == "browser" for item in failures))
 
     def test_open_unsupported_type_is_skipped(self) -> None:
-        page = dict(_HTML_PAGE, text="ERROR: unsupported content type: video/mp4")
+        page = dict(_HTML_PAGE, status="skipped", detail="unsupported content type: video/mp4",
+                    text="SKIPPED: unsupported content type: video/mp4")
         gateway, _ledger, _failures = _gateway(pages={"https://example.com/v": page})
         outcome = gateway.open("https://example.com/v")
         self.assertEqual(outcome.status, "skipped")

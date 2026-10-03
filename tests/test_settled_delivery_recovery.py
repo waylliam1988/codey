@@ -53,7 +53,7 @@ def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = "
         marker = tmp / "execution-count.txt"
         count = int(marker.read_text()) if marker.exists() else 0
         marker.write_text(str(count + 1))
-        return ToolResult(call, "run output hi", audit={"exit_code": 0})
+        return ToolResult(call, "run output hi", ok=True, audit={"exit_code": 0})
 
     if long_text:
         store = ManagedOutputStore(tmp / "state")
@@ -69,9 +69,9 @@ def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = "
             "original_sha256": ref.original_sha256,
             "stored_truncated": ref.stored_truncated,
         }}
-        result = ToolResult(call=read_call, model_text=long_text[:2000], audit=audit, truncated=True)
+        result = ToolResult(ok=True, call=read_call, model_text=long_text[:2000], audit=audit, truncated=True)
     else:
-        result = ToolResult(call=read_call, model_text=read_text)
+        result = ToolResult(ok=True, call=read_call, model_text=read_text)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.verify"})),
                           project=str(tmp))
     results = execute_turn(session, [run_call, read_call], run_id=run_id, turn=1,
@@ -174,7 +174,7 @@ def test_long_result_cannot_settle_without_durable_receipt():
         call = ToolCall(name="read_file", args={"path": "a.py"})
         sink.begin_turn([("eff-h", call, 0)], turn=1)
         with pytest.raises(ValueError, match="durable managed receipt"):
-            sink.settle("eff-h", True, result=ToolResult(call=call, model_text=full))
+            sink.settle("eff-h", True, result=ToolResult(ok=True, call=call, model_text=full))
         assert RuntimeEffectStore(log).load_effects("s-honest", "r-honest")[0].is_pending
 
 

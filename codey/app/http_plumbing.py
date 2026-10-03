@@ -231,7 +231,8 @@ def write_sse_event(
 ) -> bool:
     try:
         data = json.dumps(dict(event), ensure_ascii=False)
-        prefix = f"id: {event_id}\n" if event_id > 0 else ""
+        reset = event.get("type") == "resync_required" and event.get("cursor") == 0
+        prefix = f"id: {event_id}\n" if event_id > 0 or reset else ""
         handler.wfile.write(f"{prefix}data: {data}\n\n".encode())
         handler.wfile.flush()
         return True

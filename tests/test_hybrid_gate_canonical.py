@@ -32,7 +32,7 @@ def _full_chain_rows(testcase, run_id="r1", session_id="s1"):
         audit: dict = {"changed": (c.name == "edit")}
         if c.name == "run":
             audit["exit_code"] = 0
-        results.append(ToolResult(call=c, model_text="ok", audit=audit))
+        results.append(ToolResult(ok=True, call=c, model_text="ok", audit=audit))
     for idx, call in enumerate(calls):
         ident = _tid("r1:task", 1, idx)
         session.executed[ident] = {

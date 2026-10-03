@@ -84,11 +84,11 @@ def test_receipts_keep_small_results_inline_and_reject_unstored_large_results() 
     from codey.operations.kernel_receipts import result_receipt_fields
 
     call = ToolCall("read", {"path": "a.py"})
-    small = result_receipt_fields(ToolResult(call, "ok"), store=None, session_id="s", run_id="r", effect_id="e")
+    small = result_receipt_fields(ToolResult(call, "ok", ok=True), store=None, session_id="s", run_id="r", effect_id="e")
     assert small["result_text"] == "ok"
     assert small["result_ref"] == ""
     with pytest.raises(ValueError, match="durable managed receipt"):
-        result_receipt_fields(ToolResult(call, "z" * 30_000), store=None, session_id="s", run_id="r", effect_id="e")
+        result_receipt_fields(ToolResult(call, "z" * 30_000, ok=True), store=None, session_id="s", run_id="r", effect_id="e")
 
 
 def test_receipts_persist_complete_large_results(tmp_path: Path) -> None:
@@ -98,7 +98,7 @@ def test_receipts_persist_complete_large_results(tmp_path: Path) -> None:
     from codey.storage.managed_outputs import ManagedOutputStore
 
     store = ManagedOutputStore(tmp_path / "state")
-    result = result_receipt_fields(ToolResult(ToolCall("search", {"query": "q"}), "z" * 30_000),
+    result = result_receipt_fields(ToolResult(ToolCall("search", {"query": "q"}), "z" * 30_000, ok=True),
                                    store=store, session_id="s", run_id="r", effect_id="e")
     assert result["result_payload"] == ""
     assert result["result_ref"].startswith("out_")
@@ -147,11 +147,11 @@ def test_mutation_queue_serializes_same_file(tmp_path: Path) -> None:
 
 def test_runaway_blocks_exact_repeat() -> None:
     call = ToolCall(name="read", args={"path": "a"})
-    failed = ToolResult(call=call, model_text="ERROR: boom")
+    failed = ToolResult(ok=False, call=call, model_text="ERROR: boom")
     history = [attempt_record(call, failed, turn=turn) for turn in range(3)]
     decision = should_block_or_remind(history)
     assert decision.block
-    ok_history = [attempt_record(call, ToolResult(call=call, model_text="fine"), turn=0)]
+    ok_history = [attempt_record(call, ToolResult(ok=True, call=call, model_text="fine"), turn=0)]
     assert not should_block_or_remind(ok_history).block
 
 

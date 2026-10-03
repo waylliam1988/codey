@@ -170,7 +170,7 @@ def test_knowledge_write_split_preserves_save() -> None:
                 "title": "PLR B4 Write Fact",
                 "body": "PLR B4 write verified fact.",
                 "sources": [url],
-            })
+            }).model_text
             assert out.startswith("saved fact note id=")
         finally:
             store.index.close()

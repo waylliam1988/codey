@@ -28,7 +28,7 @@ def test_missing_tool_name_is_not_inferred_and_json_repair_keeps_visible_contrac
 
     def find(call):
         executions.append(call)
-        return ToolResult(call=call, model_text="no references")
+        return ToolResult(ok=True, call=call, model_text="no references")
 
     result = run_task_kernel(
         TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})), max_turns=2),

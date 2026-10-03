@@ -70,6 +70,7 @@ class AssetReferenceTests(unittest.TestCase):
         self.assertEqual(
             scripts,
             [
+                "/assets/operator_auth.js",
                 "/assets/render.js",
                 "/assets/research_graph.js",
                 "/assets/research_drawer.js",

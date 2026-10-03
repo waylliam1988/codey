@@ -70,18 +70,12 @@ def _tool_result(call: ToolCall, outcome: Any) -> ToolResult:
         changed = getattr(outcome, "changed", False)
         audit["changed"] = changed if type(changed) is bool else False
     return ToolResult(
-        call=call, model_text=str(outcome.model_text or ""),
+        ok=outcome.ok is True, call=call, model_text=str(outcome.model_text or ""),
         truncated=bool(getattr(outcome, "truncated", False)),
         presentation=dict(getattr(outcome, "presentation", {}) or {}),
         audit=audit,
         canonical=dict(getattr(outcome, "canonical", {}) or {}),
     )
-
-
-def _is_ok_text(text: str) -> bool:
-    lowered = str(text or "")
-    return not (lowered.startswith("ERROR:") or lowered.startswith("SKIPPED:")
-                or lowered.startswith("NEEDS_OPEN:"))
 
 
 class ExecutionDelegate:
@@ -188,21 +182,13 @@ class ExecutionDelegate:
             try:
                 produced = fn(call)
             except Exception as exc:
-                result = ToolResult(call=call, model_text=f"ERROR: {exc or 'tool failed'}")
+                result = ToolResult(ok=False, call=call, model_text=f"ERROR: {exc or 'tool failed'}")
                 return result, False, None
-            if isinstance(produced, ToolResult):
-                result = produced
-            elif isinstance(produced, str):
-                result = ToolResult(call=call, model_text=produced)
-            else:
-                result = ToolResult(call=call, model_text=str(produced))
-            from codey.operations.kernel_result import result_ok as _ok
-            try:
-                ok = bool(_ok(name, result))
-            except Exception:
-                ok = not str(result.model_text or "").startswith("ERROR:")
-            return result, ok, None
-        result = ToolResult(call=call, model_text=f"ERROR: no production executor for {name or '?'}")
+            if not isinstance(produced, ToolResult):
+                result = ToolResult(ok=False, call=call, model_text="ERROR: executor must return a structured ToolResult")
+                return result, False, None
+            return produced, produced.ok, None
+        result = ToolResult(ok=False, call=call, model_text=f"ERROR: no production executor for {name or '?'}")
         return result, False, None
 
     def _policy_check(self, call: ToolCall) -> tuple[bool, str, bool]:
@@ -252,11 +238,11 @@ class ExecutionDelegate:
 
     def _execute_project(self, call: ToolCall) -> tuple[ToolResult, bool, int | None]:
         if self.project_path is None:
-            return ToolResult(call=call, model_text="ERROR: project path unavailable"), False, None
+            return ToolResult(ok=False, call=call, model_text="ERROR: project path unavailable"), False, None
         project_path = self.project_path
         denied, message, _approval = self._policy_check(call)
         if denied:
-            result = ToolResult(call=call, model_text=f"ERROR: {message}")
+            result = ToolResult(ok=False, call=call, model_text=f"ERROR: {message}")
             return result, False, None
         name = str(call.name or "").strip().lower()
         runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
@@ -288,9 +274,9 @@ class ExecutionDelegate:
                 ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
                 return result, ok, getattr(outcome, "exit_code", None)
         except Exception as exc:
-            result = ToolResult(call=call, model_text=f"ERROR: {exc}")
+            result = ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}")
             return result, False, None
-        result = ToolResult(call=call, model_text=f"ERROR: unsupported project tool {name}")
+        result = ToolResult(ok=False, call=call, model_text=f"ERROR: unsupported project tool {name}")
         return result, False, None
 
     def _execute_edit(self, call: ToolCall) -> Any:
@@ -355,9 +341,9 @@ class ExecutionDelegate:
 
     def _opened_result(self, call: ToolCall, opened: Any, url: str, *, turn: int,
                        tool_index: int) -> tuple[ToolResult, bool, int | None]:
-        model_text = str(getattr(opened, "model_text", opened) or "")
-        if not _is_ok_text(model_text):
-            return ToolResult(call=call, model_text=model_text), False, None
+        model_text = opened.model_text
+        if not opened.ok:
+            return ToolResult(ok=False, call=call, model_text=model_text), False, None
         from codey.research.output_receipts import maybe_externalize_output
 
         title = next((line.removeprefix("Title: ") for line in model_text.splitlines()
@@ -365,23 +351,20 @@ class ExecutionDelegate:
         outcome = maybe_externalize_output(
             store=self.managed_outputs, session_id=self.session_id, run_id=self.run_id,
             permission_profile=self.permission_profile, call=call,
-            output=str(getattr(opened, "receipt_text", "") or model_text),
+            output=opened.receipt_text or model_text, ok=opened.ok,
             turn=turn, tool_index=tool_index, presentation_result=title,
             model_text_override=model_text,
         )
         final_url = self._ledger_final_url({"url": url})
         base = _tool_result(call, outcome)
-        try:
-            merged = dict(base.canonical) if isinstance(base.canonical, dict) else {}
-        except Exception:
-            merged = {}
+        merged = dict(base.canonical)
         merged["opened_url"] = final_url
         merged["request_url"] = str(url or "")
         ledger = getattr(self.research_tools, "ledger", None)
         if isinstance(ledger, ResearchLedger):
             merged["research_observation"] = ledger_observation(ledger, "open", url=url)
         result = ToolResult(
-            call=base.call, model_text=base.model_text, truncated=bool(base.truncated),
+            ok=base.ok, call=base.call, model_text=base.model_text, truncated=bool(base.truncated),
             presentation=dict(base.presentation) if isinstance(base.presentation, dict) else {},
             audit=dict(base.audit) if isinstance(base.audit, dict) else {},
             canonical=merged,
@@ -397,12 +380,12 @@ class ExecutionDelegate:
             if name == "web_search":
                 from codey.research.text_args import first_text_arg
 
-                text = tools.web_search(first_text_arg(args, "query"))
+                outcome = tools.web_search(first_text_arg(args, "query"))
                 canonical = {}
                 ledger = getattr(tools, "ledger", None)
-                if _is_ok_text(text) and isinstance(ledger, ResearchLedger):
+                if outcome.ok and isinstance(ledger, ResearchLedger):
                     canonical["research_observation"] = ledger_observation(ledger, name)
-                return ToolResult(call=call, model_text=text, canonical=canonical), _is_ok_text(text), None
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name == "open_url":
                 opened = tools.open_url(str(args.get("url") or ""), offset=args.get("offset", 0),
                                         limit=args.get("limit", 6000), pages=str(args.get("pages") or ""))
@@ -411,7 +394,7 @@ class ExecutionDelegate:
             if name in {"open_result", "reopen_source", "open_hit"}:
                 url = self._resolve_alias_url(name, args)
                 if not url:
-                    return ToolResult(call=call, model_text=f"ERROR: unknown {name} id"), False, None
+                    return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown {name} id"), False, None
                 target = (getattr(self.session, "hit_targets", {}) or {}).get(
                     str(args.get("hit_id") or "").lower(), {}
                 ) if name == "open_hit" else {}
@@ -424,51 +407,50 @@ class ExecutionDelegate:
                 url = str(args.get("url") or "")
                 if not url and str(args.get("source_id") or ""):
                     url = self._resolve_alias_url("reopen_source", {"source_id": args.get("source_id")}) or ""
-                text = tools.source_search(url, query, args.get("limit", 6))
-                ok_text = _is_ok_text(text)
-                if ok_text and url and self.session is not None:
-                    text, mapping = self._build_hit_mapping(text, url)
+                outcome = tools.source_search(url, query, args.get("limit", 6))
+                if outcome.ok and url and self.session is not None:
+                    text, mapping = self._build_hit_mapping(outcome.model_text, url)
                     hit_canonical: dict[str, object] = {"hit_targets": mapping, "source_url": url}
                     ledger = getattr(tools, "ledger", None)
                     if isinstance(ledger, ResearchLedger):
                         hit_canonical["research_observation"] = ledger_observation(ledger, name)
                     return (
-                        ToolResult(call=call, model_text=text, canonical=hit_canonical),
+                        ToolResult(ok=outcome.ok, call=call, model_text=text, canonical=hit_canonical),
                         True, None,
                     )
-                return ToolResult(call=call, model_text=text), ok_text, None
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_search":
                 from codey.research.text_args import first_text_arg
 
-                text = tools.knowledge_search(first_text_arg(args, "query"))
-                return ToolResult(call=call, model_text=text), _is_ok_text(text), None
+                outcome = tools.knowledge_search(first_text_arg(args, "query"))
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_read":
-                text = tools.knowledge_read(str(args.get("id") or ""))
-                return ToolResult(call=call, model_text=text), _is_ok_text(text), None
+                outcome = tools.knowledge_read(str(args.get("id") or ""))
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_write":
                 before = len(getattr(getattr(tools, "ledger", None), "evidence_items", ()) or ())
                 lowered, problem = self._lower_knowledge_sources(args)
                 if problem:
-                    return ToolResult(call=call, model_text=f"ERROR: {problem}"), False, None
-                text = tools.knowledge_write(lowered)
-                if not _is_ok_text(text):
-                    return ToolResult(call=call, model_text=text), False, None
+                    return ToolResult(ok=False, call=call, model_text=f"ERROR: {problem}"), False, None
+                outcome = tools.knowledge_write(lowered)
+                if not outcome.ok:
+                    return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), False, None
                 evidence = self._ledger_evidence(before)
                 evidence_canonical: dict[str, object] = {"evidence_items": evidence}
                 ledger = getattr(tools, "ledger", None)
                 if isinstance(ledger, ResearchLedger):
                     evidence_canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
                 return (
-                    ToolResult(call=call, model_text=text, canonical=evidence_canonical),
+                    ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=evidence_canonical),
                     True, None,
                 )
             if name == "knowledge_link":
-                text = tools.knowledge_link(str(args.get("src") or ""), str(args.get("dst") or ""),
+                outcome = tools.knowledge_link(str(args.get("src") or ""), str(args.get("dst") or ""),
                                             str(args.get("kind") or "relates"))
-                return ToolResult(call=call, model_text=text), _is_ok_text(text), None
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
         except Exception as exc:
-            return ToolResult(call=call, model_text=f"ERROR: {exc}"), False, None
-        return ToolResult(call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
+            return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
+        return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
 
     def _lower_knowledge_sources(self, args: dict) -> tuple[dict, str]:
         import re

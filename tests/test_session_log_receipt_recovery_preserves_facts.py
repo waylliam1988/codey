@@ -114,7 +114,7 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
         (project / str(call.args.get("path") or "a.py")).write_text(
             str(call.args.get("content") or "x = 1\n"), encoding="utf-8"
         )
-        return ToolResult(call=call, model_text="edited", audit={"changed": True})
+        return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
     def fake_run(call):
         counts["run"] += 1
@@ -123,7 +123,7 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
         audit = dict(run_audits[idx]) if idx < len(run_audits) else {"exit_code": 0}
         if forged_run_audit is not None and counts["run"] == 1:
             audit = dict(forged_run_audit)
-        return ToolResult(call=call, model_text="run out", audit=audit)
+        return ToolResult(ok=True, call=call, model_text="run out", audit=audit)
 
     calls = [ToolCall(name="edit", args={"path": "a.py", "content": "x = 2\n"})]
     for i in range(len(run_audits)):
@@ -343,10 +343,10 @@ def test_multi_turn_recovery_keeps_more_than_twenty_observations(monkeypatch):
         def do_edit(call):
             counts["edit"] += 1
             (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
-            return ToolResult(call=call, model_text="edited", audit={"changed": True})
+            return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
         def do_run(call):
             counts["run"] += 1
-            return ToolResult(call=call, model_text="ok", audit={"exit_code": 0})
+            return ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": 0})
         provider = WebMulti()
         try:
             result = run_task_kernel(

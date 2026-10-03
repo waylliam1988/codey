@@ -31,7 +31,7 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
             def edit(call):
                 calls.append(call)
                 (project / "a.py").write_text("x=2\n", encoding="utf-8")
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             session = TaskSession(
                 policy=TaskPolicy(grants=frozenset({"project.write", "control"})),

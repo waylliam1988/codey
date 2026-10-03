@@ -2,6 +2,27 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Operator and Result Boundary Hardening
+
+- Authenticate the local HTTP/SSE operator with a single-use, expiring launch
+  credential and a process-local cookie; exchange it before UI state requests.
+- Require explicit boolean tool/research status through execution, receipts,
+  recovery and headless events. Source text never decides success; preserve
+  failed observations and cancellation/deadline exceptions.
+- Validate unique, exact native call/result ID pairing before compaction or
+  HTTP; reject coercion, missing results and malformed history atomically.
+- Distinguish JSON booleans from numeric enum values; add independent generated
+  schema/UTF-8 boundary and receipt-corruption regressions.
+- Record actual serialized local requests and explicit HTTP retry attempts
+  separately from logical sends, without saving authorization headers.
+- Correct SSE replay/reset/deduplication and reconciliation-buffer gaps; test
+  the same structured tool facts through SSE and headless projections.
+- Remove status-erasing facades, bare-text executor compatibility and missing
+  receipt-status fallbacks. Update fixtures to the formal interfaces.
+- Final full suite with real Edge UI E2E: **6964 passed, 6 skipped, 1497 subtests
+  passed in 456.26s**. Initial failures and proof limits remain in
+  [TEST_REPORT](TEST_REPORT.md). No version bump, tag or GitHub Release.
+
 ## 0.5.10 - Unified Task Kernel and Runtime Hygiene
 
 - Unify project, Research, planning and authorized hybrid tools under one task

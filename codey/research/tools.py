@@ -11,7 +11,7 @@ from typing import Any
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
 from codey.knowledge.note import LINK_KINDS, NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
-from codey.knowledge.store import KnowledgeStore, content_hash_bytes
+from codey.knowledge.store import KnowledgeLinkResult, KnowledgeStore, content_hash_bytes
 from codey.research.ledger import EvidencePreparation, ResearchLedger
 from codey.research.source_gateway import (
     OPEN_DEFAULT_LIMIT,
@@ -37,6 +37,11 @@ class ResearchToolOutput:
 
     model_text: str
     receipt_text: str = ""
+    ok: bool = field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        if type(self.ok) is not bool:
+            raise TypeError("research output ok must be an exact boolean")
 
 
 @dataclass
@@ -100,16 +105,16 @@ class ResearchTools:
             on_failure=self._record_failure,
         )
 
-    def web_search(self, query: str) -> str:
+    def web_search(self, query: str) -> ResearchToolOutput:
         query = (query or "").strip()
         if not query:
-            return "ERROR: web_search needs a non-empty query"
+            return ResearchToolOutput("ERROR: web_search needs a non-empty query", ok=False)
         outcome = self.gateway.search(query, SEARCH_LIMIT)
         if outcome.error:
-            return f"ERROR: {outcome.error}"
+            return ResearchToolOutput(f"ERROR: {outcome.error}", ok=False)
         results = outcome.hits
         if not results:
-            return "no results"
+            return ResearchToolOutput("no results", ok=True)
         lines: list[str] = []
         skipped = 0
         for r in results:
@@ -123,25 +128,21 @@ class ResearchTools:
             i = len(lines) + 1
             lines.append(f"{i}. {r.get('title')}\n   {url}\n   {snippet}".rstrip())
         if not lines and skipped:
-            return f"no useful non-landing results; skipped {skipped} low-value landing result(s)"
-        return "\n".join(lines)
+            return ResearchToolOutput(f"no useful non-landing results; skipped {skipped} low-value landing result(s)", ok=True)
+        return ResearchToolOutput("\n".join(lines), ok=True)
 
     def open_url(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "") -> ResearchToolOutput:
         """Open a page once: bounded window for the model, full text for receipts."""
         return self._open_document(url, offset=offset, limit=limit, pages=pages)
-
-    def open_url_text(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "") -> str:
-        """String-only boundary for callers that need just model-visible text."""
-        return self.open_url(url, offset=offset, limit=limit, pages=pages).model_text
 
     def _open_document(
         self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = ""
     ) -> ResearchToolOutput:
         outcome = self.gateway.open(url, offset=offset, limit=limit, pages=pages)
         if outcome.status == "error":
-            return ResearchToolOutput(f"ERROR: {outcome.detail}")
+            return ResearchToolOutput(f"ERROR: {outcome.detail}", ok=False)
         if outcome.status == "skipped":
-            return ResearchToolOutput(f"SKIPPED: {outcome.detail}")
+            return ResearchToolOutput(f"SKIPPED: {outcome.detail}", ok=False)
         document = outcome.document
         assert document is not None
         self.sources_read.update(outcome.read_urls)
@@ -157,60 +158,60 @@ class ResearchTools:
         if len(body) > OPEN_MAX_LIMIT:
             body, _truncated = clip_middle(body, OPEN_MAX_LIMIT)
         full = render_opened_source(document, document.text)
-        return ResearchToolOutput(model_text=body, receipt_text=full)
+        return ResearchToolOutput(model_text=body, receipt_text=full, ok=True)
 
-    def source_search(self, url: str, query: str, limit: object = SOURCE_SEARCH_DEFAULT_LIMIT) -> str:
+    def source_search(self, url: str, query: str, limit: object = SOURCE_SEARCH_DEFAULT_LIMIT) -> ResearchToolOutput:
         outcome = self.gateway.search_inside(url, query, limit)
         if outcome.status == "needs_open":
-            return f"NEEDS_OPEN: {outcome.detail}"
+            return ResearchToolOutput(f"NEEDS_OPEN: {outcome.detail}", ok=False)
         if outcome.status == "error":
-            return f"ERROR: {outcome.detail}"
-        return render_results(list(outcome.hits))
+            return ResearchToolOutput(f"ERROR: {outcome.detail}", ok=False)
+        return ResearchToolOutput(render_results(list(outcome.hits)), ok=True)
 
-    def knowledge_search(self, query: str) -> str:
+    def knowledge_search(self, query: str) -> ResearchToolOutput:
         if self.store is None:
-            return "ERROR: knowledge store is unavailable"
+            return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         query = (query or "").strip()
         if not query:
-            return "ERROR: knowledge_search needs a query"
+            return ResearchToolOutput("ERROR: knowledge_search needs a query", ok=False)
         rows = self.store.index.search(query)
         if not rows:
-            return "no local notes yet on this topic"
+            return ResearchToolOutput("no local notes yet on this topic", ok=True)
         lines = []
         for row in rows:
             conf = "" if row.get("confidence") is None else f" conf={row['confidence']}"
             status = row.get("status") or "active"
             snippet = _clip_tail(str(row.get("snippet") or ""), 140)
             lines.append(f"[{row['type']}] {row['title']} (id={row['id']}, {status}{conf})\n   {snippet}".rstrip())
-        return "\n".join(lines)
+        return ResearchToolOutput("\n".join(lines), ok=True)
 
-    def knowledge_read(self, note_id: str) -> str:
+    def knowledge_read(self, note_id: str) -> ResearchToolOutput:
         if self.store is None:
-            return "ERROR: knowledge store is unavailable"
+            return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         note = self.store.read_note((note_id or "").strip())
         if note is None:
-            return f"ERROR: no note with id {note_id}"
+            return ResearchToolOutput(f"ERROR: no note with id {note_id}", ok=False)
         if note.type == "source" and any(s in self.sources_read for s in note.sources):
             self.grounded_ids.add(note.id)
-        return note.to_markdown()
+        return ResearchToolOutput(note.to_markdown(), ok=True)
 
-    def knowledge_write(self, args: dict) -> str:
+    def knowledge_write(self, args: dict) -> ResearchToolOutput:
         if self.store is None:
-            return "ERROR: knowledge store is unavailable"
+            return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         existing_id, existing_note, updating, identity_error = _resolve_write_target(self.store, args)
         if identity_error:
-            return identity_error
+            return ResearchToolOutput(identity_error, ok=False)
         note_type, title, body, basis_error = _validate_write_basis(args, existing_note)
         if basis_error:
-            return basis_error
+            return ResearchToolOutput(basis_error, ok=False)
 
         ownership_error = _validate_write_ownership(existing_note, self.session_id, self.project)
         if ownership_error:
-            return ownership_error
+            return ResearchToolOutput(ownership_error, ok=False)
 
         sources, sources_error = _prepare_write_sources(self, args, existing_note, updating, note_type)
         if sources_error:
-            return sources_error
+            return ResearchToolOutput(sources_error, ok=False)
         evidence_preparation = self.ledger.prepare_evidence_items(
             args.get("evidence"),
             fallback_sources=sources,
@@ -219,7 +220,7 @@ class ResearchTools:
             note_type=note_type,
         )
         if evidence_preparation.error:
-            return f"ERROR: {evidence_preparation.error}"
+            return ResearchToolOutput(f"ERROR: {evidence_preparation.error}", ok=False)
         relations, relation_warnings = _prepare_write_relations(args, existing_note)
         status = _resolve_write_status(args, existing_note)
         tags = (
@@ -242,7 +243,7 @@ class ResearchTools:
             self.project,
         )
         rel = self.store.write_note(note, changes=self.changes)
-        return _finalize_write_note(
+        model_text = _finalize_write_note(
             self,
             note,
             note_type,
@@ -251,20 +252,19 @@ class ResearchTools:
             relation_warnings,
             rel,
         )
+        return ResearchToolOutput(model_text, ok=True)
 
-    def knowledge_link(self, src: str, dst: str, kind: str = "relates") -> str:
+    def knowledge_link(self, src: str, dst: str, kind: str = "relates") -> ResearchToolOutput:
         if self.store is None:
-            return "ERROR: knowledge store is unavailable"
+            return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         src = (src or "").strip()
         dst = (dst or "").strip()
         if not src or not dst:
-            return "ERROR: knowledge_link needs src and dst"
+            return ResearchToolOutput("ERROR: knowledge_link needs src and dst", ok=False)
         result = self.store.link(src, dst, (kind or "relates").strip().lower(), changes=self.changes)
-        if result.startswith("ERROR:"):
-            return result
-        if result.startswith("linked:"):
+        if result.ok and result.created:
             self.links_created += 1
-        return result
+        return ResearchToolOutput(result.model_text, ok=result.ok)
 
     def _source_problem(self, sources: list[str]) -> str | None:
         urls = [s for s in sources if _looks_like_url(s)]
@@ -612,17 +612,17 @@ class StagedKnowledgeStore:
         path = self._parent.path_for(note)
         return self._parent.rel(path) if path.exists() else f"{note.folder}/{note.id}.md"
 
-    def link(self, src: str, dst: str, kind: str = "relates", *, changes: KnowledgeChanges | None = None) -> str:
+    def link(self, src: str, dst: str, kind: str = "relates", *, changes: KnowledgeChanges | None = None) -> KnowledgeLinkResult:
         del changes
         kind = kind if kind in LINK_KINDS else "relates"
         src_id = self.resolve(src)
         if src_id is None:
-            return f"ERROR: unknown source note: {src}"
+            return KnowledgeLinkResult(False, f"ERROR: unknown source note: {src}")
         dst_id = self.resolve(dst)
         if dst_id is None:
-            return f"ERROR: unknown target note: {dst}"
+            return KnowledgeLinkResult(False, f"ERROR: unknown target note: {dst}")
         self._staged_links.append((src_id, dst_id, kind))
-        return f"linked: {src_id} -> {dst_id} ({kind})"
+        return KnowledgeLinkResult(True, f"linked: {src_id} -> {dst_id} ({kind})", created=True)
 
     def commit_to(self, target_store: KnowledgeStore, changes: KnowledgeChanges | None = None) -> None:
         changes_snapshot = changes.snapshot() if changes is not None else None

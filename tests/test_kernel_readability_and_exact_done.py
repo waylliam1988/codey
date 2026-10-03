@@ -59,7 +59,7 @@ def test_kernel_does_not_render_discarded_initial_prompt_after_each_result(monke
                          run_id='render-once',
                      ),
                      execution=KernelExecutionDeps(
-                         executors={'read_file': lambda call: ToolResult(call=call, model_text='file text')},
+                         executors={'read_file': lambda call: ToolResult(ok=True, call=call, model_text='file text')},
                      ),
                  ),
              )

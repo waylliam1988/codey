@@ -80,7 +80,7 @@ class _PipelineSearch:
         return []
 
     def fetch(self, url: str) -> dict:
-        return {
+        return {"status": "ok",
             "url": url,
             "title": "Pipeline source",
             "text": "Pipeline source text says the fact.",
@@ -1275,7 +1275,7 @@ def test_knowledge_write_update_merges_existing_provenance_and_scope() -> None:
             "relations": [{"src": "alpha", "dst": "beta", "kind": "affects"}],
             "aliases": ["Alpha"],
             "confidence": 0.7,
-        })
+        }).model_text
         note_id = tools.created_ids[0]
         original = store.read_note(note_id)
         assert original is not None
@@ -1284,7 +1284,7 @@ def test_knowledge_write_update_merges_existing_provenance_and_scope() -> None:
             "id": note_id,
             "title": "Updated fact",
             "body": "Updated body.",
-        })
+        }).model_text
         note = store.read_note(note_id)
         assert note is not None
 
@@ -1337,7 +1337,8 @@ def test_knowledge_write_update_rejects_cross_session_owner() -> None:
             "body": "Wrong owner.",
         })
 
-        assert result == "ERROR: note belongs to another session"
+        assert result.ok is False
+        assert result.model_text == "ERROR: note belongs to another session"
         note = store.read_note(note_id)
         assert note is not None
         assert note.title == "Original fact"
@@ -1424,21 +1425,21 @@ def test_staged_knowledge_store_link_validation() -> None:
         staged_store.write_note(KnowledgeNote(id="existing-note", title="T", body="B", type="fact"))
 
         # Link fails on unknown source
-        res1 = staged_store.link("unknown-note", "existing-note")
+        res1 = staged_store.link("unknown-note", "existing-note").model_text
         assert "ERROR: unknown source note" in res1
 
         # Link fails on unknown target
-        res2 = staged_store.link("existing-note", "unknown-note")
+        res2 = staged_store.link("existing-note", "unknown-note").model_text
         assert "ERROR: unknown target note" in res2
 
         # Link succeeds when both exist
-        res3 = staged_store.link("existing-note", "existing-note")
+        res3 = staged_store.link("existing-note", "existing-note").model_text
         assert res3.startswith("linked:")
 
         # Staging resolves titles like the real KnowledgeStore, including staged-only notes.
         store.write_note(KnowledgeNote(id="parent-note", title="Parent Title", body="Parent Body", type="fact"))
         staged_store.write_note(KnowledgeNote(id="staged-note", title="Staged Title", body="Staged Body", type="fact"))
-        res4 = staged_store.link("Staged Title", "Parent Title", "supports")
+        res4 = staged_store.link("Staged Title", "Parent Title", "supports").model_text
         assert res4 == "linked: staged-note -> parent-note (supports)"
 
 
@@ -1456,19 +1457,19 @@ def test_staged_knowledge_store_rollback_restores_links_after_link_failure() -> 
         store.write_note(source)
         store.write_note(old_target)
         store.write_note(new_target)
-        assert store.link("Source Title", "Old Target", "supports").startswith("linked:")
+        assert store.link("Source Title", "Old Target", "supports").model_text.startswith("linked:")
         original_body = store.read_note("source-note").body
         original_links = _link_rows(store, ["source-note", "old-target", "new-target"])
 
         staged_store = StagedKnowledgeStore(store)
-        assert staged_store.link("Source Title", "New Target", "supports") == (
+        assert staged_store.link("Source Title", "New Target", "supports").model_text == (
             "linked: source-note -> new-target (supports)"
         )
         original_link = store.link
 
         def fail_after_link(src, dst, kind="relates", *, changes=None):
             result = original_link(src, dst, kind, changes=changes)
-            assert result.startswith(("linked:", "updated link:", "already linked:"))
+            assert result.ok is True
             raise OSError("link failed after side effect")
 
         store.link = fail_after_link

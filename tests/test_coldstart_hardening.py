@@ -201,8 +201,8 @@ class EventBusOverflowTests(unittest.TestCase):
         # Adopting the marker strictly advances the cursor: the off-by-one
         # case (cursor == oldest_retained - 1) must not resync twice.
         self.assertEqual(bus.replay_events_after(marker_id), [])
-        # Any other expired cursor converges on the same marker id.
-        self.assertEqual(bus.replay_events_after(2)[0][0], marker_id)
+        # The cursor immediately before the oldest retained ID has no gap.
+        self.assertEqual([event_id for event_id, _ in bus.replay_events_after(2)], [3, 4, 5, 6])
 
 
 class _RecordedStringIO(io.StringIO):

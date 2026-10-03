@@ -1,5 +1,78 @@
 # Codey Test Report
 
+## Operator and result boundary hardening (2026-10-03, no release)
+
+Baseline: `5999b63a`, initially clean; version remains `0.5.10`. Scope is the
+six requested boundary groups, existing-interface cleanup, commit and push.
+No tag, GitHub Release, installer or live-model A/B was produced in this run.
+
+### Behavior and TDD evidence
+
+Twenty-five new test files contain **188 collected cases**. Defect regressions
+were run red before their fixes. Existing passing behavior was also locked:
+the generated UTF-8/schema cases and frozen-result controls were not all red,
+and they are not claimed as newly discovered defects.
+
+| Group | Verified behavior |
+| --- | --- |
+| Operator authentication | Unauthenticated real HTTP/SSE requests cannot access application state. Bootstrap credentials are single-use, expire after 300 seconds, reject non-ASCII input and are exchanged before UI state/catalog/SSE requests. |
+| Structured status and lifecycle | Exact boolean status survives execution, settlement, real-log restoration, compact replay and headless projection. Literal `ERROR:` source text can succeed; failure prose cannot create evidence. Cancellation/deadline exceptions preserve their type and do not start fallback acquisition. |
+| Native history | Unique exact call/result IDs form a one-to-one group before compaction/HTTP. Duplicate, foreign, missing, coerced and silently dropped IDs are rejected without committing history. |
+| Independent boundaries | Fixed-seed nested schema witnesses and UTF-8 byte-slice oracles check valid boundaries and corruptions. JSON enum booleans do not equal numbers, including nested containers. Recomputed receipt hashes cannot authorize missing/conflicting status. |
+| Request diagnostics | The recorder observes actual serialized request bytes; logical sends and explicit `urlopen` attempts/retries are counted separately. Authorization headers are not passed to the observer. Diagnostic observer exceptions do not change production retry behavior. |
+| SSE/headless | The cursor just before the retained window replays normally; expired/future cursors reconcile without skipping live events. Actual JavaScript tests cover deduplication, restart/reset and reconciliation-buffer overflow. Common kernel tool facts agree through SSE and headless projections. |
+
+Cold-start cleanup removes the text-only `open_url_text` facade, unused output
+facade methods, bare-string executor conversion, result-ID coercion/drop and
+missing-status receipt fallback. Compact replay retains the original failure
+text; its unused turn argument and callers were removed under green tests.
+The shared kernel, task authorization and completion requirements keep their
+existing owners. No additional tool loop, durable fact log or generic framework
+was introduced. Fixture migrations use structured results and actual operator
+credential exchange rather than an authentication bypass.
+
+### Failures preserved
+
+First full run with real Edge enabled:
+**16 failed, 6919 passed, 28 skipped, 1497 subtests passed in 470.40s**.
+Most failures were unmigrated fixtures/assertions: bare text executors/research
+outputs, a removed output accessor, an orphan native terminal result, positional
+diagnostic-record indexing, and the old SSE boundary expectation. The run also
+identified omitted status in compact replay and a UI E2E helper using the
+credential fragment as part of the API base URL. These were corrected; the
+compact status regression first produced `3 failed, 4 passed` before its fix.
+The first run's 22 extra skips were symlink privileges restricted by the sandbox.
+Raw log: `.e2e-artifacts/six-boundaries-full-pytest.log` (ignored).
+
+Afterward, scoped regressions passed: `163 passed`; recovery/receipt regressions
+`69 passed`; real Edge UI regressions `8 passed`; the wider affected-area run
+`1361 passed, 464 subtests passed`. The final signature migration also passed
+`19` focused guard/replay cases. No skip/xfail additions, threshold increases,
+weakened completion oracle or historical parity-baseline rewrite were used.
+
+### Final verification
+
+Before final full pytest: `python -m mypy codey` passed under the current config
+(364 source files); `ruff check .`, compileall, JavaScript syntax, result
+constructor scanning and `git diff --check` passed. Mypy still reports its
+existing informational note about an unchecked untyped function body; this is
+not a strict whole-program type proof.
+
+Final full run with real Edge UI E2E, Windows/Python 3.12.8, full local permissions,
+`RUN_BROWSER_E2E=1`:
+`python -u -m pytest -q -o faulthandler_timeout=120 -rs`
+→ **6964 passed, 6 skipped, 1497 subtests passed in 456.26s (0:07:36)**,
+zero failures. All 188 new cases ran. The six skips are two Windows-inapplicable
+POSIX permission-bit cases, one POSIX process-group case, one POSIX absolute-path
+case and two `O_NOFOLLOW` cases. The real Edge E2E uses scripted providers.
+Raw final log: `.e2e-artifacts/six-boundaries-final-full-pytest.log` (ignored).
+
+These tests establish the listed invariants over their exercised inputs, not a
+mathematical proof that the entire program has no bugs or dead code. No real
+model success-rate, latency/token improvement or Windows Python 3.13 full-suite
+result is claimed for this change. Earlier live-model/version evidence below
+remains historical and was not rewritten.
+
 ## 0.5.10 version commit verification (2026-10-03)
 
 Baseline: `3ecd4a1b`, initially clean. Previous source version: `0.5.9`

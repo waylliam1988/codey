@@ -6,6 +6,7 @@ import contextlib
 import http.client
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from typing import Any, cast
@@ -258,12 +259,9 @@ class LocalOpenAIProvider:
     ) -> object:
         pending: list[dict] = []
         for item in results:
-            tool_call_id = str(item.get("tool_call_id") or "")
-            if not tool_call_id:
-                continue
             pending.append({
                 "role": "tool",
-                "tool_call_id": tool_call_id,
+                "tool_call_id": item.get("tool_call_id"),
                 "content": str(item.get("content") or ""),
             })
         self._acquire_send()
@@ -319,6 +317,9 @@ class LocalOpenAIProvider:
         window, reserve, keep = self._context_budget()
         from codey.agents import context_compaction as compaction
 
+        groups = compaction.group_messages_for_compaction(candidate)
+        if any(not compaction.is_tool_group_complete(candidate, group) for group in groups):
+            raise errors.RequestPrepError("local tool history has incomplete or invalid ID pairing")
         try:
             compaction.compact_openai_messages_in_place(
                 candidate,
@@ -382,23 +383,32 @@ class LocalOpenAIProvider:
             headers["Authorization"] = f"Bearer {self.api_key}"
         request = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
         last_error: Exception | None = None
-        for _attempt in range(_RESPONSE_RETRIES + 1):
+        for attempt in range(1, _RESPONSE_RETRIES + 2):
+            started = time.perf_counter()
+            phase = "error"
+            response_bytes = 0
+            self._notify_http_attempt(attempt, data, "request", 0, 0.0)
             try:
                 with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
                     raw = response.read(_CHAT_RESPONSE_MAX_BYTES + 1)
+                    response_bytes = len(raw)
                 if len(raw) > _CHAT_RESPONSE_MAX_BYTES:
                     raise RuntimeError(
                         f"local model at {endpoint} response exceeded "
                         f"{_CHAT_RESPONSE_MAX_BYTES} bytes"
                     )
                 body = _load_response_json(raw, endpoint)
+                phase = "response"
                 return body
             except http.client.IncompleteRead as exc:
+                phase = "retryable_error"
+                response_bytes = len(exc.partial)
                 last_error = _RetryableResponseError(
                     f"local model at {endpoint} returned a truncated response "
                     f"({len(exc.partial)} bytes read, {exc.expected} more expected)"
                 )
             except _RetryableResponseError as exc:
+                phase = "retryable_error"
                 last_error = exc
             except urllib.error.HTTPError as exc:
                 try:
@@ -424,7 +434,19 @@ class LocalOpenAIProvider:
                 raise RuntimeError(message) from exc
             except (urllib.error.URLError, TimeoutError) as exc:
                 raise RuntimeError(f"could not reach local model at {self.base_url}: {exc}") from exc
+            finally:
+                self._notify_http_attempt(attempt, data, phase, response_bytes, time.perf_counter() - started)
         raise RuntimeError(str(last_error or f"local model at {endpoint} did not return a reply"))
+
+    def _notify_http_attempt(self, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float) -> None:
+        # Diagnostic storage must not turn a successful request into a retry.
+        with contextlib.suppress(Exception):
+            self._observe_http_attempt(attempt=attempt, data=data, phase=phase,
+                                       response_bytes=response_bytes, seconds=seconds)
+
+    def _observe_http_attempt(self, *, attempt: int, data: bytes, phase: str,
+                              response_bytes: int, seconds: float) -> None:
+        """Optional transport observation; authorization headers are never supplied."""
 
     def _complete_message(
         self,
@@ -514,19 +536,21 @@ def _parse_tool_calls(message: dict) -> tuple[list[dict[str, object]], int]:
         raise RuntimeError("local model returned malformed tool_calls")
     parsed: list[dict[str, object]] = []
     dropped = 0
+    seen_ids: set[str] = set()
     for item in raw_calls:
         if not isinstance(item, dict):
             dropped += 1
             continue
-        call_id = str(item.get("id") or "")
+        call_id = item.get("id")
         function = item.get("function")
         if not isinstance(function, dict):
             dropped += 1
             continue
         name = str(function.get("name") or "")
-        if not call_id or not name:
+        if type(call_id) is not str or not call_id.strip() or call_id in seen_ids or not name:
             dropped += 1
             continue
+        seen_ids.add(call_id)
         raw_args = function.get("arguments")
         if isinstance(raw_args, dict):
             arguments = dict(raw_args)

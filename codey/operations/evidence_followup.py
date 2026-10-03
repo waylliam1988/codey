@@ -19,7 +19,7 @@ from codey.research.evidence_rules import (
     build_evidence_followup_prompt,
     build_evidence_followup_repair_prompt,
 )
-from codey.runtime.core.models import ToolCall
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.utils.refs import clip
 
 
@@ -70,12 +70,12 @@ def run_evidence_followup(
             return EvidenceFollowupResult(stop_reason="stopped")
         last_error = ""
 
-        def write(call: ToolCall) -> str:
+        def write(call: ToolCall) -> ToolResult:
             nonlocal last_error
             result = controller.execute_tool_call(call.name, dict(call.args or {}))
-            if str(result).startswith("ERROR:"):
-                last_error = clip(str(result), 200)
-            return str(result)
+            if not result.ok:
+                last_error = clip(result.model_text, 200)
+            return ToolResult(call=call, model_text=result.model_text, ok=result.ok)
 
         session = TaskSession(
             policy=_subset_followup_policy(parent_policy),

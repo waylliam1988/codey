@@ -16,7 +16,7 @@ class Search:
         return [{"url": URL, "title": "Testing", "snippet": "Test a discount formula."}]
 
     def fetch(self, url):
-        return {"url": url, "title": "Testing", "text": "A test checks discounted prices for multiple inputs."}
+        return {"status": "ok", "url": url, "title": "Testing", "text": "A test checks discounted prices for multiple inputs."}
 
     def close(self):
         pass
@@ -28,10 +28,10 @@ def test_web_resource_factory_does_not_require_or_create_vault(tmp_path):
     tools = build_research_tools(deps, session_id="s", project=str(tmp_path))
     assert tools is not None
     assert tools.store is None
-    assert "Testing" in tools.web_search("discount test")
+    assert "Testing" in tools.web_search("discount test").model_text
     assert list(tmp_path.iterdir()) == []
-    for result in [tools.knowledge_search("test"), tools.knowledge_read("missing"),
-                   tools.knowledge_write({}), tools.knowledge_link("a", "b")]:
+    for result in [tools.knowledge_search("test").model_text, tools.knowledge_read("missing").model_text,
+                   tools.knowledge_write({}).model_text, tools.knowledge_link("a", "b").model_text]:
         assert result.startswith("ERROR:")
         assert "unavailable" in result
 
@@ -41,7 +41,7 @@ def test_web_only_staging_projects_ledger_without_a_dummy_store(tmp_path):
     assert tools is not None
     staged = tools.create_staged()
     assert staged.store is None and staged.changes is None
-    assert "Testing" in staged.web_search("discount")
+    assert "Testing" in staged.web_search("discount").model_text
     assert staged.ledger is not tools.ledger
     tools.commit_staged(staged)
     assert tools.ledger is staged.ledger

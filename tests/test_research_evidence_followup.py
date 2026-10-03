@@ -77,10 +77,10 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
             controller = EvidenceFollowupController(tools, [allowed_url])
 
             # 1. Non-knowledge_write tool is blocked
-            res = controller.execute_tool_call("web_search", {"query": "test"})
+            res = controller.execute_tool_call("web_search", {"query": "test"}).model_text
             assert res.startswith("ERROR: Tool 'web_search' is forbidden")
 
-            res_done = controller.execute_tool_call("done", {})
+            res_done = controller.execute_tool_call("done", {}).model_text
             assert res_done.startswith("ERROR: Tool 'done' is forbidden")
 
             # 2. s1/s2 internal source ID is blocked
@@ -89,7 +89,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                 "title": "Claim Title",
                 "body": "Claim Body",
                 "sources": ["s1"],
-            })
+            }).model_text
             assert "Internal IDs like s1/s2 are strictly forbidden" in res_s1
 
             # 3. URL not in whitelist is blocked
@@ -98,7 +98,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                 "title": "Claim Title",
                 "body": "Claim Body",
                 "sources": ["https://example.com/other"],
-            })
+            }).model_text
             assert "is not in the allowed fresh material whitelist" in res_unauth
 
             # 4. Valid whitelisted URL with evidence succeeds
@@ -112,7 +112,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                     "excerpt": "Fresh source body",
                     "claim": "Verified Fact",
                 }],
-            })
+            }).model_text
             assert res_ok.startswith("saved fact note id=")
             assert len(tools.ledger.evidence_items) == 1
 
@@ -122,7 +122,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                 "title": "Implicit Claim",
                 "body": "Body without evidence",
                 "sources": [allowed_url],
-            })
+            }).model_text
             assert "evidence to be a non-empty list" in res_no_ev
 
             # 6. Scalar sources are rejected; sources must be a URL list
@@ -135,7 +135,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                     "source_url": allowed_url,
                     "excerpt": "Fresh source body",
                 }],
-            })
+            }).model_text
             assert "sources to be a non-empty list of URLs" in res_scalar_sources
 
             # 7. Singleton dict evidence is rejected; evidence must be a list
@@ -148,7 +148,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                     "source_url": "https://example.com/unauthorized",
                     "excerpt": "Fresh source body",
                 },
-            })
+            }).model_text
             assert "evidence to be a non-empty list" in res_bad_single
 
             # 8. Evidence source alias is rejected; source_url must be explicit
@@ -161,7 +161,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                     "source": allowed_url,
                     "excerpt": "Fresh source body",
                 }],
-            })
+            }).model_text
             assert "'source' alias is not accepted" in res_source_alias
 
             # 9. Non-fact note type (e.g. concept) is rejected
@@ -174,7 +174,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                     "source_url": allowed_url,
                     "excerpt": "Fresh source body",
                 }],
-            })
+            }).model_text
             assert "requires type='fact', got 'concept'" in res_bad_type
 
             # 10. Missing explicit type field is rejected
@@ -186,7 +186,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                     "source_url": allowed_url,
                     "excerpt": "Fresh source body",
                 }],
-            })
+            }).model_text
             assert "requires explicit type='fact'" in res_missing_type
 
             # 11. Evidence source_url not in note's sources is rejected for provenance integrity
@@ -201,7 +201,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                     "source_url": "https://example.com/fresh2",
                     "excerpt": "Fresh source body",
                 }],
-            })
+            }).model_text
             assert "must be declared in the note's 'sources' list" in res_mismatch_src
 
             # 12. Evidence-only mode rejects ordinary knowledge_write side channels
@@ -216,7 +216,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                 }],
                 "tags": ["research"],
                 "relations": [],
-            })
+            }).model_text
             assert "accepts only type/title/body/sources/evidence args" in res_extra_args
             assert "relations" in res_extra_args
             assert "tags" in res_extra_args

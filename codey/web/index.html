@@ -169,6 +169,7 @@
   </div>
 </section>
 
+<script src="/assets/operator_auth.js?v=__APP_VERSION__"></script>
 <script src="/assets/render.js?v=__APP_VERSION__"></script>
 <script src="/assets/research_graph.js?v=__APP_VERSION__"></script>
 <script src="/assets/research_drawer.js?v=__APP_VERSION__"></script>
@@ -1725,6 +1726,7 @@ document.addEventListener('keydown', (e) => {
 });
 // ============================ boot ============================
 async function boot() {
+  await window.CodeyOperatorAuth.authorize();
   await window.CodeyProviderUI.adoptCatalog();
   DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER;
   bindUiStatePagehide();
@@ -1827,7 +1829,7 @@ async function boot() {
   syncResearchUseProjectButton();
   connectEvents();
 }
-boot();
+boot().catch(error => setStatus(error.message, 'warn'));
 </script>
 </body>
 </html>

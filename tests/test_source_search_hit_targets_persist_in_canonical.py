@@ -28,7 +28,8 @@ def test_source_search_canonical_replays_to_same_facts():
 
     class FakeSearch:
         def source_search(self, url, query, limit=6):
-            return "1. offset 120: matched text\n2. p.3: other"
+            from codey.research.tools import ResearchToolOutput
+            return ResearchToolOutput("1. offset 120: matched text\n2. p.3: other", ok=True)
 
     delegate = ExecutionDelegate(session=session, research_tools=type("R", (), {"source_search": FakeSearch().source_search})())
     call = ToolCall("source_search", {"url": "https://example.com/a", "query": "q"})
@@ -53,7 +54,7 @@ def test_source_search_canonical_replays_to_same_facts():
     from codey.runtime.core.models import ToolResult
 
     tampered = ToolResult(
-        call=call, model_text=result.model_text,
+        ok=True, call=call, model_text=result.model_text,
         canonical={"hit_targets": {"h1": {"url": "https://evil.example/", "offset": 0, "pages": ""}}},
     )
     try:
@@ -71,13 +72,13 @@ def test_open_hit_resolves_from_hit_targets_fact():
     session = _session()
     search_call = ToolCall("source_search", {"url": "https://example.com/a", "query": "q"})
     search_result = ToolResult(
-        call=search_call, model_text="h1: 1. offset 120: matched text",
+        ok=True, call=search_call, model_text="h1: 1. offset 120: matched text",
         canonical={"hit_targets": {"h1": {"url": "https://example.com/a", "offset": 120, "pages": ""}}},
     )
     record_facts_for_result(session, search_call, search_result, ok=True)
     open_call = ToolCall("open_hit", {"hit_id": "h1"})
     open_result = ToolResult(
-        call=open_call, model_text="Title: A\nbody",
+        ok=True, call=open_call, model_text="Title: A\nbody",
         canonical={"opened_url": "https://example.com/a", "request_url": "h1"},
     )
     record_facts_for_result(session, open_call, open_result, ok=True)
@@ -91,7 +92,7 @@ def test_knowledge_write_canonical_replays_evidence():
     session = _session()
     call = ToolCall("knowledge_write", {"sources": ["https://example.com/a"]})
     result = ToolResult(
-        call=call, model_text="saved",
+        ok=True, call=call, model_text="saved",
         canonical={"evidence_items": [{"source_url": "https://example.com/a", "excerpt": "clip"}]},
     )
     record_facts_for_result(session, call, result, ok=True)

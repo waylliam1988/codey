@@ -210,7 +210,7 @@ def attach_trusted_workspace(result: ToolResult, proof: TrustedWorkspaceProof) -
         raise RecoveryFailed(f"trusted workspace audit attach failed: {exc}") from exc
     try:
         trusted = ToolResult(
-            call=result.call,
+            ok=result.ok, call=result.call,
             model_text=result.model_text,
             truncated=bool(result.truncated),
             presentation=dict(result.presentation) if isinstance(result.presentation, dict) else {},

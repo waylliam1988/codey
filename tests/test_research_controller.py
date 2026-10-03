@@ -264,7 +264,7 @@ class ResearchControllerTests(unittest.TestCase):
 
     def test_controller_result_followup_hides_runtime_open_url_action(self) -> None:
         prompt = format_controller_results([
-            ToolResult(ToolCall("open_url", {"url": "https://example.com/a"}), "opened text")
+            ToolResult(ToolCall("open_url", {"url": "https://example.com/a"}), "opened text", ok=True)
         ])
 
         self.assertIn('[result: opened_source "https://example.com/a"]', prompt)

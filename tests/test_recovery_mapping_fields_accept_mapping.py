@@ -12,7 +12,7 @@ class RecoveryMappingFieldsAcceptMappingTests(unittest.TestCase):
 
         result = build_recovered_result(
             RecoveredResultSpec(
-                call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"),
+                ok=True, call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"),
                 model_text="ok",
                 audit=types.MappingProxyType({"ok": True}),
                 presentation=types.MappingProxyType({"result": "ok"}),

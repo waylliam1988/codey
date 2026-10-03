@@ -102,6 +102,10 @@ It is not evidence, not permission, not automation, and not a second agent.
 
 ## Runtime and Recovery
 
+Local HTTP/SSE access requires the browser operator session established by the
+Codey launch link. This is separate from task grants; it never grants the model
+network, project-write or shell permission. The CLI/headless task policy is unchanged.
+
 Codey records bounded runtime facts so interrupted work can be explained and
 resumed more honestly. Provider sends, tool calls, repair rounds, delivery
 receipts, and completion proof are tracked through durable intent/settlement

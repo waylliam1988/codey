@@ -137,7 +137,7 @@ def _audit_kernel_executors(project_path: Path) -> dict[str, object]:
         except Exception as exc:
             outcome = ToolOutcome.error(str(exc))
         return ToolResult(
-            call=call,
+            ok=outcome.ok, call=call,
             model_text=outcome.model_text,
             truncated=outcome.truncated,
             presentation=dict(outcome.presentation),

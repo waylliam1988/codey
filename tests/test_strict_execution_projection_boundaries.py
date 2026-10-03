@@ -103,7 +103,7 @@ def test_explicit_edit_string_false_changed_fails_closed_without_workspace_bump(
     store = Store()
 
     def executor(call: ToolCall) -> ToolResult:
-        return ToolResult(call=call, model_text="edited", audit={"changed": "false"})
+        return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": "false"})
 
     results = execute_turn(
         session,

@@ -18,7 +18,7 @@ def test_custom_object_rejects_edit_alias_keys() -> None:
         m.unregister_custom_tool("alias_probe_tool")
 
 
-def test_custom_integer_enforces_maximum_or_rejects_unsupported() -> None:
+def test_custom_integer_accepts_maximum_and_rejects_larger_value() -> None:
     from codey.toolchain import tool_spec as m
     name = "max_probe_tool"
     m.unregister_custom_tool(name)
@@ -26,11 +26,9 @@ def test_custom_integer_enforces_maximum_or_rejects_unsupported() -> None:
                                 parameters=(("value", {"type": "integer", "maximum": 5}),),
                                 required=("value",))
     try:
-        if not ok:
-            # 注册时拒绝不支持的约束也是合法的（禁止注册成功但忽略约束）
-            return
-        err = m.validate_args_against_spec(name, {"value": 100})
-        assert err, "maximum=5 时 value=100 应被拒绝（或注册时已拒绝）"
+        assert ok
+        assert m.validate_args_against_spec(name, {"value": 5}) == ""
+        assert m.validate_args_against_spec(name, {"value": 6})
     finally:
         m.unregister_custom_tool(name)
 

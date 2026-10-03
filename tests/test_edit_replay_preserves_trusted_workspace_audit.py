@@ -58,7 +58,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
 
             def fake_edit(call: ToolCall):
                 return ToolResult(
-                    call=call, model_text="edited",
+                    ok=True, call=call, model_text="edited",
                     truncated=True,
                     presentation={"result": "p"},
                     audit={"changed": True, "extra": "keep"},
@@ -82,7 +82,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
             replayed = _replay_settled_slot(
                 session, _turn_effect_id("r-replay-audit-1:task", 1, 0),
                 ToolCall(name="edit", args={"path": "b.py", "content": "y=2\n"}),
-                "edit", 1,
+                "edit",
             )
             self.assertIsNotNone(replayed)
             assert replayed is not None
@@ -105,7 +105,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
         # Strict provenance: audit keys alone are never trusted. The stored
         # result must carry the kernel side-channel attached by the bump.
         base = ToolResult(
-            call=call, model_text="edited",
+            ok=True, call=call, model_text="edited",
             audit={"changed": True},
             presentation={"result": "p"}, canonical={"tool": "edit"},
         )
@@ -114,7 +114,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
         )
         # Audit-only forgery without the side-channel must stay untrusted.
         forged = ToolResult(
-            call=call, model_text="edited",
+            ok=True, call=call, model_text="edited",
             audit={"changed": True, "workspace_revision": 2,
                    "workspace_fingerprint": "sha256:" + "ab" * 32},
         )
@@ -164,7 +164,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
             def fake_edit(call: ToolCall):
                 (project / str(call.args.get("path") or "b.py")).write_text(
                     str(call.args.get("content") or "y"), encoding="utf-8")
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             with mock.patch.object(store, "bump_state", side_effect=counting_bump):
                 results = ke.execute_turn(
@@ -208,7 +208,7 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
                     replayed = _replay_settled_slot(
                         session, identity,
                         ToolCall(name="edit", args={"path": "c.py", "content": "z=3\n"}),
-                        "edit", 2,
+                        "edit",
                     )
                     self.assertIsNotNone(replayed)
                     assert replayed is not None

@@ -22,7 +22,7 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
             "codey.operations.kernel_result.ToolResult", side_effect=RuntimeError("ctor boom")
         ):
             with self.assertRaises(RecoveryFailed) as ctx:
-                build_recovered_tool_result(call, model_text="edited")
+                build_recovered_tool_result(call, ok=True, model_text="edited")
             self.assertTrue(
                 any(token in str(ctx.exception).lower() for token in ("recovered", "rebuild", "provenance")),
                 f"RecoveryFailed must mention recovered/rebuild/provenance, got {ctx.exception!r}",
@@ -53,7 +53,7 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
 
             def fake_edit(_c: ToolCall):
                 (project / "a.py").write_text("x=2\n", encoding="utf-8")
-                return ToolResult(call=_c, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=_c, model_text="edited", audit={"changed": True})
 
             with mock.patch(
                 "codey.operations.kernel_provenance._with_trusted_workspace_state",

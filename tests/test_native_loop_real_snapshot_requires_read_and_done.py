@@ -80,7 +80,7 @@ def test_native_loop_uses_real_snapshot_with_read_and_done(tmp_path: Path) -> No
                     context_text="",
                 ),
                 execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
             ),

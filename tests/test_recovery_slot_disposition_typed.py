@@ -58,7 +58,7 @@ class RecoverySlotDispositionTypedTests(unittest.TestCase):
             "excerpt": "content",
             "args_digest": compute_args_digest(call.args),
         }
-        slot = replay_slot_typed(session, identity, call, "read_file", 1)
+        slot = replay_slot_typed(session, identity, call, "read_file")
         self.assertEqual(slot.disposition, "RECOVERED")
         self.assertIsNotNone(slot.result)
 

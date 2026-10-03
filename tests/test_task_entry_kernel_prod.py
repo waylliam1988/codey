@@ -311,13 +311,13 @@ class ExecutionEvidenceTests(unittest.TestCase):
         session = TaskSession(policy=policy, task_kind="project", project="E:/tmp", max_turns=8)
         edit_call = ToolCall("edit", {"path": "a.py", "content": "x"})
         kernel.execute_turn(session, [edit_call], executors={
-            "edit": lambda c: ToolResult(call=c, model_text="edited"),
-            "run": lambda c: ToolResult(call=c, model_text="1 failed, 0 passed"),
+            "edit": lambda c: ToolResult(ok=True, call=c, model_text="edited"),
+            "run": lambda c: ToolResult(ok=True, call=c, model_text="1 failed, 0 passed"),
         }, run_id="run-1", turn=1)
         from codey.runtime.core.models import ToolCall as TC
 
         kernel.execute_turn(session, [TC("run", {"command": "pytest -q"})], executors={
-            "run": lambda c: ToolResult(call=c, model_text="1 failed, 0 passed"),
+            "run": lambda c: ToolResult(ok=True, call=c, model_text="1 failed, 0 passed"),
         }, run_id="run-1", turn=2)
         verdict = evaluate(session, "done")
         self.assertFalse(verdict.complete)
@@ -335,11 +335,11 @@ class ExecutionEvidenceTests(unittest.TestCase):
             task_kind="hybrid")
         session = TaskSession(policy=policy, task_kind="hybrid", project="", max_turns=8)
         execute_turn(session, [ToolCall("open_url", {"url": "https://example.com/a"})],
-                     executors={"open_url": lambda c: ToolResult(call=c, model_text="ERROR: boom")},
+                     executors={"open_url": lambda c: ToolResult(ok=False, call=c, model_text="ERROR: boom")},
                      run_id="r", turn=1)
         execute_turn(session, [ToolCall("knowledge_write",
                                         {"type": "fact", "title": "t", "body": "b"})],
-                     executors={"knowledge_write": lambda c: ToolResult(call=c, model_text="ERROR: boom")},
+                     executors={"knowledge_write": lambda c: ToolResult(ok=False, call=c, model_text="ERROR: boom")},
                      run_id="r", turn=2)
         self.assertEqual(session.opened_sources, set())
         self.assertEqual(session.evidence, [])
@@ -360,7 +360,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
             session = TaskSession(policy=policy, task_kind="project", project=td, max_turns=8)
             results = execute_turn(
                 session, [ToolCall("read_file", {"path": "../escape"})],
-                executors={"read_file": lambda c: ToolResult(call=c, model_text="should not run")},
+                executors={"read_file": lambda c: ToolResult(ok=True, call=c, model_text="should not run")},
                 run_id="r", turn=1, project_path=Path(td))
             self.assertIn("ERROR", results[0].model_text)
 
@@ -377,7 +377,7 @@ class PersistenceTests(unittest.TestCase):
             TaskSubmission("s", "E:/tmp", "t", 8, False, "local"), task_kind="project")
         session = TaskSession(policy=policy, task_kind="project", project="E:/tmp", max_turns=8)
         made: list[str] = []
-        ex = {"read_file": lambda c: (made.append("read"), ToolResult(call=c, model_text="v1"))[1]}
+        ex = {"read_file": lambda c: (made.append("read"), ToolResult(ok=True, call=c, model_text="v1"))[1]}
         call = ToolCall("read_file", {"path": "a.py"})
         execute_turn(session, [call], executors=ex, run_id="r", turn=1)
         execute_turn(session, [call], executors=ex, run_id="r", turn=2)

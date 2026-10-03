@@ -84,6 +84,9 @@ Ghost 状态必须可控（预览、导出、删除、重置、禁用同时作�
 
 ## Runtime 与恢复
 
+本地 HTTP/SSE 要求浏览器通过 Codey 启动链接建立操作者会话。这与任务授权独立，
+不会授予模型联网、写项目或 shell 权限。CLI/headless 的任务策略不变。
+
 Codey 会记录有界 runtime fact，让中断后的工作更容易解释和恢复。Provider send、
 tool call、repair round、delivery receipt 和 completion proof 都通过 durable
 intent/settlement 风格记录。

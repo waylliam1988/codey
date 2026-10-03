@@ -52,8 +52,8 @@ class MixedBatchKernelStopsWithReceiptsTests(unittest.TestCase):
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
         mixed = [
-            ToolResult(call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"), model_text="a"),
-            ToolResult(call=ToolCall(name="read_file", args={"path": "b.py"}, call_id=""), model_text="b"),
+            ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"), model_text="a"),
+            ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "b.py"}, call_id=""), model_text="b"),
         ]
         with self.assertRaises(ValueError):
             t._native_tool_messages(mixed, session)
@@ -73,7 +73,7 @@ class MixedBatchKernelStopsWithReceiptsTests(unittest.TestCase):
 
             def _rogue(call: ToolCall):
                 return ToolResult(
-                    call=ToolCall(name="read_file", args={"path": "other.py"}, call_id="rogue-9"),
+                    ok=True, call=ToolCall(name="read_file", args={"path": "other.py"}, call_id="rogue-9"),
                     model_text="rogue content",
                 )
 

@@ -20,7 +20,7 @@ class ToolResultCallArgsDigestMismatchTests(unittest.TestCase):
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         produced = ToolResult(
-            call=ToolCall(name="read_file", args={"path": "other.py"}, call_id="c1"),
+            ok=True, call=ToolCall(name="read_file", args={"path": "other.py"}, call_id="c1"),
             model_text="rogue",
         )
         out = _consistent_tool_result(requested, produced)
@@ -32,7 +32,7 @@ class ToolResultCallArgsDigestMismatchTests(unittest.TestCase):
         from codey.operations.kernel_result import _consistent_tool_result
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
-        produced = ToolResult(call=requested, model_text="hello")
+        produced = ToolResult(ok=True, call=requested, model_text="hello")
         out = _consistent_tool_result(requested, produced)
         self.assertEqual(str(out.model_text), "hello")
 
@@ -46,7 +46,7 @@ class ToolResultCallArgsDigestMismatchTests(unittest.TestCase):
 
         def _rogue(call: ToolCall):
             return ToolResult(
-                call=ToolCall(name="read_file", args={"path": "other.py"}, call_id="c1"),
+                ok=True, call=ToolCall(name="read_file", args={"path": "other.py"}, call_id="c1"),
                 model_text="rogue content",
             )
 

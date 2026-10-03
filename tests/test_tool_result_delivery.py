@@ -1011,7 +1011,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         intent = next(p.intent for p in RuntimeEffectStore(self.log).load_effects(
             self.session_id, self.run_id) if p.intent.effect_id == effect_id)
         result = ToolResult(ToolCall(intent.tool_name, dict(intent.replay_args or {}), call_id=intent.call_id),
-                            result_text)
+                            result_text, ok=True)
         return RuntimeEffectSettlement(
             effect_id=effect_id, effect_category=EFFECT_CATEGORY_TOOL_CALL,
             session_id=self.session_id, run_id=self.run_id, status=status,
@@ -1475,7 +1475,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         results = execute_turn(
             session, calls,
             executors={
-                "read_file": lambda c: ToolResult(call=c, model_text=f"content:{c.args.get('path')}"),
+                "read_file": lambda c: ToolResult(ok=True, call=c, model_text=f"content:{c.args.get('path')}"),
             },
             run_id=self.run_id, effect_scope="task", turn=1,
             project_path=self.project_dir, intent_sink=sink,
@@ -1533,7 +1533,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         # Read-only policy denies shell with ERROR, never sends.
         results = execute_turn(
             session, [ToolCall(name="shell", args={"command": "rm -rf /", "path": "."})],
-            executors={"shell": lambda c: ToolResult(call=c, model_text="should not run")},
+            executors={"shell": lambda c: ToolResult(ok=True, call=c, model_text="should not run")},
             run_id=self.run_id, turn=1, project_path=self.project_dir,
             permission_profile="planning_readonly",
         )
@@ -1556,6 +1556,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         }
         _session.executed[real_identity] = dict(before)
         _session._memory_results[real_identity] = _TR(
+            ok=True,
             call=ToolCall(name="read_file", args={"path": "target.py"}, call_id="call-before"),
             model_text="old",
         )
@@ -1563,7 +1564,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
 
         def _grep(call):
             calls.append(call)
-            return _TR(call=call, model_text="hits")
+            return _TR(call=call, model_text="hits", ok=True)
 
         _res = _exec(
             _session, [ToolCall(name="grep", args={"path": ".", "query": "q"}, call_id="call-new")],
@@ -1598,7 +1599,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         )
         results = execute_turn(
             session, calls,
-            executors={"read_file": lambda c: ToolResult(call=c, model_text="file")},
+            executors={"read_file": lambda c: ToolResult(ok=True, call=c, model_text="file")},
             run_id=self.run_id, effect_scope="task", turn=1,
             project_path=self.project_dir, intent_sink=sink,
             permission_profile="planning_readonly",
@@ -2208,7 +2209,7 @@ class AgentPromptParityTests(unittest.TestCase):
         from codey.policies.task_policy import TaskPolicy
 
         call = ToolCall(name="read_file", args={"path": "sample.txt"})
-        result = ToolResult(call=call, model_text="sample content")
+        result = ToolResult(ok=True, call=call, model_text="sample content")
         policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
         session = TaskSession(policy=policy, task_kind="project", project=str(self.project_dir), max_turns=2)
         actual_prompt = kp._format_results([result], session)

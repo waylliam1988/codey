@@ -1267,13 +1267,13 @@ class FixtureSearchProvider:
         self.fetches.append(str(url or ""))
         for doc in self.documents:
             if doc.url == url:
-                return {
+                return {"status": "ok",
                     "url": doc.url,
                     "title": doc.title,
                     "text": doc.text,
                     "truncated": False,
                 }
-        return {
+        return {"status": "error", "detail": ("ERROR: fixture URL not found").removeprefix("ERROR:").strip(),
             "url": url,
             "title": "",
             "text": "ERROR: fixture URL not found",

@@ -25,7 +25,7 @@ class MissingExitCodeReportsFailureTests(unittest.TestCase):
         session = TaskSession(policy=_policy(), task_kind="project", project="", max_turns=2)
 
         def fake(call):
-            return ToolResult(call=call, model_text="run output", audit={})
+            return ToolResult(ok=True, call=call, model_text="run output", audit={})
 
         results = ke.execute_turn(
             session,

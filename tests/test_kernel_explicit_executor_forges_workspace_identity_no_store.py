@@ -57,7 +57,7 @@ class ExplicitExecutorForgesWorkspaceIdentityNoStoreTests(unittest.TestCase):
 
             def fake_edit(call: ToolCall):
                 return ToolResult(
-                    call=call, model_text="ok",
+                    ok=True, call=call, model_text="ok",
                     audit={
                         "changed": True,
                         "workspace_revision": 999,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from codey.knowledge.changes import KnowledgeChanges
@@ -13,6 +14,13 @@ from codey.knowledge.note import LINK_KINDS, KnowledgeNote, is_safe_id, now_iso,
 from codey.storage.atomic_io import write_text_atomic
 
 RELATED_HEADING = "## Related"
+
+
+@dataclass(frozen=True)
+class KnowledgeLinkResult:
+    ok: bool
+    model_text: str
+    created: bool = False
 
 
 class KnowledgeStore:
@@ -71,17 +79,17 @@ class KnowledgeStore:
         kind: str = "relates",
         *,
         changes: KnowledgeChanges | None = None,
-    ) -> str:
+    ) -> KnowledgeLinkResult:
         kind = kind if kind in LINK_KINDS else "relates"
         src_id = self.index.resolve(src_target)
         if src_id is None:
-            return f"ERROR: unknown source note: {src_target}"
+            return KnowledgeLinkResult(False, f"ERROR: unknown source note: {src_target}")
         src = self.read_note(src_id)
         if src is None:
-            return f"ERROR: unknown source note: {src_target}"
+            return KnowledgeLinkResult(False, f"ERROR: unknown source note: {src_target}")
         dst_id = self.index.resolve(dst_target)
         if dst_id is None:
-            return f"ERROR: unknown target note: {dst_target}"
+            return KnowledgeLinkResult(False, f"ERROR: unknown target note: {dst_target}")
         dst = self.read_note(dst_id)
         display = dst.title or dst.id if dst else dst_id
         link_text = wikilink(display)
@@ -91,13 +99,13 @@ class KnowledgeStore:
                 src.body = upgraded
                 self.write_note(src, changes=changes)
                 self.index.add_link(src_id, dst_id, kind)
-                return f"updated link: {src_id} -> {dst_id} ({kind})"
+                return KnowledgeLinkResult(True, f"updated link: {src_id} -> {dst_id} ({kind})")
             self.index.add_link(src_id, dst_id, kind)
-            return f"already linked: {src_id} -> {dst_id} ({kind})"
+            return KnowledgeLinkResult(True, f"already linked: {src_id} -> {dst_id} ({kind})")
         src.body = _append_related(src.body, f"{link_text} ({kind})")
         self.write_note(src, changes=changes)
         self.index.add_link(src_id, dst_id, kind)
-        return f"linked: {src_id} -> {dst_id} ({kind})"
+        return KnowledgeLinkResult(True, f"linked: {src_id} -> {dst_id} ({kind})", created=True)
 
     def read_note(self, note_id: str) -> KnowledgeNote | None:
         note = self._read_indexed_note(note_id)

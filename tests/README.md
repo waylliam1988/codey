@@ -22,6 +22,37 @@ pytest -q
 
 ## Boundary Sweeps
 
+- `test_operator_auth_blocks_unauthenticated_http.py`,
+  `test_operator_auth_rejects_non_ascii_credentials.py`, and
+  `test_operator_bootstrap_before_ui_requests.py`: real HTTP authentication,
+  one-time/expired credentials and actual JavaScript boot order.
+- `test_tool_execution_status_is_not_display_text.py`,
+  `test_research_results_preserve_structured_status.py`,
+  `test_source_fetch_status_is_not_document_text.py`, and
+  `test_source_lifecycle_cancel_and_deadline_propagate.py`: explicit status and
+  acquisition lifecycle exceptions.
+- `test_durable_recovery_preserves_failed_tool_status.py`,
+  `test_compact_slot_replay_requires_and_preserves_status.py`,
+  `test_persisted_result_status_is_required.py`, and
+  `test_tool_receipt_status_corruption_fails_closed.py`: real-log and compact
+  replay status, unchanged failed results and corrupt receipt rejection.
+- `test_context_tool_group_requires_exact_result_ids.py`,
+  `test_local_request_rejects_unpaired_tool_history.py`, and
+  `test_local_native_call_ids_preserve_exact_identity.py`: one-to-one IDs,
+  malformed history rejected before send and history preserved on rejection.
+- `test_generated_tool_schema_nested_boundaries.py`,
+  `test_tool_schema_enum_distinguishes_json_booleans.py`, and
+  `test_output_capture_generated_utf8_boundaries.py`: independently known
+  schema witnesses and byte-slice oracles, with fixed reproducible seeds.
+- `test_local_request_diagnostics_match_wire_attempts.py` and
+  `test_gate_diagnostics_report_physical_attempts.py`: actual request bytes,
+  retry accounting and diagnostic failure isolation.
+- `test_sse_cursor_reconnect_boundaries.py`,
+  `test_sse_browser_dedup_reset_and_buffer_gap.py`,
+  `test_headless_tool_status_requires_exact_boolean.py`, and
+  `test_tool_result_ui_headless_semantic_parity.py`: cursor gaps/restarts,
+  actual JavaScript deduplication and the common tool-event projection.
+
 - `test_coldstart_provider_trace_cleanup.py`: provider and trace dead fields.
 - `test_coldstart_contract_cleanup.py`: strict payload and projection contracts.
 - `test_coldstart_export_cleanup.py`: package export and shared helper cleanup.

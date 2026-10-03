@@ -299,8 +299,8 @@ class FixtureSearchProvider:
     def fetch(self, url: str) -> dict:
         doc = self.document_for_url(url)
         if doc is None:
-            return {"url": url, "title": "", "text": "ERROR: fixture URL not found", "truncated": False}
-        return {"url": doc.url, "title": doc.title, "text": doc.text, "truncated": False}
+            return {"status": "error", "detail": ("ERROR: fixture URL not found").removeprefix("ERROR:").strip(), "url": url, "title": "", "text": "ERROR: fixture URL not found", "truncated": False}
+        return {"status": "ok", "url": doc.url, "title": doc.title, "text": doc.text, "truncated": False}
 
     def document_for_url(self, url: str) -> FixtureDocument | None:
         normalized = str(url or "").strip()
@@ -346,7 +346,7 @@ class ProbeResearchTools(ResearchTools):
         lookup = getattr(self.search, "document_for_url", lambda _url: None)
         doc = lookup(url)
         if doc is None:
-            return ResearchToolOutput(model_text="ERROR: fixture URL not found: " + url)
+            return ResearchToolOutput(model_text="ERROR: fixture URL not found: " + url, ok=False)
         offset = max(0, _as_int(offset, 0))
         limit = min(OPEN_MAX_LIMIT, max(500, _as_int(limit, OPEN_DEFAULT_LIMIT)))
         document = SourceDocument.html(
@@ -363,7 +363,7 @@ class ProbeResearchTools(ResearchTools):
         if offset + limit < len(document.text):
             body += f"\n\n[more text available: open with offset={offset + limit}]"
         full = f"{header}\n\n{document.text}".strip()
-        return ResearchToolOutput(model_text=body, receipt_text=full)
+        return ResearchToolOutput(model_text=body, receipt_text=full, ok=True)
 
 
 _FIXTURE_FRONT = """Probe fixture hard boundary:

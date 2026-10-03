@@ -39,14 +39,14 @@ class ExecuteTurnRealSlotDigestMismatchTests(unittest.TestCase):
             }
             session.executed[real_identity] = dict(before)
             session._memory_results[real_identity] = ToolResult(
-                call=ToolCall(name="read_file", args={"path": "target.py"}, call_id="call-before"),
+                ok=True, call=ToolCall(name="read_file", args={"path": "target.py"}, call_id="call-before"),
                 model_text="old content",
             )
             calls_made: list[ToolCall] = []
 
             def _grep(call: ToolCall):
                 calls_made.append(call)
-                return ToolResult(call=call, model_text="hits")
+                return ToolResult(ok=True, call=call, model_text="hits")
 
             results = execute_turn(
                 session,

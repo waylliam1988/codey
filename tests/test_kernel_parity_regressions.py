@@ -173,7 +173,7 @@ def test_repeated_cycle_has_bounded_stop_and_distinct_information_does_not(monke
                 execution=KernelExecutionDeps(
                     executors={
                         tool: lambda call, provider=provider, changing=changing: ToolResult(
-                            call=call, model_text=f"information-{provider.i}" if changing else "unchanged information"
+                            ok=True, call=call, model_text=f"information-{provider.i}" if changing else "unchanged information"
                         )
                     },
                 ),
@@ -224,7 +224,7 @@ def test_cancellation_between_tools_settles_remaining_slots_without_executing(mo
     def edit(call):
         calls.append(call.args["path"])
         (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
-        return ToolResult(call, "wrote file", audit={"changed": True})
+        return ToolResult(call, "wrote file", ok=True, audit={"changed": True})
 
     store = WorkspaceRevisionStore(tmp_path / "state")
     bump = store.bump_state

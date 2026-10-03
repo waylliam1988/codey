@@ -127,7 +127,7 @@ def _explicit_policy_denial(
             denied, message, _approval = check(call)
             if denied:
                 return (
-                    ToolResult(call=call, model_text=f"ERROR: {message}"),
+                    ToolResult(ok=False, call=call, model_text=f"ERROR: {message}"),
                     False,
                     None,
                 )
@@ -170,12 +170,9 @@ def _run_via_delegate_or_fn(
             produced = fn(call)
         except Exception as exc:
             return _error_result(call, str(exc) or "tool failed"), False, None
-        if isinstance(produced, ToolResult):
-            result = _consistent_tool_result(call, produced)
-        elif isinstance(produced, str):
-            result = ToolResult(call=call, model_text=produced)
-        else:
-            result = ToolResult(call=call, model_text=str(produced))
+        if not isinstance(produced, ToolResult):
+            return _error_result(call, "executor must return a structured ToolResult"), False, None
+        result = _consistent_tool_result(call, produced)
         result, ok = _normalize_explicit_result(name, result)
         exit_code = strict_exit_code_or_none(result.audit.get("exit_code")) if name == "run" else None
         return result, ok, exit_code
@@ -370,13 +367,13 @@ def _settle_delivered_slot(
     if slot.disposition == "NO_MATCH":
         return False
     assert slot.result is not None
-    settle(identity, call, slot.result, ok=slot.disposition == "RECOVERED")
+    settle(identity, call, slot.result, ok=slot.result.ok)
     results.append(slot.result)
     return True
 
 
 def _reconcile_guarded_slot(
-    session: TaskSession, identity: str, call: ToolCall, name: str, active_turn: int,
+    session: TaskSession, identity: str, call: ToolCall, name: str,
     project_path: Any, workspace_revision_store: Any, ignores: tuple[str, ...],
     recovery_ctx: RecoveryContext, reconcile_intent_only: Any, settle: Any,
     guarded: ToolResult,
@@ -391,7 +388,7 @@ def _reconcile_guarded_slot(
         from codey.operations.kernel_recovery import replay_slot_typed as _replay_typed
 
         slot = _replay_typed(
-            session, identity, call, name, active_turn, project_path=project_path,
+            session, identity, call, name, project_path=project_path,
             revision_store=workspace_revision_store, ignored_paths=ignores,
             recovery_ctx=recovery_ctx,
         )
@@ -457,7 +454,7 @@ def _execute_slots(
             # Fresh guard errors settle inside the helper; already-durable
             # replays only reconcile the intent and never rewrite the receipt.
             _reconcile_guarded_slot(
-                session, identity, call, name, active_turn, project_path,
+                session, identity, call, name, project_path,
                 workspace_revision_store, ignores, recovery_ctx, reconcile_intent_only,
                 settle, guarded,
             )
@@ -561,7 +558,7 @@ def _settle_unconfirmed_edit(session: TaskSession, identity: str, call: ToolCall
         f"edit happened but workspace identity unconfirmed ({reason}); "
         "re-check workspace before verifying, do not re-apply the edit",
     )
-    failed = ToolResult(call=call, model_text=failed.model_text, audit=failed.audit,
+    failed = ToolResult(ok=failed.ok, call=call, model_text=failed.model_text, audit=failed.audit,
                         canonical={"workspace_unconfirmed": True})
     settle(identity, call, failed, ok=False)
     record_facts_for_result(session, call, failed, ok=False)

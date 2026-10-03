@@ -198,7 +198,7 @@ def test_projection_failure_callback_error_preserves_recovery_failure() -> None:
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.write", "control"})))
     call = ToolCall(name="edit", args={"path": "a.py"}, call_id="c1")
     session.executed[turn_effect_id("run", 1, 0)] = {"ok": True}
-    result = ToolResult(call=call, model_text="edited", audit={"changed": True})
+    result = ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
     object.__setattr__(result, "_kernel_workspace_identity", WorkspaceIdentity.trusted_pair(2, "sha256:" + "ab" * 32))
 
     def callback(event: object) -> None:

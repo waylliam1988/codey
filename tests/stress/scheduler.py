@@ -748,7 +748,7 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
                 tool_id=str(getattr(call, "call_id", "") or ""),
             )
             # Real subprocess ran; the boundary loses the structured exit.
-            return ToolResult(call=call, model_text=str(produced.model_text or ""), audit={})
+            return ToolResult(ok=True, call=call, model_text=str(produced.model_text or ""), audit={})
 
         executors = {"run": _unknown_run}
     result = run_task_kernel(

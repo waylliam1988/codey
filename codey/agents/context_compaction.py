@@ -97,12 +97,21 @@ def is_tool_group_complete(messages: Sequence[Mapping[str, object]], group: Sequ
     if not group:
         return False
     first = messages[group[0]]
-    if not _has_tool_calls(first):
-        return True
     calls = first.get("tool_calls")
-    expected = len(calls) if isinstance(calls, list) else 0
-    actual = sum(1 for i in group[1:] if _is_tool_message(messages[i]))
-    return actual >= expected
+    if calls is not None and not isinstance(calls, list):
+        return False
+    if not _has_tool_calls(first):
+        return not _is_tool_message(first)
+    if first.get("role") != "assistant" or not isinstance(calls, list):
+        return False
+    expected = [call.get("id") if isinstance(call, Mapping) else None for call in calls]
+    results = [messages[i] for i in group[1:]]
+    actual = [message.get("tool_call_id") for message in results]
+    if any(not _is_tool_message(message) for message in results):
+        return False
+    if any(type(value) is not str or not value.strip() for value in expected + actual):
+        return False
+    return len(set(expected)) == len(expected) == len(actual) == len(set(actual)) and set(expected) == set(actual)
 
 
 def find_safe_cut(

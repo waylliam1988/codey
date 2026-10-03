@@ -71,7 +71,7 @@ class KernelRecoveryTriStateTests(unittest.TestCase):
 
         def fake_edit(_c: ToolCall):
             called.append(1)
-            return ToolResult(call=_c, model_text="edited")
+            return ToolResult(ok=True, call=_c, model_text="edited")
 
         with mock.patch(
             "codey.operations.kernel_recovery.delivered_slot_typed",
@@ -85,7 +85,7 @@ class KernelRecoveryTriStateTests(unittest.TestCase):
             from codey.operations.task_session import turn_effect_id
 
             identity = turn_effect_id("r-tri-4:task", 1, 0)
-            delivered = {identity: ToolResult(call=call, model_text="stored")}
+            delivered = {identity: ToolResult(ok=True, call=call, model_text="stored")}
             results = ke.execute_turn(
                 session, [call],
                 executors={"edit": fake_edit},

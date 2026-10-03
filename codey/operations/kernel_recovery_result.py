@@ -25,7 +25,7 @@ No entry derives trust from display audit or event metadata.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from codey.operations.kernel_errors import RecoveryFailed
@@ -53,6 +53,7 @@ class RecoveredResultSpec:
     """Normalized recovery input for the single builder."""
 
     call: ToolCall
+    ok: bool = field(kw_only=True)
     model_text: object = ""
     audit: object = None
     presentation: object = None
@@ -135,7 +136,7 @@ def build_recovered_result(spec: RecoveredResultSpec) -> ToolResult:
     truncated = _strict_truncated(getattr(spec, "truncated", False))
     try:
         result = build_recovered_tool_result(
-            spec.call,
+            spec.call, ok=spec.ok,
             model_text=model_text,
             audit=audit,
             presentation=presentation,
@@ -157,7 +158,7 @@ def build_recovered_result(spec: RecoveredResultSpec) -> ToolResult:
 def build_recovery_error_result(call: ToolCall, message: str) -> ToolResult:
     """Single constructor for recovery-failure errors (never success-like)."""
     try:
-        return ToolResult(call=call, model_text=f"ERROR: recovery failed: {message}")
+        return ToolResult(ok=False, call=call, model_text=f"ERROR: recovery failed: {message}")
     except Exception as exc:
         raise RecoveryFailed(f"recovery error rebuild failed: {exc}") from exc
 
@@ -166,7 +167,7 @@ def build_recovery_mismatch_result(call: ToolCall, expected: str, actual: str) -
     """Single constructor for recovery-mismatch errors (never success-like)."""
     try:
         return ToolResult(
-            call=call,
+            ok=False, call=call,
             model_text=(
                 "ERROR: recovery mismatch for this turn slot: "
                 f"expected {expected or '?'} with args {actual or '?'}; "
@@ -289,7 +290,7 @@ def spec_from_frame_row(item: Any) -> RecoveredResultSpec:
         raise RecoveryFailed(f"frame tool class unreadable: {exc}") from exc
     audit_dict, presentation, canonical, truncated, model_text = _row_text_fields(outcome)
     return RecoveredResultSpec(
-        call=call_obj,
+        ok=frame_outcome_ok(item), call=call_obj,
         model_text=model_text,
         audit=audit_dict,
         presentation=presentation,
@@ -325,7 +326,7 @@ def spec_from_settled_redelivery_row(item: Any) -> RecoveredResultSpec:
         raise RecoveryFailed("recovered row missing tool name")
     audit_dict, presentation, canonical, truncated, model_text = _row_text_fields(outcome)
     return RecoveredResultSpec(
-        call=call_obj,
+        ok=frame_outcome_ok(item), call=call_obj,
         model_text=model_text,
         audit=audit_dict,
         presentation=presentation,
@@ -394,7 +395,7 @@ def spec_from_memory_result(stored: ToolResult, call: ToolCall) -> RecoveredResu
     except Exception as exc:
         raise RecoveryFailed(f"recovered outcome unreadable: {exc}") from exc
     return RecoveredResultSpec(
-        call=call,
+        ok=stored.ok, call=call,
         model_text=model_text,
         audit=audit,
         presentation=presentation,
@@ -414,6 +415,9 @@ def spec_from_persisted_record(
     """Adapter for persisted ``executed`` records (verified identity only)."""
     from codey.operations.kernel_provenance import _is_trusted_identity, _trusted_workspace_proof
 
+    ok = record.get("ok") if isinstance(record, Mapping) else None
+    if type(ok) is not bool:
+        raise RecoveryFailed("persisted replay ok must be a boolean")
     proof = None
     if verified_identity is not None and _is_trusted_identity(verified_identity):
         proof = _trusted_workspace_proof(verified_identity, "persisted_revision_store")
@@ -438,7 +442,7 @@ def spec_from_persisted_record(
     except Exception as exc:
         raise RecoveryFailed(f"persisted replay unreadable: {exc}") from exc
     return RecoveredResultSpec(
-        call=call,
+        ok=ok, call=call,
         model_text=excerpt,
         audit=audit,
         presentation={},

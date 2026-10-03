@@ -54,6 +54,7 @@ from codey.app.http_plumbing import (
     sse_replay_cursor,
     write_sse_event,
 )
+from codey.app.operator_auth import OperatorAuth
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -64,6 +65,13 @@ POST_BODY_READ_TIMEOUT = 10.0
 
 class CodeyHTTPServer(ThreadingHTTPServer):
     """Keep routine browser disconnects out of the local server log."""
+
+    def __init__(self, server_address: tuple[str, int], request_handler_class: type[BaseHTTPRequestHandler]) -> None:
+        super().__init__(server_address, request_handler_class)
+        self.operator_auth = OperatorAuth(self.server_address[1])
+
+    def launch_url(self, base_url: str) -> str:
+        return f"{base_url}#codey_bootstrap={self.operator_auth.issue_bootstrap()}"
 
     def handle_error(self, request, client_address) -> None:
         error = sys.exc_info()[1]
@@ -285,6 +293,28 @@ class Handler(BaseHTTPRequestHandler):
     def _send_index(self) -> None:
         send_index(self)
 
+    def _require_operator(self) -> bool:
+        auth = cast(CodeyHTTPServer, self.server).operator_auth
+        if auth.authenticated(self.headers.get("Cookie")):
+            return True
+        self._send_json(401, {"error": "operator authentication required"})
+        return False
+
+    def _exchange_operator(self, body: object) -> None:
+        auth = cast(CodeyHTTPServer, self.server).operator_auth
+        cookie = auth.exchange(body.get("token")) if isinstance(body, dict) and set(body) == {"token"} else None
+        if cookie is None:
+            self._send_json(401, {"error": "operator authentication required"})
+            return
+        data = b'{"ok":true}'
+        self.send_response(200)
+        self.send_header("Set-Cookie", cookie)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def _read_post_body(self, length: int) -> bytes | None:
         """Bounded body read: slow clients get 408 instead of a thread."""
         if not length:
@@ -340,6 +370,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
             return
+        if not self._require_operator():
+            return
+        if url.path == "/api/operator_session":
+            self._send_json(200, {"ok": True})
+            return
         route = _GET_ROUTES.get(url.path)
         if route is not None:
             try:
@@ -360,6 +395,9 @@ class Handler(BaseHTTPRequestHandler):
             self._deny_foreign_origin()
             return
         url = urlparse(self.path)
+        exchange = url.path == "/api/operator_session"
+        if not exchange and not self._require_operator():
+            return
         raw_length = self.headers.get("Content-Length", "0")
         if isinstance(raw_length, bool) or not isinstance(raw_length, str):
             self._send_json(400, {"error": "invalid content length"})
@@ -376,7 +414,7 @@ class Handler(BaseHTTPRequestHandler):
         if length < 0:
             self._send_json(400, {"error": "invalid content length"})
             return
-        if length > MAX_POST_BODY_BYTES:
+        if length > (1024 if exchange else MAX_POST_BODY_BYTES):
             self._send_json(413, {"error": "request body too large"})
             return
         raw = self._read_post_body(length)
@@ -388,6 +426,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "invalid json"})
             return
 
+        if exchange:
+            self._exchange_operator(body)
+            return
         route = _POST_ROUTES.get(url.path)
         if route is not None:
             try:
@@ -466,6 +507,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         actual_port = httpd.server_address[1]
         url = f"http://{host}:{actual_port}/"
         print(f"[codey] UI ready: {url}")
+        launch_url = httpd.launch_url(url)
 
         def _run_httpd() -> None:
             assert httpd is not None
@@ -486,7 +528,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         import webview
 
         icon = WEB_DIR / "icon.ico"
-        webview.create_window("Codey", url, width=1380, height=900)
+        webview.create_window("Codey", launch_url, width=1380, height=900)
         start_kwargs = {
             "private_mode": False,
             "storage_path": str(DEFAULT_STATE_HOME / "webview"),
@@ -502,7 +544,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         print("\n[codey] shutting down")
     except Exception as exc:
         try:
-            _wait_for_manual_browser(url, exc)
+            _wait_for_manual_browser(httpd.launch_url(url), exc)
         except KeyboardInterrupt:
             print("\n[codey] shutting down")
     finally:

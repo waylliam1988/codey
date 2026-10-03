@@ -264,7 +264,7 @@ def test_real_receipt_restart_preserves_long_command_identity(tmp_path):
     record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy)
     command = "python -m pytest" + " -q" * 200
     result = execute_turn(session, [ToolCall("run", {"command": command, "path": "."})],
-                          executors={"run": lambda call: ToolResult(call, "passed", audit={"exit_code": 0})},
+                          executors={"run": lambda call: ToolResult(call, "passed", ok=True, audit={"exit_code": 0})},
                           run_id="r", turn=1, effect_scope="task", project_path=project,
                           intent_sink=sink, workspace_revision_store=store)[0]
     assert result.model_text == "passed"

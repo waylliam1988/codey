@@ -201,9 +201,9 @@ def test_source_search_requires_opened_source_and_returns_pdf_page_locator() -> 
             KnowledgeChanges(store.root),
         )
 
-        before = tools.source_search(ab.PDF_METHOD_URL, "stratified bootstrap")
+        before = tools.source_search(ab.PDF_METHOD_URL, "stratified bootstrap").model_text
         opened = tools.open_url(ab.PDF_METHOD_URL).model_text
-        located = tools.source_search(ab.PDF_METHOD_URL, "stratified bootstrap")
+        located = tools.source_search(ab.PDF_METHOD_URL, "stratified bootstrap").model_text
         coverage = tools.ledger.coverage_payload()
         page = tools.open_url(ab.PDF_METHOD_URL, pages="9").model_text
         evidence_count = len(tools.ledger.evidence_items)
@@ -243,7 +243,7 @@ def test_deep_research_ab_pdf_source_search_uses_production_page_cap() -> None:
         )
 
         tools.open_url("https://example.edu/long-cap.pdf")
-        located = tools.source_search("https://example.edu/long-cap.pdf", "target phrase")
+        located = tools.source_search("https://example.edu/long-cap.pdf", "target phrase").model_text
         coverage = tools.ledger.coverage_payload()
         store.close()
 
@@ -277,7 +277,7 @@ def test_thin_gate_separates_opened_sources_from_citable_sources() -> None:
                     "excerpt": "The required threshold is a 72-hour incident notification",
                     "stance": "supports",
                 },
-            })
+            }).model_text
             state = ab._thin_gate_state(tools)
             block = ab._thin_gate_block(state)
         finally:

@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 网页操作者与结果边界收口
+
+- 本地 HTTP/SSE 采用单次、限时启动凭据与进程内 cookie；UI 先认证再读取状态。
+- 工具与 Research 结果显式携带精确布尔状态，贯通执行、收据、恢复和 headless。
+  网页正文不决定成功；恢复保留失败，取消与截止异常保持原类型。
+- 压缩与发送前检查原生 call/result ID 唯一、精确配对；拒绝类型转换、遗漏及非法历史。
+- JSON enum 区分布尔值与数值；增加独立的生成式 schema/UTF-8 边界及收据损坏测试。
+- 诊断记录实际序列化请求与显式 HTTP 重试次数，区分逻辑 send；不保存认证 header。
+- 修复 SSE 重放、游标重置、去重与协调缓冲区缺口；验证 SSE/headless 的工具事实一致。
+- 删除丢失状态的 facade、裸文本执行器兼容及缺状态收据兜底；夹具迁移到正式接口。
+- 最终全量含真实 Edge UI E2E：**6964 passed、6 skipped、1497 subtests passed，
+  456.26 秒**。首轮失败与证明范围保留在 [TEST_REPORT](TEST_REPORT.md)。
+  本次不 bump 版本、不创建 tag 或 GitHub Release。
+
 ## 0.5.10 - 统一任务内核与运行时收尾
 
 - 编程、Research、只读规划与获授权的混合任务共用工具循环、权限快照、

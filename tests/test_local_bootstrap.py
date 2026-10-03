@@ -729,7 +729,7 @@ def test_open_url_full_text_receipt(tmp_path: Path) -> None:
     store = ManagedOutputStore(tmp_path / "state")
     full = ("word " * 20000).strip()  # ~100k chars
     window = full[:6000]
-    out = ResearchToolOutput(model_text=window, receipt_text=full)
+    out = ResearchToolOutput(model_text=window, receipt_text=full, ok=True)
     result = maybe_externalize_output(
         store=store,
         session_id="s",
@@ -741,9 +741,10 @@ def test_open_url_full_text_receipt(tmp_path: Path) -> None:
         tool_index=0,
         presentation_result="",
         model_text_override=out.model_text,
+        ok=True,
     )
     assert result.truncated is True
-    managed = result.managed_output()
+    managed = result.audit["managed_output"]
     assert managed["original_bytes"] == len(full.encode("utf-8"))
     # The model sees the window, the store keeps the full text.
     assert len(result.model_text.encode("utf-8")) < len(full.encode("utf-8"))

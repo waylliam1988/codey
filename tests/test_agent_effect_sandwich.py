@@ -260,7 +260,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
         sink.settle(
             effect_id, True,
-            result=ToolResult(call=call, model_text=outcome.model_text),
+            result=ToolResult(ok=True, call=call, model_text=outcome.model_text),
         )
 
         # Verify no pending effects
@@ -308,7 +308,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             executed.append(str(getattr(call, "name", "")))
             from codey.runtime.core.models import ToolResult
 
-            return ToolResult(call=call, model_text="ok")
+            return ToolResult(ok=True, call=call, model_text="ok")
 
         # Mismatched recovery batch must abort without executing (new entry).
         from codey.operations.task_session import turn_effect_id

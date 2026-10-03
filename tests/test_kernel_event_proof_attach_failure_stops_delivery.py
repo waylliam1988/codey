@@ -22,7 +22,7 @@ class KernelEventProofAttachFailureStopsDeliveryTests(unittest.TestCase):
             max_turns=4,
         )
         call = ToolCall(name="edit", args={"path": "a.py", "content": "x"}, call_id="c1")
-        result = ToolResult(call=call, model_text="edited", audit={"changed": True})
+        result = ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
         identity = WorkspaceIdentity.trusted_pair(2, "sha256:" + "ab" * 32)
         object.__setattr__(result, _KERNEL_WORKSPACE_ATTR, identity)
         session.executed[turn_effect_id("run:task", 1, 0)] = {"ok": True}
@@ -60,7 +60,7 @@ class KernelEventProofAttachFailureStopsDeliveryTests(unittest.TestCase):
             max_turns=4,
         )
         call = ToolCall(name="edit", args={"path": "a.py", "content": "x"}, call_id="c1")
-        result = ToolResult(call=call, model_text="edited", audit={"changed": True})
+        result = ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
         object.__setattr__(
             result,
             _KERNEL_WORKSPACE_ATTR,

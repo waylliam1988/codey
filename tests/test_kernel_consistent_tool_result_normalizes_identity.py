@@ -22,7 +22,7 @@ class ConsistentToolResultNormalizesIdentityTests(unittest.TestCase):
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         produced = ToolResult(
-            call=ToolCall(name="READ_FILE", args={"path": "a.py"}, call_id="c1"),
+            ok=True, call=ToolCall(name="READ_FILE", args={"path": "a.py"}, call_id="c1"),
             model_text="hi",
             audit={"extra": "keep"},
         )
@@ -38,7 +38,7 @@ class ConsistentToolResultNormalizesIdentityTests(unittest.TestCase):
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         produced = ToolResult(
-            call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"),
+            ok=True, call=ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"),
             model_text="hi",
         )
         with mock.patch(
@@ -58,7 +58,7 @@ class ConsistentToolResultNormalizesIdentityTests(unittest.TestCase):
 
         requested = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         produced = ToolResult(
-            call=ToolCall(name="read_file", args={"path": "b.py"}, call_id="c1"),
+            ok=True, call=ToolCall(name="read_file", args={"path": "b.py"}, call_id="c1"),
             model_text="hi",
         )
         out = _consistent_tool_result(requested, produced)

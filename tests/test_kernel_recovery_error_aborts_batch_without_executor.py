@@ -31,7 +31,7 @@ class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
         def fake_edit(_c: ToolCall):
             called.append(1)
             from codey.runtime.core.models import ToolResult
-            return ToolResult(call=_c, model_text="edited")
+            return ToolResult(ok=True, call=_c, model_text="edited")
 
         # Tri-state pre-check outage must abort without invoking the executor.
         # Both the recovery module and the execution orchestrator's bound
@@ -60,7 +60,7 @@ class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
         from tests.recovery_test_helpers import delivered_slot_result as _delivered_slot_result
 
         call = ToolCall(name="edit", args={"path": "a.py", "content": "x\n"}, call_id="c1")
-        stored = ToolResult(call=call, model_text="stored-bare")
+        stored = ToolResult(ok=True, call=call, model_text="stored-bare")
         identity = turn_effect_id("r-batch-err-2:task", 1, 0)
         delivered = {identity: stored}
         with mock.patch(

@@ -50,6 +50,11 @@ opens, log in once with the web AI account you already use. Then choose a
 project folder and ask for a change, or stay in `New Chat` for ordinary
 conversation with no project access.
 
+The local UI authorizes itself automatically when Codey opens it. If the native
+window cannot open, use the complete launch link printed by Codey. That link is
+single-use and expires after five minutes; restart Codey to obtain a new link
+when it has expired or been consumed. This does not require another AI account.
+
 To use a local model, choose `Local` and provide an OpenAI-compatible base URL,
 model id, and optional API key.
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import http.client
 import json
 import shutil
 import socket
@@ -46,6 +45,7 @@ from codey.toolchain.runtime import ToolOutcome
 from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker
 from tests.app_state import make_app_state
+from tests.operator_http import OperatorHTTPConnection
 
 VALID_SHA256 = "a" * 64
 
@@ -1187,7 +1187,7 @@ class ResearchGraphApiTests(unittest.TestCase):
             host, port = httpd.server_address
             try:
                 with mock.patch.object(server, "STATE", state):
-                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn = OperatorHTTPConnection(httpd, timeout=5)
                     path = (
                         "/api/research/graph?session_id=s1"
                         f"&focus={synthesis.id}&depth=3&counterpoint=Missing+primary+data"
@@ -1220,7 +1220,7 @@ class ResearchGraphApiTests(unittest.TestCase):
             host, port = httpd.server_address
             try:
                 with mock.patch.object(server, "STATE", state):
-                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn = OperatorHTTPConnection(httpd, timeout=5)
                     conn.request("GET", "/api/research/graph?session_id=missing&focus=unknown")
                     response = conn.getresponse()
                     payload = json.loads(response.read().decode("utf-8"))
@@ -1244,7 +1244,7 @@ class ResearchGraphApiTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             with mock.patch.object(server, "STATE", state):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request("GET", "/api/research/concept_graph?session_id=s1")
                 response = conn.getresponse()
                 response.read()
@@ -1264,7 +1264,7 @@ class ResearchGraphApiTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             with mock.patch.object(server, "STATE", state):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request("GET", "/api/changes?project=x")
                 response = conn.getresponse()
                 response.read()
@@ -1288,7 +1288,7 @@ class ResearchGraphApiTests(unittest.TestCase):
             host, port = httpd.server_address
             try:
                 with mock.patch.object(server, "STATE", state):
-                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn = OperatorHTTPConnection(httpd, timeout=5)
                     body = json.dumps({"ids": [note.id, "missing"]}).encode("utf-8")
                     conn.request(
                         "POST",
@@ -1324,7 +1324,7 @@ class ResearchGraphApiTests(unittest.TestCase):
                     side_effect=AssertionError("catalog must not probe"),
                 ),
             ):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request("GET", "/api/provider_catalog")
                 response = conn.getresponse()
                 payload = json.loads(response.read().decode("utf-8"))
@@ -1627,7 +1627,7 @@ class WebAssetTests(unittest.TestCase):
         thread.start()
         host, port = httpd.server_address
         try:
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = OperatorHTTPConnection(httpd, timeout=5)
             conn.request("GET", "/assets/research_graph.js?v=0.2.11")
             response = conn.getresponse()
             body = response.read().decode("utf-8")
@@ -1648,14 +1648,14 @@ class WebAssetTests(unittest.TestCase):
         thread.start()
         host, port = httpd.server_address
         try:
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = OperatorHTTPConnection(httpd, timeout=5)
             conn.request("GET", "/assets/render.js?v=9.9.9")
             pinned = conn.getresponse()
             pinned.read()
             pinned_cache = pinned.getheader("Cache-Control") or ""
             conn.close()
 
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = OperatorHTTPConnection(httpd, timeout=5)
             conn.request("GET", "/assets/render.js")
             unpinned = conn.getresponse()
             unpinned.read()
@@ -1677,7 +1677,7 @@ class WebAssetTests(unittest.TestCase):
         thread.start()
         host, port = httpd.server_address
         try:
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = OperatorHTTPConnection(httpd, timeout=5)
             conn.request("GET", "/assets/missing.js")
             response = conn.getresponse()
             response.read()
@@ -1697,7 +1697,7 @@ class WebAssetTests(unittest.TestCase):
         statuses = {}
         try:
             for path in ("/assets/../server.py", "/assets/x.txt", "/assets/", "/assets/..%2fserver.py"):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request("GET", path)
                 response = conn.getresponse()
                 response.read()
@@ -1727,7 +1727,7 @@ class WebAssetTests(unittest.TestCase):
                 ),
             ):
                 for path in ("/api/ui_state", "/api/providers"):
-                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn = OperatorHTTPConnection(httpd, timeout=5)
                     conn.request("GET", path)
                     response = conn.getresponse()
                     payloads[path] = (
@@ -1751,7 +1751,7 @@ class WebAssetTests(unittest.TestCase):
         thread.start()
         host, port = httpd.server_address
         try:
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = OperatorHTTPConnection(httpd, timeout=5)
             conn.request("GET", "/")
             response = conn.getresponse()
             body = response.read().decode("utf-8")
@@ -1792,7 +1792,7 @@ class LocalProviderApiTests(unittest.TestCase):
         # without touching STATE or any handler logic.
         httpd, host, port = self._start_server()
         try:
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = OperatorHTTPConnection(httpd, timeout=5)
             conn.request("GET", "/api/state", headers={"Host": "evil.example"})
             response = conn.getresponse()
             body = json.loads(response.read().decode("utf-8"))
@@ -1801,7 +1801,7 @@ class LocalProviderApiTests(unittest.TestCase):
             self.assertEqual(response.status, 403)
             self.assertIn("refused", str(body.get("error")))
 
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = OperatorHTTPConnection(httpd, timeout=5)
             conn.request(
                 "POST",
                 "/api/ui_state",
@@ -1826,7 +1826,7 @@ class LocalProviderApiTests(unittest.TestCase):
             base = int(state.load_ui_state().get("revision") or 0)
             try:
                 with mock.patch.object(server, "STATE", state):
-                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn = OperatorHTTPConnection(httpd, timeout=5)
                     conn.request(
                         "POST",
                         "/api/ui_state",
@@ -1838,7 +1838,7 @@ class LocalProviderApiTests(unittest.TestCase):
                     conn.close()
 
                     current = int(state.load_ui_state().get("revision") or 0)
-                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn = OperatorHTTPConnection(httpd, timeout=5)
                     conn.request(
                         "POST",
                         "/api/ui_state",
@@ -1871,7 +1871,7 @@ class LocalProviderApiTests(unittest.TestCase):
         assert run is not None
         try:
             with mock.patch.object(server, "STATE", state):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request(
                     "POST",
                     "/api/new_chat",
@@ -1895,7 +1895,7 @@ class LocalProviderApiTests(unittest.TestCase):
         state.ghost_continuity = fake_continuity
         try:
             with mock.patch.object(server, "STATE", state):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request(
                     "POST",
                     "/api/new_chat",
@@ -1928,7 +1928,7 @@ class LocalProviderApiTests(unittest.TestCase):
             assert run is not None
             try:
                 with mock.patch.object(server, "STATE", state):
-                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn = OperatorHTTPConnection(httpd, timeout=5)
                     conn.request(
                         "POST",
                         "/api/changes/restore",
@@ -1968,7 +1968,7 @@ class LocalProviderApiTests(unittest.TestCase):
                 },
             )
             try:
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request(
                     "POST",
                     "/api/changes/restore",
@@ -1990,7 +1990,7 @@ class LocalProviderApiTests(unittest.TestCase):
         try:
             # An unknown path returns the router's 404, which proves the
             # request passed the Host gate without touching any handler.
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = OperatorHTTPConnection(httpd, timeout=5)
             conn.request("GET", "/api/no_such_endpoint")
             response = conn.getresponse()
             response.read()
@@ -2004,7 +2004,7 @@ class LocalProviderApiTests(unittest.TestCase):
         httpd, host, port = self._start_server()
         httpd.server_address = ("192.168.1.10", port)
         try:
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = OperatorHTTPConnection(httpd, timeout=5, connect_host=host)
             conn.request(
                 "GET",
                 "/api/no_such_endpoint",
@@ -2044,7 +2044,7 @@ class LocalProviderApiTests(unittest.TestCase):
                 mock.patch.object(app_api, "save_local_config") as save,
                 mock.patch.object(app_api, "local_bootstrap_payload", return_value={"connected": True}),
             ):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request(
                     "POST",
                     "/api/local_provider",
@@ -2095,7 +2095,7 @@ class LocalProviderApiTests(unittest.TestCase):
                 mock.patch.object(app_api, "save_local_config") as save,
                 mock.patch.object(app_api, "local_bootstrap_payload", return_value={"connected": True}),
             ):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request(
                     "POST",
                     "/api/local_provider",
@@ -2144,7 +2144,7 @@ class LocalProviderApiTests(unittest.TestCase):
                 mock.patch.object(app_api, "save_local_config") as save,
                 mock.patch.object(app_api, "local_bootstrap_payload", return_value={"connected": True}),
             ):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request(
                     "POST",
                     "/api/local_provider",
@@ -2560,12 +2560,13 @@ class RunSnapshotTests(unittest.TestCase):
         state.emit({"type": "info", "seq": 2})
         state.emit({"type": "info", "seq": 3})
 
+        state.emit({"type": "info", "seq": 4})
         replay = state.replay_events_after(1)
 
         # Expired window forces a full reconcile: marker-only, stamped past
         # the caller's cursor, never replayed twice.
         self.assertEqual(len(replay), 1)
-        self.assertEqual(replay[0][0], 3)
+        self.assertEqual(replay[0][0], 4)
         self.assertGreater(replay[0][0], 1)
         self.assertEqual(replay[0][1]["type"], "resync_required")
         self.assertEqual(replay[0][1]["reason"], "sse_replay_window_expired")
@@ -2592,7 +2593,7 @@ class RunSnapshotTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "replay_events_after", wraps=original_replay) as replay,
             ):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request("GET", "/api/events")
                 response = conn.getresponse()
                 lines: list[str] = []
@@ -2625,7 +2626,7 @@ class RunSnapshotTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "replay_events_after", wraps=original_replay) as replay,
             ):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request("GET", "/api/events?last_event_id=1")
                 response = conn.getresponse()
                 lines: list[str] = []
@@ -3330,7 +3331,7 @@ class RunSnapshotTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(server, "MAX_POST_BODY_BYTES", 8),
             ):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request(
                     "POST",
                     "/api/new_chat",
@@ -3390,7 +3391,7 @@ class RunSnapshotTests(unittest.TestCase):
                         return_value="run-next",
                     ) as submit,
                 ):
-                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn = OperatorHTTPConnection(httpd, timeout=5)
                     conn.request(
                         "POST",
                         "/api/shell_approval",
@@ -4850,7 +4851,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ]
 
             def fetch(self, url):
-                return {
+                return {"status": "ok",
                     "url": url,
                     "title": "Helium source",
                     "text": "Helium is separated from natural gas.",
@@ -4957,7 +4958,7 @@ class SessionThreadingTests(unittest.TestCase):
 
             def fetch(self, url):
                 if url == pdf_url:
-                    return {
+                    return {"status": "ok",
                         "url": url,
                         "title": "PDF report",
                         "text": "",
@@ -4966,7 +4967,7 @@ class SessionThreadingTests(unittest.TestCase):
                         "bytes": b"%PDF fixture",
                         "truncated": False,
                     }
-                return {
+                return {"status": "ok",
                     "url": html_url,
                     "title": "Iran-US war: Four scenarios for what's next as talks stumble",
                     "text": (
@@ -5101,7 +5102,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ]
 
             def fetch(self, url):
-                return {
+                return {"status": "ok",
                     "url": url,
                     "title": "Helium source",
                     "text": "The storage plan source supports the SQLite-backed plan.",
@@ -7330,6 +7331,7 @@ class UiLaunchTests(unittest.TestCase):
         ):
             httpd = mock.Mock()
             httpd.server_address = ("127.0.0.1", 43210)
+            httpd.launch_url.side_effect = lambda base: base + "#codey_bootstrap=test-only"
             httpd_cls.return_value = httpd
 
             server.serve(port=0)
@@ -7338,7 +7340,7 @@ class UiLaunchTests(unittest.TestCase):
         fake_webview.start.assert_called_once()
         warmup.assert_called_once_with(server.STATE, delay_s=2.0)
         fallback.assert_called_once()
-        self.assertEqual(fallback.call_args.args[0], "http://127.0.0.1:43210/")
+        self.assertEqual(fallback.call_args.args[0], "http://127.0.0.1:43210/#codey_bootstrap=test-only")
         self.assertIn("missing webview runtime", str(fallback.call_args.args[1]))
         printed.assert_any_call("\n[codey] shutting down")
         httpd.shutdown.assert_called_once()

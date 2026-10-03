@@ -618,6 +618,21 @@ def _check_object_value(spec_name: str, key: str, schema: object, value: Any, *,
     return ""
 
 
+def _json_value_equal(left: Any, right: Any) -> bool:
+    """JSON numbers compare numerically; booleans never compare as numbers."""
+    if isinstance(left, bool) or isinstance(right, bool):
+        return type(left) is type(right) and left == right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left == right
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(_json_value_equal(value, right[key]) for key, value in left.items())
+    if isinstance(left, list):
+        return len(left) == len(right) and all(_json_value_equal(a, b) for a, b in zip(left, right, strict=True))
+    return left == right
+
+
 def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, value: Any, *, strict: bool = False) -> str:
     """声明 schema 子集的类型检查（非 Full JSON-schema）。"""
     want, minimum, maximum = _spec_want_and_bounds(schema)
@@ -625,7 +640,7 @@ def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, v
         return ""
     if isinstance(schema, Mapping) and "enum" in schema:
         enum = schema.get("enum")
-        if isinstance(enum, (list, tuple)) and value not in enum:
+        if isinstance(enum, (list, tuple)) and not any(_json_value_equal(value, item) for item in enum):
             return f"{spec_name} arg '{key}' must be one of {enum!r}"
     if want == "string":
         return _check_string_value(spec_name, key, value)

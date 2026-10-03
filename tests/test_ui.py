@@ -295,7 +295,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("function reconcileRunState()", HTML)
         self.assertIn("return window.CodeySse.reconcileRunState();", HTML)
         self.assertIn("fetch('/api/state', { cache: 'no-store' })", SSE_JS)
-        self.assertIn("Number.parseInt(e.lastEventId || '', 10)", SSE_JS)
+        self.assertIn("Number(e.lastEventId || data.event_id || 0)", SSE_JS)
         self.assertIn("data.event_id = eventId", SSE_JS)
         self.assertIn("runningRunId", HTML)
         self.assertIn("data.pending_event", HTML)
@@ -882,7 +882,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("bindUiStatePagehide();", HTML)
         self.assertIn("await restoreUiStateFromServer();", HTML)
         boot_start = HTML.index("async function boot()")
-        boot_block = HTML[boot_start:HTML.index("boot();", boot_start)]
+        boot_block = HTML[boot_start:HTML.index("boot().catch", boot_start)]
         self.assertIn("refreshProviderStatus();", boot_block)
         self.assertIn("connectEvents();", HTML)
         self.assertLess(HTML.index("await restoreUiStateFromServer();"), HTML.index("connectEvents();"))

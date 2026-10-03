@@ -88,7 +88,7 @@ def test_native_format_results_is_native_wording() -> None:
 
     policy = TaskPolicy(grants=frozenset({"control"}))
     session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
-    results = [ToolResult(ToolCall(name="read_file", args={"path": "a"}, call_id="c1"), "hi")]
+    results = [ToolResult(ToolCall(name="read_file", args={"path": "a"}, call_id="c1"), "hi", ok=True)]
     prompt = kp._format_results(results, session)
     assert prompt
 
@@ -195,9 +195,10 @@ def test_research_receipt_externalizes_with_store(tmp_path: Path) -> None:
         output=big,
         turn=1,
         tool_index=0,
+        ok=True,
     )
     assert outcome.truncated is True
-    managed = outcome.managed_output()
+    managed = outcome.audit["managed_output"]
     assert managed["handle"].startswith("out_")
     assert managed["original_bytes"] == 30_000
     assert "externalized" in outcome.model_text
@@ -217,9 +218,10 @@ def test_research_receipt_clips_without_store() -> None:
         output="y" * 30_000,
         turn=2,
         tool_index=1,
+        ok=True,
     )
     assert outcome.truncated is True
-    assert outcome.managed_output() == {}
+    assert "managed_output" not in outcome.audit
     assert "externalized" in outcome.model_text
 
 
@@ -282,7 +284,7 @@ def test_tool_turn_results_sort_back_to_tool_index(tmp_path: Path) -> None:
         ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1"),
     ]
     results = execute_turn(
-        session, calls, executors={"read_file": lambda c: ToolResult(call=c, model_text=f"content:{c.args.get('path')}")},
+        session, calls, executors={"read_file": lambda c: ToolResult(ok=True, call=c, model_text=f"content:{c.args.get('path')}")},
         run_id="r1", turn=1, project_path=tmp_path,
     )
     assert [r.call.call_id for r in results] == ["c0", "c1"]

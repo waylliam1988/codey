@@ -66,7 +66,7 @@ class _SearchBackend:
     def fetch(self, url: str) -> dict:
         self.fetch_calls.append(url)
         title = "Alpha source" if url.endswith("/alpha") else "Beta source" if url.endswith("/beta") else "source"
-        return {
+        return {"status": "ok",
             "url": url,
             "title": title,
             "text": f"opened body for {url}",
@@ -156,7 +156,7 @@ def test_plan_executor_stops_before_search_when_total_source_budget_is_full() ->
 
             def fetch(self, url: str) -> dict:
                 self.fetch_calls.append(url)
-                return {
+                return {"status": "ok",
                     "url": url,
                     "title": url.rsplit("/", 1)[-1],
                     "text": f"opened body for {url}",
@@ -313,7 +313,7 @@ def test_plan_executor_skips_root_landing_pages_before_opening() -> None:
 
             def fetch(self, url: str) -> dict:
                 self.fetch_calls.append(url)
-                return {
+                return {"status": "ok",
                     "url": url,
                     "title": "PMC article",
                     "text": "opened article body for direct evidence",
@@ -377,7 +377,7 @@ def test_plan_executor_does_not_count_redirect_to_root_landing_page_as_fresh_mat
 
             def fetch(self, url: str) -> dict:
                 self.fetch_calls.append(url)
-                return {
+                return {"status": "ok",
                     "url": "https://example.com/",
                     "title": "Example Home",
                     "text": "opened home page body",
@@ -444,7 +444,7 @@ def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
 
             def fetch(self, url: str) -> dict:
                 self.fetch_calls.append(url)
-                return {
+                return {"status": "ok",
                     "url": "https://example.com/target",
                     "title": "Target Title",
                     "text": "Target body text",

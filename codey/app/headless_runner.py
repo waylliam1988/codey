@@ -32,6 +32,7 @@ from codey.providers.registry import connect_provider as default_connect_provide
 from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.model import TaskSubmission
+from codey.utils.refs import strict_exit_code
 from codey.workspace.changes import collect_changes as default_collect_changes
 from codey.workspace.changes import is_git_repository
 
@@ -454,7 +455,7 @@ def _payload_tool(common: dict[str, object], event: dict) -> dict[str, object]:
         "tool": clip_event_text(event.get("kind") or "", 80),
         "tool_name": clip_event_text(event.get("tool_name") or "", 80),
         "path": clip_event_text(event.get("path") or "", 240),
-        "ok": bool(event.get("ok", not bool(event.get("error")))),
+        "ok": event.get("ok") is True,
         "status": clip_event_text(event.get("status") or "", 80),
         "changed": bool(event.get("changed", False)),
         "truncated": bool(event.get("truncated", False)),
@@ -465,15 +466,7 @@ def _payload_tool(common: dict[str, object], event: dict) -> dict[str, object]:
         payload["command"] = command
     # Strict exit: only real ints are projected; bool/str/float are omitted
     # instead of being coerced to 0 (bool False must not become exit 0).
-    try:
-        from codey.utils.refs import strict_exit_code as _strict_exit
-    except Exception:
-        _strict_exit = None  # type: ignore[assignment]
-    try:
-        raw_exit = event.get("exit_code")
-        strict_exit = _strict_exit(raw_exit) if _strict_exit is not None else None
-    except Exception:
-        strict_exit = None
+    strict_exit = strict_exit_code(event.get("exit_code"))
     if strict_exit is not None:
         payload["exit_code"] = strict_exit
     _copy_if_present(payload, event, "output_handle", limit=120)

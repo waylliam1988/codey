@@ -31,7 +31,7 @@ class ExplicitExecutorInvalidExitCodeProjectionTests(unittest.TestCase):
         )
 
         def fake(call: ToolCall):
-            return ToolResult(call=call, model_text="ok", audit={"exit_code": bad})
+            return ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": bad})
 
         results = ke.execute_turn(
             session,

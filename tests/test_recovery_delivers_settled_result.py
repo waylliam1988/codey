@@ -33,7 +33,7 @@ def test_settle_persists_exit_code_and_full_bounded_result() -> None:
         sink, log, _ = _new_sink(tmp, "s1", "r1")
         call = ToolCall(name="read_file", args={"path": "a.py"})
         sink.begin_turn([("eff1", call, 0)], turn=1)
-        result = ToolResult(call=call, model_text="original observation", audit={"exit_code": 0})
+        result = ToolResult(ok=True, call=call, model_text="original observation", audit={"exit_code": 0})
         sink.settle("eff1", True, result=result, exit_code=0)
         from codey.runtime.effects.effect_records import RuntimeEffectStore
         store = RuntimeEffectStore(log)

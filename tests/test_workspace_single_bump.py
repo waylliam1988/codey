@@ -85,7 +85,7 @@ class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
             def fake_edit(call: ToolCall):
                 target = project / str(call.args.get("path") or "b.py")
                 target.write_text(str(call.args.get("content") or "y=2\n"), encoding="utf-8")
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             with mock.patch.object(store, "bump_state", side_effect=counting_bump):
                 results = ke.execute_turn(
@@ -160,7 +160,7 @@ class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
             def fake_edit(call: ToolCall):
                 target = project / str(call.args.get("path") or "keep.py")
                 target.write_text(str(call.args.get("content") or "x"), encoding="utf-8")
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             with mock.patch.object(store, "bump_state", side_effect=counting_bump):
                 for turn, (fname, content) in ((1, ("n1.py", "x=2\n")), (2, ("n2.py", "x=3\n"))):

@@ -121,7 +121,7 @@ class ManagedOutputStoreTests(unittest.TestCase):
             from codey.runtime.core.models import ToolCall, ToolResult
 
             result = ToolResult(
-                call=ToolCall(name="run", args={}),
+                ok=True, call=ToolCall(name="run", args={}),
                 model_text="clipped",
                 truncated=True,
                 audit={"managed_output": {

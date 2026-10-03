@@ -212,21 +212,21 @@ class WebOnlyLoopTests(unittest.TestCase):
         self.assertFalse(hasattr(provider, "send_tool_results"))
 
         def fake_web_search(call):
-            return ToolResult(call=call, model_text="found https://example.com/docs")
+            return ToolResult(ok=True, call=call, model_text="found https://example.com/docs")
 
         def fake_open(call):
-            return ToolResult(call=call, model_text="page text about login")
+            return ToolResult(ok=True, call=call, model_text="page text about login")
 
         def fake_read(call):
-            return ToolResult(call=call, model_text="old code")
+            return ToolResult(ok=True, call=call, model_text="old code")
 
         def fake_edit(call):
             (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
-            return ToolResult(call=call, model_text="edited app.py")
+            return ToolResult(ok=True, call=call, model_text="edited app.py")
 
         def fake_run(call):
             # Structured exit code only; text never implies pass.
-            return ToolResult(call=call, model_text="1 passed", audit={"exit_code": 0})
+            return ToolResult(ok=True, call=call, model_text="1 passed", audit={"exit_code": 0})
 
         project, store = _project_runtime(self)
         session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=12)
@@ -300,8 +300,8 @@ class WebOnlyLoopTests(unittest.TestCase):
                 ),
                 execution=KernelExecutionDeps(
                     executors={
-                        "web_search": lambda call: ToolResult(call=call, model_text="found"),
-                        "open_url": lambda call: ToolResult(call=call, model_text="page"),
+                        "web_search": lambda call: ToolResult(ok=True, call=call, model_text="found"),
+                        "open_url": lambda call: ToolResult(ok=True, call=call, model_text="page"),
                     },
                 ),
             ),
@@ -403,7 +403,7 @@ class HybridAndPlanningTests(unittest.TestCase):
                 if name == "edit":
                     (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
                 audit = {"exit_code": exit_code} if exit_code is not None else {}
-                return ToolResult(call=call, model_text=text, audit=audit)
+                return ToolResult(ok=True, call=call, model_text=text, audit=audit)
 
             return fn
 
@@ -497,7 +497,7 @@ class ThirdTaskTests(unittest.TestCase):
                                   provider=FakeWeb(),
                               ),
                               execution=KernelExecutionDeps(
-                                  executors={'summarize': lambda call: ToolResult(call=call, model_text='summary: hello')},
+                                  executors={'summarize': lambda call: ToolResult(ok=True, call=call, model_text='summary: hello')},
                               ),
                           ),
                       )
@@ -536,7 +536,7 @@ class RecoveryTests(unittest.TestCase):
                 calls_made.append(name)
                 if name == "edit":
                     (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
-                return ToolResult(call=call, model_text=f"{name} ok", audit={"exit_code": 0} if name == "run" else {})
+                return ToolResult(ok=True, call=call, model_text=f"{name} ok", audit={"exit_code": 0} if name == "run" else {})
 
             return fn
 
@@ -589,7 +589,7 @@ class RecoveryTests(unittest.TestCase):
 
         def fake_search(call):
             executed.append("web_search")
-            return ToolResult(call=call, model_text="found https://example.com/a")
+            return ToolResult(ok=True, call=call, model_text="found https://example.com/a")
 
         # First run executes once; the durable delivery carries the full
         # result across the switch.

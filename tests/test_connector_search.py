@@ -37,7 +37,7 @@ class FakeBaseSearchProvider:
 
     def fetch(self, url: str) -> dict:
         self.fetches.append(url)
-        return {
+        return {"status": "ok",
             "url": url,
             "title": "Generic",
             "text": "generic page body",

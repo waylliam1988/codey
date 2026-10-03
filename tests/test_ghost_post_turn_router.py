@@ -119,6 +119,7 @@ def test_auto_research_action_continues_real_kernel_without_mode_redispatch() ->
     from types import SimpleNamespace
 
     from codey.research.ledger import ResearchLedger
+    from codey.research.tools import ResearchToolOutput
 
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
@@ -137,10 +138,10 @@ def test_auto_research_action_continues_real_kernel_without_mode_redispatch() ->
         ledger = ResearchLedger()
         def search(query):
             ledger.record_search(query, [{"url": "https://example.com/version", "title": "Version"}])
-            return "1. Version\nhttps://example.com/version"
+            return ResearchToolOutput("1. Version\nhttps://example.com/version", ok=True)
         def opened(url, **kwargs):
             ledger.record_open(url, url, "Version", "VERSION_KERNEL_MARKER")
-            return "VERSION_KERNEL_MARKER"
+            return ResearchToolOutput("VERSION_KERNEL_MARKER", ok=True)
         tools = SimpleNamespace(ledger=ledger, web_search=search, open_url=opened)
         unused = mock.Mock(side_effect=AssertionError("mode redispatch must not run"))
         with (

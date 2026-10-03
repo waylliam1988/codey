@@ -12,7 +12,7 @@ class DelegateNormalizationDropsWorkspaceProvenanceTests(unittest.TestCase):
         from codey.workspace.revision import WorkspaceIdentity
 
         call = ToolCall(name="run", args={"command": "echo hi"}, call_id="c1")
-        result = ToolResult(call=call, model_text="ok", audit={"exit_code": False})
+        result = ToolResult(ok=True, call=call, model_text="ok", audit={"exit_code": False})
         object.__setattr__(result, _KERNEL_WORKSPACE_ATTR, WorkspaceIdentity.trusted_pair(7, "sha256:" + "ab" * 32))
 
         normalized, ok, _ = _normalize_delegate_result("run", result, True, None)

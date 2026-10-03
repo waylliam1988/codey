@@ -38,7 +38,7 @@ class TrustedProofSourceAllowlistTests(unittest.TestCase):
                 out["workspace_fingerprint"] = FORGED_FP
                 return out
 
-        result = ToolResult(call=_call(), model_text="content")
+        result = ToolResult(ok=True, call=_call(), model_text="content")
         with self.assertRaises(RecoveryFailed):
             attach_trusted_workspace(result, _trusted_workspace_proof(Forged(), "bump_state"))
 
@@ -49,7 +49,7 @@ class TrustedProofSourceAllowlistTests(unittest.TestCase):
         from codey.workspace.revision import WorkspaceIdentity
 
         legit = WorkspaceIdentity.trusted_pair(2, LEGIT_FP)
-        result = ToolResult(call=_call(), model_text="content")
+        result = ToolResult(ok=True, call=_call(), model_text="content")
         with self.assertRaises(RecoveryFailed):
             attach_trusted_workspace(
                 result, _trusted_workspace_proof(legit, "attacker_source")

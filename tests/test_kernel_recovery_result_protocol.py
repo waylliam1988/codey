@@ -41,7 +41,7 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
 
         spec = RecoveredResultSpec(
-            call=_call(), model_text="edited",
+            ok=True, call=_call(), model_text="edited",
             audit={"changed": True, "extra": "keep"},
             presentation={"status": "ok"}, canonical={"path": "a.py"}, truncated=True,
         )
@@ -61,7 +61,7 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
 
         ident = WorkspaceIdentity.trusted_pair(2, LEGIT_FP)
         proof = _trusted_workspace_proof(ident, "bump_state")
-        spec = RecoveredResultSpec(call=_call(), model_text="edited", audit={"changed": True}, trusted_workspace=proof)
+        spec = RecoveredResultSpec(ok=True, call=_call(), model_text="edited", audit={"changed": True}, trusted_workspace=proof)
         result = build_recovered_result(spec)
         rev, fp = _trusted_workspace_from_result(result)
         self.assertEqual((rev, fp), (2, LEGIT_FP))
@@ -73,7 +73,7 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         from codey.operations.kernel_errors import RecoveryFailed
         from codey.operations.kernel_recovery_result import RecoveredResultSpec, build_recovered_result
 
-        spec = RecoveredResultSpec(call=_call(), model_text="edited", audit={"changed": True},
+        spec = RecoveredResultSpec(ok=True, call=_call(), model_text="edited", audit={"changed": True},
                                    require_workspace_provenance=True)
         with self.assertRaises(RecoveryFailed) as ctx:
             build_recovered_result(spec)
@@ -88,12 +88,12 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         # Untrusted identity (0,"") must not attach even with a source.
         bad = _trusted_workspace_proof(WorkspaceIdentity(), "bump_state")
         with self.assertRaises(RecoveryFailed):
-            build_recovered_result(RecoveredResultSpec(call=_call(), audit={}, trusted_workspace=bad))
+            build_recovered_result(RecoveredResultSpec(ok=True, call=_call(), audit={}, trusted_workspace=bad))
         # Missing source must not attach even with trusted identity.
         legit = WorkspaceIdentity.trusted_pair(2, LEGIT_FP)
         no_source = _trusted_workspace_proof(legit, "")
         with self.assertRaises(RecoveryFailed):
-            build_recovered_result(RecoveredResultSpec(call=_call(), audit={}, trusted_workspace=no_source))
+            build_recovered_result(RecoveredResultSpec(ok=True, call=_call(), audit={}, trusted_workspace=no_source))
 
     def test_frame_row_forged_audit_stays_untrusted(self) -> None:
         from codey.operations.kernel_recovery_result import build_recovered_result, spec_from_frame_row
@@ -142,7 +142,7 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
             rev, _fp = _trusted_workspace_from_result(result)
             self.assertEqual(rev, 0, f"audit must never promote: {dict(result.audit)!r}")
 
-        bare = ToolResult(call=call, model_text="content", audit=dict(forged))
+        bare = ToolResult(ok=True, call=call, model_text="content", audit=dict(forged))
         got = _delivered_slot_result({"s": bare}, "s", call)
         assert got is not None
         rev, _fp = _trusted_workspace_from_result(got)

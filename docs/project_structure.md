@@ -55,6 +55,8 @@ Using web tools in ordinary coding does not automatically require research notes
 
 | Owner | Responsibility |
 | --- | --- |
+| `codey/app/operator_auth.py`, `web/assets/operator_auth.js` | Process-local HTTP/SSE operator credential and UI bootstrap; independent of model/task grants |
+| `codey/runtime/core/models.py` | Immutable `ToolResult` with mandatory exact boolean status; display text has no status authority |
 | `codey/operations/task_state.py` | `TaskState` and the typed submission-store bundle |
 | `codey/operations/task_run.py`, `task_phases/` | Run resource lifecycle, provider setup, callbacks and terminal settlement |
 | `codey/operations/task_entry.py`, `task_session.py` | Entry policy and per-task facts |
@@ -66,6 +68,9 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/operations/project_completion_checks.py`, `research_completion_checks.py` | Project and source/strict-Research check providers |
 | `codey/operations/kernel_session_recovery.py`, `kernel_receipts.py` | Restore original policy/facts and settled results; validate receipt identity |
 | `codey/providers/local_response_codec.py` | Local response envelopes and model dialects, before the kernel |
+| `codey/agents/context_compaction.py`, `providers/local_openai.py` | Exact native history pairing before compaction/request; actual serialized-request diagnostic hook |
+| `codey/research/source_gateway.py`, `tools.py` | Explicit acquisition/tool outcomes; cancellation/deadlines propagate without fallback acquisition |
+| `codey/app/event_bus.py`, `web/assets/sse.js`, `app/headless_runner.py` | Replay cursors, reconciliation and consistent structured event projections |
 | `codey/operations/research_iteration.py` | `run_research_iteration`, the pipeline's shared-kernel adapter |
 
 ## Durable runtime and storage
@@ -79,6 +84,17 @@ Task facts are reconstructed from original log/receipts. Research evidence is a
 domain projection, not a competing task log. Managed outputs and recovery
 receipts may retain source text/tool output locally; audit summaries and model
 windows are bounded independently.
+
+Tool success is explicit through settlement and recovery, including failed
+results. Receipt status must agree with the settlement. Research fetch adapters
+return `status` (`ok/error/skipped`), plus a failure `detail` when applicable;
+`ResearchToolOutput.ok` stays explicit until it becomes the common `ToolResult`.
+Native history requires one result per unique call ID in each tool group.
+
+The manual gate recorder observes bytes at the local provider's request
+boundary. Request hashes diagnose changes; they grant no permission and prove
+neither semantic equivalence nor completion. It distinguishes logical exchanges
+from the explicit `urlopen` attempts, including the existing transport retries.
 
 Ghost work queues and affinity each separate `*_model`, `*_sources`,
 `*_events` and the store module. These are domain owners, not generic framework

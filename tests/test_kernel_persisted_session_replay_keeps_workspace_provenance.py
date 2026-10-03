@@ -142,7 +142,7 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
                 (project / str(call.args.get("path") or "b.py")).write_text(
                     str(call.args.get("content") or "y"), encoding="utf-8"
                 )
-                return ToolResult(call=call, model_text="edited", audit={"changed": True})
+                return ToolResult(ok=True, call=call, model_text="edited", audit={"changed": True})
 
             bump_calls: list[str] = []
             orig_bump = WorkspaceRevisionStore.bump_state
@@ -196,7 +196,7 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
 
                 def must_not_execute(call: ToolCall):
                     executed_calls.append(str(call.name))
-                    return ToolResult(call=call, model_text="must-not-run", audit={"changed": True})
+                    return ToolResult(ok=True, call=call, model_text="must-not-run", audit={"changed": True})
 
                 fresh_snapshot = build_turn_snapshot(fresh)
                 again = ke.execute_turn(

@@ -1,4 +1,4 @@
-from codey.runtime.core.models import ToolCall
+from codey.runtime.core.models import ToolCall, ToolResult
 
 
 def test_registered_custom_executor_runs_without_project() -> None:
@@ -9,7 +9,7 @@ def test_registered_custom_executor_runs_without_project() -> None:
 
     name = "projectless_custom"
     assert register_custom_tool(name, grant="control", executor="custom", required=())
-    assert register_custom_executor(name, lambda call: "ok")
+    assert register_custom_executor(name, lambda call: ToolResult(call, "ok", ok=True))
     try:
         session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), task_kind="chat")
         results = execute_turn(session, [ToolCall(name, {})], run_id="r1", turn=1)

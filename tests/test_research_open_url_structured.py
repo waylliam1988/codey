@@ -17,7 +17,7 @@ class _LongSearch:
         self.url = url
 
     def fetch(self, requested: str) -> dict:
-        return {
+        return {"status": "ok",
             "url": requested,
             "title": "Long doc",
             "text": self.text,
@@ -38,7 +38,7 @@ def test_open_url_returns_structured_window_and_full_receipt() -> None:
         store = KnowledgeStore(Path(td))
         tools = ResearchTools(_LongSearch(full_text, url), store, KnowledgeChanges(store.root))
         opened = tools.open_url(url, offset=6000, limit=2000)
-        text_view = tools.open_url_text(url, offset=6000, limit=2000)
+        text_view = tools.open_url(url, offset=6000, limit=2000).model_text
         store.close()
 
     assert isinstance(opened, ResearchToolOutput)
@@ -70,6 +70,7 @@ def test_receipt_externalize_keeps_window_only_for_model() -> None:
         turn=1,
         tool_index=0,
         model_text_override="WINDOW",
+        ok=True,
     )
     assert "WINDOW" in outcome.model_text
     assert "TAIL_ONLY" not in outcome.model_text
@@ -102,6 +103,7 @@ def test_receipt_override_skips_head_tail_clip() -> None:
             turn=1,
             tool_index=0,
             model_text_override="WINDOW",
+            ok=True,
         )
     finally:
         receipts.head_tail_clip = original  # type: ignore[method-assign]
@@ -113,4 +115,4 @@ def test_research_tool_output_is_window_plus_receipt_only() -> None:
     import dataclasses
 
     names = {field.name for field in dataclasses.fields(ResearchToolOutput)}
-    assert names == {"model_text", "receipt_text"}
+    assert names == {"model_text", "receipt_text", "ok"}

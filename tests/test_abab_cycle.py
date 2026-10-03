@@ -14,7 +14,7 @@ from codey.runtime.core.models import ToolCall, ToolResult
 
 
 def _ok(name: str, args: dict, text: str, *, turn: int = 0) -> ToolAttemptRecord:
-    return attempt_record(ToolCall(name=name, args=args), ToolResult(call=ToolCall(name, args), model_text=text), turn=turn)
+    return attempt_record(ToolCall(name=name, args=args), ToolResult(ok=True, call=ToolCall(name, args), model_text=text), turn=turn)
 
 
 def test_single_lookback_does_not_trigger() -> None:
@@ -115,7 +115,7 @@ def test_runaway_record_failure_is_visible(tmp_path: Path) -> None:
     )
     progress = KernelProgress(stagnant_turns=4)
     result = ToolResult(
-        call=ToolCall(name="read", args={"path": "app.py"}, call_id="c1"),
+        ok=True, call=ToolCall(name="read", args={"path": "app.py"}, call_id="c1"),
         model_text="hello",
     )
     with mock.patch(

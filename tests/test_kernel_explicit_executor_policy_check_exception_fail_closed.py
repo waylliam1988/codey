@@ -27,7 +27,7 @@ class ExplicitExecutorPolicyCheckExceptionFailClosedTests(unittest.TestCase):
 
         def fake(call: ToolCall):
             called.append(1)
-            return ToolResult(call=call, model_text="ok")
+            return ToolResult(ok=True, call=call, model_text="ok")
 
         class _ExplodingDelegate:
             def handles(self, name: str) -> bool:

@@ -77,6 +77,9 @@ def test_plain_text_and_terminal_receipt_do_not_force_tools(monkeypatch):
     monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
     provider = LocalOpenAIProvider("http://model.test/v1", "test")
     assert provider.send("hello") == "ok"
+    provider._messages.append({"role": "assistant", "content": "", "tool_calls": [
+        {"id": "done1", "type": "function", "function": {"name": "done", "arguments": "{}"}},
+    ]})
     provider.send_tool_results([{"tool_call_id": "done1", "content": "OK: done accepted"}], [])
     assert all("tools" not in payload and "tool_choice" not in payload
                and "parallel_tool_calls" not in payload for payload in seen)
@@ -102,8 +105,9 @@ def test_gate_records_the_actual_required_request(monkeypatch, tmp_path):
     assert rows[0]["payload"]["tool_choice"] == "required"
     provider.send_tool_results([{"tool_call_id": "c1", "content": "OK: done accepted"}], [])
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
-    assert rows[2]["payload"] == wire[1]
-    assert rows[2]["payload"]["max_tokens"] == 1
+    requests = [row["payload"] for row in rows if row["type"] == "request"]
+    assert requests == wire
+    assert requests[1]["max_tokens"] == 1
 
 
 def test_gate_metadata_includes_the_provider_and_transport_being_tested(monkeypatch):

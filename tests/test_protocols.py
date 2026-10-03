@@ -64,7 +64,7 @@ class JsonToolCodecTests(unittest.TestCase):
     def test_tool_result_sanitizes_projection_contracts(self) -> None:
         result = ToolResult(
             ToolCall("read", {"path": "app.py"}),
-            "content",
+            "content", ok=True,
             presentation={
                 "result": object(),
                 "status": "ok",
@@ -90,7 +90,7 @@ class JsonToolCodecTests(unittest.TestCase):
     def test_tool_result_sanitizes_non_mapping_projections(self) -> None:
         result = ToolResult(
             ToolCall("read", {"path": "app.py"}),
-            "content",
+            "content", ok=True,
             presentation=object(),
             audit=object(),
             canonical=object(),
@@ -573,7 +573,7 @@ class JsonToolCodecTests(unittest.TestCase):
     def test_format_results_and_repair_prompt_remind_json_only(self) -> None:
         codec = JsonToolCodec()
         call = ToolCall("read", {"path": "app.py"})
-        prompt = codec.format_results([ToolResult(call, "content")])
+        prompt = codec.format_results([ToolResult(call, "content", ok=True)])
 
         self.assertIn("[tool_result tool=read_file path=app.py]\n---\ncontent\n---", prompt)
         self.assertIn("exactly one JSON object", prompt)
@@ -586,7 +586,7 @@ class JsonToolCodecTests(unittest.TestCase):
         prompt = codec.format_results([
             ToolResult(
                 call,
-                "MODEL_TEXT_SENTINEL",
+                "MODEL_TEXT_SENTINEL", ok=True,
                 presentation={"result": "PRESENTATION_SENTINEL"},
                 audit={"audit_id": "AUDIT_SENTINEL"},
                 canonical={"fact": "CANONICAL_SENTINEL"},
@@ -612,7 +612,7 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(plan.calls[0].args["symbol"], "createRouter")
 
         prompt = codec.format_results([
-            ToolResult(plan.calls[0], "References for createRouter under src:")
+            ToolResult(plan.calls[0], "References for createRouter under src:", ok=True)
         ])
 
         self.assertIn("[tool_result tool=find_references path=src]", prompt)
@@ -639,7 +639,7 @@ class JsonToolCodecTests(unittest.TestCase):
     def test_format_results_marks_truncated_results_explicitly(self) -> None:
         codec = JsonToolCodec()
         call = ToolCall("run", {"path": ".", "command": "python -m unittest"})
-        prompt = codec.format_results([ToolResult(call, "HEAD\nTAIL", truncated=True)])
+        prompt = codec.format_results([ToolResult(call, "HEAD\nTAIL", ok=True, truncated=True)])
 
         self.assertIn("[tool_result tool=run path=. truncated=true]", prompt)
         self.assertIn("omitted content may contain relevant errors or code", prompt)
@@ -651,7 +651,7 @@ class JsonToolCodecTests(unittest.TestCase):
         prompt = codec.format_results([
             ToolResult(
                 call,
-                "HEAD\nTAIL",
+                "HEAD\nTAIL", ok=True,
                 truncated=True,
                 audit={
                     "managed_output": {
@@ -680,7 +680,7 @@ class JsonToolCodecTests(unittest.TestCase):
                 prompt = codec.format_results([
                     ToolResult(
                         call,
-                        "HEAD\nTAIL",
+                        "HEAD\nTAIL", ok=True,
                         audit={
                             "managed_output": {
                                 "handle": "out_0001_abcdef",
@@ -705,7 +705,7 @@ class JsonToolCodecTests(unittest.TestCase):
                 prompt = codec.format_results([
                     ToolResult(
                         call,
-                        "HEAD\nTAIL",
+                        "HEAD\nTAIL", ok=True,
                         audit={
                             "managed_output": {
                                 "handle": handle,

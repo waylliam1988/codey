@@ -134,7 +134,7 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
         from codey.runtime.core.models import ToolResult
 
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
-        bare = ToolResult(call=call, model_text="content", audit=dict(forged_audit))
+        bare = ToolResult(ok=True, call=call, model_text="content", audit=dict(forged_audit))
         got = _delivered_slot_result({"slot": bare}, "slot", call)
         self.assertIsNotNone(got)
         assert got is not None
