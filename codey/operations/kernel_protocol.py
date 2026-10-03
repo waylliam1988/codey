@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
+from codey.protocols.json_scanner import balanced_json_spans
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
 
@@ -280,11 +281,7 @@ def _invalid_plan(message: str, *, tool: str = "", kind: str = "invalid_args") -
                     protocol_tool_name=str(tool or ""))
 
 
-def _extract_json_objects(text: str) -> list[dict[str, Any]]:
-    try:
-        from codey.protocols.json_scanner import balanced_json_spans
-    except Exception:
-        balanced_json_spans = None  # type: ignore[assignment]
+def _extract_json_objects(text: str) -> list[dict[str, Any]] | ToolPlan:
     source = str(text or "").strip()
     if source.startswith("```") and source.endswith("```"):
         first_newline = source.find("\n")
@@ -294,17 +291,8 @@ def _extract_json_objects(text: str) -> list[dict[str, Any]]:
         if language not in {"", "json"}:
             return []
         source = source[first_newline + 1:-3].strip()
-    if balanced_json_spans is None:
-        try:
-            value = json.loads(source)
-        except Exception:
-            return []
-        return [value] if isinstance(value, dict) else []
     objects: list[dict[str, Any]] = []
-    try:
-        spans = balanced_json_spans(source)
-    except Exception:
-        return []
+    spans = balanced_json_spans(source)
     if not spans:
         return []
     # Text mode is a canonical JSON protocol.  Do not mine an arbitrary
@@ -319,8 +307,18 @@ def _extract_json_objects(text: str) -> list[dict[str, Any]]:
     for start, end in spans:
         try:
             value = json.loads(source[start:end])
-        except Exception:
-            continue
+        except json.JSONDecodeError as exc:
+            # Reject the whole turn: skipping an invalid member would execute
+            # a partial batch. Report location, never echo file contents.
+            detail = f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}."
+            if exc.msg.startswith("Invalid control character"):
+                detail += (
+                    r" Escape line breaks and tabs inside JSON strings as \n, \r and \t;"
+                    r' for example, "content":"first line\nsecond line\n".'
+                )
+            return _invalid_plan(detail, kind="invalid_json")
+        except (ValueError, RecursionError):
+            return _invalid_plan("invalid JSON: value exceeds decoder limits", kind="invalid_json")
         if isinstance(value, dict):
             objects.append(value)
     return objects
@@ -594,6 +592,8 @@ def _plan_from_tool_objects(
 def _text_tool_objects(text: str) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
     """Unwrap text JSON; authorization and argument validation stay shared."""
     objects = _extract_json_objects(text)
+    if isinstance(objects, ToolPlan):
+        return objects
     if not objects:
         return _invalid_plan("no JSON tool call found", kind="no_json")
     items: list[tuple[str, dict[str, Any], str]] = []

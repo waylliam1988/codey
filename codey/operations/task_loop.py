@@ -175,7 +175,7 @@ def _receive_turn_plan(
                 snapshot=snapshot, plan=plan, native=native)
     protocol_action = _kernel_handle_protocol(
         plan, provider, reply, native, native_tools, stagnant_turns=stagnant_turns,
-        invalid_turns=state.invalid_turns, turn=turn,
+        invalid_turns=state.invalid_turns, turn=turn, contract_text=snapshot.contract_text,
     )
     if isinstance(protocol_action, KernelResult):
         return protocol_action
@@ -318,6 +318,7 @@ def _kernel_handle_protocol(
     stagnant_turns: int | None,
     invalid_turns: int,
     turn: int,
+    contract_text: str,
 ) -> Any:
     """Handle one protocol error; None means proceed to tools."""
     if not getattr(plan, "protocol_error", ""):
@@ -340,7 +341,7 @@ def _kernel_handle_protocol(
         return KernelResult(
             False, f"stopped after {invalid_turns} invalid tool requests: {plan.protocol_error}", turn, "protocol"
         )
-    prompt = _prompt._repair_prompt(plan.protocol_error)
+    prompt = _prompt._repair_prompt(plan.protocol_error, contract_text=contract_text, native=native)
     try:
         pending_reply = _transport.repair_native_dangling(provider, reply, native, native_tools, plan.protocol_error)
     except Exception as exc:

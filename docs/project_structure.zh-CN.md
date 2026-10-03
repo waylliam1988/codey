@@ -1,0 +1,90 @@
+# 项目结构与职责地图
+
+[English](project_structure.md)
+
+本文描述当前源码。历史方案与实验报告只描述当时的提交，不作为当前 API 说明。
+
+```text
+codey/
+  __init__.py   包版本的唯一来源
+  __main__.py   python -m codey 入口
+  app/          HTTP/桌面/CLI 入口、注册表、任务提交与资源生命周期
+  automation/   本地自动化作业与调度
+  task/         用户提交与任务类型数据
+  policies/     任务授权、动作、网络与命令边界
+  operations/   任务入口、共同内核、执行适配、完成与恢复接线
+  agents/       项目请求/结果、提示、上下文、审查及审批辅助
+  providers/    网页/本地适配器、回复 codec、会话、worker 与健康状态
+  protocols/    共用 JSON/native 计划 codec 与消息 framing
+  toolchain/    共同工具定义、schema 校验与项目工具实现
+  completion/   完成契约、引擎、验证与编辑完整性
+  research/     来源、证据、报告检查、pipeline 策略与研究记录
+  runtime/      持久操作状态、事实、effect、写口与只读观察
+  workspace/    项目路径、版本、地图、变更、事实与上下文
+  storage/      原子 I/O、文件锁、对话与受管输出
+  knowledge/    本地笔记、图与知识变更
+  ghost/        有界本地经历、记忆、工作队列与控制面
+  reviews/      审查协调与 findings
+  repairs/      provider 修复作业与监督
+  runs/         运行 ledger、trace、检查点、详情与收据
+  utils/        共用文本、引用与扫描小工具
+  web/          随包发布的本地 UI、JavaScript/CSS
+tests/          行为回归、架构锁、压力测试与本地/浏览器 E2E
+  support/      仅测试使用的夹具与历史对照适配器
+  manual/       实机实验与历史报告
+tools/          发布门槛、诊断、parity 与开发工具
+docs/           当前架构、发布说明与带日期的审查记录
+```
+
+## 顺着一次任务阅读
+
+```text
+HTTP / CLI → task submission → task_run + task_phases
+           → task_entry → TaskPolicy + TaskSession + KernelRunRequest
+           → task_loop.run_task_kernel
+                → TurnSnapshot → provider 回复 → 规范工具计划
+                → 授权 → execute_turn → intent / 结果结算
+                → 交付结果 → completion_gate → 最终结果
+```
+
+编程、Research、规划与获授权的混合任务共用模型工具内核。领域策略可以安排
+后续动作，不另建模型工具循环。Research 按钮选择严格证据/报告要求；普通编程
+查过网页不会因此被要求创建研究笔记。
+
+| 所有者 | 职责 |
+| --- | --- |
+| `codey/operations/task_state.py` | `TaskState` 与类型化提交资源包 |
+| `codey/operations/task_run.py`、`task_phases/` | 运行资源生命周期、provider 接入、回调与终态结算 |
+| `codey/operations/task_entry.py`、`task_session.py` | 入口策略与任务事实 |
+| `codey/operations/task_loop.py` | 唯一生产模型工具循环，依赖分为 transport/execution/observation |
+| `codey/toolchain/tool_spec.py` | 工具定义、schema 与按权限生成的本轮快照 |
+| `codey/operations/kernel_protocol.py` | JSON/native 归一及当前快照校验 |
+| `codey/operations/kernel_execution.py`、`task_execution.py` | 执行边界及领域适配器 |
+| `codey/operations/completion_gate.py` | 最终完成证明组合；模型的 done 只是候选 |
+| `codey/operations/project_completion_checks.py`、`research_completion_checks.py` | 项目、来源与严格 Research 检查提供者 |
+| `codey/operations/kernel_session_recovery.py`、`kernel_receipts.py` | 恢复原策略/事实/结算结果，并验证收据身份 |
+| `codey/providers/local_response_codec.py` | 本地响应信封与模型方言，在进入内核前归一 |
+| `codey/operations/research_iteration.py` | 函数 `run_research_iteration`，pipeline 对共同内核的适配入口 |
+
+## 持久 runtime 与存储
+
+`runtime/core` 管状态/契约，`runtime/log` 管规范日志投影，`runtime/effects`
+管 effect/结果交付，`runtime/write` 管获准变更，`runtime/observe` 管只读观察。
+runtime 不依赖任务编排层。细节见 [runtime 架构](runtime_architecture.zh-CN.md)。
+
+任务事实从原日志/收据重建，Research 证据是领域投影，不竞争成为第二任务日志。
+受管输出和恢复收据可能在本地保留来源正文/工具输出；审计摘要与模型窗口另行限长。
+
+Ghost 工作队列与 affinity 已分别拆成 `*_model`、`*_sources`、`*_events` 和
+Store 模块；它们是领域所有者，不是新的通用框架。continuity 与 Hebbian 保留
+现有职责连贯的模块。
+
+## 修改后去哪里验证
+
+- [测试索引](../tests/README.md)：行为与归属回归。
+- [发布门槛](release_gate.zh-CN.md)：静态、确定性、机器契约及实机要求。
+- [内核不变量](kernel_invariants.zh-CN.md)：可执行检查与有限证明范围。
+- [测试报告](../TEST_REPORT.md)：真实结果和环境限制。
+
+旧编程/Research 循环与生产 `ResearchIteration` 类已删除；同名对照适配器只在
+`tests/support/`。当前消费者使用函数适配器与正式所有者，历史夹具不构成生产兼容承诺。

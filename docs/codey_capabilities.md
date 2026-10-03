@@ -16,14 +16,18 @@ overview, not a release gate.
 
 - `New Chat` keeps the conversation detached from local project files.
 - `Choose folder` attaches the current conversation to one local project.
-- `Research` starts a research run for the current request.
+- `Research` enables strict evidence, ledger and report requirements for the request.
 - Automatic mode lets the first normal model call answer directly or request
-  a permission-checked action (chat, read-only planning, Research, Writer,
-  or Review; Hybrid stays available through explicit mode selection). There is
-  no separate routing model call, and the project writer lock is only claimed
-  after an edit action is actually chosen.
+  an action within the original task policy. Tools and incomplete answers can
+  continue through the same kernel; model mode labels cannot grant permissions.
+  There is no separate routing model call, and project writes require the writer lock.
 - Manual mode, project scope, and permission settings still win over automatic
   mode.
+
+Coding, planning, Research and authorized mixed tasks share one tool loop.
+Web access requires task authorization; ordinary web-assisted coding does not
+automatically require a Research notebook. See the
+[source ownership map](project_structure.md).
 
 ## Coding Loop
 
@@ -122,8 +126,12 @@ Codey keeps quiet audit surfaces for people who need to inspect behavior:
 - research evidence/source/note views;
 - bounded run traces and ledgers.
 
-These surfaces avoid raw prompts, raw model replies, full source files, webpage
-bodies, cookies, and secrets.
+Audit summaries and prompt manifests are bounded projections. Local managed
+outputs and recovery receipts may retain read source text, webpage bodies and
+tool results; conversation and enabled Ghost experience stores also retain
+user messages/answers. Prompt traces do not record raw prompts. These stores
+have different purposes; the summary view is not a claim that no raw content
+exists in local state.
 
 ## Current Boundaries
 

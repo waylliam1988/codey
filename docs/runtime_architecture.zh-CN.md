@@ -1,7 +1,9 @@
 # Codey Runtime 架构（living doc）
 
 这份文档只写当前真相。历史演进去看 `CHANGELOG.md`，不要在这里考古。
-改动 runtime 时先更新这份文档，再改代码。
+改动 runtime 时同步维护本文；测试报告的结果必须等实际验证结束后再记录。
+
+完整包结构与当前函数入口见[项目结构与职责地图](project_structure.zh-CN.md)。
 
 ## 一句话
 
@@ -68,7 +70,10 @@ outcome 不自动变成完成证据，完成只认 proof + verification。
 
 Coding 与 Research 共用 `task_loop`、`kernel_protocol`、`kernel_execution` 和
 completion gate。`project_adapter` 保留 AgentRequest/RunResult 边界；
-`research_iteration` 负责知识库与 synthesis 交付。
+`research_iteration.run_research_iteration` 负责知识库与 synthesis 交付，不保留
+旧迭代类。`run_task_kernel` 只接收正式 `KernelRunRequest`，其依赖分为 transport、
+execution、observation；不再提供旧 keyword 适配。运行回调由 `task_phases/hooks`
+的一次运行实例持有，任务提交资源由 `TaskSubmissionStores` 显式捕获。
 
 - 文本 `read_files / parallel` 在解析期整批校验后降低为有序只读调用；native
   只用各自显式 ID，不为 wrapper 编造 child ID。执行和恢复仍按每个 effect 结算。

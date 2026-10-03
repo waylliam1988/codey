@@ -32,7 +32,9 @@ pytest -q
 ## Research Experiments
 
 The important live A/B probes remain under `tests/manual/` and use the shared
-`ResearchIteration` entry:
+`run_research_iteration` function through the shared kernel. Some comparison
+fixtures use the test-only `tests/support/research_iteration_adapter.py` class;
+there is no production `ResearchIteration` class:
 
 - `deep_research_core_ab.py`
 - `research_repair_prompt_ab.py`
@@ -53,7 +55,8 @@ one research entry.
 
 - `tools/local_model_release_gate.py`: release-blocking local OpenAI-compatible
   model gate. It covers chat/read, create/edit/references, the shared `hybrid`
-  entry, read-only planning, discussion, auto routing, and Ghost state. Each
+  entry, read-only planning, discussion, auto routing, test generation, strict
+  Research, recovery and Ghost state. Each
   attempt has a process deadline and a unique artifact directory. Objective
   completion, independently correct artifacts, conversation safety and Ghost
   control-plane checks are reported separately; answer quality is not automated.

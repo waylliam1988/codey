@@ -372,6 +372,8 @@ def _exercise_page(
     page.locator("#task").fill("Stay active across one UI reload.")
     page.locator("#send").click()
     expect(page.locator("#stop")).to_be_visible()
+    if not writer.reload_entered.wait(5):
+        raise AssertionError("reload probe did not enter the provider send")
     page.reload(wait_until="domcontentloaded")
     expect(page.locator("#stop")).to_be_visible(timeout=3_000)
     expect(page.locator("#status")).to_contain_text("Running")

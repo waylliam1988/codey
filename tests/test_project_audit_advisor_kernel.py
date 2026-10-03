@@ -44,7 +44,8 @@ def test_audit_send_respects_remaining_time_budget(tmp_path):
             return _done_call("clean")
 
     assert run_project_audit_advisor(Provider(), tmp_path, "audit", parent_policy=_audit_policy()) == "clean"
-    assert all(value is not None and 0 < value <= PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT for value in deadlines)
+    assert deadlines
+    assert all(value is not None and 0 < value <= PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT for value in deadlines), deadlines
 
 
 class _AuditProvider:
@@ -110,8 +111,8 @@ def test_advisor_drives_single_shared_kernel_with_readonly_policy():
         assert policy.allows("project.read") is True
         assert policy.allows("project.write") is False
         assert policy.allows("shell.approval") is False
-        executors = kernel.call_args.kwargs.get("executors") or {}
-        assert set(executors) <= {"list_dir", "read_file", "grep", "find_references"}, (
+        executors = kernel.call_args.kwargs["request"].execution.executors
+        assert set(executors) == {"list_dir", "read_file", "grep", "find_references"}, (
             f"审计子会话只允许只读执行器：{sorted(executors)}"
         )
 

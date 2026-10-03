@@ -84,8 +84,8 @@ class MovedGlueTests(unittest.TestCase):
             [call.args[0] for call in ctx.set_run_status.call_args_list],
             ["connecting", "running"],
         )
-        self.assertEqual(events[0]["status"], "connecting")
-        self.assertTrue(events[1]["providers"])
+        self.assertEqual([event["status"] for event in events[:2]], ["connecting", "running"])
+        self.assertTrue(events[2]["providers"])
 
     def test_claim_shell_ticket_mints_under_gate(self) -> None:
         gate = threading.Lock()

@@ -2,7 +2,26 @@
 
 [English version](CHANGELOG.md)
 
-## Unreleased - 回调生命周期与审美收尾（未发布）
+## 0.5.10 - 统一任务内核与运行时收尾
+
+- 编程、Research、只读规划与获授权的混合任务共用工具循环、权限快照、
+  持久结果和完成门。
+- 收紧恢复身份、最新验证观察、本地 provider 回复与有界截断续写，删除旧循环、
+  无用字段和转发层。
+- JSON 格式修复提示明确换行转义；格式错误的文本批次整轮拒绝。
+- 顾问超时不超过配置预算；连接成功的运行状态同步发布给 UI/SSE 和 headless。
+- 同步 README、能力与架构文档，新增[当前源码地图](docs/project_structure.zh-CN.md)。
+- 最终全量含真实 Edge E2E：**6776 passed、6 skipped、1497 subtests passed，
+  481.80s**；最终 JSON／原生实机矩阵分别 **13/13**。此前失败保留在
+  [TEST_REPORT](TEST_REPORT.md) 和[版本验收记录](docs/release_0.5.10.zh-CN.md)。
+- 本次仅版本 commit 和 push，不创建 tag 或 GitHub Release。
+
+## 0.5.10 包含的开发检查点
+
+以下保留各次修改当时的结果、失败记录及“未单独发布”状态；历史测试数字
+不作为本次 0.5.10 的最终结果。
+
+### 回调生命周期与审美收尾（未发布）
 
 - 将运行回调的共享状态归一个实例；工厂从 143 行、复杂度 21 降至
   40 行、复杂度 1，删除复杂度豁免。
@@ -14,7 +33,7 @@
   安全检查，不新增任务框架或缓存。详见 [`TEST_REPORT.md`](TEST_REPORT.md)
   与[审美审查报告](docs/aesthetic_review_2026-10-03.zh-CN.md)。
 
-## Unreleased - Mypy 干净安装与跨平台门禁修复（未发布）
+### Mypy 干净安装与跨平台门禁修复（未发布）
 
 - 在 CI pinned 依赖中加入 `types-PyYAML`，确保干净环境检查懒加载 YAML
   笔记序列化模块时不会缺少 stub。
@@ -24,7 +43,7 @@
   12 skipped、1497 subtests passed，439.96 秒**，无失败。详细 skip 原因见
   [`TEST_REPORT.md`](TEST_REPORT.md)。
 
-## Unreleased - 架构与资源生命周期审查（未发布）
+### 架构与资源生命周期审查（未发布）
 
 - 修复两个已确认的资源生命周期问题：HTTP 服务构造、线程启动或 provider
   warmup 失败时释放 state home lease；`AppContext.close()` 释放项目 writer
@@ -34,7 +53,7 @@
   Ruff、mypy（363 个文件）、compileall 与 diff 检查通过。skip 原因与剩余平台
   风险见 [`TEST_REPORT.md`](TEST_REPORT.md)。
 
-## Unreleased - 边界审查与冷启动清理（未发布）
+### 边界审查与冷启动清理（未发布）
 
 - 删除生产内核旧关键字适配器和重复扁平请求；33 个测试/压力测试文件的
   70 处调用改用正式类型化请求，原有 857 个断言节点保留。
@@ -49,7 +68,7 @@
   Python 3.13 定向 **86 passed**；Ruff、compileall、diff 检查与 mypy（363 文件）通过。
   未发布、无 tag。详细边界和证明限制见 [审查报告](docs/kernel_review_2026-10-03.zh-CN.md)。
 
-## Unreleased - 显式任务提交资源（未发布）
+### 显式任务提交资源（未发布）
 
 - 新增类型化 `TaskSubmissionStores` bundle 和 `AppContext` 工厂，按提交时
   的当前句柄构造资源，也覆盖延迟初始化的 knowledge store。
@@ -59,7 +78,7 @@
   耗时 **419.89 秒**。唯一失败是旧构造器文本的架构断言，已更新断言并通过
   定向复测。未发布、无版本 bump。
 
-## Unreleased - 全树类型检查收口（未发布）
+### 全树类型检查收口（未发布）
 
 - 完成 TaskState、task loop、结构化 verification、动态 payload、trace 和
   ProcessTreeOwner 边界收口。CI 增量门槛现在覆盖 16 个模块，
@@ -69,7 +88,7 @@
   场景定向复测为 **10 passed、10 subtests**；按执行约束未重复全量测试。
   Ruff 和 diff 检查均通过。
 
-## Unreleased - 应用与运行时类型边界收口（未发布）
+### 应用与运行时类型边界收口（未发布）
 
 - 将任务 writer 的 `TaskState` project 参数修正为具体的 `str | Path` 契约，
   新增 `TaskSubmissionState` 承载构造 `TaskRunDeps` 所需的 stores，保持基础
@@ -85,7 +104,7 @@
   mypy 门槛和 diff 检查均通过。全树 mypy 当前为 **354 errors / 114 files**
   （检查 363 个源码文件），相对冻结的 506 错误基线继续下降。未发布、无版本 bump。
 
-## Unreleased - 内核边界、投影异常与 CI 类型检查（未发布）
+### 内核边界、投影异常与 CI 类型检查（未发布）
 
 - 将生产 `run_task_kernel` 的大参数入口收敛为 transport、execution、
   observation 三组类型化依赖和 `KernelRunRequest`；所有生产调用点已迁移，
@@ -99,7 +118,7 @@
   耗时 **420.65 秒**；无 failed、xfailed 或 xpassed。Ruff、增量 mypy、
   compileall、测试收集和 diff 检查均通过。未发布、无版本 bump。
 
-## Unreleased - 完整代码与测试卫生审查（未发布）
+### 完整代码与测试卫生审查（未发布）
 
 - 审查生产入口、架构边界、冷启动兼容锁、fallback、异常处理、资源路径、
   测试收集及 skip/xfail 使用。未复现确定性的生产 bug，也未删除生产兼容层。
@@ -110,7 +129,7 @@
   **408.51 秒**；无 failed、xfailed 或 xpassed。Ruff、compileall、测试收集和
   diff 检查通过。跳过项仍是环境门槛，未放宽断言或超时。
 
-## Unreleased - Research 发布门槛收口（未发布）
+### Research 发布门槛收口（未发布）
 
 - 修复本地门槛的隔离 research 配置：headless research 现在接收显式
   `research_store_root`，门槛使用隔离 state 目录下的 vault，并把 research
@@ -122,7 +141,7 @@
 - 最终全量 pytest：**6650 passed、12 skipped、1488 subtests passed，
   419.21 秒**。跳过项均为环境限制；未发布、无版本 bump。
 
-## Unreleased - 原生工具生命周期与失败复现（未发布）
+### 原生工具生命周期与失败复现（未发布）
 
 - 从原始请求复现 Gemma/KoboldCpp 验证通过后的截断。原生活动轮次要求工具调用并指导逐步调用，普通聊天保持原方式。诊断记录器共用真实请求构造，记录生产模块哈希。
 - 终止收据撤回工具，确认输出限制一个 token，保留已验证的最终回答。最后一轮拒绝 done 或协议修复返回的新调用也关闭 id，不执行后续工具。
@@ -131,7 +150,7 @@
 - 最终原生项目实机 **12/12 正常完成、12/12 产物正确**；其他六个入口判定通过，含真实混合工具链。保留中间 10/12、11/12 失败，不宣称普遍成功率或速度优势。[根因报告](docs/local_native_protocol_2026-10-02.zh-CN.md)。
 - 启用真实 Edge 的最终全量 **6640 passed、6 skipped、1488 subtests passed，464.01 秒**；首轮三项失败如实记录并修复。Python 3.13.15 针对性八十三项通过。Ruff、compileall、diff 检查通过。未发布、无 tag/版本 bump，推送后不等待托管 CI。
 
-## Unreleased - 诚实的本地模型门槛与共同完成接线（未发布）
+### 诚实的本地模型门槛与共同完成接线（未发布）
 
 - 固定探测到的 endpoint/model，显式选择 native 或文本 JSON。每次尝试独立记录真实请求/响应、usage、项目/state、异常和进程截止时间；失败不覆盖。正常完成、产物正确、只读安全与 Ghost 控制面分开统计。
 - 独立判定拒绝标记子串、常量实现、改写原测试和无意义生成测试；新增四十三项回归，仍使用生产 provider 与一个共同任务循环。
@@ -141,7 +160,7 @@
 - Gemma 12B 实机：JSON 纯项目任务 **12/12**，沙盒外真实混合任务 **3/3**；沙盒 CDP 启动失败单独保留。原生复测正常完成 **2/4**、产物正确 **4/4**，两次仍连续截断；不声称该路径通过，不合并不同条件成为总体成功率。[完整报告](docs/local_model_gate_2026-10-02.zh-CN.md)。
 - 启用真实 Edge 的最终全量：3.12.8 **6618 passed、6 skipped、1488 subtests passed，424.86 秒**；新增四十三项在 3.13.15 也通过。Ruff、compileall、diff 检查通过。无 tag/release/版本 bump，不等待托管 CI。
 
-## Unreleased - 可读性收尾与本地产物忽略（未发布）
+### 可读性收尾与本地产物忽略（未发布）
 
 - 在原模块内拆清 pending 状态决策、收据形状校验与文本/native 解包；共同校验和恢复优先级保持，无新框架或 facade。
 - 圈复杂度：next_runtime_action 19→8、task_receipt_from_payload 20→10、normalize_turn 19→6。单循环 run_task_kernel 保留一百六十五行、复杂度十六，全项目阈值仍为二十。
@@ -149,7 +168,7 @@
 - 根 artifacts 的本地探针/运行记录/修改前备份纳入忽略，文件保留本地，不提交运行数据。
 - 启用真实 Edge 的最终两版本全量各 **6553 passed、28 skipped、1488 subtests passed**：3.12.8 为 469.19 秒、3.13.15 为 463.51 秒。Ruff、compileall、diff 检查通过。[可读性决定与边界](docs/kernel_review_2026-10-02.zh-CN.md#10-可读性收尾与拆分停止条件)。无 tag/release/版本 bump，按要求不等待托管 CI。
 
-## Unreleased - 持久恢复与真实 UI 后续收口（未发布）
+### 持久恢复与真实 UI 后续收口（未发布）
 
 - 修复 manifest 已替换但目录 fsync 报错后错误删除 baseline：仅确认未发布时清理，发布状态未知时保留正文并继续报错。
 - 恢复拒绝被转换的当前工作区身份；两次存储读取失败不再证明 epoch 稳定。
@@ -160,7 +179,7 @@
 - 启用真实 Edge 的最终两版本全量各 **6522 passed、28 skipped、1488 subtests passed**：3.12.8 为 468.39 秒、3.13.15 为 462.37 秒。手工编辑完整性 self-test 二十例通过；未声称真实模型延迟/token 改善。
 - 完整审查相对 aff30e0 生产净减少 **707 行**，无新内核/日志/缓存。[详细审查及有限证明边界](docs/kernel_review_2026-10-02.zh-CN.md)。无 tag/release/版本 bump。
 
-## Unreleased - 内核边界、规范编辑与管道完成收口（未发布）
+### 内核边界、规范编辑与管道完成收口（未发布）
 
 - 纳入工作区原有 edit 修改：唯一 replacements 协议贯通 JSON/native，删除编辑方言修复并迁移真实 EditBlock 消费者。
 - 修复 provider 文本工具帧在 native 路径丢失，保持真实 call id 与历史一致；截断和畸形 native 批次不能借 JSON done 放行。
@@ -171,14 +190,14 @@
 - 最终两版本全量各 **6475 passed、29 skipped、1488 subtests passed**：Python 3.12.8 为 447.36 秒，3.13.15 为 441.12 秒。Ruff、compileall、JS syntax、diff 检查通过；相对 aff30e0 生产净减少 **718 行**。
 - [完整审查与证明边界](docs/kernel_review_2026-10-02.zh-CN.md)：有限模型验证不等于全程序无 bug；本轮未测真实 UI/模型性能，无 tag/release/版本 bump。
 
-## Unreleased - 本地模型 canonical edit 协议与实机复测（未发布）
+### 本地模型 canonical edit 协议与实机复测（未发布）
 
 - 将 edit 的唯一规范形状收敛为 `replacements[{old_string,new_string}]`；native schema、prompt、codec、repair、ToolSpec 和 kernel validator 使用同一协议，kernel 不再处理模型方言或历史别名。
 - 新增协议漂移回归测试，确认旧 `search/replace`、`old/new`、`before/after` 等别名在执行前拒绝，provider 适配仍是模型模板的唯一边界。
 - 使用 KoboldCpp Gemma 12B 对 Pi 与 Codey 做独立项目 A/B 复测：两边均能完成正确 edit 和测试；Codey 在 2048/4096 预算下实际修改与测试均成功，但模型最后的完成响应被截断，因此严格终态为 provider failure，未产生 false completion 或 duplicate mutation。8192 轮因本地生成持续增长而中止，不计入统计。
 - 详细记录见 [LOCAL_MODEL_PI_AB_REPORT.zh-CN.md](tests/manual/LOCAL_MODEL_PI_AB_REPORT.zh-CN.md)。
 
-## Unreleased - Provider 响应归一化与有界截断续轮（未发布）
+### Provider 响应归一化与有界截断续轮（未发布）
 
 - 保持 kernel 只接收 `AssistantTurn` / `ProviderToolCall`；Gemma 的
   `[TOOLCALL REASONING]`、`final_decision` 和 `tool_name` 只作为 provider metadata，
@@ -194,7 +213,7 @@
   `task_done`；coding A/B 两边都完成正确 patch 和测试，Codey 因末轮第二次
   `finish_reason=length` 以 `provider_failure` 结束，无 false completion、无 duplicate mutation。
 
-## Unreleased - 原授权不变、持久事实恢复、auto 同窗续跑（未发布）
+### 原授权不变、持久事实恢复、auto 同窗续跑（未发布）
 
 - 首个工具前保存原策略；恢复缺失/非法时拒绝，已设置的快照不可替换。拒绝项、来源要求、必须修改和禁止验证无损持久化，不洗类型。
 - 已交付历史仍投影任务事实；重建不等于确认交付，重复重启/提供者切换保留待交付原结果。现有受管收据恢复完整正文/PDF 页/证据，事实及账本整批成功才发布。
@@ -203,7 +222,7 @@
 - 行为问题先红后绿，并补有限状态、能力和故障序列检查。最终全量 **6399 通过、29 跳过、1495 子测试通过，396.40 秒**；首轮 PubMed 失败及后续长身份反例如实记录。
 - 相对 `cac74c9` 生产代码净 **-342 行**。[证明范围](docs/kernel_invariants.zh-CN.md)明确有限检查不等于全程序无 bug；未声称真实 UI/模型延迟/token 改善。无 tag/release/版本 bump。
 
-## Unreleased - 直接门 fail-closed、加载器 None、auto 续跑、旧证明拦截、真实恢复、并行序列化删除、来源原子提交、返回槽收敛、回放保指纹（未发布）
+### 直接门 fail-closed、加载器 None、auto 续跑、旧证明拦截、真实恢复、并行序列化删除、来源原子提交、返回槽收敛、回放保指纹（未发布）
 
 - TDD 红测锁定（7 个新文件，先失败、后通过）：完成门异常/`None`/非法裁决永不完成、
   `None` 加载器保留 pytest 要求并在真实内核阻塞替代、auto 拒绝后同 run 进内核且用真实
@@ -224,7 +243,7 @@
 - 传统 `old_string`/`new_string` 拒绝为预期 breaking：4 个 protocol 示例与 9 个 loop 用例已登记
   `before`/`after` 评审差异。
 
-## Unreleased - 未知最新结果拦截、恢复精确整数、单一豁免源、真实 scheduler 完成、精确 schema/版本（未发布）
+### 未知最新结果拦截、恢复精确整数、单一豁免源、真实 scheduler 完成、精确 schema/版本（未发布）
 
 - TDD 红测锁定（6 个新文件，先失败、后通过）：
   `test_completion_latest_unknown_result_blocks_both_paths`（成功后接
@@ -264,7 +283,7 @@
   最终全量：**6168 通过，10 跳过，1492 子测试通过，369.98 秒（0:06:09）**，单次零失败。
 - 未发布，无 tag、无版本 bump。
 
-## Unreleased - 不完整最新观察拦截、独立 oracle、真实 kernel/soak 视图、严格 affinity 入口（未发布）
+### 不完整最新观察拦截、独立 oracle、真实 kernel/soak 视图、严格 affinity 入口（未发布）
 
 - TDD 红测锁定（4 个新文件，先失败、后通过）：
   `test_completion_incomplete_latest_observation_blocks`（缺身份/坏身份的
@@ -305,7 +324,7 @@
   **6128 通过，10 跳过，1492 子测试通过，耗时 382.81s（0:06:22）**，单次零失败。
 - 未发布、未打 tag、未升级版本。
 
-## Unreleased - 最新观察决定完成、oracle 严格接线、队列别名清理与 Affinity 拆分（未发布）
+### 最新观察决定完成、oracle 严格接线、队列别名清理与 Affinity 拆分（未发布）
 
 - TDD 红色锁定 5 组新文件（先失败、后通过）：
   `test_completion_projection_latest_observation_wins`（成功→失败拦截、
@@ -345,7 +364,7 @@
   迁移 affinity 测试与手工 A/B 到所有者；转换故障测试只 patch 转换所有者。
 - 未发布、未打 tag、未升级版本。
 
-## Unreleased - 验证身份、严格 Research 账本、工作队列拆分与诚实 A/B（未发布）
+### 验证身份、严格 Research 账本、工作队列拆分与诚实 A/B（未发布）
 
 - TDD 红色锁定 6 个新文件（先失败、后通过）：
   `test_completion_verification_identity_exact`（缺失/过期/畸形身份永不
@@ -377,7 +396,7 @@
   工作队列文档描述已完成的委托关系。
 - 未 release、未打 tag、未改版本号。
 
-## Unreleased - 内核依赖方向、死入口清理与检查所有权（未发布）
+### 内核依赖方向、死入口清理与检查所有权（未发布）
 
 - TDD 红色锁定 12 个新文件（先失败、后通过）：
   `test_kernel_dependency_direction`、
@@ -418,7 +437,7 @@
   修复并复验。范围与首轮失败记录见 TEST_REPORT.md。
 - 未 release、未打 tag、未改版本号。
 
-## Unreleased - 冷启动内核授权、完整收据与生命周期收口（未发布）
+### 冷启动内核授权、完整收据与生命周期收口（未发布）
 
 - 编程、Research 和只读审计顾问使用共同任务工具循环；删除旧 agent 执行
   入口及顾问独立解析/执行循环。编程修复轮次复用来源执行资源，由所属 flow
@@ -446,7 +465,7 @@
   及 `docs/kernel_convergence_review.zh-CN.md`。
 - 未 release、未打 tag、未改版本号。
 
-## Unreleased - 堵住 Research 越权、恢复原收据与冻结快照（未发布）
+### 堵住 Research 越权、恢复原收据与冻结快照（未发布）
 
 - TDD 红色锁定 8 个新文件（先失败、后通过）：Research 系统动作授权、
   恢复交付原结算、普通来源与严格 Research 分离、快照无全局缓存、
@@ -470,7 +489,7 @@
 - 最终验证：ruff、diff-check 通过；全量 pytest **5879 passed、10 skipped、
   1471 subtests passed，364.92s**。未发布、未改版本号。
 
-## Unreleased - 统一入口授权与持久化任务证明（未发布）
+### 统一入口授权与持久化任务证明（未发布）
 
 - 统一 project、research 和 headless 的任务入口授权与完成要求；模型路由
   不能扩大授权。Headless 只有在入口明确要求时才要求项目产生修改。
@@ -484,7 +503,7 @@
 - 最终验证：parity `682 cases / 0 failures`；全量 pytest **5833 passed,
   32 skipped，364.45s**。未发布、未改版本号。
 
-## Unreleased - 确定性 Kernel parity 与功能缺口补齐（未发布）
+### 确定性 Kernel parity 与功能缺口补齐（未发布）
 
 - 固定统一前 `958bcb4` 为独立 oracle：枚举 AST/源码指纹、旧模块与 request
   字段边界，以及 682 个协议/Coding/Research 场景。583 个行为一致，99 个精确
@@ -509,7 +528,7 @@
   32 skipped, 1471 subtests passed in 357.78s (0:05:57)。
 - 未修改版本号，未 release，未创建 release tag。
 
-## Unreleased - 统一 Kernel 的本地 provider 文本 codec（未发布）
+### 统一 Kernel 的本地 provider 文本 codec（未发布）
 
 - local provider 响应现在先经过 `local_response_codec`，再进入统一
   kernel。完整且受支持的文本工具帧会归一化为标准
@@ -525,7 +544,7 @@
   1471 subtests passed in 353.14s`。
 - 未发布。
 
-## Unreleased - Provider 协议边界与测试收集卫生（未发布）
+### Provider 协议边界与测试收集卫生（未发布）
 
 - kernel 现在只接受 canonical JSON 文档（允许通用 Markdown JSON 围栏）或
   标准 `AssistantTurn`/`ProviderToolCall`；provider 专属模型模板会被拒绝，
@@ -540,7 +559,7 @@
   1471 subtests passed in 347.07s`。
 - 未发布。
 
-## Unreleased - 故障注入收口与恢复上下文拆分（未发布）
+### 故障注入收口与恢复上下文拆分（未发布）
 
 - P1 unsafe replay 每次 guarded delivery 都重新读取 durable workspace state，
   关闭批次校验到结果构造之间的竞态。`RecoveryContext` 与 persisted receipt
@@ -563,7 +582,7 @@
   `5063 passed, 32 skipped, 1471 subtests passed in 371.77s (0:06:11)`，
   零失败。未发布。
 
-## Unreleased - 恢复边界扫描与 receipt 类型加固（未发布）
+### 恢复边界扫描与 receipt 类型加固（未发布）
 
 - P1 `event_proof()` 现在与两个 attach 路径共用同一校验 helper，重新校验
   capability；伪造或无 capability 的 proof 不会被采纳。
@@ -584,7 +603,7 @@
   `5044 passed, 32 skipped, 1471 subtests passed in 349.22s (0:05:49)`，
   零失败。未发布。
 
-## Unreleased - Kernel 恢复与结算加固（未发布）
+### Kernel 恢复与结算加固（未发布）
 
 - P1 退出码按 effect 隔离：tool event 只读取当前 durable receipt 或当前
   result audit 的 `exit_code`，上一轮 verification 不会泄漏到后续 `run`。
@@ -604,7 +623,7 @@
   `5022 passed, 32 skipped, 1474 subtests passed in 345.70s (0:05:45)`，
   零失败。未发布。
 
-## Unreleased - 信任边界关闭：event proof、frame 仅安全重放、typed disposition（未发布）
+### 信任边界关闭：event proof、frame 仅安全重放、typed disposition（未发布）
 
 - P1 event metadata 伪造关闭：`hooks` 不再从 `RunEvent.metadata` 推导可信
   身份；`kernel_events` 经 `attach_proof_to_event` 附加内核 side-channel
@@ -653,7 +672,7 @@
   `python -m pytest -q`：`5031 passed, 10 skipped, 1474 subtests passed in
   347.31s (0:05:47)`，零失败。未发布。
 
-## Unreleased - 统一恢复协议 + 结算/三态加固 + completion 拆分（未发布）
+### 统一恢复协议 + 结算/三态加固 + completion 拆分（未发布）
 
 - P1 恢复信任边界关闭：`delivered_from_frame` 不再从展示 `audit` 推导可信身份；
   audit 经 `sanitize_recovery_audit` 净化，可信只来自内核自有
@@ -681,7 +700,7 @@
   `python -m pytest -q`：`4999 passed, 10 skipped, 1474 subtests passed in
   351.47s (0:05:51)`。零失败。未发布。
 
-## Unreleased - 统一恢复 + 持久化来源验证 + 内核拆分（未发布）
+### 统一恢复 + 持久化来源验证 + 内核拆分（未发布）
 
 - P1 `delivered_from_frame` 经 `build_recovered_tool_result` 保留完整恢复元数据
   （audit/presentation/canonical/truncated），并从 durable audit 显式附加可信
@@ -713,7 +732,7 @@
   `4972 passed, 10 skipped, 1460 subtests passed in 344.27s`。首轮 1 失败
   （缺文件读取建目录），修复只读路径后第二轮全绿。未发布。
 
-## Unreleased - 严格来源 + 严格退出码 + 重放闭环（未发布）
+### 严格来源 + 严格退出码 + 重放闭环（未发布）
 
 - P1 执行器伪造工作区身份已堵住：显式执行器返回的
   `workspace_revision`/`workspace_fingerprint` 在内核边界直接剥离，只有
@@ -750,7 +769,7 @@
   `4958 passed, 10 skipped, 1460 subtests passed in 360.07s`。首次全量 2 失败
   （新增超 1000 行基线、current_state 锁外断言），修复后第二次全绿。未发布。
 
-## Unreleased - durable 工作区 + 严格退出码 + 身份收口（未发布）
+### durable 工作区 + 严格退出码 + 身份收口（未发布）
 
 - P1 单次结算：`execute_turn()` 对 edit 延迟结算，等权威 `bump_state()`
   决定最终结果再结算一次。bump 失败只结算一次显式错误（编辑已发生、工作区
@@ -788,7 +807,7 @@
   全量 `python -m pytest -q -p no:cacheprovider`：
   `4948 passed, 10 skipped, 1460 subtests passed in 343.67s`。未发布。
 
-## Unreleased - 00facf6 复核门槛/版本/harness 收口（未发布）
+### 00facf6 复核门槛/版本/harness 收口（未发布）
 
 - 发布门槛假阴性修复：`check_single_session_identity()` 只检查任务运行事件
   （`task_start`、`turn`、`tool_started`、`tool`、`task_done`），全局
@@ -819,7 +838,7 @@
   `4925 passed, 10 skipped, 1460 subtests passed in 363.29s`。未发布，无端到端
   耗时数据；单次编辑少一次扫描仍是唯一可确认性能收益。
 
-## Unreleased - Review 3643593 收口 + 旧模块删除（未发布）
+### Review 3643593 收口 + 旧模块删除（未发布）
 
 - 单次编辑单次推进：有 revision store 时仅
   `sync_workspace_state_after_edit()` 推进，返回
@@ -846,7 +865,7 @@
 - 验证：全量 `python -m pytest -q`：
   `4901 passed, 10 skipped, 1460 subtests passed`。未发布。
 
-## Unreleased - 内核行为收紧 + task_loop 按职责拆分（未发布）
+### 内核行为收紧 + task_loop 按职责拆分（未发布）
 
 - 协议校验失败即关闭：`validate_args_against_spec` 抛异常时，JSON 与原生
   调用一律拒绝，不再接受未声明参数（`test_kernel_protocol_validator_failclosed`）。
@@ -878,7 +897,7 @@
   `python -m pytest tests -q`：`4890 passed, 10 skipped, 1464 subtests passed`。
   未发布。
 
-## Unreleased - 共享任务内核冷启动收口（未发布）
+### 共享任务内核冷启动收口（未发布）
 
 - pytest 在应用模块导入前安装可写的临时 home，测试不会再写入宿主用户的
   `.codey`；手工恢复/checkpoint smoke 已切到现行 `project_adapter` 入口和
@@ -909,14 +928,14 @@
 - 空的 operation-state 授权保持不写入 payload；非空入口授权快照正常持久化；手工 Research 探针已迁移到共享迭代结果形状。
 - 验证：`4816 passed, 32 skipped, 1467 subtests passed`；Ruff、compileall 和 diff 检查通过。未发布。
 
-## Unreleased - 空字节 fail-closed（3.13）+ auto 路由优先（未发布）
+### 空字节 fail-closed（3.13）+ auto 路由优先（未发布）
 
 - 修 `WorkCheckpointStore.start()` 在 Python 3.13 接受含空字节 project（红字先行）：原实现依赖 `Path.resolve()` 对内嵌 null 抛 `ValueError`，但 3.13 改为相对 CWD 解析并保留 null，导致带 `"\0"` 的检查点被落盘（`project='D:\\tmp\x00evil'`，本地以 3.13 行为桩复现）。`resolve()` 之前加显式 `if "\0" in str(project): return None` 守卫（resolve 后再查一次作纵深），沿用 `changes/restore` 接口 `400` 守卫的既定模式。`tests/test_work_checkpoint.py` 新增 `WorkCheckpointNullByteTests` 2 例（任意版本下不依赖 resolve 行为拒绝 + `Path` 对象形态；首例修前失败、修后全过）。`_file_hash` 遇 null rel 已返回 `None` 且不崩（有覆盖，未动）。`load()` 的 null 载荷路径按“无复现即非 bug”原则未动（无失败复现）。
 - 修 auto 路由被跳过：`dispatch_run_mode()` 中 project/research/planning 的单入口返回写在了 `is_auto_request` 检查之前，所有 auto 意图任务跳过首轮路由直跑 project writer（10 ghost + 1 headless 失败；`df7d115` worktree 基线全绿，间谍确认 `run_task_mode` 进入而 `run_auto_mode` 从未进入）。把 auto 块移到单入口返回之前（hybrid/unified 提前返回保持第一，以保留空命名空间切锁行为）。新增锁定 `test_auto_intent_reaches_auto_router_before_single_entry`（修前红、修后绿）；端到端调试确认 auto 进入、直接回答走 chat、writer 未被调用。
 - 恢复 `codey/operations/task_effects.py` 真实实现（stash 冲突曾以自导入垫片覆盖，已从 `df7d115:kernel_effects.py` 取回；修好 7 个 `test_unified_cutover` `ImportError`），并迁移最后两处旧名测试导入（`task_kernel`→`task_loop`）；生产对已删除模块名零导入。
 - 验证：`ruff check codey tests` 与 `git diff --check` 干净。最终全量 `python -m pytest -q`：`4980 passed, 10 skipped, 1494 subtests passed in 371.42s`（相对 4965 基线恰为 15 个新锁定：11 收敛 + 2 空字节 + 1 auto 顺序 + 1 生产无旧循环架构）。未发布。
 
-## Unreleased - 收敛：行为锁定 + 单一入口 + 单一工具源 + 重命名（未发布）
+### 收敛：行为锁定 + 单一入口 + 单一工具源 + 重命名（未发布）
 
 - 新增 `tests/test_convergence_repro_locks.py` 红色锁定 11 例（先失败、后通过）：批次错配整体终止且不覆盖原收据（原生为所有 call id 返回错误）；删除伪造 `sha256(kernel-session:…)` 指纹（缺身份保持 `not_run`，真实 `edit`/`run` 携带 revision/fingerprint/exit）；Controller 失败永不编码为无限制（ fail-closed 配置错误，解析与执行共享同一不可变快照）；否定式中文只读（`不要修改`）永不要求改动（入口显式 `project_changes_required`，删除关键词猜测）；第三类任务 `注册→JSON/native 解析→执行→完成` 经通用 `ToolSpec` 校验 + `register_custom_executor` 通过；第二轮网页文本重发 `Visible tools` + `Tool contract` + 变化原因（原生每轮 schema）；已接受原生 `done` 回执失败返回 `provider_failure`（不谎称闭环）；跨提供者/新会话恢复只用文字（不用旧 call id）；`required_checks` 超限（>12）显式 `too many`（不再静默截到 16，`from_payload` 全保留）。
 - `TaskSession` 新增显式 `project_changes_required` + `workspace_revision/fingerprint`（`to_payload`/`from_payload` 持久化）；`TaskSubmission` 与 `AgentRequest` 新增显式 `project_changes_required`；`record_verification` 携带工作区身份；`_record_facts_for_result` 与 `_evidence_with_session_facts` 按 20 分支门限拆分（不再伪造指纹，匹配或 `not_run`）。
@@ -927,7 +946,7 @@
 - 提供者兼容：`task_loop` 网页/原生发送先试 `timeout=None`，`TypeError` 含 timeout 则降级无参（旧测试双倍无 timeout 仍可工作）；`unified_mode._decide_auto` 同理。
 - 验证：`ruff check codey tests` 与 `git diff --check` 干净。目标测试绿（`convergence 11`、`review 11` 等 200+）。最终全量 `python -m pytest -q`：`12 failed, 4965 passed, 10 skipped, 1494 subtests passed in 358.69s`。失败：1 长文件上限（跑后已提到 1330，单测已过）+ 11 ghost/headless 自动路由（误调 writer、`blocked` vs `done`、`agent` vs `planning`/`review`）——调查中，疑为完成门收紧（真实身份）需如 `test_issue3` 般更新测试，未回滚以保持 fail-closed。未发布。
 
-## Unreleased - 共享内核审查修复 1-7（未发布）
+### 共享内核审查修复 1-7（未发布）
 
 - 严格 Research 的 hybrid 不再泄漏 `project.write`/`shell.approval`：仅在用户明确请求 `project.write` 时保留写入与 shell；协议解析与执行前均拒绝无授权的 `edit`。
 - Hybrid 单会话：`dispatch_run_mode()` 将 `hybrid`（及 `unified` 别名）送入 `run_unified_mode()`，同一 run 内交替 `web_search → read_file → edit → run → done`；project/research/规划保留原流程（内部已是同一内核，外加评审/修复/自修复）。
@@ -939,7 +958,7 @@
 - 切流锁定：默认 `hybrid` 走共享内核的断言更新，hybrid 的 server/trace/operation 测试迁至单会话入口；`task_kernel.py` 拆出辅助函数以通过 ruff（上限 1180，旧循环移除后回落）。
 - `tests/test_review_repro_lock.py` 11 个红测先行（先失败后通过）；最终全量（隔离 `USERPROFILE`/`HOME`）：`4965 passed, 10 skipped, 1485 subtests passed`。`ruff check codey tests` 与 `git diff --check` 干净。未发布。
 
-## Unreleased - 共享内核进入生产默认路径（未发布）
+### 共享内核进入生产默认路径（未发布）
 
 - 默认项目写入、Research 模型迭代和证据补全均通过薄适配器进入同一个
   `run_task_kernel()`。评审、修复、计划和故障切换继续作为外层工作流编排。
@@ -955,7 +974,7 @@
 - `tests/test_unified_cutover.py` 红测先行；最终全量：`4932 passed,
   31 skipped, 1485 subtests passed`。Ruff 与 diff 检查干净。未发布。
 
-## Unreleased - 统一内核 1-7 生产加固：入口授权、ToolSpec、真实委托、持久意图、账本完成门、分阶段切换（未发布）
+### 统一内核 1-7 生产加固：入口授权、ToolSpec、真实委托、持久意图、账本完成门、分阶段切换（未发布）
 
 - 入口授权贯通（§1）：`codey/app/api.py` 新增 `derive_entry_auth()`，只从用户
   提交推导 `requested_capabilities`/`strict_research`（research 意图强制严格；
@@ -992,7 +1011,7 @@
   为 Playwright UI 用例的资源时序 flake（未动 Web 资产，隔离重跑 `6 passed`）。
   相对 4883 增量为 24 个新锁。未发布。
 
-## Unreleased - 统一任务内核完成：normalize + 适配器 + 完成门 + 单循环（未发布）
+### 统一任务内核完成：normalize + 适配器 + 完成门 + 单循环（未发布）
 
 - 新增单一任务循环（`codey/operations/task_kernel.py`）：`normalize_turn()` 把
   网页 JSON 文本与原生 `AssistantTurn` 收敛为同一 `ToolPlan`（同一授权 +
@@ -1024,7 +1043,7 @@
   最终 `python -m pytest -q`：`4883 passed, 10 skipped, 1484 subtests passed
   in 339.66s (0:05:39)`。相对 4869 增量恰为 14 个新锁。未发布。
 
-## Unreleased - 统一任务内核步骤 1：可持久 TaskPolicy + fail-closed 快照/完成契约 + hybrid handoff（未发布）
+### 统一任务内核步骤 1：可持久 TaskPolicy + fail-closed 快照/完成契约 + hybrid handoff（未发布）
 
 - 新增可持久、可解释的 `TaskPolicy`（`codey/policies/task_policy.py`）：
   授权在入口处由用户意图一次建成（`requested_capabilities`、任务类型、
@@ -1050,7 +1069,7 @@
   in 356.22s (0:05:56)`。相对 4854 的增量恰为 15 个新锁（14 统一 + 1 溢出）。
   未发布。
 
-## Unreleased - Full-red round5：fail-closed 横扫 + null 字节确定性 + call_arg 收窄（未发布）
+### Full-red round5：fail-closed 横扫 + null 字节确定性 + call_arg 收窄（未发布）
 
 - 修 ~60 个确定性 bug，全部红测先行（新 `tests/test_fullred_round5_sweep.py`
   60 个测试，58 个修前红、修后绿；2 个 search-page/clamp 断言记录既有
@@ -1084,7 +1103,7 @@
   终版 `python -m pytest -q`：`4854 passed, 10 skipped, 1484 subtests passed
   in 341.48s (0:05:41)`，相对 4794 增量正好是 60 个新锁。未发布。
 
-## Unreleased - Trace 拆分：schema/values/research/completion/protocol + 通用 generated_ref（未发布）
+### Trace 拆分：schema/values/research/completion/protocol + 通用 generated_ref（未发布）
 
 - 拆分 `codey/runs/trace.py`（2421 行）为五个叶模块，行为零变化（红测
   行为锁，golden JSON 字节级相同）：`trace_schema.py`（版本、全部
@@ -1127,7 +1146,7 @@
   **4794 passed、10 skipped、1484 subtests passed，348.62s（0:05:48）**。
   增量正好 6 个新测试（4 golden + 1 parity + 1 arch）。未发布。
 
-## Unreleased - 全量红测第四轮：数值fail-closed横扫 + schema/域名/API/ledger收紧（未发布）
+### 全量红测第四轮：数值fail-closed横扫 + schema/域名/API/ledger收紧（未发布）
 
 - 修复约 50 个确定性 bug，全部红测先行（49 个修复前失败、修复后全过；
   `tests/test_fullred_round4_sweep.py` 共 50 个测试，其中 1 个为前后皆绿的
@@ -1195,7 +1214,7 @@
   **4788 passed、10 skipped、1473 subtests passed，338.89s（0:05:38）**。
   增量正好 50 个新测试。未发布。
 
-## Unreleased - 冷启动清理第四轮：包导出层 + Ghost公共函数 + native-tools统一（未发布）
+### 冷启动清理第四轮：包导出层 + Ghost公共函数 + native-tools统一（未发布）
 
 - 删除内部包便捷导出层（未删除任何生产模块）：
   `research/__init__.py`、`knowledge/__init__.py`、`providers/__init__.py`
@@ -1239,7 +1258,7 @@
   **4738 passed、10 skipped、1473 subtests passed，350.62s（0:05:50）**。
   增量正好 12 个新锁。未发布。
 
-## Unreleased - 全量红测第三轮：OverflowError硬化 + 域名严格 + 坏行跳过 + ASCII数字门禁（未发布）
+### 全量红测第三轮：OverflowError硬化 + 域名严格 + 坏行跳过 + ASCII数字门禁（未发布）
 
 - 修复 22 个确定性 bug，全部红测先行（修复前 22 失败，修复后全过）：
   `runs/ledger._tool_id` 改用 `_safe_tool_index`（`"abc"/"²"/True/inf/1.5`
@@ -1285,7 +1304,7 @@
   **4726 passed、10 skipped、1473 subtests passed，351.77s（0:05:51）**。
   增量正好 22 个新锁。未发布。
 
-## Unreleased - 全量红测第二轮：events/registry/writer/shell过期/browser域名/safe-cwd/inbox严格化（未发布）
+### 全量红测第二轮：events/registry/writer/shell过期/browser域名/safe-cwd/inbox严格化（未发布）
 
 - 修复 7 个确定性 bug，全部红测先行（修复前 7 失败，修复后全过）：
   `runtime/observe/events` 新增 `_safe_tool_index/_safe_byte_count`，
@@ -1321,7 +1340,7 @@
   **4704 passed、10 skipped、1473 subtests passed，344.80s（0:05:44）**。
   增量正好 31 个新锁。未发布。
 
-## Unreleased - Unicode 数字硬化 + schema_version v1 严格化收尾（未发布）
+### Unicode 数字硬化 + schema_version v1 严格化收尾（未发布）
 
 - 修复确定性 unicode 数字崩溃（P1，红测先行）：`str.isdigit()` 对 `"²"` 为
   True，但 `int("²")` 抛 `ValueError`。已硬化
@@ -1368,7 +1387,7 @@
   **4673 passed、10 skipped、1473 subtests passed，341.16s（0:05:41）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - 可读性：read_file 读取/格式化拆分、门禁保持 20、round3 digest 断言、删除过时 C901 注释（未发布）
+### 可读性：read_file 读取/格式化拆分、门禁保持 20、round3 digest 断言、删除过时 C901 注释（未发布）
 
 - 仅按自然职责边界拆分 `read_file`（确定性，红测先行）：811–870 行提成
   `_format_read_file_page(rel, start_line, line_limit, total, lines)`；
@@ -1398,7 +1417,7 @@
   **4654 passed、10 skipped、1473 subtests passed，353.87s（0:05:53）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - 冷启动清理第三轮：trace 严格版本、agent/evidence 直读、投影去重（未发布）
+### 冷启动清理第三轮：trace 严格版本、agent/evidence 直读、投影去重（未发布）
 
 - Run Trace 对缺失/非法 schema 版本直接 fail-closed（P1，确定性，红测先行）：
   `record_research_topic_continuity` 与 `record_completion_repair_context`
@@ -1447,7 +1466,7 @@
   **4648 passed、10 skipped、1470 subtests passed，335.25s（0:05:35）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - 冷启动跟进：严格整数 Unicode 兜底、ghost 真单解析器（未发布）
+### 冷启动跟进：严格整数 Unicode 兜底、ghost 真单解析器（未发布）
 
 - 修复 `strict_nonnegative_int()` 遇到 Unicode 数字抛错（P2，确定性，红测先行）：
   `"²".isdigit()` 为真但 `int("²")` 抛 `ValueError`，导致 `strict("²")`、
@@ -1472,7 +1491,7 @@
   **4619 passed、10 skipped、1460 subtests passed，350.85s（0:05:50）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - 冷启动清理第二轮：provider 死字段、prompt 仅边界、ghost 单入口、严格整数共享（未发布）
+### 冷启动清理第二轮：provider 死字段、prompt 仅边界、ghost 单入口、严格整数共享（未发布）
 
 - 删除 7 个无消费者 provider 能力字段（`json_reliability`、
   `context_budget_hint`、`native_tool_interference_risk`、
@@ -1510,7 +1529,7 @@
   **4616 passed、10 skipped、1460 subtests passed，332.88s（0:05:32）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - 可执行桩修复、Continue 已删 provider 守卫、helper 直读（未发布）
+### 可执行桩修复、Continue 已删 provider 守卫、helper 直读（未发布）
 
 - 修复可执行锁使其在 Node 下通过（P1，桩完备性断言先红）：假 DOM 补齐
   `local-config-close`/`local-config-save`/`local-config-pop` 节点
@@ -1533,7 +1552,7 @@
   **4606 passed、10 skipped、1435 subtests passed，356.59s（0:05:56）**。
   跳过为已知 Windows/opt-in 项加 Node 专属测试。未发布。
 
-## Unreleased - 启动后默认 live 化、可执行缩减锁定、验证记录补正（未发布）
+### 启动后默认 live 化、可执行缩减锁定、验证记录补正（未发布）
 
 - 补完剩余的默认过期范围（P2，红测先行，
   `tests/test_ui.py::test_post_boot_default_fallback_reads_live_source`，
@@ -1559,7 +1578,7 @@
   **4606 passed、10 skipped、1435 subtests passed，349.39s（0:05:49）**。
   跳过为已知 Windows/opt-in 项加 Node 专属可执行测试。未发布。
 
-## Unreleased - 死参数/重复实现/Provider 层级清理，前端缩减修复（未发布）
+### 死参数/重复实现/Provider 层级清理，前端缩减修复（未发布）
 
 - 删除前端不可达兼容分支（红测先行，
   `tests/test_ui.py::test_provider_config_detects_removal_and_uses_single_source`，
@@ -1602,7 +1621,7 @@
   跳过为已知 Windows/opt-in 项。本地无 `node`，JS 以 `test_ui.py`
  （73 通过）加括号配平校验。未发布。
 
-## Unreleased - 删除 finding status 字段，open-only 收为类型约束（未发布）
+### 删除 finding status 字段，open-only 收为类型约束（未发布）
 
 - 将 open-only 从投影规则收成类型约束（红测先行，
   `tests/test_finding_openonly_shape_locks.py`，4 项中 2 项先失败）：删除
@@ -1618,7 +1637,7 @@
   **4588 passed、9 skipped、1433 subtests passed，342.02s（0:05:42）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - finding open-only 契约、规划器/矩阵残留清理（未发布）
+### finding open-only 契约、规划器/矩阵残留清理（未发布）
 
 - 补完 finding 生命周期清理为 open-only 审计契约（红测先行，
   `tests/test_finding_status_contract_locks.py`，5 项先失败）：删除不可达的
@@ -1639,7 +1658,7 @@
   **4584 passed、9 skipped、1433 subtests passed，342.61s（0:05:42）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - 死代码清理：可执行 connector、统一浏览器打开、mode-selection 轨迹（未发布）
+### 死代码清理：可执行 connector、统一浏览器打开、mode-selection 轨迹（未发布）
 
 - 按真实执行能力收紧 Research connector（红测先行，
   `tests/test_deadcode_cleanup_locks.py`，先 9 项失败，含 redaction 稳定后 10 项）：
@@ -1682,7 +1701,7 @@
   **4579 passed、9 skipped、1433 subtests passed，335.05s（0:05:35）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - shell 事件哈希/marker 严格绑定（未发布）
+### shell 事件哈希/marker 严格绑定（未发布）
 
 - 修复 `agents/shell_approval._event_record_fields` 两个确定性 P2
  （红测先行，`tests/test_shell_event_p2_locks.py`，4 项中 3 项先失败）：
@@ -1699,7 +1718,7 @@
   **4601 passed、9 skipped、1448 subtests passed，343.91s（0:05:43）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - 冷启动 v1 收敛、严格读取、精确画像、严格 shell 事件（未发布）
+### 冷启动 v1 收敛、严格读取、精确画像、严格 shell 事件（未发布）
 
 - 三个 schema 定为 v1（红测先行，`tests/test_coldstart_v1_locks.py`）：
   `runtime_operation_state`、`local-openai.json`、`CONTROL_SURFACE_SCHEMA_VERSION`
@@ -1731,7 +1750,7 @@
   **4597 passed、9 skipped、1448 subtests passed，335.60s（0:05:35）**。
   跳过为已知 Windows/opt-in 项。未发布。
 
-## Unreleased - Auto Ghost 项目作用域与 0.6 单次调用路线（未发布）
+### Auto Ghost 项目作用域与 0.6 单次调用路线（未发布）
 
 - 修复 `auto` 首次正常调用读取 Ghost Directive/continuity 时漏传项目路径的问题。
   先用失败测试锁定项目提示缺失；修复后两个提示均进入首次提示词，provider
@@ -1743,7 +1762,7 @@
 - 全量前预检通过；唯一一次全量 pytest：**4559 passed、31 skipped、
   1441 subtests passed，348.64s（0:05:48）**。未发布。
 
-## Unreleased - Ghost 底座审查与 UI 修复（未发布）
+### Ghost 底座审查与 UI 修复（未发布）
 
 - 核对当前 Ghost 接线与 0.5.9 发布提交。保留已提交经历检索、手动候选审核、
   Hebbian/Directive、affinity、continuity、work queue、sleep。0.5.9 在符合条件的
@@ -1761,7 +1780,7 @@
   1441 subtests passed，337.66s（0:05:37）**。使用临时 `USERPROFILE` 写入测试
   状态。未发布。
 
-## Unreleased - Ghost 显式偏好入口与本地上下文修复（未发布）
+### Ghost 显式偏好入口与本地上下文修复（未发布）
 
 - 保留 Ghost 的经历检索、inbox、Hebbian、Directive、affinity、continuity、sleep
   和 work queue，作为 0.6 路线图底座；没有恢复回合后抽取或回合前路由的额外模型调用。
@@ -1777,7 +1796,7 @@
   31 skipped、1441 subtests passed，352.23s（0:05:52）**。测试进程使用临时
   `USERPROFILE`，因为沙箱禁止写默认 `.codey` 状态目录。未发布。
 
-## Unreleased - Ghost 冷启动退役：学习环 + 预路由移除，图标打包，revival/助手去重（未发布）
+### Ghost 冷启动退役：学习环 + 预路由移除，图标打包，revival/助手去重（未发布）
 
 - 打包修复（确定性 bug，先红后绿）：`pyproject.toml` 的 package-data 只列了
   HTML/CSS/JS，wheel 丢了 `codey/web/icon.ico`，而 `server.py`（`/icon.ico`）
@@ -1822,7 +1841,7 @@
   `4570 passed、7 skipped、1449 subtests passed，344.88s（0:05:44）`。跳过为已知
   Windows/手动启用项。未发布。
 
-## Unreleased - 测试门禁修复：全仓 ruff、冗余 CDP 测试、确定性轮询时钟（未发布）
+### 测试门禁修复：全仓 ruff、冗余 CDP 测试、确定性轮询时钟（未发布）
 
 - P1 纯测试修复（阻断 CI）：`tests/test_readonly_cleanup_locks.py` 违反全仓
   `python -m ruff check .` 门禁（CI 即跑此命令），I001：函数内
@@ -1842,7 +1861,7 @@
   `4633 passed、7 skipped、1471 subtests passed，350.17s（0:05:50）`。跳过为已知
   Windows/手动启用项（相对 4634/1471 基线恰为删除的 1 个冗余测试）。未发布。
 
-## Unreleased - 只读审计清理：死参数、测试专用垫片、共享函数（未发布）
+### 只读审计清理：死参数、测试专用垫片、共享函数（未发布）
 
 - 第 1 项 `toolchain/tool_prompt`：删除 `render_coding_system_prompt()` 的死参数
   `profile_name`（进函数即 `del`，规则本就只看 `allowed_tool_names`）。同步更新
@@ -1887,7 +1906,7 @@
   `4634 passed、7 skipped、1471 subtests passed，338.21s（0:05:38）`。跳过为已知
   Windows/手动启用项（相对 4615/1471 基线的增量恰为 19 个新锁）。未发布。
 
-## Unreleased - 提示词规则单源 + allowed/definitions 严格一致校验（未发布）
+### 提示词规则单源 + allowed/definitions 严格一致校验（未发布）
 
 - `toolchain/tool_prompt`：相同规则行只保留一份共享片段（`_RULE_OUTPUT_JSON`、
   `_RULE_NATIVE_DENIAL`、`_RULE_READFILE_TRAILING`、`_RULE_EDIT_BLOCK`、
@@ -1912,7 +1931,7 @@
   `4615 passed、7 skipped、1471 subtests passed，348.22s（0:05:48）`。跳过为已知
   Windows/手动启用项（相对 4612/1471 基线的增量恰为 3 个新锁）。未发布。
 
-## Unreleased - 异味清理：提示词单路径、路由评测移出、UI 状态形状、shell 回退、Ghost 警告（未发布）
+### 异味清理：提示词单路径、路由评测移出、UI 状态形状、shell 回退、Ghost 警告（未发布）
 
 - 第 1 项 `toolchain/tool_prompt`：删除旧 `_system_prompt()` 独立拼接路径；
   `render_coding_system_prompt()` 成为唯一入口，只按 `allowed_tool_names` 生成
@@ -1957,7 +1976,7 @@
   `4612 passed、7 skipped、1471 subtests passed，385.55s（0:06:25）`。跳过为已知
   Windows/手动启用项（相对 4601/1471 基线的增量恰为 11 个新锁测试）。未发布。
 
-## Unreleased - api 导入成本锁定：图谱栈保持未加载（未发布）
+### api 导入成本锁定：图谱栈保持未加载（未发布）
 
 - 纯测试跟进（无生产行为变更，确定性）：第 5 项旧锁只覆盖了图构建调用路径，
   未锁住“导入 `api` 时不加载知识图谱栈”这一性质。在
@@ -1975,7 +1994,7 @@
   Windows/手动启用项（相对 4599/1452 基线的增量恰为 2 个新测试 + 19 个新
   subtest）。未发布。
 
-## Unreleased - 冷启动清理：facts 检查、提示源、共享裁剪、死代码、api 转发层（未发布）
+### 冷启动清理：facts 检查、提示源、共享裁剪、死代码、api 转发层（未发布）
 
 - 第 1 项 `workspace/facts`：`_successful_check_from_object()`
   不再把纯字符串检查转成对象（fail-closed，直接返回 `None`）；持久化读取限定为
@@ -2018,7 +2037,7 @@
   `4599 passed、7 skipped、1452 subtests passed，340.60s（0:05:40）`。跳过为已知
   Windows/手动启用项。未发布。
 
-## Unreleased - proof 校验文档写明 str-coercion（未发布）
+### proof 校验文档写明 str-coercion（未发布）
 
 - 文档口径修复（无行为变更，TDD 先红后绿）：`research_proof_ref()`
   先以 `str(value or "")` 转成字符串（继承自两处原校验器）再 strip 校验，
@@ -2038,7 +2057,7 @@
   `4588 passed、7 skipped、1452 subtests passed，340.48s`。跳过为已知
   Windows/手动启用项。未发布。
 
-## Unreleased - 共享截断预算、工具示例单源、共享 proof 校验（未发布）
+### 共享截断预算、工具示例单源、共享 proof 校验（未发布）
 
 - 截断预算修复（确定性 bug，TDD 先红后绿）：新增
   `codey.utils.text_budget.clip_tail()` + `TRUNCATION_MARKER`
@@ -2081,7 +2100,7 @@
   `4586 passed、7 skipped、1441 subtests passed，346.01s`。跳过为已知
   Windows/手动启用项。未发布。
 
-## Unreleased - 锁定测试精度：只认 ImportError，保证限定作用域（未发布）
+### 锁定测试精度：只认 ImportError，保证限定作用域（未发布）
 
 - 收紧锁定测试：`test_worker_releases_slot_when_accessor_breaks_after_submit`
   现只接受 `ImportError`（不容忍 accessor 错误覆盖），并断言原 accessor 恰
@@ -2099,7 +2118,7 @@
   `4570 passed、7 skipped、1391 subtests passed，359.31s`。跳过为已知
   Windows/手动启用项。未发布。
 
-## Unreleased - 槽位释放不再依赖 accessor：submit 捕获 state 传给 worker（未发布）
+### 槽位释放不再依赖 accessor：submit 捕获 state 传给 worker（未发布）
 
 - 释放不再依赖 accessor 二次可用：`submit_task()` 只取一次 state 对象
   （`state = get_state()`），以 `get_state=lambda: state` 交给 worker，并复
@@ -2125,7 +2144,7 @@
   cacheprovider`：`4570 passed、7 skipped、1391 subtests passed，
   354.61s`。跳过为已知 Windows/手动启用项。未发布。
 
-## Unreleased - Worker 初始化缺口补齐：惰性导入纳入槽位释放（未发布）
+### Worker 初始化缺口补齐：惰性导入纳入槽位释放（未发布）
 
 - 槽位释放缺口补齐：`run_task()` 的惰性导入（`consensus_service`、
   `review_service`、`context`、`task_entry`）及首次 `get_state()` 移入受保护
@@ -2146,7 +2165,7 @@
   skipped、1391 subtests passed，350.55s`。跳过为已知 Windows/手动启用项。
   未发布。
 
-## Unreleased - Review 策略边界缺口：提交前失败、入口校验、槽位释放（未发布）
+### Review 策略边界缺口：提交前失败、入口校验、槽位释放（未发布）
 
 - 提交前失败（busy 槽泄漏已修）：`submit_task()` 在预约运行槽之前先经
   `load_review_policy()` 校验 `REVIEW_POLICY`，拼错直接抛 `ValueError` 且不
@@ -2176,7 +2195,7 @@
   `4568 passed、7 skipped、1391 subtests passed，336.40s`。跳过为已知
   Windows/手动启用项。未发布。
 
-## Unreleased - 冷启动收敛：严格 Review 策略、校验函数归一、死路径删除（未发布）
+### 冷启动收敛：严格 Review 策略、校验函数归一、死路径删除（未发布）
 
 - Review 策略收紧（fail-closed）：`codey/reviews/review_policy.py` 仅保留
   `web_if_available`（默认）与 `require_web`。空值/未设置走默认；非空无效值
@@ -2228,7 +2247,7 @@
   `python -m pytest -q -p no:cacheprovider`：`4564 passed、7 skipped、1391
   subtests passed，355.60s`。跳过为已知 Windows/手动启用项。未发布。
 
-## Unreleased - 修学习开关 fail-open、Auto 新会话归属、P5 诚实报告缺口（未发布）
+### 修学习开关 fail-open、Auto 新会话归属、P5 诚实报告缺口（未发布）
 
 - 学习开关 fail-closed：`GhostInboxStore._read_settings_unlocked()`仅在
   `settings.json`从未存在时默认启用。文件存在但无效（坏JSON、非dict、
@@ -2268,7 +2287,7 @@
   `python -m pytest -q -p no:cacheprovider`：`4563 passed、7 skipped、1391
   subtests passed，356.54s`。跳过为已知Windows/手动启用项。未发布。
 
-## Unreleased - 修损坏误报成功、delivery悬空、探针假阳性、预算超限（未发布）
+### 修损坏误报成功、delivery悬空、探针假阳性、预算超限（未发布）
 
 - Ghost损坏契约：`GhostObservationStore.delete_scope()`在中间坏行时不再返回
   `0`，改为抛`GhostObservationCorruptedError`（`OSError`子类，控制面转为500
@@ -2304,7 +2323,7 @@
   特性把`tool_result_delivery.py`撑到1194行触发1100 ceiling，已上调至1250并
   单测复绿，全量后生产代码未再动）。未重跑消耗Kobold的实机门槛。未发布。
 
-## Unreleased - 实机p4/p5收尾 + harness语义化判定（未发布）
+### 实机p4/p5收尾 + harness语义化判定（未发布）
 
 - P4（hostile夹具全量搜索）3轮done：命中精确，symlink未进任何结构化
   tool结果，零crash信号。P5（无`make` environments下跑`make lint/test`）：
@@ -2321,7 +2340,7 @@
   一个self-repair测试连到真模型卡约2分钟后通过——如实记录，未为数字重跑）。
   未发布。
 
-## Unreleased - 修CI独有的审计扫描黑洞（symlink root，未发布）
+### 修CI独有的审计扫描黑洞（symlink root，未发布）
 
 - 0.4.14分包时埋下的潜伏bug，被新的consensus拆分测试在CI上钓出：
   `safe_join`返回resolve后路径，而审计守卫拿未resolve的caller root做
@@ -2337,7 +2356,7 @@
   `python -m pytest -q -o faulthandler_timeout=120`（`4516 passed，
   7 skipped，1391 subtests passed，396.94s`）。未发布。
 
-## Unreleased - C901≤20 门禁 + 5个怪物拆分，修2个bug（未发布）
+### C901≤20 门禁 + 5个怪物拆分，修2个bug（未发布）
 
 - `pyproject.toml` 中 `C901（McCabe≤20）` 加入 CI 门禁（`tests/`/`tools/`
   同 PLR 豁免）。PLR 拆分后的分布是 312（>8）/ 43（>15）/ 12（>18）/
@@ -2358,7 +2377,7 @@
   `python -m pytest -q -o faulthandler_timeout=120`（`4513 passed，
   7 skipped，1391 subtests passed，378.39s`）。未发布。
 
-## Unreleased - PLR 可读性拆分：27个怪物清零，修4个bug（未发布）
+### PLR 可读性拆分：27个怪物清零，修4个bug（未发布）
 
 - 可读性门禁改为 `pyproject.toml` 中的 `PLR0912（分支≤20）+ PLR0915
   （语句≤80）`（`C901` 关闭，`tests/`/`tools/` 不参与体积门禁）。24个
@@ -2380,7 +2399,7 @@
   `python -m pytest -q -o faulthandler_timeout=120`（`4453 passed，
   7 skipped，1387 subtests passed，359.14s`）。未发布。
 
-## Unreleased - writer/repair 结算不再被悬空 delivery 掀翻（未发布）
+### writer/repair 结算不再被悬空 delivery 掀翻（未发布）
 
 - 实机发现的崩溃：headless 拒绝 shell 后从 delivery 内部停止，leaf 停在
   `tool_delivery_pending`，无条件的 `mark_writer_settled` 抛出跃迁错误，把
@@ -2395,7 +2414,7 @@
   `python -m pytest -q -o faulthandler_timeout=120`（`4358 passed，
   7 skipped，1387 subtests passed，432.16s`）。未发布。
 
-## Unreleased - 审查驱动的 Ghost/auto 加固与实机门槛收紧（未发布）
+### 审查驱动的 Ghost/auto 加固与实机门槛收紧（未发布）
 
 - 观察存储不再因损坏丢数据：读取被阻断时 `append_completed()` 与
   `delete_scope()` 直接失败、不写回文件。检索范围显式化（默认 `session`，
@@ -2420,7 +2439,7 @@
   `python -m pytest -q -o faulthandler_timeout=120`（`4356 passed，
   7 skipped，1387 subtests passed，377.78s`）。未发布。
 
-## Unreleased - KoboldCpp 实机发布前扫测（未发布）
+### KoboldCpp 实机发布前扫测（未发布）
 
 - 本地默认超时 180 秒 -> 600 秒：`stream=False` 下超时即整轮生成预算，实机
   400 词顾问形生成用了 242 秒，短了就会在长输出上复现 10053 掐断。600 秒覆盖
@@ -2432,7 +2451,7 @@
   `hello.txt`（内容 `hello codey`），exit 0。
 - 全量：`4342 passed, 7 skipped, 1387 subtests passed`。
 
-## Unreleased - 辅助调用按 provider 超时；观察存真正 reply（未发布）
+### 辅助调用按 provider 超时；观察存真正 reply（未发布）
 
 - 找到第二族 KoboldCpp `WinError 10053` 根因：共识顾问调用固定 60 秒超时
   （`codey/agents/consensus.py`），而慢速本地生成需要约 82 秒，Codey 掐断后
@@ -2446,7 +2465,7 @@
 - 统一 auto 的 `ACTION` 协议处理不变：解析失败即普通回答，拒绝动作去标记；
   永不第二次调用。
 
-## Unreleased - 经历记忆取代每轮 Ghost 模型调用（未发布）
+### 经历记忆取代每轮 Ghost 模型调用（未发布）
 
 - 统一 `auto` 循环：首次正常模型调用直接作答或请求受权限检查的动作
   （`codey/operations/auto_loop.py`）；曾导致 KoboldCpp `WinError 10053`
@@ -2466,7 +2485,7 @@
   几乎永不命中，检索原是死的）；`codey chat --provider local` 不再误报
   "attaching browser" 状态。
 
-## Unreleased - 边界加固：快照、账本、Ghost 输入、UI 冲突（未发布）
+### 边界加固：快照、账本、Ghost 输入、UI 冲突（未发布）
 
 - 快照恢复依据只读：新增 `SnapshotStore.require_baseline()` 永不写盘；
   `capture_before()` 缓存命中只读校验它，manifest/条目丢失或内存与磁盘不一
@@ -2521,7 +2540,7 @@
   Ghost 作为生产能力保留；不拆 worker、不合五账本、不按行数机械拆分、不批量
   清扫 `except`。
 
-## Unreleased - 恢复所有权与小步减法加固（未发布）
+### 恢复所有权与小步减法加固（未发布）
 
 - 快照单写者收口：`put_baseline()` 按键存在判定，`null` 条目抛 `StoreCorruption`
   不再覆盖原 body；文件数/总字节上限在 manifest 锁内按磁盘视图判定；
@@ -2558,7 +2577,7 @@
   1374 subtests passed in 371.21s`；一次 `LocalProviderApiTests` 因 WinError 10053
   中断，重试通过）。未发布。Ghost 保留为本地自适应层；未重写 worker，未加兼容垫片。
 
-## Unreleased - 已核验的恢复与生命周期加固（未发布）
+### 已核验的恢复与生命周期加固（未发布）
 
 - 快照损坏改为阻断而非静默重置：`load()`、`put_baseline()`、`remove()`、
   `_update_manifest_locked()` 在 manifest 已存在但不可读或顶层非法时抛
@@ -2593,7 +2612,7 @@
   subtests passed in 366.77s`，0 warning；跳过均为 Windows POSIX/可选 E2E）。
   未发布。
 
-## Unreleased - 冷启动复查跟进（未发布）
+### 冷启动复查跟进（未发布）
 
 - 单持久化写入者：`SnapshotStore.acquire_writer()` 按项目跨进程独占
   （`FileLease`，非阻塞）；任务入口对快照写拿锁，拿不到直接报

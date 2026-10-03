@@ -172,6 +172,7 @@ def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID
     ctx.emit({"type": "status", "status": "connecting"})
     provider = connect_provider(provider_id)
     ctx.set_run_status("running")
+    ctx.emit({"type": "status", "status": "running"})
     ctx.emit({
         "type": "providers",
         "providers": provider_status_update(provider_id, True),

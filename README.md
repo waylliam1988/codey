@@ -2,13 +2,13 @@
 
 **Local-first AI coding and research for people who already have web AI access.**
 
-[![Version](https://img.shields.io/badge/version-0.5.9-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.10-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
 [中文说明](README.zh-CN.md)
 
-Version: `0.5.9`
+Version: `0.5.10`
 
 Codey connects browser AI accounts you already use, such as DeepSeek, MiMo,
 StepFun, Qwen, and GLM, or a local OpenAI-compatible model, to a controlled
@@ -25,7 +25,7 @@ research.
 - A desktop/local UI for chat, coding, review, and research.
 - A bridge from web AI chat products to local project folders.
 - A controlled tool loop for reading, editing, testing, diffing, reviewing, and restoring.
-- A research loop that cites opened sources instead of treating search results as evidence.
+- Research requirements on the shared task loop: cite opened sources rather than search summaries.
 - A bounded local memory layer that can be inspected, exported, deleted, reset, or disabled.
 
 Codey is not a cloud coding agent, not a plugin marketplace, and not a way to
@@ -74,15 +74,19 @@ python -m codey agent --json --provider qwen --project E:\my-project "Fix the fa
 - [Detailed capabilities](docs/codey_capabilities.md)
 - [Roadmap](ROADMAP.zh-CN.md)
 - [Changelog](CHANGELOG.md)
+- [Project structure and ownership](docs/project_structure.md)
+- [0.5.10 verification record (Chinese)](docs/release_0.5.10.zh-CN.md)
 - [Ghost future direction](docs/ghost_future_direction.zh-CN.md)
 
 ## Safety Model
 
 Models can work only inside the project folder you choose. Local actions pass
 through Codey's tool contract, permission profile, action policy, completion
-proof, and research evidence checks. Codey records bounded local facts for
-audit and recovery, but avoids saving raw prompts, full transcripts, source
-files, webpage bodies, cookies, or secrets.
+proof, and research evidence checks. Audit views use bounded summaries and
+references. Local managed outputs and recovery receipts may retain read source
+text, webpage bodies and tool results. Conversation and enabled Ghost experience
+storage retain user messages/answers locally; this differs from a prompt trace,
+which records manifests and digests rather than raw prompts.
 
 Browser providers can change their websites. Codey keeps provider adapters
 isolated so a broken web page integration can be fixed without changing the
@@ -92,12 +96,17 @@ agent core.
 
 ```powershell
 pip install -e .[dev]
-python -m pytest
+python -m pytest -q -o faulthandler_timeout=120
 ```
 
 The offline kernel parity gate is `python tools/kernel_parity.py --report parity.json`.
 Its pinned legacy oracle, coverage and reviewed differences are described in the
 [parity audit](docs/kernel_parity.zh-CN.md).
+
+CI also gates Ruff, full-tree mypy, JavaScript syntax and supported-platform
+regressions. For a matching development toolchain, install `requirements-ci.txt`
+before `pip install -e . --no-deps`. Release checks and their live-model scope
+are defined in the [release gate](docs/release_gate.zh-CN.md).
 
 ## License
 

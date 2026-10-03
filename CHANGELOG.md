@@ -2,7 +2,30 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
-## Unreleased - Callback lifecycle and aesthetic closure
+## 0.5.10 - Unified Task Kernel and Runtime Hygiene
+
+- Unify project, Research, planning and authorized hybrid tools under one task
+  loop, permission snapshot, durable result path and completion gate.
+- Tighten recovery identity, latest verification observations, provider reply
+  normalization and bounded continuation; remove obsolete loops and facades.
+- Clarify strict JSON syntax repairs and reject malformed text batches atomically.
+- Keep advisor timeouts within the configured budget and publish the running
+  connection state consistently to UI/SSE and headless consumers.
+- Refresh the README, capability and architecture documentation, including the
+  [current source map](docs/project_structure.md).
+- Final full run with real Edge E2E: **6776 passed, 6 skipped, 1497 subtests
+  passed in 481.80s**. Final JSON and native local-model matrices each passed
+  **13/13**; earlier failures remain documented in [TEST_REPORT](TEST_REPORT.md)
+  and the [version verification record](docs/release_0.5.10.zh-CN.md).
+- Version commit and push only; no tag or GitHub Release.
+
+## Development checkpoints included in 0.5.10
+
+The records below retain the outcomes at their original dates, including
+failed attempts and their former “no release” status. Their test numbers
+are historical checkpoints, not the final 0.5.10 result.
+
+### Callback lifecycle and aesthetic closure
 
 - Give run callbacks one explicit state owner; reduce the hook factory from
   143 lines/complexity 21 to 40 lines/complexity 1 and remove its exemption.
@@ -15,7 +38,7 @@
   [`TEST_REPORT.md`](TEST_REPORT.md) and the
   [aesthetic review](docs/aesthetic_review_2026-10-03.zh-CN.md).
 
-## Unreleased - Mypy clean-install and cross-platform gate fix (no release)
+### Mypy clean-install and cross-platform gate fix (no release)
 
 - Added the pinned `types-PyYAML` CI stub dependency so a clean mypy install
   checks the lazy YAML note serializer consistently.
@@ -25,7 +48,7 @@
   **6732 passed, 12 skipped, 1497 subtests passed in 439.96s**, zero failures.
   Details and environment-limited skips are recorded in [`TEST_REPORT.md`](TEST_REPORT.md).
 
-## Unreleased - Architecture and lifecycle audit (no release)
+### Architecture and lifecycle audit (no release)
 
 - Fixed two confirmed resource lifecycle bugs: server startup now releases its
   state-home lease when HTTP construction/thread startup/warmup fails, and
@@ -37,7 +60,7 @@
   passed. Skip details and residual platform risk are recorded in
   [`TEST_REPORT.md`](TEST_REPORT.md).
 
-## Unreleased - Boundary audit and cold-start cleanup (no release)
+### Boundary audit and cold-start cleanup (no release)
 
 - Removed the production kernel's legacy keyword adapter and duplicate flat
   dependency carrier. Migrated 70 direct calls in 33 test/stress files to the
@@ -56,7 +79,7 @@
   passed**, **444.67s**. Python 3.13 targeted regression: **86 passed**.
   Ruff, compileall, diff check and mypy (363 files) passed. No release or tag.
 
-## Unreleased - Explicit task submission resources (no release)
+### Explicit task submission resources (no release)
 
 - Introduced the typed `TaskSubmissionStores` bundle and an `AppContext`
   factory that captures current store handles, including late-bound knowledge
@@ -69,7 +92,7 @@
   the old constructor spelling; the assertion was updated and targeted tests
   passed. No release or version bump.
 
-## Unreleased - Full-tree typing closure (no release)
+### Full-tree typing closure (no release)
 
 - Completed the staged TaskState, task-loop, structured verification,
   dynamic-payload, trace, and ProcessTreeOwner boundaries. The CI incremental
@@ -80,7 +103,7 @@
   were fixed and their affected scenarios rechecked with **10 passed, 10
   subtests**; the full suite was not repeated. Ruff and diff checks passed.
 
-## Unreleased - Typed application and runtime boundaries (no release)
+### Typed application and runtime boundaries (no release)
 
 - Replaced the task writer `TaskState` project argument with the concrete
   `str | Path` contract and introduced `TaskSubmissionState` for the stores
@@ -99,7 +122,7 @@
   files** (363 source files checked), down from the frozen 506-error baseline.
   No release or version bump.
 
-## Unreleased - Kernel boundary, projection errors, and CI typing (no release)
+### Kernel boundary, projection errors, and CI typing (no release)
 
 - Replaced the production `run_task_kernel` fan-in signature with typed
   transport, execution, and observation dependency groups. Migrated every
@@ -116,7 +139,7 @@
   **420.65s**; no failed, xfailed, or xpassed tests. Ruff, incremental mypy,
   compileall, collection, and diff checks passed. No release or version bump.
 
-## Unreleased - Complete code and test hygiene audit (no release)
+### Complete code and test hygiene audit (no release)
 
 - Audited production entry points, architecture boundaries, cold-start
   compatibility locks, fallbacks, exception handling, resource paths, test
@@ -131,7 +154,7 @@
   collection, and diff checks passed. Skips remain environment-gated and no
   test assertion or timeout was weakened.
 
-## Unreleased - Research release gate closure (no release)
+### Research release gate closure (no release)
 
 - Fixed the local gate's isolated research setup by giving headless research
   runs an explicit `research_store_root`; the gate now uses a vault under its
@@ -144,7 +167,7 @@
 - Final full pytest: **6650 passed, 12 skipped, 1488 subtests passed in
   419.21s**. Skips are environment limitations; no release or version bump.
 
-## Unreleased - Native tool lifecycle and failure reproduction (no release)
+### Native tool lifecycle and failure reproduction (no release)
 
 - Reproduce Gemma/KoboldCpp post-check truncation from original requests. Require a native call on active tool turns, request sequential calls and keep normal chat unchanged. Share wire payload construction with the diagnostic recorder; record production source hashes.
 - Withdraw tools for terminal receipts, cap acknowledgement to one token and preserve the validated final answer. Close late call ids returned by rejected done or protocol repair on the last turn without executing them.
@@ -153,7 +176,7 @@
 - Final native project live gate **12/12 complete, 12/12 artifacts correct**; six other entry checks passed, including real hybrid. Preserve intermediate 10/12 and 11/12 failures; no universal success-rate or speed claim. [Root cause report](docs/local_native_protocol_2026-10-02.zh-CN.md).
 - Final full suite with real Edge: **6640 passed, 6 skipped, 1488 subtests passed in 464.01s**; first full run's three failures documented and fixed. Python 3.13.15 targeted 83 passed. Ruff, compileall and diff checks passed. No release/tag/version bump; do not wait for hosted CI.
 
-## Unreleased - Truthful local model gate and shared completion wiring (no release)
+### Truthful local model gate and shared completion wiring (no release)
 
 - Pin the probed endpoint/model and explicitly select native or text JSON. Record unique attempts, real provider exchanges/usage, final projects/state, failures and process deadlines; preserve all failed attempts. Keep objective completion separate from correct artifacts, conversation safety and Ghost control checks.
 - Harden independent checks against marker substrings, constant implementations, changed fixture tests and meaningless generated tests. Add 43 regressions; retain the production provider and one shared task loop.
@@ -163,7 +186,7 @@
 - Gemma 12B live results: JSON pure project tasks **12/12**; real hybrid outside sandbox **3/3**. Sandbox CDP failures remain separately archived. Native follow-up **2/4** complete, **4/4** artifacts correct, with two repeated truncations; do not claim that lane passed or merge conditions into a universal rate. [Detailed report](docs/local_model_gate_2026-10-02.zh-CN.md).
 - Final full suite with real Edge: **6618 passed, 6 skipped, 1488 subtests passed in 424.86s** on 3.12.8; new 43 tests also pass on 3.13.15. Ruff, compileall and diff checks pass. No tag/release/version bump; do not wait for hosted CI.
 
-## Unreleased - Readability closeout and local artifact exclusion (no release)
+### Readability closeout and local artifact exclusion (no release)
 
 - Extract pending-state decisions, receipt shape checks and text/native unwrapping within their existing modules. Keep final validation and recovery priorities unchanged; no new framework or facade.
 - Reduce McCabe complexity: next_runtime_action 19→8, task_receipt_from_payload 20→10, normalize_turn 19→6. Keep the readable single-loop run_task_kernel at 165 lines / complexity 16; retain the project-wide limit of 20.
@@ -171,7 +194,7 @@
 - Ignore root artifacts containing local probe/runtime output and pre-review backups, preserving files locally and excluding them from commits.
 - Final full suites with real Edge: **6553 passed, 28 skipped, 1488 subtests passed** on 3.12.8 (469.19s) and 3.13.15 (463.51s). Ruff, compileall and diff checks passed. [Readability decision and limits](docs/kernel_review_2026-10-02.zh-CN.md#10-可读性收尾与拆分停止条件). No tag/release/version bump; do not wait for hosted CI.
 
-## Unreleased - Durable recovery and real UI follow-up (no release)
+### Durable recovery and real UI follow-up (no release)
 
 - Preserve baseline bodies when manifest replacement succeeds before fsync reports an error; confirm non-publication before deleting an orphan, and propagate uncertain publication failures.
 - Reject coerced current workspace identities during recovery; two failed store reads no longer count as a stable epoch.
@@ -182,7 +205,7 @@
 - Final full suites with real Edge enabled: **6522 passed, 28 skipped, 1488 subtests passed** on Python 3.12.8 (468.39s) and 3.13.15 (462.37s). Manual edit-integrity self-test: 20 cases passed. No new live model performance claim.
 - Complete audit production net **-707 lines** from aff30e0; no additional kernel/log/cache. [Detailed review and finite proof limits](docs/kernel_review_2026-10-02.zh-CN.md). No tag/release/version bump.
 
-## Unreleased - Kernel boundaries, canonical edits and capture completion (no release)
+### Kernel boundaries, canonical edits and capture completion (no release)
 
 - Include and review the existing canonical edit changes; remove edit dialect repairs and migrate real EditBlock consumers. JSON/native validation use the same contract.
 - Preserve complete provider text tool frames and their call IDs in native history; prevent truncated or malformed native batches from being rescued as JSON done.
@@ -193,14 +216,14 @@
 - Final Windows full suites: **6475 passed, 29 skipped, 1488 subtests passed** on both Python 3.12.8 (447.36s) and 3.13.15 (441.12s). Ruff, compileall, JavaScript syntax and diff checks passed. Production net **-718 lines** from aff30e0.
 - [Detailed review and proof limits](docs/kernel_review_2026-10-02.zh-CN.md). Finite model checks support bounded invariants, not whole-program freedom from bugs. No new live UI/model performance claim; no release/tag/version bump.
 
-## Unreleased - Canonical local edit protocol and live A/B rerun (no release)
+### Canonical local edit protocol and live A/B rerun (no release)
 
 - Converge the only edit shape to `replacements[{old_string,new_string}]` across native schema, prompts, codecs, repair, ToolSpec and kernel validation. The kernel does not parse model dialects or historical aliases.
 - Add protocol-drift regression coverage proving legacy `search/replace`, `old/new` and `before/after` aliases are rejected before execution; provider adapters remain the boundary for model templates.
 - Re-run Pi vs Codey with the same KoboldCpp Gemma 12B model and isolated projects. Both produced the correct edit and passing tests; Codey completed the mutation but its final model completion response was truncated at 2048/4096 tokens, so it correctly reported provider failure without false completion or duplicate mutation. The 8192-token run was aborted after unbounded local generation and is excluded from results.
 - See [LOCAL_MODEL_PI_AB_REPORT.zh-CN.md](tests/manual/LOCAL_MODEL_PI_AB_REPORT.zh-CN.md) for the Chinese evidence report.
 
-## Unreleased - Original authorization, durable fact recovery and same-window auto (no release)
+### Original authorization, durable fact recovery and same-window auto (no release)
 
 - Persist the original policy before tools; reject missing/invalid recovery and replacement of an existing snapshot. Preserve denials, source requirements, explicit must-change and verification prohibition without schema/type laundering.
 - Project all settled facts even after delivery. Reconstructed batches remain pending until acknowledgement; repeated restart/provider switch preserves pending results. Stage Research ledger and task facts atomically from existing managed receipts, including full source text/PDF pages/evidence.
@@ -209,7 +232,7 @@
 - Add red-first behavioral regressions plus finite state/capability/crash checks. Final full: **6399 passed, 29 skipped, 1495 subtests passed in 396.40s**. First full PubMed failure and subsequent long-identity regressions are documented, not hidden.
 - Production net **-342 lines** from `cac74c9`. [Proof scope](docs/kernel_invariants.zh-CN.md): finite checks, not a whole-program no-bug theorem; no live UI/model latency/token claim. No tag/release/version bump.
 
-## Unreleased - Fail-closed direct gate, loader None, auto continuation, stale-proof block, real recovery, payload removal, hit atomicity, slot convergence, replay identity (no release)
+### Fail-closed direct gate, loader None, auto continuation, stale-proof block, real recovery, payload removal, hit atomicity, slot convergence, replay identity (no release)
 
 - TDD red-first locks (7 new files, all failed before, pass after):
   `test_direct_answer_gate_failure_never_completes` (gate exception/`None`/illegal
@@ -391,7 +414,7 @@
   `before`/`after` with reason, tests, and `CHANGELOG.md`; `parity_regressions`
   asserts the three loop keys against the reviewed `after`.
 
-## Unreleased - Unknown-latest block, restore exact-int, single exemption source, real scheduler completion, exact schema/revision (no release)
+### Unknown-latest block, restore exact-int, single exemption source, real scheduler completion, exact schema/revision (no release)
 
 - TDD red-first locks (6 new files, all failed before, pass after):
   `test_completion_latest_unknown_result_blocks_both_paths` (success-then-unknown
@@ -442,7 +465,7 @@
   zero failures in a single run.
 - No release, tag, or version bump.
 
-## Unreleased - Incomplete-latest block, independent oracle, real kernel/soak views, strict affinity apply (no release)
+### Incomplete-latest block, independent oracle, real kernel/soak views, strict affinity apply (no release)
 
 - TDD red-first locks (4 new files, all failed before, pass after):
   `test_completion_incomplete_latest_observation_blocks` (missing/bad
@@ -495,7 +518,7 @@
   zero failures in a single run.
 - No release, tag, or version bump.
 
-## Unreleased - Latest-observation completion, strict oracle wiring, queue alias removal, affinity split (no release)
+### Latest-observation completion, strict oracle wiring, queue alias removal, affinity split (no release)
 
 - TDD red-first locks (5 new files, all failed before, pass after):
   `test_completion_projection_latest_observation_wins` (success-then-failure
@@ -548,7 +571,7 @@
   owner.
 - No release, tag, or version bump.
 
-## Unreleased - Verification identity, strict-Research ledger, work-queue split, honest A/B (no release)
+### Verification identity, strict-Research ledger, work-queue split, honest A/B (no release)
 
 - TDD red-first locks (6 new files, all failed before, pass after):
   `test_completion_verification_identity_exact` (missing/stale/malformed
@@ -588,7 +611,7 @@
   describe the completed delegation.
 - No release, tag, or version bump.
 
-## Unreleased - Kernel dependency direction, dead entry removal, and check ownership (no release)
+### Kernel dependency direction, dead entry removal, and check ownership (no release)
 
 - TDD red-first locks (12 new files, all failed before, pass after):
   `test_kernel_dependency_direction`,
@@ -635,7 +658,7 @@
   See `TEST_REPORT.md` for scope and the failed-first-run record.
 - No release, tag, or version bump.
 
-## Unreleased - Cold-start kernel authority, lossless receipts, and lifecycle closure (no release)
+### Cold-start kernel authority, lossless receipts, and lifecycle closure (no release)
 
 - Project writers, Research iterations, and read-only audit advisors use the
   shared task tool loop. Removed obsolete agent execution entry points and the
@@ -672,7 +695,7 @@
   the first failed full run, and platform/live-provider limitations.
 - No release, tag, or version bump.
 
-## Unreleased - Close Research auth bypass, settled recovery, and frozen snapshots (no release)
+### Close Research auth bypass, settled recovery, and frozen snapshots (no release)
 
 - TDD red-first locks (8 new files, all failed before, pass after):
   `test_research_system_actions_require_task_policy`,
@@ -729,7 +752,7 @@
   full pytest **5879 passed, 10 skipped, 1471 subtests passed in 364.92s
   (0:06:04)**. No release or version bump.
 
-## Unreleased - Unified entry authorization and durable task proof (no release)
+### Unified entry authorization and durable task proof (no release)
 
 - Unified task entry authorization and completion requirements across project,
   research, and headless runs; model routing cannot widen grants. Headless
@@ -748,7 +771,7 @@
 - Final verification: parity `682 cases / 0 failures`; full pytest **5833
   passed, 32 skipped in 364.45s**. No release or version bump.
 
-## Unreleased - Deterministic kernel parity and missing behavior restoration (no release)
+### Deterministic kernel parity and missing behavior restoration (no release)
 
 - Added a pinned, isolated pre-unification oracle for commit `958bcb4`: AST/source
   fingerprints, removed-module/request-field boundary ownership, and 682 fixed
@@ -781,7 +804,7 @@
   32 skipped, 1471 subtests passed in 357.78s (0:05:57).
 - No version bump, release or release tag.
 
-## Unreleased - Local provider text codec for unified kernel (no release)
+### Local provider text codec for unified kernel (no release)
 
 - Local provider responses now pass through `local_response_codec` before the
   unified kernel. A complete supported text tool frame becomes the standard
@@ -799,7 +822,7 @@
   1471 subtests passed in 353.14s`.
 - No release was made.
 
-## Unreleased - Provider protocol boundary and test collection hygiene (no release)
+### Provider protocol boundary and test collection hygiene (no release)
 
 - The kernel now accepts canonical JSON documents (with only a generic
   Markdown JSON fence allowed) or standard `AssistantTurn`/`ProviderToolCall`
@@ -816,7 +839,7 @@
   1471 subtests passed in 347.07s`.
 - No release was made.
 
-## Unreleased - Fault injection closure and recovery context split (no release)
+### Fault injection closure and recovery context split (no release)
 
 - P1 unsafe replay now refreshes the durable workspace state for every guarded
   delivery, closing the gap between batch validation and result construction.
@@ -844,7 +867,7 @@
   `5063 passed, 32 skipped, 1471 subtests passed in 371.77s (0:06:11)`.
   Zero failures. No release.
 
-## Unreleased - Recovery boundary sweep and receipt type hardening (no release)
+### Recovery boundary sweep and receipt type hardening (no release)
 
 - P1 trusted proof capability is now revalidated by `event_proof()` through the
   same helper used by both attach paths; forged or capability-less proofs are
@@ -868,7 +891,7 @@
   `5044 passed, 32 skipped, 1471 subtests passed in 349.22s (0:05:49)`.
   Zero failures. No release.
 
-## Unreleased - Kernel recovery and settlement hardening (no release)
+### Kernel recovery and settlement hardening (no release)
 
 - P1 effect-local exit projection: tool events read `exit_code` from the
   current durable effect receipt or result audit only; a prior verification
@@ -892,7 +915,7 @@
   `5022 passed, 32 skipped, 1474 subtests passed in 345.70s (0:05:45)`.
   Zero failures. No release.
 
-## Unreleased - Trust-boundary closure: event proof, frame safe-only, typed disposition (no release)
+### Trust-boundary closure: event proof, frame safe-only, typed disposition (no release)
 
 - P1 event metadata forgery closed: `hooks._adopt_kernel_workspace_state`
   no longer derives trust from `RunEvent.metadata` ints; `kernel_events`
@@ -955,7 +978,7 @@
   `5031 passed, 10 skipped, 1474 subtests passed in 347.31s (0:05:47)`.
   Zero failures. No release.
 
-## Unreleased - Unified recovery protocol + settlement/tri-state hardening + completion split (no release)
+### Unified recovery protocol + settlement/tri-state hardening + completion split (no release)
 
 - P1 recovery trust boundary closed: `delivered_from_frame` no longer derives
   trusted identity from display `audit`; audit is sanitized
@@ -1009,7 +1032,7 @@
   `4999 passed, 10 skipped, 1474 subtests passed in 351.47s (0:05:51)`.
   Zero failures. No release.
 
-## Unreleased - Unified recovery + durable provenance verification + kernel split (no release)
+### Unified recovery + durable provenance verification + kernel split (no release)
 
 - P1 `delivered_from_frame` now preserves full recovery metadata via
   `build_recovered_tool_result` (audit/presentation/canonical/truncated)
@@ -1069,7 +1092,7 @@
   directory); fixed the read-only missing path, second full run green.
   No release.
 
-## Unreleased - Strict provenance + strict exit + fail-closed replay (no release)
+### Strict provenance + strict exit + fail-closed replay (no release)
 
 - P1 executor workspace forgery closed: explicit executor
   `workspace_revision`/`workspace_fingerprint` are stripped at the kernel
@@ -1127,7 +1150,7 @@
   `current_state` outside-lock assertion); fixed the baseline and the version
   check, second full run green. No release.
 
-## Unreleased - Durable workspace + strict exit + identity hardening (no release)
+### Durable workspace + strict exit + identity hardening (no release)
 
 - P1 durable single settlement: `execute_turn()` defers edit settlement until
   the authoritative `bump_state()` decides the final result. A failing bump
@@ -1190,7 +1213,7 @@
   Full `python -m pytest -q -p no:cacheprovider`:
   `4948 passed, 10 skipped, 1460 subtests passed in 343.67s`. No release.
 
-## Unreleased - Gate/version/harness hardening from 00facf6 review (no release)
+### Gate/version/harness hardening from 00facf6 review (no release)
 
 - Release gate false negative fixed: `check_single_session_identity()` now
   checks only task-run events (`task_start`, `turn`, `tool_started`,
@@ -1266,7 +1289,7 @@
   No release was made. No e2e latency data; single edit still saves the
   second scan vs the old double-bump (confirmed perf gain only).
 
-## Unreleased - Review 3643593 hardening + legacy deletion (no release)
+### Review 3643593 hardening + legacy deletion (no release)
 
 - Single workspace bump per edit: `sync_workspace_state_after_edit()` is the
   sole authority when a revision store is present and returns
@@ -1310,7 +1333,7 @@
 - Verification: full `python -m pytest -q`:
   `4901 passed, 10 skipped, 1460 subtests passed`. No release was made.
 
-## Unreleased - Kernel behavior hardening + task_loop split by responsibility (no release)
+### Kernel behavior hardening + task_loop split by responsibility (no release)
 
 - Fail-closed protocol validation: a `validate_args_against_spec` exception now
   rejects the call for both JSON and native turns instead of accepting it with
@@ -1377,7 +1400,7 @@
   `python -m pytest tests -q`: `4890 passed, 10 skipped, 1464 subtests passed`.
   No release was made.
 
-## Unreleased - Shared kernel cold-start cleanup (no release)
+### Shared kernel cold-start cleanup (no release)
 
 - Test startup now installs a writable temporary home before application
   imports, so pytest never writes the host user's `.codey` directory. Manual
@@ -1421,14 +1444,14 @@
 - Verification: `4816 passed, 32 skipped, 1467 subtests passed`; Ruff,
   compileall, and diff checks passed. No release was made.
 
-## Unreleased - Null-byte fail-closed (3.13) + auto-router precedence (no release)
+### Null-byte fail-closed (3.13) + auto-router precedence (no release)
 
 - Fixed `WorkCheckpointStore.start()` accepting null-byte projects on Python 3.13 (red-first): the method relied on `Path.resolve()` raising `ValueError` for embedded nulls, but 3.13 resolves against CWD and keeps the null, so a checkpoint carrying `"\0"` was saved (`project='D:\\tmp\x00evil'`, reproduced locally by stubbing `resolve` to 3.13 behavior). Added the explicit `if "\0" in str(project): return None` guard before `resolve()` (plus a post-resolve `"\0"` check as defense in depth), mirroring the established `changes_response`/`restore_changes_response` `400` guards. New locks in `tests/test_work_checkpoint.py` (`WorkCheckpointNullByteTests`, 2 cases: resolve-independent rejection on any version + `Path`-object form; the first failed before, both pass after). `_file_hash` with a null rel already returns `None` without crashing (covered, untouched). `load()`'s null-payload path was investigated and left unchanged per reproduce-or-it-is-not-a-bug (no failing repro).
 - Fixed auto-router bypass: the single-entry return for project/research/planning in `dispatch_run_mode()` preceded the `is_auto_request` check, so every auto-intent task skipped the first-call router and ran the project writer directly (10 `test_ghost_post_turn_router` + 1 `test_headless_runner` failures; confirmed green on the `df7d115` worktree baseline, then reproduced the skip with spies showing `run_task_mode` entered and `run_auto_mode` never entered). Moved the auto block above the single-entry return (hybrid/unified early return stays first, preserving the empty-namespace cutover locks). New lock `test_auto_intent_reaches_auto_router_before_single_entry` (failed before, passes after); end-to-end debug confirms auto enters, direct answer exits chat, writer untouched.
 - Repaired `codey/operations/task_effects.py` (real `KernelEffectSink`/`KernelRecordedProvider` implementation restored from `df7d115:kernel_effects.py` after a stash conflict replaced it with a self-import shim; 7 `test_unified_cutover` `ImportError`s) and migrated the last two old-name test imports (`task_kernel` → `task_loop`); production has zero imports of the deleted module names.
 - Verification: `ruff check codey tests` and `git diff --check` clean. Targeted green before final (work_checkpoint + flow + round5 sweep 90; ghost + headless + cutover 189). Final full `python -m pytest -q`: `4980 passed, 10 skipped, 1494 subtests passed in 371.42s` (delta vs 4965 baseline is exactly the 15 new locks: 11 convergence + 2 null-byte + 1 auto-order + 1 production-no-old-loop arch). No release was made.
 
-## Unreleased - Convergence: behavior locks + single entry + single tool source + renames (no release)
+### Convergence: behavior locks + single entry + single tool source + renames (no release)
 
 - Red-first repro locks in `tests/test_convergence_repro_locks.py` (11 cases, failed before, pass after): batch mismatch aborts without overwriting receipts (native returns errors for all call ids); no synthesized `sha256(kernel-session:…)` fingerprint (missing identity stays `not_run`, real `edit`/`run` carry revision/fingerprint/exit); controller failure never encodes as unlimited (fail-closed config error, parse/exec share one immutable snapshot); negative Chinese read-only (`不要修改`) never requires modification (explicit `project_changes_required` from entry, keyword guess deleted); third-task `register→JSON/native parse→execute→complete` passes via generic `ToolSpec` validation + `register_custom_executor`; second-round web text resends `Visible tools` + `Tool contract` + controller reason (native keeps per-turn schema); accepted native `done` receipt failure returns `provider_failure` (never claims closed); cross-provider/new-session recovery uses text only (never stale call ids); `required_checks` over-limit (>12) reports explicit `too many` (no silent truncate to 16, `from_payload` preserves all).
 - `TaskSession` carries explicit `project_changes_required` + `workspace_revision/fingerprint` (persisted in `to_payload`/`from_payload`); `TaskSubmission` and `AgentRequest` gain explicit `project_changes_required`; `record_verification` carries workspace identity; `_record_facts_for_result` split for the 20-branch gate; `_evidence_with_session_facts` split (no fake fingerprint, match-or-`not_run`).
@@ -1439,7 +1462,7 @@
 - Provider compat: `task_loop` web/native sends try `timeout=None` then fallback without (old test doubles without timeout keep working); `unified_mode._decide_auto` same.
 - Verification: `ruff check codey tests` clean, `git diff --check` clean. Targeted green (`convergence 11`, `review 11`, `unification+remaining+prod+cutover+arch` 200+). Final full `python -m pytest -q`: `12 failed, 4965 passed, 10 skipped, 1494 subtests passed in 358.69s`. Failures: 1 `test_long_files_do_not_grow` (ceiling, fixed post-run to 1330, now passes in isolation) + 11 ghost/headless auto-router (writer called when chat expected, `blocked` vs `done`, `agent` vs `planning`/`review`) – under investigation, likely completion-gate tightening (real identity) needing test updates like `test_issue3`, not reverted to keep fail-closed. No release was made.
 
-## Unreleased - Shared kernel review fixes 1-7 (no release)
+### Shared kernel review fixes 1-7 (no release)
 
 - Strict Research hybrid no longer leaks `project.write`/`shell.approval`:
   `build_task_policy()` only keeps write/shell with an explicit user
@@ -1483,7 +1506,7 @@
   `4965 passed, 10 skipped, 1485 subtests passed`. `ruff check codey tests`
   and `git diff --check` clean. No release was made.
 
-## Unreleased - Shared kernel production cutover (no release)
+### Shared kernel production cutover (no release)
 
 - Default project writing and Research model iterations now use the same
   `run_task_kernel()` through thin adapters. The Research evidence follow-up
@@ -1507,7 +1530,7 @@
   `4932 passed, 31 skipped, 1485 subtests passed`. Ruff and diff checks clean.
   No release was made.
 
-## Unreleased - Unified kernel 1-7 production hardening: entry auth, ToolSpec, real delegates, durable intents, ledger gate, staged cutover (no release)
+### Unified kernel 1-7 production hardening: entry auth, ToolSpec, real delegates, durable intents, ledger gate, staged cutover (no release)
 
 - Entry auth贯通 (§1): `derive_entry_auth()` in `codey/app/api.py` derives
   `requested_capabilities`/`strict_research` from user submission only
@@ -1567,7 +1590,7 @@
   Delta vs 4883 is the 24 new locks (one flaked in the full run, green alone).
   No release was made.
 
-## Unreleased - Unified task kernel complete: normalize + adapters + gate + single loop (no release)
+### Unified task kernel complete: normalize + adapters + gate + single loop (no release)
 
 - Added the single production-capable loop (`codey/operations/task_kernel.py`):
   `normalize_turn()` converges web JSON text and native `AssistantTurn` into one
@@ -1611,7 +1634,7 @@
   `4883 passed, 10 skipped, 1484 subtests passed in 339.66s (0:05:39)`.
   Delta vs 4869 is exactly the 14 new remaining locks. No release was made.
 
-## Unreleased - Unified task kernel step 1: persistent TaskPolicy + fail-closed snapshots/completion + hybrid handoff (no release)
+### Unified task kernel step 1: persistent TaskPolicy + fail-closed snapshots/completion + hybrid handoff (no release)
 
 - Added persistent, explainable `TaskPolicy` (`codey/policies/task_policy.py`):
   grants are built once at the entry boundary from user intent
@@ -1648,7 +1671,7 @@
   Delta vs 4854 is exactly the 15 new locks (14 unification + 1 overflow).
   No release was made.
 
-## Unreleased - Full-red round5: fail-closed sweep + null-byte determinism + call_arg narrowing (no release)
+### Full-red round5: fail-closed sweep + null-byte determinism + call_arg narrowing (no release)
 
 - Fixed ~60 deterministic bugs, all red-first (60 tests in new
   `tests/test_fullred_round5_sweep.py`, 58 failed before and pass after;
@@ -1707,7 +1730,7 @@
   `4854 passed, 10 skipped, 1484 subtests passed in 341.48s (0:05:41)`.
   Delta vs 4794 is exactly the 60 new round5 locks. No release was made.
 
-## Unreleased - Trace split: schema/values/research/completion/protocol + generic generated_ref (no release)
+### Trace split: schema/values/research/completion/protocol + generic generated_ref (no release)
 
 - Split `codey/runs/trace.py` (2421 lines) into five leaf modules with no
   behavior change (red-first behavior locks, golden JSON byte-identical):
@@ -1762,7 +1785,7 @@
   Delta vs 4788 is exactly the 6 new tests (4 golden + 1 parity + 1 arch).
   No release was made.
 
-## Unreleased - Full-red round4: numeric fail-closed sweep + schema/host/API/ledger strict (no release)
+### Full-red round4: numeric fail-closed sweep + schema/host/API/ledger strict (no release)
 
 - Fixed ~50 deterministic bugs, all red-first (49 failed before, pass after;
   50 tests in `tests/test_fullred_round4_sweep.py` include 1 non-bug guard
@@ -1832,7 +1855,7 @@
   `4788 passed, 10 skipped, 1473 subtests passed in 338.89s (0:05:38)`.
   Delta vs 4738 is exactly the 50 new tests. No release was made.
 
-## Unreleased - Cold-start cleanup round4: package export layers + Ghost shared helpers + native-tools unify (no release)
+### Cold-start cleanup round4: package export layers + Ghost shared helpers + native-tools unify (no release)
 
 - Removed internal package-convenience export layers (no prod-module deletions):
   `research/__init__.py`, `knowledge/__init__.py`, `providers/__init__.py`
@@ -1879,7 +1902,7 @@
   `4738 passed, 10 skipped, 1473 subtests passed in 350.62s (0:05:50)`.
   Delta vs 4726 is exactly the 12 new locks. No release was made.
 
-## Unreleased - Full-red round3: OverflowError hardening + hostname strict + bad-row skip + ascii-digit gate (no release)
+### Full-red round3: OverflowError hardening + hostname strict + bad-row skip + ascii-digit gate (no release)
 
 - Fixed 22 deterministic bugs, all red-first (22 failed before, pass after):
   `runs/ledger._tool_id` now uses `_safe_tool_index` (no `ValueError`/
@@ -1938,7 +1961,7 @@
   `4726 passed, 10 skipped, 1473 subtests passed in 351.77s (0:05:51)`.
   Delta vs 4704 is exactly the 22 new locks. No release was made.
 
-## Unreleased - Full-red round2: events/registry/writer/shell-expire/browser-host/safe-cwd/inbox strict (no release)
+### Full-red round2: events/registry/writer/shell-expire/browser-host/safe-cwd/inbox strict (no release)
 
 - Fixed 7 deterministic bugs, all red-first (7 failed before, pass after):
   `runtime/observe/events._safe_tool_index/_safe_byte_count` stops
@@ -1979,7 +2002,7 @@
   `4704 passed, 10 skipped, 1473 subtests passed in 344.80s (0:05:44)`.
   Delta vs 4673 is exactly the 31 new fullred locks. No release was made.
 
-## Unreleased - Unicode digit hardening + strict schema_version v1 follow-up (no release)
+### Unicode digit hardening + strict schema_version v1 follow-up (no release)
 
 - Fixed deterministic unicode-digit crashes (P1, red-first): `str.isdigit()`
   is true for `"²"` but `int("²")` raises `ValueError`. Hardened
@@ -2032,7 +2055,7 @@
   `4673 passed, 10 skipped, 1473 subtests passed in 341.16s (0:05:41)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Readability: read_file read/format split, gate stays at 20, round3 digest asserts, stale C901 comment removed (no release)
+### Readability: read_file read/format split, gate stays at 20, round3 digest asserts, stale C901 comment removed (no release)
 
 - Split only `read_file` on its natural read/format boundary (deterministic,
   red-first): lines 811-870 become `_format_read_file_page(rel, start_line,
@@ -2070,7 +2093,7 @@
   `4654 passed, 10 skipped, 1473 subtests passed in 353.87s (0:05:53)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Cold-start cleanup round3: strict trace schema, direct agent/evidence reads, projection dedup (no release)
+### Cold-start cleanup round3: strict trace schema, direct agent/evidence reads, projection dedup (no release)
 
 - Run Trace now rejects missing/invalid schema versions fail-closed
   (P1, deterministic, red-first): `record_research_topic_continuity` and
@@ -2129,7 +2152,7 @@
   `4648 passed, 10 skipped, 1470 subtests passed in 335.25s (0:05:35)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Cold-start follow-up: strict int unicode guard, true single ghost parser (no release)
+### Cold-start follow-up: strict int unicode guard, true single ghost parser (no release)
 
 - Fixed `strict_nonnegative_int()` raising `ValueError` on unicode digits
   (P2, deterministic, red-first): `"²".isdigit()` is true but `int("²")`
@@ -2164,7 +2187,7 @@
   `4619 passed, 10 skipped, 1460 subtests passed in 350.85s (0:05:50)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Cold-start cleanup round2: provider dead fields, prompt boundary only, ghost single entry, strict int share (no release)
+### Cold-start cleanup round2: provider dead fields, prompt boundary only, ghost single entry, strict int share (no release)
 
 - Removed seven unread provider capability fields (`json_reliability`,
   `context_budget_hint`, `native_tool_interference_risk`,
@@ -2211,7 +2234,7 @@
   `4616 passed, 10 skipped, 1460 subtests passed in 332.88s (0:05:32)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Executable harness fix, continueTask removed-provider guard, helper direct-read (no release)
+### Executable harness fix, continueTask removed-provider guard, helper direct-read (no release)
 
 - Fixed the executable lock so it passes under Node (P1, red-first harness
   completeness asserts failed before): the fake DOM now provides
@@ -2244,7 +2267,7 @@
   Skips are the known Windows/opt-in family plus the Node-only executable
   test. No release was made.
 
-## Unreleased - Post-boot default live-read, executable shrink lock, verification correction (no release)
+### Post-boot default live-read, executable shrink lock, verification correction (no release)
 
 - Fixed the remaining stale-default scope (P2, red-first
   `tests/test_ui.py::test_post_boot_default_fallback_reads_live_source`, 2
@@ -2278,7 +2301,7 @@
   Skips are the known Windows/opt-in family plus the Node-only executable
   test. No release was made.
 
-## Unreleased - Dead-param / dedup / provider-hierarchy cleanup, frontend shrink fix (no release)
+### Dead-param / dedup / provider-hierarchy cleanup, frontend shrink fix (no release)
 
 - Removed the unreachable frontend compat branch (red-first
   `tests/test_ui.py::test_provider_config_detects_removal_and_uses_single_source`,
@@ -2336,7 +2359,7 @@
   (`node` unavailable); `provider_ui.js` verified via `test_ui.py`
   (73 passed) plus manual brace/paren balance. No release was made.
 
-## Unreleased - Finding status field removal, open-only as type constraint (no release)
+### Finding status field removal, open-only as type constraint (no release)
 
 - Made open-only a type constraint instead of a projection rule (red-first
   `tests/test_finding_openonly_shape_locks.py`, 2 of 4 failed before):
@@ -2354,7 +2377,7 @@
   `4588 passed, 9 skipped, 1433 subtests passed in 342.02s (0:05:42)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Finding open-only contract, planner/matrix residue removal (no release)
+### Finding open-only contract, planner/matrix residue removal (no release)
 
 - Closed the finding-lifecycle residue as an open-only audit contract
   (red-first `tests/test_finding_status_contract_locks.py`, 5 failed before):
@@ -2377,7 +2400,7 @@
   `4584 passed, 9 skipped, 1433 subtests passed in 342.61s (0:05:42)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Dead-code cleanup: executable connectors, unified browser open, mode-selection trace (no release)
+### Dead-code cleanup: executable connectors, unified browser open, mode-selection trace (no release)
 
 - Tightened Research connectors to real execution capability (red-first
   `tests/test_deadcode_cleanup_locks.py`, 9 failed before, 10 with redaction
@@ -2425,7 +2448,7 @@
   `4579 passed, 9 skipped, 1433 subtests passed in 335.05s (0:05:35)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Strict shell event hash/marker binding (no release)
+### Strict shell event hash/marker binding (no release)
 
 - Fixed two deterministic P2s in `agents/shell_approval._event_record_fields`
   (red-first, `tests/test_shell_event_p2_locks.py`, 3 of 4 failed before):
@@ -2444,7 +2467,7 @@
   `4601 passed, 9 skipped, 1448 subtests passed in 343.91s (0:05:43)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Cold-start v1 convergence, strict reads, exact profiles, strict shell events (no release)
+### Cold-start v1 convergence, strict reads, exact profiles, strict shell events (no release)
 
 - Schemas to v1 (red-first, `tests/test_coldstart_v1_locks.py`): `runtime_operation_state`
   `SCHEMA_VERSION`, `local-openai.json` `SCHEMA_VERSION`, and
@@ -2486,7 +2509,7 @@
   `4597 passed, 9 skipped, 1448 subtests passed in 335.60s (0:05:35)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Auto Ghost project scope and 0.6 single-call roadmap (no release)
+### Auto Ghost project scope and 0.6 single-call roadmap (no release)
 
 - Fixed the `auto` first call dropping the project argument when reading Ghost
   Directive and continuity. A failing test first confirmed project-scoped
@@ -2499,7 +2522,7 @@
 - Preflight passed; the single full pytest run reported **4559 passed,
   31 skipped, 1441 subtests passed in 348.64s (0:05:48)**. No release.
 
-## Unreleased - Ghost foundation audit and UI repair (no release)
+### Ghost foundation audit and UI repair (no release)
 
 - Audited current Ghost wiring and the 0.5.9 release commit. Preserved committed
   experience retrieval, manual candidate review, Hebbian/Directive, affinity,
@@ -2522,7 +2545,7 @@
   1441 subtests passed in 337.66s (0:05:37)**. A temporary `USERPROFILE` kept
   test state inside a writable directory. No release was made.
 
-## Unreleased - Ghost manual preference path and local context fixes (no release)
+### Ghost manual preference path and local context fixes (no release)
 
 - Kept Ghost's observation retrieval, inbox, Hebbian, Directive, affinity,
   continuity, sleep, and work queue foundations for the 0.6 roadmap. No
@@ -2546,7 +2569,7 @@
   temporary `USERPROFILE` because the sandbox blocks the default `.codey`
   state directory. No release was made.
 
-## Unreleased - Ghost cold-start retirement: learning loop + pre-turn router removed, icon packaging, revival/meta + helper dedup (no release)
+### Ghost cold-start retirement: learning loop + pre-turn router removed, icon packaging, revival/meta + helper dedup (no release)
 
 - Packaging fix (deterministic bug, red-first): `pyproject.toml` package-data
   listed only HTML/CSS/JS, so wheels missed `codey/web/icon.ico` while
@@ -2603,7 +2626,7 @@
   `4570 passed, 7 skipped, 1449 subtests passed in 344.88s (0:05:44)`.
   Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Test gate fix: repo-wide ruff, redundant CDP test, deterministic polling clock (no release)
+### Test gate fix: repo-wide ruff, redundant CDP test, deterministic polling clock (no release)
 
 - P1 test-only fix (CI-blocking): `tests/test_readonly_cleanup_locks.py`
   violated the repo-wide `python -m ruff check .` gate (CI runs it) with I001:
@@ -2630,7 +2653,7 @@
   the known Windows/opt-in family (delta vs the 4634/1471 baseline is exactly
   the one deleted redundant test). No release was made.
 
-## Unreleased - Readonly audit cleanup: dead params, test-only shims, shared helpers (no release)
+### Readonly audit cleanup: dead params, test-only shims, shared helpers (no release)
 
 - Item1 `toolchain/tool_prompt`: deleted the dead `profile_name` parameter from
   `render_coding_system_prompt()` (it was immediately `del`-ed; rules already
@@ -2684,7 +2707,7 @@
   the known Windows/opt-in family (delta vs the 4615/1471 baseline is exactly
   the 19 new locks). No release was made.
 
-## Unreleased - Prompt rules single-source plus strict allowed/definitions check (no release)
+### Prompt rules single-source plus strict allowed/definitions check (no release)
 
 - `toolchain/tool_prompt`: identical rule lines now live exactly once as shared
   fragments (`_RULE_OUTPUT_JSON`, `_RULE_NATIVE_DENIAL`, `_RULE_READFILE_TRAILING`,
@@ -2717,7 +2740,7 @@
   the known Windows/opt-in family (delta vs the 4612/1471 baseline is exactly
   the 3 new locks). No release was made.
 
-## Unreleased - Smell cleanup: prompt single-path, router eval move, ui-state shape, shell fallback, ghost warnings (no release)
+### Smell cleanup: prompt single-path, router eval move, ui-state shape, shell fallback, ghost warnings (no release)
 
 - Item1 `toolchain/tool_prompt`: removed the legacy `_system_prompt()` independent
   path; `render_coding_system_prompt()` is now the single entry and derives rules
@@ -2771,7 +2794,7 @@
   the known Windows/opt-in family (delta vs the 4601/1471 baseline is exactly
   the 11 new lock tests). No release was made.
 
-## Unreleased - Api import-cost lock: graph stack stays unloaded (no release)
+### Api import-cost lock: graph stack stays unloaded (no release)
 
 - Test-only follow-up (no production behavior change, deterministic): the Item5
   lock covered the builder call path but not the "importing `api` must not
@@ -2794,7 +2817,7 @@
   the known Windows/opt-in family (delta vs the 4599/1452 baseline is exactly
   the 2 new tests + 19 new subtests). No release was made.
 
-## Unreleased - Cold-start cleanup: facts checks, prompt source, shared clip, dead code, api facade (no release)
+### Cold-start cleanup: facts checks, prompt source, shared clip, dead code, api facade (no release)
 
 - Item1 `workspace/facts`: `_successful_check_from_object()` no longer coerces
   plain-string checks (fail closed, `None`); persisted payloads stay limited to
@@ -2846,7 +2869,7 @@
   `4599 passed, 7 skipped, 1452 subtests passed in 340.60s (0:05:40)`. Skips are
   the known Windows/opt-in family. No release was made.
 
-## Unreleased - Proof-ref docstring documents str-coercion (no release)
+### Proof-ref docstring documents str-coercion (no release)
 
 - Doc wording fix (no behavior change, TDD red-first): `research_proof_ref()`
   coerces inputs with `str(value or "")` (inherited from both original
@@ -2870,7 +2893,7 @@
   `4588 passed, 7 skipped, 1452 subtests passed in 340.48s`. Skips are the
   known Windows/opt-in family. No release was made.
 
-## Unreleased - Shared truncation budget, single-source tool examples, shared proof ref (no release)
+### Shared truncation budget, single-source tool examples, shared proof ref (no release)
 
 - Truncation budget fix (deterministic, TDD red-first): added
   `codey.utils.text_budget.clip_tail()` + `TRUNCATION_MARKER` (`"\n[truncated]"`)
@@ -2918,7 +2941,7 @@
   `4586 passed, 7 skipped, 1441 subtests passed in 346.01s`. Skips are the
   known Windows/opt-in family. No release was made.
 
-## Unreleased - Lock-test accuracy: ImportError-only pin, scoped guarantee (no release)
+### Lock-test accuracy: ImportError-only pin, scoped guarantee (no release)
 
 - Strict lock test: `test_worker_releases_slot_when_accessor_breaks_after_submit`
   now pins `ImportError`-only surfacing (no accessor-error masking tolerated)
@@ -2939,7 +2962,7 @@
   `4570 passed, 7 skipped, 1391 subtests passed in 359.31s`. Skips are the
   known Windows/opt-in family. No release was made.
 
-## Unreleased - Accessor-proof slot release: submit captures state for the worker (no release)
+### Accessor-proof slot release: submit captures state for the worker (no release)
 
 - Accessor-proof release: `submit_task()` captures the state object once
   (`state = get_state()`) and hands it to the worker as `get_state=lambda:
@@ -2975,7 +2998,7 @@
   `4570 passed, 7 skipped, 1391 subtests passed in 354.61s`. Skips are the
   known Windows/opt-in family. No release was made.
 
-## Unreleased - Worker init gap closed: lazy imports under slot release (no release)
+### Worker init gap closed: lazy imports under slot release (no release)
 
 - Slot-release gap closed: `run_task()`'s lazy imports (`consensus_service`,
   `review_service`, `context`, `task_entry`) and the initial `get_state()`
@@ -3001,7 +3024,7 @@
   `4569 passed, 7 skipped, 1391 subtests passed in 350.55s`. Skips are the
   known Windows/opt-in family. No release was made.
 
-## Unreleased - Review policy boundary gaps: fail-fast submit, entry validation, slot release (no release)
+### Review policy boundary gaps: fail-fast submit, entry validation, slot release (no release)
 
 - Fail-fast submit (busy-slot leak fixed): `submit_task()` now validates
   `REVIEW_POLICY` via `load_review_policy()` before reserving the run slot, so
@@ -3039,7 +3062,7 @@
   `4568 passed, 7 skipped, 1391 subtests passed in 336.40s`. Skips are the
   known Windows/opt-in family. No release was made.
 
-## Unreleased - Cold-start convergence: strict review policy, deduped validators, dead-path removal (no release)
+### Cold-start convergence: strict review policy, deduped validators, dead-path removal (no release)
 
 - Review policy strict (fail-closed): `codey/reviews/review_policy.py` now
   keeps only `web_if_available` (default) and `require_web`. Empty/unset uses
@@ -3103,7 +3126,7 @@
   `4564 passed, 7 skipped, 1391 subtests passed in 355.60s`. Skips are the
   known Windows/opt-in family. No release was made.
 
-## Unreleased - Fix learning-switch fail-open, Auto fresh-window ownership, P5 honest-report gap (no release)
+### Fix learning-switch fail-open, Auto fresh-window ownership, P5 honest-report gap (no release)
 
 - Learning switch fail-closed: `GhostInboxStore._read_settings_unlocked()`
   only defaults to enabled when `settings.json` never existed. A present but
@@ -3159,7 +3182,7 @@
   `USERPROFILE`/`HOME`: `4563 passed, 7 skipped, 1391 subtests passed in
   356.54s`. Skips are the known Windows/opt-in family. No release was made.
 
-## Unreleased - Fix corruption false-success, abandoned delivery, probe false-pass, budget overflow (no release)
+### Fix corruption false-success, abandoned delivery, probe false-pass, budget overflow (no release)
 
 - Ghost corruption contract: `GhostObservationStore.delete_scope()` no longer
   returns `0` on mid-file corruption; it raises
@@ -3205,7 +3228,7 @@
   architecture test re-verified green; no production change after the full
   run). No live kobold gate was re-run. No release was made.
 
-## Unreleased - Live probe p4/p5 + harness semantic verdicts (no release)
+### Live probe p4/p5 + harness semantic verdicts (no release)
 
 - P4 (hostile-fixture search sweep) done in 3 turns: exact hits, symlink
   absent from every structured tool result, zero crash signals. P5 (`make
@@ -3228,7 +3251,7 @@
   and stalled ~2min before passing — kept on record, suite not re-run to
   hide it). No release was made.
 
-## Unreleased - Fix CI-only audit blackout on symlinked roots (no release)
+### Fix CI-only audit blackout on symlinked roots (no release)
 
 - Latent bug since the 0.4.14 package split, exposed on CI by the new
   consensus split tests: `safe_join` resolves paths while the audit guards
@@ -3246,7 +3269,7 @@
   final `python -m pytest -q -o faulthandler_timeout=120` (`4516 passed,
   7 skipped, 1391 subtests passed in 396.94s`). No release was made.
 
-## Unreleased - C901<=20 gate + 5 monsters split, 2 bugs fixed (no release)
+### C901<=20 gate + 5 monsters split, 2 bugs fixed (no release)
 
 - `C901 (McCabe <= 20)` joins the CI gate in `pyproject.toml`
   (`tests/`/`tools/` excluded like PLR). Post-PLR-split distribution was
@@ -3268,7 +3291,7 @@
   final `python -m pytest -q -o faulthandler_timeout=120` (`4513 passed,
   7 skipped, 1391 subtests passed in 378.39s`). No release was made.
 
-## Unreleased - PLR readability split: 27 monsters down, 4 bugs fixed (no release)
+### PLR readability split: 27 monsters down, 4 bugs fixed (no release)
 
 - Readability gate is now `PLR0912 (branches <= 20) + PLR0915 (statements
   <= 80)` in `pyproject.toml` (`C901` off, `tests/`/`tools/` excluded from
@@ -3293,7 +3316,7 @@
   final `python -m pytest -q -o faulthandler_timeout=120` (`4453 passed,
   7 skipped, 1387 subtests passed in 359.14s`). No release was made.
 
-## Unreleased - Writer/repair settle survives abandoned tool delivery (no release)
+### Writer/repair settle survives abandoned tool delivery (no release)
 
 - Live-found crash: when a run stops from inside tool delivery (headless denied
   a shell request), the leaf stays at `tool_delivery_pending` and the
@@ -3312,7 +3335,7 @@
   final `python -m pytest -q -o faulthandler_timeout=120` (`4358 passed,
   7 skipped, 1387 subtests passed in 432.16s`). No release was made.
 
-## Unreleased - Review-driven Ghost/auto hardening; live gate tightening (no release)
+### Review-driven Ghost/auto hardening; live gate tightening (no release)
 
 - Ghost observation writes are lossless on corruption: `append_completed()` and
   `delete_scope()` return failure without rewriting the file when the read is
@@ -3351,7 +3374,7 @@
   final `python -m pytest -q -o faulthandler_timeout=120` (`4356 passed,
   7 skipped, 1387 subtests passed in 377.78s`). No release was made.
 
-## Unreleased - Provider-aware auxiliary timeouts; observation stores the visible reply (no release)
+### Provider-aware auxiliary timeouts; observation stores the visible reply (no release)
 
 - Root-caused a second KoboldCpp `WinError 10053` family: consensus advisor
   calls used a fixed 60s cap (`codey/agents/consensus.py`) while slow local
@@ -3370,7 +3393,7 @@
 - The unified-auto `ACTION` protocol handling is unchanged: unparseable output
   stays a plain answer, denied actions strip markers; no second call ever.
 
-## Unreleased - Live-fire release sweep vs KoboldCpp (no release)
+### Live-fire release sweep vs KoboldCpp (no release)
 
 - Local default socket timeout 180s -> 600s: with `stream=False` the timeout
   is the full-generation budget, and a 400-word advisor-shaped generation took
@@ -3385,7 +3408,7 @@
   exit 0. `codey chat --provider local` wording fix covered earlier.
 - Full suite: `4342 passed, 7 skipped, 1387 subtests passed`.
 
-## Unreleased - Experience memory replaces per-turn Ghost model calls (no release)
+### Experience memory replaces per-turn Ghost model calls (no release)
 
 - Unified `auto` loop: the first normal model call answers directly or requests
   a permission-checked action (`codey/operations/auto_loop.py`); the retired
@@ -3413,7 +3436,7 @@
   spaceless Chinese, leaving retrieval dead); `codey chat --provider local`
   no longer prints a misleading "attaching browser" status.
 
-## Unreleased - Boundary hardening: snapshot, ledger, Ghost inputs, UI conflicts (no release)
+### Boundary hardening: snapshot, ledger, Ghost inputs, UI conflicts (no release)
 
 - Snapshot recovery basis is read-only: `SnapshotStore.require_baseline()` never
   writes; `ChangeTracker.capture_before()` revalidates cached paths against it
@@ -3481,7 +3504,7 @@
   No release was made. Ghost kept as production; no worker split, no store
   merge, no mechanical 2400-line split, no bulk `except` sweep.
 
-## Unreleased - Recovery ownership and small-subtraction hardening (no release)
+### Recovery ownership and small-subtraction hardening (no release)
 
 - Snapshot single-writer closure: `put_baseline()` uses key-existence (`rel in files`)
   so a `null` entry raises `StoreCorruption` instead of overwriting the body;
@@ -3529,7 +3552,7 @@
   run aborted with WinError 10053 then passed on retry). No release was made.
   Ghost kept as the local adaptive layer; no worker rewrite, no new compat shims.
 
-## Unreleased - Verified recovery and lifecycle hardening (no release)
+### Verified recovery and lifecycle hardening (no release)
 
 - Snapshot corruption blocks instead of silent reset: `load()`,
   `put_baseline()`, `remove()`, and `_update_manifest_locked()` raise
@@ -3572,7 +3595,7 @@
   1374 subtests passed in 366.77s`, 0 warnings; skips are Windows
   POSIX/opt-in E2E). No release was made.
 
-## Unreleased - Cold-start review follow-ups (no release)
+### Cold-start review follow-ups (no release)
 
 - Single persistent writer: `SnapshotStore.acquire_writer()` claims one
   cross-process writer per project (`FileLease`, non-blocking); task entry

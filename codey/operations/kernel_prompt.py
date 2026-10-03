@@ -85,7 +85,11 @@ def kernel_prompt_for_session(
             "Call done separately, only after the required checks have passed. Do not reply with raw JSON."
         )
     else:
-        parts.append("Reply with exactly one JSON tool call per turn, or done.")
+        parts.append(
+            "Reply with exactly one JSON tool call per turn, or done. "
+            r"Escape line breaks and tabs inside JSON strings as \n and \t. "
+            r'For example: "content":"first line\nsecond line\n".'
+        )
     return "\n\n".join(parts)
 
 
@@ -123,11 +127,23 @@ def _coding_context_for_session(session: TaskSession) -> str:
         return ""
 
 
-def _repair_prompt(error: str) -> str:
-    return (
+def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:
+    intro = (
         "Your previous reply was not a valid tool call "
-        f"({(error or 'invalid').strip()}). Reply with exactly one JSON object "
-        'using {"tool":"...","args":{...}} and no other text.'
+        f"({(error or 'invalid').strip()}). "
+    )
+    if native:
+        instruction = "Call exactly one native tool from the contract below. Do not reply with raw JSON or prose."
+    else:
+        instruction = (
+            'Reply with exactly one JSON object using {"tool":"ACTUAL_TOOL_NAME","args":{...}}. '
+            "Use double-quoted JSON keys, no prose and no tool-call tags. "
+            "The tool field must name an actual tool from the contract below, not the word 'tool'."
+        )
+    return (
+        intro + instruction
+        + " Resend the same intended call and keep its intended file contents."
+        + f"\n\nCurrent authorized tool contract:\n{contract_text}"
     )
 
 

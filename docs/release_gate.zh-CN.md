@@ -13,6 +13,7 @@
 
 ```powershell
 python -m ruff check codey tests tools
+python -m mypy codey
 git diff --check
 python -m compileall -q codey tests
 # JS（有 node 时本地也要跑；CI 必跑）
@@ -46,6 +47,7 @@ python -m pytest tests/test_cli.py tests/test_headless_runner.py tests/test_rele
 
 ```powershell
 python tools/local_model_release_gate.py --case all --repeat 1 --timeout 600 --protocol native --json
+python tools/local_model_release_gate.py --case all --repeat 1 --timeout 600 --protocol json --json
 ```
 
 `--case all` 使用当前默认门槛集合，包含带隔离 research vault 的网页研究 case。可单独运行：
@@ -69,6 +71,7 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 | `auto` | `auto`：小任务自动选路 | 文件内容精确等于 `hello auto`（仅容忍末尾换行）+ `done` + exit 0 |
 | `ghost` | 隔离 state 下写→按 run_id 读→检索→删→不可检索 | roundtrip 完整；独立控制面检查，不计入模型任务成功率，不读取默认用户状态 |
 | `tests` | 为已有实现补充测试 | 测试通过、原实现未改动、变异实现必须被测试拒绝 |
+| `research` | 显式 Research：查官方 pathlib 文档 | 实际搜索和打开来源、隔离账本/报告要求通过、正常 `done` |
 | `recovery` | 隔离 state 下恢复控制面 roundtrip | case 身份保持一致；写→读→检索→删完整 |
 
 实机要求：
@@ -90,7 +93,10 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 ## 5. Gate 4：记录（必须写）
 
 - `TEST_REPORT.md` 追加一条：范围、验证命令、实际 `/models` ID、JSONL 路径、全量 suite 数字，不沿用上一次模型名。
-- 按用户要求更新 `Unreleased` 与 TEST_REPORT；不 bump 版本、不打 tag、不 release。TEST_REPORT 的全量数字必须等测试实际结束后记录。
+- 开发验证更新 `Unreleased`；版本发布更新源码版本、README、中英文 changelog、必要的
+  当前架构/能力文档与 TEST_REPORT。全量数字必须等实际测试结束后记录。
+- tag 与 GitHub Release 按用户明确选择执行，不从版本提交自动推导。本次 0.5.10
+  沿用版本 commit + push，不创建 tag 或 GitHub Release。
 
 ## 6. Bug 闭环（本次已在用）
 

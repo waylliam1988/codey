@@ -406,7 +406,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_topbar_shows_running_spinner(self) -> None:
         self.assertIn(".spinner", STYLE_SOURCE)
         self.assertIn('id="status"', HTML)
-        self.assertIn("setStatus('Running', 'run')", HTML)
+        self.assertIn("window.CodeySse.displayRunStatus('running')", HTML)
         self.assertIn("drawer-loading", STYLE_SOURCE)
         self.assertIn("class=\"spinner\"", CHANGES_DRAWER_JS)
         self.assertIn("spinner.className = 'spinner';", RESEARCH_DRAWER_JS)

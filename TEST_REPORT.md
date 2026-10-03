@@ -1,5 +1,82 @@
 # Codey Test Report
 
+## 0.5.10 version commit verification (2026-10-03)
+
+Baseline: `3ecd4a1b`, initially clean. Previous source version: `0.5.9`
+(`d71683d`); candidate version: `0.5.10`. Scope is version/docs/commit/push only:
+no tag, GitHub Release or release assets, and no wait for post-push CI.
+
+Red-first regressions cover advisor float-rounding budget overflow, strict JSON
+syntax diagnostics and atomic batch rejection, desktop/headless running events,
+and protocol repair retaining the frozen contract and actual transport. Four new
+test files contain 29 cases. A valid escaped JSON string remained a positive
+control; decoder-limit guards were added during parser review. The UI event tests
+first produced `3 failed, 3 passed`; the three snapshot repair tests failed before
+the fix. UI status extraction followed green behavior tests. No new skip/xfail,
+threshold increase, permissive parser, tool-name inference or parity baseline
+rewrite was used. The audit executor assertion now reads the real typed request
+and requires the exact nonempty set instead of accepting an empty fallback.
+
+Before the final full run:
+
+- Protocol/parity/architecture regressions: `802 passed, 381 subtests passed`.
+- UI/state/protocol affected regressions with real Edge: `109 passed, 2 subtests passed`.
+- Python 3.13 targeted protocol, connection, timeout and cancellation regressions:
+  `81 passed, 1 skipped in 8.78s` (POSIX process-group case).
+- Ruff, compileall and `git diff --check`: passed.
+- `python -m mypy codey`: zero errors in 363 source files under the current config.
+- Node.js syntax: 11 assets and one actual inline script passed.
+- Inline script: 1648 lines, below the unchanged 1650-line budget.
+- Production complexity above 10/15/20: 195/48/0; no new complexity exemption.
+- Offline parity: **682 cases / 554 equal / 128 intentional / 0 failures**.
+- Finite checks: delivery fixed point **44 states, 134 accepted edges**;
+  capabilities **512 subsets × 2 denial states**.
+
+Final full run (Windows, Python 3.12.8, `RUN_BROWSER_E2E=1`):
+`python -u -m pytest -q -o faulthandler_timeout=120 -rs`
+→ **6776 passed, 6 skipped, 1497 subtests passed in 481.80s (0:08:01)**,
+zero failures. Real Edge E2E ran. Skips are two POSIX permission-bit cases, one
+POSIX process-group case, one POSIX absolute-path case and two `O_NOFOLLOW` cases.
+The 29 new cases all ran. Raw final log:
+`.e2e-artifacts/release-0.5.10-full-pytest-complete.log` (ignored).
+
+Final live matrices, each one complete attempt per case: **JSON 13/13, native
+13/13**. Each has 6/6 objective tasks completed and 6/6 independently correct
+artifacts. Actual model: `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`
+at `http://127.0.0.1:5001/v1`, temperature 0, no seed sent. Model projects, state
+and research vaults are isolated. Raw requests/results and source hashes are in:
+
+- `.e2e-artifacts/release-0.5.10-json-final-candidate-20261003/`
+- `.e2e-artifacts/release-0.5.10-native-final-candidate-20261003/`
+
+Recorded production hashes match the final candidate. The metadata Git commit
+is the pre-commit baseline; it does not pretend to identify the later version
+commit. Raw artifacts remain ignored; only the written verification is committed.
+Control-plane cases are not coding tasks; answer quality was not independently
+reviewed and no controlled latency/token comparison was performed.
+
+Failures preserved, not pooled away:
+
+- Baseline GitHub Python 3.12 failed the advisor budget assertion. Clock `76.013`
+  deterministically reproduces subtraction above 180 seconds; the CI log did not
+  print its actual timeout/clock. Sends now clamp to the original shared budget.
+- First full candidate: `2 failed, 6765 passed, 6 skipped, 1497 subtests passed in
+  449.57s`: stale 0.5.9 version lock and a real UI connection-status replay issue.
+- Second full candidate: `2 failed, 6771 passed, 6 skipped, 1497 subtests passed in
+  470.80s`: old provider-event index and the unchanged inline size ratchet. The
+  index was migrated to the exact event order; shared status display moved into
+  the existing SSE module. This run preceded final repair-prompt changes.
+- An earlier JSON matrix was 12/13 because the tests case repeatedly emitted raw
+  newlines inside a JSON string. Another was 12/13 because references emitted
+  unnamed tool-call markup. Both stopped as protocol failures without edits;
+  their independent verification then failed. Syntax/context repair and focused
+  reruns passed before the final complete matrices. Original raw classifications
+  and failure artifacts were retained unchanged.
+
+These checks support this version commit, not a whole-program no-bug/no-dead-code
+proof or universal model success. Full diagnosis, source owners, history and
+proof limits: [version verification](docs/release_0.5.10.zh-CN.md).
+
 ## Callback lifecycle and aesthetic closure (2026-10-03)
 
 Baseline: `7e44ffd2`, clean working tree. The callback factory now binds one

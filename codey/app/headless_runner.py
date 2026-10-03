@@ -93,6 +93,7 @@ class HeadlessAppContext(AppContext):
         self.emit({"type": "status", "status": "connecting"})
         provider = self._connect_provider(provider_id, port=self.port)
         self.set_run_status("running")
+        self.emit({"type": "status", "status": "running"})
         return provider
 
     def emit(self, event: dict) -> None:

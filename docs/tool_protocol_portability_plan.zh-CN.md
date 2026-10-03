@@ -31,7 +31,8 @@ canonical ingestion。本文档中 0.5 之后的部分仍是后续 protocol port
 tool call 都经 `codey.operations.kernel_protocol`、`task_loop` 和统一完成门处理。
 Research 的旧 `controller.py` 与 `protocols.py` 已移出生产包；需要保留的研究 codec
 和 controller 行为只作为 `tests/support` 下的实验对照夹具，实机 A/B 脚本通过
-`codey.operations.research_iteration.ResearchIteration` 驱动共享内核。生产代码不应
+`codey.operations.research_iteration.run_research_iteration` 驱动共享内核；仅实验
+对照使用 `tests/support/research_iteration_adapter.py` 的同名历史类。生产代码不应
 再引用这两个旧路径。
 
 ## 核心结论

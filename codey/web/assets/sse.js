@@ -14,6 +14,12 @@ function init(nextDeps) {
   deps = nextDeps;
 }
 
+function displayRunStatus(status) {
+  const running = status === 'running';
+  const text = status === 'connecting' ? 'Connecting to browser…' : running ? 'Running' : status;
+  deps.setStatus(text, running ? 'run' : 'warn');
+}
+
 function clearReconnectTimer() {
   if (reconnectTimer === null) return;
   clearTimeout(reconnectTimer);
@@ -68,7 +74,7 @@ async function acceptRunResponse(response, sessionId) {
   const runId = data.run_id || null;
   deps.acceptRun(runId, runId ? sessionId : null);
   if (runId) {
-    deps.setStatus('Running', 'run');
+    displayRunStatus('running');
     deps.setProviderBusy(true);
     deps.updateSend();
     deps.updateComposerContext();
@@ -105,6 +111,7 @@ function connect() {
 
 window.CodeySse = {
   init,
+  displayRunStatus,
   connect,
   reconcileRunState,
   acceptRunResponse,

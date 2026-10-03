@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import time
 from typing import Any
 
@@ -86,12 +87,17 @@ class ConversationProvider(ProviderAdapter):
 class DeadlineProvider(ProviderAdapter):
     """Propagate one episode's remaining budget to both provider protocols."""
 
-    def __init__(self, provider: Any, deadline: float) -> None:
+    def __init__(self, provider: Any, *, timeout: float) -> None:
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("provider episode timeout must be positive finite seconds")
         super().__init__(provider)
-        self.deadline = deadline
+        self.timeout = timeout
+        self.deadline = time.monotonic() + timeout
 
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        remaining = self.deadline - time.monotonic()
+        # Addition/subtraction may round slightly above the original duration
+        # when the clock has not advanced. Never enlarge the configured budget.
+        remaining = min(self.timeout, self.deadline - time.monotonic())
         if remaining <= 0:
             raise TimeoutError("provider episode deadline exceeded")
         requested = kwargs.get("timeout")

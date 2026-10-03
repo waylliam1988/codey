@@ -2,13 +2,13 @@
 
 **让你已经能用的网页 AI，安全地在本地帮你写代码、查资料、跑验证。**
 
-[![版本](https://img.shields.io/badge/version-0.5.9-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.5.10-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全边界)
 
 [English](README.md)
 
-版本：`0.5.9`
+版本：`0.5.10`
 
 Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、StepFun、Qwen 和
 GLM，也可以连接本地 OpenAI-compatible 模型，然后把它们接到你电脑上的受控工作区。
@@ -22,7 +22,7 @@ diff、必要时恢复，并在需要时做带证据的研究。
 - 一个本地/桌面 AI 工作台，用来聊天、写代码、审查和研究。
 - 一座把网页版 AI 接到本地项目文件夹的小桥。
 - 一个受控工具闭环：读取、编辑、测试、diff、Review、Restore。
-- 一个 Research 闭环：只能引用实际打开过的来源，不把搜索结果当证据。
+- 共同任务闭环上的严格 Research 要求：引用实际打开过的来源，不把搜索摘要当证据。
 - 一个有界本地记忆层：可以检查、导出、删除、重置或禁用。
 
 Codey 不是云端代码托管 agent，不是插件市场，也不是让网页 AI 暗中访问整台电脑的工具。
@@ -69,13 +69,17 @@ python -m codey agent --json --provider qwen --project E:\my-project "修复失�
 - [详细能力说明](docs/codey_capabilities.zh-CN.md)
 - [路线图](ROADMAP.zh-CN.md)
 - [版本更新记录](CHANGELOG.zh-CN.md)
+- [项目结构与职责地图](docs/project_structure.zh-CN.md)
+- [0.5.10 版本验收记录](docs/release_0.5.10.zh-CN.md)
 - [Ghost 未来方向](docs/ghost_future_direction.zh-CN.md)
 
 ## 安全边界
 
 模型只能在你选择的项目文件夹里工作。本地动作会经过 Codey 的工具契约、权限配置、
-action policy、completion proof 和 Research evidence 检查。Codey 会保存有界本地事实，
-用于审计和恢复，但避免保存 raw prompt、完整聊天记录、源码全文、网页正文、cookie 或密钥。
+action policy、completion proof 和 Research evidence 检查。审计视图使用有界摘要和引用；
+本地受管输出与恢复收据可能保留读取的源码、网页正文和工具结果。对话存储与启用的 Ghost
+经历也会在本地保留用户消息/回答；这与仅记录 manifest/digest、不记录 raw prompt 的
+提示追踪不同。
 
 网页 provider 会改版。Codey 把不同网站的 adapter 隔离起来，所以网页坏了主要修对应
 adapter，不需要改 agent 核心。
@@ -84,11 +88,15 @@ adapter，不需要改 agent 核心。
 
 ```powershell
 pip install -e .[dev]
-python -m pytest
+python -m pytest -q -o faulthandler_timeout=120
 ```
 
 离线 kernel parity 门：`python tools/kernel_parity.py --report parity.json`。
 固定旧版 oracle、覆盖边界和差异裁决见[确定性审计报告](docs/kernel_parity.zh-CN.md)。
+
+CI 还检查 Ruff、全树 mypy、JavaScript 语法和支持平台的回归。开发环境需要与 CI
+一致时，先安装 `requirements-ci.txt`，再运行 `pip install -e . --no-deps`。
+发布检查及实机覆盖范围见[发布门槛](docs/release_gate.zh-CN.md)。
 
 ## 许可证
 

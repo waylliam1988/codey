@@ -196,11 +196,11 @@ def run_project_audit_advisor(
         max_turns=max(1, int(max_turns or PROJECT_AUDIT_MAX_TURNS)),
         task_text=prompt,
     )
-    deadline = time.monotonic() + PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT
+    bounded_provider = DeadlineProvider(provider, timeout=PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT)
     run_id = f"audit-{uuid4().hex}"
     stop = threading.Event()
     timer = threading.Timer(
-        max(0.1, deadline - time.monotonic()), stop.set,
+        max(0.1, min(bounded_provider.timeout, bounded_provider.deadline - time.monotonic())), stop.set,
     )
     timer.daemon = True
     timer.start()
@@ -210,14 +210,14 @@ def run_project_audit_advisor(
                 session,
                 request=KernelRunRequest(
                     transport=KernelTransportDeps(
-                        provider=DeadlineProvider(provider, deadline),
+                        provider=bounded_provider,
                         run_id=run_id,
                         effect_scope="audit",
                         user_task=prompt,
                         stop_flag=stop,
                     ),
                     execution=KernelExecutionDeps(
-                    executors=cast(Mapping[str, Callable[[Any], Any]], _audit_kernel_executors(project_path)),
+                        executors=cast(Mapping[str, Callable[[Any], Any]], _audit_kernel_executors(project_path)),
                         project_path=project_path,
                     ),
                     observation=KernelObservationDeps(
