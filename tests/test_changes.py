@@ -1226,6 +1226,27 @@ class ChangeTrackerTests(unittest.TestCase):
                 first.close()
                 second.close()
 
+    def test_context_close_releases_project_writer_lease(self) -> None:
+        from codey.app.context import AppContext
+
+        with tempfile.TemporaryDirectory() as td:
+            state_home = Path(td, "state")
+            root = Path(td, "proj")
+            root.mkdir()
+            first = AppContext(state_home)
+            second = None
+            try:
+                self.assertTrue(first.acquire_project_writer(root))
+                self.assertTrue(first.close())
+
+                second = AppContext(state_home)
+                self.assertTrue(second.acquire_project_writer(root))
+            finally:
+                if second is not None:
+                    second.release_project_writer(root)
+                    second.close()
+                first.release_project_writer(root)
+
     def test_untracked_symlink_never_expands_target(self) -> None:
         import os as _os
 

@@ -1,5 +1,64 @@
 # Codey Test Report
 
+## Architecture and lifecycle audit (2026-10-03)
+
+Scope: production Python under `codey/`, test collection/configuration, cold-start
+and compatibility locks, exception/fallback paths, resource ownership, and user
+visible server state. Static review covered all 363 mypy source files, 6742
+collected tests, architecture/cold-start boundaries, and test skip/xfail and
+subprocess assertion patterns. No compatibility layer, fallback, or dead code
+was deleted: this review found no additional unreachable path with sufficient
+call-graph and test evidence for safe removal.
+
+Two deterministic production defects were found and fixed with red-first tests:
+
+- `serve()` acquired `.server.lock` before constructing `CodeyHTTPServer` but
+  leaked the lease when construction, HTTP thread startup, or provider warmup
+  failed. `test_serve_releases_lease_when_http_server_construction_fails`
+  reproduced the leak; startup cleanup now shuts down a partial server and
+  releases the lease before re-raising.
+- `AppContext.close()` reported success while retaining project writer leases.
+  `test_context_close_releases_project_writer_lease` reproduced a failed writer
+  reacquisition in a fresh context and a Windows lock cleanup failure. Close
+  now releases each lease, retains failed releases for retry, and reports an
+  incomplete close when necessary.
+
+Both are production resource-lifecycle bugs. The added tests assert observable
+lease ownership and retry behavior; no existing assertion or fixture was
+weakened. The fixes remove stale busy states and make a failed server launch
+retryable without extra user action.
+
+Verification before the final run:
+
+- Targeted server/changes/cold-start/file-lock tests: `353 passed, 2 skipped`.
+- Architecture and cold-start tests: `167 passed, 417 subtests passed`.
+- Boundary regression tests: `130 passed, 9 subtests passed`.
+- Test collection: `6742 tests collected`.
+- `ruff check codey tests tools`: passed.
+- `python -m mypy codey`: `Success: no issues found in 363 source files`.
+- `python -m compileall -q codey tests tools`: passed.
+- `git diff --check`: passed.
+
+Final full command (Windows 11, Python 3.12.8):
+`python -u -m pytest -q -o faulthandler_timeout=120 -rs`
+→ **6708 passed, 34 skipped, 1497 subtests passed in 446.49s (0:07:26)**;
+zero failed, xfailed, or xpassed tests.
+
+Skip reasons were environment-specific and unchanged by this review: three
+adapter symlink privilege cases; four atomic I/O symlink/permission cases;
+three audit path symlink cases; one bounded-scan symlink case; one POSIX
+process-group case; one changes symlink case; one consensus symlink case; two
+Node.js local-context cases; one project-config symlink case; one POSIX absolute
+path case; two search-scan symlink cases; one server directory-symlink case;
+two shell-continuation Node.js cases; four tool-runtime symlink cases; one UI
+Node.js case; one opt-in browser E2E case; one verification-policy symlink case;
+and four workspace symlink/O_NOFOLLOW cases. No skip or xfail was added.
+
+Residual risk: Windows cannot exercise POSIX permission/process-group and
+symlink contracts in this run; Node.js and real browser UI behavior remain
+covered only where those tools are available or explicitly enabled. Provider
+live-model quality, latency, and memory behavior were not benchmarked.
+
 ## Boundary audit and cold-start cleanup (2026-10-03)
 
 Review base: `96ce456e..2be380c1`. Detailed findings, TDD cases and proof

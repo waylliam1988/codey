@@ -2,6 +2,16 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 架构与资源生命周期审查（未发布）
+
+- 修复两个已确认的资源生命周期问题：HTTP 服务构造、线程启动或 provider
+  warmup 失败时释放 state home lease；`AppContext.close()` 释放项目 writer
+  lease，释放失败则保留以便重试。
+- 两个问题均先添加稳定失败的回归测试再修复。Windows Python 3.12.8 最终全量：
+  **6708 passed、34 skipped、1497 subtests passed，446.49 秒**，无失败。
+  Ruff、mypy（363 个文件）、compileall 与 diff 检查通过。skip 原因与剩余平台
+  风险见 [`TEST_REPORT.md`](TEST_REPORT.md)。
+
 ## Unreleased - 边界审查与冷启动清理（未发布）
 
 - 删除生产内核旧关键字适配器和重复扁平请求；33 个测试/压力测试文件的

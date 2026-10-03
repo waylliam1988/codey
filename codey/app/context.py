@@ -820,6 +820,17 @@ class AppContext:
 
         resources_closed = True
         with self.lock:
+            project_writer_leases = tuple(self._project_writer_leases.items())
+        for project, lease in project_writer_leases:
+            try:
+                cast(Any, lease).release()
+            except Exception:
+                resources_closed = False
+            else:
+                with self.lock:
+                    if self._project_writer_leases.get(project) is lease:
+                        self._project_writer_leases.pop(project, None)
+        with self.lock:
             self._knowledge_store_enabled = False
             knowledge_store = self._knowledge_store
         if knowledge_store is not None:

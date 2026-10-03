@@ -7343,6 +7343,17 @@ class UiLaunchTests(unittest.TestCase):
         printed.assert_any_call("\n[codey] shutting down")
         httpd.shutdown.assert_called_once()
 
+    def test_serve_releases_lease_when_http_server_construction_fails(self) -> None:
+        lease = mock.Mock()
+        with (
+            self.assertRaisesRegex(OSError, "port busy"),
+            mock.patch("codey.storage.file_lock.acquire_lease", return_value=lease),
+            mock.patch.object(server.CodeyHTTPServer, "__init__", side_effect=OSError("port busy")),
+        ):
+            server.serve(port=0)
+
+        lease.release.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

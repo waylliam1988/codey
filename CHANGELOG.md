@@ -2,6 +2,18 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Architecture and lifecycle audit (no release)
+
+- Fixed two confirmed resource lifecycle bugs: server startup now releases its
+  state-home lease when HTTP construction/thread startup/warmup fails, and
+  `AppContext.close()` releases project writer leases while retaining failed
+  releases for retry.
+- Added red-first regressions for both restart/cleanup paths. Final Windows
+  Python 3.12.8 run: **6708 passed, 34 skipped, 1497 subtests passed in
+  446.49s**, zero failures. Ruff, mypy (363 files), compileall, and diff checks
+  passed. Skip details and residual platform risk are recorded in
+  [`TEST_REPORT.md`](TEST_REPORT.md).
+
 ## Unreleased - Boundary audit and cold-start cleanup (no release)
 
 - Removed the production kernel's legacy keyword adapter and duplicate flat

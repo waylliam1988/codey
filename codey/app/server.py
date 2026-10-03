@@ -460,17 +460,27 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         server_lease = acquire_lease(DEFAULT_STATE_HOME / ".server.lock", timeout_seconds=0.0)
     except LockTimeout as exc:
         raise RuntimeError("该 state home 已在使用") from exc
-    httpd = CodeyHTTPServer((host, port), Handler)
-    actual_port = httpd.server_address[1]
-    url = f"http://{host}:{actual_port}/"
-    print(f"[codey] UI ready: {url}")
+    httpd: CodeyHTTPServer | None = None
+    try:
+        httpd = CodeyHTTPServer((host, port), Handler)
+        actual_port = httpd.server_address[1]
+        url = f"http://{host}:{actual_port}/"
+        print(f"[codey] UI ready: {url}")
 
-    def _run_httpd() -> None:
-        with contextlib.suppress(KeyboardInterrupt):
-            httpd.serve_forever()
+        def _run_httpd() -> None:
+            assert httpd is not None
+            with contextlib.suppress(KeyboardInterrupt):
+                httpd.serve_forever()
 
-    threading.Thread(target=_run_httpd, daemon=True).start()
-    provider_services.start_provider_warmup(get_state(), delay_s=2.0)
+        threading.Thread(target=_run_httpd, daemon=True).start()
+        provider_services.start_provider_warmup(get_state(), delay_s=2.0)
+    except BaseException:
+        if httpd is not None:
+            with contextlib.suppress(Exception):
+                httpd.shutdown()
+        with contextlib.suppress(Exception):
+            server_lease.release()
+        raise
 
     def _run_webview() -> None:
         import webview
@@ -496,6 +506,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         except KeyboardInterrupt:
             print("\n[codey] shutting down")
     finally:
+        assert httpd is not None
         httpd.shutdown()
         with contextlib.suppress(Exception):
             server_lease.release()
