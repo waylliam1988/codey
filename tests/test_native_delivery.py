@@ -15,7 +15,13 @@ from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.kernel_recovery import apply_recovery_first
 from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
-from codey.operations.task_loop import run_task_kernel
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -101,15 +107,23 @@ def test_native_delivery_records_effect_and_batch(tmp_path: Path) -> None:
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session,
-            provider=recorded,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r",
-            effect_scope="task",
-            provider_id="local",
-            project_path=tmp_path,
-            user_task="read app",
-            context_text="",
-            intent_sink=sink,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=recorded,
+                    run_id="r",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+                observation=KernelObservationDeps(
+                    intent_sink=sink,
+                ),
+            ),
         )
     assert result.stop_reason == "done"
     assert result.summary == "ok"
@@ -169,11 +183,21 @@ def test_native_overflow_fails_closed_without_fallback(tmp_path: Path) -> None:
     ]
     with _mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
-            session, provider=provider,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r-overflow-1", effect_scope="task",
-            provider_id="local", project_path=tmp_path,
-            user_task="read app", context_text="",
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-overflow-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+            ),
         )
     assert not result.completed
     assert result.stop_reason == "provider_failure", f"overflow must be provider_failure: {result}"
@@ -205,14 +229,20 @@ def test_native_protocol_error_answers_chain(tmp_path: Path) -> None:
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session,
-            provider=provider,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r-proto-1",
-            effect_scope="task",
-            provider_id="local",
-            project_path=tmp_path,
-            user_task="read app",
-            context_text="",
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-proto-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+            ),
         )
     assert result.stop_reason == "done"
     assert result.summary == "recovered"
@@ -267,15 +297,23 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session,
-            provider=recorded,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="run-native-1",
-            effect_scope="task",
-            provider_id="local",
-            project_path=tmp_path,
-            user_task="read app",
-            context_text="",
-            intent_sink=sink,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=recorded,
+                    run_id="run-native-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+                observation=KernelObservationDeps(
+                    intent_sink=sink,
+                ),
+            ),
         )
     assert not result.completed
     assert result.stop_reason == "provider_failure"
@@ -324,15 +362,21 @@ def test_recovered_native_delivery_marks_delivered(tmp_path: Path) -> None:
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session2,
-            provider=provider,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r-recovered-1",
-            effect_scope="task",
-            provider_id="local",
-            project_path=tmp_path,
-            user_task="read app",
-            context_text="",
-            initial_results=pending,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-recovered-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                    initial_results=pending,
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+            ),
         )
     assert result.stop_reason == "done"
     assert provider.tool_results_seen
@@ -352,14 +396,20 @@ def test_native_success_leaves_no_pending_context_rows(tmp_path: Path) -> None:
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session,
-            provider=provider,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r-clean-1",
-            effect_scope="task",
-            provider_id="local",
-            project_path=tmp_path,
-            user_task="read app",
-            context_text="",
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-clean-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+            ),
         )
     assert result.stop_reason == "done"
     assert session.last_done_text == "ok"
@@ -385,14 +435,20 @@ def test_native_too_many_calls_answered_in_full(tmp_path: Path) -> None:
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session,
-            provider=provider,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r-many-1",
-            effect_scope="task",
-            provider_id="local",
-            project_path=tmp_path,
-            user_task="read app",
-            context_text="",
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-many-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+            ),
         )
     assert result.stop_reason == "done"
     answered = provider.tool_results_seen[0]
@@ -413,14 +469,20 @@ def test_idless_turn_restarts_fresh_chat_instead_of_dangling(tmp_path: Path) -> 
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session,
-            provider=provider,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r-idless-1",
-            effect_scope="task",
-            provider_id="local",
-            project_path=tmp_path,
-            user_task="read app",
-            context_text="",
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-idless-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+            ),
         )
     assert result.stop_reason == "done"
     # No fresh-chat restart: idless fails closed as a protocol error.
@@ -447,14 +509,20 @@ def test_native_mixed_done_answered_in_full(tmp_path: Path) -> None:
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session,
-            provider=provider,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r-mixed-1",
-            effect_scope="task",
-            provider_id="local",
-            project_path=tmp_path,
-            user_task="read app",
-            context_text="",
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-mixed-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+            ),
         )
     assert result.stop_reason == "done"
     answered = provider.tool_results_seen[0]

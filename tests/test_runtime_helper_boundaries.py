@@ -17,6 +17,7 @@ from codey.automation.browser_worker import (
     _Job,
     _JobState,
 )
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.providers.diagnostics import ProviderActionError
 from codey.providers.discovery import (
     _combined_text,
@@ -251,8 +252,17 @@ class AgentLoopSplitTests(unittest.TestCase):
 
         with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
             result = run_task_kernel(
-                session, provider=_BadProvider(), executors={}, run_id="r-stagnant",
-                stagnant_turns=2,
+                session,
+                request=KernelRunRequest(
+                    transport=KernelTransportDeps(
+                        provider=_BadProvider(),
+                        run_id="r-stagnant",
+                        stagnant_turns=2,
+                    ),
+                    execution=KernelExecutionDeps(
+                        executors={},
+                    ),
+                ),
             )
         self.assertEqual(result.stop_reason, "protocol")
         self.assertIn("invalid", result.summary.lower())

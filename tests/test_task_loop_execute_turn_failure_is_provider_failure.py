@@ -11,6 +11,8 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps
+
 
 class TaskLoopExecuteTurnFailureIsProviderFailureTests(unittest.TestCase):
     def test_execute_turn_exception_becomes_provider_failure(self) -> None:
@@ -31,8 +33,15 @@ class TaskLoopExecuteTurnFailureIsProviderFailureTests(unittest.TestCase):
             "codey.operations.task_loop._execute_turn", side_effect=RuntimeError("boom-settle")
         ):
             out = run_task_kernel(
-                session, provider=_P(), run_id="r-loop-fault-1",
-                user_task="hi", context_text="",
+                session,
+                request=KernelRunRequest(
+                    transport=KernelTransportDeps(
+                        provider=_P(),
+                        run_id="r-loop-fault-1",
+                        user_task="hi",
+                        context_text="",
+                    ),
+                ),
             )
         self.assertFalse(out.completed)
         self.assertEqual(out.stop_reason, "provider_failure")

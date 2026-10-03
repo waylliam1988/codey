@@ -31,10 +31,7 @@ def clamp_unit_float(value: object, *, digits: int = 4) -> float:
     """Lenient coercion: unusable input becomes 0.0, out-of-range clamps."""
     if isinstance(value, bool):
         return 0.0
-    try:
-        number = coerce_float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
+    number = coerce_float(value)
     if not math.isfinite(number):
         return 0.0
     return round(max(0.0, min(1.0, number)), digits)

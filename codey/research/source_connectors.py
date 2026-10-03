@@ -1105,10 +1105,7 @@ def _connector_status(value: object) -> str:
 def _score(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
-    try:
-        score = coerce_float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
+    score = coerce_float(value)
     import math as _math
     if not _math.isfinite(score):
         return 0.0

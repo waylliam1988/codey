@@ -74,3 +74,7 @@ number for this migration is the 1.18.2 result above.
 After the staged boundary cleanup, the same command now reports **0 errors
 in 363 source files** with mypy 1.18.2. The raw file above remains unchanged
 as the frozen starting point; this section records the ratcheted result.
+
+The post-commit boundary audit also passed at 0 errors in 363 files. Both
+Windows and Linux CI now gate `python -m mypy codey`; the old 16-module
+migration list has been removed. The historical diagnostics above are retained.

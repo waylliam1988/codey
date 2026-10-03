@@ -464,10 +464,7 @@ def _clean_ids(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
 def _as_int(value: object, default: int) -> int:
     if isinstance(value, bool):
         return default
-    try:
-        return coerce_int(value, default=default)
-    except (TypeError, ValueError, OverflowError):
-        return default
+    return coerce_int(value, default=default)
 
 
 def _looks_like_url(value: str) -> bool:

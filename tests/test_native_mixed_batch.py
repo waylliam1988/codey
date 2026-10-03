@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import unittest
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+
 
 class MixedCallIdBatchTests(unittest.TestCase):
     def test_mixed_call_id_batch_is_explicitly_rejected(self) -> None:
@@ -100,14 +102,20 @@ class MixedCallIdBatchTests(unittest.TestCase):
             ):
                 result = run_task_kernel(
                     session,
-                    provider=provider,
-                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-                    run_id="r-mixed-kernel-1",
-                    effect_scope="task",
-                    provider_id="local",
-                    project_path=project,
-                    user_task="read",
-                    context_text="",
+                    request=KernelRunRequest(
+                        transport=KernelTransportDeps(
+                            provider=provider,
+                            run_id="r-mixed-kernel-1",
+                            effect_scope="task",
+                            provider_id="local",
+                            user_task="read",
+                            context_text="",
+                        ),
+                        execution=KernelExecutionDeps(
+                            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                            project_path=project,
+                        ),
+                    ),
                 )
             self.assertFalse(result.completed)
             self.assertEqual(result.stop_reason, "protocol")

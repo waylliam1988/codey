@@ -10,6 +10,8 @@ it byte-identically.
 """
 from __future__ import annotations
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+
 COMPLETION_OP = "completion_produce"
 
 
@@ -251,15 +253,23 @@ def test_real_pytest_assertion_failure_blocks_with_failed_observation(tmp_path, 
 
     run_task_kernel(
         session,
-        provider=_Web(),
-        provider_id="web",
-        executors={"edit": _edit},
-        run_id="r-assert-fail",
-        user_task="fix",
-        project_path=project,
-        tool_fns=DEFAULT_TOOL_FNS,
-        completion_context=None,
-        workspace_revision_store=store,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=_Web(),
+                provider_id="web",
+                run_id="r-assert-fail",
+                user_task="fix",
+            ),
+            execution=KernelExecutionDeps(
+                executors={"edit": _edit},
+                project_path=project,
+                tool_fns=DEFAULT_TOOL_FNS,
+                workspace_revision_store=store,
+            ),
+            observation=KernelObservationDeps(
+                completion_context=None,
+            ),
+        ),
     )
     assert session.verifications, "failing pytest must record an observation"
     last = session.verifications[-1]

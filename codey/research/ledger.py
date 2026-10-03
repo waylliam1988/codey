@@ -597,11 +597,8 @@ def normalize_evidence_stance(value: object) -> str:
 def _safe_page_number(value: object) -> int | None:
     if isinstance(value, bool):
         return None
-    try:
-        number = parse_int(value)
-        if number is None:
-            return None
-    except (TypeError, ValueError, OverflowError):
+    number = parse_int(value)
+    if number is None:
         return None
     return number if number > 0 else None
 
@@ -609,10 +606,7 @@ def _safe_page_number(value: object) -> int | None:
 def _safe_count(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    try:
-        return max(0, coerce_int(value))
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    return max(0, coerce_int(value))
 
 
 def _as_page(value: object) -> int | None:

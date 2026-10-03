@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import unittest
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+
 
 class RecoveryFormatErrorTests(unittest.TestCase):
     def test_recovery_format_error_must_raise_not_drop(self) -> None:
@@ -71,10 +73,20 @@ class RecoveryFormatErrorTests(unittest.TestCase):
             if orig is not None:
                 kp._format_results = boom_format  # type: ignore[attr-defined]
             result = run_task_kernel(
-                session, provider=provider, executors={"read_file": fake_tool},
-                run_id="r-rec", effect_scope="task",
-                user_task="t", context_text="",
-                initial_results=pending,
+                session,
+                request=KernelRunRequest(
+                    transport=KernelTransportDeps(
+                        provider=provider,
+                        run_id="r-rec",
+                        effect_scope="task",
+                        user_task="t",
+                        context_text="",
+                        initial_results=pending,
+                    ),
+                    execution=KernelExecutionDeps(
+                        executors={"read_file": fake_tool},
+                    ),
+                ),
             )
         finally:
             if orig is not None:

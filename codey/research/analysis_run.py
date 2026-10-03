@@ -92,11 +92,8 @@ class AnalysisRunRecord:
 def _bounded_duration(value: object) -> int | None:
     if isinstance(value, bool):
         return None
-    try:
-        parsed = parse_int(value)
-        if parsed is None:
-            return None
-    except (TypeError, ValueError, OverflowError):
+    parsed = parse_int(value)
+    if parsed is None:
         return None
     if parsed < 0:
         return None
@@ -106,10 +103,7 @@ def _bounded_duration(value: object) -> int | None:
 def _optional_int(value: object) -> int | None:
     if isinstance(value, bool):
         return None
-    try:
-        return parse_int(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
+    return parse_int(value)
 
 
 def _managed_output_view(value: object) -> Mapping[str, object]:

@@ -372,10 +372,7 @@ def _get(row: dict[str, object], key: str) -> object:
 def _unit_float(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
-    try:
-        number = coerce_float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
+    number = coerce_float(value)
     if not math.isfinite(number):
         return 0.0
     return round(max(0.0, min(1.0, number)), 4)
@@ -386,10 +383,7 @@ def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int
         return default
     if isinstance(value, str) and not value.strip().isascii():
         return default
-    try:
-        number = coerce_int(value, default=default)
-    except (TypeError, ValueError, OverflowError):
-        number = default
+    number = coerce_int(value, default=default)
     return max(minimum, min(maximum, number))
 
 

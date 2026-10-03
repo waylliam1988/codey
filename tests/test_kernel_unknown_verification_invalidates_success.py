@@ -11,7 +11,13 @@ import json
 
 import pytest
 
-from codey.operations.task_loop import run_task_kernel
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolResult
@@ -84,12 +90,20 @@ def test_latest_unknown_blocks_real_kernel(tmp_path, monkeypatch, bad_exit, with
 
     result = run_task_kernel(
         session,
-        provider=WebOnly(),
-        provider_id="web",
-        executors={"run": execute_run},
-        run_id="unknown-result",
-        user_task="fix a.py",
-        completion_context=context,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=WebOnly(),
+                provider_id="web",
+                run_id="unknown-result",
+                user_task="fix a.py",
+            ),
+            execution=KernelExecutionDeps(
+                executors={"run": execute_run},
+            ),
+            observation=KernelObservationDeps(
+                completion_context=context,
+            ),
+        ),
     )
 
     assert len(executions) == 2
@@ -130,12 +144,20 @@ def test_success_then_unknown_then_new_success_allows_completion(tmp_path, monke
 
     run_task_kernel(
         session,
-        provider=WebThree(),
-        provider_id="web",
-        executors={"run": execute_run},
-        run_id="unknown-then-success",
-        user_task="fix a.py",
-        completion_context=None,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=WebThree(),
+                provider_id="web",
+                run_id="unknown-then-success",
+                user_task="fix a.py",
+            ),
+            execution=KernelExecutionDeps(
+                executors={"run": execute_run},
+            ),
+            observation=KernelObservationDeps(
+                completion_context=None,
+            ),
+        ),
     )
     assert len(executions) == 3
     assert len(session.verifications) == 3

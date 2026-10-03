@@ -372,10 +372,7 @@ def _context_summary(
 def _safe_count(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    try:
-        return max(0, coerce_int(value))
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    return max(0, coerce_int(value))
 
 
 def _actions_summary(projection: RunLedgerProjection | None) -> str:

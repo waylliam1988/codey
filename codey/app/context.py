@@ -81,13 +81,11 @@ class AppContext:
     ) -> None:
         self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
-        assert self._ephemeral_runtime_home is not None or self.state_home is not None
-        ephemeral_runtime_home = self._ephemeral_runtime_home
-        runtime_state_home = (
-            self.state_home
-            if self.state_home is not None
-            else Path(ephemeral_runtime_home.name if ephemeral_runtime_home is not None else tempfile.gettempdir())
-        )
+        if self.state_home is not None:
+            runtime_state_home = self.state_home
+        else:
+            assert self._ephemeral_runtime_home is not None
+            runtime_state_home = Path(self._ephemeral_runtime_home.name)
         self.lock = threading.Lock()
         # Spawn gate: Stop's generation bump and the executor's final
         # check+Popen both hold it (never self.lock: re-entrant deadlock).

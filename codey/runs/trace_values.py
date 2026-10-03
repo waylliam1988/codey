@@ -52,29 +52,20 @@ def _trace_list_items(value: object) -> tuple[object, ...]:
 def _nonnegative_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    try:
-        return max(0, coerce_int(value))
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    return max(0, coerce_int(value))
 
 
 def _bounded_int(value: object, lower: int, upper: int) -> int:
     if isinstance(value, bool):
         return lower
-    try:
-        parsed = coerce_int(value, default=lower)
-    except (TypeError, ValueError, OverflowError):
-        parsed = lower
+    parsed = coerce_int(value, default=lower)
     return max(lower, min(upper, parsed))
 
 
 def _unit_float(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
-    try:
-        number = coerce_float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
+    number = coerce_float(value)
     if not math.isfinite(number):
         return 0.0
     if number < 0:
@@ -89,11 +80,8 @@ def _int_or_none(value: object) -> int | None:
         return None
     if isinstance(value, str) and not value.strip().isascii():
         return None
-    try:
-        parsed = parse_int(value)
-        return None if parsed is None else max(0, parsed)
-    except (TypeError, ValueError, OverflowError):
-        return None
+    parsed = parse_int(value)
+    return None if parsed is None else max(0, parsed)
 
 
 def _identifier(value: object, limit: int = MAX_TEXT_CHARS) -> str:

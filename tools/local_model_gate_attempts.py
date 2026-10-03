@@ -144,7 +144,7 @@ def _has_truncation(result: dict) -> bool:
     metrics = result.get("provider_metrics")
     if not isinstance(metrics, dict):
         return False
-    return any(str(reason or "").lower() == "length" for reason in metrics.get("finish_reasons", ()))
+    return any(str(reason or "").lower() == "length" for reason in metrics.get("active_finish_reasons", ()))
 
 
 def _failure_kind(result: dict) -> str:
@@ -203,7 +203,17 @@ def _provider_metrics(directory: Path) -> dict:
                 incomplete = True  # The owned worker was interrupted mid-write.
             else:
                 raise
-    responses = [row["payload"] for row in rows if row["type"] == "response"]
+    requests = {row["exchange"]: row["payload"] for row in rows if row["type"] == "request"}
+    response_rows = [row for row in rows if row["type"] == "response"]
+    responses = [row["payload"] for row in response_rows]
+    active_reasons, terminal_reasons = [], []
+    for row in response_rows:
+        request = requests.get(row.get("exchange"), {})
+        messages = request.get("messages") or []
+        terminal = (not request.get("tools") and request.get("max_tokens") == 1
+                    and bool(messages) and messages[-1].get("role") == "tool")
+        reasons = terminal_reasons if terminal else active_reasons
+        reasons.extend(choice.get("finish_reason") for choice in row["payload"].get("choices", []))
     usage: Counter = Counter()
     for body in responses:
         for key, value in (body.get("usage") or {}).items():
@@ -215,6 +225,8 @@ def _provider_metrics(directory: Path) -> dict:
         "reported_models": sorted({str(body["model"]) for body in responses if body.get("model")}),
         "usage": dict(usage) if any("usage" in body for body in responses) else None,
         "finish_reasons": [choice.get("finish_reason") for body in responses for choice in body.get("choices", [])],
+        "active_finish_reasons": active_reasons,
+        "terminal_finish_reasons": terminal_reasons,
         "output_budget": "active turns: server_default; terminal receipts: max_tokens=1",
     }
 
@@ -283,25 +295,39 @@ def run_case_process(case: str, directory: Path, target: GateTarget, *, timeout:
     return result
 
 
+def _attempt_matrix(results: list[dict], expected_cases: tuple[str, ...] | None, repeat: int | None) -> dict:
+    if expected_cases is None and repeat is None:
+        return {"matrix_complete": True, "missing_attempts": [], "duplicate_attempts": [],
+                "unexpected_attempts": [], "invalid_attempts": []}
+    if (expected_cases is None or type(repeat) is not int or repeat < 1
+            or not expected_cases or any(type(case) is not str or not case for case in expected_cases)
+            or len(set(expected_cases)) != len(expected_cases)):
+        raise ValueError("matrix requires unique nonempty cases and a positive integer repeat")
+    expected = {(case, attempt) for case in expected_cases for attempt in range(1, repeat + 1)}
+    observed: Counter = Counter()
+    invalid = []
+    for index, row in enumerate(results):
+        case, attempt = row.get("case"), row.get("attempt")
+        if type(case) is not str or type(attempt) is not int or attempt < 1:
+            invalid.append(index)
+        else:
+            observed[(case, attempt)] += 1
+    def slots(values):
+        return [{"case": case, "attempt": attempt} for case, attempt in sorted(values)]
+    missing = slots(expected - observed.keys())
+    duplicates = slots(key for key, count in observed.items() if count > 1)
+    unexpected = slots(observed.keys() - expected)
+    return {"matrix_complete": not (missing or duplicates or unexpected or invalid),
+            "missing_attempts": missing, "duplicate_attempts": duplicates,
+            "unexpected_attempts": unexpected, "invalid_attempts": invalid}
+
+
 def summarize(
     results: list[dict], *, expected_cases: tuple[str, ...] | None = None,
     repeat: int | None = None,
 ) -> dict:
     objective = [row for row in results if row.get("scope") == "objective_task"]
-    expected = (
-        {(str(case), attempt) for attempt in range(1, int(repeat) + 1) for case in expected_cases}
-        if expected_cases is not None and repeat is not None
-        else None
-    )
-    observed = {
-        (str(row.get("case") or ""), int(row.get("attempt") or 1))
-        for row in results
-    }
-    missing_attempts = (
-        [{"case": case, "attempt": attempt} for case, attempt in sorted(expected - observed)]
-        if expected is not None else []
-    )
-    matrix_complete = not missing_attempts
+    attempt_matrix = _attempt_matrix(results, expected_cases, repeat)
     matrix: dict[str, dict[str, dict[str, int]]] = {}
     root_causes: Counter = Counter()
     for row in results:
@@ -325,10 +351,9 @@ def summarize(
         if root_cause != "none":
             root_causes[root_cause] += 1
     return {
-        "ok": bool(results) and matrix_complete and all(row.get("ok") is True for row in results),
+        "ok": bool(results) and attempt_matrix["matrix_complete"] and all(row.get("ok") is True for row in results),
         "attempts": len(results), "passed": sum(row.get("ok") is True for row in results),
-        "matrix_complete": matrix_complete,
-        "missing_attempts": missing_attempts,
+        **attempt_matrix,
         "matrix": matrix,
         "root_causes": dict(root_causes),
         "objective_tasks": {

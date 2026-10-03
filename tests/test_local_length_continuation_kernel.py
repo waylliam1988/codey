@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.providers.base import AssistantTurn, ProviderToolCall
 
 
@@ -61,11 +62,17 @@ def test_kernel_consumes_one_local_length_continuation_before_done():
     )
     result = run_task_kernel(
         session,
-        provider=provider,
-        executors={},
-        run_id="local-length-continuation",
-        provider_id="local",
-        user_task="already complete",
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=provider,
+                run_id="local-length-continuation",
+                provider_id="local",
+                user_task="already complete",
+            ),
+            execution=KernelExecutionDeps(
+                executors={},
+            ),
+        ),
     )
     assert result.stop_reason == "done"
     assert len(provider.prompts) == 2
@@ -80,7 +87,16 @@ def test_non_local_native_provider_does_not_get_local_length_continuation(monkey
     monkeypatch.setenv("NATIVE_TOOLS", "1")
     provider = _AlwaysLengthProvider()
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=2)
-    result = run_task_kernel(session, provider=provider, provider_id="web", run_id="web-length")
+    result = run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=provider,
+                provider_id="web",
+                run_id="web-length",
+            ),
+        ),
+    )
     assert not result.completed
     assert all("Your previous response was truncated" not in prompt for prompt in provider.prompts)
 
@@ -99,11 +115,17 @@ def test_second_local_length_stop_is_provider_failure() -> None:
     )
     result = run_task_kernel(
         session,
-        provider=provider,
-        executors={},
-        run_id="local-double-length",
-        provider_id="local",
-        user_task="already complete",
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=provider,
+                run_id="local-double-length",
+                provider_id="local",
+                user_task="already complete",
+            ),
+            execution=KernelExecutionDeps(
+                executors={},
+            ),
+        ),
     )
 
     assert result.completed is False
@@ -133,11 +155,17 @@ def test_plain_text_after_length_never_completes() -> None:
     )
     result = run_task_kernel(
         session,
-        provider=provider,
-        executors={},
-        run_id="local-plain-after-length",
-        provider_id="local",
-        user_task="already complete",
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=provider,
+                run_id="local-plain-after-length",
+                provider_id="local",
+                user_task="already complete",
+            ),
+            execution=KernelExecutionDeps(
+                executors={},
+            ),
+        ),
     )
 
     assert result.completed is False

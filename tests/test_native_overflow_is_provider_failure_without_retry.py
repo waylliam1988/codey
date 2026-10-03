@@ -13,7 +13,13 @@ from __future__ import annotations
 from pathlib import Path
 from unittest import mock
 
-from codey.operations.task_loop import run_task_kernel
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -71,11 +77,21 @@ def test_native_overflow_is_provider_failure_without_retry(tmp_path: Path) -> No
     ]
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
-            session, provider=provider,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r-overflow-lock-1", effect_scope="task",
-            provider_id="local", project_path=tmp_path,
-            user_task="read app", context_text="",
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-overflow-lock-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+            ),
         )
     assert not result.completed
     assert result.stop_reason == "provider_failure", f"must be deterministic provider_failure: {result}"
@@ -129,11 +145,24 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
     session = TaskSession(policy=_policy(), task_kind="project", project=str(tmp_path), max_turns=3)
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
-            session, provider=recorded,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id=run_id, effect_scope="task", provider_id="local",
-            project_path=tmp_path, user_task="read app", context_text="",
-            intent_sink=sink,
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=recorded,
+                    run_id=run_id,
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+                observation=KernelObservationDeps(
+                    intent_sink=sink,
+                ),
+            ),
         )
     assert not result.completed
     assert result.stop_reason == "provider_failure"

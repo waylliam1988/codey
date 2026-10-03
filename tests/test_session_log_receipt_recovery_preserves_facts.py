@@ -28,6 +28,8 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+
 
 def _dirs(tmp: Path):
     project = tmp / "project"
@@ -348,10 +350,24 @@ def test_multi_turn_recovery_keeps_more_than_twenty_observations(monkeypatch):
         provider = WebMulti()
         try:
             result = run_task_kernel(
-                session, provider=KernelRecordedProvider(provider, sink), provider_id="local",
-                executors={"edit": do_edit, "run": do_run}, run_id="r-many", user_task="fix a.py",
-                project_path=project, workspace_revision_store=store, intent_sink=sink,
-                completion_context={"run_id": "r-many", "project": str(project)},
+                session,
+                request=KernelRunRequest(
+                    transport=KernelTransportDeps(
+                        provider=KernelRecordedProvider(provider, sink),
+                        provider_id="local",
+                        run_id="r-many",
+                        user_task="fix a.py",
+                    ),
+                    execution=KernelExecutionDeps(
+                        executors={"edit": do_edit, "run": do_run},
+                        project_path=project,
+                        workspace_revision_store=store,
+                    ),
+                    observation=KernelObservationDeps(
+                        intent_sink=sink,
+                        completion_context={"run_id": "r-many", "project": str(project)},
+                    ),
+                ),
             )
             assert result.completed is True
             assert counts == {"edit": 1, "run": 25}

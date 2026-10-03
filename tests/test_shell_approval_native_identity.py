@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps
+
 LONG_CALL_ID = "shell-call-" + "x" * 100
 
 
@@ -158,9 +160,18 @@ def test_approved_shell_result_answers_original_call_id_natively():
         "codey.operations.kernel_transport.provider_uses_native", return_value=True,
     ):
         out = run_task_kernel(
-            session, provider=P(), run_id="r-next", effect_scope="task",
-            provider_id="local", user_task="continue",
-            delivered=delivered, initial_results=initial,
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=P(),
+                    run_id="r-next",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="continue",
+                    delivered=delivered,
+                    initial_results=initial,
+                ),
+            ),
         )
     assert executed == ["answered"]
     assert out.stop_reason == "done"

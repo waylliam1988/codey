@@ -60,10 +60,7 @@ def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int
         return default
     if isinstance(value, str) and not value.strip().isascii():
         return default
-    try:
-        parsed = coerce_int(value, default=default)
-    except (TypeError, ValueError, OverflowError):
-        parsed = default
+    parsed = coerce_int(value, default=default)
     return max(minimum, min(parsed, maximum))
 
 

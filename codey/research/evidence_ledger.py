@@ -1084,6 +1084,7 @@ def _map_schema_ok(
 
 
 def _source_schema_ok(source: Mapping[str, object]) -> bool:
+    page_count = source.get("page_count")
     return (
         _identifier_schema_ok(source.get("source_id"), 80, allow_empty=False)
         and _host_schema_ok(source.get("host"))
@@ -1091,9 +1092,8 @@ def _source_schema_ok(source: Mapping[str, object]) -> bool:
         and _content_hash_schema_ok(source.get("content_hash"))
         and _clip_schema_ok(source.get("retrieved_at"), 80)
         and _identifier_schema_ok(source.get("content_kind"), 40, allow_empty=False)
-        and isinstance(source.get("page_count"), int)
-        and nonnegative_int(source.get("page_count")) >= 0
-        and _positive_ints(source.get("pages_read"), 48) == source.get("pages_read")
+        and type(page_count) is int and page_count >= 0
+        and _positive_ints_schema_ok(source.get("pages_read"), 48)
         and isinstance(source.get("truncated"), bool)
     )
 
@@ -1111,13 +1111,13 @@ def _evidence_schema_ok(evidence: Mapping[str, object]) -> bool:
 
 
 def _claim_schema_ok(claim: Mapping[str, object]) -> bool:
+    claim_chars = claim.get("claim_chars")
     return (
         _identifier_schema_ok(claim.get("claim_id"), 80, allow_empty=False)
         and _digest_schema_ok(claim.get("claim_text_digest"))
-        and isinstance(claim.get("claim_chars"), int)
-        and 0 <= nonnegative_int(claim.get("claim_chars")) <= MAX_CLAIM_TEXT_CHARS
+        and type(claim_chars) is int and 0 <= claim_chars <= MAX_CLAIM_TEXT_CHARS
         and _identifier_schema_ok(claim.get("claim_section"), 80, allow_empty=False)
-        and _positive_ints(claim.get("citation_numbers"), 24) == claim.get("citation_numbers")
+        and _positive_ints_schema_ok(claim.get("citation_numbers"), 24)
         and list(bounded_refs(_list_values(claim.get("evidence_refs")), limit=48)) == claim.get("evidence_refs")
         and list(bounded_refs(_list_values(claim.get("assumption_refs")), limit=48))
         == claim.get("assumption_refs")
@@ -1126,11 +1126,11 @@ def _claim_schema_ok(claim: Mapping[str, object]) -> bool:
 
 
 def _assumption_schema_ok(assumption: Mapping[str, object]) -> bool:
+    assumption_chars = assumption.get("assumption_chars")
     return (
         _identifier_schema_ok(assumption.get("assumption_id"), 80, allow_empty=False)
         and _digest_schema_ok(assumption.get("assumption_text_digest"))
-        and isinstance(assumption.get("assumption_chars"), int)
-        and 0 <= nonnegative_int(assumption.get("assumption_chars")) <= MAX_CLAIM_TEXT_CHARS
+        and type(assumption_chars) is int and 0 <= assumption_chars <= MAX_CLAIM_TEXT_CHARS
         and _identifier_schema_ok(assumption.get("reason"), 80)
         and _identifier_schema_ok(assumption.get("claim_ref"), 80)
     )
@@ -1142,7 +1142,7 @@ def _relation_schema_ok(relation: Mapping[str, object]) -> bool:
         and relation.get("relation_kind") in CLAIM_RELATION_KINDS
         and _identifier_schema_ok(relation.get("from_ref"), 80, allow_empty=False)
         and _identifier_schema_ok(relation.get("to_ref"), 80, allow_empty=False)
-        and _positive_ints(relation.get("citation_numbers"), 24) == relation.get("citation_numbers")
+        and _positive_ints_schema_ok(relation.get("citation_numbers"), 24)
     )
 
 
@@ -1199,7 +1199,7 @@ def _locator_schema_ok(value: object) -> bool:
 def _counts_schema_ok(value: object) -> bool:
     if not isinstance(value, dict) or set(value) - _COUNT_KEYS:
         return False
-    return all(isinstance(item, int) and item >= 0 for item in value.values())
+    return all(type(item) is int and item >= 0 for item in value.values())
 
 
 def _record_counts_match(record: Mapping[str, object]) -> bool:
@@ -1214,7 +1214,7 @@ def _record_counts_match(record: Mapping[str, object]) -> bool:
     if any(counts.get(key) != value for key, value in expected.items()):
         return False
     unsupported = counts.get("unsupported_claims")
-    return isinstance(unsupported, int) and 0 <= unsupported <= expected["claims"]
+    return type(unsupported) is int and 0 <= unsupported <= expected["claims"]
 
 
 def _warnings_schema_ok(value: object) -> bool:
@@ -1458,6 +1458,11 @@ def _list(value: object) -> list[dict[str, object]]:
 
 def _list_values(value: object) -> list[object]:
     return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _positive_ints_schema_ok(value: object, limit: int) -> bool:
+    return (isinstance(value, list) and all(type(item) is int for item in value)
+            and _positive_ints(value, limit) == value)
 
 
 def _positive_ints(value: object, limit: int) -> list[int]:

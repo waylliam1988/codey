@@ -4,6 +4,8 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+
 
 class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
     def test_projection_failure_returns_recovery_failure_and_closes_tool_event(self) -> None:
@@ -44,13 +46,21 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
             ):
                 result = run_task_kernel(
                     session,
-                    provider=Provider(),
-                    executors={"edit": edit},
-                    run_id="r-event-failure",
-                    effect_scope="task",
-                    project_path=project,
-                    workspace_revision_store=WorkspaceRevisionStore(Path(home)),
-                    on_event=events.append,
+                    request=KernelRunRequest(
+                        transport=KernelTransportDeps(
+                            provider=Provider(),
+                            run_id="r-event-failure",
+                            effect_scope="task",
+                        ),
+                        execution=KernelExecutionDeps(
+                            executors={"edit": edit},
+                            project_path=project,
+                            workspace_revision_store=WorkspaceRevisionStore(Path(home)),
+                        ),
+                        observation=KernelObservationDeps(
+                            on_event=events.append,
+                        ),
+                    ),
                 )
 
         self.assertEqual(result.stop_reason, "recovery_failure")

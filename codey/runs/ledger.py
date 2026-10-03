@@ -491,10 +491,7 @@ def _int_or_none(value: object) -> int | None:
         return None
     if isinstance(value, str) and not value.strip().isascii():
         return None
-    try:
-        return parse_int(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
+    return parse_int(value)
 
 
 def read_ledger(path: Path) -> list[RunLedgerRecord]:

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import unittest
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+
 
 class WorkspaceFingerprintStaleTests(unittest.TestCase):
     def test_edit_run_done_verification_uses_post_edit_fingerprint(self) -> None:
@@ -75,22 +77,30 @@ class WorkspaceFingerprintStaleTests(unittest.TestCase):
             with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
                 run_task_kernel(
                     session,
-                    provider=FakeProvider(),
-                    executors={},
-                    run_id="r-ws-stale",
-                    effect_scope="unified",
-                    project_path=project,
-                    tool_fns=DEFAULT_TOOL_FNS,
-                    session_id="s-ws",
-                    permission_profile="coding_writer",
-                    user_task="fix file then verify",
-                    completion_context={
-                        "run_id": "r-ws-stale",
-                        "task": "fix file then verify",
-                        "question": "fix file then verify",
-                        "project": str(project),
-                        "execution_evidence": outer,
-                    },
+                    request=KernelRunRequest(
+                        transport=KernelTransportDeps(
+                            provider=FakeProvider(),
+                            run_id="r-ws-stale",
+                            effect_scope="unified",
+                            user_task="fix file then verify",
+                        ),
+                        execution=KernelExecutionDeps(
+                            executors={},
+                            project_path=project,
+                            tool_fns=DEFAULT_TOOL_FNS,
+                            session_id="s-ws",
+                            permission_profile="coding_writer",
+                        ),
+                        observation=KernelObservationDeps(
+                            completion_context={
+                                "run_id": "r-ws-stale",
+                                "task": "fix file then verify",
+                                "question": "fix file then verify",
+                                "project": str(project),
+                                "execution_evidence": outer,
+                            },
+                        ),
+                    ),
                 )
             # Must have edited and verified.
             self.assertTrue(session.edited_files, "expected an edit fact")

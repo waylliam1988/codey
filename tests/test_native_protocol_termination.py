@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from unittest import mock
 
-from codey.operations.task_loop import run_task_kernel
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -53,12 +58,18 @@ def test_protocol_threshold_close_answers_followup_call_ids_without_executing():
     ):
         result = run_task_kernel(
             session,
-            provider=provider,
-            executors={"knowledge_search": lambda call: executed.append(call.name) or "x"},
-            run_id="run-proto-close",
-            provider_id="local",
-            user_task="q",
-            stagnant_turns=1,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="run-proto-close",
+                    provider_id="local",
+                    user_task="q",
+                    stagnant_turns=1,
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"knowledge_search": lambda call: executed.append(call.name) or "x"},
+                ),
+            ),
         )
     assert result.stop_reason == "protocol", f"阈值应终止为 protocol：{result}"
     assert executed == [], f"终止路径不得执行后续工具：{executed}"

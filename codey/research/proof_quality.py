@@ -988,10 +988,7 @@ def _positive_ints(value: object) -> tuple[int, ...]:
 def _bounded_score(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
-    try:
-        score = coerce_float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
+    score = coerce_float(value)
     if not math.isfinite(score):
         return 0.0
     if score < 0:

@@ -27,10 +27,7 @@ MODEL_BOUNDARY_FRESHNESS = frozenset((PROVIDER_TURN_BOUNDARY,))
 def _safe_budget(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    try:
-        return max(0, coerce_int(value))
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    return max(0, coerce_int(value))
 MAX_PROMPT_SOURCE_REFS = 64
 MAX_PROMPT_REF_CHARS = 160
 

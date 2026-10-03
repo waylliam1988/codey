@@ -6,7 +6,12 @@ from threading import Event
 
 import pytest
 
-from codey.operations.task_loop import run_task_kernel
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import local_openai
@@ -143,8 +148,16 @@ def test_real_kernel_does_not_enter_optional_answer_branch(monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "1")
     monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=3)
-    result = run_task_kernel(session, provider=LocalOpenAIProvider("http://model.test/v1", "test"),
-                             provider_id="local", run_id="required-tool-choice")
+    result = run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=LocalOpenAIProvider("http://model.test/v1", "test"),
+                provider_id="local",
+                run_id="required-tool-choice",
+            ),
+        ),
+    )
     assert result.completed is True
     assert len(seen) == 2
     assert seen[0]["tool_choice"] == "required"
@@ -179,9 +192,21 @@ def test_terminal_kernel_receipts_close_ids_without_advertising_tools(monkeypatc
     monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
                           project=str(tmp_path), max_turns=1)
-    result = run_task_kernel(session, provider=LocalOpenAIProvider("http://model.test/v1", "test"),
-                             provider_id="local", run_id=f"terminal-{terminal}", project_path=tmp_path,
-                             stop_flag=stop, executors={"read_file": lambda call: executed.append(call.name) or "x = 1"})
+    result = run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=LocalOpenAIProvider("http://model.test/v1", "test"),
+                provider_id="local",
+                run_id=f"terminal-{terminal}",
+                stop_flag=stop,
+            ),
+            execution=KernelExecutionDeps(
+                project_path=tmp_path,
+                executors={"read_file": lambda call: executed.append(call.name) or "x = 1"},
+            ),
+        ),
+    )
     assert result.stop_reason == {"done": "done", "cancel": "stopped", "budget": "max_turns"}[terminal]
     assert executed == (["read_file"] if terminal == "budget" else [])
     assert len(seen) == 3
@@ -215,9 +240,20 @@ def test_rejected_reply_at_last_turn_still_closes_the_followup_id(monkeypatch, t
                                            required_checks=("project_changes_required",)),
                           project=str(tmp_path), max_turns=1)
     executed = []
-    result = run_task_kernel(session, provider=LocalOpenAIProvider("http://model.test/v1", "test"),
-                             provider_id="local", run_id="reject-last-turn", project_path=tmp_path,
-                             executors={"edit": lambda call: executed.append(call.name)})
+    result = run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=LocalOpenAIProvider("http://model.test/v1", "test"),
+                provider_id="local",
+                run_id="reject-last-turn",
+            ),
+            execution=KernelExecutionDeps(
+                project_path=tmp_path,
+                executors={"edit": lambda call: executed.append(call.name)},
+            ),
+        ),
+    )
     assert result.completed is False
     assert result.stop_reason == "max_turns"
     assert executed == []

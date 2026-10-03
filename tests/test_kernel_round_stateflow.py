@@ -23,6 +23,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+
 
 def _project_policy():
     from codey.policies.task_policy import build_task_policy
@@ -73,8 +75,17 @@ class SnapshotFailClosedTests(unittest.TestCase):
 
             with mock.patch.object(ts, "visible_tool_names_for_snapshot", flaky):
                 result = run_task_kernel(
-                    session, provider=WebProvider(), executors={},
-                    run_id="r-snap", effect_scope="snap",
+                    session,
+                    request=KernelRunRequest(
+                        transport=KernelTransportDeps(
+                            provider=WebProvider(),
+                            run_id="r-snap",
+                            effect_scope="snap",
+                        ),
+                        execution=KernelExecutionDeps(
+                            executors={},
+                        ),
+                    ),
                 )
         finally:
             pass
@@ -106,8 +117,18 @@ class SnapshotFailClosedTests(unittest.TestCase):
 
         session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"})), max_turns=2)
         with mock.patch.object(kernel, "_build_turn_snapshot", snapshot):
-            result = kernel.run_task_kernel(session, provider=SimpleNamespace(send=send),
-                                            executors={"read_file": read}, run_id="snapshot-order")
+            result = kernel.run_task_kernel(
+                         session,
+                         request=KernelRunRequest(
+                             transport=KernelTransportDeps(
+                                 provider=SimpleNamespace(send=send),
+                                 run_id='snapshot-order',
+                             ),
+                             execution=KernelExecutionDeps(
+                                 executors={'read_file': read},
+                             ),
+                         ),
+                     )
         self.assertTrue(result.completed)
         self.assertEqual(events, ["snapshot", "send", "execute", "snapshot", "send"])
 
@@ -144,9 +165,16 @@ class SnapshotFailClosedTests(unittest.TestCase):
         session = TaskSession(policy=policy, task_kind="hybrid", project="",
                               max_turns=8)
         run_task_kernel(
-            session, provider=WebProvider(),
-            executors={"web_search": fake_search, "open_url": fake_open},
-            run_id="r-drift",
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=WebProvider(),
+                    run_id="r-drift",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"web_search": fake_search, "open_url": fake_open},
+                ),
+            ),
         )
         joined = "\n".join(prompts[1:])
         self.assertIn("open_url", joined)
@@ -299,8 +327,17 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
         session = TaskSession(policy=_project_policy(), task_kind="project",
                               project="", max_turns=4)
         result = run_task_kernel(
-            session, provider=FakeNative(), executors={},
-            run_id="r-receipt", provider_id="local",
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=FakeNative(),
+                    run_id="r-receipt",
+                    provider_id="local",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={},
+                ),
+            ),
         )
         self.assertEqual(result.stop_reason, "provider_failure")
         self.assertEqual(len(send_turns), 1)
@@ -328,8 +365,17 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
         session = TaskSession(policy=_strict_research_policy(),
                               task_kind="research", project="", max_turns=4)
         result = run_task_kernel(
-            session, provider=FakeNative(), executors={},
-            run_id="r-done-receipt", provider_id="local",
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=FakeNative(),
+                    run_id="r-done-receipt",
+                    provider_id="local",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={},
+                ),
+            ),
         )
         self.assertEqual(result.stop_reason, "provider_failure")
         self.assertEqual(len(send_turns), 1)
@@ -377,8 +423,16 @@ class PromptAndTransportHygieneTests(unittest.TestCase):
         with mock.patch("codey.providers.native_tools.supports_native_tools",
                         side_effect=RuntimeError("capability boom")):
             result = run_task_kernel(
-                session, provider=WebCountingProvider(), executors={},
-                run_id="r-ident",
+                session,
+                request=KernelRunRequest(
+                    transport=KernelTransportDeps(
+                        provider=WebCountingProvider(),
+                        run_id="r-ident",
+                    ),
+                    execution=KernelExecutionDeps(
+                        executors={},
+                    ),
+                ),
             )
         self.assertEqual(result.stop_reason, "controller_failure")
         self.assertEqual(sends, [])

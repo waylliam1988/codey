@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+
 
 def _cutover_parent_policy():
     from codey.policies.task_policy import TaskPolicy
@@ -214,7 +216,17 @@ def test_unified_kernel_passes_authoritative_research_ledger_to_gate() -> None:
 
     with patch("codey.operations.completion_gate.evaluate") as evaluate:
         evaluate.return_value = SimpleNamespace(complete=False, followup="missing")
-        run_task_kernel(session, provider=Provider(), completion_context={"research_ledger": ledger})
+        run_task_kernel(
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=Provider(),
+                ),
+                observation=KernelObservationDeps(
+                    completion_context={"research_ledger": ledger},
+                ),
+            ),
+        )
     assert evaluate.call_args.kwargs["context"]["research_ledger"] is ledger
 
 
@@ -269,7 +281,17 @@ def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
     policy = build_task_policy(TaskSubmission("s", None, "claim", 3, False, "deepseek"),
                                task_kind="research", strict_research=True)
     session = TaskSession(policy=policy, task_kind="research", max_turns=3)
-    run_task_kernel(session, provider=Provider(), research_tools=tools)
+    run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=Provider(),
+            ),
+            execution=KernelExecutionDeps(
+                research_tools=tools,
+            ),
+        ),
+    )
     assert "r1" in prompts[1] and url in prompts[1]
     assert "s1" in prompts[2] and url in prompts[2]
 
@@ -744,8 +766,20 @@ def test_shell_approval_records_turn_intent_before_notifying_user(tmp_path) -> N
             return '{"tool":"shell","args":{"path":".","command":"git status"}}'
 
     result = run_task_kernel(
-        session, provider=Provider(), project_path=tmp_path, run_id="run",
-        intent_sink=Sink(), on_shell_request=lambda _approval: order.append("approval"),
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=Provider(),
+                run_id="run",
+            ),
+            execution=KernelExecutionDeps(
+                project_path=tmp_path,
+            ),
+            observation=KernelObservationDeps(
+                intent_sink=Sink(),
+                on_shell_request=lambda _approval: order.append("approval"),
+            ),
+        ),
     )
     assert result.stop_reason == "approval"
     assert order == ["intent", "approval"]
@@ -792,8 +826,21 @@ def test_kernel_records_intent_before_project_tool_execution(tmp_path) -> None:
             return '{"tool":"read_file","args":{"path":"file.txt"}}'
 
     (tmp_path / "file.txt").write_text("x", encoding="utf-8")
-    run_task_kernel(session, provider=Provider(), project_path=tmp_path,
-                    intent_sink=Sink(), on_event=lambda event: observed.append(event.kind))
+    run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=Provider(),
+            ),
+            execution=KernelExecutionDeps(
+                project_path=tmp_path,
+            ),
+            observation=KernelObservationDeps(
+                intent_sink=Sink(),
+                on_event=lambda event: observed.append(event.kind),
+            ),
+        ),
+    )
     assert observed.index("begin:1") < observed.index("settle")
 
 
@@ -851,8 +898,21 @@ def test_production_kernel_persists_tool_and_delivery_receipts(tmp_path) -> None
     policy = build_task_policy(TaskSubmission("s", str(tmp_path), "read", 3, False, "deepseek"),
                                task_kind="project")
     session = TaskSession(policy=policy, task_kind="project", project=str(tmp_path), max_turns=3)
-    outcome = run_task_kernel(session, provider=KernelRecordedProvider(Provider(), sink),
-                              project_path=tmp_path, run_id="r", intent_sink=sink)
+    outcome = run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=KernelRecordedProvider(Provider(), sink),
+                run_id="r",
+            ),
+            execution=KernelExecutionDeps(
+                project_path=tmp_path,
+            ),
+            observation=KernelObservationDeps(
+                intent_sink=sink,
+            ),
+        ),
+    )
     assert outcome.stop_reason == "done"
     effects = RuntimeEffectStore(log).load_effects("s", "r")
     assert any(row.intent.effect_category == "tool_call" and row.settlement is not None for row in effects)
@@ -1207,8 +1267,18 @@ def test_native_final_turn_answers_tool_call_before_budget_stop(tmp_path, monkey
             messages.extend(results)
             return AssistantTurn(text="acknowledged")
 
-    outcome = run_task_kernel(session, provider=Provider(), provider_id="local",
-                              project_path=tmp_path)
+    outcome = run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=Provider(),
+                provider_id="local",
+            ),
+            execution=KernelExecutionDeps(
+                project_path=tmp_path,
+            ),
+        ),
+    )
     assert outcome.stop_reason == "max_turns"
     assert messages and messages[0]["tool_call_id"] == "call-1"
 
@@ -1243,7 +1313,18 @@ def test_native_budget_stop_rejects_following_dangling_tool_call(tmp_path, monke
                 ))
             return AssistantTurn(text="acknowledged")
 
-    run_task_kernel(session, provider=Provider(), provider_id="local", project_path=tmp_path)
+    run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=Provider(),
+                provider_id="local",
+            ),
+            execution=KernelExecutionDeps(
+                project_path=tmp_path,
+            ),
+        ),
+    )
     assert len(messages) == 2
     assert messages[1][0]["tool_call_id"] == "call-2"
     assert "budget" in messages[1][0]["content"]

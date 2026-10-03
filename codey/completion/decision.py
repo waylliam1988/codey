@@ -38,10 +38,7 @@ from codey.utils.refs import coerce_int
 def _safe_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    try:
-        return coerce_int(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    return coerce_int(value)
 
 
 @dataclass(frozen=True)

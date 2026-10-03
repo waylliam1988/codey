@@ -1,7 +1,8 @@
 """Full-red round5 sweep: deterministic fail-closed locks.
 
-Red-first: every bug test below failed before the fix (crash or fail-open)
-and passes after. Non-repros are documented as non-bugs in TEST_REPORT.
+Behavioral cases exercise malformed inputs; some historical source checks
+are structural guards, not behavioral proofs. Non-repros are documented
+as non-bugs in TEST_REPORT.
 """
 from __future__ import annotations
 
@@ -303,16 +304,29 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
         from codey.ghost.work_queue import _int
         self.assertEqual(_int(True), 0)
 
-    def test_work_queue_transition_overflow(self):
-        import inspect
-
+    def test_work_queue_transition_rejects_invalid_counter_without_conversion(self):
         from codey.ghost import work_queue_events as wq_events
-        src = inspect.getsource(wq_events._apply_queue_transition)
-        self.assertIn("OverflowError", src, "transition still misses OverflowError")
+        from tests.test_work_queue_events_owns_replay import _item
+
+        class ExplodingInteger:
+            def __int__(self):
+                raise AssertionError("transition must inspect the raw type, not convert it")
+
+        item = _item(status="blocked")
+        before = item.to_payload()
+        for value in (float("inf"), float("nan"), True, False, "0", 0.0, -1, 1, ExplodingInteger()):
+            with self.subTest(value=value):
+                self.assertIsNone(wq_events._apply_queue_transition(item, {"retry_count": value}, now="now"))
+                self.assertEqual(item.to_payload(), before)
+        queued = wq_events._apply_queue_transition(item, {"retry_count": 0}, now="now")
+        self.assertIsNotNone(queued)
+        self.assertEqual(queued.status, "queued")
+        self.assertEqual(queued.retry_count, 0)
+        self.assertEqual(item.to_payload(), before)
 
     def test_inbox_int_bool(self):
         from codey.ghost.inbox import _int_or_default
-        self.assertEqual(_int_or_default(True, 1), 1 if False else _int_or_default(True, 1))
+        self.assertEqual(_int_or_default(True, 1), 1)
         # contract: bool must map to default, not 1
         self.assertEqual(_int_or_default(True, 7), 7)
 

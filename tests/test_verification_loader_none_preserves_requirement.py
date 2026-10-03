@@ -7,6 +7,7 @@ from __future__ import annotations
 from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.completion_gate import evaluate
 from codey.operations.project_verification import refresh_verification_candidates
+from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
@@ -132,11 +133,19 @@ def test_loader_none_blocks_real_kernel_compileall(tmp_path, monkeypatch):
     )
     result = run_task_kernel(
         session,
-        provider=WebDone(),
-        provider_id="web",
-        executors={},
-        run_id="loader-none-kernel",
-        user_task="fix a.py",
-        completion_context=None,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=WebDone(),
+                provider_id="web",
+                run_id="loader-none-kernel",
+                user_task="fix a.py",
+            ),
+            execution=KernelExecutionDeps(
+                executors={},
+            ),
+            observation=KernelObservationDeps(
+                completion_context=None,
+            ),
+        ),
     )
     assert result.completed is False

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import unittest
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+
 
 def _project_runtime(case):
     import tempfile
@@ -230,15 +232,22 @@ class WebOnlyLoopTests(unittest.TestCase):
         session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=12)
         outcome = run_task_kernel(
             session,
-            provider=provider,
-            executors={
-                "web_search": fake_web_search,
-                "open_url": fake_open,
-                "read_file": fake_read,
-                "edit": fake_edit,
-                "run": fake_run,
-            },
-            project_path=project, workspace_revision_store=store,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                ),
+                execution=KernelExecutionDeps(
+                    executors={
+                        "web_search": fake_web_search,
+                        "open_url": fake_open,
+                        "read_file": fake_read,
+                        "edit": fake_edit,
+                        "run": fake_run,
+                    },
+                    project_path=project,
+                    workspace_revision_store=store,
+                ),
+            ),
         )
         self.assertTrue(outcome.completed)
         self.assertIn("fixed", outcome.summary)
@@ -284,12 +293,18 @@ class WebOnlyLoopTests(unittest.TestCase):
         session = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=8)
         outcome = run_task_kernel(
             session,
-            provider=NativeProvider(),
-            executors={
-                "web_search": lambda call: ToolResult(call=call, model_text="found"),
-                "open_url": lambda call: ToolResult(call=call, model_text="page"),
-            },
-            provider_id="local",
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=NativeProvider(),
+                    provider_id="local",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={
+                        "web_search": lambda call: ToolResult(call=call, model_text="found"),
+                        "open_url": lambda call: ToolResult(call=call, model_text="page"),
+                    },
+                ),
+            ),
         )
         self.assertTrue(outcome.completed)
 
@@ -396,15 +411,22 @@ class HybridAndPlanningTests(unittest.TestCase):
         session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=12)
         outcome = run_task_kernel(
             session,
-            provider=FakeWeb(),
-            executors={
-                "web_search": make("web_search", "found"),
-                "open_url": make("open_url", "page"),
-                "read_file": make("read_file", "code"),
-                "edit": make("edit", "edited"),
-                "run": make("run", "passed", exit_code=0),
-            },
-            project_path=project, workspace_revision_store=store,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=FakeWeb(),
+                ),
+                execution=KernelExecutionDeps(
+                    executors={
+                        "web_search": make("web_search", "found"),
+                        "open_url": make("open_url", "page"),
+                        "read_file": make("read_file", "code"),
+                        "edit": make("edit", "edited"),
+                        "run": make("run", "passed", exit_code=0),
+                    },
+                    project_path=project,
+                    workspace_revision_store=store,
+                ),
+            ),
         )
         self.assertTrue(outcome.completed)
         self.assertEqual(order, ["web_search", "open_url", "read_file", "edit", "run"])
@@ -469,10 +491,16 @@ class ThirdTaskTests(unittest.TestCase):
 
             session = TaskSession(policy=policy, task_kind="project", project="demo", max_turns=8)
             outcome = kernel.run_task_kernel(
-                session,
-                provider=FakeWeb(),
-                executors={"summarize": lambda call: ToolResult(call=call, model_text="summary: hello")},
-            )
+                          session,
+                          request=KernelRunRequest(
+                              transport=KernelTransportDeps(
+                                  provider=FakeWeb(),
+                              ),
+                              execution=KernelExecutionDeps(
+                                  executors={'summarize': lambda call: ToolResult(call=call, model_text='summary: hello')},
+                              ),
+                          ),
+                      )
             self.assertTrue(outcome.completed)
         finally:
             gate.unregister_completion_check_provider("summarize_present")

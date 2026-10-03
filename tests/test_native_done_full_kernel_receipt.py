@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 
@@ -48,9 +49,20 @@ def test_done_receipt_closes_followup_via_real_kernel(tmp_path) -> None:
     )
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         out = run_task_kernel(
-            sess2, provider=provider, run_id="r-done", effect_scope="task",
-            provider_id="test", user_task="q", project_path=tmp_path,
-            executors={"read_file": lambda call: executed.append(call.name) or "x"},
+            sess2,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-done",
+                    effect_scope="task",
+                    provider_id="test",
+                    user_task="q",
+                ),
+                execution=KernelExecutionDeps(
+                    project_path=tmp_path,
+                    executors={"read_file": lambda call: executed.append(call.name) or "x"},
+                ),
+            ),
         )
     flat = [i for batch in provider.answered for i in batch]
     assert "done-1" in flat, f"done id 未被回答: {provider.answered}"

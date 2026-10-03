@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from codey.operations.kernel_protocol import normalize_turn
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from tests.support.kernel_parity_cases import json_call
@@ -163,9 +164,21 @@ def test_repeated_cycle_has_bounded_stop_and_distinct_information_does_not(monke
 
     for changing in (False, True):
         provider = Provider()
-        result = run_task_kernel(TaskSession(policy=TaskPolicy(grants=frozenset({grant})), task_kind=kind, max_turns=12),
-            provider=provider, executors={tool: lambda call, provider=provider, changing=changing: ToolResult(call=call,
-                model_text=f"information-{provider.i}" if changing else "unchanged information")})
+        result = run_task_kernel(
+            TaskSession(policy=TaskPolicy(grants=frozenset({grant})), task_kind=kind, max_turns=12),
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                ),
+                execution=KernelExecutionDeps(
+                    executors={
+                        tool: lambda call, provider=provider, changing=changing: ToolResult(
+                            call=call, model_text=f"information-{provider.i}" if changing else "unchanged information"
+                        )
+                    },
+                ),
+            ),
+        )
         assert result.stop_reason == ("max_turns" if changing else "no_progress")
         assert result.turns == 12 if changing else result.turns < 12
 
@@ -224,9 +237,20 @@ def test_cancellation_between_tools_settles_remaining_slots_without_executing(mo
     monkeypatch.setattr(store, "bump_state", bump_then_stop)
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.write"})))
-    outcome = run_task_kernel(session, provider=SimpleNamespace(send=lambda _p: reply),
-                              stop_flag=stop, executors={"edit": edit}, project_path=project,
-                              workspace_revision_store=store)
+    outcome = run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=SimpleNamespace(send=lambda _p: reply),
+                stop_flag=stop,
+            ),
+            execution=KernelExecutionDeps(
+                executors={"edit": edit},
+                project_path=project,
+                workspace_revision_store=store,
+            ),
+        ),
+    )
     assert calls == ["a.py"]
     assert outcome.stop_reason == "stopped"
     assert len(session.executed) == 2

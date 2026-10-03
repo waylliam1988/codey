@@ -378,10 +378,7 @@ def _int(value: object, default: int = 0) -> int:
         return default
     if isinstance(value, str) and not value.strip().isascii():
         return default
-    try:
-        return coerce_int(value, default=default)
-    except (TypeError, ValueError, OverflowError):
-        return default
+    return coerce_int(value, default=default)
 
 
 def _optional_int(value: object) -> int | None:
@@ -389,10 +386,7 @@ def _optional_int(value: object) -> int | None:
         return None
     if isinstance(value, str) and not value.strip().isascii():
         return None
-    try:
-        return parse_int(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
+    return parse_int(value)
 
 
 def _bool(value: object) -> bool:

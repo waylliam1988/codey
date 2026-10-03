@@ -2,6 +2,21 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 边界审查与冷启动清理（未发布）
+
+- 删除生产内核旧关键字适配器和重复扁平请求；33 个测试/压力测试文件的
+  70 处调用改用正式类型化请求，原有 857 个断言节点保留。
+- 效果坐标及恢复轮次在执行、重放和发送前校验；队列 retry_count 与规范
+  账本的计数、数字列表先验原值，拒绝转换后冒充合法输入。
+- 非法 Research 上下文预算恢复默认 8000；实机矩阵要求每个预期轮次恰好一次，
+  截断诊断分开活跃回复与终止确认的单 token 上限。
+- 删除 28 个重复数值异常分支和不可达临时目录兜底；Windows/Linux CI 收口到全树 mypy。
+- 旧源码文本 overflow 断言改为真实转换行为检查，修正一条恒真断言。
+  生产 Python 净减少 265 行。
+- 含真实 Edge 的终轮全量：**6734 passed、6 skipped、1497 subtests passed，444.67 秒**。
+  Python 3.13 定向 **86 passed**；Ruff、compileall、diff 检查与 mypy（363 文件）通过。
+  未发布、无 tag。详细边界和证明限制见 [审查报告](docs/kernel_review_2026-10-03.zh-CN.md)。
+
 ## Unreleased - 显式任务提交资源（未发布）
 
 - 新增类型化 `TaskSubmissionStores` bundle 和 `AppContext` 工厂，按提交时

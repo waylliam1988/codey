@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import unittest
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+
 
 class EntryAuthTests(unittest.TestCase):
     def test_recovery_without_policy_log_blocks_instead_of_using_new_grants(self) -> None:
@@ -225,7 +227,17 @@ class LoopPromptTests(unittest.TestCase):
 
         session = TaskSession(policy=policy, task_kind="hybrid", project="E:/tmp",
                               max_turns=2, task_text="修复登录 bug", handoff="先查文档")
-        run_task_kernel(session, provider=FakeWeb(), executors={})
+        run_task_kernel(
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=FakeWeb(),
+                ),
+                execution=KernelExecutionDeps(
+                    executors={},
+                ),
+            ),
+        )
         joined = "\n".join(prompts)
         self.assertIn("修复登录 bug", joined)
         self.assertIn("先查文档", joined)
@@ -269,7 +281,18 @@ class LoopPromptTests(unittest.TestCase):
                 return AssistantTurn(text='{"tool":"done","args":{"summary":"结论 x 来源 y"}}')
 
         session = TaskSession(policy=policy, task_kind="research", project="", max_turns=4)
-        run_task_kernel(session, provider=FakeNative(), executors={}, provider_id="local")
+        run_task_kernel(
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=FakeNative(),
+                    provider_id="local",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={},
+                ),
+            ),
+        )
         self.assertEqual(calls[0], "send_turn")
         self.assertEqual(calls[1], "send_tool_results")
 

@@ -72,10 +72,7 @@ def is_valid_derived_ref(value: object) -> bool:
 def _bounded_size(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    try:
-        parsed = coerce_int(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    parsed = coerce_int(value)
     return max(0, min(parsed, MAX_SIZE_BYTES))
 
 

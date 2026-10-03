@@ -41,6 +41,7 @@ from unittest import mock
 from codey.app import shell_service
 from codey.app.approval_registry import ApprovalRegistry
 from codey.automation.browser_worker import BrowserWorker
+from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
 from codey.providers.diagnostics import ProviderFailure
 from codey.providers.supervisor import STATE_OPEN, ProviderHealth
 from codey.repairs.self_repair import SelfRepairSupervisor
@@ -752,15 +753,23 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
         executors = {"run": _unknown_run}
     result = run_task_kernel(
         session,
-        provider=_DeterministicWeb(),
-        workspace_revision_store=store,
-        provider_id="web",
-        executors=executors or None,
-        run_id=f"completion-{seq:06d}",
-        user_task="fix",
-        project_path=project_dir,
-        tool_fns=DEFAULT_TOOL_FNS,
-        completion_context=None,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=_DeterministicWeb(),
+                provider_id="web",
+                run_id=f"completion-{seq:06d}",
+                user_task="fix",
+            ),
+            execution=KernelExecutionDeps(
+                workspace_revision_store=store,
+                executors=executors or None,
+                project_path=project_dir,
+                tool_fns=DEFAULT_TOOL_FNS,
+            ),
+            observation=KernelObservationDeps(
+                completion_context=None,
+            ),
+        ),
     )
     assert session.verifications, "real kernel chain must record an observation"
     assert (project_dir / relpath).read_text(encoding="utf-8") == content

@@ -2215,7 +2215,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/hebbian.py",
             "ghost/inbox.py",
             "ghost/work_queue.py",
-            "operations/task_loop.py",
             "providers/controls.py",
             # PLR split 2026-09-26: extracted per-branch helpers stay in-module
             # for cohesion (single caller, domain-specific); file crossed 1000.
@@ -2247,12 +2246,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/inbox.py": 1200,
             # PLR split 2026-09-26: 2780 lines after per-action split.
             "ghost/work_queue.py": 2840,
-            # Unified single-loop convergence 2026-09-28: batch precheck,
-            # real workspace identity, fail-closed controller, web contract
-            # resend, done-receipt failure, cross-provider text recovery,
-            # provider-timeout compat (1318 lines); will shrink as
-            # facts/precheck move to task_execution/task_effects boundary.
-            "operations/task_loop.py": 1330,
             "providers/controls.py": 1400,
             # PLR split 2026-09-26: 1009 lines after _wait_for_response split.
             "providers/worker.py": 1060,

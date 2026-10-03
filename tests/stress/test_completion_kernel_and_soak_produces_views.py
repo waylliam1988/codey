@@ -7,6 +7,8 @@ one (no zero-iteration wiring).
 """
 from __future__ import annotations
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+
 
 class _DoneThenCloseProvider:
     name = "fake"
@@ -46,9 +48,18 @@ def test_kernel_readonly_run_completes_with_real_tool_loop(tmp_path):
     session = _readonly_session(tmp_path)
     provider = _DoneThenCloseProvider()
     result = run_task_kernel(
-        session, provider=provider, run_id="r-kernel-view",
-        project_path=tmp_path, provider_id="fake",
-        user_task="Summarize a.txt. Do not modify files.",
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=provider,
+                run_id="r-kernel-view",
+                provider_id="fake",
+                user_task="Summarize a.txt. Do not modify files.",
+            ),
+            execution=KernelExecutionDeps(
+                project_path=tmp_path,
+            ),
+        ),
     )
     assert result.completed is True
     assert result.stop_reason == "done"
@@ -64,9 +75,18 @@ def test_gate_view_from_kernel_session_passes_oracle(tmp_path):
     session = _readonly_session(tmp_path)
     provider = _DoneThenCloseProvider()
     result = run_task_kernel(
-        session, provider=provider, run_id="r-kernel-oracle",
-        project_path=tmp_path, provider_id="fake",
-        user_task="Summarize a.txt. Do not modify files.",
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=provider,
+                run_id="r-kernel-oracle",
+                provider_id="fake",
+                user_task="Summarize a.txt. Do not modify files.",
+            ),
+            execution=KernelExecutionDeps(
+                project_path=tmp_path,
+            ),
+        ),
     )
     assert result.completed is True
     evidence = ExecutionEvidence()

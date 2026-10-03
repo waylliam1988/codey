@@ -538,10 +538,7 @@ def _planner_warnings(
 
 
 def _unit_float(value: object) -> float:
-    try:
-        number = coerce_float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
+    number = coerce_float(value)
     if not math.isfinite(number):
         return 0.0
     return max(0.0, min(1.0, round(number, 3)))

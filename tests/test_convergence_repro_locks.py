@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import unittest
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+
 
 class BatchMismatchTests(unittest.TestCase):
     def test_mismatch_aborts_batch_and_preserves_receipt(self) -> None:
@@ -224,7 +226,23 @@ class SecondRoundWebPromptTests(unittest.TestCase):
         from unittest.mock import patch
 
         with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
-            run_task_kernel(session, provider=FakeWeb(), executors={}, run_id="r-web2", research_tools=FakeTools(), session_id="s", completion_context=None)
+            run_task_kernel(
+                session,
+                request=KernelRunRequest(
+                    transport=KernelTransportDeps(
+                        provider=FakeWeb(),
+                        run_id="r-web2",
+                    ),
+                    execution=KernelExecutionDeps(
+                        executors={},
+                        research_tools=FakeTools(),
+                        session_id="s",
+                    ),
+                    observation=KernelObservationDeps(
+                        completion_context=None,
+                    ),
+                ),
+            )
         self.assertGreaterEqual(len(sent_prompts), 2)
         second = sent_prompts[1]
         # Second-round web prompt must carry the new tool contract + change reason,
@@ -258,7 +276,19 @@ class DoneReceiptFailureTests(unittest.TestCase):
             patch("codey.operations.kernel_transport.provider_uses_native", return_value=True),
             patch("codey.toolchain.tool_spec.native_tools_for_snapshot", return_value=[{"type": "function", "function": {"name": "done", "description": "d", "parameters": {"type": "object", "properties": {}, "required": []}}}]),
         ):
-            result = run_task_kernel(session, provider=FakeNative(), executors={}, run_id="r-done-fail", provider_id="local")
+            result = run_task_kernel(
+                session,
+                request=KernelRunRequest(
+                    transport=KernelTransportDeps(
+                        provider=FakeNative(),
+                        run_id="r-done-fail",
+                        provider_id="local",
+                    ),
+                    execution=KernelExecutionDeps(
+                        executors={},
+                    ),
+                ),
+            )
         self.assertFalse(result.completed)
         self.assertIn(result.stop_reason, ("provider_failure", "pending_delivery"))
 

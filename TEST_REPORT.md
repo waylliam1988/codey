@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Boundary audit and cold-start cleanup (2026-10-03)
+
+Review base: `96ce456e..2be380c1`. Detailed findings, TDD cases and proof
+limits: [review](docs/kernel_review_2026-10-03.zh-CN.md).
+
+- Final full run, Windows / Python 3.12.8, `RUN_BROWSER_E2E=1`:
+  `python -u -m pytest -q -o faulthandler_timeout=120 -rs`
+  → **6734 passed, 6 skipped, 1497 subtests passed in 444.67s**, zero failures.
+- Real Edge flow ran. The six skips are POSIX-only executable/permission bits,
+  process groups, absolute paths and O_NOFOLLOW contracts on Windows.
+- Previous complete run: **6733 passed, 1 failed, 6 skipped, 1488 subtests
+  passed in 458.20s**. The sole failure required the literal `OverflowError`
+  in queue transition source. It was replaced with actual malformed-input,
+  no-conversion, no-mutation and valid-input behavior checks. An earlier
+  preparation run was stopped to add ledger summary-count counterexamples;
+  it is not acceptance evidence.
+- Final Python 3.13.15 targeted run: **86 passed in 5.38s**, covering bounded
+  capture/process handling, effect/resume identity, canonical ledger counts,
+  gate accounting and queue replay. This was not a full 3.13 suite.
+- Ruff, compileall and `git diff --check`: passed. Full-tree mypy: **0 errors
+  in 363 files**. Windows and Linux CI now both run `python -m mypy codey`.
+- Added 65 scenario instances across six new files and a boundary deletion
+  lock: 59 behavioral red failures before their grouped fixes, six positive
+  controls. Test-authoring fixture/syntax errors are excluded from red counts.
+- Migrated 70 kernel calls in 33 files; AST comparison preserved all **857**
+  original pytest/unittest assertion nodes. No test-only legacy kwargs shim.
+- Deleted production legacy request conversion, duplicate carrier and 28
+  redundant numerical exception handlers. Production Python net **-265 lines**;
+  task_loop **1051 → 879** lines; kernel function **172 → 165** lines,
+  McCabe **16**, without a complexity suppression.
+- Fixed a tautological assertion; historical source checks remain structural
+  guards and are not counted as behavioral correctness proofs.
+- Existing finite-state/trace invariants ran in the suite. These and the new
+  exact-type/matrix predicates prove only their stated scope, not universal
+  absence of bugs or hash collisions. No new live-model success-rate, token,
+  latency or memory benchmark was run. No release, tag or version bump.
+
 ## Explicit TaskSubmissionStores (2026-10-03)
 
 - Added the typed `TaskSubmissionStores` bundle and `AppContext` factory.

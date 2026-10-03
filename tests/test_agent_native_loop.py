@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from codey.env_names import NATIVE_TOOLS_ENV
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall
 
@@ -70,11 +71,21 @@ def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
 
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
-            session, provider=provider,
-            executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
-            run_id="r-native-1", effect_scope="task",
-            provider_id="local", project_path=tmp_path,
-            user_task="read app", context_text="",
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    run_id="r-native-1",
+                    effect_scope="task",
+                    provider_id="local",
+                    user_task="read app",
+                    context_text="",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": lambda call: ToolResult(call=call, model_text="hello")},
+                    project_path=tmp_path,
+                ),
+            ),
         )
     assert result.stop_reason == "done"
     assert result.summary == "ok"

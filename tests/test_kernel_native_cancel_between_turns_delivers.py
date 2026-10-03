@@ -7,6 +7,8 @@ the chain is closed on delivery failure.
 """
 from __future__ import annotations
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+
 
 def _policy():
     from codey.policies.task_policy import TaskPolicy
@@ -81,13 +83,19 @@ def test_cancel_between_turns_delivers_executed_result(tmp_path):
         # sees stop set and must drain pending messages.
         result = run_task_kernel(
             session,
-            provider=provider,
-            provider_id="native-test",
-            executors={"read_file": execute_read},
-            run_id="cancel-between",
-            user_task="read a.py",
-            stop_flag=stop,
-            project_path=str(tmp_path),
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    provider_id="native-test",
+                    run_id="cancel-between",
+                    user_task="read a.py",
+                    stop_flag=stop,
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": execute_read},
+                    project_path=str(tmp_path),
+                ),
+            ),
         )
     finally:
         nt.supports_native_tools = orig
@@ -129,14 +137,20 @@ def test_delivery_failure_reports_provider_failure(tmp_path):
         initial = [ToolResult(call=call, model_text="content")]
         result = run_task_kernel(
             session,
-            provider=FailProvider(),
-            provider_id="native-test",
-            executors={},
-            run_id="cancel-fail",
-            user_task="read",
-            stop_flag=stop,
-            project_path=str(tmp_path),
-            initial_results=initial,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=FailProvider(),
+                    provider_id="native-test",
+                    run_id="cancel-fail",
+                    user_task="read",
+                    stop_flag=stop,
+                    initial_results=initial,
+                ),
+                execution=KernelExecutionDeps(
+                    executors={},
+                    project_path=str(tmp_path),
+                ),
+            ),
         )
     finally:
         nt.supports_native_tools = orig

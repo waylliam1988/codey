@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from codey.runtime.core.models import ToolResult
-from codey.utils.refs import coerce_int, stable_ref
+from codey.utils.refs import stable_ref
 
 
 def session_checks_passed(session: Any, proof: Any = None) -> bool:
@@ -21,6 +21,15 @@ def session_checks_passed(session: Any, proof: Any = None) -> bool:
     return isinstance(latest, dict) and type(latest.get("passed")) is bool and latest["passed"]
 
 
+def effect_coordinates(turn: object, tool_index: object) -> tuple[int, int]:
+    """Validate identity coordinates before intent, replay or settlement."""
+    if type(turn) is not int or turn < 0:
+        raise ValueError("turn must be a nonnegative integer")
+    if type(tool_index) is not int or tool_index < 0:
+        raise ValueError("tool_index must be a nonnegative integer")
+    return turn, tool_index
+
+
 def turn_effect_id(run_id: object, turn: object, tool_index: object) -> str:
     """Call identity for intents: run + turn + index, never tool name+args.
 
@@ -28,15 +37,8 @@ def turn_effect_id(run_id: object, turn: object, tool_index: object) -> str:
     edit; those are new calls. Only the same turn slot reuses an identity.
     """
 
-    try:
-        return stable_ref(
-            "task_turn_effect",
-            str(run_id or ""),
-            coerce_int(turn or 0),
-            coerce_int(tool_index or 0),
-        )
-    except Exception:
-        return stable_ref("task_turn_effect", str(run_id or ""), str(turn or 0), str(tool_index or 0))
+    turn, tool_index = effect_coordinates(turn, tool_index)
+    return stable_ref("task_turn_effect", str(run_id or ""), turn, tool_index)
 
 
 @dataclass
@@ -178,4 +180,4 @@ class TaskSession:
         return "\n".join(parts)
 
 
-__all__ = ["TaskSession", "turn_effect_id"]
+__all__ = ["TaskSession", "effect_coordinates", "turn_effect_id"]

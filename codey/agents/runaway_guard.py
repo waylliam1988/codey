@@ -46,10 +46,7 @@ def result_fingerprint(result: ToolResult) -> str:
 def _safe_int(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    try:
-        return coerce_int(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    return coerce_int(value)
 
 
 def attempt_record(

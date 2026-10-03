@@ -1190,10 +1190,7 @@ def _coerce_confidence(value: object) -> float | None:
 
 
 def _coerce_reward(value: object) -> float:
-    try:
-        reward = coerce_float(value, default=1.0)
-    except (TypeError, ValueError, OverflowError):
-        return 1.0
+    reward = coerce_float(value, default=1.0)
     if not math.isfinite(reward):
         return 1.0
     return max(0.0, min(1.0, reward))

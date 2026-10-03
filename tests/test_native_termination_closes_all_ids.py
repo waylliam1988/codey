@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps
+
 
 def _native_reply(*ids: str):
     return SimpleNamespace(tool_calls=tuple(SimpleNamespace(id=i, name="read_file", arguments={"path": "a.py"}) for i in ids))
@@ -29,8 +31,19 @@ def test_protocol_threshold_closes_current_call_id() -> None:
             return SimpleNamespace(tool_calls=())
 
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
-        out = run_task_kernel(sess, provider=P(), run_id="r-proto", effect_scope="task",
-                              provider_id="x", user_task="t", stagnant_turns=1)
+        out = run_task_kernel(
+            sess,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=P(),
+                    run_id="r-proto",
+                    effect_scope="task",
+                    provider_id="x",
+                    user_task="t",
+                    stagnant_turns=1,
+                ),
+            ),
+        )
     assert out.stop_reason == "protocol", f"应以 protocol 退出，实际 {out.stop_reason}"
     assert "invalid-last-id" in closed, f"阈值退出前必须先回答当前 id，实际已回答 {closed}"
 

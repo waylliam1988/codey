@@ -111,7 +111,7 @@ def test_gate_result_classification_keeps_observation_separate_from_root_cause()
         "case": "edit",
         "ok": False,
         "failure_stage": "completion:provider_failure",
-        "provider_metrics": {"finish_reasons": ["length"]},
+        "provider_metrics": {"active_finish_reasons": ["length"]},
     })
     assert truncated["failure_kind"] == "truncation"
     assert truncated["root_cause_class"] == "undetermined"
@@ -181,7 +181,7 @@ def test_root_cause_requires_explicit_evidence_reference():
 
 def test_summary_can_require_a_complete_matrix_without_marking_missing_cells_passed():
     summary = runner.summarize([
-        {"case": "edit", "ok": True, "scope": "objective_task"},
+        {"case": "edit", "attempt": 1, "ok": True, "scope": "objective_task"},
     ], expected_cases=("edit", "create"), repeat=1)
     assert summary["matrix_complete"] is False
     assert summary["missing_attempts"] == [{"case": "create", "attempt": 1}]

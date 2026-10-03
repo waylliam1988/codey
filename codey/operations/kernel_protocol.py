@@ -180,7 +180,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
                         "parameters": _schema_fn(spec),
                     },
                 })
-            rebuilt.sort(key=lambda item: str((item.get("function") or {}).get("name", "") if isinstance(item.get("function"), dict) else ""))
+            rebuilt.sort(key=lambda item: item["function"]["name"])
             native_now = rebuilt
         except Exception as exc:
             # 构建失败即停本轮：绝不回退到实时注册表的旧 schema。

@@ -268,10 +268,7 @@ def _done_reports_no_relevant_material(args: object) -> bool:
 
 
 def _context_char_limit(value: object) -> int:
-    try:
-        parsed = coerce_int(value)
-    except (TypeError, ValueError, OverflowError):
-        parsed = _DEFAULT_CONTEXT_CHARS
+    parsed = coerce_int(value, default=_DEFAULT_CONTEXT_CHARS)
     return max(_MIN_CONTEXT_CHARS, min(_MAX_CONTEXT_CHARS, parsed))
 
 

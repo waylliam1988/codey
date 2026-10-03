@@ -38,9 +38,8 @@ from codey.operations.kernel_result import (
     _normalize_explicit_result,
     strict_exit_code_or_none,
 )
-from codey.operations.task_session import TaskSession, turn_effect_id
+from codey.operations.task_session import TaskSession, effect_coordinates, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.utils.refs import coerce_int
 
 __all__ = [
     "execute_turn",
@@ -310,14 +309,7 @@ def _turn_setup(
     turn: object | None, tool_index_base: object, delivered: Mapping[str, ToolResult] | None,
     workspace_ignored_paths: Any, project_path: Any, workspace_revision_store: Any,
 ) -> tuple[int, int, str, str, dict[str, ToolResult], tuple[str, ...], RecoveryContext]:
-    try:
-        active_turn = coerce_int(turn) if turn is not None else coerce_int(session.turn or 0)
-    except (TypeError, ValueError):
-        active_turn = int(session.turn or 0)
-    try:
-        base_index = coerce_int(tool_index_base or 0)
-    except (TypeError, ValueError):
-        base_index = 0
+    active_turn, base_index = effect_coordinates(session.turn if turn is None else turn, tool_index_base)
     run_ref_str = str(run_id or "")
     identity_ref = f"{run_ref_str}:{effect_scope}" if effect_scope else run_ref_str
     delivered_map = dict(delivered or {})

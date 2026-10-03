@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+
 
 def _submission(project="E:/codey", task="研究，不要修改", requested=(), strict=True):
     return SimpleNamespace(
@@ -105,9 +107,21 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
         "read_file": lambda call: ToolResult(call, (project / call.args["path"]).read_text()),
         "edit": edit, "run": verify,
     }
-    result = run_task_kernel(session, provider=Provider(), executors=executors, project_path=project,
-                             workspace_revision_store=WorkspaceRevisionStore(tmp_path / "state"),
-                             run_id="r-interleave", effect_scope="hybrid")
+    result = run_task_kernel(
+        session,
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=Provider(),
+                run_id="r-interleave",
+                effect_scope="hybrid",
+            ),
+            execution=KernelExecutionDeps(
+                executors=executors,
+                project_path=project,
+                workspace_revision_store=WorkspaceRevisionStore(tmp_path / "state"),
+            ),
+        ),
+    )
     assert result.stop_reason == "done", result
     assert session.searches
     assert session.read_files and session.opened_sources
@@ -285,7 +299,16 @@ def test_issue6_native_prompt_and_done_closure(monkeypatch):
     from unittest.mock import patch
     with patch("codey.operations.completion_gate.evaluate",
                return_value=SimpleNamespace(complete=True, followup="", proof=None)):
-        run_task_kernel(s2, provider=Provider(), provider_id="local", run_id="r-native-done")
+        run_task_kernel(
+            s2,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=Provider(),
+                    provider_id="local",
+                    run_id="r-native-done",
+                ),
+            ),
+        )
     assert sent_batches, "accepted native done must still send tool result for its call id"
     assert any(m.get("tool_call_id") == "done-1" for batch in sent_batches for m in batch)
 

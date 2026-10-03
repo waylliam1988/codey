@@ -9,6 +9,7 @@ from codey.agents.runaway_guard import (
     should_block_or_remind,
 )
 from codey.agents.state import ToolAttemptRecord
+from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.runtime.core.models import ToolCall, ToolResult
 
 
@@ -144,7 +145,19 @@ def test_runaway_guard_failure_is_visible(tmp_path: Path) -> None:
             return "not json"
 
     with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
-        result = run_task_kernel(session, provider=_BadProvider(), executors={}, run_id="r-runaway", stagnant_turns=2)
+        result = run_task_kernel(
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=_BadProvider(),
+                    run_id="r-runaway",
+                    stagnant_turns=2,
+                ),
+                execution=KernelExecutionDeps(
+                    executors={},
+                ),
+            ),
+        )
     assert result.stop_reason == "protocol"
 
 

@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Boundary audit and cold-start cleanup (no release)
+
+- Removed the production kernel's legacy keyword adapter and duplicate flat
+  dependency carrier. Migrated 70 direct calls in 33 test/stress files to the
+  typed request; preserved 857 existing assertion nodes.
+- Reject invalid effect coordinates and resume turns before execution,
+  recovery or provider sends. Validate raw queue retry counts and canonical
+  ledger counts/number lists before normalization.
+- Restore the 8000-character default for malformed research context budgets.
+  Require exactly one observation per expected local gate attempt; distinguish
+  active truncation from terminal receipt token caps.
+- Removed 28 redundant numerical exception handlers and unreachable temporary
+  directory fallback. Both CI platforms now gate the full mypy tree.
+- Replaced a source-text overflow test with real transition behavior checks
+  and corrected a tautological assertion. Production Python is 265 lines smaller.
+- Final full pytest with real Edge: **6734 passed, 6 skipped, 1497 subtests
+  passed**, **444.67s**. Python 3.13 targeted regression: **86 passed**.
+  Ruff, compileall, diff check and mypy (363 files) passed. No release or tag.
+
 ## Unreleased - Explicit task submission resources (no release)
 
 - Introduced the typed `TaskSubmissionStores` bundle and an `AppContext`
