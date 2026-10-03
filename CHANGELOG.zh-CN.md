@@ -2,6 +2,18 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 回调生命周期与审美收尾（未发布）
+
+- 将运行回调的共享状态归一个实例；工厂从 143 行、复杂度 21 降至
+  40 行、复杂度 1，删除复杂度豁免。
+- 故障转移配置错误显式失败，不再静默使用整个 provider 目录；保留
+  按需读取与合法空顺序。
+- 删除没有消费者的健康记录重导出和原样转发的来源信任 helper。
+- 新增 9 项行为/归属回归；真实 Edge E2E 与全量：**6747 passed、
+  6 skipped、1497 subtests passed，456.55 秒**。保留职责连贯的内核与
+  安全检查，不新增任务框架或缓存。详见 [`TEST_REPORT.md`](TEST_REPORT.md)
+  与[审美审查报告](docs/aesthetic_review_2026-10-03.zh-CN.md)。
+
 ## Unreleased - Mypy 干净安装与跨平台门禁修复（未发布）
 
 - 在 CI pinned 依赖中加入 `types-PyYAML`，确保干净环境检查懒加载 YAML

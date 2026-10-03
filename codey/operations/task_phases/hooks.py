@@ -7,6 +7,7 @@ import logging
 import uuid
 from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import dataclass, field
 from typing import Any
 
 from codey.agents.shell_approval import (
@@ -22,7 +23,6 @@ from codey.operations.project_completion_context import (
 )
 from codey.operations.task_state import TaskState
 from codey.policies.shell_risk import classify_shell_risk
-from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderFailure
 from codey.providers.supervisor import HealthStoreError
 from codey.runs.ledger import LedgerWriteFailed, RunLedgerWriter
@@ -78,7 +78,136 @@ def record_provider_success_event(supervisor: Any, pid: str) -> None:
         logger.exception("provider health success record failed for %s", pid)
 
 
-def build_hooks(  # noqa: C901
+@dataclass(kw_only=True)
+class _RunHookCallbacks:
+    """Own callback state for one run; all callbacks share this lifetime."""
+
+    deps: Any
+    state: TaskState
+    work: RunWork
+    session_id: str
+    run_id: str
+    project: str | None
+    max_turns: int
+    project_config_ignored: tuple[str, ...]
+    review_log_lines: int
+    project_completion_deps: ProjectCompletionDeps
+    current_provider_id: Callable[[], str] | None
+    supervisor: Any
+    self_repair: Any
+    logged_provider_failures: set[tuple[str, str, str, str]] = field(default_factory=set)
+
+    def append_ledger(self, action: Callable[[RunLedgerWriter], None]) -> None:
+        if self.work.ledger is None:
+            return
+        try:
+            action(self.work.ledger)
+        except (LedgerWriteFailed, OSError, ValueError, TimeoutError) as exc:
+            # Expected storage faults mark this run's ledger unavailable;
+            # the task itself still completes. One bounded diagnostic, no
+            # new persisted file.
+            logger.warning(
+                "run ledger unavailable: %s",
+                str(exc)[:120],
+            )
+            self.work.ledger = None
+
+    def append_ledger_provider_failure(self, pid: str, failure: ProviderFailure) -> None:
+        key = (
+            str(pid),
+            str(getattr(failure, "action", "")),
+            str(getattr(failure, "kind", "")),
+            str(getattr(failure, "message", "")),
+        )
+        if key in self.logged_provider_failures:
+            return
+        self.logged_provider_failures.add(key)
+        self.append_ledger(lambda ledger: ledger.append_provider_failure(pid, failure))
+
+    def update_checkpoint(self, action: Callable[[Any, Any], Any]) -> None:
+        if self.deps.work_checkpoints is None or self.work.work_checkpoint is None:
+            return
+        with suppress(OSError, ValueError):
+            self.work.work_checkpoint = action(self.deps.work_checkpoints, self.work.work_checkpoint)
+
+    def on_event(self, event: RunEvent) -> None:
+        self.work.turns_observed = max(self.work.turns_observed, nonnegative_event_count(event.turn))
+        if self.work.record_agent_events_in_ledger:
+            self.append_ledger(lambda ledger: ledger.append_run_event(event))
+        payload = run_event_ui_payload(self.run_id, self.session_id, event)
+        if payload is not None:
+            self.state.emit(payload)
+        if event.kind == "tool_start":
+            return
+        if self.project and _workspace_edit_event(event) and not _adopt_kernel_workspace_state(self.work, event):
+            # Kernel edits already bumped exactly once in
+            # sync_workspace_state_after_edit and carry the authoritative
+            # proof in the event side-channel. Adopt it without a second
+            # bump/scan. Non-kernel edits carry no state and still bump.
+            self.work.advance_workspace_revision(
+                self.deps.workspace_revisions,
+                self.project,
+                ignored_paths=self.project_config_ignored,
+            )
+        self.work.evidence.record(event)
+        message = render_run_event(event)
+        self.work.recent_events.append(message)
+        if len(self.work.recent_events) > self.review_log_lines * 2:
+            del self.work.recent_events[:self.review_log_lines]
+        if self.project and event.kind == "tool" and event.call is not None and event.outcome is not None:
+            handle_project_tool_event(
+                self.project_completion_deps,
+                event=event,
+                project=self.project,
+                work=self.work,
+                run_id=self.run_id,
+                update_checkpoint=self.update_checkpoint,
+            )
+
+    def on_shell_request(self, approval: ShellApprovalRequest) -> None:
+        if not self.project:
+            return
+        command = shell_command_text(approval.command)
+        command_fields = shell_command_payload(command)
+        risk = classify_shell_risk(command)
+        approval_id = "shell_" + uuid.uuid4().hex[:12]
+        provider_label = self.current_provider_id() if self.current_provider_id is not None else ""
+        # pending 形状唯一归属 build_shell_approval_pending：原生调用身份
+        #（call id、provider 会话、turn/tool_index）完整持久化。
+        pending = build_shell_approval_pending(
+            approval=approval,
+            approval_id=approval_id,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=self.project,
+            max_turns=self.max_turns,
+            provider_label=provider_label,
+            command_fields=dict(command_fields),
+            risk_label=risk.label,
+            risk_title=risk.title,
+            risk_detail=risk.detail,
+            post_approval_instructions=risk.post_approval_instructions,
+        )
+        self.state.add_pending_shell_approval(approval_id, pending)
+        event = pending.get("ui_event")
+        if isinstance(event, dict):
+            self.state.emit(event)
+
+    def record_provider_failure(self, pid: str, failure: ProviderFailure) -> None:
+        record_provider_failure_event(
+            self.append_ledger_provider_failure,
+            FailOpenPromptTrace(self.work.trace),
+            self.supervisor,
+            self.self_repair,
+            pid,
+            failure,
+        )
+
+    def provider_failover_order(self) -> tuple[str, ...]:
+        return self.state.provider_failover_order()
+
+
+def build_hooks(
     deps: Any,
     state: TaskState,
     work: RunWork,
@@ -92,133 +221,30 @@ def build_hooks(  # noqa: C901
     project_completion_deps: ProjectCompletionDeps,
     current_provider_id: Callable[[], str] | None = None,
 ) -> RunHooks:
-    """Assemble RunHooks closures; behavior identical to the previous inline block."""
-    logged_provider_failures: set[tuple[str, str, str, str]] = set()
-
-    def append_ledger(action: Callable[[RunLedgerWriter], None]) -> None:
-        if work.ledger is None:
-            return
-        try:
-            action(work.ledger)
-        except (LedgerWriteFailed, OSError, ValueError, TimeoutError) as exc:
-            # Expected storage faults mark this run's ledger unavailable;
-            # the task itself still completes. One bounded diagnostic, no
-            # new persisted file.
-            logger.warning(
-                "run ledger unavailable: %s",
-                str(exc)[:120],
-            )
-            work.ledger = None
-
-    def append_ledger_provider_failure(pid: str, failure: ProviderFailure) -> None:
-        key = (
-            str(pid),
-            str(getattr(failure, "action", "")),
-            str(getattr(failure, "kind", "")),
-            str(getattr(failure, "message", "")),
-        )
-        if key in logged_provider_failures:
-            return
-        logged_provider_failures.add(key)
-        append_ledger(lambda ledger: ledger.append_provider_failure(pid, failure))
-
-    def update_checkpoint(action: Callable[[Any, Any], Any]) -> None:
-        if deps.work_checkpoints is None or work.work_checkpoint is None:
-            return
-        with suppress(OSError, ValueError):
-            work.work_checkpoint = action(deps.work_checkpoints, work.work_checkpoint)
-
-    def on_event(event: RunEvent) -> None:
-        work.turns_observed = max(work.turns_observed, nonnegative_event_count(event.turn))
-        if work.record_agent_events_in_ledger:
-            append_ledger(lambda ledger: ledger.append_run_event(event))
-        payload = run_event_ui_payload(run_id, session_id, event)
-        if payload is not None:
-            state.emit(payload)
-        if event.kind == "tool_start":
-            return
-        if project and _workspace_edit_event(event) and not _adopt_kernel_workspace_state(work, event):
-            # Kernel edits already bumped exactly once in
-            # sync_workspace_state_after_edit and carry the authoritative
-            # proof in the event side-channel. Adopt it without a second
-            # bump/scan. Non-kernel edits carry no state and still bump.
-            work.advance_workspace_revision(
-                deps.workspace_revisions,
-                project,
-                ignored_paths=project_config_ignored,
-            )
-        work.evidence.record(event)
-        message = render_run_event(event)
-        work.recent_events.append(message)
-        if len(work.recent_events) > review_log_lines * 2:
-            del work.recent_events[:review_log_lines]
-        if project and event.kind == "tool" and event.call is not None and event.outcome is not None:
-            handle_project_tool_event(
-                project_completion_deps,
-                event=event,
-                project=project,
-                work=work,
-                run_id=run_id,
-                update_checkpoint=update_checkpoint,
-            )
-
-    def on_shell_request(approval: ShellApprovalRequest) -> None:
-        if not project:
-            return
-        command = shell_command_text(approval.command)
-        command_fields = shell_command_payload(command)
-        risk = classify_shell_risk(command)
-        approval_id = "shell_" + uuid.uuid4().hex[:12]
-        provider_label = current_provider_id() if current_provider_id is not None else ""
-        # pending 形状唯一归属 build_shell_approval_pending：原生调用身份
-        #（call id、provider 会话、turn/tool_index）完整持久化。
-        pending = build_shell_approval_pending(
-            approval=approval,
-            approval_id=approval_id,
-            session_id=session_id,
-            run_id=run_id,
-            project=project,
-            max_turns=max_turns,
-            provider_label=provider_label,
-            command_fields=dict(command_fields),
-            risk_label=risk.label,
-            risk_title=risk.title,
-            risk_detail=risk.detail,
-            post_approval_instructions=risk.post_approval_instructions,
-        )
-        state.add_pending_shell_approval(approval_id, pending)
-        event = pending.get("ui_event")
-        if isinstance(event, dict):
-            state.emit(event)
-
-    supervisor = state.providers.supervisor
-    self_repair = getattr(state, "self_repair", None)
-
-    def record_provider_failure(pid: str, failure: ProviderFailure) -> None:
-        record_provider_failure_event(
-            append_ledger_provider_failure,
-            FailOpenPromptTrace(work.trace),
-            supervisor,
-            self_repair,
-            pid,
-            failure,
-        )
-
-    def provider_failover_order() -> tuple[str, ...]:
-        loader = getattr(state, "provider_failover_order", None)
-        try:
-            return tuple(loader()) if loader is not None else tuple(PROVIDER_LABELS)
-        except Exception:
-            return tuple(PROVIDER_LABELS)
-
+    """Bind one run's event, approval, persistence and provider callbacks."""
+    callbacks = _RunHookCallbacks(
+        deps=deps,
+        state=state,
+        work=work,
+        session_id=session_id,
+        run_id=run_id,
+        project=project,
+        max_turns=max_turns,
+        project_config_ignored=project_config_ignored,
+        review_log_lines=review_log_lines,
+        project_completion_deps=project_completion_deps,
+        current_provider_id=current_provider_id,
+        supervisor=state.providers.supervisor,
+        self_repair=state.self_repair,
+    )
     return RunHooks(
-        on_event=on_event,
-        on_shell_request=on_shell_request,
-        update_checkpoint=update_checkpoint,
-        record_provider_failure=record_provider_failure,
-        append_ledger=append_ledger,
-        provider_failover_order=provider_failover_order,
-        supervisor=supervisor,
+        on_event=callbacks.on_event,
+        on_shell_request=callbacks.on_shell_request,
+        update_checkpoint=callbacks.update_checkpoint,
+        record_provider_failure=callbacks.record_provider_failure,
+        append_ledger=callbacks.append_ledger,
+        provider_failover_order=callbacks.provider_failover_order,
+        supervisor=callbacks.supervisor,
         trace=work.trace,
     )
 

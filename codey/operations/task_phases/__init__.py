@@ -8,11 +8,7 @@ from codey.operations.task_phases.dispatch import (
     review_flow_deps,
 )
 from codey.operations.task_phases.ghost import claim_or_route_ghost_work, ghost_task_deps
-from codey.operations.task_phases.hooks import (
-    build_hooks,
-    record_provider_failure_event,
-    record_provider_success_event,
-)
+from codey.operations.task_phases.hooks import build_hooks
 from codey.operations.task_phases.lifecycle import (
     build_run_work,
     ensure_run_reserved_and_started,
@@ -40,8 +36,6 @@ __all__ = [
     "open_run_ledger",
     "open_run_trace",
     "project_completion_deps",
-    "record_provider_failure_event",
-    "record_provider_success_event",
     "record_route_trace",
     "review_flow_deps",
     "settle_cancelled_run",

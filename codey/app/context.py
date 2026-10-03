@@ -714,11 +714,7 @@ class AppContext:
         return provider_services.open_provider_session(self, provider_id)
 
     def provider_failover_order(self) -> tuple[str, ...]:
-        """Thin seam: open tabs first, then registry order.
-
-        Read via ``getattr`` by ``task_phases.build_hooks`` so task doubles
-        can override the order without a provider registry.
-        """
+        """TaskState contract: open tabs first, then registry order."""
         from codey.app import provider_services
 
         return provider_services.provider_failover_order(self.providers)

@@ -1,5 +1,47 @@
 # Codey Test Report
 
+## Callback lifecycle and aesthetic closure (2026-10-03)
+
+Baseline: `7e44ffd2`, clean working tree. The callback factory now binds one
+private owner per run instead of seven nested closures. Its complexity fell
+from 21 to 1 (143 to 40 lines); existing event ordering, single workspace bump,
+checkpoint updates and per-run failure deduplication remain covered. No new
+task framework, model loop or cache was introduced.
+
+Failover configuration errors and missing TaskState members no longer silently
+select the entire provider catalog. A real preflight regression verifies that
+an order-loading failure never selects or switches a replacement provider.
+Unused health-helper reexports and the pure source-trust forwarding helper were
+deleted; consumers use the owning modules.
+
+TDD: after correcting a tool_start fixture to carry an actual call, four
+existing-behavior tests passed and four new requirements failed on the baseline.
+Minimal fixes made them green before callback extraction; one real preflight
+case was then added. Nine new tests total; no skip, xfail, assertion weakening,
+threshold increase or historical parity baseline rewrite.
+
+Verification:
+
+- Focused affected tests: `159 passed, 3 skipped, 26 subtests passed`.
+- Architecture/callback/provider tests: `132 passed, 381 subtests passed`.
+- Ruff, compileall and diff checks: passed.
+- `python -m mypy codey`: zero errors in 363 source files.
+- Ruff with `--ignore-noqa`: 195 functions above complexity 10, 48 above 15,
+  zero above 20; zero production complexity/branch/statement exemptions.
+- Final full run on Windows, Python 3.12.8, `RUN_BROWSER_E2E=1`:
+  `python -u -m pytest -q -o faulthandler_timeout=120 -rs`
+  → **6747 passed, 6 skipped, 1497 subtests passed in 456.55s (0:07:36)**,
+  zero failures. Real Edge E2E ran.
+
+The six skips were two POSIX permission-bit cases, one POSIX process-group
+case, one POSIX absolute-path case and two Windows `O_NOFOLLOW` cases.
+No model latency/token benchmark was run. Reference scans and finite tests do
+not establish whole-program absence of bugs or dead code. Keep the 165-line,
+complexity-16 kernel flow and coherent safety validators; do not split solely
+to lower a number. Production Python grew by five lines as explicit callback
+state replaced closure captures. Full rationale:
+[`docs/aesthetic_review_2026-10-03.zh-CN.md`](docs/aesthetic_review_2026-10-03.zh-CN.md).
+
 ## Mypy clean-install and cross-platform gate fix (2026-10-03)
 
 The reported `python -m mypy codey` failures were reproduced in two focused

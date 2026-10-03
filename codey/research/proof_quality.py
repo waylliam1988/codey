@@ -16,7 +16,7 @@ from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_
 from codey.research.guards import status_token as _status_token
 from codey.research.guards import valid_digest_ref
 from codey.research.object_model import ResearchRecord
-from codey.research.source_trust import source_trust_warnings as _shared_source_trust_warnings
+from codey.research.source_trust import source_trust_warnings
 from codey.utils.refs import (
     bounded_refs,
     clip,
@@ -213,7 +213,7 @@ def review_research_proof(
     proof_question = requested_question or _question_text(payload)
     question_digest = _question_digest(proof_question)
     coverage = _answer_coverage(proof_question, claims, evidence)
-    trust = _source_trust_warnings(sources)
+    trust = source_trust_warnings(sources)
     overclaim = _overclaim_warnings(claims, relation_review["supported_claim_ids"])
     missing = [
         str(item)
@@ -867,13 +867,6 @@ def _planner_signals(
             "source_trust_warning",
         ))
     return tuple(followups[:MAX_SIGNALS]), tuple(rewrites[:MAX_SIGNALS])
-
-
-def _source_trust_warnings(sources: Mapping[str, Mapping[str, object]]) -> tuple[str, ...]:
-    # Shared deterministic rules live beside the source-trust projection
-    # (research/source_trust.py); this wrapper keeps the review's output
-    # byte-identical while the logic has exactly one owner.
-    return _shared_source_trust_warnings(sources)
 
 
 def _overclaim_warnings(

@@ -2,6 +2,19 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Callback lifecycle and aesthetic closure
+
+- Give run callbacks one explicit state owner; reduce the hook factory from
+  143 lines/complexity 21 to 40 lines/complexity 1 and remove its exemption.
+- Surface failover configuration errors rather than silently selecting the
+  entire provider catalog; retain lazy loading and valid empty orders.
+- Remove unused provider-health reexports and the pure source-trust forwarder.
+- Add nine behavior and ownership regressions. Full suite with real Edge E2E:
+  **6747 passed, 6 skipped, 1497 subtests passed in 456.55s**. Keep coherent
+  kernel/safety flows; no new task framework or cache. Details in
+  [`TEST_REPORT.md`](TEST_REPORT.md) and the
+  [aesthetic review](docs/aesthetic_review_2026-10-03.zh-CN.md).
+
 ## Unreleased - Mypy clean-install and cross-platform gate fix (no release)
 
 - Added the pinned `types-PyYAML` CI stub dependency so a clean mypy install
