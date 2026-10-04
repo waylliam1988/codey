@@ -80,6 +80,15 @@ unsettled dangerous writes are not blindly retried.
 
 ## Documentation
 
+Read-only review uses the selected Reviewer, validates findings against the
+actual input scope and checks whether the workspace changed. Partial or
+unavailable results are explicit; review approval does not replace tests.
+An explicit `review_source_run_id` can reuse a finished result only in the same
+session/project with matching input, known local target/settings and a current
+snapshot. No source means a fresh review. Run Details shows bounded status;
+`GET /api/run_review` returns verified stored findings through the authenticated
+run API. See [current review ownership](docs/project_structure.md).
+
 - [Detailed capabilities](docs/codey_capabilities.md)
 - [Roadmap](ROADMAP.zh-CN.md)
 - [Changelog](CHANGELOG.md)

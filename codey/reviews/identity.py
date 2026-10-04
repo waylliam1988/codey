@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from codey.reviews.core import REVIEW_CONTRACT_VERSION
@@ -18,6 +19,7 @@ class ReviewSnapshot:
     files: tuple[tuple[str, str], ...]
     ok: bool = True
     reason: str = ""
+    inventory_digest: str = ""
 
     def is_current(self, root: str | Path | None = None) -> bool:
         return verify_snapshot(self, root=root)
@@ -38,18 +40,14 @@ class ReviewIdentity:
     snapshot_files: tuple[tuple[str, str], ...] = ()
     attempt_id: str = ""
     artifact_sha256: str = ""
+    snapshot_inventory_digest: str = ""
 
 
 def scope_digest_for(scope: ReviewScope) -> str:
-    payload = "|".join([
-        str(scope.total_changed_files),
-        ",".join(sorted(scope.provided_files)),
-        ",".join(sorted(scope.excluded_files)),
-        "1" if scope.diff_truncated else "0",
-        "1" if scope.file_list_truncated else "0",
-        "1" if scope.collection_incomplete else "0",
-        ",".join(sorted(scope.exclusion_reasons)),
-    ])
+    fields = asdict(scope)
+    for key in ("provided_files", "excluded_files", "exclusion_reasons"):
+        fields[key] = sorted(fields[key])
+    payload = json.dumps(fields, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -58,7 +56,7 @@ def prompt_digest_for(prompt: str) -> str:
 
 
 def snapshot_digest_for(snapshot: ReviewSnapshot) -> str:
-    payload = "|".join([f"{path}={digest}" for path, digest in sorted(snapshot.files)])
+    payload = json.dumps([sorted(snapshot.files), snapshot.inventory_digest], separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -67,86 +65,50 @@ def capture_snapshot(project_root: str | Path, provided_files: tuple[str, ...] |
         root = Path(project_root).expanduser().resolve()
     except (OSError, RuntimeError, ValueError):
         return ReviewSnapshot(root=str(project_root), files=(), ok=False, reason="bad_root")
-    files: list[tuple[str, str]] = []
-    for rel in list(provided_files)[:MAX_SNAPSHOT_FILES]:
-        if not isinstance(rel, str) or not rel.strip():
-            return ReviewSnapshot(root=str(root), files=(), ok=False, reason="bad_path")
-        try:
-            from codey.workspace.paths import safe_join as _safe_join
+    if len(provided_files) > MAX_SNAPSHOT_FILES:
+        return ReviewSnapshot(root=str(root), files=(), ok=False, reason="file_limit")
+    inventory = _inventory_digest(root)
+    if not inventory:
+        return ReviewSnapshot(root=str(root), files=(), ok=False, reason="inventory_unavailable")
+    try:
+        files = [_snapshot_row(root, rel) for rel in provided_files]
+    except (OSError, RuntimeError, ValueError):
+        return ReviewSnapshot(root=str(root), files=(), ok=False, reason="snapshot_failed")
+    return ReviewSnapshot(root=str(root), files=tuple(files), ok=True, inventory_digest=inventory)
 
-            path = _safe_join(root, rel)
-            canonical = path.relative_to(root).as_posix()
-        except (ValueError, OSError):
-            return ReviewSnapshot(root=str(root), files=(), ok=False, reason="unsafe_path")
-        if canonical != rel:
-            return ReviewSnapshot(root=str(root), files=(), ok=False, reason="non_canonical")
-        try:
-            if path.is_symlink():
-                digest = "symlink"
-            elif not path.exists():
-                digest = "missing"
-            elif not path.is_file():
-                return ReviewSnapshot(root=str(root), files=(), ok=False, reason="not_file")
-            else:
-                try:
-                    size = path.stat().st_size
-                except OSError:
-                    return ReviewSnapshot(root=str(root), files=(), ok=False, reason="stat_failed")
-                if size > MAX_SNAPSHOT_FILE_BYTES:
-                    return ReviewSnapshot(root=str(root), files=(), ok=False, reason="too_large")
-                try:
-                    data = path.read_bytes()
-                except OSError:
-                    return ReviewSnapshot(root=str(root), files=(), ok=False, reason="read_failed")
-                digest = "sha256:" + hashlib.sha256(data).hexdigest()
-        except OSError:
-            return ReviewSnapshot(root=str(root), files=(), ok=False, reason="snapshot_failed")
-        files.append((canonical, digest))
-    return ReviewSnapshot(root=str(root), files=tuple(files), ok=True)
+
+def _snapshot_row(root: Path, rel: str) -> tuple[str, str]:
+    """The sole bounded file identity reader for capture and later validation."""
+    from codey.workspace.paths import safe_join
+
+    if not isinstance(rel, str) or not rel.strip():
+        raise ValueError("bad_path")
+    path = safe_join(root, rel)
+    if path.relative_to(root).as_posix() != rel:
+        raise ValueError("non_canonical")
+    if not path.exists():
+        return rel, "missing"
+    if not path.is_file():
+        raise ValueError("not_file")
+    with path.open("rb") as stream:
+        data = stream.read(MAX_SNAPSHOT_FILE_BYTES + 1)
+    if len(data) > MAX_SNAPSHOT_FILE_BYTES:
+        raise ValueError("too_large")
+    return rel, "sha256:" + hashlib.sha256(data).hexdigest()
 
 
 def verify_snapshot(snapshot: ReviewSnapshot, root: str | Path | None = None) -> bool:
-    if not isinstance(snapshot, ReviewSnapshot) or not snapshot.ok:
+    if not isinstance(snapshot, ReviewSnapshot) or not snapshot.ok or not snapshot.inventory_digest:
         return False
     try:
         expected_root = Path(snapshot.root).expanduser().resolve()
+        if root is not None and Path(root).expanduser().resolve() != expected_root:
+            return False
+        if _inventory_digest(expected_root) != snapshot.inventory_digest:
+            return False
+        return all(_snapshot_row(expected_root, rel) == (rel, digest) for rel, digest in snapshot.files)
     except (OSError, RuntimeError, ValueError):
         return False
-    if root is not None:
-        try:
-            given = Path(root).expanduser().resolve()
-        except (OSError, RuntimeError, ValueError):
-            return False
-        if given != expected_root:
-            return False
-    for rel, digest in snapshot.files:
-        try:
-            from codey.workspace.paths import safe_join as _safe_join
-
-            path = _safe_join(expected_root, rel)
-            if path.relative_to(expected_root).as_posix() != rel:
-                return False
-        except (ValueError, OSError):
-            return False
-        try:
-            if path.is_symlink():
-                current = "symlink"
-            elif not path.exists():
-                current = "missing"
-            elif not path.is_file():
-                return False
-            else:
-                try:
-                    if path.stat().st_size > MAX_SNAPSHOT_FILE_BYTES:
-                        return False
-                    current = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-                except OSError:
-                    return False
-        except OSError:
-            return False
-        if current != digest:
-            return False
-    return True
 
 
 def build_identity(
@@ -185,7 +147,58 @@ def build_identity(
         snapshot_files=snapshot_files,
         attempt_id=str(attempt_id or ""),
         artifact_sha256=str(artifact_sha256 or ""),
+        snapshot_inventory_digest=snapshot.inventory_digest if snapshot is not None else "",
     )
+
+
+def _inventory_digest(root: Path) -> str:
+    """Bounded path inventory detects additions without hashing the whole project."""
+    from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
+    from codey.workspace.revision import FINGERPRINT_EXCLUDED_DIRS
+
+    if not root.is_dir():
+        return ""
+    budget = BoundedScanBudget(max_files=5000, max_dirs=500, max_dir_entries=1000)
+    try:
+        names = sorted(path.relative_to(root).as_posix() for path in iter_bounded_files(
+            root, excluded_dirs=set(FINGERPRINT_EXCLUDED_DIRS), budget=budget,
+        ))
+    except (OSError, ValueError):
+        return ""
+    if budget.limited or budget.read_failed:
+        return ""
+    git_basis = _git_basis(root)
+    if git_basis is None:
+        return ""
+    return hashlib.sha256(json.dumps([names, git_basis], separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _git_basis(root: Path) -> str | None:
+    """Git HEAD and index affect the diff even when worktree bytes do not."""
+    from codey.workspace.changes import _run_git
+
+    if not any((parent / ".git").exists() for parent in (root, *root.parents)):
+        return "not_git"
+    hashes = []
+    for args in (["rev-parse", "--verify", "HEAD"], ["diff", "--cached", "--raw", "--no-abbrev", "-z", "--"]):
+        observed = _run_git(root, args)
+        if observed.returncode != 0 or observed.stdout_truncated:
+            return None
+        hashes.append(hashlib.sha256(observed.stdout.encode("utf-8")).hexdigest())
+    return ":".join(hashes)
+
+
+def review_model_identity(provider: object) -> str:
+    """Hash known local target/settings; a web provider name is not a model ID."""
+    from codey.providers.local_openai import LocalOpenAIProvider
+
+    if not isinstance(provider, LocalOpenAIProvider):
+        return ""
+    settings = {name: getattr(provider, name) for name in (
+        "base_url", "model", "temperature", "system_prompt", "context_window_tokens",
+        "context_reserve_tokens", "context_keep_recent_tokens",
+    )}
+    return hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def identities_match(first: ReviewIdentity, second: ReviewIdentity) -> bool:
@@ -196,6 +209,8 @@ def identities_match(first: ReviewIdentity, second: ReviewIdentity) -> bool:
     if first.policy != second.policy:
         return False
     if first.self_review != second.self_review:
+        return False
+    if first.project != second.project:
         return False
     if (first.reviewer_id or "") != (second.reviewer_id or ""):
         return False

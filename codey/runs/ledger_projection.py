@@ -131,6 +131,7 @@ class _LedgerBuildState:
     final_changes: ChangesSummary | None = None
     review: ReviewSummary | None = None
     review_events: dict[str, dict[str, object]] = field(default_factory=dict)
+    review_conflicts: set[str] = field(default_factory=set)
     ledger_truncated: bool = False
     has_run_started: bool = False
     has_run_finished: bool = False
@@ -258,19 +259,24 @@ def _project_review(state: _LedgerBuildState) -> ReviewSummary | None:
     attempt = str(finished.get("review_attempt_id") or "")
     if str(projected.get("review_attempt_id") or "") != attempt:
         return None
+    if attempt in state.review_conflicts:
+        return None
+    fields = ("verdict", "status", "origin", "finding_count", "artifact_sha256", "source_review_run_id")
+    if any(projected.get(name) != finished.get(name) for name in fields):
+        return None
     source = projected
-    verdict = str(source.get("verdict") or "")
-    status = str(source.get("status") or "")
-    origin = str(source.get("origin") or "fresh")
+    from codey.reviews.core import MAX_FINDINGS
+
+    verdict = source.get("verdict")
+    status = source.get("status")
+    origin = source.get("origin")
     count = source.get("finding_count")
-    if isinstance(count, bool):
-        finding_count = 0
-    elif isinstance(count, int):
-        finding_count = max(0, count)
-    elif isinstance(count, str) and count.strip().isdigit():
-        finding_count = max(0, int(count.strip()))
-    else:
-        finding_count = 0
+    if (not isinstance(verdict, str) or verdict not in {"approved", "changes_requested", "unknown"}
+        or not isinstance(status, str) or status not in {"complete", "incomplete", "unavailable", "stale"}
+        or not isinstance(origin, str) or origin not in {"fresh", "reused"}
+        or type(count) is not int or not 0 <= count <= MAX_FINDINGS):
+        return None
+    finding_count = count
     return ReviewSummary(
         verdict=verdict[:40],
         status=status[:40],
@@ -329,14 +335,17 @@ def project_run_ledger(records: Iterable[RunLedgerRecord]) -> RunLedgerProjectio
             state.ledger_truncated = True
             continue
         if event_type in (
-            "review_prepared",
-            "review_attempt_started",
             "review_result_projected",
-            "review_reused",
             "review_finished",
         ):
             attempt = str(payload.get("review_attempt_id") or "")
             if attempt:
+                previous = state.review_events.get(event_type)
+                fields = ("verdict", "status", "origin", "finding_count", "artifact_sha256", "source_review_run_id")
+                if previous and previous.get("review_attempt_id") == attempt and any(
+                    previous.get(name) != payload.get(name) for name in fields
+                ):
+                    state.review_conflicts.add(attempt)
                 state.review_events[event_type] = dict(payload)
             continue
         if event_type == "run_finished":
@@ -378,15 +387,22 @@ def event_with_projected_receipt(
     session_id: str,
     run_id: str,
 ) -> dict[str, object]:
-    """Attach the durable receipt projection to a terminal event when present."""
+    """Attach independent durable verification/review projections to the terminal event."""
 
-    receipt = build_task_receipt_from_projection(
-        load_run_projection(store, session_id, run_id)
-    )
-    if receipt is None:
+    projection = load_run_projection(store, session_id, run_id)
+    receipt = build_task_receipt_from_projection(projection)
+    review = projection.review if projection is not None else None
+    if receipt is None and review is None:
         return event
     updated = dict(event)
-    updated["receipt"] = receipt.to_dict()
+    if receipt is not None:
+        updated["receipt"] = receipt.to_dict()
+    if review is not None:
+        updated["review"] = {
+            "verdict": review.verdict, "status": review.status, "origin": review.origin,
+            "finding_count": review.finding_count, "attempt_id": review.attempt_id,
+            "artifact_sha256": review.artifact_sha256, "source_review_run_id": review.source_run_id,
+        }
     return updated
 
 

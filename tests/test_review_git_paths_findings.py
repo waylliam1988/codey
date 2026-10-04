@@ -41,12 +41,7 @@ class GitStatusPathTests(unittest.TestCase):
     def test_git_numstat_rename_matches_status_target(self) -> None:
         stats: dict[str, dict[str, int]] = {}
         change_col._merge_numstat(stats, "1\t0\told.py => new.py\n")
-        # rename numstat must resolve to the status target, not a literal arrow key
-        self.assertTrue(
-            "new.py" in stats or "old.py => new.py" not in stats or True
-        )
-        # at minimum it must not crash and must record counts
-        self.assertTrue(any(v["additions"] == 1 for v in stats.values()))
+        self.assertEqual(stats, {"new.py": {"additions": 1, "deletions": 0}})
 
     def test_git_quoted_path_matches_diff_hunks(self) -> None:
         # Git C-style quoting with octal escapes must decode to the real path

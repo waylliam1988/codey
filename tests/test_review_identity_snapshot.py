@@ -90,6 +90,18 @@ class IdentityTests(unittest.TestCase):
         b = build_identity(inp, reviewer_id="r1", policy="require_web")
         self.assertFalse(identities_match(a, b))
 
+    def test_project_change_rejects_reuse(self) -> None:
+        inp = _input()
+        a = build_identity(
+            inp, reviewer_id="r1", policy="web_if_available", model_id="model-x",
+            project="E:/project-a",
+        )
+        b = build_identity(
+            inp, reviewer_id="r1", policy="web_if_available", model_id="model-x",
+            project="E:/project-b",
+        )
+        self.assertFalse(identities_match(a, b))
+
 
 class SnapshotTests(unittest.TestCase):
     def test_snapshot_detects_edit_rename_delete_and_new_change(self) -> None:

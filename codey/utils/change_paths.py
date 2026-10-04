@@ -53,6 +53,8 @@ def change_file_paths(
     previous_decoded = decode_git_path(raw_previous_path) if isinstance(raw_previous_path, str) else ""
     previous_path = safe_change_path(previous_decoded)
     path_text = str(raw_path or "")
+    if previous_path:
+        return safe_change_path(decode_git_path(path_text)), previous_path
     status = str(raw_status or "").strip().upper()
     if " -> " not in path_text or (
         not previous_path and not status.startswith(("R", "C"))

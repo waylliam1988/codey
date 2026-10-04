@@ -291,6 +291,36 @@ def run_details_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, di
     }
 
 
+def run_review_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict]:
+    """Structured cold read using the same authenticated run lookup as Details."""
+    from dataclasses import asdict
+
+    from codey.reviews.core import review_result_payload
+    from codey.reviews.persistence import load_recorded_review
+    from codey.reviews.reuse import validate_source_run_id
+
+    session_id = query_value(query, "session_id")
+    run_id = query_value(query, "run_id")
+    if not session_id or not run_id:
+        return 400, {"ok": False, "error": "session_id and run_id required"}
+    try:
+        validate_source_run_id(run_id)
+    except ValueError:
+        return 400, {"ok": False, "error": "invalid run_id"}
+    try:
+        recorded = load_recorded_review(ctx.state_home, session_id, run_id)
+    except (OSError, ValueError):
+        recorded = None
+    if recorded is None:
+        return 200, {"ok": True, "available": False, "review": None}
+    _projection, result = recorded
+    payload = review_result_payload(result)
+    payload["findings"] = [asdict(finding) for finding in result.findings]
+    payload["scope"] = asdict(result.scope)
+    payload["summary"] = result.summary
+    return 200, {"ok": True, "available": True, "review": payload}
+
+
 def research_restore_response(ctx: Any, body: dict) -> tuple[int, dict]:
     run_id = str(body.get("run_id") or "").strip()
     if not run_id:
@@ -551,16 +581,14 @@ def run_submit_response(
         return 400, {"error": f"unsupported provider: {provider_id}"}
     if intent == "review" and not project:
         return 400, {"error": "project required for review"}
-    review_source_run_id = str(body.get("review_source_run_id") or "").strip()
-    if review_source_run_id:
-        from codey.reviews.reuse import validate_source_run_id
+    from codey.reviews.reuse import validate_source_run_id
 
-        if intent not in {"review", "project"}:
-            return 400, {"error": "review_source_run_id requires review or project intent"}
-        try:
-            review_source_run_id = validate_source_run_id(review_source_run_id)
-        except ValueError as exc:
-            return 400, {"error": str(exc)}
+    try:
+        review_source_run_id = validate_source_run_id(body.get("review_source_run_id", ""))
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    if review_source_run_id and intent not in {"review", "project"}:
+        return 400, {"error": "review_source_run_id requires review or project intent"}
     project_error = _project_directory_error(project)
     if project_error:
         return 400, {"error": project_error}
@@ -797,6 +825,7 @@ __all__ = [
     "research_restore_response",
     "restore_changes_response",
     "run_details_response",
+    "run_review_response",
     "run_submit_response",
     "save_local_provider_response",
     "save_ui_state_response",

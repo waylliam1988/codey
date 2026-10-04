@@ -327,7 +327,7 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("keep CLI behavior", prompt)
 
     def test_review_repair_prompt_is_json_only(self) -> None:
-        prompt = review.review_repair_prompt()
+        prompt = review.REVIEW_REPAIR_PROMPT
 
         self.assertIn("Return only the JSON object now", prompt)
         self.assertIn("preserving your previous verdict", prompt)

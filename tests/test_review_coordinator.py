@@ -8,6 +8,7 @@ from codey.reviews.coordinator import ReviewCoordinator, change_state
 from codey.reviews.core import ReviewFinding, ReviewResult
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.execution_evidence import CheckEvidence
+from tests.support.review_workspace import review_workspace
 
 CHANGES = {
     "ok": True,
@@ -41,37 +42,38 @@ class ReviewCoordinatorTests(unittest.TestCase):
             mock.Mock(return_value="Verification Map"),
         )
         stop_requested = overrides.pop("stop_requested", mock.Mock(return_value=False))
-        result = coordinator.run_cycle(
-            project="project",
-            tracker=object(),
-            session_id="session",
-            task="Fix app",
-            result=overrides.pop("result", RunResult("done", "done", 1, False, True)),
-            task_changed=overrides.pop("task_changed", True),
-            changes=overrides.pop("changes", CHANGES),
-            changes_dirty=overrides.pop("changes_dirty", False),
-            writer_id="deepseek",
-            recent_log="read app.py",
-            render_change_brief=overrides.pop("render_change_brief", mock.Mock(return_value="brief")),
-            execution_evidence="evidence",
-            successful_checks=overrides.pop(
-                "successful_checks",
-                (CheckEvidence("python -m pytest", "."),),
-            ),
-            checkpoint_prompt=overrides.pop("checkpoint_prompt", "checkpoint prompt"),
-            checks_before_review_followup=overrides.pop(
-                "checks_before_review_followup",
-                True,
-            ),
-            stop_requested=stop_requested,
-            refresh_project_map=refresh_project_map,
-            build_verification_map=build_verification_map,
-            run_review=run_review,
-            close_writer_for_review=close_writer,
-            repair_writer=repair_writer,
-            set_checkpoint_status=set_checkpoint_status,
-            emit_review_unavailable=emit_unavailable,
-        )
+        with review_workspace(run_review) as (project, callback):
+            result = coordinator.run_cycle(
+                project=project,
+                tracker=object(),
+                session_id="session",
+                task="Fix app",
+                result=overrides.pop("result", RunResult("done", "done", 1, False, True)),
+                task_changed=overrides.pop("task_changed", True),
+                changes=overrides.pop("changes", CHANGES),
+                changes_dirty=overrides.pop("changes_dirty", False),
+                writer_id="deepseek",
+                recent_log="read app.py",
+                render_change_brief=overrides.pop("render_change_brief", mock.Mock(return_value="brief")),
+                execution_evidence="evidence",
+                successful_checks=overrides.pop(
+                    "successful_checks",
+                    (CheckEvidence("python -m pytest", "."),),
+                ),
+                checkpoint_prompt=overrides.pop("checkpoint_prompt", "checkpoint prompt"),
+                checks_before_review_followup=overrides.pop(
+                    "checks_before_review_followup",
+                    True,
+                ),
+                stop_requested=stop_requested,
+                refresh_project_map=refresh_project_map,
+                build_verification_map=build_verification_map,
+                run_review=callback,
+                close_writer_for_review=close_writer,
+                repair_writer=repair_writer,
+                set_checkpoint_status=set_checkpoint_status,
+                emit_review_unavailable=emit_unavailable,
+            )
         return {
             "result": result,
             "collect_changes": collect_changes,

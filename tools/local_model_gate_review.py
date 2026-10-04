@@ -16,12 +16,12 @@ def run_review_case(target, directory: Path) -> dict:
     root = Path(config["project"])
     state_home = Path(config["state"])
     root.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q", str(root)], check=False, timeout=30)
-    subprocess.run(["git", "-C", str(root), "config", "user.email", "gate@test"], check=False, timeout=10)
-    subprocess.run(["git", "-C", str(root), "config", "user.name", "gate"], check=False, timeout=10)
+    subprocess.run(["git", "init", "-q", str(root)], check=True, timeout=30)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "gate@test"], check=True, timeout=10)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "gate"], check=True, timeout=10)
     (root / "app.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(root), "add", "."], check=False, timeout=30)
-    subprocess.run(["git", "-C", str(root), "commit", "-qm", "init"], check=False, timeout=30)
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True, timeout=30)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "init"], check=True, timeout=30)
     (root / "app.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
     baseline = {
         p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -58,12 +58,34 @@ def run_review_case(target, directory: Path) -> dict:
         }
         review_events = [r for r in rows if r.get("type") == "review"]
         task_done = next((r for r in reversed(rows) if r.get("type") == "task_done"), None)
+        review = (task_done or {}).get("review")
+        provider_path = directory / "provider.jsonl"
+        provider_rows = [json.loads(line) for line in provider_path.read_text(encoding="utf-8").splitlines()] if provider_path.exists() else []
+        requests = [row for row in provider_rows if row.get("type") == "request"]
+        from codey.reviews.persistence import ReviewArtifactStore, load_review_artifact
+        from codey.runs.ledger import RunLedgerStore
+        from codey.runs.ledger_projection import load_run_projection
+
+        projection = load_run_projection(RunLedgerStore(state_home), result.session_id, result.run_id)
+        durable = projection.review if projection is not None else None
+        restored = None
+        if durable is not None and durable.artifact_sha256:
+            restored = load_review_artifact(
+                ReviewArtifactStore(state_home), session_id=result.session_id, run_id=result.run_id,
+                attempt_id=durable.attempt_id, expected_sha256=durable.artifact_sha256,
+            )
         ok = (
-            task_done is not None
-            and result.exit_code in (0, 1)
-            and bool(review_events)
+            task_done is not None and result.exit_code == 0
+            and task_done.get("stop_reason") == "done"
+            and bool(requests) and all(row["payload"].get("model") == target.model for row in requests)
+            and isinstance(review, dict) and review.get("status") == "complete"
+            and restored is not None and restored.is_complete
+            and durable is not None and review.get("attempt_id") == durable.attempt_id
+            and review.get("verdict") == restored.verdict
+            and review.get("finding_count") == len(restored.findings)
+            and review.get("artifact_sha256") == durable.artifact_sha256
             and after == baseline
-            and all("review" in r for r in review_events if r.get("review"))
+            and not any(row.get("type") in {"file_changed", "command_verified"} for row in rows)
         )
         # The smoke proves wiring (real Reviewer call, contract, read-only,
         # persistence hooks); it never asserts the model found a specific bug.
@@ -76,6 +98,8 @@ def run_review_case(target, directory: Path) -> dict:
             "session_id": result.session_id,
             "jsonl_rows": len(rows),
             "review_events": len(review_events),
+            "review_requests": len(requests),
+            "review_status": review.get("status") if isinstance(review, dict) else "missing",
             "failure_stage": "" if ok else "review_smoke",
         }
     except Exception as exc:  # noqa: BLE001

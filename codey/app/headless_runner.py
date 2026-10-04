@@ -326,7 +326,7 @@ def _run_headless_task(
                 strict_research=entry_strict,
                 sources_open_required=bool(getattr(request, "sources_open_required", False)),
                 project_changes_required=entry_requires,
-                review_source_run_id=str(getattr(request, "review_source_run_id", "") or ""),
+                review_source_run_id=request.review_source_run_id,
             ),
         )
         terminal = dict(state.run_registry.last_terminal_event() or {})
@@ -359,18 +359,12 @@ def _no_headless_review(**_kwargs):
 def _headless_review_for(request: HeadlessRequest, state: HeadlessAppContext):
     if _request_intent(request.intent) != "review":
         return _no_headless_review
-    try:
-        from codey.app import review_service as _review_service
+    from codey.app.review_service import run_review
 
-        def _run_review(**kwargs):
-            kwargs.setdefault("run_id", str(request.run_id or ""))
-            if request.review_source_run_id and "review_source_run_id" not in kwargs:
-                kwargs["review_source_run_id"] = request.review_source_run_id
-            return _review_service.run_review(state, **kwargs)
+    def _run_review(**kwargs):
+        return run_review(state, connect_reviewer=state.get_provider, **kwargs)
 
-        return _run_review
-    except Exception:
-        return _no_headless_review
+    return _run_review
 
 
 def _headless_run_id_exists(

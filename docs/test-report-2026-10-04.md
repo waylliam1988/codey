@@ -1,5 +1,21 @@
 # Test Report (2026-10-04)
 
+## Current audit result
+
+The latest single full run returned **7187 passed, 29 skipped, 1 failed,
+1497 subtests passed in 449.65s**. The lone old Ghost/router assertion expected
+`done` after Reviewer failure; it was migrated to unavailable/no-success facts.
+The post-full affected suite passed **44 cases in 5.06s**, with no production
+changes and no repeat full run. This is not a zero-failure full-run claim.
+
+Static checks passed; the machine gate passed **268 cases in 31.32s**. Final
+KoboldCpp review smoke passed **1/1**, 1 request, no retry, **5.498s**, 756 reported
+tokens. Windows privilege/platform and browser opt-in skips are recorded in
+[TEST_REPORT](../TEST_REPORT.md). Node-backed script tests now execute with Node
+24.19.0; the earlier missing-Node results below remain historical evidence.
+
+See the [function ownership and fixes](review-audit-2026-10-04.zh-CN.md).
+
 ## Review hardening follow-up
 
 - `python -m ruff check codey tests`: passed.

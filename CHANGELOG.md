@@ -4,6 +4,25 @@
 
 ## Unreleased - Review determinism, scope, persistence and explicit reuse
 
+- Audit follow-up: invalid/nested/status-only JSON cannot hide an incomplete
+  review; format repair preserves already actionable findings. Git NUL rename
+  parsing preserves literal delimiters and rejects incomplete records.
+- Safe review input preserves ordinary auth/credential code and long literals,
+  redacts credential/private-key values, and marks redaction or required-input
+  clipping as partial scope. Original changes remain intact.
+- Snapshot guards fail closed on bounded-scan errors and Git HEAD/index changes.
+  Known local endpoint/model/settings and actual self-review policy bind reuse;
+  unknown web model identity does not qualify as a known model.
+- Read an artifact once and verify the same bytes; enforce exact schema types,
+  IDs, scope and finding hashes. Cold HTTP reads and reuse share verified ledger
+  lineage; failed source runs and conflicting terminal events cannot be reused.
+- Formal headless review uses its configured connector and reports unavailable,
+  incomplete or stale status truthfully. Review metadata shares its payload and
+  terminal owners; remove duplicate preparation/reuse readers and unused shims.
+- Strengthen the local review gate against zero-request/unavailable false passes
+  and Windows read-only Git cleanup failure. Add 80 new regression cases and
+  document the single full-run result plus the corrected old terminal assertion.
+
 - Strict review parsing: skip non-review JSON, reject unknown verdicts, empty
   objects, wrong finding types and duplicate contract keys; approved with
   actionable findings normalizes to changes_requested; conflicting objects and

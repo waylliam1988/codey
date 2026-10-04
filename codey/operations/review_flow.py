@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -11,7 +12,7 @@ from codey.operations.context import RunFrame
 from codey.operations.project_completion_context import record_review_input_prepared_trace
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState
-from codey.reviews.core import has_reviewable_changes
+from codey.reviews.core import has_reviewable_changes, review_result_payload
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
@@ -90,7 +91,8 @@ def run_review_mode(
                 run_id=frame.run_id,
                 session_id=request.session_id,
                 summary=summary,
-                stop_reason="done",
+                stop_reason="review_unavailable",
+                review=review_result_payload(None),
                 turns=0,
                 max_turns=request.max_turns,
                 provider=frame.provider_id,
@@ -121,7 +123,8 @@ def run_review_mode(
                 run_id=frame.run_id,
                 session_id=request.session_id,
                 summary=summary,
-                stop_reason="done",
+                stop_reason="review_unavailable",
+                review=review_result_payload(None),
                 turns=0,
                 max_turns=request.max_turns,
                 provider=frame.provider_id,
@@ -165,7 +168,7 @@ def run_review_mode(
     try:
         try:
             review_impact_map = safe_review_impact_map(project, changes)
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
             review_impact_map = ""
@@ -198,18 +201,23 @@ def run_review_mode(
             run_id=frame.run_id,
             review_source_run_id=str(getattr(request, "review_source_run_id", "") or ""),
         )
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         reviewed = None
     if reviewed is None:
         summary = "Review unavailable. No files were changed."
+        review = None
     else:
         _reviewer_id, review = reviewed
         from codey.reviews.persistence import append_review_result_ledger
 
-        append_review_result_ledger(append_ledger, review)
+        # A persistence failure must not erase the current observation.
+        with contextlib.suppress(OSError, ValueError):
+            append_review_result_ledger(append_ledger, review)
         summary = render_review_only_summary(review)
+    review_payload = review_result_payload(review)
+    stop_reason = "done" if review is not None and review.is_complete else "review_" + review_payload["status"]
     state.set_provider_session(frame.provider_id, None)
     frame.conversation.update_snapshot(
         replace(
@@ -229,29 +237,23 @@ def run_review_mode(
     # Settlement owns final display: persist the experience observation first,
     # then publish review + task_done. Modes never emit final events themselves.
     return ModeOutcome(
-        {
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": summary,
-            "stop_reason": "done",
-            "turns": 1 if reviewed is not None else 0,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "review",
-            "changed": False,
-            "changes": {
+        task_done_event(
+            run_id=frame.run_id, session_id=request.session_id, summary=summary, stop_reason=stop_reason,
+            review=review_payload, turns=1 if reviewed is not None else 0, max_turns=request.max_turns,
+            provider=frame.provider_id, mode="review", changed=False,
+            changes={
                 "changed_count": changes.get("changed_count", 0),
                 "files": changes.get("files", [])[:3],
                 "mode": changes.get("mode"),
                 "project": project,
             },
-        },
+        ),
         display=({
             "type": "review",
             "run_id": frame.run_id,
             "session_id": request.session_id,
             "text": summary,
+            "review": review_payload,
         },),
     )
 
@@ -274,20 +276,20 @@ def render_review_only_summary(review: object) -> str:
         return "Review outdated · files changed"
     if status in ("unavailable",):
         return "Review unavailable"
-    if status == "incomplete" or verdict == "unknown":
-        if diff_truncated or scope_incomplete:
+    if not findings and (status == "incomplete" or verdict == "unknown"):
+        if diff_truncated:
             return "Partial review · diff truncated"
         return "Review incomplete"
     if verdict == "approved" and not findings:
         if scope_incomplete:
-            return "Partial review · diff truncated"
+            return "Partial review · diff truncated" if diff_truncated else "Review incomplete"
         if origin == "reused":
             return "Previous review reused"
         return "Review passed"
     if findings:
         if origin == "reused":
             header = f"Previous review reused · {len(findings)} issues found"
-        elif scope_incomplete:
+        elif scope_incomplete or status == "incomplete":
             header = f"Partial review · {len(findings)} issues found"
         else:
             header = f"{len(findings)} issues found"

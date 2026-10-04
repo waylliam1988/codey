@@ -161,76 +161,123 @@ def load_review_artifact(
     session_id: str,
     run_id: str,
     attempt_id: str,
+    expected_sha256: str = "",
+    project: str = "",
 ) -> ReviewResult:
-    from codey.reviews.input import ReviewScope
+    """Validate and reconstruct one bounded read, including its exact identity."""
+    from codey.reviews.identity import ReviewIdentity
 
     path = store.path_for(session_id, run_id, attempt_id)
     try:
-        raw = path.read_bytes()
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_ARTIFACT_BYTES + 1)
     except OSError as exc:
-        raise ValueError(f"review artifact missing: {exc}") from exc
-    if len(raw) > MAX_ARTIFACT_BYTES + 1024:
+        raise ValueError("review artifact missing") from exc
+    if len(raw) > MAX_ARTIFACT_BYTES:
         raise ValueError("review artifact exceeds size limit")
+    digest = hashlib.sha256(raw).hexdigest()
+    if expected_sha256 and digest != expected_sha256:
+        raise ValueError("review artifact digest mismatch")
     try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise ValueError(f"review artifact unreadable: {exc}") from exc
+        payload = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object)
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+        raise ValueError("review artifact unreadable") from exc
     if not isinstance(payload, dict):
         raise ValueError("review artifact invalid")
-    if payload.get("schema_version") != SCHEMA_VERSION:
-        raise ValueError("review artifact schema mismatch")
-    if payload.get("session_id") != session_id or payload.get("run_id") != run_id:
-        raise ValueError("review artifact identity mismatch")
-    if payload.get("contract_version") != REVIEW_CONTRACT_VERSION:
-        raise ValueError("review artifact contract mismatch")
-    findings = []
+    _validate_artifact_contract(payload, session_id, run_id, attempt_id)
+    scope = _read_scope(payload.get("scope"))
+    findings = _read_findings(payload.get("findings"), scope)
+    diagnostics = payload.get("diagnostics")
+    if not isinstance(diagnostics, list) or len(diagnostics) > 8 or any(not isinstance(row, str) for row in diagnostics):
+        raise ValueError("review artifact diagnostics invalid")
+    if payload["verdict"] == "approved" and findings:
+        raise ValueError("review artifact verdict conflicts with findings")
+    identity = ReviewIdentity(
+        scope_digest=payload["scope_digest"], prompt_digest=payload["prompt_digest"],
+        snapshot_digest=payload["snapshot_digest"], project=project, reviewer_id=payload["reviewer_id"],
+        model_id=payload["model_id"], contract_version=payload["contract_version"], policy=payload["policy"],
+        self_review=payload["self_review"], attempt_id=attempt_id, artifact_sha256=digest,
+    )
+    return ReviewResult(payload["verdict"], payload["summary"], findings,
+                        status=payload["status"], origin="fresh", diagnostics=tuple(diagnostics),
+                        scope=scope, identity=identity)
+
+
+def _validate_artifact_contract(payload, session_id, run_id, attempt_id):
+    for name, expected in (("schema_version", SCHEMA_VERSION), ("contract_version", REVIEW_CONTRACT_VERSION)):
+        if type(payload.get(name)) is not int or payload[name] != expected:
+            raise ValueError("review artifact version mismatch")
+    for name, expected_id in (("session_id", session_id), ("run_id", run_id), ("attempt_id", attempt_id)):
+        if payload.get(name) != expected_id:
+            raise ValueError("review artifact identity mismatch")
+    if not isinstance(payload.get("verdict"), str) or payload["verdict"] not in {"approved", "changes_requested", "unknown"}:
+        raise ValueError("review artifact verdict invalid")
+    if not isinstance(payload.get("status"), str) or payload["status"] not in {"complete", "incomplete", "unavailable", "stale"}:
+        raise ValueError("review artifact status invalid")
+    if type(payload.get("self_review")) is not bool:
+        raise ValueError("review artifact self_review invalid")
+    for name in ("summary", "scope_digest", "prompt_digest", "snapshot_digest", "reviewer_id", "model_id", "policy"):
+        if not isinstance(payload.get(name), str):
+            raise ValueError("review artifact text invalid")
+
+
+def _read_findings(raw_findings, scope):
     from codey.reviews.core import ReviewFinding
 
-    raw_findings = payload.get("findings")
-    if not isinstance(raw_findings, list):
+    if not isinstance(raw_findings, list) or len(raw_findings) > MAX_FINDINGS_PERSISTED:
         raise ValueError("review artifact findings invalid")
-    if len(raw_findings) > MAX_FINDINGS_PERSISTED:
-        raise ValueError("review artifact findings exceed limit")
+    findings = []
     for item in raw_findings:
         if not isinstance(item, dict):
             raise ValueError("review artifact finding invalid")
-        finding_id = item.get("finding_id")
-        path_value = item.get("path")
-        issue = item.get("issue")
-        if not isinstance(finding_id, str) or not finding_id:
-            raise ValueError("review artifact finding_id invalid")
-        if not isinstance(path_value, str) or not path_value:
-            raise ValueError("review artifact path invalid")
-        if not isinstance(issue, str) or not issue:
-            raise ValueError("review artifact issue invalid")
-        raw_fix = item.get("suggested_fix")
-        fix = raw_fix if isinstance(raw_fix, str) else ""
-        raw_hunk = item.get("hunk_index")
-        hunk = raw_hunk if type(raw_hunk) is int else None
-        raw_new = item.get("new_line")
-        new_line = raw_new if type(raw_new) is int else None
-        raw_old = item.get("old_line")
-        old_line = raw_old if type(raw_old) is int else None
-        findings.append(ReviewFinding(path_value, issue, fix, hunk, new_line, old_line))
-    scope_payload = payload.get("scope") or {}
-    scope = ReviewScope(
-        total_changed_files=int(scope_payload.get("total_changed_files") or 0),
-        provided_files=tuple(scope_payload.get("provided_files") or ()),
-        excluded_files=tuple(scope_payload.get("excluded_files") or ()),
-        diff_truncated=bool(scope_payload.get("diff_truncated")),
-        file_list_truncated=bool(scope_payload.get("file_list_truncated")),
-        context_truncated=bool(scope_payload.get("context_truncated")),
-        collection_incomplete=bool(scope_payload.get("collection_incomplete")),
-    )
-    return ReviewResult(
-        verdict=str(payload.get("verdict") or "unknown"),
-        summary=str(payload.get("summary") or ""),
-        findings=findings,
-        status=str(payload.get("status") or "incomplete"),
-        origin="reused",
-        diagnostics=tuple(payload.get("diagnostics") or ()),
-        scope=scope,
-    )
+        for name in ("finding_id", "path", "issue", "suggested_fix"):
+            if not isinstance(item.get(name), str):
+                raise ValueError("review artifact finding text invalid")
+        if not item["issue"] or item["path"] not in scope.provided_files:
+            raise ValueError("review artifact finding outside scope")
+        anchors = [item.get(name) for name in ("hunk_index", "new_line", "old_line")]
+        if any(value is not None and (type(value) is not int or value <= 0) for value in anchors):
+            raise ValueError("review artifact anchor invalid")
+        finding = ReviewFinding(item["path"], item["issue"], item["suggested_fix"], *anchors)
+        if item["finding_id"] != _finding_id(finding):
+            raise ValueError("review artifact finding identity mismatch")
+        findings.append(finding)
+    return findings
+
+
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate artifact key")
+        result[key] = value
+    return result
+
+
+def _read_scope(payload):
+    from codey.reviews.input import ReviewScope
+
+    if not isinstance(payload, dict):
+        raise ValueError("review artifact scope invalid")
+    total = payload.get("total_changed_files")
+    if type(total) is not int or total < 0:
+        raise ValueError("review artifact scope count invalid")
+    fields = {"total_changed_files": total}
+    for name in ("provided_files", "excluded_files", "exclusion_reasons"):
+        rows = payload.get(name)
+        if not isinstance(rows, list) or any(not isinstance(row, str) for row in rows):
+            raise ValueError("review artifact scope list invalid")
+        fields[name] = tuple(rows)
+    for name in ("diff_truncated", "file_list_truncated", "context_truncated", "collection_incomplete", "required_context_truncated", "content_redacted"):
+        if type(payload.get(name)) is not bool:
+            raise ValueError("review artifact scope flag invalid")
+        fields[name] = payload[name]
+    return ReviewScope(**fields)
+
+
+def _finding_id(finding) -> str:
+    stable = f"{finding.path}\x00{finding.issue}\x00{finding.suggested_fix}\x00{finding.hunk_index}\x00{finding.new_line}\x00{finding.old_line}"
+    return "review_finding:" + hashlib.sha256(stable.encode("utf-8")).hexdigest()[:16]
 
 
 def review_trace_payload(result: ReviewResult, *, scope_digest: str, prompt_digest: str) -> dict[str, object]:
@@ -261,8 +308,7 @@ def _artifact_payload(
 ) -> dict[str, object]:
     findings = []
     for index, finding in enumerate(list(result.findings)[:MAX_FINDINGS_PERSISTED]):
-        stable = f"{finding.path}\x00{finding.issue}\x00{finding.suggested_fix}\x00{finding.hunk_index}\x00{finding.new_line}\x00{finding.old_line}"
-        finding_id = "review_finding:" + hashlib.sha256(stable.encode("utf-8")).hexdigest()[:16]
+        finding_id = _finding_id(finding)
         findings.append({
             "finding_id": finding_id,
             "index": index,
@@ -282,6 +328,9 @@ def _artifact_payload(
         "file_list_truncated": bool(getattr(scope, "file_list_truncated", False)),
         "context_truncated": bool(getattr(scope, "context_truncated", False)),
         "collection_incomplete": bool(getattr(scope, "collection_incomplete", False)),
+        "required_context_truncated": bool(getattr(scope, "required_context_truncated", False)),
+        "content_redacted": bool(getattr(scope, "content_redacted", False)),
+        "exclusion_reasons": list(getattr(scope, "exclusion_reasons", ())),
     }
     return {
         "schema_version": SCHEMA_VERSION,
@@ -306,9 +355,39 @@ def _artifact_payload(
 
 
 def _safe_component(value: object) -> str:
-    import re as _re
+    import re
 
-    text = _re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "").strip())[:120].strip("._")
-    if not text:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", value) or ".." in value:
         raise ValueError("invalid artifact component")
-    return text
+    return value
+
+
+def load_recorded_review(state_home, session_id: str, run_id: str):
+    """Read finished ledger plus its verified artifact, with one-hop reuse lineage."""
+    from dataclasses import replace
+
+    from codey.runs.ledger import RunLedgerStore
+    from codey.runs.ledger_projection import load_run_projection
+
+    ledgers = RunLedgerStore(state_home)
+    projection = load_run_projection(ledgers, session_id, run_id)
+    if projection is None or not projection.complete or projection.review is None:
+        return None
+    summary = projection.review
+    artifact_run = summary.source_run_id if summary.origin == "reused" else run_id
+    if not artifact_run or not summary.artifact_sha256:
+        return None
+    if artifact_run != run_id:
+        original = load_run_projection(ledgers, session_id, artifact_run)
+        if (original is None or not original.complete or original.review is None
+            or original.stop_reason != "done" or original.project != projection.project
+            or original.review.origin != "fresh"
+            or original.review.attempt_id != summary.attempt_id
+            or original.review.artifact_sha256 != summary.artifact_sha256):
+            return None
+    result = load_review_artifact(ReviewArtifactStore(state_home), session_id=session_id, run_id=artifact_run,
+        attempt_id=summary.attempt_id, expected_sha256=summary.artifact_sha256, project=projection.project)
+    if result.verdict != summary.verdict or result.status != summary.status or len(result.findings) != summary.finding_count:
+        return None
+    return projection, replace(result, origin=summary.origin,
+                               source_run_id=artifact_run if summary.origin == "reused" else "")

@@ -886,37 +886,33 @@ def parse_git_status(short_status: str) -> list[dict]:
 
 
 def parse_git_status_nul(nul_status: str) -> list[dict]:
+    from codey.utils.change_paths import safe_change_path
+
+    if nul_status and not nul_status.endswith("\x00"):
+        raise ValueError("incomplete Git status record")
     files: list[dict] = []
-    chunks = (nul_status or "").split("\x00")
+    chunks = (nul_status or "").split("\x00")[:-1]
     index = 0
     while index < len(chunks):
         entry = chunks[index]
         index += 1
-        if not entry:
-            continue
         if len(entry) < 4 or entry[2] != " ":
-            continue
+            raise ValueError("invalid Git status record")
         status = entry[:2].strip() or "M"
-        raw_path = entry[3:]
-        if not raw_path.strip():
-            continue
-        previous_raw = ""
-        if status.startswith(("R", "C")) and index < len(chunks):
-            nxt = chunks[index]
-            if nxt and " -> " not in raw_path and "\t" not in nxt:
-                previous_raw = nxt
-                index += 1
-        if " -> " in raw_path and not previous_raw:
-            path, previous_path = change_file_paths(raw_path, "", status)
-        elif previous_raw:
-            path, previous_path = change_file_paths(raw_path, previous_raw, status)
-        else:
-            path, previous_path = change_file_paths(raw_path, "", status)
+        path = safe_change_path(entry[3:])
+        previous = ""
+        if "R" in status or "C" in status:
+            if index >= len(chunks) or not chunks[index]:
+                raise ValueError("incomplete Git rename record")
+            previous = safe_change_path(chunks[index])
+            index += 1
+            if not previous:
+                raise ValueError("unsafe Git rename source")
         if not path:
-            continue
+            raise ValueError("unsafe Git status path")
         item = {"path": path, "status": status, "additions": 0, "deletions": 0}
-        if previous_path:
-            item["previous_path"] = previous_path
+        if previous:
+            item["previous_path"] = previous
         files.append(item)
     return files
 
@@ -948,42 +944,30 @@ def _merge_numstat(stats: dict[str, dict[str, int]], text: str) -> None:
 
 
 def _merge_numstat_nul(stats: dict[str, dict[str, int]], text: str) -> None:
-    chunks = (text or "").split("\x00")
+    from codey.utils.change_paths import safe_change_path
+
+    if not text.endswith("\x00"):
+        raise ValueError("incomplete Git numstat record")
+    chunks = text.split("\x00")[:-1]
     index = 0
     while index < len(chunks):
-        chunk = chunks[index]
+        parts = chunks[index].split("\t", 2)
         index += 1
-        if not chunk:
-            continue
-        parts = chunk.split("\t")
-        if len(parts) < 3:
-            continue
-        added, deleted = parts[0], parts[1]
-        raw_path = "\t".join(parts[2:])
+        if len(parts) != 3:
+            raise ValueError("invalid Git numstat record")
+        added, deleted, raw_path = parts
         if not raw_path:
-            if index + 1 < len(chunks) + 1 and index < len(chunks):
-                old = chunks[index] if index < len(chunks) else ""
-                new = chunks[index + 1] if index + 1 < len(chunks) else ""
-                index += 2
-                target = _numstat_target(new) or _numstat_target(old)
-                if not target:
-                    continue
-                item = stats.setdefault(target, {"additions": 0, "deletions": 0})
-                if added.isascii() and added.isdigit():
-                    item["additions"] += int(added)
-                if deleted.isascii() and deleted.isdigit():
-                    item["deletions"] += int(deleted)
-            continue
-        if " => " in raw_path and index < len(chunks) and chunks[index] and "\t" not in chunks[index]:
-            raw_path = chunks[index]
-            index += 1
-        path = _numstat_target(raw_path)
-        if not path:
-            continue
+            if index + 1 >= len(chunks) or not chunks[index] or not chunks[index + 1]:
+                raise ValueError("incomplete Git numstat rename")
+            raw_path = chunks[index + 1]
+            index += 2
+        path = safe_change_path(raw_path)
+        if not path or any(value != "-" and not (value.isascii() and value.isdigit()) for value in (added, deleted)):
+            raise ValueError("invalid Git numstat fields")
         item = stats.setdefault(path, {"additions": 0, "deletions": 0})
-        if added.isascii() and added.isdigit():
+        if added != "-":
             item["additions"] += int(added)
-        if deleted.isascii() and deleted.isdigit():
+        if deleted != "-":
             item["deletions"] += int(deleted)
 
 
@@ -1158,11 +1142,10 @@ def _load_git_status_files(git_root: Path) -> tuple[list[dict] | None, dict | No
             "diff": "",
             "reason": GIT_REASON_FAILED,
         }
-    files = [
-        file
-        for file in parse_git_status(status_proc.stdout)
-        if is_displayable_change_path(file["path"])
-    ]
+    try:
+        files = [file for file in parse_git_status(status_proc.stdout) if is_displayable_change_path(file["path"])]
+    except ValueError:
+        return None, _git_failed_payload()
     return files, None
 
 
@@ -1183,8 +1166,11 @@ def _load_git_numstat_stats(git_root: Path) -> tuple[dict[str, dict[str, int]] |
             "reason": GIT_REASON_FAILED,
         }
     stats: dict[str, dict[str, int]] = {}
-    _merge_numstat(stats, unstaged_num.stdout)
-    _merge_numstat(stats, staged_num.stdout)
+    try:
+        _merge_numstat(stats, unstaged_num.stdout)
+        _merge_numstat(stats, staged_num.stdout)
+    except ValueError:
+        return None, _git_failed_payload()
     return stats, None
 
 

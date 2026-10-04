@@ -598,6 +598,15 @@ class ApprovedShellTests(unittest.TestCase):
 
 
 class ProviderStatusTests(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.review_project = directory.name
+        root = Path(directory.name)
+        (root / "src").mkdir()
+        (root / "src/api.ts").write_text("export function renamed() {}", encoding="utf-8")
+        (root / "app.py").write_text("x", encoding="utf-8")
+
     def test_provider_payload_marks_available_models(self) -> None:
         payload = provider_services.provider_payload({"deepseek": True, "stepfun": False})
 
@@ -769,7 +778,7 @@ class ProviderStatusTests(unittest.TestCase):
             review_service.run_review(
                 server.AppContext(),
                 session_id="session-1",
-                project="E:/demo",
+                project=self.review_project,
                 task="task",
                 writer_summary="done",
                 changes={"ok": True, "changed_count": 1, "diff": "+x"},
@@ -806,7 +815,7 @@ class ProviderStatusTests(unittest.TestCase):
             reviewed = review_service.run_review(
                 state,
                 session_id="session-1",
-                project="E:/demo",
+                project=self.review_project,
                 task="task",
                 writer_summary="done",
                 changes=changes,
@@ -815,7 +824,7 @@ class ProviderStatusTests(unittest.TestCase):
             )
 
         self.assertIsNotNone(reviewed)
-        impact_map.assert_called_once_with("E:/demo", changes)
+        impact_map.assert_called_once_with(self.review_project, changes)
         prompt = reviewer.send.call_args.args[0]
         self.assertIn("Review Impact Map (bounded hints; not coverage proof)", prompt)
         reviewer.close.assert_called_once_with()
@@ -844,7 +853,7 @@ class ProviderStatusTests(unittest.TestCase):
             reviewed = review_service.run_review(
                 state,
                 session_id="session-1",
-                project="E:/demo",
+                project=self.review_project,
                 task="task",
                 writer_summary="done",
                 changes=changes,
@@ -881,7 +890,7 @@ class ProviderStatusTests(unittest.TestCase):
             reviewed = review_service.run_review(
                 state,
                 session_id="session-1",
-                project="E:/demo",
+                project=self.review_project,
                 task="task",
                 writer_summary="done",
                 changes=changes,
@@ -921,7 +930,7 @@ class ProviderStatusTests(unittest.TestCase):
             reviewed = review_service.run_review(
                 state,
                 session_id="session-1",
-                project="E:/demo",
+                project=self.review_project,
                 task="task",
                 writer_summary="done",
                 changes=changes,
@@ -961,7 +970,7 @@ class ProviderStatusTests(unittest.TestCase):
             reviewed = review_service.run_review(
                 state,
                 session_id="session-review-trace",
-                project="E:/demo",
+                project=self.review_project,
                 task="task",
                 writer_summary="done",
                 changes=changes,
@@ -990,7 +999,7 @@ class ProviderStatusTests(unittest.TestCase):
             review_service.run_review(
                 state,
                 session_id="session-1",
-                project="E:/demo",
+                project=self.review_project,
                 task="task",
                 writer_summary="done",
                 changes={"ok": True, "changed_count": 1, "diff": "+x"},
@@ -1018,7 +1027,7 @@ class ProviderStatusTests(unittest.TestCase):
             review_service.run_review(
                 state,
                 session_id="session-1",
-                project="E:/demo",
+                project=self.review_project,
                 task="task",
                 writer_summary="done",
                 changes={"ok": True, "changed_count": 1, "diff": "+x"},

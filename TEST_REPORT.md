@@ -1,5 +1,61 @@
 # Codey Test Report
 
+## Review audit and deterministic boundary fixes (2026-10-04)
+
+Scope: commits `39a0fc80` and `de413af3`, plus the existing uncommitted identity,
+safe-input and reuse changes. Package version remains **0.5.11**; no release/tag.
+
+- Defect regressions were reproduced before fixes. **15 new regression files,
+  80 collected cases**; valid controls and fixture migrations are not claimed
+  to have all been red. Existing tests now exercise real snapshot guards,
+  submission consumers, cold storage and selected-provider headless review.
+- Preflight: `ruff check .`, `mypy codey` (**370 files, 0 errors**),
+  `compileall -q codey tests tools`, JavaScript syntax checks and
+  `git diff --check` passed. Node **24.19.0** is available for the browser-script
+  tests that previously failed to launch; historical failures remain below.
+- Broad affected-area regression: **1020 passed, 2 skipped, 35 subtests passed
+  in 121.46s**. Final machine contract gate: **268 passed in 31.32s**, no skips.
+- One full run, Windows / Python 3.12:
+  `python -m pytest -q -o faulthandler_timeout=120 -ra`
+  → **7187 passed, 29 skipped, 1 failed, 1497 subtests passed in 449.65s**.
+  The failure was the old Ghost/router expectation that an unavailable Reviewer
+  should terminate with `done`; production correctly returned
+  `review_unavailable`. The test now checks unavailable metadata, no Writer,
+  and no successful Ghost observation. Its first new empty-observation assertion
+  used a list instead of the API's tuple; that test mistake was corrected.
+- Post-full scoped regression: **44 passed in 5.06s** (Ghost/router, formal
+  headless review, review contract integration and Coordinator consumption).
+  Only the test expectation changed after the full run; production did not.
+  No second full run was performed. This is **not** reported as a zero-failure
+  full run. Skips cover Windows/POSIX differences, unavailable symlink privileges
+  and opt-in real browser E2E; no new skip/xfail was added to hide defects.
+
+### KoboldCpp review smoke
+
+Final-source command:
+`python tools/local_model_release_gate.py --cases review --repeat 1 --timeout 600 --protocol native --json`
+
+- **PASS 1/1**; model
+  `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`,
+  endpoint `http://127.0.0.1:5001/v1`.
+- **5.498s**, 1 logical send / 1 HTTP attempt / 0 retries; reported usage
+  **666 prompt + 90 completion = 756 tokens**.
+- Actual selected Reviewer request, complete structured result, verified
+  artifact/ledger/terminal identity, and unchanged project files.
+- Artifacts (ignored, not committed):
+  `.e2e-artifacts/local-model-release-20261004-200043-73ce5d8d89`.
+- Earlier smoke `local-model-release-20261004-193552-a982719f97` had a valid
+  review but failed archiving/cleanup with Windows `WinError 5` on read-only Git
+  objects. A deterministic filesystem regression preceded the bounded cleanup
+  fix; both subsequent smokes passed. The initial failure remains recorded.
+
+This smoke validates the review chain, not model finding accuracy or a full
+native/JSON task matrix. Reviewer uses textual review JSON even when the gate's
+selected target protocol is native. Real browser layout E2E and broad model
+quality/latency comparisons were not run in this audit.
+
+See [audit, ownership and remaining limits](docs/review-audit-2026-10-04.zh-CN.md).
+
 ## Unreleased review hardening (2026-10-04)
 
 The review hardening changes were rechecked after the final lineage and typing

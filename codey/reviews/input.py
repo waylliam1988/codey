@@ -1,6 +1,7 @@
 """Safe review input preparation with explicit scope."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,6 +22,8 @@ class ReviewScope:
     file_list_truncated: bool = False
     context_truncated: bool = False
     collection_incomplete: bool = False
+    required_context_truncated: bool = False
+    content_redacted: bool = False
     exclusion_reasons: tuple[str, ...] = ()
 
     @property
@@ -30,6 +33,8 @@ class ReviewScope:
             or self.diff_truncated
             or self.file_list_truncated
             or bool(self.excluded_files)
+            or self.required_context_truncated
+            or self.content_redacted
         )
 
 
@@ -101,8 +106,11 @@ def prepare_review_input(
     excluded: list[str] = []
     reasons: list[str] = []
     kept: list[str] = []
+    allowed_diff_paths: set[str] = set()
     for item in all_files:
         reason = _sensitive_file_reason(item.path)
+        if not reason and item.previous_path:
+            reason = _sensitive_file_reason(item.previous_path)
         if reason:
             excluded.append(item.path)
             reasons.append(f"{item.path}:{reason}")
@@ -110,11 +118,20 @@ def prepare_review_input(
             kept.append(item.path)
     file_list_truncated = len(kept) > 20
     provided = tuple(kept[:20])
+    for item in all_files:
+        if item.path in provided:
+            allowed_diff_paths.add(item.path)
+            if item.previous_path:
+                allowed_diff_paths.add(item.previous_path)
     raw_diff = str(source.get("diff") or "")
     upstream_truncated = bool(source.get("truncated"))
-    filtered_diff = _filter_diff_to_provided(raw_diff, set(provided))
+    filtered_diff, filter_incomplete = _filter_diff_to_provided(raw_diff, allowed_diff_paths)
     redacted_diff = _redact_text(filtered_diff)
-    diff_truncated = upstream_truncated or len(redacted_diff) > MAX_REVIEW_DIFF_CHARS
+    diff_truncated = (
+        upstream_truncated
+        or filter_incomplete
+        or len(redacted_diff) > MAX_REVIEW_DIFF_CHARS
+    )
     safe_log = _redact_text(recent_log)
     safe_brief = _redact_text(change_brief)
     safe_map = _redact_text(project_map)
@@ -172,8 +189,15 @@ def prepare_review_input(
         diff_truncated=diff_truncated,
         file_list_truncated=file_list_truncated,
         context_truncated=context_truncated,
-        collection_incomplete=False,
+        collection_incomplete=source.get("changed_count", total) != total,
+        required_context_truncated=len(safe_task) > 6000 or len(safe_brief) > 8000,
         exclusion_reasons=tuple(reasons[:20]),
+        content_redacted=any(original != safe for original, safe in (
+            (filtered_diff, redacted_diff), (task, safe_task), (writer_summary, safe_summary),
+            (recent_log, safe_log), (change_brief, safe_brief), (project_map, safe_map),
+            (verification_map, safe_verification), (review_impact_map, safe_impact),
+            (execution_evidence, safe_evidence),
+        )),
     )
     return ReviewInput(
         change_set=change_set,
@@ -194,9 +218,9 @@ def _sensitive_file_reason(path: str) -> str:
             return "sensitive_filename"
         if any(lower.endswith(s) for s in _SENSITIVE_SUFFIXES):
             return "sensitive_suffix"
-        if lower in _SENSITIVE_NAME_PARTS or any(m in lower for m in ("secret", "credential", "private")):
-            if lower in {"token", "tokens", "password", "passwd"}:
-                continue
+        # Module names such as private_helpers.py and credentials_parser.py
+        # are ordinary code. Only dedicated secret directories are excluded.
+        if part != parts[-1] and lower in _SENSITIVE_NAME_PARTS - {"auth", "private"}:
             return "secret_like_path"
     return ""
 
@@ -209,8 +233,16 @@ def _redact_text(text: object) -> str:
         return raw
     lines = raw.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     redacted: list[str] = []
+    in_private_key = False
     for line in lines:
-        if looks_secret_shape(line) or looks_high_entropy_secret(line):
+        if "-----BEGIN " in line and "PRIVATE KEY-----" in line:
+            in_private_key = True
+        if in_private_key:
+            marker = line[:1] if line[:1] in {"+", "-", " "} else ""
+            redacted.append(marker + _REDACTED)
+            if "-----END " in line and "PRIVATE KEY-----" in line:
+                in_private_key = False
+        elif looks_secret_shape(line) or looks_high_entropy_secret(line):
             redacted.append(_redact_line(line))
         else:
             redacted.append(line)
@@ -226,39 +258,48 @@ def _redact_line(line: str) -> str:
     text = re.sub(r"AIza[0-9A-Za-z_\-]{20,}", _REDACTED, text)
     text = re.sub(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[^\n]*", _REDACTED, text)
     text = re.sub(r"\b[A-Za-z0-9][A-Za-z0-9_\-./+=]{16,}\b", _redact_token, text)
-    if text == line:
-        return _REDACTED if len(line) > 200 else line
     return text
 
 
-def _redact_token(match: object) -> str:
+def _redact_token(match: re.Match[str]) -> str:
+    import re
+
+    from codey.policies.redaction import SECRET_MARKER_RE
     from codey.policies.redaction import looks_high_entropy_secret as _looks
 
-    token = match.group(0) if hasattr(match, "group") else str(match)
-    if _looks(token):
+    token = match.group(0)
+    # Keep the surrounding marker: lowercase hex and slash-bearing secrets
+    # only qualify when the caller supplied their credential context.
+    prefix = match.string[:match.start()]
+    markers = list(SECRET_MARKER_RE.finditer(prefix))
+    credential_value = bool(markers and re.fullmatch(r'''[\s:=?"']*''', prefix[markers[-1].end():]))
+    if _looks(token) or credential_value and _looks("api_key=" + token):
         return _REDACTED
     return token
 
 
-def _filter_diff_to_provided(diff: str, provided: set[str]) -> str:
+def _filter_diff_to_provided(diff: str, provided: set[str]) -> tuple[str, bool]:
     if not diff:
-        return diff
+        return diff, False
     if not provided:
-        return ""
+        return "", False
     from codey.workspace.change_set import _path_from_diff_git as _diff_path
     from codey.workspace.change_set import _path_from_file_header as _header_path
 
     lines = diff.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     kept: list[str] = []
     current: list[str] = []
-    current_path = ""
-    pending_old = ""
-    pending_new = ""
+    current_paths: set[str] = set()
+    current_has_hunk = False
+    incomplete = False
 
     def _flush() -> None:
+        nonlocal incomplete
         if not current:
             return
-        keep = not current_path or current_path in provided
+        keep = bool(current_paths) and current_paths.issubset(provided)
+        if not current_paths:
+            incomplete = True
         if keep:
             kept.extend(current)
 
@@ -266,22 +307,50 @@ def _filter_diff_to_provided(diff: str, provided: set[str]) -> str:
         if line.startswith("diff --git "):
             _flush()
             current = [line]
-            current_path = _diff_path(line)
-            pending_old = ""
-            pending_new = ""
+            current_paths = set()
+            current_has_hunk = False
+            diff_path = _diff_path(line)
+            if diff_path:
+                current_paths.add(diff_path)
+            continue
+        if (
+            line.startswith("--- ")
+            and current
+            and any(item.startswith("+++") for item in current)
+            and not current_has_hunk
+        ):
+            _flush()
+            current = [line]
+            current_paths = set()
+            current_has_hunk = False
+            header_path = _header_path(line[4:])
+            if header_path:
+                current_paths.add(header_path)
             continue
         if not current:
-            kept.append(line)
+            if line.startswith("--- "):
+                current = [line]
+                current_paths = set()
+                current_has_hunk = False
+                header_path = _header_path(line[4:])
+                if header_path:
+                    current_paths.add(header_path)
+            else:
+                kept.append(line)
             continue
         current.append(line)
-        if line.startswith("--- "):
-            pending_old = _header_path(line[4:])
+        if line.startswith("@@"):
+            current_has_hunk = True
             continue
-        if line.startswith("+++ "):
-            pending_new = _header_path(line[4:])
-            selected = pending_new or pending_old or current_path
-            if selected:
-                current_path = selected
+        if line.startswith("--- ") and not current_has_hunk:
+            header_path = _header_path(line[4:])
+            if header_path:
+                current_paths.add(header_path)
+            continue
+        if line.startswith("+++ ") and not current_has_hunk:
+            header_path = _header_path(line[4:])
+            if header_path:
+                current_paths.add(header_path)
             continue
     _flush()
-    return "\n".join(kept)
+    return "\n".join(kept), incomplete

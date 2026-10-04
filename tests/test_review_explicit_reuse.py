@@ -22,12 +22,15 @@ class SubmissionWiringTests(unittest.TestCase):
         self.assertEqual(sub.review_source_run_id, "run-1")
 
     def test_source_is_rejected_for_unsupported_intent(self) -> None:
-        from codey.reviews.reuse import validate_source_run_id
+        from unittest.mock import Mock
 
-        # chat intent must not accept review source (checked by entry layer)
-        self.assertEqual(validate_source_run_id("run-1"), "run-1")
-        with self.assertRaises(ValueError):
-            validate_source_run_id("../evil.py")
+        from codey.operations.task_run import prepare_submission
+
+        request = TaskSubmission("s", None, "hello", 4, False, "local", intent="chat", review_source_run_id="run-1")
+        state = Mock()
+        with self.assertRaisesRegex(ValueError, "only supported"):
+            prepare_submission(state, request)
+        state.reserve_run.assert_not_called()
 
     def test_shell_previous_run_id_behavior_is_unchanged(self) -> None:
         sub = TaskSubmission(
@@ -86,7 +89,7 @@ class ReuseConditionTests(unittest.TestCase):
             )
             self.assertIsNone(result)
 
-    def test_input_mismatch_runs_fresh_review(self) -> None:
+    def test_missing_source_is_a_reuse_miss(self) -> None:
         import tempfile
 
         with tempfile.TemporaryDirectory() as td:
@@ -102,7 +105,7 @@ class ReuseConditionTests(unittest.TestCase):
             )
             self.assertIsNone(result)
 
-    def test_fresh_default_does_not_query_historical_results(self) -> None:
+    def test_empty_source_id_is_accepted_as_fresh_default(self) -> None:
         self.assertEqual(validate_source_run_id(""), "")
 
 

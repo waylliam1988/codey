@@ -73,6 +73,12 @@ CLI、网页事件和 headless JSONL 共用运行身份与工具状态。恢复�
 
 ## 文档
 
+只读审查使用实际选定的 Reviewer，按真实输入范围校验问题并检查工作区是否变化。
+部分范围或不可用结果会明确显示；审查通过不能替代测试。显式
+`review_source_run_id` 只在同会话/项目、输入与已知本地模型配置匹配、快照仍有效时
+复用已完成结果；不提供来源就进行新审查。Run Details 展示有界状态，经过认证的
+`GET /api/run_review` 从正式存储恢复问题。详见[当前职责地图](docs/project_structure.zh-CN.md)。
+
 - [详细能力说明](docs/codey_capabilities.zh-CN.md)
 - [路线图](ROADMAP.zh-CN.md)
 - [版本更新记录](CHANGELOG.zh-CN.md)

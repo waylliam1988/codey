@@ -74,8 +74,14 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 | `tests` | 为已有实现补充测试 | 测试通过、原实现未改动、变异实现必须被测试拒绝 |
 | `research` | 显式 Research：查官方 pathlib 文档 | 实际搜索和打开来源、隔离账本/报告要求通过、正常 `done` |
 | `recovery` | 两个独立进程：真实编辑结算后强制退出，再从正式日志恢复 | 原结果已交付、编辑只执行一次、原策略保持、文件精确符合请求、独立测试通过、最终 `done` |
+| `review` | 正式 headless 只读审查，固定目标传入 Reviewer 连接器 | 实际请求非零且模型匹配、完整结构化结果、产物/ledger/终态一致、文件哈希不变；不可用不通过，不断言固定问题措辞 |
 
 实机要求：
+
+- `review` 可用 `--cases review --repeat 1` 单独冒烟。Reviewer 当前发送文本审查 JSON；
+  gate 的 `--protocol native` 不表示 Reviewer 调用了原生工具。单例通过不替代完整矩阵。
+- Windows 临时 Git 对象可能是只读文件。清理只对已确认的 owned 临时目录内删除权限
+  错误处理文件写入位并重试一次；不忽略清理/存档失败，不修改用户项目权限。
 
 - 默认地址通过本地模型发现（LM Studio、Ollama、KoboldCpp 和通用兼容端点）；
   设置 `LOCAL_OPENAI_BASE_URL` 时只探测该地址。先探 `/models`，`reason=ok` 才开跑。

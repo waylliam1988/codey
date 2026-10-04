@@ -31,6 +31,7 @@ class BoundedScanBudget:
     dir_limited: bool = False
     entry_limited: bool = False
     byte_limited: bool = False
+    read_failed: bool = False
 
     @property
     def limited(self) -> bool:
@@ -67,6 +68,7 @@ class BoundedScanBudget:
         try:
             info = path.lstat()
         except OSError:
+            self.read_failed = True
             return False
         if stat.S_ISLNK(info.st_mode):
             return False
@@ -133,6 +135,7 @@ def _collect_dir_entries(
                 budget.entry_limited = True
                 break
     except OSError:
+        budget.read_failed = True
         return entries
     return entries
 
@@ -168,6 +171,7 @@ def _partition_sorted_entries(
                     continue
                 yielded.append(entry)
         except OSError:
+            budget.read_failed = True
             continue
     return dirs, yielded, False
 

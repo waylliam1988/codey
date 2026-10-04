@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -291,7 +292,7 @@ def run_case_process(case: str, directory: Path, target: GateTarget, *, timeout:
         finally:
             for temporary in (project, state):
                 try:
-                    shutil.rmtree(temporary)
+                    _remove_case_temp_tree(temporary)
                 except OSError as exc:
                     artifact_errors.append(f"cleanup {temporary}: {exc}")
         if artifact_errors:
@@ -309,6 +310,27 @@ def run_case_process(case: str, directory: Path, target: GateTarget, *, timeout:
             })
         write_json(directory / "result.json", result)
     return result
+
+
+def _remove_case_temp_tree(root: Path) -> None:
+    """Remove only a gate-created temp tree; retry read-only Git files once."""
+    import stat
+
+    expected = Path(tempfile.gettempdir()).resolve()
+    resolved = root.resolve()
+    if root.is_symlink() or resolved.parent != expected or not resolved.name.startswith("codey-gate-"):
+        raise ValueError("gate cleanup target is not an isolated temp tree")
+
+    def retry_readonly(operation, filename, exception_info):
+        error = exception_info[1]
+        path = Path(filename)
+        if not isinstance(error, PermissionError) or operation not in {os.unlink, os.remove, os.rmdir}:
+            raise error
+        path.resolve().relative_to(resolved)
+        path.chmod(path.stat().st_mode | stat.S_IWRITE | stat.S_IWUSR)
+        operation(filename)
+
+    shutil.rmtree(resolved, onerror=retry_readonly)
 
 
 def _attempt_matrix(results: list[dict], expected_cases: tuple[str, ...] | None, repeat: int | None) -> dict:

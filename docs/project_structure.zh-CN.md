@@ -24,7 +24,7 @@ codey/
   storage/      原子 I/O、文件锁、对话与受管输出
   knowledge/    本地笔记、图与知识变更
   ghost/        有界本地经历、记忆、工作队列与控制面
-  reviews/      审查协调与 findings
+  reviews/      审查契约、安全输入、身份、产物、显式复用与协调
   repairs/      provider 修复作业与监督
   runs/         运行 ledger、trace、检查点、详情与收据
   utils/        共用文本、引用与扫描小工具
@@ -75,6 +75,23 @@ HTTP / CLI → task submission → task_run + task_phases
 | `codey/operations/research_iteration.py` | 函数 `run_research_iteration`，pipeline 对共同内核的适配入口 |
 
 ## 持久 runtime 与存储
+
+### 审查职责
+
+| 所有者 | 消费者 / 边界 |
+| --- | --- |
+| `reviews/core.py`、`findings.py` | 有界回复解析、可执行问题与公共审查事件元数据 |
+| `reviews/input.py`、`identity.py` | 实际安全 prompt/范围、本地模型配置身份、有界文件与 Git 基准快照 |
+| `reviews/persistence.py`、`reuse.py` | 单次校验读取、已完成 ledger 来源链、显式同会话/项目复用 |
+| `app/review_service.py` | 单次准备、实际 Reviewer 选择、一次格式修复及保存；未知发送失败不切 Reviewer 重发 |
+| `reviews/coordinator.py`、`operations/project_review_phase.py` | 当前快照有效的问题进入既有一次 Writer repair |
+| `operations/review_flow.py`、`app/headless_runner.py` | 通过已配置连接器进行只读审查并如实报告终态；默认 project 不新增 Reviewer 调用 |
+| `runs/ledger_projection.py`、`runs/details.py`、`app/api.py` | 有界展示及经过认证的 `/api/run_review` 结构化冷读 |
+| `tools/local_model_gate_review.py` | 真请求、文件不变、产物/ledger/事件一致性；不评判模型找问题能力 |
+
+模型身份描述配置的目标/模型/参数，不证明模型权重不可变。快照扫描和文件读取有明确
+预算；读取失败或超预算不授予信任。这些边界不构成全库无 bug 的证明，也不能消除任意
+并发外部写入造成的竞争。详见[本轮审计](review-audit-2026-10-04.zh-CN.md)。
 
 `runtime/core` 管状态/契约，`runtime/log` 管规范日志投影，`runtime/effects`
 管 effect/结果交付，`runtime/write` 管获准变更，`runtime/observe` 管只读观察。

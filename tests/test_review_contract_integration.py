@@ -9,6 +9,7 @@ from unittest import mock
 from codey.reviews.coordinator import ReviewCoordinator
 from codey.reviews.core import ReviewResult, parse_review_response
 from codey.runtime.core.run_result import RunResult
+from tests.support.review_workspace import review_workspace
 
 CHANGES = {
     "ok": True,
@@ -19,31 +20,32 @@ CHANGES = {
 
 
 def _coordinator(run_review):
-    return ReviewCoordinator(mock.Mock(return_value=CHANGES)).run_cycle(
-        project="project",
-        tracker=object(),
-        session_id="s",
-        task="t",
-        result=RunResult("done", "done", 1, False, True),
-        task_changed=True,
-        changes=CHANGES,
-        changes_dirty=False,
-        writer_id="w",
-        recent_log="log",
-        render_change_brief=mock.Mock(return_value=""),
-        execution_evidence="",
-        successful_checks=(),
-        checkpoint_prompt="cp",
-        checks_before_review_followup=False,
-        stop_requested=mock.Mock(return_value=False),
-        refresh_project_map=mock.Mock(return_value=""),
-        build_verification_map=mock.Mock(return_value=""),
-        run_review=run_review,
-        close_writer_for_review=mock.Mock(),
-        repair_writer=mock.Mock(return_value=RunResult("fixed", "done", 1, False, True)),
-        set_checkpoint_status=mock.Mock(),
-        emit_review_unavailable=mock.Mock(),
-    )
+    with review_workspace(run_review) as (project, callback):
+        return ReviewCoordinator(mock.Mock(return_value=CHANGES)).run_cycle(
+            project=project,
+            tracker=object(),
+            session_id="s",
+            task="t",
+            result=RunResult("done", "done", 1, False, True),
+            task_changed=True,
+            changes=CHANGES,
+            changes_dirty=False,
+            writer_id="w",
+            recent_log="log",
+            render_change_brief=mock.Mock(return_value=""),
+            execution_evidence="",
+            successful_checks=(),
+            checkpoint_prompt="cp",
+            checks_before_review_followup=False,
+            stop_requested=mock.Mock(return_value=False),
+            refresh_project_map=mock.Mock(return_value=""),
+            build_verification_map=mock.Mock(return_value=""),
+            run_review=callback,
+            close_writer_for_review=mock.Mock(),
+            repair_writer=mock.Mock(return_value=RunResult("fixed", "done", 1, False, True)),
+            set_checkpoint_status=mock.Mock(),
+            emit_review_unavailable=mock.Mock(),
+        )
 
 
 class ContractIntegrationTests(unittest.TestCase):
@@ -70,17 +72,18 @@ class ContractIntegrationTests(unittest.TestCase):
             changes=changes,
         )
         review = ReviewResult("approved", "ok", [], status="complete")
-        from codey.reviews.identity import ReviewSnapshot
+        from codey.reviews.identity import capture_snapshot
 
-        finalized = review_service._finalize_review(
-            _Ctx(), "s", "project", "reviewer", False,
-            prepared,
-            ReviewSnapshot(root="project", files=(), ok=True),
-            review,
-            None,
-            "run-1",
-        )
-        self.assertFalse(prepared.scope.is_complete)
+        with tempfile.TemporaryDirectory() as directory:
+            finalized = review_service._finalize_review(
+                _Ctx(), "s", "project", "reviewer", False,
+                prepared,
+                capture_snapshot(directory, ()),
+                review,
+                None,
+                "run-1",
+            )
+            self.assertFalse(prepared.scope.is_complete)
         self.assertEqual(finalized.status, "incomplete")
         self.assertFalse(finalized.is_complete)
 
@@ -375,7 +378,8 @@ class ContractIntegrationTests(unittest.TestCase):
                 finding_count=0,
                 source_review_run_id="r1",
             ),
-            record(3, "review_finished", review_attempt_id="a1"),
+            record(3, "review_finished", review_attempt_id="a1", verdict="approved",
+                   status="complete", origin="reused", finding_count=0, source_review_run_id="r1"),
             record(4, "run_finished"),
         ])
         self.assertIsNotNone(projection.review)
@@ -413,7 +417,7 @@ class ContractIntegrationTests(unittest.TestCase):
             path.write_text('{"schema_version":1,"seq":1,"type":"run_started"}\nbad json\n', encoding="utf-8")
             self.assertEqual(read_ledger(path), [])
 
-    def test_repeated_terminal_events_do_not_duplicate_repair(self) -> None:
+    def test_project_review_repair_is_bounded_to_one_call(self) -> None:
         from codey.reviews.core import ReviewFinding
 
         review = ReviewResult(
@@ -421,30 +425,34 @@ class ContractIntegrationTests(unittest.TestCase):
         )
         repair = mock.Mock(return_value=RunResult("fixed", "done", 1, False, True))
         coord = ReviewCoordinator(mock.Mock(return_value=CHANGES))
-        first = coord.run_cycle(
-            project="p", tracker=object(), session_id="s", task="t",
-            result=RunResult("done", "done", 1, False, True),
-            task_changed=True, changes=CHANGES, changes_dirty=False,
-            writer_id="w", recent_log="", render_change_brief=mock.Mock(return_value=""),
-            execution_evidence="", successful_checks=(),
-            checkpoint_prompt="cp", checks_before_review_followup=False,
-            stop_requested=mock.Mock(return_value=False),
-            refresh_project_map=mock.Mock(return_value=""),
-            build_verification_map=mock.Mock(return_value=""),
-            run_review=mock.Mock(return_value=("r", review)),
-            close_writer_for_review=mock.Mock(), repair_writer=repair,
-            set_checkpoint_status=mock.Mock(), emit_review_unavailable=mock.Mock(),
-        )
+        with review_workspace(mock.Mock(return_value=("r", review))) as (project, callback):
+            first = coord.run_cycle(
+                project=project, tracker=object(), session_id="s", task="t",
+                result=RunResult("done", "done", 1, False, True),
+                task_changed=True, changes=CHANGES, changes_dirty=False,
+                writer_id="w", recent_log="", render_change_brief=mock.Mock(return_value=""),
+                execution_evidence="", successful_checks=(),
+                checkpoint_prompt="cp", checks_before_review_followup=False,
+                stop_requested=mock.Mock(return_value=False),
+                refresh_project_map=mock.Mock(return_value=""),
+                build_verification_map=mock.Mock(return_value=""),
+                run_review=callback,
+                close_writer_for_review=mock.Mock(), repair_writer=repair,
+                set_checkpoint_status=mock.Mock(), emit_review_unavailable=mock.Mock(),
+            )
         self.assertTrue(first.review_repair_attempted)
         self.assertEqual(repair.call_count, 1)
 
-    def test_output_schema_drop_is_contract_failure(self) -> None:
+    def test_review_serializer_preserves_structured_result(self) -> None:
         from codey.app import event_payloads as _payloads
 
-        event = {"type": "review", "run_id": "r", "session_id": "s", "text": "hi"}
+        review_payload = {"verdict": "changes_requested", "status": "complete", "origin": "fresh",
+                          "finding_count": 1, "attempt_id": "a1", "artifact_sha256": "a" * 64}
+        event = {"type": "review", "run_id": "r", "session_id": "s", "text": "hi", "review": review_payload}
         payload = _payloads.machine_event_payload(event)
         self.assertIsNotNone(payload)
         self.assertEqual(payload["type"], "review")
+        self.assertEqual(payload["review"], review_payload)
 
 
 if __name__ == "__main__":

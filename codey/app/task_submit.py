@@ -108,7 +108,7 @@ def run_task(
                 denied_capabilities=tuple(denied_capabilities or ()),
                 previous_run_id=str(previous_run_id or ""),
                 initial_shell_results=tuple(initial_shell_results or ()),
-                review_source_run_id=str(review_source_run_id or ""),
+                review_source_run_id=review_source_run_id,
             )
         )
     finally:
@@ -173,7 +173,7 @@ def submit_task(
             initial_shell_results=tuple(initial_shell_results or ()),
             get_state=lambda: state,
             review_policy=review_policy,
-            review_source_run_id=str(review_source_run_id or ""),
+            review_source_run_id=review_source_run_id,
         )
     except Exception:
         state.release_run(reserved.run_id)

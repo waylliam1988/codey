@@ -10,6 +10,7 @@ from codey.reviews.core import ReviewFinding, ReviewResult
 from codey.reviews.input import ReviewScope
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.execution_evidence import CheckEvidence
+from tests.support.review_workspace import review_workspace
 
 CHANGES = {
     "ok": True,
@@ -31,31 +32,32 @@ def _cycle(**overrides):
         "repair_writer",
         mock.Mock(return_value=RunResult("fixed", "done", 1, False, True)),
     )
-    return coordinator.run_cycle(
-        project=overrides.pop("project", "project"),
-        tracker=object(),
-        session_id="session",
-        task="Fix app",
-        result=overrides.pop("result", RunResult("done", "done", 1, False, True)),
-        task_changed=overrides.pop("task_changed", True),
-        changes=overrides.pop("changes", CHANGES),
-        changes_dirty=overrides.pop("changes_dirty", False),
-        writer_id="deepseek",
-        recent_log="log",
-        render_change_brief=overrides.pop("render_change_brief", mock.Mock(return_value="brief")),
-        execution_evidence="evidence",
-        successful_checks=(CheckEvidence("python -m pytest", "."),),
-        checkpoint_prompt="checkpoint",
-        checks_before_review_followup=True,
-        stop_requested=mock.Mock(return_value=False),
-        refresh_project_map=mock.Mock(return_value="map"),
-        build_verification_map=mock.Mock(return_value="vmap"),
-        run_review=run_review,
-        close_writer_for_review=close_writer,
-        repair_writer=repair_writer,
-        set_checkpoint_status=mock.Mock(),
-        emit_review_unavailable=mock.Mock(),
-    ), {"run_review": run_review, "repair_writer": repair_writer}
+    with review_workspace(run_review) as (project, callback):
+        return coordinator.run_cycle(
+            project=overrides.pop("project", project),
+            tracker=object(),
+            session_id="session",
+            task="Fix app",
+            result=overrides.pop("result", RunResult("done", "done", 1, False, True)),
+            task_changed=overrides.pop("task_changed", True),
+            changes=overrides.pop("changes", CHANGES),
+            changes_dirty=overrides.pop("changes_dirty", False),
+            writer_id="deepseek",
+            recent_log="log",
+            render_change_brief=overrides.pop("render_change_brief", mock.Mock(return_value="brief")),
+            execution_evidence="evidence",
+            successful_checks=(CheckEvidence("python -m pytest", "."),),
+            checkpoint_prompt="checkpoint",
+            checks_before_review_followup=True,
+            stop_requested=mock.Mock(return_value=False),
+            refresh_project_map=mock.Mock(return_value="map"),
+            build_verification_map=mock.Mock(return_value="vmap"),
+            run_review=callback,
+            close_writer_for_review=close_writer,
+            repair_writer=repair_writer,
+            set_checkpoint_status=mock.Mock(),
+            emit_review_unavailable=mock.Mock(),
+        ), {"run_review": run_review, "repair_writer": repair_writer}
 
 
 class CoordinatorConsumptionTests(unittest.TestCase):

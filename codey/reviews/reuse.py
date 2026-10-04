@@ -10,14 +10,11 @@ from codey.reviews.input import ReviewScope
 
 
 def validate_source_run_id(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
+    if value == "":
         return ""
-    if "/" in text or "\\" in text or ".." in text:
-        raise ValueError("review source must be a run id, not a path")
-    if len(text) > 120:
-        raise ValueError("review source run id too long")
-    return text
+    from codey.reviews.persistence import _safe_component
+
+    return _safe_component(value)
 
 
 def try_reuse_review(
@@ -44,100 +41,27 @@ def try_reuse_review(
     if not current_identity.model_id:
         return None
     try:
-        projection = _source_projection(state_home, session_id, source, current_project)
-        if projection is None:
+        from codey.reviews.persistence import load_recorded_review
+
+        recorded = load_recorded_review(state_home, session_id, source)
+        if recorded is None:
             return None
-        attempt_id = str(getattr(projection, "attempt_id", "") or "")
-        if not attempt_id:
-            return None
-        expected_artifact_sha = str(
-            getattr(projection, "artifact_sha256", "") or ""
-        )
-        restored = _load_source_artifact(
-            state_home,
-            session_id,
-            source,
-            attempt_id,
-            expected_artifact_sha,
-        )
-        if restored is None:
+        projection, restored = recorded
+        if projection.stop_reason != "done" or projection.project != current_project or not restored.is_complete:
             return None
         if not _scope_matches_current(restored, current_scope):
             return None
-        source_identity = _source_identity(
-            state_home,
-            session_id,
-            source,
-            attempt_id,
-            current_project,
-            expected_artifact_sha,
-        )
-        if source_identity is None:
-            return None
+        source_identity = restored.identity
         if not identities_match(source_identity, current_identity):
             return None
         return replace(
             restored,
             origin="reused",
             identity=source_identity,
-            source_run_id=source,
+            source_run_id=restored.source_run_id or source,
         )
     except (ValueError, OSError):
         return None
-
-
-def _source_projection(state_home, session_id, source, current_project):
-    from codey.runs.ledger import RunLedgerStore
-    from codey.runs.ledger_projection import load_run_projection
-
-    projection = load_run_projection(RunLedgerStore(state_home), session_id, source)
-    if projection is None or not projection.complete:
-        return None
-    if projection.project and current_project and projection.project != current_project:
-        return None
-    review_summary = getattr(projection, "review", None)
-    if review_summary is None:
-        return None
-    if str(getattr(review_summary, "status", "") or "") != "complete":
-        return None
-    return review_summary
-
-
-def _load_source_artifact(
-    state_home,
-    session_id,
-    source,
-    attempt_id,
-    expected_artifact_sha: str,
-):
-    import hashlib
-
-    from codey.reviews.persistence import ReviewArtifactStore, load_review_artifact
-
-    try:
-        store = ReviewArtifactStore(state_home)
-        path = store.path_for(
-            session_id,
-            source,
-            attempt_id,
-        )
-        if not expected_artifact_sha:
-            return None
-        if hashlib.sha256(path.read_bytes()).hexdigest() != expected_artifact_sha:
-            return None
-        restored = load_review_artifact(
-            store,
-            session_id=session_id,
-            run_id=source,
-            attempt_id=attempt_id,
-        )
-    except (ValueError, OSError):
-        return None
-    if restored.status != "complete":
-        return None
-    if restored.scope is not None and not restored.scope.is_complete:
-        return None
-    return restored
 
 
 def _scope_matches_current(restored, current_scope) -> bool:
@@ -148,42 +72,3 @@ def _scope_matches_current(restored, current_scope) -> bool:
     from codey.reviews.identity import scope_digest_for
 
     return scope_digest_for(restored.scope) == scope_digest_for(current_scope)
-
-
-def _source_identity(
-    state_home,
-    session_id,
-    source,
-    attempt_id,
-    current_project,
-    artifact_sha256: str,
-):
-    import json as _json
-
-    from codey.reviews.core import REVIEW_CONTRACT_VERSION
-
-    try:
-        from codey.reviews.persistence import ReviewArtifactStore
-
-        raw = ReviewArtifactStore(state_home).path_for(session_id, source, attempt_id).read_bytes()
-        payload = _json.loads(raw.decode("utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    try:
-        return ReviewIdentity(
-            scope_digest=str(payload.get("scope_digest") or ""),
-            prompt_digest=str(payload.get("prompt_digest") or ""),
-            snapshot_digest=str(payload.get("snapshot_digest") or ""),
-            project=current_project,
-            reviewer_id=str(payload.get("reviewer_id") or ""),
-            model_id=str(payload.get("model_id") or ""),
-            contract_version=int(payload.get("contract_version") or REVIEW_CONTRACT_VERSION),
-            policy=str(payload.get("policy") or ""),
-            self_review=bool(payload.get("self_review", False)),
-            attempt_id=attempt_id,
-            artifact_sha256=artifact_sha256,
-        )
-    except (TypeError, ValueError):
-        return None

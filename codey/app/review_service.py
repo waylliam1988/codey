@@ -9,6 +9,8 @@ research, or concepts at import time.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
+from dataclasses import replace
 
 from codey.app import provider_services as providers
 from codey.operations.task_state import TaskState
@@ -31,32 +33,11 @@ def emit_review_with_payload(
     session_id: str,
     text: str,
     review: ReviewResult,
-    attempt_id: str,
-    artifact_sha: str,
 ) -> None:
-    identity = getattr(review, "identity", None)
-    attempt_id = attempt_id or str(getattr(identity, "attempt_id", "") or "")
-    artifact_sha = artifact_sha or str(getattr(identity, "artifact_sha256", "") or "")
-    payload = {
-        "verdict": review.verdict,
-        "status": review.status,
-        "origin": review.origin,
-        "finding_count": len(review.findings),
-        "attempt_id": attempt_id,
-        "artifact_sha256": artifact_sha,
-    }
-    source_run_id = str(getattr(review, "source_run_id", "") or "")
-    if source_run_id:
-        payload["source_review_run_id"] = source_run_id[:120]
-    try:
-        ctx.emit({
-            "type": "review",
-            "session_id": session_id,
-            "text": text,
-            "review": payload,
-        })
-    except Exception:
-        ctx.emit({"type": "review", "session_id": session_id, "text": text})
+    from codey.reviews.core import review_result_payload
+
+    ctx.emit({"type": "review", "session_id": session_id, "text": text,
+              "review": review_result_payload(review)})
 
 
 class ReviewSendUnknown(RuntimeError):
@@ -82,8 +63,10 @@ def run_review_attempt(
     self_review: bool,
     trace_recorder: object | None = None,
     run_id: str = "",
+    review_policy: str = WEB_IF_AVAILABLE,
+    review_source_run_id: str = "",
 ) -> tuple[str, ReviewResult]:
-    from codey.reviews.identity import capture_snapshot, verify_snapshot
+    from codey.reviews.identity import build_identity, capture_snapshot, review_model_identity, verify_snapshot
     from codey.reviews.input import prepare_review_input
 
     try:
@@ -107,16 +90,36 @@ def run_review_attempt(
         cancellation.check()
         if not verify_snapshot(snapshot):
             return reviewer_id, _stale_before_send(ctx, session_id, reviewer_id, prepared)
+        model_id = review_model_identity(reviewer)
+        if review_source_run_id and model_id:
+            from codey.reviews.reuse import try_reuse_review
+
+            identity = build_identity(prepared, reviewer_id=reviewer_id, policy=review_policy,
+                                      model_id=model_id, self_review=self_review, project=project, snapshot=snapshot)
+            state_home = getattr(ctx, "state_home", None)
+            reused = try_reuse_review(
+                state_home=state_home, session_id=session_id, current_run_id=run_id,
+                current_project=project, source_run_id=review_source_run_id,
+                current_scope=prepared.scope, current_identity=identity, current_snapshot_ok=True,
+            ) if state_home is not None else None
+            if reused is not None and reused.identity is not None and verify_snapshot(snapshot):
+                # Historical artifact reference, current applicability guard.
+                identity = replace(identity, attempt_id=reused.identity.attempt_id,
+                                   artifact_sha256=reused.identity.artifact_sha256)
+                reused = replace(reused, identity=identity)
+                emit_review_with_payload(ctx, session_id, "Previous review reused", reused)
+                return reviewer_id, reused
+        cancellation.check()
         reviewer.new_chat()
         reply = _send_review_prompt(
-            reviewer, trace_recorder, prepared.prompt, session_id
+            reviewer, trace_recorder, prepared.prompt
         )
         review = _parse_with_single_repair(
             reviewer, trace_recorder, reply, prepared
         )
         return reviewer_id, _finalize_review(
             ctx, session_id, project, reviewer_id, self_review,
-            prepared, snapshot, review, trace_recorder, run_id,
+            prepared, snapshot, review, trace_recorder, run_id, review_policy, model_id,
         )
     finally:
         with contextlib.suppress(Exception):
@@ -153,7 +156,7 @@ def _stale_before_send(ctx, session_id, reviewer_id, prepared):
     return review
 
 
-def _send_review_prompt(reviewer, trace_recorder, prompt, _session_id):
+def _send_review_prompt(reviewer, trace_recorder, prompt):
     trace = FailOpenPromptTrace(trace_recorder)
     trace.call("record_permission_profile", "reviewer", phase="review")
     record_provider_send_prompt(
@@ -167,7 +170,7 @@ def _send_review_prompt(reviewer, trace_recorder, prompt, _session_id):
     try:
         with provider_controls.suppress_assistance():
             return reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception as exc:
         raise ReviewSendUnknown(str(exc)) from exc
@@ -185,29 +188,19 @@ def _parse_with_single_repair(reviewer, trace_recorder, reply, prepared):
         )
         try:
             return reviewer.send(repair, timeout=REVIEW_TIMEOUT)
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             raise ReviewSendUnknown(str(exc)) from exc
 
-    try:
-        return parse_review_with_repair(
-            reply,
-            send_repair_prompt,
-            changes=prepared.reviewer_view,
-        )
-    except cancellation.TaskCancelled:
-        raise
-    except ValueError:
-        raise
+    return parse_review_with_repair(reply, send_repair_prompt, changes=prepared.reviewer_view)
 
 
 def _finalize_review(
     ctx, session_id, project, reviewer_id, self_review,
-    prepared, snapshot, review, trace_recorder, run_id,
+    prepared, snapshot, review, trace_recorder, run_id, review_policy=WEB_IF_AVAILABLE, model_id="",
 ):
     import uuid as _uuid
-    from dataclasses import replace
 
     from codey.reviews.identity import (
         build_identity,
@@ -231,32 +224,26 @@ def _finalize_review(
     artifact_sha = _persist_attempt_artifact(
         ctx, session_id, run_id, attempt_id, review,
         scope_digest, prompt_digest, snapshot_digest,
-        reviewer_id, self_review, reviewer_id,
+        reviewer_id, self_review, model_id, review_policy,
     )
     identity = build_identity(
         prepared,
         reviewer_id=reviewer_id,
-        policy="self_review" if self_review else "web_if_available",
-        model_id=reviewer_id,
+        policy=review_policy,
+        model_id=model_id,
         self_review=self_review,
         project=project,
         snapshot=snapshot,
         attempt_id=attempt_id,
         artifact_sha256=artifact_sha,
     )
-    if not snapshot_current:
-        review = replace(review, origin="fresh", identity=identity)
-    else:
-        review = replace(review, identity=identity)
-    try:
-        from codey.reviews.persistence import review_trace_payload
+    review = replace(review, identity=identity)
+    from codey.reviews.persistence import review_trace_payload
 
-        FailOpenPromptTrace(trace_recorder).call(
-            "record_coding_review",
-            review_trace_payload(review, scope_digest=scope_digest, prompt_digest=prompt_digest),
-        )
-    except Exception:
-        pass
+    FailOpenPromptTrace(trace_recorder).call(
+        "record_coding_review",
+        review_trace_payload(review, scope_digest=scope_digest, prompt_digest=prompt_digest),
+    )
     label = providers.review_label(reviewer_id)
     prefix = f"{label} self-review" if self_review else label
     if review.approved:
@@ -265,14 +252,14 @@ def _finalize_review(
         emit_text = f"{prefix} incomplete"
     else:
         emit_text = f"{prefix} suggested changes"
-    emit_review_with_payload(ctx, session_id, emit_text, review, attempt_id, artifact_sha)
+    emit_review_with_payload(ctx, session_id, emit_text, review)
     return review
 
 
 def _persist_attempt_artifact(
     ctx, session_id, run_id, attempt_id, review,
     scope_digest, prompt_digest, snapshot_digest, reviewer_id, self_review,
-    model_id,
+    model_id, review_policy,
 ) -> str:
     if not run_id:
         return ""
@@ -292,102 +279,13 @@ def _persist_attempt_artifact(
             prompt_digest=prompt_digest,
             snapshot_digest=snapshot_digest,
             reviewer_id=reviewer_id,
-            policy="self_review" if self_review else "web_if_available",
+            policy=review_policy,
             model_id=model_id,
+            self_review=self_review,
         )
         return ref.sha256 if ref is not None else ""
     except Exception:
         return ""
-
-
-def _try_explicit_reuse(
-    ctx: TaskState,
-    *,
-    session_id: str,
-    run_id: str,
-    project: str,
-    task: str,
-    writer_summary: str,
-    changes: dict,
-    recent_log: str,
-    change_brief: str,
-    project_map: str,
-    verification_map: str,
-    review_impact_map: str,
-    execution_evidence: str,
-    writer_id: str,
-    source_run_id: str,
-    review_policy: str,
-    trace_recorder: object | None,
-) -> tuple[str, ReviewResult] | None:
-    from codey.reviews.identity import build_identity, capture_snapshot, verify_snapshot
-    from codey.reviews.input import prepare_review_input
-    from codey.reviews.reuse import try_reuse_review
-
-    try:
-        prepared = prepare_review_input(
-            project=project,
-            task=task,
-            writer_summary=writer_summary,
-            changes=changes,
-            recent_log=recent_log,
-            change_brief=change_brief,
-            project_map=project_map,
-            verification_map=verification_map,
-            review_impact_map=review_impact_map,
-            execution_evidence=execution_evidence,
-        )
-    except Exception:
-        return None
-    snapshot = capture_snapshot(project, prepared.scope.provided_files)
-    if not snapshot.ok or not verify_snapshot(snapshot):
-        return None
-    candidates = list(providers.reviewer_candidates(ctx, writer_id))
-    reviewer_id = candidates[0] if candidates else writer_id
-    # The provider/reviewer id is the stable model identity available at this
-    # boundary. Browser providers do not expose a more specific selector.
-    identity = build_identity(
-        prepared,
-        reviewer_id=reviewer_id,
-        policy=review_policy,
-        model_id=reviewer_id,
-        self_review=False,
-        project=project,
-        snapshot=snapshot,
-    )
-    try:
-        state_home = getattr(ctx, "state_home", None)
-        if state_home is None:
-            return None
-        reused = try_reuse_review(
-            state_home=state_home,
-            session_id=session_id,
-            current_run_id=run_id,
-            current_project=project,
-            source_run_id=source_run_id,
-            current_scope=prepared.scope,
-            current_identity=identity,
-            current_snapshot_ok=True,
-        )
-    except ValueError:
-        raise
-    except Exception:
-        return None
-    if reused is None:
-        return None
-    if not verify_snapshot(snapshot):
-        return None
-    label = providers.review_label(reviewer_id)
-    reused_identity = getattr(reused, "identity", None)
-    emit_review_with_payload(
-        ctx,
-        session_id,
-        f"{label} reused",
-        reused,
-        str(getattr(reused_identity, "attempt_id", "") or ""),
-        str(getattr(reused_identity, "artifact_sha256", "") or ""),
-    )
-    return reviewer_id, reused
 
 
 def run_review(
@@ -409,6 +307,7 @@ def run_review(
     review_policy: str = WEB_IF_AVAILABLE,
     run_id: str = "",
     review_source_run_id: str = "",
+    connect_reviewer: Callable | None = None,
 ) -> tuple[str, ReviewResult] | None:
     from codey.reviews.reuse import validate_source_run_id
 
@@ -420,11 +319,29 @@ def run_review(
     if review_impact_map is None:
         review_impact_map = safe_review_impact_map(project, changes)
     source = validate_source_run_id(review_source_run_id) if review_source_run_id else ""
-    if source:
-        reused = _try_explicit_reuse(
+    if connect_reviewer is not None:
+        if not self_review_allowed:
+            raise ValueError("headless selected-provider review requires self-review permission")
+        reviewer = connect_reviewer(writer_id)
+        return run_review_attempt(ctx, session_id=session_id, project=project, task=task,
+            writer_summary=writer_summary, changes=changes, recent_log=recent_log,
+            change_brief=change_brief, project_map=project_map, verification_map=verification_map,
+            review_impact_map=review_impact_map, execution_evidence=execution_evidence,
+            reviewer_id=writer_id, reviewer=reviewer, self_review=True, trace_recorder=trace_recorder,
+            run_id=run_id, review_policy=review_policy, review_source_run_id=source)
+    for reviewer_id in providers.reviewer_candidates(ctx, writer_id):
+        cancellation.check()
+        try:
+            reviewer = providers.connect_existing_provider(reviewer_id)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            last_error = exc
+            continue
+        ctx.set_provider_session(reviewer_id, None)
+        return run_review_attempt(
             ctx,
             session_id=session_id,
-            run_id=run_id,
             project=project,
             task=task,
             writer_summary=writer_summary,
@@ -435,43 +352,14 @@ def run_review(
             verification_map=verification_map,
             review_impact_map=review_impact_map,
             execution_evidence=execution_evidence,
-            writer_id=writer_id,
-            source_run_id=source,
-            review_policy=review_policy,
+            reviewer_id=reviewer_id,
+            reviewer=reviewer,
+            self_review=False,
             trace_recorder=trace_recorder,
+            run_id=run_id,
+            review_policy=review_policy,
+            review_source_run_id=source,
         )
-        if reused is not None:
-            return reused
-    for reviewer_id in providers.reviewer_candidates(ctx, writer_id):
-        cancellation.check()
-        try:
-            reviewer = providers.connect_existing_provider(reviewer_id)
-            ctx.set_provider_session(reviewer_id, None)
-            return run_review_attempt(
-                ctx,
-                session_id=session_id,
-                project=project,
-                task=task,
-                writer_summary=writer_summary,
-                changes=changes,
-                recent_log=recent_log,
-                change_brief=change_brief,
-                project_map=project_map,
-                verification_map=verification_map,
-                review_impact_map=review_impact_map,
-                execution_evidence=execution_evidence,
-                reviewer_id=reviewer_id,
-                reviewer=reviewer,
-                self_review=False,
-                trace_recorder=trace_recorder,
-                run_id=run_id,
-            )
-        except cancellation.TaskCancelled:
-            raise
-        except (ReviewSendUnknown, ValueError):
-            raise
-        except Exception as exc:
-            last_error = exc
     cancellation.check()
     if not self_review_allowed:
         emit_review(ctx, session_id, "Review unavailable: no web reviewer is open.")
@@ -499,8 +387,10 @@ def run_review(
             self_review=True,
             trace_recorder=trace_recorder,
             run_id=run_id,
+            review_policy=review_policy,
+            review_source_run_id=source,
         )
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception as exc:
         last_error = exc

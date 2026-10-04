@@ -177,7 +177,7 @@ def _build_review_verification_map(
     )
 
 
-def _review_cycle_phase(ctx: ProjectRun) -> None:
+def run_review_phase(ctx: ProjectRun) -> None:
     assert ctx.result is not None
     review_coordinator = ReviewCoordinator(ctx.deps.verification.collect_changes)
     ctx.review_cycle = review_coordinator.run_cycle(
@@ -219,11 +219,6 @@ def _review_cycle_phase(ctx: ProjectRun) -> None:
     collected_changed = change_state(ctx.task_changes)
     if collected_changed is not None:
         ctx.task_changed = collected_changed
-
-
-def run_review_phase(ctx: ProjectRun) -> None:
-    """Public review phase entry (renamed from _review_cycle_phase)."""
-    _review_cycle_phase(ctx)
 
 
 __all__ = [

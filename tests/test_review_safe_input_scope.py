@@ -63,6 +63,25 @@ class ScopeTests(unittest.TestCase):
         self.assertTrue(inp.scope.file_list_truncated)
         self.assertFalse(inp.scope.is_complete)
 
+    def test_diff_for_file_outside_provided_file_list_is_not_sent(self) -> None:
+        files = [{"path": f"f{i}.py", "status": "M"} for i in range(21)]
+        diff = (
+            "diff --git a/f20.py b/f20.py\n"
+            "--- a/f20.py\n"
+            "+++ b/f20.py\n"
+            "@@ -1 +1 @@\n"
+            "-old\n"
+            "+outside = True\n"
+        )
+        inp = prepare_review_input(
+            project="E:/demo",
+            task="fix",
+            writer_summary="done",
+            changes=_changes(files, diff=diff),
+        )
+        self.assertTrue(inp.scope.file_list_truncated)
+        self.assertNotIn("outside = True", inp.prompt)
+
     def test_collection_failure_is_not_empty_clean_scope(self) -> None:
         inp = prepare_review_input(
             project="E:/demo",
@@ -72,6 +91,88 @@ class ScopeTests(unittest.TestCase):
         )
         self.assertTrue(inp.scope.collection_incomplete)
         self.assertFalse(inp.scope.is_complete)
+
+    def test_header_only_diff_still_excludes_sensitive_file(self) -> None:
+        diff = (
+            "--- .env\n"
+            "+++ .env\n"
+            "+SECRET_KEY=sk-live-abcdefghij1234567890XYZ\n"
+            "--- app.py\n"
+            "+++ app.py\n"
+            "+safe = True\n"
+        )
+        inp = prepare_review_input(
+            project="E:/demo",
+            task="fix",
+            writer_summary="done",
+            changes=_changes(
+                [
+                    {"path": ".env", "status": "M"},
+                    {"path": "app.py", "status": "M"},
+                ],
+                diff=diff,
+            ),
+        )
+        self.assertNotIn("SECRET_KEY", inp.prompt)
+        self.assertIn("safe = True", inp.prompt)
+
+    def test_diff_content_starting_with_header_marker_is_not_split(self) -> None:
+        diff = (
+            "--- app.py\n"
+            "+++ app.py\n"
+            "@@ -1 +1 @@\n"
+            "--- removed header\n"
+            "+safe = True\n"
+        )
+        inp = prepare_review_input(
+            project="E:/demo",
+            task="fix",
+            writer_summary="done",
+            changes=_changes([{"path": "app.py", "status": "M"}], diff=diff),
+        )
+        self.assertIn("removed header", inp.prompt)
+        self.assertIn("safe = True", inp.prompt)
+
+    def test_unparseable_diff_block_marks_scope_incomplete(self) -> None:
+        diff = (
+            "diff --git malformed\n"
+            "@@ -1 +1 @@\n"
+            "-old\n"
+            "+new\n"
+        )
+        inp = prepare_review_input(
+            project="E:/demo",
+            task="fix",
+            writer_summary="done",
+            changes=_changes([{"path": "app.py", "status": "M"}], diff=diff),
+        )
+        self.assertTrue(inp.scope.diff_truncated)
+        self.assertFalse(inp.scope.is_complete)
+
+    def test_rename_from_sensitive_path_excludes_old_file_content(self) -> None:
+        diff = (
+            "diff --git a/.env b/app.py\n"
+            "similarity index 80%\n"
+            "rename from .env\n"
+            "rename to app.py\n"
+            "--- a/.env\n"
+            "+++ b/app.py\n"
+            "@@ -1 +1 @@\n"
+            "-SECRET_KEY=sk-live-abcdefghij1234567890XYZ\n"
+            "+safe = True\n"
+        )
+        inp = prepare_review_input(
+            project="E:/demo",
+            task="fix",
+            writer_summary="done",
+            changes=_changes(
+                [{"path": "app.py", "previous_path": ".env", "status": "R"}],
+                diff=diff,
+            ),
+        )
+        self.assertNotIn("SECRET_KEY", inp.prompt)
+        self.assertNotIn("sk-live-abcdefghij1234567890XYZ", inp.prompt)
+        self.assertIn("app.py", inp.scope.excluded_files)
 
 
 class SensitiveTests(unittest.TestCase):

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from codey.utils.positive_int import positive_int as _positive_int
@@ -126,8 +126,10 @@ def _json_candidates(text: str) -> tuple[list[tuple[dict[str, Any], str]], tuple
     candidates: list[tuple[dict[str, Any], str]] = []
     diagnostics: list[str] = []
     brace_scans = 0
-    for index, char in enumerate(source):
-        if char != "{":
+    index = 0
+    while index < len(source):
+        if source[index] != "{":
+            index += 1
             continue
         brace_scans += 1
         if brace_scans > MAX_REVIEW_BRACE_SCANS:
@@ -139,9 +141,13 @@ def _json_candidates(text: str) -> tuple[list[tuple[dict[str, Any], str]], tuple
         try:
             value, end = decoder.raw_decode(source[index:])
         except json.JSONDecodeError:
+            diagnostics.append("malformed_json_object")
+            index += 1
             continue
         if isinstance(value, dict):
             candidates.append((value, source[index : index + end]))
+        # Nested findings/metadata are part of this object, never new reviews.
+        index += end
     return candidates, tuple(diagnostics[:MAX_DIAGNOSTICS])
 
 
@@ -165,7 +171,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _is_review_candidate(obj: dict[str, Any]) -> bool:
-    return any(key in obj for key in ("verdict", "status", "findings"))
+    return any(key in obj for key in ("verdict", "findings"))
 
 
 def _strict_text(value: object) -> str:
@@ -185,15 +191,18 @@ def parse_review_response(
     candidates, scan_diagnostics = _json_candidates(source)
     diagnostics: list[str] = list(scan_diagnostics)
     parsed: list[ReviewResult] = []
+    incomplete = bool(scan_diagnostics)
     for obj, raw in candidates:
-        if _has_duplicate_keys(raw):
-            diagnostics.append("duplicate_contract_keys")
-            continue
         if not _is_review_candidate(obj):
             diagnostics.append("skipped_non_review_object")
             continue
+        if _has_duplicate_keys(raw):
+            diagnostics.append("duplicate_contract_keys")
+            incomplete = True
+            continue
         result = _parse_candidate(obj, change_set, diagnostics)
         if result is None:
+            incomplete = True
             continue
         parsed.append(result)
     diagnostics = diagnostics[:MAX_DIAGNOSTICS]
@@ -204,29 +213,9 @@ def parse_review_response(
         if not _same_review(first, other):
             raise ValueError("conflicting review objects")
     if len(parsed) > 1:
-        diagnostics = [*diagnostics, "duplicate_review_objects"][:MAX_DIAGNOSTICS]
-        first = ReviewResult(
-            verdict=first.verdict,
-            summary=first.summary,
-            findings=first.findings,
-            status=first.status,
-            origin=first.origin,
-            diagnostics=tuple(diagnostics),
-            scope=first.scope,
-            identity=first.identity,
-        )
-    elif diagnostics:
-        first = ReviewResult(
-            verdict=first.verdict,
-            summary=first.summary,
-            findings=first.findings,
-            status=first.status,
-            origin=first.origin,
-            diagnostics=tuple([*first.diagnostics, *diagnostics][:MAX_DIAGNOSTICS]),
-            scope=first.scope,
-            identity=first.identity,
-        )
-    return first
+        diagnostics.append("duplicate_review_objects")
+    return replace(first, status="incomplete" if incomplete else first.status,
+                   diagnostics=tuple(dict.fromkeys([*first.diagnostics, *diagnostics]))[:MAX_DIAGNOSTICS])
 
 
 def _same_review(first: ReviewResult, second: ReviewResult) -> bool:
@@ -246,7 +235,7 @@ def _parse_candidate(
     if "findings" in obj and not isinstance(obj.get("findings"), list):
         diagnostics.append("findings_not_list")
         return None
-    raw_verdict = obj.get("verdict") if "verdict" in obj else obj.get("status")
+    raw_verdict = obj.get("verdict")
     if raw_verdict is not None and not isinstance(raw_verdict, str):
         diagnostics.append("verdict_not_string")
         return None
@@ -286,7 +275,7 @@ def _parse_candidate(
     summary = _strict_text(raw_summary).strip() or (
         "Looks good" if verdict == "approved" else "Changes requested"
     )
-    final_status = "complete" if not findings_incomplete else "incomplete"
+    final_status = "complete" if not findings_incomplete and (verdict == "approved" or findings) else "incomplete"
     return ReviewResult(
         verdict=verdict,
         summary=_clip(summary),
@@ -303,8 +292,20 @@ def _canonical_finding_path(raw_path: str, change_set: ChangeSet | None) -> str:
     return canonical_path(raw_path, change_set)
 
 
-def review_repair_prompt() -> str:
-    return REVIEW_REPAIR_PROMPT
+def review_result_payload(review: ReviewResult | None) -> dict:
+    """The shared bounded event projection; findings remain in the artifact."""
+    if review is None:
+        return {"verdict": "unknown", "status": "unavailable", "origin": "fresh", "finding_count": 0}
+    identity = review.identity
+    return {
+        "verdict": review.verdict,
+        "status": review.status,
+        "origin": review.origin,
+        "finding_count": len(review.findings),
+        "attempt_id": identity.attempt_id if identity is not None else "",
+        "artifact_sha256": identity.artifact_sha256 if identity is not None else "",
+        "source_review_run_id": review.source_run_id,
+    }
 
 
 def parse_review_with_repair(
@@ -321,7 +322,9 @@ def parse_review_with_repair(
             send_repair_prompt(REVIEW_REPAIR_PROMPT),
             changes=changes,
         )
-    if first.verdict == "unknown" or first.status == "incomplete":
+    # Already validated issues are useful observations, even with a partial
+    # reply. A format-only turn cannot safely retract them.
+    if not first.findings and (first.verdict == "unknown" or first.status == "incomplete"):
         return parse_review_response(
             send_repair_prompt(REVIEW_REPAIR_PROMPT),
             changes=changes,
@@ -344,13 +347,15 @@ def _parse_findings(
     findings: list[ReviewFinding] = []
     seen: set[tuple[object, ...]] = set()
     for item in value[:MAX_FINDING_CANDIDATES]:
+        before = len(diagnostics) if diagnostics is not None else 0
         finding = _parse_one_finding(item, change_set, diagnostics, seen)
         if finding is None:
+            if diagnostics is not None:
+                incomplete |= any(reason != "duplicate_finding" for reason in diagnostics[before:])
             continue
         findings.append(finding)
-        if len(findings) >= MAX_FINDINGS:
-            break
-    return findings, incomplete
+    incomplete |= len(findings) > MAX_FINDINGS
+    return findings[:MAX_FINDINGS], incomplete
 
 
 def _parse_one_finding(
@@ -384,7 +389,7 @@ def _parse_one_finding(
         return None
     seen.add(fingerprint)
     return ReviewFinding(
-        path=_clip(canonical, 400),
+        path=canonical,
         issue=_clip(issue),
         suggested_fix=_clip(suggested_fix),
         hunk_index=anchor.hunk_index,

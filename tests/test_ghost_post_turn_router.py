@@ -490,7 +490,7 @@ def test_review_only_route_does_not_start_writer_or_repair() -> None:
     assert getattr(state, "_project_writer_leases", {}) == {}
 
 
-def test_review_only_provider_failure_is_reported_without_error() -> None:
+def test_review_only_provider_failure_is_unavailable_and_not_committed_as_success() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
@@ -517,8 +517,13 @@ def test_review_only_provider_failure_is_reported_without_error() -> None:
                 ),
             )
 
+        observations = state.ghost_observations.read_committed(session_id="session-1")
+
     run_review.assert_called_once()
-    assert state.run_registry.last_terminal_event()["stop_reason"] == "done"
+    runner.agent_run.assert_not_called()
+    assert observations == ()
+    assert state.run_registry.last_terminal_event()["stop_reason"] == "review_unavailable"
+    assert state.run_registry.last_terminal_event()["review"]["status"] == "unavailable"
     assert state.run_registry.last_terminal_event()["mode"] == "review"
     assert state.run_registry.last_terminal_event()["changed"] is False
     assert state.run_registry.last_terminal_event()["summary"] == "Review unavailable. No files were changed."

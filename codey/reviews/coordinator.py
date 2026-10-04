@@ -233,11 +233,11 @@ class ReviewCoordinator:
 def _snapshot_still_current(project: str | Path, review: object) -> bool:
     identity = getattr(review, "identity", None)
     if identity is None:
-        return True
+        return False
     snapshot_root = getattr(identity, "snapshot_root", "")
     snapshot_files = getattr(identity, "snapshot_files", ())
-    if not snapshot_root and not snapshot_files:
-        return True
+    if not snapshot_root or not getattr(identity, "snapshot_inventory_digest", ""):
+        return False
     try:
         from codey.reviews.identity import ReviewSnapshot, verify_snapshot
 
@@ -245,8 +245,9 @@ def _snapshot_still_current(project: str | Path, review: object) -> bool:
             root=str(snapshot_root or project),
             files=tuple(snapshot_files),
             ok=True,
+            inventory_digest=getattr(identity, "snapshot_inventory_digest", ""),
         )
-        return verify_snapshot(snapshot)
+        return verify_snapshot(snapshot, root=project)
     except Exception:
         return False
 

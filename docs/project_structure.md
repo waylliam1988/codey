@@ -25,7 +25,7 @@ codey/
   storage/      Atomic I/O, file locks, conversation and managed-output storage
   knowledge/    Local notes, graph and knowledge changes
   ghost/        Bounded local experience, memory, work queues and control surfaces
-  reviews/      Review coordination and findings
+  reviews/      Review contract, safe input, identity, artifacts, explicit reuse and coordination
   repairs/      Provider repair jobs and supervision
   runs/         Run ledgers, traces, checkpoints, details and receipts
   utils/        Small shared text, reference and scan helpers
@@ -77,6 +77,24 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/operations/research_iteration.py` | `run_research_iteration`, the pipeline's shared-kernel adapter |
 
 ## Durable runtime and storage
+
+### Review ownership
+
+| Owner | Consumer / boundary |
+| --- | --- |
+| `reviews/core.py`, `findings.py` | Bounded reply parsing, actionable findings and common review event metadata |
+| `reviews/input.py`, `identity.py` | Actual safe prompt/scope, local model/settings identity, bounded file and Git-basis snapshot checks |
+| `reviews/persistence.py`, `reuse.py` | One verified artifact read, finished-ledger lineage and explicit same-session/project reuse |
+| `app/review_service.py` | Single input preparation, actual Reviewer selection, one format repair, persistence; unknown send failures are not retried through another Reviewer |
+| `reviews/coordinator.py`, `operations/project_review_phase.py` | Current-snapshot findings may enter the existing single Writer repair |
+| `operations/review_flow.py`, `app/headless_runner.py` | Read-only review via the configured connector and truthful terminal state; default project adds no Reviewer calls |
+| `runs/ledger_projection.py`, `runs/details.py`, `app/api.py` | Consistent bounded display plus authenticated `/api/run_review` cold structured reads |
+| `tools/local_model_gate_review.py` | Real Reviewer request, unchanged files, verified artifact/ledger/event consistency; not model finding-quality scoring |
+
+Model identity describes configured target/model/settings, not immutable model
+weights. Snapshot inventories and file reads have finite bounds; scan failures
+or exhausted bounds decline trust. These are explicit limits, not a whole-project
+no-bug proof or a guarantee against arbitrary concurrent writes.
 
 `runtime/core` owns state/contracts, `runtime/log` canonical log projections,
 `runtime/effects` effect/result delivery, `runtime/write` admitted mutations,

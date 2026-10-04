@@ -43,6 +43,14 @@ CONTRACT_TESTS = (
     "tests/test_recovery_restores_research_ledger.py",
     "tests/test_review_contract_integration.py",
     "tests/test_review_reuse_integration.py",
+    "tests/test_headless_review_uses_selected_provider.py",
+    "tests/test_review_history_http_and_reuse_lineage.py",
+    "tests/test_review_artifact_strict_read_and_terminal_conflicts.py",
+    "tests/test_review_consumer_and_provider_failure_boundaries.py",
+    "tests/test_review_parser_preserves_incomplete_results.py",
+    "tests/test_review_submission_rejects_coerced_source_ids.py",
+    "tests/test_local_review_gate_rejects_unavailable.py",
+    "tests/test_local_review_gate_cleans_readonly_git_objects.py",
 )
 
 
