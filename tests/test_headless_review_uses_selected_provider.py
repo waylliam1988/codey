@@ -40,6 +40,7 @@ def run_review(tmp_path, reviewer, *, changes_override=None):
             HeadlessRequest(project=project, task="Review changes", intent="review", provider_id="local",
                             state_home=tmp_path / "state"),
             connect_provider=lambda *_args, **_kwargs: reviewer,
+            connect_reviewer=lambda *_args: reviewer,
             collect_changes=lambda *_args: changes,
             emit_jsonl=rows.append,
         )

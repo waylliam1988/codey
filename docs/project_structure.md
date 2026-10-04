@@ -40,7 +40,8 @@ docs/           Current architecture, release guidance and dated audit reports
 ## Follow a task
 
 ```text
-HTTP / CLI -> task submission -> task_run + task_phases
+HTTP / CLI -> shared task services + entry authorization
+           -> task submission -> task_run + task_phases
            -> task_entry -> TaskPolicy + TaskSession + KernelRunRequest
            -> task_loop.run_task_kernel
                 -> TurnSnapshot -> provider reply -> normalized tool plan
@@ -57,6 +58,7 @@ Using web tools in ordinary coding does not automatically require research notes
 | --- | --- |
 | `codey/app/operator_auth.py`, `web/assets/operator_auth.js` | Process-local HTTP/SSE operator credential and UI bootstrap; independent of model/task grants |
 | `codey/runtime/core/models.py` | Immutable `ToolResult` with mandatory exact boolean status; display text has no status authority |
+| `codey/app/task_services.py`, `task/entry_auth.py` | Compose desktop/headless review and advisor services once; derive HTTP and CLI authorization with one rule set |
 | `codey/operations/task_state.py` | `TaskState` and the typed submission-store bundle |
 | `codey/operations/task_run.py`, `task_phases/` | Run resource lifecycle, provider setup, callbacks and terminal settlement |
 | `codey/operations/task_entry.py`, `task_session.py` | Entry policy and per-task facts |
@@ -87,7 +89,7 @@ Using web tools in ordinary coding does not automatically require research notes
 | `reviews/persistence.py`, `reuse.py` | One verified artifact read, finished-ledger lineage and explicit same-session/project reuse |
 | `app/review_service.py` | Single input preparation, actual Reviewer selection, one format repair, persistence; unknown send failures are not retried through another Reviewer |
 | `reviews/coordinator.py`, `operations/project_review_phase.py` | Current-snapshot findings may enter the existing single Writer repair |
-| `operations/review_flow.py`, `app/headless_runner.py` | Read-only review via the configured connector; embedded headless project callers can explicitly enable the existing automatic review phase; default CLI/headless project adds no Reviewer calls |
+| `operations/review_flow.py`, `app/headless_runner.py` | Shared review service: read-only review and default automatic project review on desktop and CLI/headless; optional pinned Reviewer connector for gates |
 | `runs/ledger_projection.py`, `runs/details.py`, `app/api.py` | Consistent bounded display plus authenticated `/api/run_review` cold structured reads |
 | `tools/local_model_gate_review.py` | Real Reviewer request, unchanged files, verified artifact/ledger/event consistency; not model finding-quality scoring |
 | `tools/local_model_gate_project_review.py` | One formal project run: code/check, automatic isolated local review, optional existing repair; independent file/test and real request checks |

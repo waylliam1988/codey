@@ -597,6 +597,8 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
         result = run_headless(
             request, emit_jsonl=record_event,
             connect_provider=lambda provider_id, **kwargs: _connect_gate_provider(provider_id, target, case_dir),
+            connect_reviewer=(lambda provider_id: _connect_gate_provider(provider_id, target, case_dir))
+            if intent in {"project", "hybrid", "auto", "review"} else None,
         )
         dt = round(time.perf_counter() - t0, 1)
         done = next((r for r in reversed(rows) if str(r.get("type") or "") == "task_done"), None)
@@ -779,7 +781,8 @@ def _metadata(target: attempts.GateTarget) -> dict:
             for path in ("codey/toolchain/constants.py", "codey/toolchain/definition.py", "codey/toolchain/runtime.py",
                          "codey/providers/local_openai.py", "codey/operations/kernel_transport.py",
                          "codey/app/event_payloads.py", "codey/app/event_bus.py", "codey/app/context.py",
-                         "codey/app/headless_runner.py", "codey/operations/kernel_recovery.py",
+                         "codey/app/headless_runner.py", "codey/app/task_services.py", "codey/task/entry_auth.py",
+                         "codey/operations/kernel_recovery.py",
                          "codey/operations/project_adapter.py",
                          "codey/operations/task_loop.py", "codey/operations/kernel_prompt.py",
                          "codey/operations/planning_flow.py", "codey/operations/project_writer_phase.py",

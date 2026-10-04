@@ -1,5 +1,61 @@
 # Codey Test Report
 
+## Desktop / CLI task service parity (2026-10-04)
+
+Baseline: `fe09ecc3`, initially clean. Version remains **0.5.11**; development
+commit/push only, with no tag or Release. This section supersedes the older
+headless-default statements in the dated reports below.
+
+- One `app/task_services.py` composition now serves both entries: Reviewer,
+  consensus, project audit and Research advisors. One `task/entry_auth.py`
+  derives HTTP and headless grants, denials and completion requirements.
+- Default CLI/headless project review now follows desktop routing/policy and
+  the existing single repair. CLI exposes all intents, explicit grants,
+  session continuation and source review reuse. Delete no-review stubs and
+  duplicate dependency/auth construction; failed requirement derivation raises
+  instead of silently removing required modifications.
+- **8 new files / 29 cases**: 20 task behavior cases observed red before
+  production fixes; one HTTP fixture race case observed red before fixture
+  repair; eight valid/control/integration cases are not claimed to have been red.
+- Formal desktop + CLI tests run real read/edit/verification/review/repair in
+  non-Git projects. A second CLI invocation restores a review from official
+  disk storage, without a new chat/send or file mutation. No-project and
+  require-web restrictions remain enforced.
+- Scripted entry tests isolate external provider discovery with an opt-in
+  fixture. Real service selection stays active. Before isolation, lifecycle
+  fakes probed user models (some cases took ~15s); the isolated headless file
+  passed **16 cases in 4.08s**. This is test timing, not a product speed claim.
+- Expanded regression initially found four fixture failures: two outdated gate
+  callback signatures and two Research callbacks patched to non-callable `None`.
+  Migrate the signatures, use a callable empty-advice result, and ensure stores
+  close on test exceptions; retain behavioral assertions.
+- First full run: **6 failed, 7253 passed, 29 skipped, 1495 subtests passed in
+  671.53s** (two failures were subtests). Migrate two source-location assertions
+  to the shared owners; explicitly mark identity/web-only fixtures as not
+  requiring edits. Preserve their success, event and source assertions.
+- The remaining Windows HTTP `WinError 10053` was a test-client early-close
+  race: 300 unauthenticated GETs reproduced **2 transport failures**, with
+  **zero state dispatches**. Lock it with a deterministic early-rejecting peer,
+  then send each small fixture's headers/body together. No retries or auth
+  changes. Another 300 requests had **0 transport failures / 0 state dispatches**.
+- Final machine gate: **338 passed in 70.82s**, no skips. Preflight:
+  `ruff check .`, `mypy codey` (**372 source files, 0 errors**), compileall,
+  JavaScript syntax (**12 files**) and `git diff --check` passed. The existing
+  mypy note about unchecked untyped bodies remains; not every body is typed.
+- **Final full run**, after the fixes and preflight:
+  `python -m pytest -q -o faulthandler_timeout=120 -ra`
+  → **7258 passed, 29 skipped, 1497 subtests passed in 575.36s**, zero failures.
+  Skips: 28 platform/privilege cases plus one opt-in browser E2E. Logs retained
+  separately under ignored `.e2e-artifacts/desktop-cli-full-pytest-20261004.log`
+  and `desktop-cli-full-pytest-final-20261004.log`.
+- KoboldCpp smoke was attempted using `--cases review,project_review --protocol
+  native --repeat 1 --timeout 600 --json`; endpoint `/models` probes were
+  unreachable, so **0 attempts / preflight_error**, not a live pass. Artifact:
+  `.e2e-artifacts/local-model-release-20261004-214826-25d5323e30/summary.json`.
+  No current-source live matrix, real browser E2E, latency/token comparison or
+  general absence-of-bugs proof is claimed. Historical live successes remain
+  recorded below for their original source.
+
 ## Automatic local project review gate (2026-10-04)
 
 Baseline: `e4b089da`, initially clean. Version remains **0.5.11**; this is a

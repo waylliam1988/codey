@@ -5,6 +5,21 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
+
+@pytest.fixture
+def no_external_advisor_models(monkeypatch):
+    """Scripted entry tests select real services without probing user models."""
+    from codey.app.provider_services import reset_provider_availability_cache
+
+    reset_provider_availability_cache()
+    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", lambda: {})
+    try:
+        yield
+    finally:
+        reset_provider_availability_cache()
+
 
 def _install_isolated_state_home() -> Path:
     """Give every pytest process a writable home before application imports.

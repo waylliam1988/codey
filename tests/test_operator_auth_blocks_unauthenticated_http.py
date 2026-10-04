@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import socket
 import threading
 from unittest import mock
 
@@ -27,11 +28,23 @@ def httpd():
 
 
 def request(httpd, method, path, *, body=None, headers=None):
-    connection = http.client.HTTPConnection(*httpd.server_address, timeout=3)
+    payload = body.encode("utf-8") if body is not None else b""
+    host, port = httpd.server_address
+    fields = {"Host": f"{host}:{port}", "Accept-Encoding": "identity"}
+    if body is not None:
+        fields["Content-Length"] = str(len(payload))
+    fields.update(headers or {})
+    # These bounded fixtures are one small HTTP message. Sending headers and
+    # body separately races the intentional early 401/403 and Windows close;
+    # send the complete fixture without retrying a rejected request.
+    lines = [f"{method} {path} HTTP/1.1", *(f"{key}: {value}" for key, value in fields.items()), "", ""]
+    wire = "\r\n".join(lines).encode("latin-1") + payload
+    connection = socket.create_connection(httpd.server_address, timeout=3)
     try:
-        connection.request(method, path, body=body, headers=headers or {})
-        response = connection.getresponse()
-        return response.status, dict(response.getheaders()), response.read()
+        connection.sendall(wire)
+        with http.client.HTTPResponse(connection) as response:
+            response.begin()
+            return response.status, dict(response.getheaders()), response.read()
     finally:
         connection.close()
 

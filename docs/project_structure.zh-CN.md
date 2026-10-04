@@ -39,7 +39,8 @@ docs/           当前架构、发布说明与带日期的审查记录
 ## 顺着一次任务阅读
 
 ```text
-HTTP / CLI → task submission → task_run + task_phases
+HTTP / CLI → 共用任务服务 + 入口授权
+           → task submission → task_run + task_phases
            → task_entry → TaskPolicy + TaskSession + KernelRunRequest
            → task_loop.run_task_kernel
                 → TurnSnapshot → provider 回复 → 规范工具计划
@@ -55,6 +56,7 @@ HTTP / CLI → task submission → task_run + task_phases
 | --- | --- |
 | `codey/app/operator_auth.py`、`web/assets/operator_auth.js` | 进程内 HTTP/SSE 操作者凭据及 UI 启动认证；独立于模型/任务授权 |
 | `codey/runtime/core/models.py` | 不可变 `ToolResult`，必须携带精确布尔状态；展示文字不决定状态 |
+| `codey/app/task_services.py`、`task/entry_auth.py` | 桌面/headless 的审查与顾问服务只有一个组合入口；HTTP/CLI 授权只有一套推导规则 |
 | `codey/operations/task_state.py` | `TaskState` 与类型化提交资源包 |
 | `codey/operations/task_run.py`、`task_phases/` | 运行资源生命周期、provider 接入、回调与终态结算 |
 | `codey/operations/task_entry.py`、`task_session.py` | 入口策略与任务事实 |
@@ -85,7 +87,7 @@ HTTP / CLI → task submission → task_run + task_phases
 | `reviews/persistence.py`、`reuse.py` | 单次校验读取、已完成 ledger 来源链、显式同会话/项目复用 |
 | `app/review_service.py` | 单次准备、实际 Reviewer 选择、一次格式修复及保存；未知发送失败不切 Reviewer 重发 |
 | `reviews/coordinator.py`、`operations/project_review_phase.py` | 当前快照有效的问题进入既有一次 Writer repair |
-| `operations/review_flow.py`、`app/headless_runner.py` | 通过已配置连接器只读审查；嵌入 headless project 可显式接入既有自动审查阶段，默认 CLI/headless project 不新增 Reviewer 调用 |
+| `operations/review_flow.py`、`app/headless_runner.py` | 共用审查服务：只读 review 与桌面/CLI/headless 默认自动 project review；测试门可显式固定 Reviewer 连接器 |
 | `runs/ledger_projection.py`、`runs/details.py`、`app/api.py` | 有界展示及经过认证的 `/api/run_review` 结构化冷读 |
 | `tools/local_model_gate_review.py` | 真请求、文件不变、产物/ledger/事件一致性；不评判模型找问题能力 |
 | `tools/local_model_gate_project_review.py` | 同一次正式 project：编码/验证、隔离本地自动自审及既有可选修复；独立核验文件、测试及真实请求 |

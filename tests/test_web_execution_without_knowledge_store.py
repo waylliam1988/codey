@@ -5,6 +5,8 @@ import json
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.operations.task_execution import build_research_tools
 
@@ -48,6 +50,7 @@ def test_web_only_staging_projects_ledger_without_a_dummy_store(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.usefixtures("no_external_advisor_models")
 def test_real_headless_hybrid_executes_search_and_open_in_isolated_state(tmp_path, monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project = tmp_path / "project"
@@ -69,7 +72,7 @@ def test_real_headless_hybrid_executes_search_and_open_in_isolated_state(tmp_pat
         result = run_headless(
             HeadlessRequest(project=project, task="Search the web and open a document about discount tests.",
                             intent="hybrid", provider_id="local", max_turns=4, state_home=tmp_path / "state",
-                            sources_open_required=True),
+                            sources_open_required=True, project_changes_required=False),
             emit_jsonl=rows.append, connect_provider=lambda *a, **kw: provider,
         )
     assert result.stop_reason == "done", rows

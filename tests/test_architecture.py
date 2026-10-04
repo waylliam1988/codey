@@ -2082,7 +2082,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_provider_single_entry_and_server_stays_http_only(self) -> None:
         # Single entry: api/context resolve providers via provider_services.
         # server.py keeps HTTP/SSE routing + STATE/boot; TaskRunDeps assembly
-        # lives in task_submit.py, task execution in operations/.
+        # lives in task_services.py, task execution in operations/.
         api_source = (ROOT / "codey" / "app" / "api.py").read_text(encoding="utf-8")
         self.assertIn("from codey.app import provider_services", api_source)
         self.assertIn("provider_services.provider_availability(ctx)", api_source)
@@ -2101,7 +2101,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("from codey.agents.runner import", server_source)
         self.assertNotIn("from codey.operations.task_entry import", server_source)
         submit_source = (ROOT / "codey" / "app" / "task_submit.py").read_text(encoding="utf-8")
-        self.assertIn("TaskRunDeps.from_submission_stores(", submit_source)
+        self.assertIn("build_task_deps(", submit_source)
+        headless_source = (ROOT / "codey" / "app" / "headless_runner.py").read_text(encoding="utf-8")
+        self.assertIn("build_task_deps(", headless_source)
+        self.assertNotIn("TaskRunDeps.from_submission_stores(", headless_source)
+        services_source = (ROOT / "codey" / "app" / "task_services.py").read_text(encoding="utf-8")
+        self.assertIn("TaskRunDeps.from_submission_stores(", services_source)
         self.assertIn("run_task_submission(", submit_source)
 
     def test_only_kernel_provenance_writes_trusted_side_channel(self) -> None:

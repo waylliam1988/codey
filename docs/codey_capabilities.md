@@ -44,11 +44,13 @@ read -> edit -> run/check -> diff -> review -> done/blocked
 Git improves the workflow when available, but Codey keeps non-Git diff and
 restore paths so beginners can start without learning Git first.
 
-With the default review policy, a desktop project can use a fresh local
-self-review when no web Reviewer is available. Concrete findings enter at most
-one Writer repair; review approval does not replace fresh verification. Default
-CLI/headless project calls do not add a Reviewer request. Embedded headless
-callers may explicitly supply a Reviewer connector to use the same phase.
+Desktop and CLI/headless project tasks use one service composition and the
+same review policy: prefer an available web Reviewer, otherwise use a fresh
+self-review if allowed. Concrete findings enter at most one Writer repair;
+review approval does not replace fresh verification. CLI exposes all task
+intents, explicit network/write grants, session continuation and review reuse.
+Embedded gates may explicitly pin a Reviewer connector. Presentation and
+noninteractive shell approval remain entry-specific.
 
 Text tool calls support bounded read-only batches: `read_files` and `parallel`
 validate the whole batch before running its actions in order. Repeated unchanged
@@ -110,7 +112,7 @@ It is not evidence, not permission, not automation, and not a second agent.
 
 Local HTTP/SSE access requires the browser operator session established by the
 Codey launch link. This is separate from task grants; it never grants the model
-network, project-write or shell permission. The CLI/headless task policy is unchanged.
+network, project-write or shell permission. Desktop and CLI/headless derive task authorization through the same rules.
 
 Codey records bounded runtime facts so interrupted work can be explained and
 resumed more honestly. Provider sends, tool calls, repair rounds, delivery

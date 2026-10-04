@@ -230,8 +230,9 @@ def test_agent_uses_pinned_provider_and_preserves_failed_project(tmp_path):
     state.mkdir()
     (tmp_path / "input.json").write_text(json.dumps({"project": str(project), "state": str(state)}), encoding="utf-8")
     connected = []
-    def headless(request, *, emit_jsonl, connect_provider):
+    def headless(request, *, emit_jsonl, connect_provider, connect_reviewer):
         connected.append(connect_provider("local"))
+        connected.append(connect_reviewer("local"))
         (request.project / "failure.txt").write_text("diagnose me", encoding="utf-8")
         raise RuntimeError("deliberate failure")
     provider = object()
@@ -241,7 +242,7 @@ def test_agent_uses_pinned_provider_and_preserves_failed_project(tmp_path):
     ):
         result = gate.run_agent_case("edit", target=target, case_dir=tmp_path)
     assert result["ok"] is False
-    assert connected == [provider]
+    assert connected == [provider, provider]
     assert factory.call_args.args[0] == target
     assert (Path(result["project"]) / "failure.txt").read_text() == "diagnose me"
     assert (tmp_path / "events.jsonl").is_file()
@@ -255,7 +256,7 @@ def test_correct_files_and_done_cannot_bypass_hybrid_tool_evidence(tmp_path):
     project.mkdir()
     state.mkdir()
     (tmp_path / "input.json").write_text(json.dumps({"project": str(project), "state": str(state)}), encoding="utf-8")
-    def headless(request, *, emit_jsonl, connect_provider):
+    def headless(request, *, emit_jsonl, connect_provider, connect_reviewer):
         (project / "pricing.py").write_text(
             "def discounted_price(price, percent):\n    return price * (1 - percent / 100)\n", encoding="utf-8",
         )

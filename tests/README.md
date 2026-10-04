@@ -113,12 +113,33 @@ Research-only codec/controller fixtures and the legacy iterator adapter live in
 `tests/support/` so production code has one task protocol, one task loop, and
 one research entry.
 
+## Desktop / CLI task parity
+
+- `test_desktop_cli_project_review_parity.py`: actual desktop submission and
+  actual CLI command, automatic approval/finding and single repair, matching
+  tool facts and one terminal; shared non-Git local fixture is in `support/`.
+- `test_cli_task_intents_and_authorization.py`: intents, grants, sessions,
+  reuse, incompatible options and human review progress.
+- `test_headless_desktop_entry_authorization_parity.py` and
+  `test_headless_shared_services_preserve_policy_boundaries.py`: common entry
+  grants/requirements, no-project restrictions, require-web and bad configuration.
+- `test_shared_task_service_consumers.py`: all four app service callbacks
+  receive the correct state and policy through both formal entries.
+- `test_cli_review_readonly_and_cold_reuse.py`: two independently closed CLI
+  contexts restore a persisted review without a new chat/send or file writes.
+- `test_entry_authorization_requirement_errors_propagate.py`: failed
+  derivation cannot silently remove required modifications.
+- `test_operator_http_fixture_sends_complete_request.py`: deterministic early
+  peer rejection locks the auth fixture's complete-request write; no retries.
+- `no_external_advisor_models` is an opt-in fixture for scripted entry tests;
+  real service selection remains active, while user model discovery is isolated.
+
 ## Live Gates
 
 - Automatic local review contracts (also required by `machine_contract_gate`):
   `test_project_auto_local_review_lifecycle.py` uses the formal project entry
   with both injected and no-web desktop review routing, approval/finding,
-  unknown reply and unchanged headless defaults;
+  unknown reply and default shared desktop/headless review;
   `test_review_writer_reentry_requires_new_attempt.py` locks durable reentry;
   `test_review_line_endings_do_not_mark_redaction.py` and
   `test_review_redaction_preserves_declared_symbols.py` distinguish normal

@@ -49,9 +49,17 @@ def cmd_chat(args: argparse.Namespace) -> int:
     return 0
 
 
+def _agent_intent(args: argparse.Namespace) -> str:
+    if args.readonly:
+        return "planning_readonly"
+    if args.auto:
+        return "auto"
+    return args.intent or "project"
+
+
 def cmd_agent(args: argparse.Namespace) -> int:
     task = " ".join(args.task)
-    project = Path(args.project).resolve()
+    project = Path(args.project).resolve() if args.project else None
     json_mode = args.json is True
     _safe_print(f"[codey] project: {project}", file=sys.stderr)
     from codey.agents.request import DEFAULT_MAX_TURNS
@@ -68,7 +76,6 @@ def cmd_agent(args: argparse.Namespace) -> int:
         if state_home_arg
         else DEFAULT_STATE_HOME
     )
-    project.mkdir(parents=True, exist_ok=True)
     raw_max_turns = args.max_turns
     max_turns = DEFAULT_MAX_TURNS if raw_max_turns is None else raw_max_turns
     request = HeadlessRequest(
@@ -76,13 +83,16 @@ def cmd_agent(args: argparse.Namespace) -> int:
         task=task,
         provider_id=args.provider,
         max_turns=max_turns,
-        intent=(
-            "planning_readonly"
-            if args.readonly is True
-            else ("auto" if args.auto is True else "project")
-        ),
+        intent=_agent_intent(args),
         state_home=state_home,
         port=args.port,
+        session_id=args.session_id,
+        review_source_run_id=args.review_source_run_id,
+        requested_capabilities=tuple(name for name, enabled in (
+            ("web.read", args.allow_web), ("project.write", args.allow_write),
+        ) if enabled),
+        continue_task=args.continue_task,
+        review_policy=args.review_policy,
     )
     if json_mode:
         result = run_headless(
@@ -112,7 +122,7 @@ def _human_cli_line(row: dict[str, object]) -> str:
     kind = str(row.get("type") or "")
     if kind == "task_start":
         return f"[codey] start mode={row.get('mode', '')} provider={row.get('provider', '')}"
-    if kind in {"status", "info"}:
+    if kind in {"status", "info", "review"}:
         text = str(row.get("status") or row.get("text") or "").strip()
         return f"[codey] {text}" if text else ""
     if kind in {"tool_started", "tool"}:
@@ -531,13 +541,21 @@ def main(argv: list[str] | None = None) -> int:
     sp_chat.set_defaults(func=cmd_chat)
 
     sp_agent = sub.add_parser("agent", help="CLI agent loop")
-    sp_agent.add_argument("--project", required=True)
+    sp_agent.add_argument("--project", default="", help="attach a project folder")
     sp_agent.add_argument("--max-turns", type=int, default=None)
     sp_agent.add_argument("--port", type=int, default=9222)
     sp_agent.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
     sp_agent.add_argument("--json", action="store_true", help="emit JSONL events on stdout")
-    sp_agent.add_argument("--readonly", action="store_true", help="run a read-only planning task in JSONL mode")
-    sp_agent.add_argument("--auto", action="store_true", help="let JSONL mode choose the execution path automatically")
+    modes = sp_agent.add_mutually_exclusive_group()
+    modes.add_argument("--intent", choices=("auto", "chat", "project", "hybrid", "research", "review", "planning_readonly"), help="task mode")
+    modes.add_argument("--readonly", action="store_true", help="read-only planning")
+    modes.add_argument("--auto", action="store_true", help="choose the task path automatically")
+    sp_agent.add_argument("--allow-web", action="store_true", help="authorize web reading")
+    sp_agent.add_argument("--allow-write", action="store_true", help="authorize project writing, including Research")
+    sp_agent.add_argument("--session-id", default="", help="existing or new task session")
+    sp_agent.add_argument("--continue", dest="continue_task", action="store_true", help="continue the selected session")
+    sp_agent.add_argument("--review-source-run-id", default="", help="prefer a verified review from this prior run")
+    sp_agent.add_argument("--review-policy", choices=("web_if_available", "require_web"), default=None, help="Reviewer policy; defaults to configured policy")
     sp_agent.add_argument("--state-home", default="", help="local Codey state directory")
     sp_agent.add_argument("task", nargs="+")
     sp_agent.set_defaults(func=cmd_agent)
@@ -547,6 +565,15 @@ def main(argv: list[str] | None = None) -> int:
     _add_ghost_subcommands(sp_ghost_sub)
 
     args = ap.parse_args(argv)
+    if args.cmd == "agent":
+        intent = _agent_intent(args)
+        if args.continue_task and not args.session_id:
+            sp_agent.error("--continue requires --session-id")
+        if args.review_source_run_id:
+            if not args.session_id:
+                sp_agent.error("--review-source-run-id requires --session-id")
+            if intent not in {"project", "review"}:
+                sp_agent.error("review source requires project or review intent")
     return args.func(args)
 
 

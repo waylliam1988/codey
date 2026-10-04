@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from codey.agents.request import AgentRequest, ShellApprovalRequest
 from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS
 from codey.app.event_payloads import machine_event_payload
@@ -47,6 +49,7 @@ class _RouteProvider:
         self.closed = True
 
 
+@pytest.mark.usefixtures("no_external_advisor_models")
 class HeadlessRunnerTests(unittest.TestCase):
     def test_research_request_can_use_an_explicit_isolated_knowledge_root(self) -> None:
         from codey.knowledge.store import KnowledgeStore
@@ -80,6 +83,7 @@ class HeadlessRunnerTests(unittest.TestCase):
             project = Path(td, "project")
             result = run_headless(
                 HeadlessRequest(
+                    project_changes_required=False,
                     project=project,
                     task="check tests",
                     provider_id="qwen",
@@ -119,6 +123,7 @@ class HeadlessRunnerTests(unittest.TestCase):
             state_home = Path(td, "state")
             result = run_headless(
                 HeadlessRequest(
+                    project_changes_required=False,
                     project=Path(td, "project"),
                     task="check tests",
                     provider_id="qwen",
@@ -157,6 +162,7 @@ class HeadlessRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             result = run_headless(
                 HeadlessRequest(
+                    project_changes_required=False,
                     project=Path(td, "project"),
                     task="custom run",
                     provider_id="qwen",
@@ -337,6 +343,7 @@ class HeadlessRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             result = run_headless(
                 HeadlessRequest(
+                    project_changes_required=False,
                     project=Path(td, "project"),
                     task="done",
                     provider_id="qwen",
@@ -383,6 +390,7 @@ class HeadlessRunnerTests(unittest.TestCase):
         ):
             result = run_headless(
                 HeadlessRequest(
+                    project_changes_required=False,
                     project=Path(td, "project"),
                     task="done task",
                     provider_id="qwen",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
 import socket
@@ -4890,8 +4891,9 @@ class SessionThreadingTests(unittest.TestCase):
             def close(self):
                 pass
 
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
             state = server.AppContext(td)
+            cleanup.callback(state.close)
             seed_ghost_style_memory(state, session_id="session-research")
             from codey.knowledge.store import KnowledgeStore
 
@@ -4941,7 +4943,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
-                mock.patch.object(consensus_service, "run_research_advisors", None),
+                mock.patch.object(consensus_service, "run_research_advisors", return_value=()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 _run_task_with_ghost_wait("session-research", None, "Research helium", 8, False, "deepseek", "research")
@@ -5141,8 +5143,9 @@ class SessionThreadingTests(unittest.TestCase):
             def close(self):
                 pass
 
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
             state = server.AppContext(td)
+            cleanup.callback(state.close)
             from codey.knowledge.store import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
@@ -5200,7 +5203,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
-                mock.patch.object(consensus_service, "run_research_advisors", None),
+                mock.patch.object(consensus_service, "run_research_advisors", return_value=()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 _run_task_with_ghost_wait(

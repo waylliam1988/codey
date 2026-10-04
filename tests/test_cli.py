@@ -90,6 +90,7 @@ class ProviderCliTests(unittest.TestCase):
                 json=False,
                 readonly=False,
                 auto=False,
+                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None,
                 state_home=td,
             )
 
@@ -113,6 +114,7 @@ class ProviderCliTests(unittest.TestCase):
                 json=False,
                 readonly=False,
                 auto=False,
+                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None,
                 state_home=td,
             )
             stdout = io.StringIO()
@@ -161,6 +163,7 @@ class ProviderCliTests(unittest.TestCase):
                 json=True,
                 readonly=False,
                 auto=False,
+                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None,
                 state_home="",
             )
             stdout = io.StringIO()
@@ -212,6 +215,7 @@ class ProviderCliTests(unittest.TestCase):
                 json=False,
                 readonly=False,
                 auto=False,
+                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None,
                 state_home=td,
             )
             stdout = io.StringIO()
@@ -248,6 +252,7 @@ class ProviderCliTests(unittest.TestCase):
                 json=True,
                 readonly=True,
                 auto=False,
+                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None,
                 state_home="",
             )
             stdout = io.StringIO()
@@ -275,6 +280,7 @@ class ProviderCliTests(unittest.TestCase):
                 json=True,
                 readonly=False,
                 auto=True,
+                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None,
                 state_home="",
             )
             stdout = io.StringIO()

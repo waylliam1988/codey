@@ -79,9 +79,12 @@ def test_task_run_deps_factory_expands_the_bundle_once() -> None:
 def test_submission_entrypoints_use_the_bundle_factory() -> None:
     for relative in ("codey/app/task_submit.py", "codey/app/headless_runner.py"):
         source = (ROOT / relative).read_text(encoding="utf-8")
-        assert "from_submission_stores" in source
+        assert "build_task_deps(" in source
         for field in _STORE_FIELDS:
             assert f"{field}=state.{field}" not in source
+    composition = (ROOT / "codey/app/task_services.py").read_text(encoding="utf-8")
+    assert "TaskRunDeps.from_submission_stores(" in composition
+    assert "stores=state.task_submission_stores" in composition
 
 
 def test_factory_is_a_classmethod_with_explicit_store_input() -> None:

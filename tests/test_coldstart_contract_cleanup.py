@@ -315,7 +315,7 @@ class AgentCliStrictTests(unittest.TestCase):
     def test_cmd_agent_reads_required_fields_directly(self) -> None:
         import codey.app.cli as cli
 
-        source = std_inspect.getsource(cli.cmd_agent)
+        source = std_inspect.getsource(cli.cmd_agent) + std_inspect.getsource(cli._agent_intent)
         for field in ("args.json", "args.state_home", "args.max_turns",
                       "args.readonly", "args.auto"):
             with self.subTest(field=field):
@@ -371,6 +371,7 @@ class AgentCliStrictTests(unittest.TestCase):
                 max_turns=None,
                 readonly=False,
                 auto=False,
+                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None,
             )
             with (
                 mock.patch(

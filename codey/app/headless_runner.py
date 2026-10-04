@@ -18,30 +18,24 @@ from typing import Any
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.shell_approval import shell_command_event_fields
-from codey.app.context import (
-    REVIEW_FIX_TURNS,
-    REVIEW_LOG_LINES,
-    AppContext,
-)
+from codey.app.context import AppContext
 from codey.app.event_payloads import SCHEMA_VERSION, machine_event_payload
-from codey.operations.project_adapter import run as default_agent_run
+from codey.app.task_services import build_task_deps
 from codey.operations.task_entry import run_task_submission
-from codey.operations.task_run import TaskRunDeps
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
-from codey.providers.diagnostics import capture_provider_failure as default_capture_provider_failure
 from codey.providers.registry import connect_provider as default_connect_provider
+from codey.reviews.review_policy import allow_self_review, load_review_policy
 from codey.runtime.observe.events import clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
+from codey.task.entry_auth import derive_entry_auth
 from codey.task.model import TaskSubmission
-from codey.workspace.changes import collect_changes as default_collect_changes
-from codey.workspace.changes import is_git_repository
 
 HEADLESS_SESSION_PREFIX = "headless_"
 
 
 @dataclass(frozen=True)
 class HeadlessRequest:
-    project: Path
+    project: Path | None
     task: str
     provider_id: str = DEFAULT_PROVIDER_ID
     max_turns: int = DEFAULT_MAX_TURNS
@@ -52,12 +46,14 @@ class HeadlessRequest:
     port: int = 9222
     requested_capabilities: tuple[str, ...] = ()
     strict_research: bool = False
-    sources_open_required: bool = False
+    sources_open_required: bool | None = None
     project_changes_required: bool | None = None
     # Research runs may opt into an isolated vault outside the user's default
     # state home. The caller owns the path; headless still closes the store.
     research_store_root: Path | None = None
     review_source_run_id: str = ""
+    continue_task: bool = False
+    review_policy: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,7 +112,6 @@ class HeadlessAppContext(AppContext):
             self._emit_jsonl(rejected)
 
 
-
 def emit_jsonl(payload: dict[str, object], *, file=sys.stdout) -> None:
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     encoding = getattr(file, "encoding", None) or "utf-8"
@@ -134,12 +129,14 @@ def run_headless(
     connect_provider: Callable[..., Any] = default_connect_provider,
     connect_reviewer: Callable[..., Any] | None = None,
 ) -> HeadlessResult:
-    # An explicit connector enables the existing project review phase for
-    # embedded callers/gates. CLI defaults still add no Reviewer requests.
-    if connect_reviewer is not None and _request_intent(request.intent) not in {"project", "review"}:
-        raise ValueError("connect_reviewer requires project or review intent")
-    project = Path(request.project).expanduser().resolve()
-    project.mkdir(parents=True, exist_ok=True)
+    intent = _request_intent(request.intent)
+    policy = load_review_policy() if request.review_policy is None else request.review_policy
+    allow_self_review(policy)
+    if connect_reviewer is not None and intent not in {"project", "hybrid", "auto", "review"}:
+        raise ValueError("connect_reviewer requires project, hybrid, auto or review intent")
+    project = Path(request.project).expanduser().resolve() if request.project is not None else None
+    if project is not None:
+        project.mkdir(parents=True, exist_ok=True)
     session_id = request.session_id or HEADLESS_SESSION_PREFIX + uuid.uuid4().hex[:12]
     state_home = Path(request.state_home).expanduser() if request.state_home else None
     state = HeadlessAppContext(
@@ -193,6 +190,7 @@ def run_headless(
                 collect_changes=collect_changes,
                 capture_provider_failure=capture_provider_failure,
                 connect_reviewer=connect_reviewer,
+                review_policy=policy,
             )
     except BaseException as exc:
         task_result = None
@@ -273,12 +271,13 @@ def _run_headless_task(
     *,
     request: HeadlessRequest,
     session_id: str,
-    project: Path,
+    project: Path | None,
     pre_reserved_run_id: str,
     agent_run: Callable | None,
     collect_changes: Callable | None,
     capture_provider_failure: Callable | None,
     connect_reviewer: Callable[..., Any] | None,
+    review_policy: str,
 ) -> tuple[HeadlessResult | None, BaseException | None]:
     """Run the submission; the caller owns shutdown so close never masks this."""
     try:
@@ -290,49 +289,34 @@ def _run_headless_task(
             from codey.knowledge.store import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(request.research_store_root)
-        deps = TaskRunDeps.from_submission_stores(
-            state=state,
-            stores=state.task_submission_stores,
-            agent_run=agent_run or default_agent_run,
-            collect_changes=collect_changes or default_collect_changes,
-            run_review=_headless_review_for(request, state, connect_reviewer),
-            capture_provider_failure=capture_provider_failure or default_capture_provider_failure,
-            is_git_repository=is_git_repository,
-            review_fix_turns=REVIEW_FIX_TURNS,
-            review_log_lines=REVIEW_LOG_LINES,
+        deps = build_task_deps(
+            state, agent_run=agent_run, collect_changes=collect_changes,
+            capture_provider_failure=capture_provider_failure,
+            connect_reviewer=connect_reviewer, review_policy=review_policy,
         )
-        entry_requested = tuple(getattr(request, "requested_capabilities", ()) or ())
-        entry_strict = bool(getattr(request, "strict_research", False))
-        if not entry_strict and _request_intent(request.intent) == "research":
-            entry_strict = True
-        try:
-            explicit = getattr(request, "project_changes_required", None)
-            if explicit is True:
-                entry_requires = True
-            elif explicit is False:
-                entry_requires = False
-            else:
-                # Headless execution is an explicit machine entry. It only
-                # requires a project change when the caller opts in; an empty
-                # project may validly complete an inspection or planning task.
-                entry_requires = False
-        except Exception:
-            entry_requires = False
+        auth = derive_entry_auth({
+            "intent": _request_intent(request.intent), "task": request.task,
+            "requested_capabilities": request.requested_capabilities,
+            "strict_research": request.strict_research,
+            "project_changes_required": request.project_changes_required,
+            "sources_open_required": request.sources_open_required,
+        }, project=str(project) if project is not None else None)
         run_task_submission(
             deps,
             TaskSubmission(
                 session_id=session_id,
-                project=str(project),
+                project=str(project) if project is not None else None,
                 task=request.task,
                 max_turns=request.max_turns,
-                continue_task=False,
+                continue_task=request.continue_task,
                 provider_id=request.provider_id,
                 intent=_request_intent(request.intent),
                 run_id=pre_reserved_run_id,
-                requested_capabilities=entry_requested,
-                strict_research=entry_strict,
-                sources_open_required=bool(getattr(request, "sources_open_required", False)),
-                project_changes_required=entry_requires,
+                requested_capabilities=auth.requested_capabilities,
+                strict_research=auth.strict_research,
+                sources_open_required=auth.sources_open_required,
+                project_changes_required=auth.project_changes_required,
+                denied_capabilities=auth.denied_capabilities,
                 review_source_run_id=request.review_source_run_id,
             ),
         )
@@ -357,25 +341,6 @@ def _run_headless_task(
         ), None
     except BaseException as exc:
         return None, exc
-
-
-def _no_headless_review(**_kwargs):
-    return None
-
-
-def _headless_review_for(
-    request: HeadlessRequest,
-    state: HeadlessAppContext,
-    connect_reviewer: Callable[..., Any] | None = None,
-):
-    if _request_intent(request.intent) != "review" and connect_reviewer is None:
-        return _no_headless_review
-    from codey.app.review_service import run_review
-
-    def _run_review(**kwargs):
-        return run_review(state, connect_reviewer=connect_reviewer or state.get_provider, **kwargs)
-
-    return _run_review
 
 
 def _headless_run_id_exists(
@@ -413,7 +378,7 @@ def _pre_reserve_run_id(
     *,
     request: HeadlessRequest,
     session_id: str,
-    project: Path,
+    project: Path | None,
 ) -> str:
     requested = str(request.run_id or "").strip()
     if not requested:
@@ -425,7 +390,7 @@ def _pre_reserve_run_id(
         return ""
     reserved = state.reserve_run(
         session_id=session_id,
-        project=str(project),
+        project=str(project) if project is not None else None,
         task=request.task,
         provider_id=request.provider_id,
         run_id=requested,
@@ -439,4 +404,4 @@ def _request_intent(value: str) -> str:
         return "planning_readonly"
     if text in {"auto", "chat", "research", "project", "hybrid", "review"}:
         return text
-    return "project"
+    raise ValueError(f"invalid intent: {value}")

@@ -74,6 +74,16 @@ python -m codey agent --provider qwen --project E:\my-project --max-turns 10 "Fi
 python -m codey agent --json --provider qwen --project E:\my-project "Fix the failing tests"
 ```
 
+`agent` uses the same task services and authorization rules as the desktop.
+It defaults to `project`; use `--auto` for automatic routing or `--intent` for
+`chat`, `research`, `hybrid`, `review` or `planning_readonly`. A project folder
+is optional for chat/Research. `--readonly` selects read-only planning;
+`--allow-web` and `--allow-write` supply explicit grants, subject to task denials.
+`--session-id` selects a session and `--continue` continues it. Review reuse
+requires the same session and `--review-source-run-id` with a prior run's ID.
+Noninteractive shell approval remains denied. The single-message `chat` command
+is a provider utility; `agent --intent chat` uses the recorded task flow.
+
 CLI, browser events and headless JSONL share run identity and tool status.
 Recovery retains the original requirements and can deliver settled results;
 unsettled dangerous writes are not blindly retried.
@@ -89,12 +99,13 @@ snapshot. No source means a fresh review. Run Details shows bounded status;
 `GET /api/run_review` returns verified stored findings through the authenticated
 run API. See [current review ownership](docs/project_structure.md).
 
-Under the default review policy, desktop project runs can automatically open a
-fresh local self-review when no web Reviewer is available, then repair concrete
-findings once. This also works with a plain project folder. Default CLI/headless
-project runs retain their existing behavior; embedded callers can opt into the
-same review phase with `run_headless(connect_reviewer=...)`. The live
-`project_review` gate checks this chain in one run.
+Desktop and CLI/headless project runs use the same automatic review phase.
+Under the default policy, an available web Reviewer is preferred; otherwise a
+fresh self-review can use the Writer's model. Concrete findings enter at most
+one Writer repair. Plain non-Git folders are supported. `--review-policy
+require_web` requires a web Reviewer; embedded gates can explicitly pin a
+Reviewer connector. Review approval never replaces fresh verification.
+See [desktop/CLI parity evidence](docs/desktop-cli-task-parity-2026-10-04.zh-CN.md).
 
 - [Detailed capabilities](docs/codey_capabilities.md)
 - [Roadmap](ROADMAP.zh-CN.md)

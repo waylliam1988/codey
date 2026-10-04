@@ -4,12 +4,24 @@
 
 ## Unreleased - Review determinism, scope, persistence and explicit reuse
 
+- Unify desktop and CLI/headless task services, review/advisor consumers and
+  entry authorization. CLI now exposes all intents, explicit grants, session
+  continuation and verified review reuse; default project review follows the
+  desktop's policy and single repair. Remove duplicate wiring and no-review
+  stubs; requirement derivation errors no longer remove task obligations.
+- Add 29 behavioral/control cases across eight files. Isolate scripted model
+  discovery; migrate ownership assertions and inspection fixtures. Reproduce
+  and lock a Windows early-close race in the HTTP test client, without auth
+  changes or retries. Final suite: **7258 passed, 29 skipped, 1497 subtests**;
+  machine gate: **338 passed**. Live smoke could not start because the local
+  endpoint was unreachable; it is not reported as passing.
+
 - Add `project_review` to the default local-model gate: one production run
   writes, verifies, automatically reviews with the same local target and may
   enter the existing single Writer repair. Independent files/tests, real HTTP
   requests, read-only review, persisted results and terminal identity are checked.
-- Allow embedded headless callers to supply an explicit Reviewer connector;
-  ordinary CLI/headless project defaults remain unchanged. Review repair now
+- Embedded headless callers may pin a Reviewer connector. Desktop and ordinary
+  CLI/headless project tasks now share automatic review by default. Review repair now
   opens a new durable Writer attempt before effects and settles it afterward;
   failed or finalized attempts cannot be reopened.
 - Fix partial-review false positives from CRLF/CR normalization and qualified

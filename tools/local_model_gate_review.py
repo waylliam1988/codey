@@ -50,6 +50,8 @@ def run_review_case(target, directory: Path) -> dict:
             emit_jsonl=_record,
             connect_provider=lambda provider_id, **kwargs: attempts.make_provider(target, directory)
             if provider_id == "local" else (_ for _ in ()).throw(RuntimeError("gate pins local")),
+            connect_reviewer=lambda provider_id: attempts.make_provider(target, directory)
+            if provider_id == "local" else (_ for _ in ()).throw(RuntimeError("gate pins local reviewer")),
         )
         dt = round(time.perf_counter() - t0, 1)
         after = {

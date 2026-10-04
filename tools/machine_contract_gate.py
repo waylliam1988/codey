@@ -10,6 +10,13 @@ import pytest
 
 CONTRACT_TESTS = (
     "tests/test_cli.py",
+    "tests/test_desktop_cli_project_review_parity.py",
+    "tests/test_cli_task_intents_and_authorization.py",
+    "tests/test_headless_desktop_entry_authorization_parity.py",
+    "tests/test_shared_task_service_consumers.py",
+    "tests/test_cli_review_readonly_and_cold_reuse.py",
+    "tests/test_headless_shared_services_preserve_policy_boundaries.py",
+    "tests/test_entry_authorization_requirement_errors_propagate.py",
     "tests/test_headless_runner.py",
     "tests/test_release_gate_tool_order.py",
     "tests/test_headless_real_kernel_lifecycle.py",
@@ -20,6 +27,7 @@ CONTRACT_TESTS = (
     "tests/test_tool_event_exit_uses_authoritative_record.py",
     "tests/test_provider_connection_running_event.py",
     "tests/test_operator_auth_blocks_unauthenticated_http.py",
+    "tests/test_operator_http_fixture_sends_complete_request.py",
     "tests/test_operator_auth_rejects_non_ascii_credentials.py",
     "tests/test_entry_authorization_cannot_expand_by_route.py",
     "tests/test_entry_auth_denied_capabilities.py",

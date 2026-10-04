@@ -22,7 +22,7 @@ from codey.operations.task_state import TaskSubmissionState
 from codey.providers.diagnostics import capture_provider_failure
 from codey.reviews.review_policy import load_review_policy
 from codey.task.model import TaskSubmission
-from codey.workspace.changes import collect_changes, is_git_repository
+from codey.workspace.changes import collect_changes
 
 SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
 
@@ -55,29 +55,18 @@ def run_task(
     # init-phase failure (import, state, policy, deps) releases a preset
     # reservation instead of pinning busy forever.
     try:
-        from codey.app import consensus_service, review_service
-        from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
+        from codey.app.task_services import build_task_deps
         from codey.operations.task_entry import run_task_submission
-        from codey.operations.task_run import TaskRunDeps
 
         state = get_state()
         if review_policy is None:
             review_policy = load_review_policy()
-        deps = TaskRunDeps.from_submission_stores(
-            state=state,
-            stores=state.task_submission_stores,
+        deps = build_task_deps(
+            state,
             agent_run=agent_run,
             collect_changes=collect_changes,
-            run_review=lambda **kwargs: review_service.run_review(
-                state, review_policy=review_policy, **kwargs
-            ),
+            review_policy=review_policy,
             capture_provider_failure=capture_provider_failure,
-            run_consensus=lambda **kwargs: consensus_service.run_consensus(state, **kwargs),
-            run_project_audit=lambda **kwargs: consensus_service.run_project_audit(state, **kwargs),
-            run_research_advisors=lambda **kwargs: consensus_service.run_research_advisors(state, **kwargs),
-            is_git_repository=is_git_repository,
-            review_fix_turns=REVIEW_FIX_TURNS,
-            review_log_lines=REVIEW_LOG_LINES,
         )
     except Exception:
         # Init-phase failure happens before TaskRuntime owns the slot: release

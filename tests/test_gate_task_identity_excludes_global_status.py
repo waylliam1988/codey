@@ -19,7 +19,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
 
+
+@pytest.mark.usefixtures("no_external_advisor_models")
 class GateTaskIdentityExcludesGlobalStatusTests(unittest.TestCase):
     def test_global_status_without_ids_does_not_fail_identity(self) -> None:
         import tools.local_model_release_gate as gate
@@ -95,6 +98,7 @@ class GateTaskIdentityExcludesGlobalStatusTests(unittest.TestCase):
                     provider_id="local",
                     max_turns=3,
                     intent="project",
+                    project_changes_required=False,
                     state_home=Path(td) / "state",
                 ),
                 emit_jsonl=rows.append,

@@ -35,9 +35,11 @@
 
 有 Git 会增强体验，但没有 Git 也能用非 Git diff 和 restore 开始工作。
 
-默认审查策略下，桌面 project 没有网页 Reviewer 时可以开一个新的本地自审会话，
-具体问题最多进入一次 Writer repair；审查通过不能代替新鲜验证。默认 CLI/headless
-project 不增加 Reviewer 请求，嵌入式 headless 调用可显式提供连接器进入相同阶段。
+桌面与 CLI/headless project 共用服务组合和审查策略：优先可用的网页 Reviewer，
+否则在策略允许时开新会话自审。具体问题最多进入一次 Writer repair；审查通过
+不能代替新鲜验证。CLI 提供全部任务 intent、明确联网/写入授权、继续会话及
+显式审查复用。嵌入测试门可固定 Reviewer 连接器；展示与非交互 shell 审批保持
+入口各自的适配。
 
 文本工具支持有界只读批次 `read_files / parallel`：整批校验后按顺序执行。
 结果不变的重复循环会有界停止，新信息与成功编辑继续推进。
@@ -89,7 +91,7 @@ Ghost 状态必须可控（预览、导出、删除、重置、禁用同时作�
 ## Runtime 与恢复
 
 本地 HTTP/SSE 要求浏览器通过 Codey 启动链接建立操作者会话。这与任务授权独立，
-不会授予模型联网、写项目或 shell 权限。CLI/headless 的任务策略不变。
+不会授予模型联网、写项目或 shell 权限。桌面与 CLI/headless 通过相同规则推导任务授权。
 
 Codey 会记录有界 runtime fact，让中断后的工作更容易解释和恢复。Provider send、
 tool call、repair round、delivery receipt 和 completion proof 都通过 durable

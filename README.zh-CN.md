@@ -68,6 +68,14 @@ python -m codey agent --provider qwen --project E:\my-project --max-turns 10 "�
 python -m codey agent --json --provider qwen --project E:\my-project "修复失败的测试"
 ```
 
+`agent` 与桌面共用任务服务和授权规则，默认是 `project`；`--auto` 自动选路，
+`--intent` 可指定 `chat/research/hybrid/review/planning_readonly`。聊天和 Research
+不必关联项目；`--readonly` 选择只读规划；`--allow-web/--allow-write` 提供明确授权，
+仍受任务的禁止项约束。`--session-id` 选择会话，`--continue` 继续该会话；
+审查复用使用同一会话及 `--review-source-run-id` 指定的历史 run ID。
+非交互 shell 审批仍拒绝。单次 `chat` 命令是 provider 工具；
+`agent --intent chat` 才走记录运行事实的任务流程。
+
 CLI、网页事件和 headless JSONL 共用运行身份与工具状态。恢复保留原任务要求；
 已结算结果可继续交付，未结算的危险写操作不会被盲目重试。
 
@@ -79,10 +87,11 @@ CLI、网页事件和 headless JSONL 共用运行身份与工具状态。恢复�
 复用已完成结果；不提供来源就进行新审查。Run Details 展示有界状态，经过认证的
 `GET /api/run_review` 从正式存储恢复问题。详见[当前职责地图](docs/project_structure.zh-CN.md)。
 
-默认审查策略下，桌面 project 在没有网页 Reviewer 时，可以自动开一个新的本地
-自审会话，并对具体问题最多修复一次；普通项目文件夹也可使用。默认 CLI/headless
-project 保持既有行为；嵌入调用可通过 `run_headless(connect_reviewer=...)` 接入
-相同审查阶段。实机 `project_review` 门在同一次运行中验证这条链路。
+桌面与 CLI/headless project 共用自动审查阶段。默认优先使用可用网页 Reviewer，
+否则可用 Writer 的模型开启新自审会话；具体问题最多修复一次，普通非 Git 文件夹
+也可使用。`--review-policy require_web` 要求网页 Reviewer，嵌入测试门可显式固定
+Reviewer 连接器。审查通过不能代替新鲜验证。
+详见[桌面/CLI 一致性验收](docs/desktop-cli-task-parity-2026-10-04.zh-CN.md)。
 
 - [详细能力说明](docs/codey_capabilities.zh-CN.md)
 - [路线图](ROADMAP.zh-CN.md)
