@@ -85,9 +85,14 @@ HTTP / CLI → task submission → task_run + task_phases
 | `reviews/persistence.py`、`reuse.py` | 单次校验读取、已完成 ledger 来源链、显式同会话/项目复用 |
 | `app/review_service.py` | 单次准备、实际 Reviewer 选择、一次格式修复及保存；未知发送失败不切 Reviewer 重发 |
 | `reviews/coordinator.py`、`operations/project_review_phase.py` | 当前快照有效的问题进入既有一次 Writer repair |
-| `operations/review_flow.py`、`app/headless_runner.py` | 通过已配置连接器进行只读审查并如实报告终态；默认 project 不新增 Reviewer 调用 |
+| `operations/review_flow.py`、`app/headless_runner.py` | 通过已配置连接器只读审查；嵌入 headless project 可显式接入既有自动审查阶段，默认 CLI/headless project 不新增 Reviewer 调用 |
 | `runs/ledger_projection.py`、`runs/details.py`、`app/api.py` | 有界展示及经过认证的 `/api/run_review` 结构化冷读 |
 | `tools/local_model_gate_review.py` | 真请求、文件不变、产物/ledger/事件一致性；不评判模型找问题能力 |
+| `tools/local_model_gate_project_review.py` | 同一次正式 project：编码/验证、隔离本地自动自审及既有可选修复；独立核验文件、测试及真实请求 |
+
+审查修复仅在 Writer 成功结算且尚未记录最终证明时，以更新的 attempt 回到
+`writer_running`，修复后结算再进入完成检查。不另建工具循环，也不把旧结算裁决
+当作可执行新 effect 的授权。详见[自动本地自审验收](automatic-local-review-2026-10-04.zh-CN.md)。
 
 模型身份描述配置的目标/模型/参数，不证明模型权重不可变。快照扫描和文件读取有明确
 预算；读取失败或超预算不授予信任。这些边界不构成全库无 bug 的证明，也不能消除任意

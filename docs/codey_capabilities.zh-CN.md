@@ -35,6 +35,10 @@
 
 有 Git 会增强体验，但没有 Git 也能用非 Git diff 和 restore 开始工作。
 
+默认审查策略下，桌面 project 没有网页 Reviewer 时可以开一个新的本地自审会话，
+具体问题最多进入一次 Writer repair；审查通过不能代替新鲜验证。默认 CLI/headless
+project 不增加 Reviewer 请求，嵌入式 headless 调用可显式提供连接器进入相同阶段。
+
 文本工具支持有界只读批次 `read_files / parallel`：整批校验后按顺序执行。
 结果不变的重复循环会有界停止，新信息与成功编辑继续推进。
 取消会阻止后续动作，包括同批尚未开始的工具。

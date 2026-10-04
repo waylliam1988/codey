@@ -87,9 +87,15 @@ Using web tools in ordinary coding does not automatically require research notes
 | `reviews/persistence.py`, `reuse.py` | One verified artifact read, finished-ledger lineage and explicit same-session/project reuse |
 | `app/review_service.py` | Single input preparation, actual Reviewer selection, one format repair, persistence; unknown send failures are not retried through another Reviewer |
 | `reviews/coordinator.py`, `operations/project_review_phase.py` | Current-snapshot findings may enter the existing single Writer repair |
-| `operations/review_flow.py`, `app/headless_runner.py` | Read-only review via the configured connector and truthful terminal state; default project adds no Reviewer calls |
+| `operations/review_flow.py`, `app/headless_runner.py` | Read-only review via the configured connector; embedded headless project callers can explicitly enable the existing automatic review phase; default CLI/headless project adds no Reviewer calls |
 | `runs/ledger_projection.py`, `runs/details.py`, `app/api.py` | Consistent bounded display plus authenticated `/api/run_review` cold structured reads |
 | `tools/local_model_gate_review.py` | Real Reviewer request, unchanged files, verified artifact/ledger/event consistency; not model finding-quality scoring |
+| `tools/local_model_gate_project_review.py` | One formal project run: code/check, automatic isolated local review, optional existing repair; independent file/test and real request checks |
+
+Review repair re-enters `writer_running` with a newer attempt only after a
+successful settled Writer and before the final proof; it settles that attempt
+before completion enforcement. It does not create a second tool loop or reuse
+a previous settled verdict as permission to execute effects.
 
 Model identity describes configured target/model/settings, not immutable model
 weights. Snapshot inventories and file reads have finite bounds; scan failures

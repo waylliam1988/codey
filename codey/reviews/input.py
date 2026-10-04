@@ -192,7 +192,7 @@ def prepare_review_input(
         collection_incomplete=source.get("changed_count", total) != total,
         required_context_truncated=len(safe_task) > 6000 or len(safe_brief) > 8000,
         exclusion_reasons=tuple(reasons[:20]),
-        content_redacted=any(original != safe for original, safe in (
+        content_redacted=any(_normalized_text(original) != safe for original, safe in (
             (filtered_diff, redacted_diff), (task, safe_task), (writer_summary, safe_summary),
             (recent_log, safe_log), (change_brief, safe_brief), (project_map, safe_map),
             (verification_map, safe_verification), (review_impact_map, safe_impact),
@@ -225,13 +225,17 @@ def _sensitive_file_reason(path: str) -> str:
     return ""
 
 
+def _normalized_text(text: object) -> str:
+    return ("" if text is None else str(text)).replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _redact_text(text: object) -> str:
     from codey.policies.redaction import looks_high_entropy_secret, looks_secret_shape
 
-    raw = "" if text is None else str(text)
+    raw = _normalized_text(text)
     if not raw:
         return raw
-    lines = raw.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines = raw.split("\n")
     redacted: list[str] = []
     in_private_key = False
     for line in lines:
@@ -264,13 +268,27 @@ def _redact_line(line: str) -> str:
 def _redact_token(match: re.Match[str]) -> str:
     import re
 
-    from codey.policies.redaction import SECRET_MARKER_RE
+    from codey.policies.redaction import SECRET_MARKER_RE, looks_secret_shape
     from codey.policies.redaction import looks_high_entropy_secret as _looks
 
     token = match.group(0)
     # Keep the surrounding marker: lowercase hex and slash-bearing secrets
     # only qualify when the caller supplied their credential context.
     prefix = match.string[:match.start()]
+    # Symbol maps render qualified names such as PricingTests.test_discount.
+    # Their punctuation/mixed case resembles entropy, but declaration syntax
+    # identifies code, not a credential value. Known secret shapes still win.
+    declaration = re.search(r"\b(def|function|class)\s+$", prefix)
+    suffix = match.string[match.end():]
+    declared_symbol = (
+        declaration is not None
+        and re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", token) is not None
+        and re.match(r"\s*(?:[:({;]|$)" if declaration[1] == "class" else r"\s*\(", suffix) is not None
+    )
+    if looks_secret_shape(token):
+        return _REDACTED
+    if declared_symbol:
+        return token
     markers = list(SECRET_MARKER_RE.finditer(prefix))
     credential_value = bool(markers and re.fullmatch(r'''[\s:=?"']*''', prefix[markers[-1].end():]))
     if _looks(token) or credential_value and _looks("api_key=" + token):

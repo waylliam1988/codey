@@ -22,7 +22,7 @@ from codey.providers.local_openai import LocalOpenAIProvider
 from codey.runtime.core.cancellation import start_process, wait_process
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-OBJECTIVE_CASES = frozenset({"create", "edit", "references", "hybrid", "auto", "tests"})
+OBJECTIVE_CASES = frozenset({"create", "edit", "references", "hybrid", "auto", "tests", "project_review"})
 
 # These labels are deliberately about the task contract, not implementation
 # details. Unknown/new cases stay visible as their own kind until the matrix
@@ -42,6 +42,7 @@ CASE_TASK_KINDS = {
     "research": "research",
     "recovery": "recovery",
     "review": "review",
+    "project_review": "coding_review",
 }
 FAILURE_KINDS = frozenset({
     "none",

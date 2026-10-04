@@ -132,7 +132,12 @@ def run_headless(
     collect_changes: Callable | None = None,
     capture_provider_failure: Callable | None = None,
     connect_provider: Callable[..., Any] = default_connect_provider,
+    connect_reviewer: Callable[..., Any] | None = None,
 ) -> HeadlessResult:
+    # An explicit connector enables the existing project review phase for
+    # embedded callers/gates. CLI defaults still add no Reviewer requests.
+    if connect_reviewer is not None and _request_intent(request.intent) not in {"project", "review"}:
+        raise ValueError("connect_reviewer requires project or review intent")
     project = Path(request.project).expanduser().resolve()
     project.mkdir(parents=True, exist_ok=True)
     session_id = request.session_id or HEADLESS_SESSION_PREFIX + uuid.uuid4().hex[:12]
@@ -187,6 +192,7 @@ def run_headless(
                 agent_run=agent_run,
                 collect_changes=collect_changes,
                 capture_provider_failure=capture_provider_failure,
+                connect_reviewer=connect_reviewer,
             )
     except BaseException as exc:
         task_result = None
@@ -272,6 +278,7 @@ def _run_headless_task(
     agent_run: Callable | None,
     collect_changes: Callable | None,
     capture_provider_failure: Callable | None,
+    connect_reviewer: Callable[..., Any] | None,
 ) -> tuple[HeadlessResult | None, BaseException | None]:
     """Run the submission; the caller owns shutdown so close never masks this."""
     try:
@@ -288,7 +295,7 @@ def _run_headless_task(
             stores=state.task_submission_stores,
             agent_run=agent_run or default_agent_run,
             collect_changes=collect_changes or default_collect_changes,
-            run_review=_headless_review_for(request, state),
+            run_review=_headless_review_for(request, state, connect_reviewer),
             capture_provider_failure=capture_provider_failure or default_capture_provider_failure,
             is_git_repository=is_git_repository,
             review_fix_turns=REVIEW_FIX_TURNS,
@@ -356,13 +363,17 @@ def _no_headless_review(**_kwargs):
     return None
 
 
-def _headless_review_for(request: HeadlessRequest, state: HeadlessAppContext):
-    if _request_intent(request.intent) != "review":
+def _headless_review_for(
+    request: HeadlessRequest,
+    state: HeadlessAppContext,
+    connect_reviewer: Callable[..., Any] | None = None,
+):
+    if _request_intent(request.intent) != "review" and connect_reviewer is None:
         return _no_headless_review
     from codey.app.review_service import run_review
 
     def _run_review(**kwargs):
-        return run_review(state, connect_reviewer=state.get_provider, **kwargs)
+        return run_review(state, connect_reviewer=connect_reviewer or state.get_provider, **kwargs)
 
     return _run_review
 

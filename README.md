@@ -89,6 +89,13 @@ snapshot. No source means a fresh review. Run Details shows bounded status;
 `GET /api/run_review` returns verified stored findings through the authenticated
 run API. See [current review ownership](docs/project_structure.md).
 
+Under the default review policy, desktop project runs can automatically open a
+fresh local self-review when no web Reviewer is available, then repair concrete
+findings once. This also works with a plain project folder. Default CLI/headless
+project runs retain their existing behavior; embedded callers can opt into the
+same review phase with `run_headless(connect_reviewer=...)`. The live
+`project_review` gate checks this chain in one run.
+
 - [Detailed capabilities](docs/codey_capabilities.md)
 - [Roadmap](ROADMAP.zh-CN.md)
 - [Changelog](CHANGELOG.md)

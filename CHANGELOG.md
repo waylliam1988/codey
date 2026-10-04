@@ -4,6 +4,20 @@
 
 ## Unreleased - Review determinism, scope, persistence and explicit reuse
 
+- Add `project_review` to the default local-model gate: one production run
+  writes, verifies, automatically reviews with the same local target and may
+  enter the existing single Writer repair. Independent files/tests, real HTTP
+  requests, read-only review, persisted results and terminal identity are checked.
+- Allow embedded headless callers to supply an explicit Reviewer connector;
+  ordinary CLI/headless project defaults remain unchanged. Review repair now
+  opens a new durable Writer attempt before effects and settles it afterward;
+  failed or finalized attempts cannot be reopened.
+- Fix partial-review false positives from CRLF/CR normalization and qualified
+  code symbols such as `PricingTests.test_discount`; credential values and known
+  secret shapes remain redacted. Add 42 behavioral/control cases across five
+  files to the machine contract gate. Full suite: 7230 passed, 29 skipped;
+  final KoboldCpp review/project-review smokes: native 2/2 and JSON 2/2.
+
 - Audit follow-up: invalid/nested/status-only JSON cannot hide an incomplete
   review; format repair preserves already actionable findings. Git NUL rename
   parsing preserves literal delimiters and rejects incomplete records.

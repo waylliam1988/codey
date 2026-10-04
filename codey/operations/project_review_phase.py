@@ -13,6 +13,7 @@ from codey.completion.verification_policy import (
 )
 from codey.operations.project_completion_context import (
     ProjectRun,
+    commit_runtime_operation,
     record_review_input_prepared_trace,
     safe_verification_map,
 )
@@ -63,8 +64,9 @@ def _close_writer_for_review(ctx: ProjectRun) -> None:
         with contextlib.suppress(Exception):
             ctx.frame.provider.close()
     ctx.frame.provider = None
-    assert ctx.failover is not None
-    ctx.failover.provider = None
+    runner = ctx.failover
+    assert runner is not None
+    runner.provider = None
 
 
 def _repair_writer(
@@ -72,22 +74,37 @@ def _repair_writer(
     followup: str,
     checkpoint: Any,
 ) -> Any:
-    assert ctx.failover is not None
+    runner = ctx.failover
+    assert runner is not None
+    commit_runtime_operation(
+        ctx, "mark_writer_running",
+        lambda mutations, session_id, run_id: mutations.mark_writer_running(
+            session_id, run_id, provider_id=runner.provider_id,
+            writer_attempt=ctx.writer_attempt_index + 1,
+        ),
+    )
     try:
-        result = ctx.failover.run(
+        result = runner.run(
             task=followup,
             turn_budget=min(ctx.request.max_turns, ctx.deps.review.review_fix_turns),
             fresh=False,
             handoff="",
             checkpoint=checkpoint,
         )
+        if result.stop_reason not in {"approval", "stopped"}:
+            commit_runtime_operation(
+                ctx, "mark_writer_settled",
+                lambda mutations, session_id, run_id: mutations.mark_writer_settled(
+                    session_id, run_id, provider_id=runner.provider_id,
+                    turns_used=result.turns, stop_reason=result.stop_reason,
+                ),
+            )
         return result
     finally:
         # Inline sync to avoid importing the writer phase (acyclic split).
-        assert ctx.failover is not None
-        ctx.frame.provider = ctx.failover.provider
-        ctx.frame.provider_id = ctx.failover.provider_id
-        ctx.frame.preflight_switches = ctx.failover.switches
+        ctx.frame.provider = runner.provider
+        ctx.frame.provider_id = runner.provider_id
+        ctx.frame.preflight_switches = runner.switches
 
 
 def _set_checkpoint_status(ctx: ProjectRun, status: str) -> None:

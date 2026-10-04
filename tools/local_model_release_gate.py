@@ -53,7 +53,7 @@ TIMEOUT = 600.0
 
 CASES = (
     "chat", "read", "create", "edit", "references", "hybrid", "discussion", "planning", "auto", "ghost",
-    "tests", "research", "recovery", "review",
+    "tests", "research", "recovery", "review", "project_review",
 )
 DEFAULT_CASES = CASES
 
@@ -734,6 +734,10 @@ def _worker(case: str, directory: Path) -> int:
             from tools.local_model_gate_review import run_review_case
 
             data = run_review_case(target, directory)
+        elif case == "project_review":
+            from tools.local_model_gate_project_review import run_project_review_case
+
+            data = run_project_review_case(target, directory)
         else:
             data = run_agent_case(case, target=target, case_dir=directory)
     except Exception as exc:
@@ -768,7 +772,7 @@ def _metadata(target: attempts.GateTarget) -> dict:
         "harness_hashes": {
             name: hashlib.sha256((attempts.REPO_ROOT / "tools" / name).read_bytes()).hexdigest()
             for name in ("local_model_release_gate.py", "local_model_gate_attempts.py", "local_model_gate_recovery.py",
-                         "local_model_gate_review.py")
+                         "local_model_gate_review.py", "local_model_gate_project_review.py")
         },
         "production_hashes": {
             path: hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
@@ -785,7 +789,8 @@ def _metadata(target: attempts.GateTarget) -> dict:
                          "codey/research/connector_search.py", "codey/research/source_gateway.py",
                          "codey/reviews/core.py", "codey/reviews/input.py", "codey/reviews/identity.py",
                          "codey/reviews/persistence.py", "codey/reviews/reuse.py",
-                         "codey/app/review_service.py")
+                         "codey/app/review_service.py", "codey/operations/project_review_phase.py",
+                         "codey/runtime/core/operation_state.py")
         },
         "server_observations": _server_observations(target.base_url),
         "chat_template": "not_reported", "quantization": "model_name_only; not independently verified",

@@ -1,5 +1,80 @@
 # Codey Test Report
 
+## Automatic local project review gate (2026-10-04)
+
+Baseline: `e4b089da`, initially clean. Version remains **0.5.11**; this is a
+development commit/push, with no tag or Release.
+
+- Add `project_review` to the default live gate, using one formal project run
+  and the production review service with an explicitly pinned local connector.
+  Default CLI/headless project behavior is unchanged. Desktop no-web self-review
+  routing and plain non-Git folders are also covered by deterministic entry tests.
+- Reproduced and fixed three production defects: review repair attempted an
+  effect while still `writer_settled`; CRLF/CR normalization falsely marked
+  redaction; qualified method symbols falsely looked like secret values.
+  Reentry requires a newer attempt after `done`, with no final proof. Actual
+  credential values and known secret formats stay redacted. A negative test
+  also caught an overly broad first symbol exemption before it was tightened.
+- **5 new files / 42 collected cases**. Defect tests were observed red before
+  production fixes; valid controls/default behavior are not claimed to have
+  been red. Gate counterexamples rejected zero Writer requests and early
+  terminals. Fixture mistakes (old edit arguments, wrong receipt field and
+  missing required emitter) were corrected as test mistakes, not production bugs.
+- Affected-area regression: **552 passed, 412 subtests passed in 54.83s**.
+  Final machine contract gate: **310 passed in 40.80s**, no skips.
+- Preflight: `ruff check .`, `mypy codey` (**370 files, 0 errors**),
+  `compileall -q codey tests tools`, JavaScript syntax and `git diff --check`
+  passed. Mypy still reports its existing note about untyped function bodies;
+  this is not a claim that every Python function is statically checked.
+- Full run on Windows / Python 3.12, after live tests and final source checks:
+  `python -m pytest -q -o faulthandler_timeout=120 -ra`
+  → **7230 passed, 29 skipped, 1497 subtests passed in 479.99s**, **0 failures**.
+  This full run includes the corrected old Ghost terminal assertion from the
+  previous audit. Historical full-run failures below remain unchanged.
+  Skips cover platform differences, symlink privileges and opt-in real browser
+  E2E; no new skip/xfail was introduced. Full log is ignored:
+  `.e2e-artifacts/project-review-full-pytest-20261004.log`.
+
+### Final-source KoboldCpp runs
+
+Model: `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`.
+Endpoint: `http://127.0.0.1:5001/v1`. Commands:
+
+```powershell
+python tools/local_model_release_gate.py --cases review,project_review --repeat 1 --timeout 600 --protocol native --json
+python tools/local_model_release_gate.py --cases review,project_review --repeat 1 --timeout 600 --protocol json --json
+```
+
+| Protocol | Case | Result | Seconds | Logical sends / HTTP attempts / retries | Reported prompt / completion / total tokens |
+| --- | --- | --- | --- | --- | --- |
+| native | review | PASS | 5.640 | 1 / 1 / 0 | 667 / 90 / 757 |
+| native | project_review | PASS | 38.762 | 7 / 7 / 0 | 13358 / 483 / 13841 |
+| json | review | PASS | 5.613 | 1 / 1 / 0 | 666 / 90 / 756 |
+| json | project_review | PASS | 13.282 | 6 / 6 / 0 | 8660 / 223 / 8883 |
+
+Each automatic case observed one actual Reviewer request, complete persisted
+review, unchanged files during review, same run/session, independent tests and
+fresh final verification. Reviewer itself uses textual review JSON in both
+matrices; native/JSON selects the Writer tool protocol. The native terminal
+receipt's `length` finish reason belongs to the existing `max_tokens=1`
+acknowledgement, not an active task failure.
+
+Ignored artifacts:
+`local-model-release-20261004-205639-f7a58a9428` (native) and
+`local-model-release-20261004-205753-2846144421` (JSON), under `.e2e-artifacts/`.
+The first automatic native run,
+`local-model-release-20261004-204916-a7ccd82049`, correctly failed the gate:
+the code/tests passed, but `PricingTests.test_discount` was redacted and scope
+became incomplete. This led to the declared-symbol red test and fix. Earlier
+individual retests passed; final results above are recorded separately.
+
+No full 15-case live matrix or real browser-layout E2E was run in this task.
+Live fixtures returned approval; the actionable-finding/one-repair branch is
+locked by deterministic formal-entry tests. Timings are observations, not a
+controlled performance A/B or evidence of better model finding accuracy.
+
+See [automatic review validation and limits](docs/automatic-local-review-2026-10-04.zh-CN.md).
+
 ## Review audit and deterministic boundary fixes (2026-10-04)
 
 Scope: commits `39a0fc80` and `de413af3`, plus the existing uncommitted identity,

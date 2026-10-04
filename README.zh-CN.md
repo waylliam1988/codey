@@ -79,6 +79,11 @@ CLI、网页事件和 headless JSONL 共用运行身份与工具状态。恢复�
 复用已完成结果；不提供来源就进行新审查。Run Details 展示有界状态，经过认证的
 `GET /api/run_review` 从正式存储恢复问题。详见[当前职责地图](docs/project_structure.zh-CN.md)。
 
+默认审查策略下，桌面 project 在没有网页 Reviewer 时，可以自动开一个新的本地
+自审会话，并对具体问题最多修复一次；普通项目文件夹也可使用。默认 CLI/headless
+project 保持既有行为；嵌入调用可通过 `run_headless(connect_reviewer=...)` 接入
+相同审查阶段。实机 `project_review` 门在同一次运行中验证这条链路。
+
 - [详细能力说明](docs/codey_capabilities.zh-CN.md)
 - [路线图](ROADMAP.zh-CN.md)
 - [版本更新记录](CHANGELOG.zh-CN.md)

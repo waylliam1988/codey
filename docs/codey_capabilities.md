@@ -44,6 +44,12 @@ read -> edit -> run/check -> diff -> review -> done/blocked
 Git improves the workflow when available, but Codey keeps non-Git diff and
 restore paths so beginners can start without learning Git first.
 
+With the default review policy, a desktop project can use a fresh local
+self-review when no web Reviewer is available. Concrete findings enter at most
+one Writer repair; review approval does not replace fresh verification. Default
+CLI/headless project calls do not add a Reviewer request. Embedded headless
+callers may explicitly supply a Reviewer connector to use the same phase.
+
 Text tool calls support bounded read-only batches: `read_files` and `parallel`
 validate the whole batch before running its actions in order. Repeated unchanged
 tool cycles stop within a bound; new information and successful edits keep going.

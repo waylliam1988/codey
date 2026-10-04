@@ -85,7 +85,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         LEAF_REPAIR_RUNNING,
         LEAF_TERMINAL,
     }),
-    LEAF_WRITER_SETTLED: frozenset({LEAF_COMPLETION_PROOF_RECORDED, LEAF_TERMINAL}),
+    LEAF_WRITER_SETTLED: frozenset({LEAF_WRITER_RUNNING, LEAF_COMPLETION_PROOF_RECORDED, LEAF_TERMINAL}),
     LEAF_COMPLETION_PROOF_RECORDED: frozenset({
         LEAF_REPAIR_CONTEXT_ADMITTED,
         LEAF_TERMINAL,
@@ -705,6 +705,14 @@ def mark_writer_running(
 ) -> RuntimeOperationState:
     provider = _text(provider_id, "provider_id")
     attempt = _count(writer_attempt, "writer_attempt", minimum=1)
+    if state.leaf == LEAF_WRITER_SETTLED:
+        # Review may request another writer attempt before the final proof.
+        # The caller must advance the attempt; failed/finalized work cannot
+        # be reopened and settled verdict fields never survive into writing.
+        if attempt <= state.writer_attempt or state.stop_reason != "done" or state.completion_proof_ref:
+            raise RuntimeOperationTransitionError("writer restart requires a new attempt after done before final proof")
+        return _transition(state, LEAF_WRITER_RUNNING, provider_id=provider,
+                           writer_attempt=attempt, turns_used=0, stop_reason="")
     if state.leaf in {LEAF_WRITER_RUNNING, LEAF_TOOL_DELIVERY_PENDING}:
         # Rebinding a writer changes transport metadata, never acknowledges
         # delivery or restarts the task state machine.

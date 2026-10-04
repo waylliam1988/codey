@@ -51,6 +51,11 @@ CONTRACT_TESTS = (
     "tests/test_review_submission_rejects_coerced_source_ids.py",
     "tests/test_local_review_gate_rejects_unavailable.py",
     "tests/test_local_review_gate_cleans_readonly_git_objects.py",
+    "tests/test_project_auto_local_review_lifecycle.py",
+    "tests/test_review_line_endings_do_not_mark_redaction.py",
+    "tests/test_review_redaction_preserves_declared_symbols.py",
+    "tests/test_review_writer_reentry_requires_new_attempt.py",
+    "tests/test_project_review_gate_requires_real_automatic_flow.py",
 )
 
 

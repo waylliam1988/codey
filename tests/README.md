@@ -115,10 +115,21 @@ one research entry.
 
 ## Live Gates
 
+- Automatic local review contracts (also required by `machine_contract_gate`):
+  `test_project_auto_local_review_lifecycle.py` uses the formal project entry
+  with both injected and no-web desktop review routing, approval/finding,
+  unknown reply and unchanged headless defaults;
+  `test_review_writer_reentry_requires_new_attempt.py` locks durable reentry;
+  `test_review_line_endings_do_not_mark_redaction.py` and
+  `test_review_redaction_preserves_declared_symbols.py` distinguish normal
+  code/normalization from secret redaction;
+  `test_project_review_gate_requires_real_automatic_flow.py` rejects missing,
+  reordered or conflicting gate facts. These are not model quality A/B tests.
 - `tools/local_model_release_gate.py`: release-blocking local OpenAI-compatible
   model gate. It covers chat/read, create/edit/references, the shared `hybrid`
   entry, read-only planning, discussion, auto routing, test generation, strict
-  Research, recovery and Ghost state. Each
+  Research, recovery, Ghost state, read-only review and automatic `project_review`.
+  The latter uses one run rather than submitting a second review task. Each
   attempt has a process deadline and a unique artifact directory. Objective
   completion, independently correct artifacts, conversation safety and Ghost
   control-plane checks are reported separately; answer quality is not automated.
