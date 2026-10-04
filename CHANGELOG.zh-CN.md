@@ -25,6 +25,10 @@
   有界 review 投影。
 - 显式复用：新增 review_source_run_id（仅 review/project、同会话同项目、精确
   身份匹配、当前快照有效）；未命中走新审查；headless review 走正式审查服务。
+- 复用来源现在写入当前运行的有界 review 事件、投影、机器事件和 Run Details，
+  显式复用有真实消费者并可追溯到 source run。
+- Review ledger 投影必须同时拥有匹配的 result 与 terminal 事件；部分写入不会
+  伪造完整 review 投影。
 - 发布门：machine 契约加入审查集成测试；local 门修复最终汇总矩阵、拒绝重复
  用例并增加真实 headless 审查冒烟（只验链路，不验模型找 bug 能力）。
 

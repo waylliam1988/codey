@@ -48,22 +48,44 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(restored.findings[0].issue, "bug")
 
     def test_ledger_contains_reference_not_raw_reply(self) -> None:
-        # ledger must store digest/reference, never raw reply bodies
-        with tempfile.TemporaryDirectory() as td:
-            store = ReviewArtifactStore(Path(td))
-            ref = save_review_artifact(
-                store,
-                session_id="s1",
-                run_id="r1",
-                attempt_id="a1",
-                result=_result(),
-                scope_digest="s",
-                prompt_digest="p",
-                snapshot_digest="snap",
-                reviewer_id="r",
-                policy="web_if_available",
-            )
-            self.assertNotIn("bug", str(ref.ledger_fields()) if hasattr(ref, "ledger_fields") else "")
+        from types import SimpleNamespace
+
+        from codey.reviews.persistence import append_review_result_ledger
+
+        result = _result()
+        result = ReviewResult(
+            result.verdict, result.summary, result.findings,
+            status=result.status,
+            scope=result.scope,
+            identity=SimpleNamespace(attempt_id="a1", artifact_sha256="sha"),
+        )
+        events: list[dict[str, object]] = []
+        writer = SimpleNamespace(
+            append=lambda event_type, **fields: events.append({"type": event_type, **fields})
+        )
+        append_review_result_ledger(lambda action: action(writer), result)
+        blob = str(events)
+        self.assertIn("review_result_projected", blob)
+        self.assertIn("artifact_sha256", blob)
+        self.assertNotIn("bug", blob)
+
+    def test_ledger_records_explicit_reuse_source(self) -> None:
+        from types import SimpleNamespace
+
+        from codey.reviews.persistence import append_review_result_ledger
+
+        result = ReviewResult(
+            "approved", "ok", [], status="complete", source_run_id="source-run",
+            identity=SimpleNamespace(attempt_id="a1", artifact_sha256="sha"),
+        )
+        events: list[dict[str, object]] = []
+        writer = SimpleNamespace(
+            append=lambda event_type, **fields: events.append({"type": event_type, **fields})
+        )
+        append_review_result_ledger(lambda action: action(writer), result)
+        self.assertEqual(
+            {event["source_review_run_id"] for event in events}, {"source-run"}
+        )
 
     def test_trace_contains_counts_and_digests_not_issue_bodies(self) -> None:
         from codey.reviews.persistence import review_trace_payload

@@ -58,6 +58,7 @@ class ReviewResult:
     diagnostics: tuple[str, ...] = ()
     scope: Any | None = None
     identity: Any | None = None
+    source_run_id: str = ""
 
     @property
     def approved(self) -> bool:

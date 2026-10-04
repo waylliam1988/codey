@@ -50,17 +50,38 @@ def try_reuse_review(
         attempt_id = str(getattr(projection, "attempt_id", "") or "")
         if not attempt_id:
             return None
-        restored = _load_source_artifact(state_home, session_id, source, attempt_id)
+        expected_artifact_sha = str(
+            getattr(projection, "artifact_sha256", "") or ""
+        )
+        restored = _load_source_artifact(
+            state_home,
+            session_id,
+            source,
+            attempt_id,
+            expected_artifact_sha,
+        )
         if restored is None:
             return None
         if not _scope_matches_current(restored, current_scope):
             return None
-        source_identity = _source_identity(state_home, session_id, source, attempt_id, current_project)
+        source_identity = _source_identity(
+            state_home,
+            session_id,
+            source,
+            attempt_id,
+            current_project,
+            expected_artifact_sha,
+        )
         if source_identity is None:
             return None
         if not identities_match(source_identity, current_identity):
             return None
-        return replace(restored, origin="reused")
+        return replace(
+            restored,
+            origin="reused",
+            identity=source_identity,
+            source_run_id=source,
+        )
     except (ValueError, OSError):
         return None
 
@@ -82,12 +103,33 @@ def _source_projection(state_home, session_id, source, current_project):
     return review_summary
 
 
-def _load_source_artifact(state_home, session_id, source, attempt_id):
+def _load_source_artifact(
+    state_home,
+    session_id,
+    source,
+    attempt_id,
+    expected_artifact_sha: str,
+):
+    import hashlib
+
     from codey.reviews.persistence import ReviewArtifactStore, load_review_artifact
 
     try:
+        store = ReviewArtifactStore(state_home)
+        path = store.path_for(
+            session_id,
+            source,
+            attempt_id,
+        )
+        if not expected_artifact_sha:
+            return None
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected_artifact_sha:
+            return None
         restored = load_review_artifact(
-            ReviewArtifactStore(state_home), session_id=session_id, run_id=source, attempt_id=attempt_id
+            store,
+            session_id=session_id,
+            run_id=source,
+            attempt_id=attempt_id,
         )
     except (ValueError, OSError):
         return None
@@ -108,7 +150,14 @@ def _scope_matches_current(restored, current_scope) -> bool:
     return scope_digest_for(restored.scope) == scope_digest_for(current_scope)
 
 
-def _source_identity(state_home, session_id, source, attempt_id, current_project):
+def _source_identity(
+    state_home,
+    session_id,
+    source,
+    attempt_id,
+    current_project,
+    artifact_sha256: str,
+):
     import json as _json
 
     from codey.reviews.core import REVIEW_CONTRACT_VERSION
@@ -133,6 +182,8 @@ def _source_identity(state_home, session_id, source, attempt_id, current_project
             contract_version=int(payload.get("contract_version") or REVIEW_CONTRACT_VERSION),
             policy=str(payload.get("policy") or ""),
             self_review=bool(payload.get("self_review", False)),
+            attempt_id=attempt_id,
+            artifact_sha256=artifact_sha256,
         )
     except (TypeError, ValueError):
         return None

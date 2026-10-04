@@ -22,6 +22,7 @@ from codey.operations.task_context import (
 )
 from codey.reviews.coordinator import ReviewCoordinator, change_state
 from codey.reviews.impact_map import safe_review_impact_map
+from codey.reviews.persistence import append_review_result_ledger
 from codey.runtime.core import cancellation
 
 
@@ -150,50 +151,13 @@ def _run_review_with_trace(ctx: ProjectRun, **kwargs):
 def _persist_project_review_ledger(ctx: ProjectRun, reviewed: object) -> None:
     if reviewed is None or not isinstance(reviewed, tuple) or len(reviewed) != 2:
         return
-    _reviewer_id, review = reviewed
-    identity = getattr(review, "identity", None)
-    attempt_id = str(getattr(identity, "attempt_id", "") or "")
-    if not attempt_id:
-        return
-    try:
-        run_id = str(getattr(ctx.frame, "run_id", "") or "")
-        session_id = str(getattr(ctx.request, "session_id", "") or "")
-    except Exception:
-        return
-    if not run_id or not session_id:
-        return
-    verdict = str(getattr(review, "verdict", "") or "")
-    status = str(getattr(review, "status", "") or "")
-    origin = str(getattr(review, "origin", "fresh") or "fresh")
-    try:
-        finding_count = len(getattr(review, "findings", ()) or ())
-    except Exception:
-        finding_count = 0
-    artifact_sha = str(getattr(identity, "artifact_sha256", "") or "")
     try:
         hooks = ctx.hooks
     except Exception:
         return
     if hooks is None:
         return
-    hooks.append_ledger(lambda w: w.append(
-        "review_result_projected",
-        review_attempt_id=attempt_id,
-        verdict=verdict[:40],
-        status=status[:40],
-        origin=origin[:40],
-        finding_count=finding_count,
-        artifact_sha256=artifact_sha[:80] or None,
-    ))
-    hooks.append_ledger(lambda w: w.append(
-        "review_finished",
-        review_attempt_id=attempt_id,
-        verdict=verdict[:40],
-        status=status[:40],
-        origin=origin[:40],
-        finding_count=finding_count,
-        artifact_sha256=artifact_sha[:80] or None,
-    ))
+    append_review_result_ledger(hooks.append_ledger, reviewed[1])
 
 
 def _build_review_verification_map(

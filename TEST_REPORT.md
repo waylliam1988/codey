@@ -2,6 +2,23 @@
 
 ## Unreleased review hardening (2026-10-04)
 
+The review hardening changes were rechecked after the final lineage and typing
+pass:
+
+- `python -m ruff check codey tests`: passed.
+- `python -m mypy codey`: 0 errors across 370 source files.
+- `python -m compileall -q codey tests`: passed.
+- Focused review/API/reuse/ledger suite: **265 passed**.
+- Full `python -m pytest -q`: **7111 passed, 14 skipped, 5 failed, 1497
+  subtests passed** in **439.74s**. All five failures are Node-backed browser
+  tests whose subprocess could not start because `node` is not installed on
+  this Windows environment (`FileNotFoundError: [WinError 2]`); no Python
+  assertion or review-path failure occurred.
+
+The five Node tests remain visible as failures and were not skipped or altered.
+Run the full suite again on a machine with Node available to obtain the clean
+browser result.
+
 TDD batches 1-8, each red before green. New files (cases): strict parsing 13,
 git paths/findings 23, safe input/scope 11, identity/snapshot 12, coordinator
 consumption 14, persistence/projection 7, explicit reuse 7, contract

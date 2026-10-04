@@ -283,15 +283,15 @@ def _review_summary(
     trace: Mapping[str, object],
 ) -> tuple[str, str] | None:
     review = getattr(projection, "review", None) if projection is not None else None
-    coding = trace.get("coding_review") if isinstance(trace.get("coding_review"), dict) else None
+    coding_value = trace.get("coding_review")
+    coding: Mapping[str, object] | None = (
+        coding_value if isinstance(coding_value, Mapping) else None
+    )
     verdict = str(getattr(review, "verdict", "") or (coding.get("verdict") if coding else "") or "")
     status = str(getattr(review, "status", "") or (coding.get("status") if coding else "") or "")
     origin = str(getattr(review, "origin", "") or (coding.get("origin") if coding else "") or "fresh")
     count = getattr(review, "finding_count", 0) if review is not None else 0
-    try:
-        finding_count = int((coding.get("finding_count") if coding else count) or 0)
-    except (TypeError, ValueError):
-        finding_count = 0
+    finding_count = _safe_count(coding.get("finding_count") if coding else count)
     if not verdict and not status and not finding_count and coding is None:
         return None
     if status == "stale":
@@ -302,6 +302,9 @@ def _review_summary(
         return "Review incomplete", "warning"
     if verdict == "approved" and not finding_count:
         if origin == "reused":
+            source = str(getattr(review, "source_run_id", "") or "")
+            if source:
+                return f"Previous review reused from {source}", "neutral"
             return "Previous review reused", "neutral"
         return "Review passed", "neutral"
     if finding_count:

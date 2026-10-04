@@ -66,6 +66,7 @@ class ReviewSummary:
     finding_count: int = 0
     attempt_id: str = ""
     artifact_sha256: str = ""
+    source_run_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -251,9 +252,13 @@ def _project_review(state: _LedgerBuildState) -> ReviewSummary | None:
     finished = state.review_events.get("review_finished")
     if finished is None:
         return None
-    attempt = str(finished.get("review_attempt_id") or "")
     projected = state.review_events.get("review_result_projected")
-    source = projected if isinstance(projected, dict) else finished
+    if projected is None:
+        return None
+    attempt = str(finished.get("review_attempt_id") or "")
+    if str(projected.get("review_attempt_id") or "") != attempt:
+        return None
+    source = projected
     verdict = str(source.get("verdict") or "")
     status = str(source.get("status") or "")
     origin = str(source.get("origin") or "fresh")
@@ -273,6 +278,7 @@ def _project_review(state: _LedgerBuildState) -> ReviewSummary | None:
         finding_count=finding_count,
         attempt_id=attempt[:80],
         artifact_sha256=str(source.get("artifact_sha256") or "")[:80],
+        source_run_id=str(source.get("source_review_run_id") or "")[:120],
     )
 
 

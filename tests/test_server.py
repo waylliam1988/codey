@@ -1492,6 +1492,26 @@ class ResearchServerHelperTests(unittest.TestCase):
             app_api.run_submit_response({"task": "hello", "provider": "missing"}, mock.Mock()),
             (400, {"error": "unsupported provider: missing"}),
         )
+        submit = mock.Mock(return_value="run-reuse")
+        status, payload = app_api.run_submit_response(
+            {
+                "task": "review diff",
+                "project": str(Path.cwd()),
+                "provider": "deepseek",
+                "intent": "review",
+                "review_source_run_id": "source-run-1",
+            },
+            submit,
+        )
+        self.assertEqual((status, payload), (200, {"ok": True, "run_id": "run-reuse"}))
+        self.assertEqual(submit.call_args.kwargs["review_source_run_id"], "source-run-1")
+        self.assertEqual(
+            app_api.run_submit_response(
+                {"task": "hello", "intent": "chat", "review_source_run_id": "source-run-1"},
+                mock.Mock(),
+            ),
+            (400, {"error": "review_source_run_id requires review or project intent"}),
+        )
         with tempfile.TemporaryDirectory() as td:
             missing_project = Path(td) / "missing"
             submit = mock.Mock(return_value="run-missing")

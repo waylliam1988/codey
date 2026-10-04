@@ -63,7 +63,12 @@ def review_change_tracker(deps: ReviewFlowDeps, project: str | None):
         return None
 
 
-def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
+def run_review_mode(
+    deps: ReviewFlowDeps,
+    frame: RunFrame,
+    *,
+    append_ledger: Callable | None = None,
+) -> ModeOutcome:
     state = deps.state
     request = frame.request
     project = request.project
@@ -201,6 +206,9 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
         summary = "Review unavailable. No files were changed."
     else:
         _reviewer_id, review = reviewed
+        from codey.reviews.persistence import append_review_result_ledger
+
+        append_review_result_ledger(append_ledger, review)
         summary = render_review_only_summary(review)
     state.set_provider_session(frame.provider_id, None)
     frame.conversation.update_snapshot(

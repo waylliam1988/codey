@@ -551,9 +551,28 @@ def run_submit_response(
         return 400, {"error": f"unsupported provider: {provider_id}"}
     if intent == "review" and not project:
         return 400, {"error": "project required for review"}
+    review_source_run_id = str(body.get("review_source_run_id") or "").strip()
+    if review_source_run_id:
+        from codey.reviews.reuse import validate_source_run_id
+
+        if intent not in {"review", "project"}:
+            return 400, {"error": "review_source_run_id requires review or project intent"}
+        try:
+            review_source_run_id = validate_source_run_id(review_source_run_id)
+        except ValueError as exc:
+            return 400, {"error": str(exc)}
     project_error = _project_directory_error(project)
     if project_error:
         return 400, {"error": project_error}
+    submit_kwargs = {
+        "requested_capabilities": entry_auth.requested_capabilities,
+        "strict_research": entry_auth.strict_research,
+        "sources_open_required": entry_auth.sources_open_required,
+        "project_changes_required": entry_auth.project_changes_required,
+        "denied_capabilities": entry_auth.denied_capabilities,
+    }
+    if review_source_run_id:
+        submit_kwargs["review_source_run_id"] = review_source_run_id
     try:
         run_id = submit_task(
             session_id,
@@ -563,11 +582,7 @@ def run_submit_response(
             continue_task,
             provider_id,
             intent,
-            requested_capabilities=entry_auth.requested_capabilities,
-            strict_research=entry_auth.strict_research,
-            sources_open_required=entry_auth.sources_open_required,
-            project_changes_required=entry_auth.project_changes_required,
-            denied_capabilities=entry_auth.denied_capabilities,
+            **submit_kwargs,
         )
     except BrowserWorkerBusy:
         return 503, {"error": "browser worker busy", "hint": "retry"}

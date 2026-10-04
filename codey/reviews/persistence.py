@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,6 +24,47 @@ class ReviewArtifactRef:
     finding_count: int
 
 
+def append_review_result_ledger(
+    append_ledger: Callable[[Callable[[object], None]], None] | None,
+    review: ReviewResult | None,
+) -> None:
+    """Persist the bounded review result through the caller's run ledger."""
+
+    if append_ledger is None or review is None:
+        return
+    identity = getattr(review, "identity", None)
+    attempt_id = str(getattr(identity, "attempt_id", "") or "")
+    if not attempt_id:
+        return
+    verdict = str(getattr(review, "verdict", "") or "")[:40]
+    status = str(getattr(review, "status", "") or "")[:40]
+    origin = str(getattr(review, "origin", "fresh") or "fresh")[:40]
+    try:
+        finding_count = len(getattr(review, "findings", ()) or ())
+    except Exception:
+        finding_count = 0
+    artifact_sha = str(getattr(identity, "artifact_sha256", "") or "")[:80]
+    source_run_id = str(getattr(review, "source_run_id", "") or "")[:120]
+
+    def _append(writer: object, event_type: str) -> None:
+        append = getattr(writer, "append", None)
+        if not callable(append):
+            return
+        append(
+            event_type,
+            review_attempt_id=attempt_id[:80],
+            verdict=verdict,
+            status=status,
+            origin=origin,
+            finding_count=max(0, finding_count),
+            artifact_sha256=artifact_sha or None,
+            source_review_run_id=source_run_id or None,
+        )
+
+    append_ledger(lambda writer: _append(writer, "review_result_projected"))
+    append_ledger(lambda writer: _append(writer, "review_finished"))
+
+
 class ReviewArtifactStore:
     def __init__(self, state_home: str | Path) -> None:
         if not state_home:
@@ -37,7 +79,9 @@ class ReviewArtifactStore:
         safe_attempt = _safe_component(attempt_id)
         path = self.root / safe_session / safe_run / f"{safe_attempt}.json"
         resolved_root = self.root.resolve()
-        resolved = path.resolve() if path.exists() else (resolved_root / safe_session / safe_run / f"{safe_attempt}.json")
+        # Resolve even a not-yet-created file so an existing symlinked parent
+        # cannot redirect a later mkdir/write outside the artifact store.
+        resolved = path.resolve()
         try:
             resolved.relative_to(resolved_root)
         except ValueError as exc:
@@ -145,7 +189,9 @@ def load_review_artifact(
     raw_findings = payload.get("findings")
     if not isinstance(raw_findings, list):
         raise ValueError("review artifact findings invalid")
-    for item in raw_findings[:MAX_FINDINGS_PERSISTED]:
+    if len(raw_findings) > MAX_FINDINGS_PERSISTED:
+        raise ValueError("review artifact findings exceed limit")
+    for item in raw_findings:
         if not isinstance(item, dict):
             raise ValueError("review artifact finding invalid")
         finding_id = item.get("finding_id")

@@ -75,6 +75,15 @@ class StrictParsingTests(unittest.TestCase):
         self.assertFalse(result.approved)
         self.assertTrue(result.needs_writer_repair)
 
+    def test_incomplete_without_findings_does_not_request_writer_repair(self) -> None:
+        result = review.ReviewResult(
+            "changes_requested",
+            "partial",
+            [],
+            status="incomplete",
+        )
+        self.assertFalse(result.needs_writer_repair)
+
     def test_conflicting_review_objects_are_rejected(self) -> None:
         text = (
             '{"verdict":"approved","summary":"good","findings":[]} '
@@ -101,6 +110,21 @@ class StrictParsingTests(unittest.TestCase):
             return '{"verdict":"approved","summary":"Looks good","findings":[]}'
 
         result = review.parse_review_with_repair("not json at all", send_repair, changes=CHANGES)
+        self.assertTrue(result.approved)
+        self.assertEqual(len(calls), 1)
+
+    def test_unknown_verdict_uses_single_format_repair(self) -> None:
+        calls: list[str] = []
+
+        def send_repair(prompt: str) -> str:
+            calls.append(prompt)
+            return '{"verdict":"approved","summary":"Looks good","findings":[]}'
+
+        result = review.parse_review_with_repair(
+            '{"verdict":"maybe","summary":"unsure","findings":[]}',
+            send_repair,
+            changes=CHANGES,
+        )
         self.assertTrue(result.approved)
         self.assertEqual(len(calls), 1)
 

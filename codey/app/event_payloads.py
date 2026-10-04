@@ -349,7 +349,7 @@ def _bounded_provider_failure(failure: dict) -> dict[str, object]:
 
 
 def _bounded_review(review: dict) -> dict[str, object]:
-    return {
+    payload = {
         "verdict": clip_event_text(review.get("verdict") or "", 40),
         "status": clip_event_text(review.get("status") or "", 40),
         "origin": clip_event_text(review.get("origin") or "", 40),
@@ -357,3 +357,7 @@ def _bounded_review(review: dict) -> dict[str, object]:
         "attempt_id": clip_event_text(review.get("attempt_id") or "", 80),
         "artifact_sha256": clip_event_text(review.get("artifact_sha256") or "", 80),
     }
+    source = clip_event_text(review.get("source_review_run_id") or "", 120)
+    if source:
+        payload["source_review_run_id"] = source
+    return payload

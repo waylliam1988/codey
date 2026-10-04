@@ -34,19 +34,26 @@ def emit_review_with_payload(
     attempt_id: str,
     artifact_sha: str,
 ) -> None:
+    identity = getattr(review, "identity", None)
+    attempt_id = attempt_id or str(getattr(identity, "attempt_id", "") or "")
+    artifact_sha = artifact_sha or str(getattr(identity, "artifact_sha256", "") or "")
+    payload = {
+        "verdict": review.verdict,
+        "status": review.status,
+        "origin": review.origin,
+        "finding_count": len(review.findings),
+        "attempt_id": attempt_id,
+        "artifact_sha256": artifact_sha,
+    }
+    source_run_id = str(getattr(review, "source_run_id", "") or "")
+    if source_run_id:
+        payload["source_review_run_id"] = source_run_id[:120]
     try:
         ctx.emit({
             "type": "review",
             "session_id": session_id,
             "text": text,
-            "review": {
-                "verdict": review.verdict,
-                "status": review.status,
-                "origin": review.origin,
-                "finding_count": len(review.findings),
-                "attempt_id": attempt_id,
-                "artifact_sha256": artifact_sha,
-            },
+            "review": payload,
         })
     except Exception:
         ctx.emit({"type": "review", "session_id": session_id, "text": text})
@@ -81,12 +88,6 @@ def run_review_attempt(
 
     try:
         cancellation.check()
-        try:
-            reviewer.new_chat()
-        except cancellation.TaskCancelled:
-            raise
-        except Exception:
-            raise
         prepared = prepare_review_input(
             project=project,
             task=task,
@@ -106,6 +107,7 @@ def run_review_attempt(
         cancellation.check()
         if not verify_snapshot(snapshot):
             return reviewer_id, _stale_before_send(ctx, session_id, reviewer_id, prepared)
+        reviewer.new_chat()
         reply = _send_review_prompt(
             reviewer, trace_recorder, prepared.prompt, session_id
         )
@@ -124,8 +126,6 @@ def run_review_attempt(
 def _early_snapshot_result(ctx, session_id, reviewer_id, prepared, snapshot):
     if snapshot.ok:
         return None
-    trace = FailOpenPromptTrace(None)
-    trace.call("record_permission_profile", "reviewer", phase="review")
     review = ReviewResult(
         verdict="unknown",
         summary="Review incomplete",
@@ -221,29 +221,33 @@ def _finalize_review(
     prompt_digest = prompt_digest_for(prepared.prompt)
     snapshot_digest = snapshot_digest_for(snapshot)
     attempt_id = _uuid.uuid4().hex[:12]
+    snapshot_current = verify_snapshot(snapshot)
+    persisted_status = (
+        "stale"
+        if not snapshot_current
+        else ("incomplete" if not prepared.scope.is_complete else review.status)
+    )
+    review = replace(review, status=persisted_status, scope=prepared.scope)
     artifact_sha = _persist_attempt_artifact(
         ctx, session_id, run_id, attempt_id, review,
         scope_digest, prompt_digest, snapshot_digest,
-        reviewer_id, self_review,
+        reviewer_id, self_review, reviewer_id,
     )
     identity = build_identity(
         prepared,
         reviewer_id=reviewer_id,
         policy="self_review" if self_review else "web_if_available",
-        model_id="",
+        model_id=reviewer_id,
         self_review=self_review,
         project=project,
         snapshot=snapshot,
         attempt_id=attempt_id,
         artifact_sha256=artifact_sha,
     )
-    if not verify_snapshot(snapshot):
-        review = replace(
-            review, status="stale", origin="fresh",
-            scope=prepared.scope, identity=identity,
-        )
+    if not snapshot_current:
+        review = replace(review, origin="fresh", identity=identity)
     else:
-        review = replace(review, scope=prepared.scope, identity=identity)
+        review = replace(review, identity=identity)
     try:
         from codey.reviews.persistence import review_trace_payload
 
@@ -268,6 +272,7 @@ def _finalize_review(
 def _persist_attempt_artifact(
     ctx, session_id, run_id, attempt_id, review,
     scope_digest, prompt_digest, snapshot_digest, reviewer_id, self_review,
+    model_id,
 ) -> str:
     if not run_id:
         return ""
@@ -288,6 +293,7 @@ def _persist_attempt_artifact(
             snapshot_digest=snapshot_digest,
             reviewer_id=reviewer_id,
             policy="self_review" if self_review else "web_if_available",
+            model_id=model_id,
         )
         return ref.sha256 if ref is not None else ""
     except Exception:
@@ -338,13 +344,13 @@ def _try_explicit_reuse(
         return None
     candidates = list(providers.reviewer_candidates(ctx, writer_id))
     reviewer_id = candidates[0] if candidates else writer_id
-    # Model identity is unknown for web providers; strict reuse requires a
-    # known model, so production web reuse correctly misses here and runs fresh.
+    # The provider/reviewer id is the stable model identity available at this
+    # boundary. Browser providers do not expose a more specific selector.
     identity = build_identity(
         prepared,
         reviewer_id=reviewer_id,
         policy=review_policy,
-        model_id="",
+        model_id=reviewer_id,
         self_review=False,
         project=project,
         snapshot=snapshot,
@@ -372,7 +378,15 @@ def _try_explicit_reuse(
     if not verify_snapshot(snapshot):
         return None
     label = providers.review_label(reviewer_id)
-    emit_review_with_payload(ctx, session_id, f"{label} reused", reused, "", "")
+    reused_identity = getattr(reused, "identity", None)
+    emit_review_with_payload(
+        ctx,
+        session_id,
+        f"{label} reused",
+        reused,
+        str(getattr(reused_identity, "attempt_id", "") or ""),
+        str(getattr(reused_identity, "artifact_sha256", "") or ""),
+    )
     return reviewer_id, reused
 
 

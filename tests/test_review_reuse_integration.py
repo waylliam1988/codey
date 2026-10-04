@@ -38,22 +38,49 @@ class ReuseIntegrationTests(unittest.TestCase):
             self.assertEqual(restored.origin, "reused")
 
     def test_exact_match_restores_without_send(self) -> None:
-        calls: list[str] = []
+        from codey.reviews.identity import ReviewIdentity
+        from codey.reviews.reuse import try_reuse_review
+        from codey.runs.ledger import RunLedgerStore
 
-        class _FakeReviewer:
-            def new_chat(self) -> None:
-                pass
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td)
+            scope = ReviewScope(total_changed_files=1, provided_files=("app.py",))
+            result = ReviewResult(
+                "approved", "ok", [], status="complete", scope=scope,
+            )
+            from codey.reviews.persistence import ReviewArtifactStore, save_review_artifact
 
-            def send(self, text: str, timeout=None) -> str:
-                calls.append(text)
-                return '{"verdict":"approved","summary":"ok","findings":[]}'
+            ref = save_review_artifact(
+                ReviewArtifactStore(state),
+                session_id="s", run_id="r1", attempt_id="a1", result=result,
+                scope_digest="scope", prompt_digest="prompt", snapshot_digest="snap",
+                reviewer_id="r", policy="web_if_available", model_id="r",
+            )
+            self.assertIsNotNone(ref)
+            ledger = RunLedgerStore(state).open(
+                run_id="r1", session_id="s", project="p", task="t",
+                provider="r", mode="review",
+            )
+            for event in ("review_result_projected", "review_finished"):
+                ledger.append(
+                    event, review_attempt_id="a1", verdict="approved",
+                    status="complete", origin="fresh", finding_count=0,
+                    artifact_sha256=ref.sha256,
+                )
+            ledger.finish(summary="done", stop_reason="done", turns=1, max_turns=1, provider="r")
+            identity = ReviewIdentity(
+                scope_digest="scope", prompt_digest="prompt", snapshot_digest="snap",
+                project="p", reviewer_id="r", model_id="r", contract_version=1,
+                policy="web_if_available", self_review=False,
+            )
+            restored = try_reuse_review(
+                state_home=state, session_id="s", current_run_id="r2",
+                current_project="p", source_run_id="r1", current_scope=scope,
+                current_identity=identity, current_snapshot_ok=True,
+            )
 
-            def close(self) -> None:
-                pass
-
-        # reuse path must not start a new reviewer chat when it hits;
-        # here we prove the fake was not needed for a direct artifact restore
-        self.assertEqual(calls, [])
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored.origin, "reused")
 
 
 if __name__ == "__main__":

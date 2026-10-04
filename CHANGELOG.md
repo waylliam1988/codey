@@ -30,6 +30,11 @@
 - Explicit reuse: new review_source_run_id for review/project only, same
   session/project, exact identity match, current snapshot valid; miss runs a
   fresh review; headless review intent uses the production review service.
+- Reuse lineage is now recorded on the current run's bounded review events,
+  projection, machine payload and Run Details, so an explicit reuse has a real
+  consumer and remains attributable to its source run.
+- Review ledger projection requires both matching result and terminal events;
+  partial ledger writes cannot manufacture a complete review projection.
 - Gates: machine contract adds review integration tests; local gate fixes the
   final summary matrix, rejects duplicate cases and adds a real headless review
   smoke (wiring only, never model accuracy).

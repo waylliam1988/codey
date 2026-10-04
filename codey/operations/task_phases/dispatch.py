@@ -298,7 +298,11 @@ def dispatch_run_mode(
             ghost_experiences=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
         ),        project=run_project_operation,
         research=_run_research_op,
-        review=lambda active_frame: run_review_mode(review_deps, active_frame),
+        review=lambda active_frame: run_review_mode(
+            review_deps,
+            active_frame,
+            append_ledger=hooks.append_ledger,
+        ),
         planning=_run_planning_op,
     )
     # Unified auto runs in the same batch as the Ghost-route removal: the first
