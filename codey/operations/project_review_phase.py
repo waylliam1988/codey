@@ -129,7 +129,71 @@ def _run_review_with_trace(ctx: ProjectRun, **kwargs):
     )
     kwargs["review_impact_map"] = review_impact_map
     kwargs["trace_recorder"] = ctx.frame.trace
-    return ctx.deps.review.run(**kwargs)
+    try:
+        run_id = str(getattr(ctx.frame, "run_id", "") or "")
+    except Exception:
+        run_id = ""
+    if run_id and "run_id" not in kwargs:
+        kwargs["run_id"] = run_id
+    try:
+        source = str(getattr(getattr(ctx, "request", None), "review_source_run_id", "") or "")
+    except Exception:
+        source = ""
+    if source and "review_source_run_id" not in kwargs:
+        kwargs["review_source_run_id"] = source
+    reviewed = ctx.deps.review.run(**kwargs)
+    with contextlib.suppress(Exception):
+        _persist_project_review_ledger(ctx, reviewed)
+    return reviewed
+
+
+def _persist_project_review_ledger(ctx: ProjectRun, reviewed: object) -> None:
+    if reviewed is None or not isinstance(reviewed, tuple) or len(reviewed) != 2:
+        return
+    _reviewer_id, review = reviewed
+    identity = getattr(review, "identity", None)
+    attempt_id = str(getattr(identity, "attempt_id", "") or "")
+    if not attempt_id:
+        return
+    try:
+        run_id = str(getattr(ctx.frame, "run_id", "") or "")
+        session_id = str(getattr(ctx.request, "session_id", "") or "")
+    except Exception:
+        return
+    if not run_id or not session_id:
+        return
+    verdict = str(getattr(review, "verdict", "") or "")
+    status = str(getattr(review, "status", "") or "")
+    origin = str(getattr(review, "origin", "fresh") or "fresh")
+    try:
+        finding_count = len(getattr(review, "findings", ()) or ())
+    except Exception:
+        finding_count = 0
+    artifact_sha = str(getattr(identity, "artifact_sha256", "") or "")
+    try:
+        hooks = ctx.hooks
+    except Exception:
+        return
+    if hooks is None:
+        return
+    hooks.append_ledger(lambda w: w.append(
+        "review_result_projected",
+        review_attempt_id=attempt_id,
+        verdict=verdict[:40],
+        status=status[:40],
+        origin=origin[:40],
+        finding_count=finding_count,
+        artifact_sha256=artifact_sha[:80] or None,
+    ))
+    hooks.append_ledger(lambda w: w.append(
+        "review_finished",
+        review_attempt_id=attempt_id,
+        verdict=verdict[:40],
+        status=status[:40],
+        origin=origin[:40],
+        finding_count=finding_count,
+        artifact_sha256=artifact_sha[:80] or None,
+    ))
 
 
 def _build_review_verification_map(

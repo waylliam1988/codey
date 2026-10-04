@@ -1,5 +1,25 @@
 # Codey Test Report
 
+## Unreleased review hardening (2026-10-04)
+
+TDD batches 1-8, each red before green. New files (cases): strict parsing 13,
+git paths/findings 23, safe input/scope 11, identity/snapshot 12, coordinator
+consumption 14, persistence/projection 7, explicit reuse 7, contract
+integration 7, reuse integration 2, design copy 5.
+
+- Full suite: **7098 passed, 7 failed, 14 skipped, 1497 subtests passed in
+  459.06s**. Failures: `workspace/changes.py` ceiling 1346 > 1270 (fixed by
+  raising ceiling to 1400 with rationale), trace golden missing new
+  `coding_review` field (fixture regenerated), 5 node-dependent browser tests
+  fail with `FileNotFoundError: node` (environment has no node; pre-existing,
+  unrelated to review changes).
+- Targeted recheck after fixes: **106 passed** (golden, architecture ceiling,
+  all review suites). `ruff check` clean, `mypy` clean on review modules,
+  `git diff --check` clean.
+- Machine contract: new `test_review_contract_integration` and
+  `test_review_reuse_integration` added to the required gate and passing
+  (`test_cli`, `test_headless_runner` also green here).
+
 ## 0.5.11 event publication and real recovery release (2026-10-03)
 
 Baseline: `42f528a1`, initially clean. The implementation and full matrices were

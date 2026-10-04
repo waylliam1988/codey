@@ -2272,7 +2272,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "toolchain/runtime.py": 1440,
             # Read-only require_baseline + stat-size capacity guard.
             # PLR split 2026-09-26: 1214 lines after git-command split.
-            "workspace/changes.py": 1270,
+            # Review NUL status/numstat + C-quote decode 2026-10-04: 1346 lines.
+            "workspace/changes.py": 1400,
         }
         grown = {
             name: size

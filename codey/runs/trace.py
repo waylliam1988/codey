@@ -287,6 +287,7 @@ class RunTraceManifest:
     reproducibility_capsules: list[dict[str, object]] = field(default_factory=list)
     research_review_findings: list[dict[str, object]] = field(default_factory=list)
     research_planner_gaps: list[dict[str, object]] = field(default_factory=list)
+    coding_review: dict[str, object] = field(default_factory=dict)
     completion_proofs: list[dict[str, object]] = field(default_factory=list)
     completion_edit_integrity: list[dict[str, object]] = field(default_factory=list)
     research_source_trust: list[dict[str, object]] = field(default_factory=list)
@@ -351,6 +352,7 @@ class RunTraceManifest:
             ),
             "research_review_findings": self.research_review_findings[:MAX_REVIEW_FINDINGS],
             "research_planner_gaps": self.research_planner_gaps[:MAX_PLANNER_GAPS],
+            "coding_review": dict(self.coding_review),
             "completion_proofs": self.completion_proofs[:MAX_COMPLETION_PROOFS],
             "completion_edit_integrity": (
                 self.completion_edit_integrity[:MAX_EDIT_INTEGRITY_ROWS]
@@ -1012,6 +1014,21 @@ class RunTraceRecorder:
                 self.manifest.warnings.append("research_review_findings_truncated")
             self.checkpoint()
 
+    def record_coding_review(self, payload: Mapping[str, object]) -> None:
+        if not isinstance(payload, Mapping):
+            return
+        bounded = {
+            "verdict": str(payload.get("verdict") or "")[:40],
+            "status": str(payload.get("status") or "")[:40],
+            "origin": str(payload.get("origin") or "fresh")[:40],
+            "finding_count": _nonnegative_count(payload.get("finding_count")),
+            "scope_digest": str(payload.get("scope_digest") or "")[:16],
+            "prompt_digest": str(payload.get("prompt_digest") or "")[:16],
+            "diagnostic_count": _nonnegative_count(payload.get("diagnostic_count")),
+        }
+        self.manifest.coding_review = bounded
+        self.checkpoint()
+
     def record_planner_gaps(self, gaps: Iterable[object]) -> None:
         changed = False
         for item in _trace_list_items(gaps):
@@ -1442,6 +1459,16 @@ def _action_ref_or_empty(value: object) -> str:
     if text.startswith("action:") and _is_hex_64(text.removeprefix("action:")):
         return text
     return ""
+
+
+def _nonnegative_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return max(0, int(value.strip()))
+    return 0
 
 
 def _is_hex_64(value: str) -> bool:

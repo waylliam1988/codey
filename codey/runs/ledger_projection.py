@@ -59,6 +59,16 @@ class ProviderSwitchSummary:
 
 
 @dataclass(frozen=True)
+class ReviewSummary:
+    verdict: str = ""
+    status: str = ""
+    origin: str = ""
+    finding_count: int = 0
+    attempt_id: str = ""
+    artifact_sha256: str = ""
+
+
+@dataclass(frozen=True)
 class RunLedgerProjection:
     run_id: str = ""
     session_id: str = ""
@@ -82,6 +92,7 @@ class RunLedgerProjection:
     provider_failures: tuple[ProviderFailureSummary, ...] = ()
     provider_switches: tuple[ProviderSwitchSummary, ...] = ()
     final_changes: ChangesSummary | None = None
+    review: ReviewSummary | None = None
     ledger_truncated: bool = False
     has_run_started: bool = False
     has_run_finished: bool = False
@@ -117,6 +128,8 @@ class _LedgerBuildState:
     provider_failures: list[ProviderFailureSummary] = field(default_factory=list)
     provider_switches: list[ProviderSwitchSummary] = field(default_factory=list)
     final_changes: ChangesSummary | None = None
+    review: ReviewSummary | None = None
+    review_events: dict[str, dict[str, object]] = field(default_factory=dict)
     ledger_truncated: bool = False
     has_run_started: bool = False
     has_run_finished: bool = False
@@ -227,9 +240,39 @@ def _build_projection(state: _LedgerBuildState) -> RunLedgerProjection:
         provider_failures=tuple(state.provider_failures),
         provider_switches=tuple(state.provider_switches),
         final_changes=state.final_changes,
+        review=_project_review(state),
         ledger_truncated=state.ledger_truncated,
         has_run_started=state.has_run_started,
         has_run_finished=state.has_run_finished,
+    )
+
+
+def _project_review(state: _LedgerBuildState) -> ReviewSummary | None:
+    finished = state.review_events.get("review_finished")
+    if finished is None:
+        return None
+    attempt = str(finished.get("review_attempt_id") or "")
+    projected = state.review_events.get("review_result_projected")
+    source = projected if isinstance(projected, dict) else finished
+    verdict = str(source.get("verdict") or "")
+    status = str(source.get("status") or "")
+    origin = str(source.get("origin") or "fresh")
+    count = source.get("finding_count")
+    if isinstance(count, bool):
+        finding_count = 0
+    elif isinstance(count, int):
+        finding_count = max(0, count)
+    elif isinstance(count, str) and count.strip().isdigit():
+        finding_count = max(0, int(count.strip()))
+    else:
+        finding_count = 0
+    return ReviewSummary(
+        verdict=verdict[:40],
+        status=status[:40],
+        origin=origin[:40],
+        finding_count=finding_count,
+        attempt_id=attempt[:80],
+        artifact_sha256=str(source.get("artifact_sha256") or "")[:80],
     )
 
 
@@ -278,6 +321,17 @@ def project_run_ledger(records: Iterable[RunLedgerRecord]) -> RunLedgerProjectio
             continue
         if event_type == "ledger_truncated":
             state.ledger_truncated = True
+            continue
+        if event_type in (
+            "review_prepared",
+            "review_attempt_started",
+            "review_result_projected",
+            "review_reused",
+            "review_finished",
+        ):
+            attempt = str(payload.get("review_attempt_id") or "")
+            if attempt:
+                state.review_events[event_type] = dict(payload)
             continue
         if event_type == "run_finished":
             _apply_run_finished(state, payload)

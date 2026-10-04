@@ -30,7 +30,13 @@ class ReviewProtocolTests(unittest.TestCase):
 
     def test_findings_imply_changes_requested_when_verdict_missing(self) -> None:
         result = review.parse_review_response(
-            '{"summary":"Needs work","findings":[{"issue":"Test is missing"}]}'
+            '{"summary":"Needs work","findings":[{"path":"app.py","issue":"Test is missing"}]}',
+            changes={
+                "ok": True,
+                "changed_count": 1,
+                "files": [{"path": "app.py", "status": "M"}],
+                "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            },
         )
 
         self.assertEqual(result.verdict, "changes_requested")
@@ -108,10 +114,8 @@ class ReviewProtocolTests(unittest.TestCase):
             },
         )
 
-        finding = result.findings[0]
-        self.assertEqual(finding.path, "invented.py")
-        self.assertIsNone(finding.hunk_index)
-        self.assertIsNone(finding.new_line)
+        self.assertEqual(result.findings, [])
+        self.assertEqual(result.verdict, "unknown")
 
     def test_render_review_prompt_is_read_only_and_json_only(self) -> None:
         prompt = review.render_review_prompt(

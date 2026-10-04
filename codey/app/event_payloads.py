@@ -127,6 +127,17 @@ def _payload_task_done(common: dict[str, object], event: dict) -> dict[str, obje
     failure = event.get("provider_failure")
     if isinstance(failure, dict):
         payload["provider_failure"] = _bounded_provider_failure(failure)
+    review = event.get("review")
+    if isinstance(review, dict):
+        payload["review"] = _bounded_review(review)
+    return payload
+
+
+def _payload_review(common: dict[str, object], event: dict) -> dict[str, object]:
+    payload = {**common, "text": clip_event_text(event.get("text") or "")}
+    review = event.get("review")
+    if isinstance(review, dict):
+        payload["review"] = _bounded_review(review)
     return payload
 
 
@@ -166,6 +177,8 @@ def machine_event_payload(event: dict) -> dict[str, object] | None:
         return _payload_tool(common, event)
     if event_type == "task_done":
         return _payload_task_done(common, event)
+    if event_type == "review":
+        return _payload_review(common, event)
     if event_type == "headless_close":
         return _payload_headless_close(common, event)
     return None
@@ -332,4 +345,15 @@ def _bounded_provider_failure(failure: dict) -> dict[str, object]:
         "kind": clip_event_text(failure.get("kind") or "", 80),
         "action": clip_event_text(failure.get("action") or "", 80),
         "message": clip_event_text(failure.get("message") or ""),
+    }
+
+
+def _bounded_review(review: dict) -> dict[str, object]:
+    return {
+        "verdict": clip_event_text(review.get("verdict") or "", 40),
+        "status": clip_event_text(review.get("status") or "", 40),
+        "origin": clip_event_text(review.get("origin") or "", 40),
+        "finding_count": _int_or_zero(review.get("finding_count")),
+        "attempt_id": clip_event_text(review.get("attempt_id") or "", 80),
+        "artifact_sha256": clip_event_text(review.get("artifact_sha256") or "", 80),
     }

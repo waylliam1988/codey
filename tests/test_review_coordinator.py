@@ -167,7 +167,9 @@ class ReviewCoordinatorTests(unittest.TestCase):
         state["refresh_project_map"].assert_called_once()
 
     def test_review_repair_without_changes_can_inherit_prior_green_check(self) -> None:
-        review = ReviewResult("changes_requested", "Check claim", [])
+        review = ReviewResult(
+            "changes_requested", "Check claim", [ReviewFinding("app.py", "Check claim")]
+        )
         repair_writer = mock.Mock(
             return_value=RunResult("claim invalid", "done", 1, False, False, False)
         )
@@ -182,7 +184,9 @@ class ReviewCoordinatorTests(unittest.TestCase):
         self.assertTrue(state["result"].changes_dirty)
 
     def test_review_repair_failed_check_does_not_inherit_green_check(self) -> None:
-        review = ReviewResult("changes_requested", "Check claim", [])
+        review = ReviewResult(
+            "changes_requested", "Check claim", [ReviewFinding("app.py", "Check claim")]
+        )
         repair_writer = mock.Mock(
             return_value=RunResult("tests failed", "done", 1, False, False, True)
         )
@@ -197,7 +201,9 @@ class ReviewCoordinatorTests(unittest.TestCase):
         self.assertTrue(state["result"].changes_dirty)
 
     def test_review_repair_no_progress_does_not_inherit_green_check(self) -> None:
-        review = ReviewResult("changes_requested", "Check claim", [])
+        review = ReviewResult(
+            "changes_requested", "Check claim", [ReviewFinding("app.py", "Check claim")]
+        )
         repair_writer = mock.Mock(
             return_value=RunResult("no progress", "no_progress", 1, False, False, False)
         )
@@ -212,7 +218,9 @@ class ReviewCoordinatorTests(unittest.TestCase):
         self.assertEqual(state["result"].result.stop_reason, "no_progress")
 
     def test_repair_provider_failure_propagates(self) -> None:
-        review = ReviewResult("changes_requested", "Fix it", [])
+        review = ReviewResult(
+            "changes_requested", "Fix it", [ReviewFinding("app.py", "Fix it")]
+        )
         failure = ProviderFailure(
             "DeepSeek",
             "send",

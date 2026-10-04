@@ -57,6 +57,7 @@ class HeadlessRequest:
     # Research runs may opt into an isolated vault outside the user's default
     # state home. The caller owns the path; headless still closes the store.
     research_store_root: Path | None = None
+    review_source_run_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -287,7 +288,7 @@ def _run_headless_task(
             stores=state.task_submission_stores,
             agent_run=agent_run or default_agent_run,
             collect_changes=collect_changes or default_collect_changes,
-            run_review=_no_headless_review,
+            run_review=_headless_review_for(request, state),
             capture_provider_failure=capture_provider_failure or default_capture_provider_failure,
             is_git_repository=is_git_repository,
             review_fix_turns=REVIEW_FIX_TURNS,
@@ -325,6 +326,7 @@ def _run_headless_task(
                 strict_research=entry_strict,
                 sources_open_required=bool(getattr(request, "sources_open_required", False)),
                 project_changes_required=entry_requires,
+                review_source_run_id=str(getattr(request, "review_source_run_id", "") or ""),
             ),
         )
         terminal = dict(state.run_registry.last_terminal_event() or {})
@@ -352,6 +354,23 @@ def _run_headless_task(
 
 def _no_headless_review(**_kwargs):
     return None
+
+
+def _headless_review_for(request: HeadlessRequest, state: HeadlessAppContext):
+    if _request_intent(request.intent) != "review":
+        return _no_headless_review
+    try:
+        from codey.app import review_service as _review_service
+
+        def _run_review(**kwargs):
+            kwargs.setdefault("run_id", str(request.run_id or ""))
+            if request.review_source_run_id and "review_source_run_id" not in kwargs:
+                kwargs["review_source_run_id"] = request.review_source_run_id
+            return _review_service.run_review(state, **kwargs)
+
+        return _run_review
+    except Exception:
+        return _no_headless_review
 
 
 def _headless_run_id_exists(

@@ -46,6 +46,7 @@ def run_task(
     *,
     get_state: Callable[[], TaskSubmissionState],
     review_policy: str | None = None,
+    review_source_run_id: str = "",
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
     # must not load operations/service modules/research (see test_server_lazy_state).
@@ -107,6 +108,7 @@ def run_task(
                 denied_capabilities=tuple(denied_capabilities or ()),
                 previous_run_id=str(previous_run_id or ""),
                 initial_shell_results=tuple(initial_shell_results or ()),
+                review_source_run_id=str(review_source_run_id or ""),
             )
         )
     finally:
@@ -134,6 +136,7 @@ def submit_task(
     *,
     get_state: Callable[[], TaskSubmissionState],
     abort_if_stopped: bool = False,
+    review_source_run_id: str = "",
 ) -> str | None:
     # Fail fast on config error before taking the slot; the validated value is
     # passed through so the worker never re-reads the environment (no race).
@@ -170,6 +173,7 @@ def submit_task(
             initial_shell_results=tuple(initial_shell_results or ()),
             get_state=lambda: state,
             review_policy=review_policy,
+            review_source_run_id=str(review_source_run_id or ""),
         )
     except Exception:
         state.release_run(reserved.run_id)

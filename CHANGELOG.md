@@ -2,6 +2,38 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Review determinism, scope, persistence and explicit reuse
+
+- Strict review parsing: skip non-review JSON, reject unknown verdicts, empty
+  objects, wrong finding types and duplicate contract keys; approved with
+  actionable findings normalizes to changes_requested; conflicting objects and
+  oversized replies never become approved (existing single format-repair kept).
+- Git paths and finding location: NUL-delimited status/numstat, correct rename
+  handling, C-quote decoding, no literal-arrow mis-split, unsafe paths rejected,
+  incomplete records explicit; findings must use canonical changed paths,
+  unknown/missing paths never reach the Writer, invalid anchors become
+  path-only; conservative dedupe preserves order and never drops valid findings.
+- Safe input and explicit scope: same preparation serves prompt and displayed
+  scope; sensitive files excluded, secret values redacted line-preserving,
+  ordinary identifiers untouched; truncations and exclusions mark partial scope,
+  which can still repair visible findings but never reports full approval.
+- Snapshot and identity: scope/prompt/snapshot digests plus reviewer, model,
+  contract and policy; content-hash snapshots detect edit/rename/delete;
+  stale results never drive pass or repair; unknown model identity never hits
+  strict reuse; no new recovery scheduler, no auto-resend of unknown requests.
+- Consumers and display: Coordinator uses needs_writer_repair/is_complete/
+  approved, keeps single repair and green-check inheritance; review-only stays
+  read-only; fixed English copy per DESIGN.md, no invented coverage.
+- Persistence and projection: bounded review artifacts via a narrow
+  reviewer-only action, ledger review events, trace coding_review counts and
+  digests (no bodies), Run Details Review row, HTTP/JSONL review projection.
+- Explicit reuse: new review_source_run_id for review/project only, same
+  session/project, exact identity match, current snapshot valid; miss runs a
+  fresh review; headless review intent uses the production review service.
+- Gates: machine contract adds review integration tests; local gate fixes the
+  final summary matrix, rejects duplicate cases and adds a real headless review
+  smoke (wiring only, never model accuracy).
+
 ## 0.5.11 - Common Events and Real Recovery
 
 - Publish common run/session identity, mode and strict status once; CLI, SSE

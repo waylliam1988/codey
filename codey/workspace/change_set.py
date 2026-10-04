@@ -274,10 +274,51 @@ def _parse_hunk_line(line: str, index: int) -> ChangeHunk | None:
 
 
 def _path_from_diff_git(line: str) -> str:
-    parts = line.split()
+    remainder = line[len("diff --git ") :] if line.startswith("diff --git ") else ""
+    if not remainder.strip():
+        return ""
+    stripped = remainder.lstrip()
+    if stripped.startswith('"'):
+        first, second = _split_quoted_pair(stripped)
+        if second:
+            return _strip_diff_prefix(second)
+        if first:
+            return _strip_diff_prefix(first)
+        return ""
+    idx = remainder.rfind(" b/")
+    if idx != -1:
+        new_raw = remainder[idx + 3 :]
+        return _strip_diff_prefix(new_raw)
+    parts = remainder.split()
     if len(parts) >= 4:
         return _strip_diff_prefix(parts[3])
     return ""
+
+
+def _split_quoted_pair(text: str) -> tuple[str, str]:
+    first, rest = _take_quoted(text)
+    if not first:
+        return "", ""
+    rest = rest.lstrip()
+    if not rest.startswith('"'):
+        return first, rest.split()[0] if rest.split() else ""
+    second, _ = _take_quoted(rest)
+    return first, second
+
+
+def _take_quoted(text: str) -> tuple[str, str]:
+    if not text.startswith('"'):
+        return "", text
+    index = 1
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == '"':
+            return text[: index + 1], text[index + 1 :]
+        index += 1
+    return "", text
 
 
 def _path_from_file_header(value: str) -> str:
@@ -288,7 +329,12 @@ def _path_from_file_header(value: str) -> str:
 
 
 def _strip_diff_prefix(path: str) -> str:
-    value = path.strip().strip('"')
+    from codey.utils.change_paths import decode_git_path as _decode
+
+    decoded = _decode(path.strip())
+    if not decoded:
+        return ""
+    value = decoded
     if value.startswith("a/") or value.startswith("b/"):
         value = value[2:]
     return _safe_relpath(value)

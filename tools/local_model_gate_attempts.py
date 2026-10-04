@@ -40,6 +40,7 @@ CASE_TASK_KINDS = {
     "tests": "tests",
     "research": "research",
     "recovery": "recovery",
+    "review": "review",
 }
 FAILURE_KINDS = frozenset({
     "none",

@@ -132,6 +132,14 @@ class TaskRunDeps:
 
 
 def prepare_submission(state: TaskState, request: TaskSubmission) -> TaskSubmission | None:
+    source = str(getattr(request, "review_source_run_id", "") or "")
+    if source:
+        from codey.reviews.reuse import validate_source_run_id
+
+        validate_source_run_id(source)
+        kind = str(getattr(request, "intent", "") or "").strip().lower()
+        if kind not in ("review", "project"):
+            raise ValueError("review source is only supported for review and project intents")
     if request.run_id:
         active = state.current_run()
         if active is None:

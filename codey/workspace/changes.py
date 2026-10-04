@@ -863,13 +863,55 @@ def is_git_repository(project: str | Path) -> bool:
 
 
 def parse_git_status(short_status: str) -> list[dict]:
+    if "\x00" in (short_status or ""):
+        return parse_git_status_nul(short_status)
     files: list[dict] = []
-    for line in short_status.splitlines():
+    for line in (short_status or "").splitlines():
         if not line.strip():
             continue
+        if len(line) < 4 or line[2] != " ":
+            continue
         status = line[:2].strip() or "M"
-        raw_path = line[3:].strip() if len(line) > 3 else line[2:].strip()
+        raw_path = line[3:]
+        if not raw_path.strip():
+            continue
         path, previous_path = change_file_paths(raw_path, "", status)
+        if not path:
+            continue
+        item = {"path": path, "status": status, "additions": 0, "deletions": 0}
+        if previous_path:
+            item["previous_path"] = previous_path
+        files.append(item)
+    return files
+
+
+def parse_git_status_nul(nul_status: str) -> list[dict]:
+    files: list[dict] = []
+    chunks = (nul_status or "").split("\x00")
+    index = 0
+    while index < len(chunks):
+        entry = chunks[index]
+        index += 1
+        if not entry:
+            continue
+        if len(entry) < 4 or entry[2] != " ":
+            continue
+        status = entry[:2].strip() or "M"
+        raw_path = entry[3:]
+        if not raw_path.strip():
+            continue
+        previous_raw = ""
+        if status.startswith(("R", "C")) and index < len(chunks):
+            nxt = chunks[index]
+            if nxt and " -> " not in raw_path and "\t" not in nxt:
+                previous_raw = nxt
+                index += 1
+        if " -> " in raw_path and not previous_raw:
+            path, previous_path = change_file_paths(raw_path, "", status)
+        elif previous_raw:
+            path, previous_path = change_file_paths(raw_path, previous_raw, status)
+        else:
+            path, previous_path = change_file_paths(raw_path, "", status)
         if not path:
             continue
         item = {"path": path, "status": status, "additions": 0, "deletions": 0}
@@ -886,16 +928,88 @@ def is_displayable_change_path(path: str) -> bool:
 
 
 def _merge_numstat(stats: dict[str, dict[str, int]], text: str) -> None:
-    for line in text.splitlines():
+    if "\x00" in (text or ""):
+        _merge_numstat_nul(stats, text)
+        return
+    for line in (text or "").splitlines():
         parts = line.split("\t")
         if len(parts) < 3:
             continue
-        added, deleted, path = parts[0], parts[1], parts[2]
+        added, deleted = parts[0], parts[1]
+        raw_path = "\t".join(parts[2:])
+        path = _numstat_target(raw_path)
+        if not path:
+            continue
         item = stats.setdefault(path, {"additions": 0, "deletions": 0})
         if added.isascii() and added.isdigit():
             item["additions"] += int(added)
         if deleted.isascii() and deleted.isdigit():
             item["deletions"] += int(deleted)
+
+
+def _merge_numstat_nul(stats: dict[str, dict[str, int]], text: str) -> None:
+    chunks = (text or "").split("\x00")
+    index = 0
+    while index < len(chunks):
+        chunk = chunks[index]
+        index += 1
+        if not chunk:
+            continue
+        parts = chunk.split("\t")
+        if len(parts) < 3:
+            continue
+        added, deleted = parts[0], parts[1]
+        raw_path = "\t".join(parts[2:])
+        if not raw_path:
+            if index + 1 < len(chunks) + 1 and index < len(chunks):
+                old = chunks[index] if index < len(chunks) else ""
+                new = chunks[index + 1] if index + 1 < len(chunks) else ""
+                index += 2
+                target = _numstat_target(new) or _numstat_target(old)
+                if not target:
+                    continue
+                item = stats.setdefault(target, {"additions": 0, "deletions": 0})
+                if added.isascii() and added.isdigit():
+                    item["additions"] += int(added)
+                if deleted.isascii() and deleted.isdigit():
+                    item["deletions"] += int(deleted)
+            continue
+        if " => " in raw_path and index < len(chunks) and chunks[index] and "\t" not in chunks[index]:
+            raw_path = chunks[index]
+            index += 1
+        path = _numstat_target(raw_path)
+        if not path:
+            continue
+        item = stats.setdefault(path, {"additions": 0, "deletions": 0})
+        if added.isascii() and added.isdigit():
+            item["additions"] += int(added)
+        if deleted.isascii() and deleted.isdigit():
+            item["deletions"] += int(deleted)
+
+
+def _numstat_target(raw_path: str) -> str:
+    from codey.utils.change_paths import decode_git_path, safe_change_path
+
+    text = (raw_path or "").strip()
+    if not text:
+        return ""
+    if " => " in text:
+        text = _expand_numstat_rename(text)
+    decoded = decode_git_path(text.strip())
+    return safe_change_path(decoded)
+
+
+def _expand_numstat_rename(text: str) -> str:
+    before, _, after = text.partition(" => ")
+    if "{" in before and "}" in after:
+        open_idx = before.rfind("{")
+        close_idx = after.find("}")
+        if open_idx != -1 and close_idx != -1:
+            prefix = before[:open_idx]
+            suffix = after[close_idx + 1 :]
+            new_part = after[:close_idx]
+            return f"{prefix}{new_part}{suffix}"
+    return after
 
 
 def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
@@ -1032,7 +1146,7 @@ def _resolve_git_root(root: Path) -> tuple[Path | None, dict | None]:
 
 
 def _load_git_status_files(git_root: Path) -> tuple[list[dict] | None, dict | None]:
-    status_proc, error = _run_one_git_command(git_root, ["status", "--short"])
+    status_proc, error = _run_one_git_command(git_root, ["status", "--porcelain=v1", "-z"])
     if error is not None:
         return None, error
     assert status_proc is not None
@@ -1053,10 +1167,10 @@ def _load_git_status_files(git_root: Path) -> tuple[list[dict] | None, dict | No
 
 
 def _load_git_numstat_stats(git_root: Path) -> tuple[dict[str, dict[str, int]] | None, dict | None]:
-    unstaged_num, error = _run_one_git_command(git_root, ["diff", "--numstat"])
+    unstaged_num, error = _run_one_git_command(git_root, ["diff", "--numstat", "-z"])
     if error is not None:
         return None, error
-    staged_num, error = _run_one_git_command(git_root, ["diff", "--cached", "--numstat"])
+    staged_num, error = _run_one_git_command(git_root, ["diff", "--cached", "--numstat", "-z"])
     if error is not None:
         return None, error
     assert unstaged_num is not None and staged_num is not None

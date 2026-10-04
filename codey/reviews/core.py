@@ -19,6 +19,12 @@ MAX_REVIEW_DIFF_CHARS = 60_000
 MAX_REVIEW_LOG_CHARS = 8_000
 MAX_FIELD_CHARS = 2_000
 MAX_FINDINGS = 8
+MAX_REVIEW_REPLY_CHARS = 120_000
+MAX_REVIEW_CANDIDATE_OBJECTS = 16
+MAX_REVIEW_BRACE_SCANS = 256
+MAX_FINDING_CANDIDATES = 64
+MAX_DIAGNOSTICS = 8
+REVIEW_CONTRACT_VERSION = 1
 REVIEW_REPAIR_PROMPT = (
     "Your previous review did not contain a valid JSON object. "
     "Return only the JSON object now, preserving your previous verdict and "
@@ -47,10 +53,41 @@ class ReviewResult:
     verdict: str
     summary: str
     findings: list[ReviewFinding]
+    status: str = "complete"
+    origin: str = "fresh"
+    diagnostics: tuple[str, ...] = ()
+    scope: Any | None = None
+    identity: Any | None = None
 
     @property
     def approved(self) -> bool:
-        return self.verdict == "approved"
+        return self.verdict == "approved" and self.is_complete and not self.findings
+
+    @property
+    def is_complete(self) -> bool:
+        if self.status != "complete":
+            return False
+        if self.verdict not in {"approved", "changes_requested"}:
+            return False
+        scope = self.scope
+        if scope is not None:
+            complete = getattr(scope, "is_complete", None)
+            if isinstance(complete, bool):
+                return complete
+            if callable(complete):
+                try:
+                    return bool(complete())
+                except Exception:
+                    return False
+        return True
+
+    @property
+    def needs_writer_repair(self) -> bool:
+        if self.status not in ("complete", "incomplete"):
+            return False
+        if self.verdict != "changes_requested":
+            return False
+        return bool(self.findings)
 
 
 def _clip(text: object, limit: int = MAX_FIELD_CHARS) -> str:
@@ -81,19 +118,57 @@ def _review_impact_map_section(review_impact_map: str) -> str:
     return _clip(review_impact_map, 3_000)
 
 
-def _json_objects(text: str) -> list[dict[str, Any]]:
+def _json_candidates(text: str) -> tuple[list[tuple[dict[str, Any], str]], tuple[str, ...]]:
+    """Scan bounded JSON objects, keeping raw text for duplicate-key checks."""
     decoder = json.JSONDecoder()
-    objects: list[dict[str, Any]] = []
-    for index, char in enumerate(text or ""):
+    source = text or ""
+    candidates: list[tuple[dict[str, Any], str]] = []
+    diagnostics: list[str] = []
+    brace_scans = 0
+    for index, char in enumerate(source):
         if char != "{":
             continue
+        brace_scans += 1
+        if brace_scans > MAX_REVIEW_BRACE_SCANS:
+            diagnostics.append("candidate_scan_budget_exhausted")
+            break
+        if len(candidates) >= MAX_REVIEW_CANDIDATE_OBJECTS:
+            diagnostics.append("candidate_object_budget_exhausted")
+            break
         try:
-            value, _end = decoder.raw_decode(text[index:])
+            value, end = decoder.raw_decode(source[index:])
         except json.JSONDecodeError:
             continue
         if isinstance(value, dict):
-            objects.append(value)
-    return objects
+            candidates.append((value, source[index : index + end]))
+    return candidates, tuple(diagnostics[:MAX_DIAGNOSTICS])
+
+
+def _has_duplicate_keys(raw: str) -> bool:
+    try:
+        json.loads(raw, object_pairs_hook=_reject_duplicate_keys)
+    except ValueError:
+        return True
+    return False
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    seen: set[str] = set()
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in seen:
+            raise ValueError(f"duplicate key: {key}")
+        seen.add(key)
+        result[key] = value
+    return result
+
+
+def _is_review_candidate(obj: dict[str, Any]) -> bool:
+    return any(key in obj for key in ("verdict", "status", "findings"))
+
+
+def _strict_text(value: object) -> str:
+    return value if isinstance(value, str) else ""
 
 
 def parse_review_response(
@@ -102,17 +177,129 @@ def parse_review_response(
     changes: dict | ChangeSet | None = None,
 ) -> ReviewResult:
     """Parse a review response while tolerating light prose around JSON."""
+    source = text or ""
+    if len(source) > MAX_REVIEW_REPLY_CHARS:
+        raise ValueError("review reply oversized")
     change_set = _change_set(changes)
-    for obj in _json_objects(text):
-        findings = _parse_findings(obj.get("findings"), change_set)
-        verdict = _normalize_verdict(obj.get("verdict") or obj.get("status"), findings)
-        summary = _clip(
-            obj.get("summary")
-            or obj.get("message")
-            or ("Looks good" if verdict == "approved" else "Changes requested")
+    candidates, scan_diagnostics = _json_candidates(source)
+    diagnostics: list[str] = list(scan_diagnostics)
+    parsed: list[ReviewResult] = []
+    for obj, raw in candidates:
+        if _has_duplicate_keys(raw):
+            diagnostics.append("duplicate_contract_keys")
+            continue
+        if not _is_review_candidate(obj):
+            diagnostics.append("skipped_non_review_object")
+            continue
+        result = _parse_candidate(obj, change_set, diagnostics)
+        if result is None:
+            continue
+        parsed.append(result)
+    diagnostics = diagnostics[:MAX_DIAGNOSTICS]
+    if not parsed:
+        raise ValueError("review response did not contain a valid review object")
+    first = parsed[0]
+    for other in parsed[1:]:
+        if not _same_review(first, other):
+            raise ValueError("conflicting review objects")
+    if len(parsed) > 1:
+        diagnostics = [*diagnostics, "duplicate_review_objects"][:MAX_DIAGNOSTICS]
+        first = ReviewResult(
+            verdict=first.verdict,
+            summary=first.summary,
+            findings=first.findings,
+            status=first.status,
+            origin=first.origin,
+            diagnostics=tuple(diagnostics),
+            scope=first.scope,
+            identity=first.identity,
         )
-        return ReviewResult(verdict=verdict, summary=summary, findings=findings)
-    raise ValueError("review response did not contain a JSON object")
+    elif diagnostics:
+        first = ReviewResult(
+            verdict=first.verdict,
+            summary=first.summary,
+            findings=first.findings,
+            status=first.status,
+            origin=first.origin,
+            diagnostics=tuple([*first.diagnostics, *diagnostics][:MAX_DIAGNOSTICS]),
+            scope=first.scope,
+            identity=first.identity,
+        )
+    return first
+
+
+def _same_review(first: ReviewResult, second: ReviewResult) -> bool:
+    return (
+        first.verdict == second.verdict
+        and first.summary == second.summary
+        and first.findings == second.findings
+        and first.status == second.status
+    )
+
+
+def _parse_candidate(
+    obj: dict[str, Any],
+    change_set: ChangeSet | None,
+    diagnostics: list[str],
+) -> ReviewResult | None:
+    if "findings" in obj and not isinstance(obj.get("findings"), list):
+        diagnostics.append("findings_not_list")
+        return None
+    raw_verdict = obj.get("verdict") if "verdict" in obj else obj.get("status")
+    if raw_verdict is not None and not isinstance(raw_verdict, str):
+        diagnostics.append("verdict_not_string")
+        return None
+    raw_summary = obj.get("summary") if "summary" in obj else obj.get("message")
+    if raw_summary is not None and not isinstance(raw_summary, str):
+        raw_summary = None
+    findings, findings_incomplete = _parse_findings(obj.get("findings"), change_set, diagnostics)
+    raw_findings = obj.get("findings")
+    had_raw_findings = isinstance(raw_findings, list) and len(raw_findings) > 0
+    if had_raw_findings and not findings:
+        diagnostics.append("no_actionable_findings")
+        summary = _strict_text(raw_summary).strip() or "Review incomplete"
+        return ReviewResult(
+            verdict="unknown",
+            summary=_clip(summary, 2000),
+            findings=[],
+            status="incomplete",
+            origin="fresh",
+            diagnostics=tuple(diagnostics[:MAX_DIAGNOSTICS]),
+        )
+    verdict, status = _normalize_verdict(raw_verdict, findings)
+    if verdict == "missing":
+        diagnostics.append("missing_verdict_without_findings")
+        return None
+    if verdict == "unknown":
+        summary = _strict_text(raw_summary).strip() or "Review incomplete"
+        return ReviewResult(
+            verdict="unknown",
+            summary=_clip(summary, 2000),
+            findings=findings,
+            status="incomplete",
+            origin="fresh",
+            diagnostics=tuple(diagnostics[:MAX_DIAGNOSTICS]),
+        )
+    if verdict == "approved" and findings:
+        verdict = "changes_requested"
+    summary = _strict_text(raw_summary).strip() or (
+        "Looks good" if verdict == "approved" else "Changes requested"
+    )
+    final_status = "complete" if not findings_incomplete else "incomplete"
+    return ReviewResult(
+        verdict=verdict,
+        summary=_clip(summary),
+        findings=findings,
+        status=final_status,
+        origin="fresh",
+        diagnostics=tuple(diagnostics[:MAX_DIAGNOSTICS]),
+    )
+
+
+def _canonical_finding_path(raw_path: str, change_set: ChangeSet | None) -> str:
+    from codey.reviews.findings import canonical_path
+
+    return canonical_path(raw_path, change_set)
 
 
 def review_repair_prompt() -> str:
@@ -127,56 +314,142 @@ def parse_review_with_repair(
 ) -> ReviewResult:
     """Parse a reviewer reply, allowing one JSON-only repair turn."""
     try:
-        return parse_review_response(first_reply, changes=changes)
+        first = parse_review_response(first_reply, changes=changes)
     except ValueError:
         return parse_review_response(
             send_repair_prompt(REVIEW_REPAIR_PROMPT),
             changes=changes,
         )
+    if first.verdict == "unknown" or first.status == "incomplete":
+        return parse_review_response(
+            send_repair_prompt(REVIEW_REPAIR_PROMPT),
+            changes=changes,
+        )
+    return first
 
 
 def _parse_findings(
     value: object,
     change_set: ChangeSet | None = None,
-) -> list[ReviewFinding]:
+    diagnostics: list[str] | None = None,
+) -> tuple[list[ReviewFinding], bool]:
+    if value is None:
+        return [], False
     if not isinstance(value, list):
-        return []
+        return [], False
+    incomplete = len(value) > MAX_FINDING_CANDIDATES
+    if incomplete and diagnostics is not None:
+        diagnostics.append("finding_candidate_budget_exhausted")
     findings: list[ReviewFinding] = []
-    for item in value[:MAX_FINDINGS]:
-        if not isinstance(item, dict):
+    seen: set[tuple[object, ...]] = set()
+    for item in value[:MAX_FINDING_CANDIDATES]:
+        finding = _parse_one_finding(item, change_set, diagnostics, seen)
+        if finding is None:
             continue
-        issue = _clip(item.get("issue") or item.get("problem") or item.get("message"))
-        if not issue:
-            continue
-        path = _clip(item.get("path") or item.get("file"), 400)
-        anchor = _normalized_anchor(
-            change_set,
-            path,
-            item.get("hunk_index") or item.get("hunk") or item.get("hunk_number"),
-            item.get("new_line") or item.get("line"),
-            item.get("old_line"),
-        )
-        findings.append(
-            ReviewFinding(
-                path=path,
-                issue=issue,
-                suggested_fix=_clip(
-                    item.get("suggested_fix")
-                    or item.get("fix")
-                    or item.get("suggestion")
-                ),
-                hunk_index=anchor.hunk_index,
-                new_line=anchor.new_line,
-                old_line=anchor.old_line,
-            )
-        )
-    return findings
+        findings.append(finding)
+        if len(findings) >= MAX_FINDINGS:
+            break
+    return findings, incomplete
 
 
-def _normalize_verdict(value: object, findings: list[ReviewFinding]) -> str:
-    raw = _clip(value, 80).lower().replace("-", "_").replace(" ", "_")
+def _parse_one_finding(
+    item: object,
+    change_set: ChangeSet | None,
+    diagnostics: list[str] | None,
+    seen: set[tuple[object, ...]],
+) -> ReviewFinding | None:
+    if not isinstance(item, dict):
+        _diag(diagnostics, "invalid_finding_entry")
+        return None
+    issue = _finding_issue(item, diagnostics)
+    if issue is None:
+        return None
+    canonical = _finding_canonical_path(item, change_set, diagnostics)
+    if not canonical:
+        return None
+    suggested_fix = _finding_fix(item, diagnostics)
+    if suggested_fix is None:
+        return None
+    anchor = _normalized_anchor(
+        change_set,
+        canonical,
+        item.get("hunk_index") if "hunk_index" in item else (item.get("hunk") if "hunk" in item else item.get("hunk_number")),
+        item.get("new_line") if "new_line" in item else item.get("line"),
+        item.get("old_line") if "old_line" in item else None,
+    )
+    fingerprint = (canonical, issue, suggested_fix, anchor.hunk_index, anchor.new_line, anchor.old_line)
+    if fingerprint in seen:
+        _diag(diagnostics, "duplicate_finding")
+        return None
+    seen.add(fingerprint)
+    return ReviewFinding(
+        path=_clip(canonical, 400),
+        issue=_clip(issue),
+        suggested_fix=_clip(suggested_fix),
+        hunk_index=anchor.hunk_index,
+        new_line=anchor.new_line,
+        old_line=anchor.old_line,
+    )
+
+
+def _diag(diagnostics: list[str] | None, reason: str) -> None:
+    if diagnostics is not None:
+        diagnostics.append(reason)
+
+
+def _finding_issue(item: dict[str, Any], diagnostics: list[str] | None) -> str | None:
+    issue_raw = item.get("issue") if "issue" in item else None
+    if issue_raw is None:
+        issue_raw = item.get("problem") if "problem" in item else item.get("message")
+    if not isinstance(issue_raw, str) or not issue_raw.strip():
+        _diag(diagnostics, "invalid_finding_issue")
+        return None
+    return issue_raw.strip()
+
+
+def _finding_canonical_path(
+    item: dict[str, Any],
+    change_set: ChangeSet | None,
+    diagnostics: list[str] | None,
+) -> str:
+    path_raw = item.get("path") if "path" in item else item.get("file")
+    if path_raw is None:
+        _diag(diagnostics, "missing_finding_path")
+        return ""
+    if not isinstance(path_raw, str) or not path_raw.strip():
+        _diag(diagnostics, "invalid_finding_path")
+        return ""
+    canonical = _canonical_finding_path(path_raw.strip(), change_set)
+    if not canonical:
+        _diag(diagnostics, "unknown_finding_path")
+        return ""
+    return canonical
+
+
+def _finding_fix(item: dict[str, Any], diagnostics: list[str] | None) -> str | None:
+    fix_raw = (
+        item.get("suggested_fix")
+        if "suggested_fix" in item
+        else (item.get("fix") if "fix" in item else item.get("suggestion"))
+    )
+    if fix_raw is None:
+        return ""
+    if isinstance(fix_raw, str):
+        return fix_raw.strip()
+    _diag(diagnostics, "invalid_finding_fix")
+    return None
+
+
+def _normalize_verdict(value: object, findings: list[ReviewFinding]) -> tuple[str, str]:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        if findings:
+            return "changes_requested", "complete"
+        return "missing", "incomplete"
+    if not isinstance(value, str):
+        return "missing", "incomplete"
+    raw = value.strip()[:80].lower().replace("-", "_").replace(" ", "_")
     if raw in {"approved", "approve", "ok", "pass", "passed", "looks_good"}:
-        return "approved"
+        return "approved", "complete"
     if raw in {
         "changes_requested",
         "request_changes",
@@ -186,8 +459,8 @@ def _normalize_verdict(value: object, findings: list[ReviewFinding]) -> str:
         "fail",
         "rework",
     }:
-        return "changes_requested"
-    return "changes_requested" if findings else "approved"
+        return "changes_requested", "complete"
+    return "unknown", "incomplete"
 
 
 def has_reviewable_changes(changes: dict) -> bool:

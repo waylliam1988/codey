@@ -190,6 +190,8 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
             review_impact_map=review_impact_map,
             execution_evidence="",
             trace_recorder=frame.trace,
+            run_id=frame.run_id,
+            review_source_run_id=str(getattr(request, "review_source_run_id", "") or ""),
         )
     except cancellation.TaskCancelled:
         raise
@@ -247,24 +249,54 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
 
 
 def render_review_only_summary(review: object) -> str:
-    approved = bool(getattr(review, "approved", False))
-    summary = str(getattr(review, "summary", "") or "").strip()
-    if approved:
-        return f"Review approved: {summary or 'No issues found.'}"
-    lines = [f"Review requested changes: {summary or 'Issues found.'}"]
-    findings = getattr(review, "findings", ()) or ()
-    for index, finding in enumerate(list(findings)[:8], start=1):
-        path = str(getattr(finding, "path", "") or "").strip()
-        issue = str(getattr(finding, "issue", "") or "").strip()
-        fix = str(getattr(finding, "suggested_fix", "") or "").strip()
-        prefix = f"{index}. "
-        if path:
-            prefix += f"{path}: "
-        text = issue or "Issue found"
-        if fix:
-            text += f" Suggested fix: {fix}"
-        lines.append(prefix + text)
-    return "\n".join(lines)
+    status = str(getattr(review, "status", "complete") or "complete")
+    verdict = str(getattr(review, "verdict", "") or "")
+    origin = str(getattr(review, "origin", "fresh") or "fresh")
+    findings = list(getattr(review, "findings", ()) or ())
+    scope = getattr(review, "scope", None)
+    scope_incomplete = False
+    diff_truncated = False
+    if scope is not None:
+        try:
+            scope_incomplete = not bool(scope.is_complete)
+        except Exception:
+            scope_incomplete = False
+        diff_truncated = bool(getattr(scope, "diff_truncated", False))
+    if status in ("stale",):
+        return "Review outdated · files changed"
+    if status in ("unavailable",):
+        return "Review unavailable"
+    if status == "incomplete" or verdict == "unknown":
+        if diff_truncated or scope_incomplete:
+            return "Partial review · diff truncated"
+        return "Review incomplete"
+    if verdict == "approved" and not findings:
+        if scope_incomplete:
+            return "Partial review · diff truncated"
+        if origin == "reused":
+            return "Previous review reused"
+        return "Review passed"
+    if findings:
+        if origin == "reused":
+            header = f"Previous review reused · {len(findings)} issues found"
+        elif scope_incomplete:
+            header = f"Partial review · {len(findings)} issues found"
+        else:
+            header = f"{len(findings)} issues found"
+        lines = [header]
+        for index, finding in enumerate(findings[:8], start=1):
+            path = str(getattr(finding, "path", "") or "").strip()
+            issue = str(getattr(finding, "issue", "") or "").strip()
+            fix = str(getattr(finding, "suggested_fix", "") or "").strip()
+            prefix = f"{index}. "
+            if path:
+                prefix += f"{path}: "
+            text = issue or "Issue found"
+            if fix:
+                text += f" Suggested fix: {fix}"
+            lines.append(prefix + text)
+        return "\n".join(lines)
+    return "Review incomplete"
 
 
 __all__ = [

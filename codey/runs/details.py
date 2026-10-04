@@ -266,11 +266,47 @@ def _summary_rows(
     if fallback:
         rows.append(RunDetailsRow("Model fallback", fallback))
 
+    review = _review_summary(projection, trace)
+    if review:
+        text, tone = review
+        rows.append(RunDetailsRow("Review", text, tone))
+
     verification, verification_tone = _verification_summary(projection)
     if verification:
         rows.append(RunDetailsRow("Verification", verification, verification_tone))
 
     return rows
+
+
+def _review_summary(
+    projection: RunLedgerProjection | None,
+    trace: Mapping[str, object],
+) -> tuple[str, str] | None:
+    review = getattr(projection, "review", None) if projection is not None else None
+    coding = trace.get("coding_review") if isinstance(trace.get("coding_review"), dict) else None
+    verdict = str(getattr(review, "verdict", "") or (coding.get("verdict") if coding else "") or "")
+    status = str(getattr(review, "status", "") or (coding.get("status") if coding else "") or "")
+    origin = str(getattr(review, "origin", "") or (coding.get("origin") if coding else "") or "fresh")
+    count = getattr(review, "finding_count", 0) if review is not None else 0
+    try:
+        finding_count = int((coding.get("finding_count") if coding else count) or 0)
+    except (TypeError, ValueError):
+        finding_count = 0
+    if not verdict and not status and not finding_count and coding is None:
+        return None
+    if status == "stale":
+        return "Review outdated · files changed", "warning"
+    if status == "unavailable":
+        return "Review unavailable", "warning"
+    if status == "incomplete" or verdict == "unknown":
+        return "Review incomplete", "warning"
+    if verdict == "approved" and not finding_count:
+        if origin == "reused":
+            return "Previous review reused", "neutral"
+        return "Review passed", "neutral"
+    if finding_count:
+        return f"{finding_count} issues found", "warning"
+    return "Review incomplete", "warning"
 
 
 def _load_operation_state(

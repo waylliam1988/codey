@@ -70,7 +70,7 @@ class ChangeTrackerTests(unittest.TestCase):
                 args=[], returncode=0, stdout="", stderr="",
                 stdout_truncated=False, stderr_truncated=False,
             )
-            changes._run_git(Path("C:/project"), ["status", "--short"])
+            changes._run_git(Path("C:/project"), ["status", "--porcelain=v1", "-z"])
 
         argv = run.call_args.args[0]
         self.assertEqual(argv[:4], ["git", "-c", "core.quotePath=false", "-C"])
@@ -90,7 +90,7 @@ class ChangeTrackerTests(unittest.TestCase):
             def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--short"]:
+                if args == ["status", "--porcelain=v1", "-z"]:
                     return _proc(args, "")
                 raise AssertionError(f"unexpected git command: {args}")
 
@@ -102,7 +102,7 @@ class ChangeTrackerTests(unittest.TestCase):
         self.assertEqual(data["diff"], "")
         self.assertEqual(
             [call.args[1] for call in run.call_args_list],
-            [["rev-parse", "--show-toplevel"], ["status", "--short"]],
+            [["rev-parse", "--show-toplevel"], ["status", "--porcelain=v1", "-z"]],
         )
 
     def test_truncated_status_is_explicit_error_not_partial(self) -> None:
@@ -120,7 +120,7 @@ class ChangeTrackerTests(unittest.TestCase):
             def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--short"]:
+                if args == ["status", "--porcelain=v1", "-z"]:
                     return _proc(args, " M a.py\n", truncated=True)
                 raise AssertionError(f"unexpected git command: {args}")
 
@@ -145,11 +145,11 @@ class ChangeTrackerTests(unittest.TestCase):
             def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--short"]:
+                if args == ["status", "--porcelain=v1", "-z"]:
                     return _proc(args, " M a.py\n")
-                if args == ["diff", "--numstat"]:
+                if args == ["diff", "--numstat", "-z"]:
                     return _proc(args, "1\t0\ta.py\n")
-                if args == ["diff", "--cached", "--numstat"]:
+                if args == ["diff", "--cached", "--numstat", "-z"]:
                     return _proc(args, "")
                 if args == ["diff", "--no-ext-diff", "--"]:
                     return _proc(args, "diff --git a/a.py b/a.py\n+x\n", truncated=True)
@@ -731,7 +731,7 @@ class ChangeTrackerTests(unittest.TestCase):
                 calls.append(args)
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--short"]:
+                if args == ["status", "--porcelain=v1", "-z"]:
                     return _proc(args, "", returncode=128)
                 raise AssertionError(f"unexpected git command after failure: {args}")
 
@@ -743,7 +743,7 @@ class ChangeTrackerTests(unittest.TestCase):
         self.assertIn("status", data["error"])
         self.assertEqual(
             calls,
-            [["rev-parse", "--show-toplevel"], ["status", "--short"]],
+            [["rev-parse", "--show-toplevel"], ["status", "--porcelain=v1", "-z"]],
         )
 
     def test_numstat_nonzero_exit_stops_before_diff(self) -> None:
@@ -763,9 +763,9 @@ class ChangeTrackerTests(unittest.TestCase):
                 calls.append(args)
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--short"]:
+                if args == ["status", "--porcelain=v1", "-z"]:
                     return _proc(args, " M a.py\n")
-                if args == ["diff", "--numstat"]:
+                if args == ["diff", "--numstat", "-z"]:
                     return _proc(args, "", returncode=1)
                 raise AssertionError(f"unexpected git command after failure: {args}")
 
@@ -776,7 +776,7 @@ class ChangeTrackerTests(unittest.TestCase):
         self.assertIn("numstat", data["error"])
         self.assertEqual(
             calls,
-            [["rev-parse", "--show-toplevel"], ["status", "--short"], ["diff", "--numstat"]],
+            [["rev-parse", "--show-toplevel"], ["status", "--porcelain=v1", "-z"], ["diff", "--numstat", "-z"]],
         )
 
     def test_diff_nonzero_exit_is_explicit_error(self) -> None:
@@ -796,11 +796,11 @@ class ChangeTrackerTests(unittest.TestCase):
                 calls.append(args)
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--short"]:
+                if args == ["status", "--porcelain=v1", "-z"]:
                     return _proc(args, " M a.py\n")
-                if args == ["diff", "--numstat"]:
+                if args == ["diff", "--numstat", "-z"]:
                     return _proc(args, "1\t0\ta.py\n")
-                if args == ["diff", "--cached", "--numstat"]:
+                if args == ["diff", "--cached", "--numstat", "-z"]:
                     return _proc(args, "")
                 if args == ["diff", "--no-ext-diff", "--"]:
                     return _proc(args, "", returncode=1)
@@ -815,9 +815,9 @@ class ChangeTrackerTests(unittest.TestCase):
             calls,
             [
                 ["rev-parse", "--show-toplevel"],
-                ["status", "--short"],
-                ["diff", "--numstat"],
-                ["diff", "--cached", "--numstat"],
+                ["status", "--porcelain=v1", "-z"],
+                ["diff", "--numstat", "-z"],
+                ["diff", "--cached", "--numstat", "-z"],
                 ["diff", "--no-ext-diff", "--"],
             ],
         )

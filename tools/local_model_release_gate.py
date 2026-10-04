@@ -53,7 +53,7 @@ TIMEOUT = 600.0
 
 CASES = (
     "chat", "read", "create", "edit", "references", "hybrid", "discussion", "planning", "auto", "ghost",
-    "tests", "research", "recovery",
+    "tests", "research", "recovery", "review",
 )
 DEFAULT_CASES = CASES
 
@@ -730,6 +730,10 @@ def _worker(case: str, directory: Path) -> int:
             data = run_ghost_case()
         elif case == "recovery":
             data = run_recovery_case(target, directory)
+        elif case == "review":
+            from tools.local_model_gate_review import run_review_case
+
+            data = run_review_case(target, directory)
         else:
             data = run_agent_case(case, target=target, case_dir=directory)
     except Exception as exc:
@@ -763,7 +767,8 @@ def _metadata(target: attempts.GateTarget) -> dict:
         "target": asdict(target), "python": sys.version, "git_commit": commit.stdout.strip(),
         "harness_hashes": {
             name: hashlib.sha256((attempts.REPO_ROOT / "tools" / name).read_bytes()).hexdigest()
-            for name in ("local_model_release_gate.py", "local_model_gate_attempts.py", "local_model_gate_recovery.py")
+            for name in ("local_model_release_gate.py", "local_model_gate_attempts.py", "local_model_gate_recovery.py",
+                         "local_model_gate_review.py")
         },
         "production_hashes": {
             path: hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
@@ -777,7 +782,10 @@ def _metadata(target: attempts.GateTarget) -> dict:
                          "codey/operations/project_completion_enforcement.py", "codey/operations/task_execution.py",
                          "codey/research/tools.py", "codey/operations/project_completion_checks.py",
                          "codey/toolchain/tool_spec.py", "codey/operations/kernel_protocol.py",
-                         "codey/research/connector_search.py", "codey/research/source_gateway.py")
+                         "codey/research/connector_search.py", "codey/research/source_gateway.py",
+                         "codey/reviews/core.py", "codey/reviews/input.py", "codey/reviews/identity.py",
+                         "codey/reviews/persistence.py", "codey/reviews/reuse.py",
+                         "codey/app/review_service.py")
         },
         "server_observations": _server_observations(target.base_url),
         "chat_template": "not_reported", "quantization": "model_name_only; not independently verified",
@@ -814,6 +822,8 @@ def main(argv: list[str] | None = None) -> int:
     selected = args.cases.split(",") if args.cases else (list(DEFAULT_CASES) if args.case == "all" else [args.case])
     if any(case not in CASES for case in selected):
         ap.error("unknown case in --cases")
+    if len(set(selected)) != len(selected):
+        ap.error("duplicate case in --cases")
     directory = args.run_dir.resolve() if args.run_dir else attempts.create_run_dir(ARTIFACT_DIR)
     if args.run_dir:
         directory.mkdir(parents=True, exist_ok=False)
@@ -833,7 +843,7 @@ def main(argv: list[str] | None = None) -> int:
         attempts.write_json(directory / "metadata.json", _metadata(target))
         _log(f"[gate] model={model} protocol={args.protocol} repeat={args.repeat}")
         results = attempts.run_attempts(selected, directory, target, repeat=args.repeat, timeout=args.timeout)
-        payload = attempts.summarize(results)
+        payload = attempts.summarize(results, expected_cases=tuple(selected), repeat=args.repeat)
     except Exception as exc:
         payload = {"ok": False, "attempts": 0, "results": [], "failure_stage": "preflight_error",
                    "error": f"{type(exc).__name__}: {exc}"}

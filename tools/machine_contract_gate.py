@@ -41,6 +41,8 @@ CONTRACT_TESTS = (
     "tests/test_durable_recovery_preserves_failed_tool_status.py",
     "tests/test_recovery_requires_original_policy.py",
     "tests/test_recovery_restores_research_ledger.py",
+    "tests/test_review_contract_integration.py",
+    "tests/test_review_reuse_integration.py",
 )
 
 

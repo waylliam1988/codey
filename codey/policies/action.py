@@ -54,6 +54,7 @@ PATH_ACTIONS = READ_ACTIONS | WRITE_ACTIONS | frozenset({
 KNOWN_ACTIONS = PATH_ACTIONS | frozenset({
     "provider_fallback",
     "managed_output",
+    "review_output",
 })
 
 
@@ -247,6 +248,7 @@ def default_action_policy_pipeline() -> ActionPolicyPipeline:
         shell_approval_guard,
         provider_fallback_guard,
         managed_output_size_guard,
+        review_output_guard,
     ))
 
 
@@ -277,7 +279,7 @@ def unknown_action_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
 
 
 def permission_profile_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
-    if subject.kind not in PATH_ACTIONS | frozenset({"managed_output"}):
+    if subject.kind not in PATH_ACTIONS | frozenset({"managed_output", "review_output"}):
         return None
     profile = _profile(subject)
     if profile is None:
@@ -298,6 +300,8 @@ def permission_profile_guard(subject: ActionSubject) -> ActionPolicyDecision | N
     if subject.kind == "managed_output" and (
         "project_verify" not in profile.coding_permissions and "open_url" not in profile.research_tools
     ):
+        return _permission_denied(subject)
+    if subject.kind == "review_output" and profile.name != "reviewer":
         return _permission_denied(subject)
     return None
 
@@ -429,6 +433,19 @@ def managed_output_size_guard(subject: ActionSubject) -> ActionPolicyDecision | 
             guard_id="managed_output_size_guard",
             reason_code="managed_output_size_limit",
             display="managed output is too large to retain completely",
+        )
+    return None
+
+
+def review_output_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
+    if subject.kind != "review_output":
+        return None
+    if subject.byte_count > 64 * 1024:
+        return ActionPolicyDecision.deny(
+            subject,
+            guard_id="review_output_guard",
+            reason_code="review_output_size_limit",
+            display="review output is too large to retain",
         )
     return None
 

@@ -46,6 +46,10 @@ class TaskSubmission:
     # shell 结果（turn-0 初始行，首发回答原 native 调用）。
     previous_run_id: str = ""
     initial_shell_results: tuple[dict[str, object], ...] = ()
+    # Explicit review reuse source: prior completed run id whose structured
+    # review may be reused when every identity and scope condition matches.
+    # Empty means fresh review; never a file path.
+    review_source_run_id: str = ""
 
 
 def derive_project_changes_required(

@@ -2,6 +2,32 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 审查确定性、范围、持久化与显式复用
+
+- 严格解析审查回复：跳过无关 JSON，拒绝未知 verdict、空对象、错误 finding
+  类型与重复契约键；approved 携带有效问题时转为 changes_requested；冲突对象
+  与超大回复永不通过，保留现有一次格式修复。
+- Git 路径与问题定位：NUL 分隔 status/numstat、正确处理 rename、C 引号解码、
+  不误判字面箭头文件名、拒绝不安全路径、不完整记录显式报错；finding 必须使用
+  规范化 changed 路径，未知/缺失路径不进入 Writer，无效 anchor 降级为 path-only；
+  保守去重保持顺序且不丢有效问题。
+- 安全输入与显式范围：同一次准备同时服务 prompt 与展示范围；敏感文件排除、
+  密钥行内遮蔽且不改变行号，普通标识符不过滤；截断与排除标记部分范围，可修
+  可见问题但不报全量通过。
+- 快照与身份：scope/prompt/snapshot 摘要加 reviewer、模型、契约与策略；内容
+  哈希快照检测编辑/重命名/删除；过期结果不驱动通过或修复；未知模型身份永不
+  命中严格复用；不新增恢复调度，未知请求不自动重发。
+- 消费者与展示：Coordinator 使用 needs_writer_repair/is_complete/approved，
+  保持单次 repair 与绿检继承；review-only 只读；按 DESIGN.md 使用固定英文文案，
+  不虚构覆盖率。
+- 持久化与投影：窄 reviewer 产物动作保存有界结构化结果，ledger 记录审查事件，
+  trace 存计数与摘要（不存正文），Run Details 增加 Review 行，HTTP/JSONL 透出
+  有界 review 投影。
+- 显式复用：新增 review_source_run_id（仅 review/project、同会话同项目、精确
+  身份匹配、当前快照有效）；未命中走新审查；headless review 走正式审查服务。
+- 发布门：machine 契约加入审查集成测试；local 门修复最终汇总矩阵、拒绝重复
+ 用例并增加真实 headless 审查冒烟（只验链路，不验模型找 bug 能力）。
+
 ## 0.5.11 - 公共事件与真实恢复
 
 - 公共出口统一运行/会话身份、模式和精确状态，CLI、SSE、headless 共用事实；

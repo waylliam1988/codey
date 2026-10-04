@@ -149,7 +149,31 @@ class ReviewCoordinator:
             )
 
         _reviewer_id, review = reviewed
-        if review.approved:
+        if getattr(review, "status", "complete") in ("stale", "unavailable"):
+            return ReviewCycleResult(
+                result,
+                task_changed,
+                changes,
+                changes_dirty,
+                review_attempted=True,
+            )
+        if not _snapshot_still_current(project, review):
+            return ReviewCycleResult(
+                result,
+                task_changed,
+                changes,
+                changes_dirty,
+                review_attempted=True,
+            )
+        if bool(getattr(review, "approved", False)):
+            return ReviewCycleResult(
+                result,
+                task_changed,
+                changes,
+                changes_dirty,
+                review_attempted=True,
+            )
+        if not bool(getattr(review, "needs_writer_repair", False)):
             return ReviewCycleResult(
                 result,
                 task_changed,
@@ -204,6 +228,27 @@ class ReviewCoordinator:
             review_repair_attempted=True,
             inherited_checks_passed=inherited,
         )
+
+
+def _snapshot_still_current(project: str | Path, review: object) -> bool:
+    identity = getattr(review, "identity", None)
+    if identity is None:
+        return True
+    snapshot_root = getattr(identity, "snapshot_root", "")
+    snapshot_files = getattr(identity, "snapshot_files", ())
+    if not snapshot_root and not snapshot_files:
+        return True
+    try:
+        from codey.reviews.identity import ReviewSnapshot, verify_snapshot
+
+        snapshot = ReviewSnapshot(
+            root=str(snapshot_root or project),
+            files=tuple(snapshot_files),
+            ok=True,
+        )
+        return verify_snapshot(snapshot)
+    except Exception:
+        return False
 
 
 def _changed_files(changes: dict | None) -> tuple[str, ...]:
