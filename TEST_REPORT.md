@@ -1,5 +1,40 @@
 # Codey Test Report
 
+## Code and test hygiene review (2026-10-05)
+
+Scope covered the production package, task/runtime/provider boundaries, CLI and
+headless entry points, compatibility/fallback references, test collection and
+weak assertion patterns, architecture locks, and the affected regression
+suite. No uncommitted user changes were present at review start.
+
+- Confirmed production defect: `_safe_print` in `codey.app.cli` and
+  `emit_jsonl` in `codey.app.headless_runner` bound `sys.stdout` at import time.
+  Embedded callers or tests replacing stdout therefore received output on the
+  stale stream. A red regression in `tests/test_cli.py` reproduced both cases;
+  the fix resolves stdout at call time with a `None` sentinel. Root cause:
+  production code. This is a small CLI/headless output correctness fix with no
+  protocol or task-state change.
+- No other deterministic production or test defects were confirmed. Existing
+  compatibility layers and fallbacks remain backed by current callers or
+  architecture tests; no cold-start deletion was justified. Existing skips are
+  platform, privilege, optional Node.js, or opt-in browser conditions.
+- Pre-full-run affected tests: CLI/headless/auth/cold-start/architecture scope
+  passed **222 tests and 422 subtests**. `ruff check .`, compileall, and
+  `git diff --check` passed.
+- Final full command:
+  `python -m pytest -q -o faulthandler_timeout=120 -ra`
+  on Windows, Python 3.12. Result: **7248 passed, 36 skipped, 5 failed, 1497
+  subtests passed in 596.09s (0:09:56)**. The five failures were
+  `test_operator_bootstrap_before_ui_requests.py` (3 cases) and
+  `test_sse_browser_dedup_reset_and_buffer_gap.py` (2 cases); all failed before
+  test logic because `node` was not installed (`FileNotFoundError: WinError 2`).
+  They are environment failures, not code regressions. Skips were the recorded
+  Windows/POSIX, symlink privilege, Node.js unavailable, `O_NOFOLLOW`, and
+  opt-in browser cases listed by pytest `-ra`; no skip/xfail was added.
+- Remaining risk: browser JavaScript behavior was not executable in this
+  environment, and the full run therefore is not a zero-failure result. The
+  Python production and test paths above were fully exercised.
+
 ## Desktop / CLI task service parity (2026-10-04)
 
 Baseline: `fe09ecc3`, initially clean. Version remains **0.5.11**; development

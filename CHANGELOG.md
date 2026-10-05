@@ -2,6 +2,16 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - CLI output stream hygiene (2026-10-05)
+
+- Fix `_safe_print` and `emit_jsonl` binding `sys.stdout` at import time.
+  Embedded or redirected CLI/headless callers now write to the current output
+  stream. Add regressions covering both helpers.
+- Review result: Ruff, compileall, and diff checks passed; the final full run
+  recorded **7248 passed, 36 skipped, 5 environment failures, 1497 subtests**
+  in 596.09s. The five failures require Node.js, which was unavailable on the
+  review host; no production assertion failure was observed.
+
 ## Unreleased - Review determinism, scope, persistence and explicit reuse
 
 - Unify desktop and CLI/headless task services, review/advisor consumers and

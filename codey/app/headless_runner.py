@@ -112,7 +112,9 @@ class HeadlessAppContext(AppContext):
             self._emit_jsonl(rejected)
 
 
-def emit_jsonl(payload: dict[str, object], *, file=sys.stdout) -> None:
+def emit_jsonl(payload: dict[str, object], *, file=None) -> None:
+    if file is None:
+        file = sys.stdout
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     encoding = getattr(file, "encoding", None) or "utf-8"
     safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")

@@ -10,7 +10,7 @@ from unittest import mock
 
 import codey.app.cli as cli
 from codey.app.cli import _safe_print
-from codey.app.headless_runner import HeadlessResult
+from codey.app.headless_runner import HeadlessResult, emit_jsonl
 
 
 class AsciiStream:
@@ -31,6 +31,22 @@ class SafePrintTests(unittest.TestCase):
         _safe_print("Qwen\u00a0reply", file=stream)
 
         self.assertEqual(stream.text, "Qwen?reply\n")
+
+    def test_default_output_uses_current_stdout(self) -> None:
+        stream = io.StringIO()
+
+        with mock.patch("sys.stdout", stream):
+            _safe_print("current stream")
+
+        self.assertEqual(stream.getvalue(), "current stream\n")
+
+    def test_jsonl_default_output_uses_current_stdout(self) -> None:
+        stream = io.StringIO()
+
+        with mock.patch("sys.stdout", stream):
+            emit_jsonl({"type": "task_done"})
+
+        self.assertEqual(stream.getvalue(), '{"type":"task_done"}\n')
 
 
 class UiCliTests(unittest.TestCase):

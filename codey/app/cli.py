@@ -14,7 +14,9 @@ import sys
 from pathlib import Path
 
 
-def _safe_print(value, *, file=sys.stdout) -> None:
+def _safe_print(value, *, file=None) -> None:
+    if file is None:
+        file = sys.stdout
     text = str(value)
     encoding = getattr(file, "encoding", None) or "utf-8"
     safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
