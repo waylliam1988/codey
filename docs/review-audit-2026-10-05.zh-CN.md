@@ -40,4 +40,4 @@
 
 剩余风险是 Node.js 缺失导致的浏览器 JavaScript 行为未在本机执行，以及真实 provider/CDP、模型质量和完整浏览器 E2E 的环境依赖；这些限制不被用作审查收敛证明。
 
-提交：`93340a8f`（`Converge iterative audit and harden typed boundaries`）。推送结果将在 `origin/master` 更新后补录。
+提交：`58eec83f`（`Converge iterative audit and harden typed boundaries`）。推送结果将在 `origin/master` 更新后补录。

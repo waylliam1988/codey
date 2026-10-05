@@ -41,7 +41,7 @@ The confirmed fix was rescanned through production code, test code, compatibilit
 - Final command, run once after convergence: `python -m pytest -q -o faulthandler_timeout=120 -ra`.
 - Raw result: **7270 passed, 14 skipped, 5 failed, 1497 subtests passed in 466.88s**.
 - The five failures were `test_operator_bootstrap_before_ui_requests.py` (3) and `test_sse_browser_dedup_reset_and_buffer_gap.py` (2), all failing before JavaScript execution because `node` is unavailable. No skip or xfail was added.
-- This audit commit: `93340a8f` (`Converge iterative audit and harden typed boundaries`); push result is recorded after the remote update.
+- This audit commit: `58eec83f` (`Converge iterative audit and harden typed boundaries`); push result is recorded after the remote update.
 - Remaining risks: browser JavaScript behavior and opt-in native browser E2E were not executable here; provider/model quality and external CDP availability remain outside deterministic CI coverage.
 - Code-fix commit: `5ab7b965` (`Harden HTTP turn budget validation`). Push to
   `origin/master` succeeded; the final report metadata is included in this commit.
