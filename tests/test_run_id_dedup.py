@@ -7,10 +7,14 @@ import unittest
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.app.run_registry import RunSnapshot
 from codey.operations.task_run import prepare_submission
 from codey.task.model import TaskSubmission
+
+pytestmark = pytest.mark.usefixtures("no_external_advisor_models")
 
 
 @dataclass

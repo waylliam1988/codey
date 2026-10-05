@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## Pytest performance review (2026-10-05)
+
+Baseline profiling used `python -m pytest -q --durations=80
+-o faulthandler_timeout=120`: **7270 passed, 14 skipped, 1497 subtests passed,
+5 environment failures in 588.23s**. The five failures were the known Node.js
+unavailable browser-script cases. The slowest deterministic cases were:
+
+- `test_required_modification_check_is_produced.py::test_real_headless_required_edit_and_fresh_verification_finish` — **78.75s**;
+- `stress/test_mixed_workload_convergence.py::test_1000_mixed_operations_converge` — **27.82s**;
+- `test_run_id_dedup.py::HeadlessRunIdReuseTests::test_reused_run_id_is_rejected_without_running_agent` — **15.47s**;
+- `test_research_to_code_ab.py::test_research_to_code_ab_self_test` — **11.07s**;
+- three headless failure-boundary cases — **7.8s** each.
+
+The first, third and fifth groups were paying for real CDP/provider availability
+probes even though their providers are scripted and their assertions target the
+formal headless lifecycle. Add the existing `no_external_advisor_models` fixture
+to isolate those tests from user browser discovery, and inject a scripted
+Reviewer connector in the required-edit integration case. Assertions, writer
+tool flow, verification, review wiring and durable terminal checks remain intact.
+The affected regression group passed **22 tests**; the measured slow-point group
+passed **18 tests in 51.57s** after the change. New timings:
+
+- required headless: **0.96s**;
+- run-id dedup: **0.33s**;
+- failure-boundary cases: **0.19–0.41s**.
+
+The 1000-operation mixed workload remains at **27.34s** because its operation
+count, ten restart boundaries, fault injection and idempotent recovery oracle are
+the behavior under test. The research self-test remains at **9.30s** because
+each arm performs an independent subprocess pytest verification. Neither was
+reduced or weakened.
+
 ## Code and test hygiene review (2026-10-05)
 
 Scope covered the production package, task/runtime/provider boundaries, CLI and

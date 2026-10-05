@@ -2,6 +2,17 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Pytest performance hygiene (2026-10-05)
+
+- Isolate scripted headless lifecycle tests from real browser/provider
+  availability probes, and inject the scripted Reviewer where review wiring is
+  still part of the assertion. The measured slow cases dropped from 78.75s to
+  0.96s, 15.47s to 0.33s, and roughly 7.9s per failure-boundary case to
+  0.19–0.41s without changing assertions or coverage.
+- Keep the 1000-operation recovery workload and independent research subprocess
+  checks at their original scope. The optimized slow-point regression group
+  passes 18 tests in 51.57s.
+
 ## Unreleased - CLI output stream hygiene (2026-10-05)
 
 - Fix `_safe_print` and `emit_jsonl` binding `sys.stdout` at import time.

@@ -13,6 +13,8 @@ from codey.policies.task_policy import TaskPolicy
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.workspace.revision import workspace_fingerprint
 
+pytestmark = pytest.mark.usefixtures("no_external_advisor_models")
+
 
 @pytest.mark.parametrize("with_context", [False, True])
 @pytest.mark.parametrize("changed,verified", [(False, True), (True, False), (True, True)])
@@ -76,7 +78,9 @@ def test_real_headless_required_edit_and_fresh_verification_finish(tmp_path, mon
     result = run_headless(
         HeadlessRequest(project=project, state_home=tmp_path / "state", provider_id="local", intent="project",
                         task="Fix a.py and run the tests.", max_turns=4, project_changes_required=True),
-        emit_jsonl=rows.append, connect_provider=lambda *a, **kw: Provider(),
+        emit_jsonl=rows.append,
+        connect_provider=lambda *a, **kw: Provider(),
+        connect_reviewer=lambda *a, **kw: Provider(),
     )
     assert result.stop_reason == "done", rows
     assert result.exit_code == 0

@@ -11,6 +11,8 @@ from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 
+pytestmark = pytest.mark.usefixtures("no_external_advisor_models")
+
 
 @pytest.mark.parametrize("failure", ["connect", "cancel", "delivery"])
 def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tmp_path, monkeypatch, failure):
