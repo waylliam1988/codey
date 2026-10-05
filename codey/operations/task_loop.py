@@ -467,7 +467,8 @@ def _completion_context_with_ignores(context: Any, ignored_paths: Any) -> Any:
 def _resume_start(value: object) -> int:
     if value is None:
         return 1
-    turn, _ = effect_coordinates(value, 0)
+    coordinates: tuple[int, int] = effect_coordinates(value, 0)
+    turn, _ = coordinates
     return max(1, turn)
 
 

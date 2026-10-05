@@ -387,7 +387,8 @@ class RunTraceStore:
         return self.session_dir(session_id) / f"{_safe_file_stem(run_id)}.json"
 
     def session_dir(self, session_id: str) -> Path:
-        return self.state_home / "run_traces" / session_key(session_id)
+        session_component: str = session_key(session_id)
+        return self.state_home / "run_traces" / session_component
 
     def open(
         self,

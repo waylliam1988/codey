@@ -130,12 +130,13 @@ class SnapshotStore:
         self.state_home = Path(state_home)
 
     def dir_for(self, root: str | Path) -> Path:
-        return (
+        snapshot_dir: Path = (
             self.state_home
             / "projects"
             / project_key(root)
             / SNAPSHOT_DIR_NAME
         )
+        return snapshot_dir
 
     def path_for(self, root: str | Path) -> Path:
         return self.dir_for(root) / "manifest.json"
@@ -391,7 +392,8 @@ class SnapshotStore:
             raise StoreCorruption(
                 self.path_for(resolved_root), f"baseline body too large: {rel!r}"
             )
-        return body
+        result: str | None = body
+        return result
 
     def _disk_total_bytes_locked(self, resolved_root: Path, files: dict[str, Any]) -> int:
         # Disk-view size guard from manifest refs + stat sizes only.
@@ -859,7 +861,8 @@ def is_git_repository(project: str | Path) -> bool:
         return False
     if proc.stdout_truncated:
         return False
-    return proc.returncode == 0 and proc.stdout.strip() == "true"
+    is_repo: bool = proc.returncode == 0 and proc.stdout.strip() == "true"
+    return is_repo
 
 
 def parse_git_status(short_status: str) -> list[dict[str, Any]]:
@@ -980,7 +983,8 @@ def _numstat_target(raw_path: str) -> str:
     if " => " in text:
         text = _expand_numstat_rename(text)
     decoded = decode_git_path(text.strip())
-    return safe_change_path(decoded)
+    normalized: str = safe_change_path(decoded)
+    return normalized
 
 
 def _expand_numstat_rename(text: str) -> str:

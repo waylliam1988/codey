@@ -224,16 +224,18 @@ def _pick_folder_response(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, 
 
 
 def _run_submit_route(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    return app_api.run_submit_response(body, _submit_task)
+    response: tuple[int, dict[str, Any]] = app_api.run_submit_response(body, _submit_task)
+    return response
 
 
 def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    return app_api.shell_approval_response(
+    response: tuple[int, dict[str, Any]] = app_api.shell_approval_response(
         ctx,
         body,
         submit_task_after_slot_release=_submit_task_after_slot_release,
         continuation_retry_after=int(SHELL_CONTINUATION_IDLE_TIMEOUT),
     )
+    return response
 
 
 _GET_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
@@ -280,7 +282,8 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _request_origin_allowed(self) -> bool:
-        return request_origin_allowed(self)
+        allowed: bool = request_origin_allowed(self)
+        return allowed
 
     def _deny_foreign_origin(self) -> None:
         self._send_json(403, {"error": "cross-origin request refused"})
@@ -482,7 +485,8 @@ class Handler(BaseHTTPRequestHandler):
             state.unsubscribe(q)
 
     def _write_sse_event(self, event: dict[str, Any], *, event_id: int = 0) -> bool:
-        return write_sse_event(self, event, event_id=event_id)
+        written: bool = write_sse_event(self, event, event_id=event_id)
+        return written
 
 
 def _wait_for_manual_browser(url: str, exc: Exception) -> None:

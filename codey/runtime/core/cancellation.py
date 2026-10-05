@@ -40,12 +40,13 @@ class _PopenWithHandle(Protocol):
 
 def _safe_capture_limit(value: object) -> int:
     from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES as _default
+    default_limit: int = _default
     if isinstance(value, bool):
-        return _default
+        return default_limit
     try:
         parsed = int(cast(_INT_INPUT, value))
     except (TypeError, ValueError, OverflowError):
-        return _default
+        return default_limit
     return max(1, parsed)
 
 

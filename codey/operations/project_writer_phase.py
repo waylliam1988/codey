@@ -48,13 +48,14 @@ from codey.workspace.config import preferred_provider_for
 
 
 def _writer_verification_candidates(ctx: ProjectRun) -> tuple[Any, ...]:
-    return safe_verification_candidates(
+    candidates: tuple[Any, ...] = safe_verification_candidates(
         ctx.project,
         ctx.verification_verified_commands,
         ctx.resumed_verification_commands,
         ctx.configured_verification_commands,
         ctx.configured_ignored_paths,
     )
+    return candidates
 
 
 def _on_writer_event(
@@ -255,7 +256,8 @@ def _clear_provider_session(ctx: ProjectRun, pid: str) -> None:
 
 def _run_writer_canary(ctx: ProjectRun, pid: str, item: Any) -> bool:
     assert ctx.hooks.supervisor is not None
-    return run_half_open_canary(pid, item, ctx.hooks.supervisor)
+    canary_ok: bool = run_half_open_canary(pid, item, ctx.hooks.supervisor)
+    return canary_ok
 
 
 def _build_writer_failover(ctx: ProjectRun) -> WriterFailoverRunner:

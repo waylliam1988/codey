@@ -101,7 +101,6 @@ def run_task(
             )
         )
     finally:
-        state = get_state()
         supervisor = state.self_repair
         if supervisor is not None:
             supervisor.kick_if_idle(state.is_busy)
@@ -171,7 +170,8 @@ def submit_task(
         state.release_run(reserved.run_id)
         raise BrowserWorkerBusy("browser worker busy: queue full")
     state.expire_stale_shell_approvals(reserved.run_id)
-    return reserved.run_id
+    run_id_value: str = reserved.run_id
+    return run_id_value
 
 
 def submit_task_after_slot_release(

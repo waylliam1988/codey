@@ -1,5 +1,11 @@
 # Codey Test Report
 
+## Iterative audit closure (2026-10-05)
+
+本轮独立审查共 7 轮，修复 5 个确定性问题（1 个运行时 cleanup 状态问题、4 组严格 mypy 动态边界问题）。完整候选台账、每轮扫描范围、排除证据和最终环境限制见[迭代审查收口](docs/review-audit-2026-10-05.zh-CN.md)。
+
+最终全量 pytest 只运行一次：**7271 passed、14 skipped、5 failed、1497 subtests passed，482.57 秒**。5 个失败均为 Node.js 缺失导致 `subprocess.run(["node", ...])` 在启动前返回 `WinError 2`，涉及 operator bootstrap 3 项和 SSE browser 2 项；全树 mypy（372 文件）、Ruff、compileall、collect-only（7290 项）和受影响回归（359 passed、381 subtests）均通过。最终全量后没有再修改生产代码或测试代码。
+
 ## Convergent audit (2026-10-05)
 
 This audit completed five independent rounds before the only final full run.
@@ -35,6 +41,7 @@ The confirmed fix was rescanned through production code, test code, compatibilit
 - Final command, run once after convergence: `python -m pytest -q -o faulthandler_timeout=120 -ra`.
 - Raw result: **7270 passed, 14 skipped, 5 failed, 1497 subtests passed in 466.88s**.
 - The five failures were `test_operator_bootstrap_before_ui_requests.py` (3) and `test_sse_browser_dedup_reset_and_buffer_gap.py` (2), all failing before JavaScript execution because `node` is unavailable. No skip or xfail was added.
+- This audit commit: `93340a8f` (`Converge iterative audit and harden typed boundaries`); push result is recorded after the remote update.
 - Remaining risks: browser JavaScript behavior and opt-in native browser E2E were not executable here; provider/model quality and external CDP availability remain outside deterministic CI coverage.
 - Code-fix commit: `5ab7b965` (`Harden HTTP turn budget validation`). Push to
   `origin/master` succeeded; the final report metadata is included in this commit.

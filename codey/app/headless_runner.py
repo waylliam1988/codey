@@ -65,7 +65,7 @@ class HeadlessResult:
     ledger_path: str = ""
 
 
-class HeadlessAppContext(AppContext):
+class HeadlessAppContext(AppContext):  # type: ignore[misc,unused-ignore]
     def __init__(
         self,
         state_home: str | Path | None,

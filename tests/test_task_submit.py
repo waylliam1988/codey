@@ -158,6 +158,39 @@ class TaskSubmitTests(unittest.TestCase):
         # called it again — cleanup used the captured state object.
         self.assertEqual(holder["calls"], 1)
 
+    def test_run_task_uses_captured_state_for_post_entry_cleanup(self) -> None:
+        import sys
+
+        state = SimpleNamespace(
+            self_repair=SimpleNamespace(kick_if_idle=mock.Mock()),
+            is_busy=mock.Mock(return_value=False),
+        )
+        holder = {"calls": 0}
+
+        def get_state():
+            holder["calls"] += 1
+            if holder["calls"] > 1:
+                raise RuntimeError("accessor down after entry")
+            return state
+
+        with (
+            mock.patch.object(task_submit, "load_review_policy", return_value="web_if_available"),
+            mock.patch("codey.app.task_services.build_task_deps", return_value=object()),
+            mock.patch.dict(sys.modules, {"codey.operations.task_entry": mock.Mock()}),
+        ):
+            # The task entry itself is replaced below so this test isolates
+            # the cleanup accessor and does not depend on the agent runtime.
+            entry = sys.modules["codey.operations.task_entry"]
+            entry.run_task_submission = mock.Mock()
+            task_submit.run_task(
+                "s", None, "t", 8, False, "deepseek", "auto", "run-9",
+                get_state=get_state,
+                review_policy="web_if_available",
+            )
+
+        self.assertEqual(holder["calls"], 1)
+        state.self_repair.kick_if_idle.assert_called_once_with(state.is_busy)
+
     def test_after_slot_release_returns_none_when_stopped(self) -> None:
         state = _FakeState(reserved=True)
         state.run_registry = SimpleNamespace(

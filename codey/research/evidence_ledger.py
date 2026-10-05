@@ -45,7 +45,8 @@ EVIDENCE_LEDGER_KIND = "research_evidence_ledger"
 def _safe_count(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    return nonnegative_int(value)
+    count: int = nonnegative_int(value)
+    return count
 MAX_EVIDENCE_LEDGER_BYTES = 1024 * 1024
 MAX_LEDGER_RECORDS = 100
 MAX_LEDGER_SOURCES = 300
@@ -213,7 +214,8 @@ class EvidenceLedgerSnapshot:
 
     @property
     def ledger_ref(self) -> str:
-        return identifier(self.payload.get("ledger_ref") if self.payload else "", 80)
+        ledger_ref: str = identifier(self.payload.get("ledger_ref") if self.payload else "", 80)
+        return ledger_ref
 
 
 class EvidenceLedgerStore:
@@ -404,7 +406,8 @@ class EvidenceLedgerStore:
         root = self.root.resolve()
         resolved = path.resolve()
         resolved.relative_to(root)
-        return resolved
+        safe_path: Path = resolved
+        return safe_path
 
     def _load_payload(self, path: Path) -> dict[str, object] | None:
         if not path.exists():
@@ -571,7 +574,8 @@ def _record_payload(record: object) -> dict[str, object]:
         or not _digest_schema_ok(payload.get("record_digest"))
     ):
         return {}
-    return payload
+    valid_payload: dict[str, object] = payload
+    return valid_payload
 
 
 def _record_integrity(payload: Mapping[str, object], entry: Mapping[str, object]) -> str:
@@ -592,7 +596,8 @@ def _record_integrity(payload: Mapping[str, object], entry: Mapping[str, object]
             for key in _CAPSULE_MAP_KEYS
         },
     }
-    return digest_text(json.dumps(capsule, ensure_ascii=True, sort_keys=True, separators=(",", ":")))
+    digest: str = digest_text(json.dumps(capsule, ensure_ascii=True, sort_keys=True, separators=(",", ":")))
+    return digest
 
 
 def _records_integrity_ok(payload: Mapping[str, object]) -> bool:
@@ -1270,7 +1275,8 @@ def _stable_ref_schema_ok(prefix: str, value: object) -> bool:
 
 
 def _bounded_text_schema_ok(value: object, limit: int, *, allow_empty: bool = True) -> bool:
-    return _clip_schema_ok(value, limit, allow_empty=allow_empty)
+    valid: bool = _clip_schema_ok(value, limit, allow_empty=allow_empty)
+    return valid
 
 
 def _host_schema_ok(value: object) -> bool:
@@ -1484,7 +1490,8 @@ def _record_id(value: object) -> str:
     prefix = "research_record:"
     suffix = text.removeprefix(prefix)
     if text.startswith(prefix) and len(suffix) == 16 and all(char in "0123456789abcdef" for char in suffix):
-        return text
+        record_id: str = text
+        return record_id
     return ""
 
 

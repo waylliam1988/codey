@@ -95,11 +95,12 @@ def safe_run_ref(value: object) -> str:
     share one run-ref vocabulary instead of each growing its own sanitizer.
     """
 
-    text = identifier(value, 120)
+    text: str = identifier(value, 120)
     if not text:
         return ""
     if looks_prompt_visible_secret(text):
-        return digest_text(text).removeprefix("sha256:")[:16]
+        digest: str = digest_text(text)
+        return digest.removeprefix("sha256:")[:16]
     return text
 
 
