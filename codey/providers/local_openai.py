@@ -619,7 +619,7 @@ def _load_response_json(raw: bytes, endpoint: str) -> dict[str, Any]:
         body = json.loads(text)
     except json.JSONDecodeError as exc:
         preview = " ".join(text.split())[:_RESPONSE_PREVIEW_LIMIT]
-        raise RuntimeError(
+        raise _RetryableResponseError(
             f"local model at {endpoint} returned non-JSON response: {preview}"
         ) from exc
     if not isinstance(body, dict):

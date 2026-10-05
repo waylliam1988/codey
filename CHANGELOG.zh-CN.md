@@ -10,9 +10,11 @@
 - 以回归测试锁定并修复 gate 层 bootstrap、终态字段、research 无项目会话和 history 隔离问题；
   生产完成规则保持严格。
 - Research 历史证明重复 `done` 来自提示未前置完成条件后收到完成门反馈，不是 JSON 兼容问题；
-  增加证据和报告章节 checklist 后，同一 Gemma4-12B 能在严格内核下完成研究。
-- 有效最终全量：7296 通过、7 跳过、1497 个子测试，耗时 512.21 秒；最初 5 个 Node PATH 失败
-  在使用 Playwright 自带 node.exe 后全部通过。
+  现在由生产 kernel prompt 提供证据、报告章节、引用和恢复规则，UI gate 只发送用户任务。
+  同一 Gemma4-12B 曾在严格完成门下完成一次研究，但后续复测暴露搜索/服务稳定性风险。
+- 本地 provider 对 HTTP 200 非 JSON 增加一次有界重试；持续异常仍 fail-closed。
+- 最终全量：7286 通过、14 跳过、5 个环境失败、1497 个子测试，耗时 488.84 秒。
+  5 项均在执行 JavaScript 前因找不到 `node`（`WinError 2`）失败，没有生产断言失败。
 
 ## 未发布 - Pytest 性能卫生（2026-10-05）
 

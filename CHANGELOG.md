@@ -12,9 +12,14 @@
   defects with regression tests; production completion rules remain strict.
 - Research history proved that repeated `done` came from completion-gate feedback
   after an under-specified prompt, not JSON incompatibility. An explicit evidence
-  and report-section checklist lets the same Gemma4-12B model complete research.
-- Effective final verification: 7296 passed, 7 skipped, 1497 subtests in 512.21s;
-  the five initial Node PATH failures passed after using Playwright's bundled node.exe.
+  and report-section checklist is now supplied by the production kernel prompt; the
+  UI gate sends only the user task. The same Gemma4-12B model completed one strict
+  research run, while later runs exposed provider/search stability risks.
+- Added one bounded retry for HTTP 200 non-JSON local-provider responses; persistent
+  malformed responses still fail closed.
+- Final full run: 7286 passed, 14 skipped, 5 environment failures, 1497 subtests
+  in 488.84s. The five failures are Node.js launch failures before JavaScript
+  execution (`WinError 2`); no production assertion failure was observed.
 
 ## Unreleased - Pytest performance hygiene (2026-10-05)
 

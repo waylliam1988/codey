@@ -99,16 +99,15 @@ python tools/local_model_ui_gate.py --json
 只能记录为未运行，不能替代 headless gate 或静态 UI 契约测试。该 gate 使用临时项目和
 临时 server state，不写入默认项目或本地 provider 配置。
 
-Research UI gate 会把研究完成条件直接写入本次测试提示：先搜索并打开来源，使用
-`knowledge_write` 保存打开页面的精确摘录，然后在 `done.summary` 中提供“结论、关键证据、
-反证与限制、来源质量、搜索覆盖、来源”六个章节。`local-model-provider-history.jsonl`
-保存本次运行的完整 request/response/tool error；gate 的 history 分析只统计每轮最后一个
-tool message，避免把重放的旧错误重复计数。2026-10-05 在 KoboldCpp Gemma4-12B 上观察到，
-未带清单的提示会在 `web_search -> open_url -> done` 后收到
-`research_evidence_missing`，随后重复 `done`；这不是 JSON 解码或 UI 重绘问题。带清单的
-提示在同一严格完成门下完成了 `web_search -> open_url -> knowledge_write -> done`，最终
-`stop_reason=done`，但仍可能需要质量反馈后的 `knowledge_read`/`knowledge_write` 重试。
-该改进仅属于 gate 测试提示，不能放宽或修改生产完成门。
+Research UI gate 只发送用户任务；研究完成条件由生产 `kernel_prompt.py` 注入，包含先搜索并打开来源、
+用 `knowledge_write` 保存精确摘录、六个独立 Markdown 章节、`[n]` 引用、固定反证模板、原样传递
+note id，以及拒绝后的 `knowledge_read` 恢复步骤。`local-model-provider-history.jsonl` 保存本次运行的
+完整 request/response/tool error；gate 的 history 分析只统计每轮最后一个 tool message，避免把重放的旧错误
+重复计数。2026-10-05 在 KoboldCpp Gemma4-12B 上观察到，缺少这些生产提示时会在
+`web_search -> open_url -> done` 后收到 `research_evidence_missing`，随后重复 `done`；这不是 JSON 解码或
+UI 重绘问题。补充生产 prompt 后，模型曾在严格完成门下完成 `web_search -> open_url -> knowledge_write -> done`，
+但后续复测仍暴露报告质量、搜索超时和服务端 HTTP 200 非 JSON 风险。完成门没有放宽；非 JSON 只在 provider
+边界进行一次有限重试，持续异常仍失败。
 
 实机要求：
 

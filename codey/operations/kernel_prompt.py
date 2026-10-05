@@ -71,7 +71,22 @@ def kernel_prompt_for_session(
             "Save short exact excerpts with knowledge_write. Use only local tool "
             "results as evidence, including when a web model has built-in browsing. "
             "Finish with done and these report sections: 结论, 关键证据, 反证与限制, "
-            "来源质量, 搜索覆盖, 来源. Cite only sources opened and saved in this run."
+            "来源质量, 搜索覆盖, 来源. Cite only sources opened and saved in this run.\n\n"
+            "Strict research completion checklist: Do not call done before knowledge_write "
+            "has saved evidence from an opened source. After a completion rejection, use "
+            "knowledge_read to inspect the saved evidence and repair the report before "
+            "trying done again. Do not repeat knowledge_write for the same evidence; add "
+            "a new evidence excerpt only when the opened source supports a new claim. "
+            "For knowledge_read, pass the note id exactly as returned by knowledge_write; "
+            "do not prepend facts/ or append .md.\n\n"
+            "Report format is strict: use these literal Markdown headings, each on its own line: "
+            "## 结论, ## 关键证据, ## 反证与限制, ## 来源质量, ## 搜索覆盖, ## 来源. "
+            "Do not replace headings with bold labels or inline prose. Put [1]-style citations "
+            "in 结论 and 关键证据; 反证与限制 must cite [n] or explicitly say 未找到强反证 "
+            "and state what was searched. A valid no-counter example is exactly: "
+            "- 未找到强反证；本轮仅检索并打开上述来源。[1]. In 来源, list each cited source as "
+            "[1] Title - https://...; "
+            "use only URLs opened and saved in this run."
         )
     parts.append(f"Visible tools: {names}")
     if contract_text:

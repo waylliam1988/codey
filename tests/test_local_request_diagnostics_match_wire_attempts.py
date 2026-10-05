@@ -59,6 +59,29 @@ def test_observer_failure_does_not_retry_successful_http_request():
 
 def test_error_attempt_is_observed_once_without_changing_exception():
     provider = ObservedProvider()
-    with patch("urllib.request.urlopen", return_value=Response(b"not JSON")), pytest.raises(RuntimeError, match="non-JSON"):
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=(Response(b"not JSON"), Response(b"still not JSON")),
+    ), pytest.raises(RuntimeError, match="non-JSON"):
         provider._post_chat([])
-    assert [row[1] for row in provider.observations] == ["request", "error"]
+    assert [row[1] for row in provider.observations] == [
+        "request",
+        "retryable_error",
+        "request",
+        "retryable_error",
+    ]
+
+
+def test_non_json_response_is_retried_once_when_next_response_is_valid_json():
+    provider = ObservedProvider()
+    responses = iter((Response(b"not JSON"), Response(b'{"choices":[]}')))
+
+    with patch("urllib.request.urlopen", side_effect=lambda *_args, **_kwargs: next(responses)):
+        assert provider._post_chat([]) == {"choices": []}
+
+    assert [row[1] for row in provider.observations] == [
+        "request",
+        "retryable_error",
+        "request",
+        "response",
+    ]

@@ -107,18 +107,10 @@ def _start_unscoped_chat(page: Page) -> None:
 
 
 def _research_gate_prompt() -> str:
-    """Give the small-model UI probe the same explicit research checklist."""
+    """Return only the user task; strict research guidance comes from production."""
     return (
-        "Research the official Python pathlib documentation. Use exactly one native tool per turn. "
-        "First call web_search, then open_url on an actual result. Save at least one short exact "
-        "excerpt from the opened page with knowledge_write before proposing completion. Cite only "
-        "sources opened and saved in this run. Your final done.summary must contain these exact "
-        "report sections: \u7ed3\u8bba, \u5173\u952e\u8bc1\u636e, \u53cd\u8bc1\u4e0e\u9650\u5236, \u6765\u6e90\u8d28\u91cf, "
-        "\u641c\u7d22\u8986\u76d6, \u6765\u6e90. \u4e0d\u8981\u5728\u8bc1\u636e\u4fdd\u5b58\u524d\u8c03\u7528 done, and do not call done "
-        "until all sections and citations are ready. Use this template: \u7ed3\u8bba: ...; \u5173\u952e\u8bc1\u636e: ...; "
-        "\u53cd\u8bc1\u4e0e\u9650\u5236: ...; \u6765\u6e90\u8d28\u91cf: ...; \u641c\u7d22\u8986\u76d6: ...; \u6765\u6e90: ... . "
-        "If the completion gate asks for more evidence, use knowledge_read on the saved note before "
-        "writing another note. Do not create or edit files."
+        "Research the official Python pathlib documentation. First use web_search, then open_url "
+        "on a result, and finish with done summarizing the source. Do not create or edit files."
     )
 
 

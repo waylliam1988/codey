@@ -246,6 +246,34 @@ def test_explicit_research_prompt_explains_evidence_and_report_contract() -> Non
         assert required in prompt
 
 
+def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
+    from codey.operations.kernel_prompt import kernel_prompt_for_session
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+
+    session = TaskSession(
+        policy=TaskPolicy(
+            grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
+            strict_research=True,
+        ),
+        task_kind="research",
+        task_text="question",
+    )
+    prompt = kernel_prompt_for_session(session)
+    for required in (
+        "Strict research completion checklist",
+        "Do not call done before knowledge_write",
+        "knowledge_read",
+        "Do not repeat knowledge_write for the same evidence",
+        "literal Markdown headings",
+        "## 结论, ## 关键证据, ## 反证与限制, ## 来源质量, ## 搜索覆盖, ## 来源",
+        "[1]-style citations",
+        "A valid no-counter example is exactly",
+        "pass the note id exactly as returned",
+    ):
+        assert required in prompt
+
+
 def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
     from codey.knowledge.changes import KnowledgeChanges
     from codey.knowledge.store import KnowledgeStore

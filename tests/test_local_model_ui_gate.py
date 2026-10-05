@@ -109,18 +109,11 @@ class LocalModelUiGateTests(unittest.TestCase):
         gate._start_unscoped_chat(page)
         self.assertEqual(page.expressions, ["newSession(null)"])
 
-    def test_research_gate_prompt_frontloads_completion_requirements(self) -> None:
+    def test_research_gate_uses_user_task_and_production_supplies_contract(self) -> None:
         prompt = gate._research_gate_prompt()
-        self.assertIn("knowledge_write", prompt)
-        self.assertIn("\u7ed3\u8bba", prompt)
-        self.assertIn("\u5173\u952e\u8bc1\u636e", prompt)
-        self.assertIn("\u53cd\u8bc1\u4e0e\u9650\u5236", prompt)
-        self.assertIn("\u6765\u6e90\u8d28\u91cf", prompt)
-        self.assertIn("\u641c\u7d22\u8986\u76d6", prompt)
-        self.assertIn("\u6765\u6e90", prompt)
-        self.assertIn("\u4e0d\u8981\u5728\u8bc1\u636e\u4fdd\u5b58\u524d\u8c03\u7528 done", prompt)
-        self.assertIn("\u7ed3\u8bba:", prompt)
-        self.assertIn("knowledge_read", prompt)
+        self.assertIn("First use web_search", prompt)
+        self.assertNotIn("knowledge_write", prompt)
+        self.assertNotIn("Strict research completion checklist", prompt)
 
     def test_browser_url_uses_operator_bootstrap(self) -> None:
         class Server:

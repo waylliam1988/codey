@@ -2,19 +2,19 @@
 
 ## Local model desktop gate and convergent audit (2026-10-05)
 
-本轮完成五个独立审查轮次：A 生产行为、B 测试质量、C 架构/兼容层、D 用户体验/性能、E 修复后反向调用方扫描。每轮都重新扫描生产代码、测试代码和入口/兼容边界；新增候选数依次为 A 1、B 1、C 0、D 1、E 0。最近两轮 C/E 没有新的可稳定复现问题：C 的静态调用关系、测试和冷启动证据没有支持删除兼容层；E 复查了 desktop、HTTP、headless、CLI、research fallback 和新 gate 接线，没有发现回归。
+本轮完成五个独立审查轮次：A 生产行为、B 测试质量、C 架构/兼容层、D 用户体验/性能、E 修复后反向调用方扫描，并追加 F 调用关系/状态流和 G 测试/fixture/fallback/冷启动扫描。每轮都重新扫描生产代码、测试代码和入口/兼容边界；新增候选数为 A 1、B 1、C 0、D 1、E 0、F 0、G 0。最近两轮 F/G 没有新的可稳定复现问题：F 复核修复后的调用方和状态流，G 复核 fixture、fallback、冷启动和 provider history，均未发现回归。
 
 确认并修复的 gate 问题：浏览器必须使用 operator bootstrap URL；终态读取 `stop_reason`；research case 必须创建无项目会话；provider history 必须按运行隔离。每项均先有失败回归测试，再修改 gate，受影响测试通过。最初用户报告的共享边界 mypy 失败在当前工作树已由 `tests/test_mypy_shared_boundaries.py` 9 项回归证明为通过；本轮未修改内核。
 
-真实 KoboldCpp UI gate（`http://127.0.0.1:5001/v1`，模型 `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`）结果：`chat,coding,review,ghost` 通过；独立 `research` 在增强提示下通过，检查 provider 选择、真实 chat、coding 变更、Review/details、Changes drawer、Research 的 Evidence/Sources/Graph/Notes、Local context/Changes 互斥。历史保存在 `.e2e-artifacts/local-model-provider-history.jsonl`，并包含完整 request/response/tool error。
+真实 KoboldCpp UI gate（`http://127.0.0.1:5001/v1`，模型 `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`）结果：`chat,coding,review,ghost` 通过，检查 provider 选择、真实 chat、coding 变更、Review/details、Changes drawer 和 Local context/Changes 互斥；research UI 路径也实际打开了 Research 的 Evidence/Sources/Graph/Notes 面板。每次运行历史保存在独立 `.e2e-artifacts/.../local-model-provider-history.jsonl`，包含完整 request/response/tool error。UI gate 的 research prompt 只发送用户任务，严格完成清单、Markdown 章节、引用和恢复规则均由生产 `kernel_prompt.py` 提供。
 
-Research 根因证据：未增强提示时序列为 `web_search -> open_url -> done`，随后 `research_evidence_missing`，再出现 `report_no_report_sections`/`research_report_quality_failed`；JSONL 解析错误和 transport 错误均为 0。增强提示明确要求 `knowledge_write` 精确摘录和六个报告章节后，12B 在严格完成门下成功收敛（一次成功运行：26 行、0 parse/transport errors、4 次 done、4 次质量反馈，最终 `stop_reason=done`）。因此问题是 gate 提示没有前置完成条件叠加 12B 的研究收敛能力边界，不是 JSON 兼容性，也不是内核缺陷；没有放宽完成门或修改生产内核。
+Research 根因证据：最初序列为 `web_search -> open_url -> done`，随后 `research_evidence_missing`；后续还出现 `report_no_report_sections`、`research_report_quality_failed`，以及模型把 note id 改写成 `facts/...md` 的 `knowledge_read` 失败。JSONL 解析错误和 transport 错误均为 0。生产 prompt 已增加 `knowledge_write` 前置、六个独立 `##` 章节、`[n]` 引用、固定反证模板、原样传递 note id 和拒绝后的 `knowledge_read` 恢复步骤；完成门保持严格。一次增强 prompt 运行曾达到 `stop_reason=done`，但后续 research-only 复测也复现了 DuckDuckGo `search_timeout`/`no_progress`，以及 KoboldCpp HTTP 200 非 JSON 的 provider_failure。结论是：原问题是生产引导不足叠加 12B 的严格报告收敛边界，不是 UI gate 自带协议，也不是 JSON/tool-call 解析错误；非 JSON 处理只在 provider 边界增加一次有限重试。
 
-质量门：Ruff、compileall、测试收集（7303 tests）、边界 mypy（9 passed）、`git diff --check` 均通过。无 Node PATH 的首次全量尝试为 `7284 passed, 14 skipped, 5 failed, 1497 subtests`，5 项均在 `node` 启动前 `WinError 2`；临时加入 Playwright driver 的 `node.exe` 后受影响用例 `7 passed`。有效最终全量命令为 `python -m pytest -q -o faulthandler_timeout=120`，原始统计：**7296 passed, 7 skipped, 1497 subtests passed in 512.21s (0:08:32)**。
+质量门：Ruff、compileall、测试收集（7305 tests）、全树 mypy（372 files）、`git diff --check` 均通过；受影响定向测试 102 项通过。唯一一次最终全量命令为 `pytest -q`，原始统计：**7286 passed, 14 skipped, 5 failed, 1497 subtests passed in 488.84s (0:08:08)**。5 项全部在启动外部 `node` 前因 `FileNotFoundError: [WinError 2]` 失败，涉及 operator bootstrap 3 项和 SSE browser 2 项；没有修改 skip/xfail，也没有把环境限制伪装成通过。
 
 剩余风险：KoboldCpp/12B 的研究质量反馈仍可能导致多轮 `done` 重试；外部 StepFun/CDP 不可用时 research 会按严格规则失败；系统默认 PATH 没有 Node，需要发布环境显式提供 Node 或使用 Playwright driver 路径。上述限制均未被伪装成通过。
 
-实现提交：`81328d82`（`Add real local model desktop UI gate`）。该提交及本报告元数据提交已推送到 `origin/master`。
+实现提交仍为当前工作树的未提交变更；本轮尚未 commit/push。按收敛要求，文档更新完成后将检查 diff，再创建提交并推送。
 
 推送后的独立 research-only 复测仍保留在 `.e2e-artifacts/research-run/local-model-provider-history.jsonl`：模型成功完成搜索、来源打开和 `knowledge_write`，随后 KoboldCpp 在 HTTP 200 响应中返回非 JSON，终态为 `provider_failure`；本次 history 无 JSONL 解析错误或 transport error。该复测确认模型/服务端输出稳定性仍是风险，不改变已经通过的增强提示成功运行，也没有因此放宽完成门或修改内核。
 
