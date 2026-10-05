@@ -1,5 +1,19 @@
 # Codey Test Report
 
+## Local model desktop gate and convergent audit (2026-10-05)
+
+本轮完成五个独立审查轮次：A 生产行为、B 测试质量、C 架构/兼容层、D 用户体验/性能、E 修复后反向调用方扫描。每轮都重新扫描生产代码、测试代码和入口/兼容边界；新增候选数依次为 A 1、B 1、C 0、D 1、E 0。最近两轮 C/E 没有新的可稳定复现问题：C 的静态调用关系、测试和冷启动证据没有支持删除兼容层；E 复查了 desktop、HTTP、headless、CLI、research fallback 和新 gate 接线，没有发现回归。
+
+确认并修复的 gate 问题：浏览器必须使用 operator bootstrap URL；终态读取 `stop_reason`；research case 必须创建无项目会话；provider history 必须按运行隔离。每项均先有失败回归测试，再修改 gate，受影响测试通过。最初用户报告的共享边界 mypy 失败在当前工作树已由 `tests/test_mypy_shared_boundaries.py` 9 项回归证明为通过；本轮未修改内核。
+
+真实 KoboldCpp UI gate（`http://127.0.0.1:5001/v1`，模型 `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`）结果：`chat,coding,review,ghost` 通过；独立 `research` 在增强提示下通过，检查 provider 选择、真实 chat、coding 变更、Review/details、Changes drawer、Research 的 Evidence/Sources/Graph/Notes、Local context/Changes 互斥。历史保存在 `.e2e-artifacts/local-model-provider-history.jsonl`，并包含完整 request/response/tool error。
+
+Research 根因证据：未增强提示时序列为 `web_search -> open_url -> done`，随后 `research_evidence_missing`，再出现 `report_no_report_sections`/`research_report_quality_failed`；JSONL 解析错误和 transport 错误均为 0。增强提示明确要求 `knowledge_write` 精确摘录和六个报告章节后，12B 在严格完成门下成功收敛（一次成功运行：26 行、0 parse/transport errors、4 次 done、4 次质量反馈，最终 `stop_reason=done`）。因此问题是 gate 提示没有前置完成条件叠加 12B 的研究收敛能力边界，不是 JSON 兼容性，也不是内核缺陷；没有放宽完成门或修改生产内核。
+
+质量门：Ruff、compileall、测试收集（7303 tests）、边界 mypy（9 passed）、`git diff --check` 均通过。无 Node PATH 的首次全量尝试为 `7284 passed, 14 skipped, 5 failed, 1497 subtests`，5 项均在 `node` 启动前 `WinError 2`；临时加入 Playwright driver 的 `node.exe` 后受影响用例 `7 passed`。有效最终全量命令为 `python -m pytest -q -o faulthandler_timeout=120`，原始统计：**7296 passed, 7 skipped, 1497 subtests passed in 512.21s (0:08:32)**。
+
+剩余风险：KoboldCpp/12B 的研究质量反馈仍可能导致多轮 `done` 重试；外部 StepFun/CDP 不可用时 research 会按严格规则失败；系统默认 PATH 没有 Node，需要发布环境显式提供 Node 或使用 Playwright driver 路径。上述限制均未被伪装成通过。
+
 ## Iterative audit closure (2026-10-05)
 
 本轮独立审查共 7 轮，修复 5 个确定性问题（1 个运行时 cleanup 状态问题、4 组严格 mypy 动态边界问题）。完整候选台账、每轮扫描范围、排除证据和最终环境限制见[迭代审查收口](docs/review-audit-2026-10-05.zh-CN.md)。

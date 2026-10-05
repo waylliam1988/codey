@@ -78,6 +78,38 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 | `review` | 正式 headless 只读审查，固定目标传入 Reviewer 连接器 | 实际请求非零且模型匹配、完整结构化结果、产物/ledger/终态一致、文件哈希不变；不可用不通过，不断言固定问题措辞 |
 | `project_review` | 同一次正式 project：编码→验证→同一本地目标自动自审→可选一次 repair | 原测试哈希及独立公式矩阵通过；Writer/Reviewer 真实请求、审查期间文件不变、完整持久结果、同 run/session、最新编辑后验证和最终收据一致 |
 
+### 3.1 Gate 3b：真实桌面 UI 摩擦（可选但建议发布前运行）
+
+`local_model_release_gate.py` 覆盖的是 headless 本地模型协议；`tools/ui_e2e.py`
+覆盖真实 Edge 的按钮、SSE 和 drawer，但故意使用 `ScriptedWriter`。两者都不能证明
+桌面 UI 与真实 local provider 已接通。`tools/local_model_ui_gate.py` 补这个边界：它启动
+真实 Codey HTTP server 和 Edge，选择 Local，发送一次真实 chat，然后点击本地配置、项目
+绑定、Local context、Changes drawer 的打开/关闭按钮，并检查终态事件、DOM 可见性和 drawer
+互斥。模型回答文本只作为存在性信号，不作为 UI 正确性的断言。
+
+该 gate 不默认进入 pytest，必须显式提供 endpoint（避免把用户保存的目标误当成发布输入）：
+
+```powershell
+$env:LOCAL_OPENAI_BASE_URL = 'http://127.0.0.1:1234/v1'
+$env:LOCAL_OPENAI_MODEL = '实际 /models 返回的 id'
+python tools/local_model_ui_gate.py --json
+```
+
+需要真实 Edge、Playwright 浏览器和正在运行的 OpenAI-compatible 本地服务；缺少这些环境
+只能记录为未运行，不能替代 headless gate 或静态 UI 契约测试。该 gate 使用临时项目和
+临时 server state，不写入默认项目或本地 provider 配置。
+
+Research UI gate 会把研究完成条件直接写入本次测试提示：先搜索并打开来源，使用
+`knowledge_write` 保存打开页面的精确摘录，然后在 `done.summary` 中提供“结论、关键证据、
+反证与限制、来源质量、搜索覆盖、来源”六个章节。`local-model-provider-history.jsonl`
+保存本次运行的完整 request/response/tool error；gate 的 history 分析只统计每轮最后一个
+tool message，避免把重放的旧错误重复计数。2026-10-05 在 KoboldCpp Gemma4-12B 上观察到，
+未带清单的提示会在 `web_search -> open_url -> done` 后收到
+`research_evidence_missing`，随后重复 `done`；这不是 JSON 解码或 UI 重绘问题。带清单的
+提示在同一严格完成门下完成了 `web_search -> open_url -> knowledge_write -> done`，最终
+`stop_reason=done`，但仍可能需要质量反馈后的 `knowledge_read`/`knowledge_write` 重试。
+该改进仅属于 gate 测试提示，不能放宽或修改生产完成门。
+
 实机要求：
 
 - `project_review` 使用无 `.git` 的普通隔离文件夹，经显式 Reviewer 连接器进入

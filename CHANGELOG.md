@@ -6,10 +6,15 @@
 
 - Completed five independent production, test-quality, architecture, UX/performance,
   and post-fix call-site review rounds.
-- Fixed HTTP `max_turns` boolean coercion: JSON `true`/`false` now returns `400`
-  instead of silently becoming a turn budget. Added a focused regression test.
-- Final verification recorded 7270 passed, 14 skipped, 5 Node.js environment
-  failures, and 1497 subtests in 466.88s; no Python production failure remained.
+- Added the opt-in real local-model desktop UI gate for chat, coding, review,
+  research, and ghost/local-context drawer flows, with per-run provider history.
+- Fixed gate-only bootstrap, terminal-field, research-session, and history-isolation
+  defects with regression tests; production completion rules remain strict.
+- Research history proved that repeated `done` came from completion-gate feedback
+  after an under-specified prompt, not JSON incompatibility. An explicit evidence
+  and report-section checklist lets the same Gemma4-12B model complete research.
+- Effective final verification: 7296 passed, 7 skipped, 1497 subtests in 512.21s;
+  the five initial Node PATH failures passed after using Playwright's bundled node.exe.
 
 ## Unreleased - Pytest performance hygiene (2026-10-05)
 

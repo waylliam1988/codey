@@ -5,10 +5,14 @@
 ## 未发布 - 收敛式审查（2026-10-05）
 
 - 完成生产行为、测试质量、架构兼容层、用户体验/性能和修复后调用方五轮独立审查。
-- 修复 HTTP `max_turns` 布尔值强制转换：JSON `true`/`false` 现在返回 `400`，不再静默变成
-  轮次预算；新增最小回归测试。
-- 最终全量记录为 7270 通过、14 跳过、5 个 Node.js 环境失败、1497 个子测试，耗时 466.88 秒；
-  没有剩余 Python 生产断言失败。
+- 新增可选的真实本地模型桌面 UI gate，覆盖 chat、coding、review、research、ghost/local context
+  drawer，并按运行保存 provider 历史。
+- 以回归测试锁定并修复 gate 层 bootstrap、终态字段、research 无项目会话和 history 隔离问题；
+  生产完成规则保持严格。
+- Research 历史证明重复 `done` 来自提示未前置完成条件后收到完成门反馈，不是 JSON 兼容问题；
+  增加证据和报告章节 checklist 后，同一 Gemma4-12B 能在严格内核下完成研究。
+- 有效最终全量：7296 通过、7 跳过、1497 个子测试，耗时 512.21 秒；最初 5 个 Node PATH 失败
+  在使用 Playwright 自带 node.exe 后全部通过。
 
 ## 未发布 - Pytest 性能卫生（2026-10-05）
 
