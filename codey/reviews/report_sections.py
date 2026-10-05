@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
+_BOLD_LABEL_RE = re.compile(r"^\s*(?:\*\*|__)\s*(.+?)\s*(?:\*\*|__)\s*[:：]\s*(.*)$")
 _LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)、]\s+)")
 _HEADING_NUMBER_RE = re.compile(
     r"^(?:"
@@ -83,6 +84,9 @@ def heading_key(line: str) -> str:
     """Map one markdown line to its canonical section key (or "")."""
 
     stripped = str(line or "").strip()
+    bold = _BOLD_LABEL_RE.match(stripped)
+    if bold:
+        stripped = bold.group(1).strip()
     match = _HEADING_RE.match(stripped)
     title = match.group(1) if match else stripped.rstrip(":：")
     title = normalize_heading(title)
@@ -130,6 +134,13 @@ def parse_sections(text: str) -> dict[str, str]:
     current = ""
     for line in str(text or "").splitlines():
         stripped = line.strip()
+        bold = _BOLD_LABEL_RE.match(stripped)
+        if bold and heading_key(line):
+            current = heading_key(bold.group(1))
+            body = bold.group(2).strip()
+            if body:
+                sections.setdefault(current, []).append(body)
+            continue
         markdown_heading = bool(_HEADING_RE.match(stripped))
         # An alias hit always wins, even when the line looks like a numbered
         # list item: bare "1. Conclusion" / "一、结论" headings are

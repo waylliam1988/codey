@@ -112,6 +112,20 @@ class ParseSectionsBoundaryTests(unittest.TestCase):
 
         self.assertIn("具体如下：\n- Build", sections["conclusion"])
 
+    def test_bold_colon_labels_are_report_section_boundaries(self) -> None:
+        sections = parse_sections(
+            "**结论**: x\n\n"
+            "**关键证据**: [1] y\n\n"
+            "**反证与限制**: 未找到强反证\n\n"
+            "**来源质量**: official\n\n"
+            "**搜索覆盖**: pathlib\n\n"
+            "**来源**: [1] Doc - https://example.com"
+        )
+
+        self.assertEqual(sections["conclusion"], "x")
+        self.assertEqual(sections["evidence"], "[1] y")
+        self.assertEqual(sections["sources"], "[1] Doc - https://example.com")
+
 
 if __name__ == "__main__":
     unittest.main()

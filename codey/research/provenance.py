@@ -22,6 +22,9 @@ _GENERIC_HOST_LABELS = {
     "google",
     "duckduckgo",
 }
+_NON_SOURCE_DOTTED_IDENTIFIERS = {
+    "os.path",
+}
 
 
 def provenance_problem(
@@ -104,6 +107,8 @@ def _domains_in_text(text: str) -> list[str]:
         if _overlaps(match.span(), url_spans):
             continue
         domain = match.group(0).strip(".").removeprefix("www.")
+        if domain in _NON_SOURCE_DOTTED_IDENTIFIERS:
+            continue
         if domain and domain not in seen:
             seen.add(domain)
             domains.append(domain)

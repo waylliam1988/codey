@@ -13,7 +13,11 @@
   现在由生产 kernel prompt 提供证据、报告章节、引用和恢复规则，UI gate 只发送用户任务。
   同一 Gemma4-12B 曾在严格完成门下完成一次研究，但后续复测暴露搜索/服务稳定性风险。
 - 本地 provider 对 HTTP 200 非 JSON 增加一次有界重试；持续异常仍 fail-closed。
-- 最终全量：7286 通过、14 跳过、5 个环境失败、1497 个子测试，耗时 488.84 秒。
+- 修复 provenance 将 Python 标识符 `os.path` 误判为未打开来源域名的问题；严格研究质量门保持不变。
+- `knowledge_write` 结果明确区分逻辑 `note_id` 与 `storage_path`，报告最终化器兼容粗体冒号段落标签，
+  不会凭空生成证据。
+- 真实 KoboldCpp 12B research-only gate 以一次 `done`、零完成门拒绝和零重复证据写入通过。
+- 最终全量：7289 通过、14 跳过、5 个环境失败、1497 个子测试，耗时 471.05 秒。
   5 项均在执行 JavaScript 前因找不到 `node`（`WinError 2`）失败，没有生产断言失败。
 
 ## 未发布 - Pytest 性能卫生（2026-10-05）

@@ -485,6 +485,10 @@ def _finalize_write_note(
         output += f"; WARNING: {evidence_preparation.warning}"
     if relation_warnings:
         output += "; WARNING: relations: " + "; ".join(relation_warnings)
+    output += (
+        f"; note_id: {note.id}; storage_path: {rel} "
+        "(do not use storage_path as note_id; pass note_id exactly to knowledge_read)"
+    )
     return output
 
 

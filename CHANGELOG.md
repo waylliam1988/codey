@@ -17,8 +17,15 @@
   research run, while later runs exposed provider/search stability risks.
 - Added one bounded retry for HTTP 200 non-JSON local-provider responses; persistent
   malformed responses still fail closed.
-- Final full run: 7286 passed, 14 skipped, 5 environment failures, 1497 subtests
-  in 488.84s. The five failures are Node.js launch failures before JavaScript
+- Fixed provenance false positives that treated the Python identifier `os.path` as
+  an unopened source domain, and kept the strict research quality gate unchanged.
+- Clarified `knowledge_write` results with separate logical `note_id` and
+  `storage_path` fields; bold-colon report labels are normalized by the existing
+  finalizer without inventing evidence.
+- The real KoboldCpp 12B research-only gate completed with one `done`, zero
+  completion rejections, and no repeated evidence writes.
+- Final full run: 7289 passed, 14 skipped, 5 environment failures, 1497 subtests
+  in 471.05s. The five failures are Node.js launch failures before JavaScript
   execution (`WinError 2`); no production assertion failure was observed.
 
 ## Unreleased - Pytest performance hygiene (2026-10-05)

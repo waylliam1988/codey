@@ -648,6 +648,9 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(ledger_text, source_text)
         self.assertNotIn(UNTRUSTED_SOURCE_START, ledger_text)
         self.assertIn("saved fact note", saved)
+        self.assertIn("note_id:", saved)
+        self.assertIn("storage_path:", saved)
+        self.assertIn("do not use storage_path as note_id", saved)
 
     def test_open_url_outcome_keeps_source_title_as_presentation_result(self) -> None:
         url = "https://example.com/helium"
@@ -1326,6 +1329,15 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
         self.assertIn("did not open", problem)
+
+    def test_provenance_does_not_treat_dotted_code_identifier_as_domain(self) -> None:
+        problem = provenance_problem(
+            "pathlib is a more direct alternative to os.path [1].",
+            opened_sources={"https://docs.python.org/3/library/pathlib.html"},
+            search_result_urls=set(),
+        )
+
+        self.assertIsNone(problem)
 
     def test_provenance_can_allow_search_result_mentions_as_limitations(self) -> None:
         problem = provenance_problem(
@@ -3157,6 +3169,23 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(finalized.source_count, 1)
         self.assertIn("[1]", finalized.text)
         self.assertIn("[1] Example A - https://example.com/a", finalized.text)
+
+    def test_done_finalizer_normalizes_bold_section_labels(self) -> None:
+        ledger = helium_ledger("https://example.com/helium")
+        finalized = finalize_done_answer(
+            "**结论**: Helium supply depends on gas processing [1]\n\n"
+            "**关键证据**: [1] The opened source supports this.\n\n"
+            "**反证与限制**: 未找到强反证；本轮仅检索并打开上述来源。[1]\n\n"
+            "**来源质量**: [1] official\n\n"
+            "**搜索覆盖**: helium production\n\n"
+            "**来源**: [1] Helium article - https://example.com/helium",
+            ledger,
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertIn("## 结论", finalized.text)
+        self.assertIn("## 来源", finalized.text)
+        self.assertIn("[1] Helium article - https://example.com/helium", finalized.text)
 
     def test_done_finalizer_rejects_unmapped_source_id_refs(self) -> None:
         ledger = helium_ledger()
