@@ -172,8 +172,6 @@ def _persist_project_review_ledger(ctx: ProjectRun, reviewed: object) -> None:
         hooks = ctx.hooks
     except Exception:
         return
-    if hooks is None:
-        return
     append_review_result_ledger(hooks.append_ledger, reviewed[1])
 
 

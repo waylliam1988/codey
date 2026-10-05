@@ -125,7 +125,7 @@ def environment_summary_digest() -> str:
     return digest_json(summary)
 
 
-def analysis_run_record(data: Mapping[str, object]) -> AnalysisRunRecord | None:
+def analysis_run_record(data: object) -> AnalysisRunRecord | None:
     """Project one bounded execution-fact mapping into an AnalysisRunRecord.
 
     Returns None when there is nothing auditable (missing command), so callers

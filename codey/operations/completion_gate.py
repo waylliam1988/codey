@@ -33,6 +33,12 @@ from codey.operations.research_completion_checks import (
     strict_research_checks,
 )
 
+
+def _context_get(context: Any, key: str) -> Any:
+    if isinstance(context, dict):
+        return context.get(key)
+    return getattr(context, key, None)
+
 CheckProvider = Callable[[Any], list[CompletionCheck]]
 
 _PROVIDERS: dict[str, tuple[CheckProvider, frozenset[str] | None]] = {}
@@ -88,7 +94,8 @@ def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
     """
     refs: list[str] = []
     try:
-        get = (lambda k: context.get(k)) if isinstance(context, dict) else (lambda k: getattr(context, k, None)) if context is not None else (lambda k: None)
+        def get(key: str) -> Any:
+            return _context_get(context, key) if context is not None else None
         run_id = str(get("run_id") or "")[:80] if context is not None else ""
         if run_id:
             refs.append(f"run:{run_id}")
@@ -248,7 +255,7 @@ def _collect_provider_checks(session: Any, profile: str, checks: list[Completion
         if profiles is not None and profile not in profiles:
             continue
         try:
-            produced = provider(session)
+            produced: object = provider(session)
         except Exception as exc:
             row = completion_check(f"{key}_error", CHECK_FAIL, f"check_provider_error:{type(exc).__name__}")
             if row is not None:
@@ -282,7 +289,8 @@ def _dedupe_checks(checks: list[CompletionCheck]) -> list[CompletionCheck]:
 
 def _contract_subject(session: Any, profile: str, context: Any) -> str:
     try:
-        get = (lambda k: context.get(k)) if isinstance(context, dict) else (lambda k: getattr(context, k, None))
+        def get(key: str) -> Any:
+            return _context_get(context, key)
         run_id = str(get("run_id") or "")[:80]
     except Exception:
         run_id = ""
@@ -310,7 +318,8 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     domain = _domain_for_session(session)
     subject = _contract_subject(session, profile, context)
     evidence_refs = _proof_evidence_refs(session, context)
-    get = context.get if isinstance(context, dict) else lambda key: getattr(context, key, None)
+    def get(key: str) -> Any:
+        return _context_get(context, key)
     coding_evaluation = get("project_evaluation")
     coding_proof = coding_evaluation.decision.proof if coding_evaluation is not None else None
     refs = {

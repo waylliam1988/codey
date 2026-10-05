@@ -134,7 +134,8 @@ class KnowledgeStore:
             return {}
         rows = self.index.notes_by_ids(seen)
         out: dict[str, tuple[KnowledgeNote, dict[str, Any]]] = {}
-        for row in rows:
+        for raw_row in rows:
+            row: object = raw_row
             if not isinstance(row, dict):
                 continue
             path_text = str(row.get("path") or "")
@@ -153,8 +154,11 @@ class KnowledgeStore:
             rows = self.index.notes_by_ids(
                 [note_id for note_id in seen if note_id not in out]
             )
-            for row in rows:
-                path_text = str(row.get("path") or "")
+            for raw_row in rows:
+                row_obj: object = raw_row
+                if not isinstance(row_obj, dict):
+                    continue
+                path_text = str(row_obj.get("path") or "")
                 if not path_text:
                     continue
                 path = self.root / path_text
@@ -164,7 +168,7 @@ class KnowledgeStore:
                     note = KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
                 except (ValueError, OSError):
                     continue
-                out[str(row.get("id") or note.id)] = (note, dict(row))
+                out[str(row_obj.get("id") or note.id)] = (note, dict(row_obj))
         return out
 
     def iter_note_paths(self) -> Any:

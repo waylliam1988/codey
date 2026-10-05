@@ -613,7 +613,7 @@ class RunTraceRecorder:
         elif added:
             self.checkpoint()
 
-    def _append_prompt_surface(self, payload: Mapping[str, object]) -> bool:
+    def _append_prompt_surface(self, payload: object) -> bool:
         try:
             from codey.runtime.observe.prompt_surface import validate_prompt_surface_payload
         except Exception:
@@ -756,7 +756,7 @@ class RunTraceRecorder:
                 self.manifest.warnings.append("prompt_sections_truncated")
             self.checkpoint()
 
-    def record_local_context_refs(self, refs: Iterable[Mapping[str, object]]) -> None:
+    def record_local_context_refs(self, refs: Iterable[object]) -> None:
         changed = False
         for ref in refs:
             if not isinstance(ref, Mapping):
@@ -800,7 +800,7 @@ class RunTraceRecorder:
                 self.manifest.warnings.append("research_note_ids_truncated")
             self.checkpoint()
 
-    def record_research_sources(self, sources: Iterable[Mapping[str, object]]) -> None:
+    def record_research_sources(self, sources: Iterable[object]) -> None:
         changed = False
         for source in sources:
             if not isinstance(source, Mapping):
@@ -883,7 +883,7 @@ class RunTraceRecorder:
             self.manifest.warnings.append("research_plans_truncated")
         self.checkpoint()
 
-    def record_research_pipeline_result(self, result: Mapping[str, object]) -> None:
+    def record_research_pipeline_result(self, result: object) -> None:
         payload = project_research_pipeline_result(result)
         if payload is None:
             return
@@ -894,7 +894,7 @@ class RunTraceRecorder:
             self.manifest.warnings.append("research_pipeline_runs_truncated")
         self.checkpoint()
 
-    def record_research_connector_errors(self, errors: Iterable[object]) -> None:
+    def record_research_connector_errors(self, errors: object) -> None:
         if not isinstance(errors, Iterable):
             return
         counts: dict[tuple[str, str, str], int] = {}
@@ -1014,7 +1014,7 @@ class RunTraceRecorder:
                 self.manifest.warnings.append("research_review_findings_truncated")
             self.checkpoint()
 
-    def record_coding_review(self, payload: Mapping[str, object]) -> None:
+    def record_coding_review(self, payload: object) -> None:
         if not isinstance(payload, Mapping):
             return
         bounded = {

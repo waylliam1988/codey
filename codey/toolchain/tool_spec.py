@@ -748,7 +748,7 @@ def _validate_required_presence(spec: Any, declared: dict[str, object], is_built
     return ""
 
 
-def validate_args_against_spec(name: object, args: dict[str, Any]) -> str:
+def validate_args_against_spec(name: object, args: object) -> str:
     """Single authoritative parameter check from the ToolSpec.
 
     Returns "" when args satisfy the ToolSpec (required presence, no extra
@@ -822,7 +822,7 @@ def _validate_types(spec: Any, declared: dict[str, object], is_builtin: bool, ar
     return ""
 
 
-def validate_args_with_spec(spec: Any, args: dict[str, Any]) -> str:
+def validate_args_with_spec(spec: Any, args: object) -> str:
     """用给定冻结 spec 校验（快照本轮定义，不读 live 注册表）。"""
     if spec is None:
         return "unknown tool"

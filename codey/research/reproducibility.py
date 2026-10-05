@@ -60,8 +60,8 @@ def _aggregate_status(statuses: Iterable[str]) -> str:
 def build_reproducibility_capsule(
     *,
     run_id: str,
-    analysis_runs: Iterable[Mapping[str, object]] = (),
-    artifacts: Iterable[Mapping[str, object]] = (),
+    analysis_runs: Iterable[object] = (),
+    artifacts: Iterable[object] = (),
     warnings: Iterable[object] = (),
 ) -> ReproducibilityCapsule | None:
     """Aggregate normalized payloads into one capsule snapshot.

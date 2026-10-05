@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +31,7 @@ from codey.task.entry_auth import derive_entry_auth
 from codey.workspace.changes import collect_changes, is_git_repository, restore_snapshot_changes
 
 
-def query_list(query: dict[str, list[str]], key: str) -> list[str]:
+def query_list(query: Mapping[str, Sequence[object]], key: str) -> list[str]:
     values: list[str] = []
     for raw in query.get(key, []):
         for item in str(raw or "").split(","):
@@ -42,13 +42,13 @@ def query_list(query: dict[str, list[str]], key: str) -> list[str]:
 
 
 def query_int(
-    query: dict[str, list[str]],
+    query: Mapping[str, Sequence[object]],
     key: str,
     default: int,
     minimum: int,
     maximum: int,
 ) -> int:
-    raw = str((query.get(key) or [str(default)])[0])
+    raw = (query.get(key) or [str(default)])[0]
     if isinstance(raw, bool):
         value = default
     elif isinstance(raw, int):
@@ -63,7 +63,7 @@ def query_int(
     return max(minimum, min(maximum, value))
 
 
-def query_value(query: dict[str, list[str]], key: str) -> str:
+def query_value(query: Mapping[str, Sequence[object]], key: str) -> str:
     raw = (query.get(key) or [""])[0]
     if raw is None or isinstance(raw, bool):
         return ""
@@ -139,7 +139,7 @@ def local_provider_response() -> tuple[int, dict[str, Any]]:
     return 200, {"ok": True, "local": local_bootstrap_payload()}
 
 
-def save_local_provider_response(body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
     if not isinstance(body, dict):
         return 400, {"ok": False, "error": "request body must be an object"}
     previous = load_local_config()
@@ -419,7 +419,7 @@ def restore_changes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[
 
 
 def run_submit_response(
-    body: dict[str, Any],
+    body: object,
     submit_task: Callable[..., str | None],
 ) -> tuple[int, dict[str, Any]]:
     if not isinstance(body, dict):

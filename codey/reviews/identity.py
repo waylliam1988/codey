@@ -201,7 +201,7 @@ def review_model_identity(provider: object) -> str:
     return hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def identities_match(first: ReviewIdentity, second: ReviewIdentity) -> bool:
+def identities_match(first: object, second: object) -> bool:
     if not isinstance(first, ReviewIdentity) or not isinstance(second, ReviewIdentity):
         return False
     if first.contract_version != second.contract_version:

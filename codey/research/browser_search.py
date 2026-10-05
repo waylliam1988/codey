@@ -147,8 +147,8 @@ class BrowserSearchProvider:
         self.isolated = bool(isolated)
         self.bring_to_front = bool(bring_to_front)
         self._session: Any | None = None
-        self._search_page = None
-        self._fetch_page = None
+        self._search_page: Any | None = None
+        self._fetch_page: Any | None = None
         self._last_worker_health: dict[str, object] = {}
         self.last_search_errors: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}

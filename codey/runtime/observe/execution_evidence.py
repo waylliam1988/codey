@@ -309,8 +309,6 @@ class ExecutionEvidence:
         """
         if not isinstance(item, CheckEvidence) or not item.command:
             return
-        if type(succeeded) is not bool:
-            return
         if succeeded:
             if _is_non_check_run_failure(item):
                 self._append_check(

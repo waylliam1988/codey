@@ -88,6 +88,19 @@ RUN_SUITE_TIMEOUT_SECONDS = 300
 RUN_OUTPUT_LIMIT = 24_000
 LONG_LINE_MARKER = "\n[... middle of overlong line omitted; not a complete old_string ...]\n"
 
+__all__ = [
+    "EditBlock",
+    "MAX_REPLACEMENTS",
+    "READ_MAX_CHARS",
+    "READ_MAX_LINES",
+    "SEARCH_MAX_FILE_BYTES",
+    "SEARCH_MAX_RESULTS",
+    "SEARCH_MAX_SCAN_BYTES",
+    "ToolOutcome",
+    "read_file",
+    "safe_join",
+]
+
 
 def retry_replacement_without_line_numbers(content: str, block: EditBlock) -> EditBlock | None:
     stripped_search, changed_search = _strip_line_number_prefixes(block.old_string)

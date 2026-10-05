@@ -598,8 +598,6 @@ def _text_tool_objects(text: str) -> list[tuple[str, dict[str, Any], str]] | Too
         return _invalid_plan("no JSON tool call found", kind="no_json")
     items: list[tuple[str, dict[str, Any], str]] = []
     for obj in objects[:MAX_NATIVE_CALLS_PER_TURN]:
-        if not isinstance(obj, dict):
-            continue
         tool, args = _tool_and_args(obj)
         items.append((tool, args, ""))
     if len(objects) > MAX_NATIVE_CALLS_PER_TURN:

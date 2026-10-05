@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -523,7 +524,7 @@ def _as_str_list(value: Any) -> list[str]:
     return []
 
 
-def _merge_relation_tags(tags: list[str], relations: list[dict[str, Any]]) -> list[str]:
+def _merge_relation_tags(tags: list[str], relations: Sequence[object]) -> list[str]:
     """Relation endpoints become tags so the Concept Graph can weight them."""
     known = {normalize_concept(tag) for tag in tags}
     merged = list(tags)

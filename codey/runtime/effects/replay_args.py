@@ -77,13 +77,13 @@ def _validate_replay_positive_int(value: object, key: str, maximum: int) -> int:
 
 def validate_replay_args_shape(
     tool_name: str,
-    args: Mapping[str, object],
+    args: object,
 ) -> dict[str, object]:
     """Validate persisted replay args without aliases, repairs, or defaults."""
     canonical_name = str(tool_name or "").strip()
     if not is_replayable_safe_tool(canonical_name):
         raise ValueError(f"tool is not replayable: {canonical_name}")
-    if not isinstance(args, Mapping) or isinstance(args, bool):
+    if not isinstance(args, Mapping):
         raise ValueError("replay args must be a mapping")
 
     keys: set[str] = set()

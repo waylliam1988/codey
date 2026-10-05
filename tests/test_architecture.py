@@ -2036,7 +2036,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         mypy = pyproject.get("tool", {}).get("mypy", {})
         self.assertEqual(mypy.get("python_version"), "3.11")
-        self.assertTrue(mypy.get("ignore_missing_imports"))
+        self.assertTrue(mypy.get("strict"))
+        self.assertFalse(mypy.get("ignore_missing_imports"))
         self.assertTrue(mypy.get("check_untyped_defs"))
         self.assertTrue(mypy.get("warn_unused_ignores"))
         self.assertTrue(mypy.get("warn_redundant_casts"))
@@ -2045,6 +2046,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertTrue(mypy.get("no_implicit_optional"))
         self.assertTrue(mypy.get("strict_equality"))
         self.assertTrue(mypy.get("warn_return_any"))
+        self.assertTrue(mypy.get("warn_unreachable"))
 
     def test_adapter_repair_surface_is_closed_and_has_no_forwarders(self) -> None:
         # Security boundary: repair may only touch one provider driver plus

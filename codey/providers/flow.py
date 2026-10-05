@@ -30,6 +30,10 @@ STAGES = frozenset({
     STAGE_NEW_CHAT,
 })
 
+__all__ = [
+    "suppress_assistance",
+]
+
 PREDICATE_INPUT_EMPTY = "input_empty"
 PREDICATE_QUESTION_INCREASED = "question_count_increased"
 PREDICATE_RESPONSE_INCREASED = "response_count_increased"

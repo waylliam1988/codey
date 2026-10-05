@@ -530,4 +530,5 @@ __all__ = [
     "ResearchIterationRunner",
     "ResearchPipeline",
     "ResearchPipelineResult",
+    "ResearchPipelineConfig",
 ]

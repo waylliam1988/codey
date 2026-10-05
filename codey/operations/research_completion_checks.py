@@ -17,6 +17,12 @@ from codey.completion.contract import (
 )
 
 
+def _context_get(context: Any, key: str) -> Any:
+    if isinstance(context, dict):
+        return context.get(key)
+    return getattr(context, key, None)
+
+
 def source_requirement_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     """普通联网任务的来源要求：只检查任务要求的来源是否实际打开。"""
     policy = getattr(session, "policy", None)
@@ -65,7 +71,8 @@ def strict_research_checks(session: Any, done_text: str, context: Any = None) ->
 
 
 def _ledger_source_only(session: Any, context: Any) -> list[CompletionCheck] | None:
-    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    def get(key: str) -> Any:
+        return _context_get(context, key)
     ledger = get("research_ledger")
     if ledger is None:
         return None
@@ -83,7 +90,8 @@ def _ledger_source_only(session: Any, context: Any) -> list[CompletionCheck] | N
 
 
 def _ledger_checks(session: Any, done_text: str, context: Any) -> list[CompletionCheck]:
-    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    def get(key: str) -> Any:
+        return _context_get(context, key)
     ledger = get("research_ledger")
     if ledger is None:
         return _missing_ledger_rows()
@@ -205,7 +213,8 @@ def finalize_research_text(session: Any, text: str, context: Any) -> str:
     """
     if not getattr(getattr(session, "policy", None), "strict_research", False):
         return text
-    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    def get(key: str) -> Any:
+        return _context_get(context, key)
     ledger = get("research_ledger")
     if ledger is None:
         return text

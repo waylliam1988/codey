@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ParamSpec, TypeVar, cast
 from urllib.parse import urlparse
 
 from codey.providers import discovery as discovery
@@ -37,6 +37,15 @@ from codey.storage.local_store import (
 )
 
 logger = logging.getLogger(__name__)
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+__all__ = [
+    "CONTROL_MESSAGE_BOX",
+    "locate_control",
+    "response_count",
+    "suppress_assistance",
+]
 
 CONTROL_MESSAGE_BOX = "message_box"
 CONTROL_SEND_BUTTON = "send_button"
@@ -144,14 +153,15 @@ def end_task_context() -> None:
     provider_flow.end_task_context()
 
 
-def revival_send(provider_id: str) -> Any:
+def revival_send(provider_id: str) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     """Wrap one provider send in an atomic local-control recovery transaction."""
-    def decorate(func: Any) -> Any:
+    def decorate(func: Callable[_P, _R]) -> Callable[_P, _R]:
         @wraps(func)
-        def wrapped(page: Any, *args: Any, **kwargs: Any) -> Any:
+        def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            page = cast(Any, args[0]) if args else kwargs.get("page")
             _begin_revival_send(provider_id, page)
             try:
-                result = func(page, *args, **kwargs)
+                result = func(*args, **kwargs)
             except BaseException as exc:
                 _record_revival_flow_failure(provider_id, exc)
                 _abort_revival_send(provider_id)

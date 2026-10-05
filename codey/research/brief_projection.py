@@ -187,7 +187,7 @@ class ResearchImpactContract:
 def project_research_brief(
     record: object = None,
     *,
-    snapshot: EvidenceRuntimeSnapshot | None = None,
+    snapshot: object | None = None,
     findings: Iterable[object] = (),
     planner_gaps: Iterable[object] = (),
     proof_reviews: Iterable[object] = (),
@@ -244,7 +244,7 @@ def project_research_brief(
     )
 
 
-def constraints_from_claims(claims: Iterable[ClaimSummary]) -> tuple[ImplementationConstraint, ...]:
+def constraints_from_claims(claims: Iterable[object]) -> tuple[ImplementationConstraint, ...]:
     """Verified-support constraints derivable from brief claims."""
 
     out: list[ImplementationConstraint] = []

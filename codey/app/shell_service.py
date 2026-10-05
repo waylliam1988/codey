@@ -257,7 +257,8 @@ def claim_shell_ticket(
 def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[str, Any]:
     """Execute an already-claimed ticket. Final Stop check and Popen happen
     under the spawn gate; waiting happens outside the gate."""
-    if not isinstance(ticket.command, str):
+    raw_command: object = ticket.command
+    if not isinstance(raw_command, str):
         return {
             "ok": False,
             "status": "spawn_error",
@@ -265,7 +266,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
             "exit_code": None,
             "output": "",
         }
-    command = ticket.command.strip()
+    command = raw_command.strip()
     if not command:
         return {
             "ok": False,
@@ -374,7 +375,7 @@ def execute_approved_shell(
     ctx: TaskState,
     project: str | Path,
     rel: str,
-    command: str,
+    command: object,
     *,
     timeout: int | None = None,
     output_limit: int | None = None,

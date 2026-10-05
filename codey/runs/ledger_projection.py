@@ -409,7 +409,7 @@ def event_with_projected_receipt(
 def _sorted_payloads(records: Iterable[RunLedgerRecord]) -> list[dict[str, object]]:
     payloads: list[tuple[int, int, dict[str, object]]] = []
     for index, record in enumerate(records):
-        payload = record.payload if isinstance(record, RunLedgerRecord) else None
+        payload: object = record.payload if isinstance(record, RunLedgerRecord) else None
         if not isinstance(payload, dict):
             continue
         if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:

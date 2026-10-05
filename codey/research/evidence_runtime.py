@@ -244,7 +244,7 @@ def snapshot_from_research_record(
     )
 
 
-def _record_payload(record: ResearchRecord | Mapping[str, object] | None) -> dict[str, object] | None:
+def _record_payload(record: object) -> dict[str, object] | None:
     if record is None:
         return None
     if isinstance(record, ResearchRecord):

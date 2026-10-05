@@ -272,7 +272,7 @@ def _submitted_question_count(page: Page, submitted_text: str) -> int:
     if not needle:
         return 0
     try:
-        values = page.locator(PROFILE.selector("question")).all_inner_texts()
+        values: object = page.locator(PROFILE.selector("question")).all_inner_texts()
     except Exception:
         return 0
     if not isinstance(values, list):

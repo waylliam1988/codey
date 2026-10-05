@@ -44,6 +44,13 @@ _SOURCE_NUMBERED_URL_FIRST_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(\d+)[\.)、]\s*(https?://\S+)\s*(?:[-–—]\s*(.*?))?\s*$"
 )
 
+__all__ = [
+    "Citation",
+    "citation_ref_items",
+    "ReportQualityReview",
+    "review_report_quality",
+]
+
 
 @dataclass(frozen=True)
 class Citation:

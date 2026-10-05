@@ -586,6 +586,7 @@ def _require_state(
 
 
 __all__ = [
+    "RuntimeOperationState",
     "RuntimeMutationLine",
     "ToolBatchCommit",
 ]

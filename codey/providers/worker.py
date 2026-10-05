@@ -255,7 +255,7 @@ class WorkerChatProvider:
             if stderr is None:
                 return
             while True:
-                chunk = stderr.readline(WORKER_STDERR_CHUNK_CHARS)
+                chunk: object = stderr.readline(WORKER_STDERR_CHUNK_CHARS)
                 if not chunk:
                     return
                 if not isinstance(chunk, str):
@@ -274,7 +274,7 @@ class WorkerChatProvider:
         while True:
             session.write_event.wait()
             with session.lock:
-                if session.closed:
+                if bool(session.closed):
                     return
                 wire = session.write_wire
                 if wire is None:

@@ -236,7 +236,7 @@ def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, d
     )
 
 
-_GET_ROUTES = {
+_GET_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
     "/api/ui_state": lambda ctx, _query: app_api.ui_state_response(ctx),
     "/api/providers": lambda ctx, _query: app_api.providers_response(ctx),
@@ -250,7 +250,7 @@ _GET_ROUTES = {
 }
 
 
-_POST_ROUTES = {
+_POST_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
     "/api/ui_state": app_api.save_ui_state_response,
     "/api/local_provider": lambda _ctx, body: app_api.save_local_provider_response(body),
     "/api/run": _run_submit_route,
@@ -399,7 +399,7 @@ class Handler(BaseHTTPRequestHandler):
         exchange = url.path == "/api/operator_session"
         if not exchange and not self._require_operator():
             return
-        raw_length = self.headers.get("Content-Length", "0")
+        raw_length: object = self.headers.get("Content-Length", "0")
         if isinstance(raw_length, bool) or not isinstance(raw_length, str):
             self._send_json(400, {"error": "invalid content length"})
             return

@@ -222,7 +222,7 @@ class ReviewCoordinator:
             inherited = True
         return ReviewCycleResult(
             repaired,
-            task_changed or repaired.changed,
+            True,
             changes,
             changes_dirty,
             review_attempted=True,

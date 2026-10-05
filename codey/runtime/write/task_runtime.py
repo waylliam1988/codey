@@ -29,7 +29,7 @@ class _SubmittedTaskOperation:
     intent: OperationIntent = field(default_factory=lambda: OperationIntent("task"))
     entered: bool = False
 
-    def run(self, context: OperationContext) -> OperationOutcome:
+    def run(self, context: OperationContext) -> OperationOutcome | None:
         self.entered = True
         outcome = self.executor(self.request)
         if outcome is None:

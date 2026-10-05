@@ -149,7 +149,7 @@ def _payload_headless_close(common: dict[str, object], event: dict[str, Any]) ->
     }
 
 
-def machine_event_payload(event: dict[str, Any]) -> dict[str, object] | None:
+def machine_event_payload(event: object) -> dict[str, object] | None:
     if not isinstance(event, dict):
         return None
     event_type = str(event.get("type") or "")

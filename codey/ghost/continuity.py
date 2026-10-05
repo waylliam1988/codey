@@ -869,7 +869,7 @@ def _items_from_knowledge(
 ) -> list[GhostContinuityItem]:
     if store is None or getattr(store, "index", None) is None:
         return []
-    rows: list[dict[str, Any]] = []
+    rows: list[object] = []
     try:
         rows = list(
             store.index.recent(
@@ -1163,7 +1163,7 @@ def _scope_filter_matches(
     return True
 
 
-def _items_from_events(events: Iterable[dict[str, object]]) -> list[GhostContinuityItem]:
+def _items_from_events(events: Iterable[object]) -> list[GhostContinuityItem]:
     by_id: dict[str, GhostContinuityItem] = {}
     for event in events:
         if not isinstance(event, dict):

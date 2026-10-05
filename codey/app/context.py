@@ -309,9 +309,8 @@ class AppContext:
         # Build outside the lock: KnowledgeStore scans the vault on miss.
         fresh = KnowledgeStore(root)
         with self.lock:
-            if self._knowledge_store is not None:
-                winner = self._knowledge_store
-            else:
+            winner: KnowledgeStore | None = self._knowledge_store
+            if winner is None:
                 self._knowledge_store = fresh
                 return fresh
         _close_if_discarded(fresh)
@@ -801,14 +800,15 @@ class AppContext:
             except Exception as exc:
                 failures["approvals"] = str(exc)
                 break
-        for store_name, attr_name, method in (
+        operations: tuple[tuple[str, str, Callable[[Any], Any]], ...] = (
             ("ghost_continuity", "ghost_continuity", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_sleep", "ghost_sleep", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_work_queue", "ghost_work_queue", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_affinity", "ghost_affinity", lambda s: s.delete_scope("session", session_id=session_id)),
             ("run_traces", "run_traces", lambda s: s.delete_session(session_id)),
             ("runtime_log", "runtime_log", lambda s: s.delete_session(session_id)),
-        ):
+        )
+        for store_name, attr_name, method in operations:
             target = getattr(self, attr_name, None)
             if target is not None:
                 try:

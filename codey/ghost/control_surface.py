@@ -412,7 +412,7 @@ class GhostControlSurface:
             return 400, _error_payload("session_id required")
         results, errors = self._mutate_all_stores(
             "delete_scope",
-            lambda store: store.delete_scope(scope, project=project, session_id=session_id),
+            lambda _name, store: store.delete_scope(scope, project=project, session_id=session_id),
         )
         return (200 if not errors else 500), {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
@@ -428,8 +428,8 @@ class GhostControlSurface:
             return 400, _error_payload("confirm required")
         results, errors = self._mutate_all_stores(
             "reset_all",
-            lambda store: store.reset_all(preserve_settings=True)
-            if isinstance(store, GhostInboxStore)
+            lambda name, store: store.reset_all(preserve_settings=True)
+            if name == "inbox"
             else store.reset_all(),
         )
         return (200 if not errors else 500), {
@@ -443,7 +443,7 @@ class GhostControlSurface:
     def _mutate_all_stores(
         self,
         action_name: str,
-        mutate: Callable[[_ResettableStore], object],
+        mutate: Callable[[str, _ResettableStore], object],
     ) -> tuple[dict[str, object], list[str]]:
         stores: list[tuple[str, object | None]] = [
             ("inbox", self.inbox),
@@ -461,7 +461,7 @@ class GhostControlSurface:
                 results[name] = "unavailable"
                 continue
             try:
-                results[name] = mutate(cast(_ResettableStore, store))
+                results[name] = mutate(name, cast(_ResettableStore, store))
             except (OSError, TypeError, ValueError):
                 results[name] = False
                 errors.append(f"{name}_{action_name}_failed")

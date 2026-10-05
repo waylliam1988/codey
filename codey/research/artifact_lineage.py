@@ -76,7 +76,7 @@ def _bounded_size(value: object) -> int:
     return max(0, min(parsed, MAX_SIZE_BYTES))
 
 
-def artifact_ref_from_managed_output(data: Mapping[str, object]) -> ArtifactRef | None:
+def artifact_ref_from_managed_output(data: object) -> ArtifactRef | None:
     """Project one Managed Output audit payload into a lineage ArtifactRef.
 
     Returns None when the payload lacks a content digest, so malformed handles

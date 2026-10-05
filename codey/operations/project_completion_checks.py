@@ -23,6 +23,12 @@ from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvi
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 
+def _context_get(context: Any, key: str) -> Any:
+    if isinstance(context, dict):
+        return context.get(key)
+    return getattr(context, key, None)
+
+
 def _task_requires_modification(session: Any) -> bool:
     """An explicit goal requirement applies independently of task profile."""
     if getattr(session, "project_changes_required", False) is True:
@@ -37,7 +43,8 @@ def _refresh_completion_workspace(session: Any, context: Any) -> None:
 
     from codey.workspace.revision import workspace_fingerprint
 
-    get = context.get if isinstance(context, dict) else lambda key: getattr(context, key, None)
+    def get(key: str) -> Any:
+        return _context_get(context, key)
     if not session.edited_files:
         return
     root = getattr(session, "project", "") or get("project")
@@ -117,7 +124,8 @@ def _resolve_selected_check(session: Any, context: Any) -> Any:
     requirement, the latest observation forms the default candidate with
     its real command and cwd preserved.
     """
-    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    def get(key: str) -> Any:
+        return _context_get(context, key)
     provided = get("selected_check")
     selected = getattr(session, "selected_verification", None)
     if selected is not None and provided is not None and not _selected_equal(selected, provided):
@@ -270,7 +278,8 @@ def _is_projectable_row(row: dict[str, Any], command: str) -> bool:
 
 
 def _normalized_scope_and_change(session: Any, context: Any) -> tuple[tuple[str, ...], bool]:
-    get = (lambda key: context.get(key)) if isinstance(context, dict) else (lambda key: getattr(context, key, None))
+    def get(key: str) -> Any:
+        return _context_get(context, key)
     scope = tuple(get("scope_files") or ())
     if not scope:
         scope = _session_scope_files(session)
@@ -307,7 +316,8 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck]:
 def _verification_checks(
     session: Any, context: Any, scope: tuple[str, ...], task_changed: bool,
 ) -> list[CompletionCheck]:
-    get = context.get if isinstance(context, dict) else lambda key: getattr(context, key, None)
+    def get(key: str) -> Any:
+        return _context_get(context, key)
     # A failed candidate refresh leaves the requirement untrustworthy:
     # block explicitly instead of falling back to the latest run.
     if getattr(session, "verification_candidates_refresh_failed", False) is True:

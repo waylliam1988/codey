@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Sequence
 from datetime import datetime
 
 MAX_RETRIEVED_ITEMS = 3
@@ -83,7 +84,7 @@ def _row_time_score(row: dict[str, object], now: float) -> float:
     return 0.1
 
 
-def score_observation(query_tokens: frozenset[str], row: dict[str, object], now: float) -> float:
+def score_observation(query_tokens: frozenset[str], row: object, now: float) -> float:
     if not query_tokens:
         return 0.0
     if not isinstance(row, dict):
@@ -122,7 +123,7 @@ def _content_budget(budget_chars: int) -> int:
 
 
 def retrieve_relevant_observations(
-    rows: tuple[dict[str, object], ...] | list[dict[str, object]],
+    rows: tuple[object, ...] | list[object],
     query: str,
     *,
     exclude_run_id: str = "",
@@ -160,7 +161,7 @@ def retrieve_relevant_observations(
     )
 
 
-def _render_single_block(row: dict[str, object], remaining: int) -> str | None:
+def _render_single_block(row: object, remaining: int) -> str | None:
     """Render one row within the remaining budget; None when nothing fits."""
     if not isinstance(row, dict):
         return None
@@ -200,7 +201,7 @@ def _render_single_block(row: dict[str, object], remaining: int) -> str | None:
 
 
 def _fit_blocks(
-    rows: list[dict[str, object]],
+    rows: Sequence[object],
     budget_chars: int,
     max_items: int,
 ) -> list[tuple[dict[str, object], str]]:

@@ -367,7 +367,7 @@ def _proof_ref_from_payload(payload: Mapping[str, object]) -> str:
     )
 
 
-def _record_payload(record: ResearchRecord | Mapping[str, object] | None) -> dict[str, object]:
+def _record_payload(record: object) -> dict[str, object]:
     if record is None:
         return {}
     if isinstance(record, ResearchRecord):

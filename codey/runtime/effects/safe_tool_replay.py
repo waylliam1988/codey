@@ -37,7 +37,7 @@ class SafeToolReplayCandidate:
 
 def validate_replay_args(
     tool_name: str,
-    args: Mapping[str, object],
+    args: object,
 ) -> dict[str, object]:
     """Strictly validate and return canonical replay args.
 
@@ -47,7 +47,7 @@ def validate_replay_args(
     canonical_name = str(tool_name or "").strip()
     if not is_replayable_safe_tool(canonical_name):
         raise RuntimeEffectError(f"tool is not a replayable safe tool: {canonical_name}")
-    if not isinstance(args, Mapping) or isinstance(args, bool):
+    if not isinstance(args, Mapping):
         raise RuntimeEffectError("replay args must be a mapping")
 
     try:

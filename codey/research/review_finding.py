@@ -385,13 +385,15 @@ def _field(item: object, name: str) -> object:
     return getattr(item, name, "")
 
 
-def _items(values: Iterable[object]) -> tuple[object, ...]:
+def _items(values: object) -> tuple[object, ...]:
     if values is None:
         return ()
     if isinstance(values, (list, tuple)):
         return tuple(values)
-    if hasattr(values, "__iter__"):
-        return tuple(values)
+    try:
+        return tuple(values)  # type: ignore[arg-type]
+    except TypeError:
+        pass
     return (values,)
 
 

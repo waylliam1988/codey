@@ -329,7 +329,7 @@ def save_local_config(config: LocalProviderConfig) -> None:
 
 
 def parse_local_config_update(
-    body: Mapping[str, object],
+    body: object,
     previous: LocalProviderConfig,
 ) -> tuple[LocalProviderConfig | None, str]:
     """Parse an API/UI update body against the previous config.

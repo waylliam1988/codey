@@ -208,7 +208,7 @@ def _replay_args_from_payload(
         or not is_replayable_safe_tool(tool_name)
     ):
         return None
-    if not isinstance(raw_replay_args, dict) or isinstance(raw_replay_args, bool):
+    if not isinstance(raw_replay_args, dict):
         return None
     try:
         validate_replay_args_shape(tool_name, raw_replay_args)
@@ -264,7 +264,7 @@ class RuntimeEffectIntent:
             raise RuntimeEffectError("record_kind must be 'intent'")
         _require_enum_str(self.replay_class, "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE))
         if self.replay_args is not None:
-            if not isinstance(self.replay_args, dict) or isinstance(self.replay_args, bool):
+            if not isinstance(self.replay_args, dict):
                 raise RuntimeEffectError("replay_args must be a dict or None")
             if (
                 self.effect_category != EFFECT_CATEGORY_TOOL_CALL

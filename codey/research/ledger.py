@@ -320,7 +320,7 @@ class ResearchLedger:
                 continue
             self.evidence_items.append(replace(item, note_id=note_id or item.note_id))
 
-    def record_source_search(self, source_url: str, query: str, hits: list[dict[str, Any]]) -> None:
+    def record_source_search(self, source_url: str, query: str, hits: list[object]) -> None:
         final_url = opened_url(self, source_url)
         query = " ".join(str(query or "").split())
         if not final_url or not query:

@@ -111,7 +111,7 @@ def _research_connector_error_payload(value: object) -> dict[str, object]:
     }
 
 
-def project_research_record_summary(summary: Mapping[str, object]) -> dict[str, object] | None:
+def project_research_record_summary(summary: object) -> dict[str, object] | None:
     if not isinstance(summary, Mapping):
         return None
     record_id = _generated_ref(summary.get("record_id"), "research_record")
@@ -131,7 +131,7 @@ def project_research_record_summary(summary: Mapping[str, object]) -> dict[str, 
     }
 
 
-def project_evidence_ledger_write(result: Mapping[str, object]) -> dict[str, object] | None:
+def project_evidence_ledger_write(result: object) -> dict[str, object] | None:
     if not isinstance(result, Mapping):
         return None
     record_id = _generated_ref(result.get("record_id"), "research_record")
@@ -157,7 +157,7 @@ def project_evidence_ledger_write(result: Mapping[str, object]) -> dict[str, obj
     return payload
 
 
-def project_research_proof_review(review: Mapping[str, object]) -> dict[str, object] | None:
+def project_research_proof_review(review: object) -> dict[str, object] | None:
     if not isinstance(review, Mapping):
         return None
     proof_ref = _generated_ref(review.get("proof_ref"), "research_proof")
@@ -192,7 +192,7 @@ def project_research_proof_review(review: Mapping[str, object]) -> dict[str, obj
     return payload
 
 
-def project_research_plan(plan: Mapping[str, object]) -> dict[str, object] | None:
+def project_research_plan(plan: object) -> dict[str, object] | None:
     if not isinstance(plan, Mapping):
         return None
     plan_ref = _generated_ref(plan.get("plan_ref"), "research_plan")
@@ -233,7 +233,7 @@ def project_research_plan(plan: Mapping[str, object]) -> dict[str, object] | Non
     return payload
 
 
-def project_research_pipeline_result(result: Mapping[str, object]) -> dict[str, object] | None:
+def project_research_pipeline_result(result: object) -> dict[str, object] | None:
     if not isinstance(result, Mapping):
         return None
     return {
@@ -266,7 +266,7 @@ def project_research_connector_error(item: object) -> dict[str, object] | None:
     }
 
 
-def project_research_done_compilation(result: Mapping[str, object]) -> dict[str, object] | None:
+def project_research_done_compilation(result: object) -> dict[str, object] | None:
     if not isinstance(result, Mapping):
         return None
     reason = _safe_trace_code(result.get("reason"), 80)
@@ -278,7 +278,7 @@ def project_research_done_compilation(result: Mapping[str, object]) -> dict[str,
     }
 
 
-def project_analysis_run(record: Mapping[str, object]) -> dict[str, object] | None:
+def project_analysis_run(record: object) -> dict[str, object] | None:
     if not isinstance(record, Mapping):
         return None
     ref = _generated_ref(record.get("analysis_run_id"), "analysis_run")
@@ -359,7 +359,7 @@ def project_artifact_ref(item: object) -> dict[str, object] | None:
     }
 
 
-def project_reproducibility_capsule(capsule: Mapping[str, object]) -> dict[str, object] | None:
+def project_reproducibility_capsule(capsule: object) -> dict[str, object] | None:
     if not isinstance(capsule, Mapping):
         return None
     ref = _generated_ref(capsule.get("capsule_id"), "capsule")
@@ -495,7 +495,7 @@ def project_source_trust_row(item: object) -> dict[str, object] | None:
 
 
 def project_research_brief_projection(
-    projection: Mapping[str, object],
+    projection: object,
 ) -> dict[str, object] | None:
     if not isinstance(projection, Mapping):
         return None

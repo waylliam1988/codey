@@ -252,7 +252,8 @@ def _evidence_urls(items: Sequence[EvidenceItem], ledger: ResearchLedger) -> set
 
 def _search_result_urls(ledger: ResearchLedger) -> set[str]:
     urls: set[str] = set()
-    for row in ledger.search_results_payload():
+    for raw_row in ledger.search_results_payload():
+        row: object = raw_row
         if not isinstance(row, dict):
             continue
         for key in ("url", "final_url"):

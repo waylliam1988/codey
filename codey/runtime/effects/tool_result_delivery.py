@@ -739,7 +739,7 @@ def iter_delivery_records_from_entries(
     for entry in entries:
         if entry.kind != "operation_effect":
             continue
-        payload = entry.payload
+        payload: object = entry.payload
         if not isinstance(payload, dict):
             continue
         if payload.get("effect_kind") != EFFECT_KIND:

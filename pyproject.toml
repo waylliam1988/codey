@@ -87,8 +87,9 @@ max-statements = 80
 # The full tree is gated in CI. The frozen starting baseline remains in
 # tools/mypy-baseline-2026-10-03.txt and docs/mypy-baseline-2026-10-03.md.
 # New boundaries should use precise annotations and Protocols over Any.
+strict = true
 python_version = "3.11"
-ignore_missing_imports = true
+ignore_missing_imports = false
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
@@ -97,6 +98,7 @@ disallow_untyped_defs = true
 no_implicit_optional = true
 strict_equality = true
 warn_return_any = true
+warn_unreachable = true
 
 [tool.codey.typecheck]
 gate = "full-tree"

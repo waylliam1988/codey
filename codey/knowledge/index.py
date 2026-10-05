@@ -52,7 +52,7 @@ class KnowledgeIndex:
             with contextlib.suppress(sqlite3.OperationalError):
                 conn.execute("PRAGMA busy_timeout=5000")
             with self._read_conns_lock:
-                if self._closed:
+                if bool(self._closed):
                     conn.close()
                     raise RuntimeError("knowledge index is closed")
                 self._read_conns.add(conn)

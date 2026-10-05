@@ -293,7 +293,7 @@ def _trace_list_items(value: object) -> tuple[object, ...]:
     return ()
 
 
-def _review_payload(review: ResearchProofReview | Mapping[str, object] | None) -> dict[str, object]:
+def _review_payload(review: object) -> dict[str, object]:
     if review is None:
         return {}
     if isinstance(review, ResearchProofReview):
