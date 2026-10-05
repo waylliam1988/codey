@@ -16,6 +16,8 @@ Research 根因证据：未增强提示时序列为 `web_search -> open_url -> d
 
 实现提交：`81328d82`（`Add real local model desktop UI gate`）。该提交及本报告元数据提交已推送到 `origin/master`。
 
+推送后的独立 research-only 复测仍保留在 `.e2e-artifacts/research-run/local-model-provider-history.jsonl`：模型成功完成搜索、来源打开和 `knowledge_write`，随后 KoboldCpp 在 HTTP 200 响应中返回非 JSON，终态为 `provider_failure`；本次 history 无 JSONL 解析错误或 transport error。该复测确认模型/服务端输出稳定性仍是风险，不改变已经通过的增强提示成功运行，也没有因此放宽完成门或修改内核。
+
 ## Iterative audit closure (2026-10-05)
 
 本轮独立审查共 7 轮，修复 5 个确定性问题（1 个运行时 cleanup 状态问题、4 组严格 mypy 动态边界问题）。完整候选台账、每轮扫描范围、排除证据和最终环境限制见[迭代审查收口](docs/review-audit-2026-10-05.zh-CN.md)。
