@@ -1495,6 +1495,10 @@ class ResearchServerHelperTests(unittest.TestCase):
             (400, {"error": "invalid max_turns"}),
         )
         self.assertEqual(
+            app_api.run_submit_response({"task": "hello", "max_turns": True}, mock.Mock()),
+            (400, {"error": "invalid max_turns"}),
+        )
+        self.assertEqual(
             app_api.run_submit_response({"task": ""}, mock.Mock()),
             (400, {"error": "task required"}),
         )

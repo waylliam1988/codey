@@ -1,5 +1,43 @@
 # Codey Test Report
 
+## Convergent audit (2026-10-05)
+
+This audit completed five independent rounds before the only final full run.
+
+| Round | Scope | New candidates | Result |
+| --- | --- | ---: | --- |
+| A | Production behavior: state transitions, exception/fallback paths, lifecycle, cancellation, provider/HTTP/SSE/CLI/headless/recovery entry points | 3 exploratory, 0 confirmed | Existing failure and close paths were covered by focused tests. |
+| B | Test quality: weak assertions, fixture semantics, failure branches, skip/xfail evidence, formal entry usage, external probes | 2 exploratory, 1 confirmed | Confirmed boolean `max_turns` coercion at the HTTP boundary; fixed with a regression test. |
+| C | Architecture and compatibility: imports, dead code, duplicate loops, legacy exports, fallback consumers, cold-start ownership | 2 exploratory, 0 confirmed | Architecture and cold-start locks found no new removable layer or second task loop. |
+| D | UX/performance: waits, duplicate connections/sends, terminal display, external provider/CDP probes, browser/SSE isolation | 2 environment/design risks, 0 confirmed | Focused provider/browser/SSE/UI tests passed; Node.js absence remained an environment risk. |
+| E | Reverse call-site audit after the fix: desktop, HTTP, headless, CLI, continuation, fallback and cold-start paths | 0 | No new reproducible issue; the fix preserves numeric-string/default behavior. |
+
+### Candidate table
+
+| ID | Location / reproduction | Classification and evidence | Status / regression / repair |
+| --- | --- | --- | --- |
+| A-001 | `codey/app/headless_runner.py:343-373`; inject storage projection errors while reusing a run id | Defensive duplicate lookup fallback; normal ledger and runtime-log paths are covered by `test_run_id_dedup.py`; faulted storage is retained as a risk because no supported cold-start object can be trusted | Not confirmed; no code change |
+| A-002 | `codey/app/run_registry.py:216-226`; inspect `run_status` after non-`done` terminal reasons | UI and API consume the authoritative `stop_reason`; focused server/run-registry tests cover stopped/provider-failure terminals | Design choice, not a bug |
+| B-001 | `python -m pytest -q tests/test_server.py -k test_run_submit_response_validation_and_submit_mapping` failed before repair: boolean `max_turns=True` returned HTTP 200 and was converted to `1` | Production API input validation; stable JSON boundary reproduction | Confirmed and fixed in `codey/app/api.py:446-453`; regression at `tests/test_server.py:1497-1500`; affected server/headless/CLI suites pass |
+| B-002 | Static scan found `assert True` in generated fixture/project snippets | Test data under test, not test assertions; architecture scanner and targeted fixture tests distinguish these cases | Not a test-quality defect |
+| C-001 | Package export and legacy alias scan across `codey/`, `tests/`, `tools/` | Static callers, architecture tests, and cold-start imports show current leaf owners; no historical-only fallback was deleted in this audit | Not confirmed; no deletion justified |
+| D-001 | Final browser scripts attempted `node -e ...` and failed with `FileNotFoundError: WinError 2` | Environment limitation; five failures are exactly the Node-backed operator/SSE cases, while Python equivalents pass | Not a product bug; recorded as residual risk |
+
+The confirmed fix was rescanned through production code, test code, compatibility/fallback references, and all call sites before rounds D and E. No production or test source was changed after the final full pytest run.
+
+### Final gate
+
+- `python -m pytest --collect-only -q`: **7289 tests collected**.
+- `ruff check codey tests`: passed.
+- `python -m mypy codey`: **0 errors, 372 source files checked**.
+- `python -m compileall -q codey tests`: passed.
+- `git diff --check`: passed.
+- Final command, run once after convergence: `python -m pytest -q -o faulthandler_timeout=120 -ra`.
+- Raw result: **7270 passed, 14 skipped, 5 failed, 1497 subtests passed in 466.88s**.
+- The five failures were `test_operator_bootstrap_before_ui_requests.py` (3) and `test_sse_browser_dedup_reset_and_buffer_gap.py` (2), all failing before JavaScript execution because `node` is unavailable. No skip or xfail was added.
+- Remaining risks: browser JavaScript behavior and opt-in native browser E2E were not executable here; provider/model quality and external CDP availability remain outside deterministic CI coverage.
+- Code-fix commit hash and push result are recorded below after the documentation commit.
+
 ## Pytest performance review (2026-10-05)
 
 Baseline profiling used `python -m pytest -q --durations=80

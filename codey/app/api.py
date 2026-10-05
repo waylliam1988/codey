@@ -443,8 +443,11 @@ def run_submit_response(
         "review",
     }:
         return 400, {"error": "invalid intent"}
+    raw_max_turns = body.get("max_turns")
+    if isinstance(raw_max_turns, bool):
+        return 400, {"error": "invalid max_turns"}
     try:
-        max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)  # type: ignore[arg-type]
+        max_turns = int(raw_max_turns or DEFAULT_MAX_TURNS)  # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):
         return 400, {"error": "invalid max_turns"}
     max_turns = max(1, min(max_turns, 500))

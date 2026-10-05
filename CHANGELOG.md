@@ -2,6 +2,15 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Convergent audit (2026-10-05)
+
+- Completed five independent production, test-quality, architecture, UX/performance,
+  and post-fix call-site review rounds.
+- Fixed HTTP `max_turns` boolean coercion: JSON `true`/`false` now returns `400`
+  instead of silently becoming a turn budget. Added a focused regression test.
+- Final verification recorded 7270 passed, 14 skipped, 5 Node.js environment
+  failures, and 1497 subtests in 466.88s; no Python production failure remained.
+
 ## Unreleased - Pytest performance hygiene (2026-10-05)
 
 - Isolate scripted headless lifecycle tests from real browser/provider
