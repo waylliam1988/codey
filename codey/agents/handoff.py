@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 from codey.runtime.core import cancellation
 from codey.utils.text_budget import clip_tail
@@ -40,7 +41,7 @@ def estimate_tokens(text: str) -> int:
     return (ascii_chars + 3) // 4 + non_ascii_chars
 
 
-def _extract_json_object(text: str) -> dict | None:
+def _extract_json_object(text: str) -> dict[str, Any] | None:
     decoder = json.JSONDecoder()
     for index, char in enumerate(text):
         if char != "{":
@@ -92,7 +93,7 @@ class ConversationSnapshot:
     latest_reply: str = ""
     conversation_summary: str = ""
 
-    def to_payload(self) -> dict:
+    def to_payload(self) -> dict[str, Any]:
         payload: dict[str, object] = {
             "mode": self.mode,
             "goal": compact_text(self.goal),

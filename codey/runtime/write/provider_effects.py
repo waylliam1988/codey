@@ -7,6 +7,8 @@ mutation line commits their rows atomically.
 
 from __future__ import annotations
 
+from typing import Any
+
 from codey.runtime.core.operation_state import (
     RuntimeOperationTransitionError,
     mark_provider_effect_pending,
@@ -74,7 +76,7 @@ def _require_supersedable_not_sent(
 
 
 def build_provider_begin_rows(
-    projection,
+    projection: Any,
     view: SessionView,
     *,
     session_id: str,
@@ -136,7 +138,7 @@ def build_provider_begin_rows(
 
 
 def build_provider_settle_rows(
-    projection,
+    projection: Any,
     view: SessionView,
     *,
     session_id: str,

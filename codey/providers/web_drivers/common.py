@@ -29,7 +29,7 @@ def message_box(
     page: Any,
     *,
     teach: bool = False,
-):
+) -> Any:
     """Locate the profiled message box through the learned-control surface."""
 
     return locate_control(

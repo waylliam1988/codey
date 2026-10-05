@@ -355,7 +355,7 @@ def _current_generation(index: dict[str, Any]) -> int:
     if isinstance(raw, bool):
         return 0
     try:
-        return max(0, int(raw or 0))  # type: ignore[arg-type]
+        return max(0, int(raw or 0))
     except (TypeError, ValueError, OverflowError):
         return 0
 
@@ -365,7 +365,7 @@ def _previous_generation(index: dict[str, Any]) -> int:
     if isinstance(raw, bool):
         return 0
     try:
-        return max(0, int(raw or 0))  # type: ignore[arg-type]
+        return max(0, int(raw or 0))
     except (TypeError, ValueError, OverflowError):
         return 0
 

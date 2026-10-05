@@ -9,6 +9,7 @@ kernel.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import (
@@ -231,7 +232,7 @@ def _audit_visible_entries(root: Path, rel: str) -> ToolOutcome:
     return ToolOutcome("\n".join(lines) if lines else "(empty)", True)
 
 
-def _audit_read_file(root: Path, rel: str, **options) -> ToolOutcome:
+def _audit_read_file(root: Path, rel: str, **options: Any) -> ToolOutcome:
     # See _audit_searchable_files: resolve so safe_join output and the
     # _audit_file_allowed guard share one path form.
     root = root.expanduser().resolve()
@@ -267,7 +268,7 @@ def _audit_scan_budget() -> BoundedScanBudget:
     )
 
 
-def _audit_searchable_files(root: Path, start: Path, budget: BoundedScanBudget):
+def _audit_searchable_files(root: Path, start: Path, budget: BoundedScanBudget) -> Any:
     # Resolve once: `start` comes from safe_join (resolved) while callers
     # may pass a symlinked/short-name root (e.g. CI temp dirs). Comparing
     # resolved entries against an unresolved root makes every allow_* guard

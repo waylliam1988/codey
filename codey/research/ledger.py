@@ -12,6 +12,7 @@ import hashlib
 import re
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
+from typing import Any
 
 from codey.research import source_domains
 from codey.research.source_document import SourceDocument
@@ -41,7 +42,7 @@ class SourceQuality:
         parts = [self.level, self.kind, self.freshness, self.independent_group]
         return " · ".join(part for part in parts if part)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -52,7 +53,7 @@ class SearchResultRecord:
     url: str
     snippet: str = ""
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -62,7 +63,7 @@ class SearchRecord:
     timestamp: str
     results: tuple[SearchResultRecord, ...] = ()
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["results"] = [item.to_dict() for item in self.results]
         return data
@@ -82,7 +83,7 @@ class OpenedSource:
     pages_read: tuple[int, ...] = ()
     truncated: bool = False
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["quality"] = self.quality.to_dict()
         data["pages_read"] = list(self.pages_read)
@@ -99,7 +100,7 @@ class EvidenceItem:
     page: int | None = None
     locator: str = ""
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         # Public/UI payload boundary: the exact excerpt stays on the ledger
         # item for proof locators, while everything leaving the ledger
@@ -120,7 +121,7 @@ class ResearchLedger:
         self.searches: list[SearchRecord] = []
         self.opened_sources: list[OpenedSource] = []
         self.evidence_items: list[EvidenceItem] = []
-        self.source_searches: list[dict] = []
+        self.source_searches: list[dict[str, Any]] = []
         self._source_texts: dict[str, str] = {}
         self._source_pages: dict[str, dict[int, str]] = {}
 
@@ -143,7 +144,7 @@ class ResearchLedger:
         self._source_texts = staged._source_texts
         self._source_pages = staged._source_pages
 
-    def record_search(self, query: str, results: list[dict]) -> None:
+    def record_search(self, query: str, results: list[dict[str, Any]]) -> None:
         query = " ".join(str(query or "").split())
         if not query:
             return
@@ -319,7 +320,7 @@ class ResearchLedger:
                 continue
             self.evidence_items.append(replace(item, note_id=note_id or item.note_id))
 
-    def record_source_search(self, source_url: str, query: str, hits: list[dict]) -> None:
+    def record_source_search(self, source_url: str, query: str, hits: list[dict[str, Any]]) -> None:
         final_url = opened_url(self, source_url)
         query = " ".join(str(query or "").split())
         if not final_url or not query:
@@ -433,9 +434,9 @@ class ResearchLedger:
                 return item.title
         return ""
 
-    def search_results_payload(self) -> list[dict]:
+    def search_results_payload(self) -> list[dict[str, Any]]:
         opened = self.final_url_set()
-        rows: list[dict] = []
+        rows: list[dict[str, Any]] = []
         for search in self.searches[:MAX_PAYLOAD_SEARCHES]:
             for result in search.results:
                 final = self.canonical_opened_url(result.url)
@@ -452,18 +453,18 @@ class ResearchLedger:
                     return rows
         return rows
 
-    def opened_sources_payload(self) -> list[dict]:
+    def opened_sources_payload(self) -> list[dict[str, Any]]:
         return [item.to_dict() for item in self.opened_sources[:MAX_PAYLOAD_SOURCES]]
 
-    def evidence_payload(self) -> list[dict]:
+    def evidence_payload(self) -> list[dict[str, Any]]:
         return [item.to_dict() for item in self.evidence_items[:MAX_PAYLOAD_EVIDENCE]]
 
-    def coverage_payload(self) -> dict:
+    def coverage_payload(self) -> dict[str, Any]:
         opened_final = self.final_url_set()
         opened_requested = {
             item.requested_url for item in self.opened_sources if item.requested_url
         }
-        skipped: list[dict] = []
+        skipped: list[dict[str, Any]] = []
         for search in self.searches:
             for result in search.results:
                 final = self.canonical_opened_url(result.url)
@@ -545,7 +546,7 @@ def _independent_group(host: str) -> str:
     return host
 
 
-def _coerce_evidence(value: object) -> list[dict]:
+def _coerce_evidence(value: object) -> list[dict[str, Any]]:
     if isinstance(value, dict):
         return [value]
     if isinstance(value, (list, tuple)):

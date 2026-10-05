@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
@@ -37,7 +38,7 @@ def _safe_byte_count(value: object) -> int:
     return max(0, number)
 
 
-def _event_metadata(event: RunEvent) -> dict:
+def _event_metadata(event: RunEvent) -> dict[str, Any]:
     metadata = getattr(event, "metadata", {})
     return metadata if isinstance(metadata, dict) else {}
 
@@ -98,7 +99,7 @@ class RunEvent:
         return cls("status", message=message)
 
 
-def _call_args(call: ToolCall | None) -> dict:
+def _call_args(call: ToolCall | None) -> dict[str, Any]:
     args = call.args if call is not None else {}
     return args if isinstance(args, dict) else {}
 
@@ -123,7 +124,7 @@ def render_run_event(event: RunEvent) -> str:
     return event.message
 
 
-def display_tool(name: str, args: dict, path: str = "") -> tuple[str, str]:
+def display_tool(name: str, args: dict[str, Any], path: str = "") -> tuple[str, str]:
     research_names = {
         "web_search": ("search", str(args.get("query") or "")),
         "open_url": ("read", str(args.get("url") or "")),
@@ -142,7 +143,7 @@ def run_event_ui_payload(
     run_id: str,
     session_id: str,
     event: RunEvent,
-) -> dict | None:
+) -> dict[str, Any] | None:
     """Render one RunEvent as the existing UI/SSE payload shape."""
 
     if event.kind == "turn":

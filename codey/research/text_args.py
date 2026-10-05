@@ -1,8 +1,10 @@
 """Neutral text-arg helper for research tools (no loop dependency)."""
 from __future__ import annotations
 
+from typing import Any
 
-def first_text_arg(args: dict, key: str) -> str:
+
+def first_text_arg(args: dict[str, Any], key: str) -> str:
     value = args.get(key) if isinstance(args, dict) else None
     if isinstance(value, str) and value.strip():
         return value.strip()

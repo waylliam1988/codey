@@ -9,6 +9,8 @@ clip-only. Never changes execution semantics.
 
 from __future__ import annotations
 
+from typing import Any
+
 RESEARCH_OUTPUT_BUDGET_BYTES = 24_000
 RESEARCH_OUTPUT_HEAD_BYTES = 12_000
 RESEARCH_OUTPUT_TAIL_BYTES = 8_000
@@ -46,7 +48,7 @@ def head_tail_clip(text: str) -> tuple[str, int]:
     return (head + receipt + tail if tail else head + receipt), raw_bytes
 
 
-def display_ref_for_call(call) -> str:
+def display_ref_for_call(call: Any) -> str:
     try:
         args = getattr(call, "args", {}) or {}
         for key in ("url", "query", "id", "src"):
@@ -60,11 +62,11 @@ def display_ref_for_call(call) -> str:
 
 def maybe_externalize_output(
     *,
-    store,
+    store: Any,
     session_id: str,
     run_id: str,
     permission_profile: str,
-    call,
+    call: Any,
     output: str,
     ok: bool,
     turn: int,

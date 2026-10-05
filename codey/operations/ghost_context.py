@@ -26,7 +26,7 @@ from codey.ghost.observation_index import (
 from codey.ghost.observations import GhostObservationCorruptedError
 
 
-def ghost_affinity_store(state: Any):
+def ghost_affinity_store(state: Any) -> Any:
     store = getattr(state, "ghost_affinity", None)
     if store is None:
         return None
@@ -45,7 +45,7 @@ def ghost_directive(
     *,
     project: str = "",
     session_id: str = "",
-):
+) -> Any:
     store = getattr(state, "ghost_hebbian", None)
     if store is None:
         return build_ghost_directive(None)
@@ -62,7 +62,7 @@ def ghost_continuity(
     *,
     project: str = "",
     session_id: str = "",
-):
+) -> Any:
     store = getattr(state, "ghost_continuity", None)
     if store is None:
         return build_ghost_continuity(None)

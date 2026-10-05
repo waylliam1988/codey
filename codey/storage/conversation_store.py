@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 from pathlib import Path
+from typing import Any
 
 from codey.agents.handoff import (
     DEFAULT_HARD_CONTEXT_TOKENS,
@@ -30,7 +31,7 @@ MAX_PERSISTED_CONVERSATIONS = 64
 SNAPSHOT_FIELDS = {field.name for field in fields(ConversationSnapshot)}
 
 
-def _snapshot_payload(snapshot: ConversationSnapshot) -> dict:
+def _snapshot_payload(snapshot: ConversationSnapshot) -> dict[str, Any]:
     return {
         "mode": snapshot.mode,
         "goal": compact_text(snapshot.goal),

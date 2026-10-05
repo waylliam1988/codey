@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from typing import Any
 
 from codey.operations.kernel_provenance import _EXECUTOR_STRIPPED_AUDIT_KEYS
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -44,7 +45,7 @@ def result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) ->
     return code == 0 if str(name or "").strip().lower() == "run" else True
 
 
-def _strip_executor_workspace_audit(audit: object) -> dict:
+def _strip_executor_workspace_audit(audit: object) -> dict[str, Any]:
     """Remove executor-forgeable workspace provenance from an audit dict."""
     try:
         source = dict(audit) if isinstance(audit, dict) else {}
@@ -55,7 +56,7 @@ def _strip_executor_workspace_audit(audit: object) -> dict:
     return source
 
 
-def _normalize_audit_exit_code(audit: dict) -> tuple[dict, int | None, bool]:
+def _normalize_audit_exit_code(audit: dict[str, Any]) -> tuple[dict[str, Any], int | None, bool]:
     """Split audit exit_code into (cleaned_audit, strict_code_or_None, invalid).
 
     Invalid means the key was present with a non-None value that is not a
@@ -99,7 +100,7 @@ def build_recovered_tool_result(
 
 
     if audit is None:
-        audit_dict: dict = {}
+        audit_dict: dict[str, Any] = {}
     elif not isinstance(audit, Mapping):
         raise RecoveryFailed(f"recovered audit must be a mapping, got {type(audit).__name__}")
     else:
@@ -110,7 +111,7 @@ def build_recovered_tool_result(
     for key in _EXECUTOR_STRIPPED_AUDIT_KEYS:
         audit_dict.pop(key, None)
     if presentation is None:
-        presentation_dict: dict = {}
+        presentation_dict: dict[str, Any] = {}
     elif not isinstance(presentation, Mapping):
         raise RecoveryFailed(
             f"recovered presentation must be a mapping, got {type(presentation).__name__}"
@@ -121,7 +122,7 @@ def build_recovered_tool_result(
         except Exception as exc:
             raise RecoveryFailed(f"recovered presentation unreadable: {exc}") from exc
     if canonical is None:
-        canonical_dict: dict = {}
+        canonical_dict: dict[str, Any] = {}
     elif not isinstance(canonical, Mapping):
         raise RecoveryFailed(
             f"recovered canonical must be a mapping, got {type(canonical).__name__}"

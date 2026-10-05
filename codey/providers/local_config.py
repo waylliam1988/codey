@@ -12,7 +12,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from codey.env_names import (
     LOCAL_OPENAI_API_KEY_ENV,
@@ -141,7 +141,7 @@ def context_budget_for_window(window_tokens: int) -> LocalContextBudget:
     if isinstance(window_tokens, bool):
         raise ValueError("context_window_tokens must be a positive integer")
     try:
-        window = int(window_tokens)  # type: ignore[arg-type]
+        window = int(window_tokens)
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError("context_window_tokens must be a positive integer") from exc
     if window <= 0:
@@ -483,7 +483,7 @@ def assemble_bootstrap_payload(
     selection: LocalTargetSelection,
     endpoint: LocalEndpoint | None,
     discovered: list[str],
-) -> dict:
+) -> dict[str, Any]:
     """Assemble the UI status payload from already-resolved inputs.
 
     Pure over its arguments: no probing, no disk reads. Save paths reuse
@@ -570,7 +570,7 @@ def local_endpoint_available() -> bool:
     return bool(effective.model)
 
 
-def local_bootstrap_payload() -> dict:
+def local_bootstrap_payload() -> dict[str, Any]:
     """UI status: connection, models, native mode, context, presets."""
     config = load_local_config()
     selection = select_local_target(config)

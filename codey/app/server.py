@@ -73,7 +73,7 @@ class CodeyHTTPServer(ThreadingHTTPServer):
     def launch_url(self, base_url: str) -> str:
         return f"{base_url}#codey_bootstrap={self.operator_auth.issue_bootstrap()}"
 
-    def handle_error(self, request, client_address) -> None:
+    def handle_error(self, request: Any, client_address: Any) -> None:
         error = sys.exc_info()[1]
         if isinstance(error, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
             return
@@ -209,7 +209,7 @@ def _submit_task_after_slot_release(
     )
 
 
-def _pick_folder_response(_ctx: AppContext, body: dict) -> tuple[int, dict]:
+def _pick_folder_response(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     mode = str(body.get("mode") or "open").strip().lower()
     if mode not in {"open", "new"}:
         return 400, {"error": "invalid mode"}
@@ -223,11 +223,11 @@ def _pick_folder_response(_ctx: AppContext, body: dict) -> tuple[int, dict]:
     return 200, {"ok": True, "path": path, "name": Path(path).name or path}
 
 
-def _run_submit_route(_ctx: AppContext, body: dict) -> tuple[int, dict]:
+def _run_submit_route(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     return app_api.run_submit_response(body, _submit_task)
 
 
-def _shell_approval_route(ctx: AppContext, body: dict) -> tuple[int, dict]:
+def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     return app_api.shell_approval_response(
         ctx,
         body,
@@ -275,7 +275,7 @@ _POST_ROUTES = {
 class Handler(BaseHTTPRequestHandler):
     server_version = f"Codey/{__version__}"
 
-    def log_message(self, fmt, *args):
+    def log_message(self, fmt: Any, *args: Any) -> None:
         # Quiet the default access log.
         pass
 
@@ -285,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
     def _deny_foreign_origin(self) -> None:
         self._send_json(403, {"error": "cross-origin request refused"})
 
-    def _send_json(self, status: int, payload: dict) -> None:
+    def _send_json(self, status: int, payload: dict[str, Any]) -> None:
         send_json(self, status, payload)
 
     def _send_file(self, path: Path, ctype: str, *, immutable: bool = False) -> None:
@@ -481,7 +481,7 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             state.unsubscribe(q)
 
-    def _write_sse_event(self, event: dict, *, event_id: int = 0) -> bool:
+    def _write_sse_event(self, event: dict[str, Any], *, event_id: int = 0) -> bool:
         return write_sse_event(self, event, event_id=event_id)
 
 

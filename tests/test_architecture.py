@@ -214,7 +214,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("class RunRegistry", registry_source)
         self.assertNotIn("class RunSnapshot", server_source)
         self.assertIn("self._active_run: RunSnapshot | None", registry_source)
-        self.assertIn("self._last_terminal_event: dict | None", registry_source)
+        self.assertIn("self._last_terminal_event: dict[str, Any] | None", registry_source)
         for token in (
             "self.active_run: RunSnapshot",
             "self.project: str | None",
@@ -2028,15 +2028,23 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 service_offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(service_offenders, [])
 
-    def test_mypy_baseline_config_exists_but_does_not_gate(self) -> None:
-        # mypy is baseline-only (493 errors / 106 files as of 2026-09-21):
-        # config must exist so counts are reproducible, CI stays ruff+pytest.
+    def test_mypy_staged_config_is_explicit(self) -> None:
+        # Staged mypy rules are explicit here so the CI typecheck cannot silently
+        # drift back to the permissive baseline.
         import tomllib
 
         pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         mypy = pyproject.get("tool", {}).get("mypy", {})
         self.assertEqual(mypy.get("python_version"), "3.11")
         self.assertTrue(mypy.get("ignore_missing_imports"))
+        self.assertTrue(mypy.get("check_untyped_defs"))
+        self.assertTrue(mypy.get("warn_unused_ignores"))
+        self.assertTrue(mypy.get("warn_redundant_casts"))
+        self.assertTrue(mypy.get("disallow_any_generics"))
+        self.assertTrue(mypy.get("disallow_untyped_defs"))
+        self.assertTrue(mypy.get("no_implicit_optional"))
+        self.assertTrue(mypy.get("strict_equality"))
+        self.assertTrue(mypy.get("warn_return_any"))
 
     def test_adapter_repair_surface_is_closed_and_has_no_forwarders(self) -> None:
         # Security boundary: repair may only touch one provider driver plus

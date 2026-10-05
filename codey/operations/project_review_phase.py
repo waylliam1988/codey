@@ -121,7 +121,7 @@ def _emit_review_unavailable(ctx: ProjectRun) -> None:
     )
 
 
-def _run_review_with_trace(ctx: ProjectRun, **kwargs):
+def _run_review_with_trace(ctx: ProjectRun, **kwargs: Any) -> Any:
     changes_value = kwargs.get("changes")
     changes = changes_value if isinstance(changes_value, dict) else {}
     try:
@@ -179,7 +179,7 @@ def _persist_project_review_ledger(ctx: ProjectRun, reviewed: object) -> None:
 
 def _build_review_verification_map(
     ctx: ProjectRun,
-    changes: dict,
+    changes: dict[str, Any],
     current_project_map: str,
 ) -> str:
     return safe_verification_map(

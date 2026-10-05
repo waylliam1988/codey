@@ -72,11 +72,11 @@ def query_value(query: dict[str, list[str]], key: str) -> str:
     return raw.strip()
 
 
-def ui_state_response(ctx: Any) -> tuple[int, dict]:
+def ui_state_response(ctx: Any) -> tuple[int, dict[str, Any]]:
     return 200, {"ok": True, "state": ctx.load_ui_state()}
 
 
-def save_ui_state_response(ctx: Any, body: dict) -> tuple[int, dict]:
+def save_ui_state_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     state = body.get("state") if isinstance(body, dict) else None
     base_revision = body.get("base_revision") if isinstance(body, dict) else None
     if type(base_revision) is not int:
@@ -110,7 +110,7 @@ def _project_directory_error(project: str | None) -> str:
 logger = logging.getLogger(__name__)
 
 
-def providers_response(ctx: Any) -> tuple[int, dict]:
+def providers_response(ctx: Any) -> tuple[int, dict[str, Any]]:
     try:
         statuses = provider_services.provider_availability(ctx)
     except Exception:
@@ -127,7 +127,7 @@ def providers_response(ctx: Any) -> tuple[int, dict]:
     }
 
 
-def provider_catalog_response() -> tuple[int, dict]:
+def provider_catalog_response() -> tuple[int, dict[str, Any]]:
     """Boot-time catalog: static ids + labels, never runs the availability probe."""
     return 200, {
         "default": DEFAULT_PROVIDER_ID,
@@ -135,11 +135,11 @@ def provider_catalog_response() -> tuple[int, dict]:
     }
 
 
-def local_provider_response() -> tuple[int, dict]:
+def local_provider_response() -> tuple[int, dict[str, Any]]:
     return 200, {"ok": True, "local": local_bootstrap_payload()}
 
 
-def save_local_provider_response(body: dict) -> tuple[int, dict]:
+def save_local_provider_response(body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     if not isinstance(body, dict):
         return 400, {"ok": False, "error": "request body must be an object"}
     previous = load_local_config()
@@ -207,11 +207,11 @@ def save_local_provider_response(body: dict) -> tuple[int, dict]:
     return 200, {"ok": True, "local": assemble_bootstrap_payload(saved, saved_selection, ordered, [])}
 
 
-def research_unconfigured_response() -> tuple[int, dict]:
+def research_unconfigured_response() -> tuple[int, dict[str, Any]]:
     return 404, {"ok": False, "error": "Research is not configured"}
 
 
-def research_graph_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict]:
+def research_graph_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
     if ctx.knowledge_store is None:
         return research_unconfigured_response()
     # Lazy import: importing api must not load the knowledge graph stack.
@@ -233,7 +233,7 @@ def research_graph_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int,
     return 200, {"ok": True, "graph": graph.to_dict()}
 
 
-def research_notes_response(ctx: Any, body: dict) -> tuple[int, dict]:
+def research_notes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     raw_ids = body.get("ids") if isinstance(body, dict) else None
     if not isinstance(raw_ids, list):
         return 400, {"ok": False, "error": "ids required"}
@@ -246,7 +246,7 @@ def research_notes_response(ctx: Any, body: dict) -> tuple[int, dict]:
         return 400, {"ok": False, "error": "ids required"}
     if ctx.knowledge_store is None:
         return research_unconfigured_response()
-    notes: dict[str, dict] = {}
+    notes: dict[str, dict[str, Any]] = {}
     missing: list[str] = []
     for note_id, (note, row) in ctx.knowledge_store.read_notes_with_rows(seen).items():
         notes[note_id] = _research_note_payload(note, row)
@@ -256,7 +256,7 @@ def research_notes_response(ctx: Any, body: dict) -> tuple[int, dict]:
     return 200, {"ok": True, "notes": notes, "missing": missing}
 
 
-def _research_note_payload(note: Any, row: dict) -> dict:
+def _research_note_payload(note: Any, row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": note.id,
         "type": note.type,
@@ -270,7 +270,7 @@ def _research_note_payload(note: Any, row: dict) -> dict:
     }
 
 
-def run_details_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict]:
+def run_details_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
     session_id = str((query.get("session_id") or [""])[0] or "").strip()
     run_id = str((query.get("run_id") or [""])[0] or "").strip()
     if not session_id or not run_id:
@@ -291,7 +291,7 @@ def run_details_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, di
     }
 
 
-def run_review_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict]:
+def run_review_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
     """Structured cold read using the same authenticated run lookup as Details."""
     from dataclasses import asdict
 
@@ -321,7 +321,7 @@ def run_review_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dic
     return 200, {"ok": True, "available": True, "review": payload}
 
 
-def research_restore_response(ctx: Any, body: dict) -> tuple[int, dict]:
+def research_restore_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     run_id = str(body.get("run_id") or "").strip()
     if not run_id:
         return 400, {"ok": False, "error": "run_id required"}
@@ -341,7 +341,7 @@ def ghost_control_surface(ctx: Any) -> GhostControlSurface:
     )
 
 
-def ghost_summary_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict]:
+def ghost_summary_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
     payload = ghost_control_surface(ctx).summary(
         session_id=query_value(query, "session_id"),
         project=query_value(query, "project"),
@@ -349,15 +349,15 @@ def ghost_summary_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, 
     return 200, payload
 
 
-def ghost_export_response(ctx: Any) -> tuple[int, dict]:
+def ghost_export_response(ctx: Any) -> tuple[int, dict[str, Any]]:
     return 200, ghost_control_surface(ctx).export_state()
 
 
-def ghost_action_response(ctx: Any, body: dict) -> tuple[int, dict]:
+def ghost_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     return ghost_control_surface(ctx).dispatch_action(body)
 
 
-def changes_response(ctx: Any, project: object) -> tuple[int, dict]:
+def changes_response(ctx: Any, project: object) -> tuple[int, dict[str, Any]]:
     project_text = str(project or "").strip()
     if "\0" in project_text:
         return 400, {"ok": False, "error": "project invalid", "files": [], "diff": ""}
@@ -382,7 +382,7 @@ def changes_response(ctx: Any, project: object) -> tuple[int, dict]:
     return 200 if payload.get("ok") else 400, payload
 
 
-def restore_changes_response(ctx: Any, body: dict) -> tuple[int, dict]:
+def restore_changes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     project = str((body.get("project") if isinstance(body, dict) else "") or "").strip()
     if not project:
         return 400, {"ok": False, "error": "project required"}
@@ -419,9 +419,9 @@ def restore_changes_response(ctx: Any, body: dict) -> tuple[int, dict]:
 
 
 def run_submit_response(
-    body: dict,
+    body: dict[str, Any],
     submit_task: Callable[..., str | None],
-) -> tuple[int, dict]:
+) -> tuple[int, dict[str, Any]]:
     if not isinstance(body, dict):
         return 400, {"error": "invalid json"}
     session_id = str(body.get("session_id") or "").strip() or "default"
@@ -447,7 +447,7 @@ def run_submit_response(
     if isinstance(raw_max_turns, bool):
         return 400, {"error": "invalid max_turns"}
     try:
-        max_turns = int(raw_max_turns or DEFAULT_MAX_TURNS)  # type: ignore[arg-type]
+        max_turns = int(raw_max_turns or DEFAULT_MAX_TURNS)
     except (TypeError, ValueError, OverflowError):
         return 400, {"error": "invalid max_turns"}
     max_turns = max(1, min(max_turns, 500))
@@ -498,8 +498,8 @@ def run_submit_response(
 
 
 def _stopped_shell_denial(
-    ctx: Any, pending: dict, approval_id: str, session_id: str
-) -> tuple[int, dict]:
+    ctx: Any, pending: dict[str, Any], approval_id: str, session_id: str
+) -> tuple[int, dict[str, Any]]:
     event = {
         "type": "shell_result",
         "run_id": pending.get("run_id") or "",
@@ -518,11 +518,11 @@ def _stopped_shell_denial(
 
 def shell_approval_response(
     ctx: Any,
-    body: dict,
+    body: dict[str, Any],
     *,
     submit_task_after_slot_release: Callable[..., str | None],
     continuation_retry_after: int = 15,
-) -> tuple[int, dict]:
+) -> tuple[int, dict[str, Any]]:
     approval_id = str(body.get("id") or "").strip()
     approved_raw = body.get("approved")
     if approved_raw is not True and approved_raw is not False:
@@ -659,14 +659,14 @@ def shell_approval_response(
     return 200, payload
 
 
-def teach_resume_response(ctx: Any, body: dict) -> tuple[int, dict]:
+def teach_resume_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     teach_id = str(body.get("id") or "").strip()
     if not ctx.resume_pending_teach(teach_id):
         return 404, {"error": "pause not found"}
     return 200, {"ok": True}
 
 
-def new_chat_response(ctx: Any, body: dict) -> tuple[int, dict]:
+def new_chat_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     session_id = str(body.get("session_id") or "").strip()
     if not session_id:
         return 400, {"ok": False, "error": "session_id required"}
@@ -682,7 +682,7 @@ def new_chat_response(ctx: Any, body: dict) -> tuple[int, dict]:
     return 200, {"ok": True}
 
 
-def stop_response(ctx: Any) -> tuple[int, dict]:
+def stop_response(ctx: Any) -> tuple[int, dict[str, Any]]:
     ctx.request_stop()
     return 200, {"ok": True}
 

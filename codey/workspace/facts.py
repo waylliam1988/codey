@@ -6,6 +6,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from codey.policies.command_line import split_run_command
 from codey.storage.local_store import (
@@ -47,7 +48,7 @@ class VerifiedCommand:
     kind: str = "run"
     entry_file: str = ""
 
-    def to_payload(self) -> dict:
+    def to_payload(self) -> dict[str, Any]:
         payload = {"command": self.command, "cwd": self.cwd, "kind": self.kind}
         if self.entry_file:
             payload["entry_file"] = self.entry_file
@@ -59,7 +60,7 @@ class SuccessfulCheck:
     command: str
     cwd: str = "."
 
-    def to_payload(self) -> dict:
+    def to_payload(self) -> dict[str, Any]:
         return {"command": self.command, "cwd": self.cwd}
 
 
@@ -70,7 +71,7 @@ class SuccessfulChange:
     checks: tuple[SuccessfulCheck, ...] = ()
     receipt: str = ""
 
-    def to_payload(self) -> dict:
+    def to_payload(self) -> dict[str, Any]:
         payload = {
             "task": self.task,
             "files": list(self.files),

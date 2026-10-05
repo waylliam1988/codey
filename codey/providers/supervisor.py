@@ -10,6 +10,7 @@ import time
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from codey.providers.base import ChatProvider
 from codey.providers.diagnostics import (
@@ -134,7 +135,7 @@ class ProviderSupervisor:
             return self._last_save_error
 
     @contextlib.contextmanager
-    def _exclusive(self):
+    def _exclusive(self) -> Any:
         """Hold the in-process lock and the file lock in one fixed order.
 
         All reads that must see fresh cross-instance state (get/select)

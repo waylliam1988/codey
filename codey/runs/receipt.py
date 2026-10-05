@@ -26,7 +26,7 @@ them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import SupportsIndex, SupportsInt, TypeAlias, cast
+from typing import Any, SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.completion.edit_integrity import (
     EDIT_INTEGRITY_SEVERITIES,
@@ -120,7 +120,7 @@ class TaskReceipt:
     verification: ReceiptVerification
     integrity: ReceiptIntegrity = field(default_factory=ReceiptIntegrity)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         verification_payload: dict[str, object] = {
             "trust": self.verification.trust,
             "checks_passed": self.verification.checks_passed,
@@ -168,7 +168,7 @@ def _file_count_text(count: int) -> str:
 
 
 def build_task_receipt(
-    changes: dict | None,
+    changes: dict[str, Any] | None,
     *,
     proof: object = None,
     provenance: object = None,
@@ -334,7 +334,7 @@ def _display_text(
     return clip(summary, MAX_SUMMARY_CHARS), clip(detail, MAX_DETAIL_CHARS)
 
 
-def _receipt_sections_well_formed(display: dict, work: dict, verification: dict, integrity: dict) -> bool:
+def _receipt_sections_well_formed(display: dict[str, Any], work: dict[str, Any], verification: dict[str, Any], integrity: dict[str, Any]) -> bool:
     """Check field shapes before any normalization or trust recomputation."""
     if not isinstance(display.get("summary"), str) or not isinstance(display.get("detail"), str):
         return False

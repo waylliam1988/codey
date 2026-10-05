@@ -6,7 +6,7 @@ import math
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from codey.ghost import _common
 from codey.ghost.affinity import GhostAffinityStore
@@ -234,7 +234,7 @@ class GhostControlSurface:
         }
         errors: list[str] = []
 
-        def _export(name: str, load) -> object:
+        def _export(name: str, load: Any) -> object:
             try:
                 return load()
             except Exception as exc:  # noqa: BLE001 - export must report, not raise
@@ -657,7 +657,7 @@ def _safe_rows(
     load: Callable[[], Iterable[object]],
     warnings: list[str],
     warning: str,
-) -> tuple:
+) -> tuple[Any, ...]:
     try:
         return tuple(load())
     except Exception:

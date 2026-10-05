@@ -13,7 +13,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.keep_policies import (
@@ -170,7 +170,7 @@ def _require_nonnegative_int(val: Any, name: str) -> int:
         raise RuntimeEffectError(f"{name} must be an integer")
     if val < 0:
         raise RuntimeEffectError(f"{name} must be non-negative")
-    return val
+    return cast(int, val)
 
 
 def _require_enum_str(val: Any, name: str, allowed: frozenset[str] | tuple[str, ...]) -> str:

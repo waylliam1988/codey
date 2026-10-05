@@ -46,7 +46,7 @@ def maybe_claim_work_item(
     request: Any,
     *,
     run_id: str,
-):
+) -> Any:
     if str(request.intent or "auto").strip().lower() != "auto":
         return None
     if not is_strict_work_continuation(request.task):
@@ -429,7 +429,7 @@ def _record_ghost_warning(
         return
 
 
-def _run_projection(deps: GhostTaskPolicyDeps, session_id: str, run_id: str):
+def _run_projection(deps: GhostTaskPolicyDeps, session_id: str, run_id: str) -> Any:
     if deps.run_ledgers is None:
         return None
     try:

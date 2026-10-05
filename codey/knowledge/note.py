@@ -12,12 +12,13 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from codey.knowledge.concept_schema import clean_relations
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
 
 
-def _yaml():
+def _yaml() -> Any:
     # Lazy: keep `import codey.knowledge.note` (and AppContext/serve boot)
     # free of the yaml import tax until a note is actually serialized.
     import yaml
@@ -96,7 +97,7 @@ class KnowledgeNote:
     tags: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
-    relations: list[dict] = field(default_factory=list)
+    relations: list[dict[str, Any]] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
     confidence: float | None = None
     status: str = "active"
@@ -120,9 +121,9 @@ class KnowledgeNote:
             self.updated = self.created
 
     @classmethod
-    def create(cls, *, type: str, title: str, body: str, **kwargs) -> KnowledgeNote:
+    def create(cls: Any, *, type: str, title: str, body: str, **kwargs: Any) -> KnowledgeNote:
         note_id = kwargs.pop("id", None) or make_id(title)
-        return cls(id=note_id, type=type, title=title, body=body, **kwargs)
+        return cast(KnowledgeNote, cls(id=note_id, type=type, title=title, body=body, **kwargs))
 
     @property
     def folder(self) -> str:
@@ -140,8 +141,8 @@ class KnowledgeNote:
                 edges[target] = kind
         return list(edges.items())
 
-    def frontmatter(self) -> dict:
-        data: dict = {
+    def frontmatter(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
             "id": self.id,
             "type": self.type,
             "title": self.title,
@@ -234,7 +235,7 @@ def _is_safe_open_question(text: str) -> bool:
     return is_prompt_visible_text_safe(text)
 
 
-def _as_float(value) -> float | None:
+def _as_float(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
     try:
@@ -253,5 +254,5 @@ def _safe_confidence(value: object) -> float | None:
     return round(max(0.0, min(1.0, number)), 2)
 
 
-def _as_str(value) -> str | None:
+def _as_str(value: Any) -> str | None:
     return str(value) if value not in (None, "") else None

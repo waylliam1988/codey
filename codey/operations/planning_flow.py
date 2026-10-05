@@ -24,7 +24,7 @@ from codey.workspace.facts import ProjectFactsStore
 @dataclass(frozen=True)
 class PlanningFlowDeps:
     state: TaskState
-    agent_run: Callable
+    agent_run: Callable[..., Any]
     project_facts: ProjectFactsStore | None = None
     knowledge_store: Any = None
     search_factory: Callable[[], Any] | None = None

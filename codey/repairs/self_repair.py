@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from codey.providers.diagnostics import (
     FAILURE_CONTROL_MISSING,
@@ -154,7 +155,7 @@ class SelfRepairSupervisor:
 def run_self_repair_job(
     *,
     state_home: str | Path | None,
-    providers,
+    providers: Any,
     job: SelfRepairJob,
 ) -> AdapterRepairResult:
     """Run one repair job with sibling helpers from the provider registry."""

@@ -11,6 +11,7 @@ import contextlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from codey.agents.handoff import ConversationSnapshot
 from codey.providers import controls as provider_controls
@@ -240,7 +241,7 @@ def render_aggregator_prompt(
 
 def run_consensus(
     *,
-    selected_provider,
+    selected_provider: Any,
     selected_provider_id: str,
     task: str,
     provider_ids: Sequence[str],

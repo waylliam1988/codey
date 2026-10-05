@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import deque
+from typing import Any
 
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
@@ -14,7 +15,7 @@ class KernelProgress:
         self.attempts: deque[ToolAttemptRecord] = deque(maxlen=16)
         self.idle = 0
 
-    def observe(self, results, session) -> bool:
+    def observe(self, results: Any, session: Any) -> bool:
         """Stop only after unchanged observations; successful mutations reset it.
 
         Progress accounting never crashes the loop: a telemetry fault for one

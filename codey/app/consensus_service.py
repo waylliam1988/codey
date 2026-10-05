@@ -9,7 +9,7 @@ here may load the browser stack at import time.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from codey.research.advisors import EvidencePack
@@ -29,7 +29,7 @@ from codey.operations.task_state import TaskState
 from codey.providers.catalog import PROVIDER_LABELS
 
 
-def connect_consensus_provider(selected_provider, provider_id: str):
+def connect_consensus_provider(selected_provider: Any, provider_id: str) -> Any:
     """Use an already-open sibling tab while a Writer provider is active."""
 
     if provider_id == "local":
@@ -48,7 +48,7 @@ def connect_consensus_provider(selected_provider, provider_id: str):
 def run_consensus(
     ctx: TaskState,
     *,
-    selected_provider,
+    selected_provider: Any,
     selected_provider_id: str,
     task: str,
     context: str = "",
@@ -82,9 +82,9 @@ def run_consensus(
 def run_project_audit(
     ctx: TaskState,
     *,
-    parent_policy,
+    parent_policy: Any,
     project: str | Path,
-    selected_provider=None,
+    selected_provider: Any = None,
     selected_provider_id: str,
     task: str,
     context: str = "",
@@ -111,7 +111,7 @@ def run_project_audit(
 def run_research_advisors(
     ctx: TaskState,
     *,
-    selected_provider,
+    selected_provider: Any,
     selected_provider_id: str,
     pack: EvidencePack,
 ) -> tuple[ConsensusAdvice, ...]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 from codey.agents.protocol import task_forbids_verification
 from codey.completion.engine import CompletionEngine, CompletionEvidence
@@ -44,7 +45,7 @@ from codey.runtime.observe.events import RunEvent
 
 def _enforcement_scope(
     ctx: ProjectRun,
-    changes: dict | None,
+    changes: dict[str, Any] | None,
     changed: bool,
 ) -> tuple[bool, tuple[str, ...]]:
     files = tuple(

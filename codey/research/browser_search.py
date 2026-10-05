@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 from codey.automation import browser_worker
@@ -84,9 +84,9 @@ class SearchUnavailableError(RuntimeError):
         super().__init__(message)
 
 
-def load_profiles() -> dict:
+def load_profiles() -> dict[str, Any]:
     try:
-        return json.loads(_PROFILES_PATH.read_text(encoding="utf-8"))
+        return cast(dict[str, Any], json.loads(_PROFILES_PATH.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return {"default_engine": "bing", "engines": {}}
 
@@ -153,7 +153,7 @@ class BrowserSearchProvider:
         self.last_search_errors: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}
 
-    def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = ""):
+    def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = "") -> Any:
         if self._session is not None:
             return self._session
         target_reuse = "" if self.isolated else reuse_url_contains
@@ -170,7 +170,7 @@ class BrowserSearchProvider:
         )
         return self._session
 
-    def _prepare_page_on_browser_thread(self, page):
+    def _prepare_page_on_browser_thread(self, page: Any) -> Any:
         page.set_default_navigation_timeout(_NAV_TIMEOUT_MS)
         if not getattr(page, "_codey_research_guarded", False):
             page.route("**/*", self._guard_request)
@@ -178,7 +178,7 @@ class BrowserSearchProvider:
                 page._codey_research_guarded = True
         return page
 
-    def _ensure_search_page_on_browser_thread(self):
+    def _ensure_search_page_on_browser_thread(self) -> Any:
         session = self._ensure_session_on_browser_thread(reuse_url_contains=self._reuse_url_contains)
         if self._page_closed_on_browser_thread(self._search_page):
             self._search_page = session.page
@@ -186,7 +186,7 @@ class BrowserSearchProvider:
                 self._bring_to_front_on_browser_thread(self._search_page)
         return self._prepare_page_on_browser_thread(self._search_page)
 
-    def _replace_search_page_on_browser_thread(self):
+    def _replace_search_page_on_browser_thread(self) -> Any:
         session = self._ensure_session_on_browser_thread(reuse_url_contains=self._reuse_url_contains)
         context = self._page_context_on_browser_thread(self._search_page or session.page)
         page = context.new_page()
@@ -195,7 +195,7 @@ class BrowserSearchProvider:
             self._bring_to_front_on_browser_thread(page)
         return self._prepare_page_on_browser_thread(page)
 
-    def _ensure_fetch_page_on_browser_thread(self, url: str):
+    def _ensure_fetch_page_on_browser_thread(self, url: str) -> Any:
         session = self._ensure_session_on_browser_thread()
         if self._page_closed_on_browser_thread(self._fetch_page):
             context = self._page_context_on_browser_thread(self._search_page or session.page)
@@ -204,14 +204,14 @@ class BrowserSearchProvider:
                 self._bring_to_front_on_browser_thread(self._fetch_page)
         return self._prepare_page_on_browser_thread(self._fetch_page)
 
-    def _page_context_on_browser_thread(self, page):
+    def _page_context_on_browser_thread(self, page: Any) -> Any:
         try:
             return page.context
         except Exception:
             session = self._ensure_session_on_browser_thread()
             return session.browser.contexts[0] if session.browser.contexts else session.browser.new_context()
 
-    def _page_closed_on_browser_thread(self, page) -> bool:
+    def _page_closed_on_browser_thread(self, page: Any) -> bool:
         if page is None:
             return True
         try:
@@ -219,11 +219,11 @@ class BrowserSearchProvider:
         except Exception:
             return True
 
-    def _bring_to_front_on_browser_thread(self, page) -> None:
+    def _bring_to_front_on_browser_thread(self, page: Any) -> None:
         with contextlib.suppress(Exception):
             page.bring_to_front()
 
-    def _guard_request(self, route) -> None:
+    def _guard_request(self, route: Any) -> None:
         try:
             blocked = bool(check_fetch_url(route.request.url, use_cache=True))
         except Exception:
@@ -231,7 +231,7 @@ class BrowserSearchProvider:
         with contextlib.suppress(Exception):
             route.abort() if blocked else route.continue_()
 
-    def search(self, query: str, limit: int = 8) -> list[dict]:
+    def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
         cancellation.check()
         self.last_search_errors = []
         self.last_search_failure = {}
@@ -243,7 +243,7 @@ class BrowserSearchProvider:
         cancellation.check()
         return results
 
-    def _search_on_browser_thread(self, query: str, limit: int) -> list[dict]:
+    def _search_on_browser_thread(self, query: str, limit: int) -> list[dict[str, Any]]:
         last_error: Exception | None = None
         deadline = time.monotonic() + _SEARCH_TOTAL_TIMEOUT_SECONDS
         for engine_index, engine in enumerate(self._engine_order):
@@ -293,14 +293,14 @@ class BrowserSearchProvider:
 
     def _search_page_results_on_browser_thread(
         self,
-        page,
+        page: Any,
         query: str,
         limit: int,
         *,
-        profile: dict | None = None,
+        profile: dict[str, Any] | None = None,
         engine: str = "",
         deadline: float | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         active_engine = engine or self.engine
         active_profile = profile if isinstance(profile, dict) else self._profile
         if not isinstance(active_profile, dict):
@@ -323,7 +323,7 @@ class BrowserSearchProvider:
                 detail="search page redirected to an unexpected host",
                 observed_host=_url_host(final_url),
             )
-        results: list[dict] = []
+        results: list[dict[str, Any]] = []
         for block in page.query_selector_all(active_profile["result_selector"])[: limit * 2]:
             cancellation.check()
             link = block.query_selector(active_profile["link_selector"])
@@ -356,8 +356,8 @@ class BrowserSearchProvider:
         cancellation.check()
         return []
 
-    def _anchor_scan_results(self, page, limit: int) -> list[dict]:
-        results: list[dict] = []
+    def _anchor_scan_results(self, page: Any, limit: int) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
         seen: set[str] = set()
         for link in page.query_selector_all("a[href]"):
             cancellation.check()
@@ -375,7 +375,7 @@ class BrowserSearchProvider:
                 break
         return results
 
-    def fetch(self, url: str) -> dict:
+    def fetch(self, url: str) -> dict[str, Any]:
         cancellation.check()
         if _is_pdf_url(url):
             page = _download_pdf_streaming(url)
@@ -408,7 +408,7 @@ class BrowserSearchProvider:
         cancellation.check()
         return page
 
-    def _fetch_on_browser_thread(self, url: str) -> dict:
+    def _fetch_on_browser_thread(self, url: str) -> dict[str, Any]:
         reason = check_fetch_url(url)
         if reason:
             return _fetch_failure(url, f'{reason}')
@@ -523,32 +523,32 @@ class BrowserSearchProvider:
             self._search_page = None
             self._session = None
 
-    def _release_page_guard_on_browser_thread(self, page) -> None:
+    def _release_page_guard_on_browser_thread(self, page: Any) -> None:
         try:
             page.unroute("**/*", self._guard_request)
             page._codey_research_guarded = False
         except Exception:
             pass
 
-    def _discard_page_on_browser_thread(self, page) -> None:
+    def _discard_page_on_browser_thread(self, page: Any) -> None:
         if page is None:
             return
         self._release_page_guard_on_browser_thread(page)
         with contextlib.suppress(Exception):
             page.close()
 
-    def _discard_fetch_page_on_browser_thread(self, page) -> None:
+    def _discard_fetch_page_on_browser_thread(self, page: Any) -> None:
         self._discard_page_on_browser_thread(page)
         if page is self._fetch_page:
             self._fetch_page = None
 
-    def _discard_search_page_on_browser_thread(self, page) -> None:
+    def _discard_search_page_on_browser_thread(self, page: Any) -> None:
         self._discard_page_on_browser_thread(page)
         if page is self._search_page:
             self._search_page = None
 
 
-def _page_content_after_navigation(page) -> str:
+def _page_content_after_navigation(page: Any) -> str:
     stop_at = time.monotonic() + _CONTENT_RETRY_TIMEOUT
     while True:
         cancellation.check()
@@ -562,7 +562,7 @@ def _page_content_after_navigation(page) -> str:
             cancellation.wait(_CONTENT_RETRY_TICK)
 
 
-def _fetch_page_content_after_settle(page) -> tuple[str, str]:
+def _fetch_page_content_after_settle(page: Any) -> tuple[str, str]:
     html = _page_content_after_navigation(page)
     text = extract_text(html)
     if _usable_fetch_page_text(text):
@@ -594,14 +594,14 @@ def _content_retryable(exc: Exception) -> bool:
     )
 
 
-def _search_host(profile: dict) -> str:
+def _search_host(profile: dict[str, Any]) -> str:
     try:
         return (urlparse(str(profile.get("search_url") or "")).hostname or "").lower()
     except Exception:
         return ""
 
 
-def _page_url(page) -> str:
+def _page_url(page: Any) -> str:
     try:
         value = page.url
     except Exception:
@@ -609,7 +609,7 @@ def _page_url(page) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _search_engine_host(profile: dict) -> str:
+def _search_engine_host(profile: dict[str, Any]) -> str:
     try:
         return (urlparse(str(profile.get("search_url") or "")).hostname or "").lower().removeprefix("www.")
     except Exception:
@@ -632,7 +632,7 @@ def _same_host(url: str, expected_host: str) -> bool:
     return bool(actual and expected and (actual == expected or actual.endswith("." + expected)))
 
 
-def _search_page_body_text(page) -> str:
+def _search_page_body_text(page: Any) -> str:
     try:
         body = page.query_selector("body")
     except Exception:
@@ -714,7 +714,7 @@ def _looks_like_short_fetch_challenge(normalized_text: str) -> bool:
     return any(marker in normalized_text for marker in _FETCH_PAGE_ERROR_MARKERS)
 
 
-def _set_navigation_timeout(page, timeout_ms: int) -> None:
+def _set_navigation_timeout(page: Any, timeout_ms: int) -> None:
     with contextlib.suppress(Exception):
         page.set_default_navigation_timeout(timeout_ms)
 
@@ -740,11 +740,11 @@ def _search_failure_detail(exc: Exception) -> str:
     }.get(failure_kind, type(exc).__name__)
 
 
-def _element_text(element) -> str:
+def _element_text(element: Any) -> str:
     return _clean_space(_element_raw_text(element))
 
 
-def _element_raw_text(element) -> str:
+def _element_raw_text(element: Any) -> str:
     if element is None:
         return ""
     for getter in ("inner_text", "text_content"):
@@ -765,7 +765,7 @@ def _element_raw_text(element) -> str:
     return ""
 
 
-def _best_result_title(block, link, profile: dict) -> str:
+def _best_result_title(block: Any, link: Any, profile: dict[str, Any]) -> str:
     selectors = [
         profile.get("title_selector"),
         profile.get("link_selector"),
@@ -791,7 +791,7 @@ def _best_result_title(block, link, profile: dict) -> str:
     return ""
 
 
-def _snippet_from_block(block, title: str) -> str:
+def _snippet_from_block(block: Any, title: str) -> str:
     lines = []
     for line in _element_raw_text(block).splitlines():
         line = line.strip()
@@ -836,7 +836,7 @@ def _is_pdf_url(url: str) -> bool:
 
 
 
-def _download_text_fallback(url: str) -> dict:
+def _download_text_fallback(url: str) -> dict[str, Any]:
     current_url = str(url or "").strip()
     redirects = 0
     while True:
@@ -853,7 +853,7 @@ def _download_text_fallback(url: str) -> dict:
                 _close_response(exc)
                 redirect = _checked_redirect(current_url, next_url, redirects, content_kind="page")
                 if redirect.get("error"):
-                    return redirect["error"]
+                    return cast(dict[str, Any], redirect["error"])
                 current_url = redirect["url"]
                 redirects += 1
                 continue
@@ -872,7 +872,7 @@ def _download_text_fallback(url: str) -> dict:
                 next_url = _redirect_target(current_url, response.headers)
                 redirect = _checked_redirect(current_url, next_url, redirects, content_kind="page")
                 if redirect.get("error"):
-                    return redirect["error"]
+                    return cast(dict[str, Any], redirect["error"])
                 current_url = redirect["url"]
                 redirects += 1
                 continue
@@ -907,7 +907,7 @@ def _download_text_fallback(url: str) -> dict:
             }
 
 
-def _content_length(headers: dict) -> int | None:
+def _content_length(headers: dict[str, Any]) -> int | None:
     try:
         value = headers.get("content-length")
     except AttributeError:
@@ -918,7 +918,7 @@ def _content_length(headers: dict) -> int | None:
         return None
 
 
-def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict:
+def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, Any]:
     current_url = str(url or "").strip()
     redirects = 0
     while True:
@@ -935,7 +935,7 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict:
                 _close_response(exc)
                 redirect = _checked_redirect(current_url, next_url, redirects)
                 if redirect.get("error"):
-                    return redirect["error"]
+                    return cast(dict[str, Any], redirect["error"])
                 current_url = redirect["url"]
                 redirects += 1
                 continue
@@ -956,7 +956,7 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict:
                 next_url = _redirect_target(current_url, response.headers)
                 redirect = _checked_redirect(current_url, next_url, redirects)
                 if redirect.get("error"):
-                    return redirect["error"]
+                    return cast(dict[str, Any], redirect["error"])
                 current_url = redirect["url"]
                 redirects += 1
                 continue
@@ -1010,12 +1010,12 @@ def _text_request(url: str) -> urllib.request.Request:
     )
 
 
-def _open_url_no_redirect(request: urllib.request.Request, *, timeout: int):
+def _open_url_no_redirect(request: urllib.request.Request, *, timeout: int) -> Any:
     opener = build_no_redirect_opener()
     return opener.open(request, timeout=timeout)
 
 
-def _pdf_download_sentinel(url: str, *, mime_type: str = "") -> dict:
+def _pdf_download_sentinel(url: str, *, mime_type: str = "") -> dict[str, Any]:
     return {"status": "ok",
         "url": url,
         "title": _title_from_url(url),
@@ -1032,7 +1032,7 @@ def _checked_redirect(
     redirects: int,
     *,
     content_kind: str = "pdf",
-) -> dict:
+) -> dict[str, Any]:
     if not next_url:
         return {"error": _redirect_error(current_url, content_kind, "redirect did not include a Location header")}
     if redirects >= _PDF_MAX_REDIRECTS:
@@ -1045,7 +1045,7 @@ def _checked_redirect(
     return {"url": next_url}
 
 
-def _response_code(response) -> int:
+def _response_code(response: Any) -> int:
     try:
         return int(response.getcode() or 0)
     except Exception:
@@ -1053,7 +1053,7 @@ def _response_code(response) -> int:
 
 
 def _fetch_failure(url: str, detail: str, *, status: str = "error", title: str = "",
-                   content_kind: str = "", mime_type: str = "") -> dict:
+                   content_kind: str = "", mime_type: str = "") -> dict[str, Any]:
     prefix = "SKIPPED" if status == "skipped" else "ERROR"
     payload = {"status": status, "detail": detail, "url": url, "title": title,
                "text": f"{prefix}: {detail}", "truncated": False}
@@ -1064,11 +1064,11 @@ def _fetch_failure(url: str, detail: str, *, status: str = "error", title: str =
     return payload
 
 
-def _pdf_skipped(url: str, mime_type: str, message: str) -> dict:
+def _pdf_skipped(url: str, mime_type: str, message: str) -> dict[str, Any]:
     return _fetch_failure(url, f'{message}', status="skipped", title=_title_from_url(url), content_kind="pdf", mime_type=mime_type or "application/pdf")
 
 
-def _redirect_error(url: str, content_kind: str, message: str) -> dict:
+def _redirect_error(url: str, content_kind: str, message: str) -> dict[str, Any]:
     if str(content_kind or "").casefold() == "pdf":
         return _pdf_skipped(url, "application/pdf", "PDF " + message)
     return _fetch_failure(url, f'page {message}', title=_title_from_url(url))
@@ -1085,7 +1085,7 @@ def _normalize_result_url(href: str) -> str:
     return target or raw
 
 
-def _is_search_redirect(parsed) -> bool:
+def _is_search_redirect(parsed: Any) -> bool:
     host = (parsed.hostname or "").lower()
     path = (parsed.path or "").lower()
     params = parse_qs(parsed.query or "")
@@ -1096,7 +1096,7 @@ def _is_search_redirect(parsed) -> bool:
         and any(key in params for key in ("uddg", "u")))
 
 
-def _search_redirect_target(parsed) -> str:
+def _search_redirect_target(parsed: Any) -> str:
     host = (parsed.hostname or "").lower()
     path = (parsed.path or "").lower()
     params = parse_qs(parsed.query or "")

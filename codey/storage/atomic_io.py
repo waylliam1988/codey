@@ -16,6 +16,7 @@ import os
 import stat
 import uuid
 from pathlib import Path
+from typing import Any
 
 MAX_ATOMIC_JSON_BYTES = 8 * 1024 * 1024
 
@@ -168,7 +169,7 @@ def write_text_atomic(
 
 def write_json_atomic(
     path: str | Path,
-    value: dict,
+    value: dict[str, Any],
     *,
     mode: int | None = None,
     preserve_mode: bool = True,

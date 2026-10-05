@@ -7,6 +7,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.index import KnowledgeIndex
@@ -122,7 +123,7 @@ class KnowledgeStore:
 
     def read_notes_with_rows(
         self, note_ids: list[str]
-    ) -> dict[str, tuple[KnowledgeNote, dict]]:
+    ) -> dict[str, tuple[KnowledgeNote, dict[str, Any]]]:
         """Batch read notes plus their index rows in one index round-trip."""
         seen: list[str] = []
         for raw in note_ids:
@@ -132,7 +133,7 @@ class KnowledgeStore:
         if not seen:
             return {}
         rows = self.index.notes_by_ids(seen)
-        out: dict[str, tuple[KnowledgeNote, dict]] = {}
+        out: dict[str, tuple[KnowledgeNote, dict[str, Any]]] = {}
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -166,7 +167,7 @@ class KnowledgeStore:
                 out[str(row.get("id") or note.id)] = (note, dict(row))
         return out
 
-    def iter_note_paths(self):
+    def iter_note_paths(self) -> Any:
         for path in sorted(self.root.rglob("*.md")):
             if ".codey" in path.parts:
                 continue

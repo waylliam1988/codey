@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from codey.policies.network import check_fetch_url
 from codey.research.context import ResearchPipelineConfig
@@ -19,7 +20,7 @@ from codey.utils.refs import clip
 @dataclass(frozen=True)
 class PlanExecutionResult:
     queries_executed: tuple[str, ...] = ()
-    opened_sources: tuple[dict, ...] = ()
+    opened_sources: tuple[dict[str, Any], ...] = ()
     previews: tuple[str, ...] = ()
     fresh_source_urls: tuple[str, ...] = ()
     fresh_source_count: int = 0
@@ -36,7 +37,7 @@ class PlanExecutionResult:
 @dataclass
 class _PlanExecutionState:
     queries: list[str]
-    opened: list[dict]
+    opened: list[dict[str, Any]]
     previews: list[str]
     fresh_urls: list[str]
     errors: list[str]
@@ -177,7 +178,7 @@ class PlanExecutor:
     def _drain_search_hits(
         self,
         runtime: ResearchTools,
-        search,
+        search: Any,
         query: str,
         state: _PlanExecutionState,
         total_limit: int,
@@ -293,7 +294,7 @@ def _collect_baseline_urls(tools: ResearchTools) -> set[str]:
     return baseline
 
 
-def _opened_source_payload(tools: ResearchTools, url: str) -> dict:
+def _opened_source_payload(tools: ResearchTools, url: str) -> dict[str, Any]:
     final_url = opened_url(tools.ledger, url)
     for item in tools.ledger.opened_sources:
         if item.final_url == final_url or item.requested_url == final_url:
@@ -301,7 +302,7 @@ def _opened_source_payload(tools: ResearchTools, url: str) -> dict:
     return {}
 
 
-def _source_preview(query: str, source: dict, body: str, limit: int) -> str:
+def _source_preview(query: str, source: dict[str, Any], body: str, limit: int) -> str:
     title = str(source.get("title") or "").strip()
     final_url = str(source.get("final_url") or source.get("url") or "").strip()
     header = " | ".join(part for part in (title, final_url) if part)

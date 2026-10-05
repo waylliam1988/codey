@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from codey.automation import browser
 from codey.automation.browser import DEFAULT_PORT, DEFAULT_PROFILE, Session
@@ -93,13 +93,13 @@ class WebChatProvider:
         kwargs = {}
         if timeout is not None:
             kwargs["response_timeout"] = timeout
-        return run_web_send(
+        return cast(str, run_web_send(
             self,
             page=self.session.page,
             func=lambda: self.spec.driver.chat(self.session.page, text, **kwargs),
             response_timeout=timeout,
             grace=getattr(self.spec.driver, self.spec.grace_attr),
-        )
+        ))
 
     def close(self) -> None:
         self.session.close()

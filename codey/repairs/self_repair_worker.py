@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from codey.automation.browser import DEFAULT_PORT
 from codey.providers import controls as provider_controls
@@ -163,7 +164,7 @@ def _failure_facts_from_json(value: str) -> dict[str, object]:
     return sanitize_failure_facts(decoded)
 
 
-def connect_repair_helper(provider_id: str, *, state_home: str | Path):
+def connect_repair_helper(provider_id: str, *, state_home: str | Path) -> Any:
     """Open a fresh helper tab in an isolated self-repair profile.
 
     The helper must never attach to the user's default browser profile from
@@ -207,7 +208,7 @@ def _parse_worker_result(provider_id: str, stdout: str, stderr: str, returncode:
     return AdapterRepairResult(False, provider_id, error=error)
 
 
-def _result_payload(result: AdapterRepairResult) -> dict:
+def _result_payload(result: AdapterRepairResult) -> dict[str, Any]:
     return {
         "ok": result.ok,
         "provider_id": result.provider_id,

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from typing import Any
 
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.graph import (
@@ -175,7 +176,7 @@ class ConceptGraphBuilder:
 
     def _aggregate_declared(
         self,
-        edge_rows: list[dict],
+        edge_rows: list[dict[str, Any]],
     ) -> dict[tuple[str, str, str], list[SupportRef]]:
         declared: dict[tuple[str, str, str], list[SupportRef]] = {}
         for row in edge_rows:
@@ -190,12 +191,12 @@ class ConceptGraphBuilder:
         return declared
 
     def _aggregate_tags(
-        self, tag_rows: list[dict], session_id: str
-    ) -> tuple[dict[str, set[str]], set[str], list[dict]]:
+        self, tag_rows: list[dict[str, Any]], session_id: str
+    ) -> tuple[dict[str, set[str]], set[str], list[dict[str, Any]]]:
         tag_notes: dict[str, set[str]] = {}
         session_concepts: set[str] = set()
-        syntheses: list[dict] = []
-        synthesis_by_id: dict[str, dict] = {}
+        syntheses: list[dict[str, Any]] = []
+        synthesis_by_id: dict[str, dict[str, Any]] = {}
         for row in tag_rows:
             concept = normalize_concept(row.get("tag"))
             if not concept:
@@ -312,7 +313,7 @@ class ConceptGraphBuilder:
         self,
         nodes: list[GraphNode],
         edges: list[GraphEdge],
-        syntheses: list[dict],
+        syntheses: list[dict[str, Any]],
         kept: set[str],
         session_id: str,
         *,
@@ -375,11 +376,11 @@ def _missing_suggestions(
 
 
 def _filter_scope_rows(
-    rows: list[dict],
+    rows: list[dict[str, Any]],
     *,
     session_id: str,
     project: str,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     if session_id and project:
         return [
             row

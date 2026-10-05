@@ -23,7 +23,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
@@ -52,8 +52,8 @@ PDF_SOURCE_SEARCH_MAX_PAGES = 30
 
 
 class _SearchProvider(Protocol):
-    def search(self, query: str, *, limit: int) -> list[dict]: ...
-    def fetch(self, url: str) -> dict: ...
+    def search(self, query: str, *, limit: int) -> list[dict[str, Any]]: ...
+    def fetch(self, url: str) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ class SearchedSources:
     """Outcome of ``search``: raw provider hits, or an error string."""
 
     query: str
-    hits: tuple[dict, ...] = ()
+    hits: tuple[dict[str, Any], ...] = ()
     error: str = ""
 
 
@@ -183,7 +183,7 @@ class ResearchSourceGateway:
         return OpenedSource(status="ok", document=document, read_urls=read_urls)
 
     def _source_document_from_fetch(
-        self, requested_url: str, page: dict, *, pages: str = ""
+        self, requested_url: str, page: dict[str, Any], *, pages: str = ""
     ) -> SourceDocument | PdfSkipped:
         final_url = str(page.get("url") or requested_url)
         content_kind = str(page.get("content_kind") or "").lower()
@@ -323,7 +323,7 @@ def _merge_source_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSe
     return unique
 
 
-def _as_int(value, default: int) -> int:
+def _as_int(value: Any, default: int) -> int:
     if isinstance(value, bool):
         return default
     try:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.kernel_session_recovery import restore_task_session
@@ -221,7 +221,7 @@ def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any) ->
 
 
 def _entry_project_receipt(frame: Any, work: Any, hooks: Any, deps: Any,
-                           session: Any, result: Any, tracker: Any) -> tuple[dict, dict | None]:
+                           session: Any, result: Any, tracker: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
     from codey.operations.task_session import session_checks_passed
     from codey.runs.receipt import build_task_receipt
 
@@ -506,11 +506,11 @@ def run_task_mode(
         except Exception:
             return outcome
     if kind == "project" and callable(run_project):
-        return run_project(frame, work, hooks, config_result=config_result)
+        return cast(ModeOutcome, run_project(frame, work, hooks, config_result=config_result))
     if kind == "research" and callable(run_research):
-        return run_research(frame, hooks)
+        return cast(ModeOutcome, run_research(frame, hooks))
     if kind == "planning" and callable(run_planning):
-        return run_planning(frame, work, config_result=config_result)
+        return cast(ModeOutcome, run_planning(frame, work, config_result=config_result))
     return run_entry_kernel(frame, work, hooks, deps, task_kind=kind, config_result=config_result)
 
 

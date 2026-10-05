@@ -6,6 +6,7 @@ import logging
 import queue
 import threading
 from collections import deque
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ RUN_EVENT_TYPES = {
 }
 
 
-def stamp_run_scope(payload: dict, active) -> dict:
+def stamp_run_scope(payload: dict[str, Any], active: Any) -> dict[str, Any]:
     """Fill the active run/session onto a run-scoped event payload.
 
     Pure helper (no bus state): run-scoped types without an explicit run_id
@@ -46,15 +47,15 @@ def stamp_run_scope(payload: dict, active) -> dict:
     return payload
 
 
-class SsePayload(dict):
+class SsePayload(dict[str, Any]):
     """Queue payload with an SSE cursor that stays out of the JSON body."""
 
-    def __init__(self, payload: dict, *, event_id: int = 0) -> None:
+    def __init__(self, payload: dict[str, Any], *, event_id: int = 0) -> None:
         super().__init__(payload)
         self.event_id = event_id
 
 
-class EventSubscriber(queue.Queue):
+class EventSubscriber(queue.Queue[SsePayload]):
     """One SSE client queue plus an overflow marker."""
 
     def __init__(self, maxsize: int = 1000) -> None:
@@ -68,14 +69,14 @@ class EventBus:
         self._lock = threading.Lock()
         self._subscribers: list[EventSubscriber] = []
         self._sequence = 0
-        self._replay: deque[tuple[int, dict]] = deque(maxlen=replay_limit)
+        self._replay: deque[tuple[int, dict[str, Any]]] = deque(maxlen=replay_limit)
 
     @property
     def sequence(self) -> int:
         with self._lock:
             return self._sequence
 
-    def emit(self, event: dict) -> None:
+    def emit(self, event: dict[str, Any]) -> None:
         with self._lock:
             payload = dict(event)
             self._sequence += 1
@@ -105,12 +106,12 @@ class EventBus:
         last_event_id: int,
         *,
         max_event_id: int | None = None,
-    ) -> list[tuple[int, dict]]:
+    ) -> list[tuple[int, dict[str, Any]]]:
         if isinstance(last_event_id, bool):
             start = 0
         else:
             try:
-                start = max(0, int(last_event_id or 0))  # type: ignore[arg-type]
+                start = max(0, int(last_event_id or 0))
             except (TypeError, ValueError, OverflowError):
                 start = 0
         with self._lock:
@@ -118,7 +119,7 @@ class EventBus:
                 cutoff = self._sequence
             else:
                 try:
-                    cutoff = min(self._sequence, max(0, int(max_event_id)))  # type: ignore[arg-type]
+                    cutoff = min(self._sequence, max(0, int(max_event_id)))
                 except (TypeError, ValueError, OverflowError):
                     cutoff = self._sequence
             rows = [
@@ -148,7 +149,7 @@ class EventBus:
     def _put_for_subscriber(
         sub: EventSubscriber,
         queued_payload: SsePayload,
-        payload: dict,
+        payload: dict[str, Any],
     ) -> None:
         try:
             sub.put_nowait(queued_payload)
@@ -162,7 +163,7 @@ class EventBus:
             return
 
         try:
-            limit = max(0, int(sub.maxsize or 0))  # type: ignore[arg-type]
+            limit = max(0, int(sub.maxsize or 0))
         except (TypeError, ValueError, OverflowError):
             limit = 0
         while limit >= 2 and sub.qsize() > limit - 2:

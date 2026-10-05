@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from codey.agents.consensus import render_project_context
 from codey.knowledge.brief import KnowledgeBriefBuilder
@@ -231,7 +232,7 @@ def _settle_work_checkpoint(ctx: ProjectRun, facts_write_succeeded: bool) -> Non
         )
 
 
-def _build_project_done_event(ctx: ProjectRun) -> dict:
+def _build_project_done_event(ctx: ProjectRun) -> dict[str, Any]:
     assert ctx.result is not None
     changes_payload = None
     if ctx.task_changed and ctx.task_changes and ctx.task_changes.get("ok"):
@@ -310,8 +311,8 @@ def run_project_mode(
     hooks: RunHooks,
     *,
     config_result: ProjectConfigLoadResult | None = None,
-    research_result=None,
-    research_pipeline_result=None,
+    research_result: Any = None,
+    research_pipeline_result: Any = None,
 ) -> ModeOutcome:
     project = frame.request.project
     if project is None:

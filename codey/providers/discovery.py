@@ -7,7 +7,7 @@ import math
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 MESSAGE_BOX = "message_box"
 SEND_BUTTON = "send_button"
@@ -272,7 +272,7 @@ def _bounding_box(locator: Any | None) -> dict[str, Any] | None:
     if locator is None:
         return None
     try:
-        return locator.bounding_box()
+        return cast(dict[str, Any] | None, locator.bounding_box())
     except Exception:
         return None
 

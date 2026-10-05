@@ -8,7 +8,7 @@ tool execution imports.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 TaskKind = Literal["chat", "project", "research", "review", "planning"]
 
@@ -53,7 +53,7 @@ class TaskSubmission:
 
 
 def derive_project_changes_required(
-    body: dict | None,
+    body: dict[str, Any] | None,
     *,
     intent: str = "",
     project: str | None = None,

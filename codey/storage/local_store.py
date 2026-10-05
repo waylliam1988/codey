@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 DEFAULT_STATE_HOME = Path.home() / ".codey"
 MAX_JSON_BYTES = 8 * 1024 * 1024
@@ -30,7 +31,7 @@ def session_key(session_id: str) -> str:
     return hashlib.sha256(str(session_id).encode("utf-8")).hexdigest()[:24]
 
 
-def read_json(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict | None:
+def read_json(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict[str, Any] | None:
     """Lenient cache read: missing or corrupt state -> None.
 
     Cache-like stores (ghost learning, facts, conversations) use this: a
@@ -47,7 +48,7 @@ def read_json(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
-def read_json_strict(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict | None:
+def read_json_strict(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict[str, Any] | None:
     """Strict read distinguishing missing (None) from corrupt (raise).
 
     Missing file -> None. Oversize, undecodable, or non-dict ->
@@ -71,7 +72,7 @@ def read_json_strict(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict | N
 
 def write_json_atomic(
     path: Path,
-    value: dict,
+    value: dict[str, Any],
     *,
     mode: int | None = None,
     preserve_mode: bool = True,

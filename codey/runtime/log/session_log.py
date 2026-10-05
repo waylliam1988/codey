@@ -56,7 +56,7 @@ class RuntimeSessionLog:
         with with_file_lock(path):
             return self._read_unlocked(session_id, repair_tail=False)
 
-    def projection(self, session_id: str):
+    def projection(self, session_id: str) -> Any:
         """Return an independent projection copy for a session.
 
         The cache stays authoritative; callers may read the returned value

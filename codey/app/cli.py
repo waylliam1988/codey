@@ -12,9 +12,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 
-def _safe_print(value, *, file=None) -> None:
+def _safe_print(value: Any, *, file: Any = None) -> None:
     if file is None:
         file = sys.stdout
     text = str(value)
@@ -142,7 +143,7 @@ def _human_cli_line(row: dict[str, object]) -> str:
     return ""
 
 
-def _ghost_list(args: argparse.Namespace, store) -> int:
+def _ghost_list(args: argparse.Namespace, store: Any) -> int:
     candidates = [
         candidate.to_payload()
         for candidate in store.list_candidates(
@@ -162,12 +163,12 @@ def _ghost_list(args: argparse.Namespace, store) -> int:
     return 0
 
 
-def _ghost_export(surface) -> int:
+def _ghost_export(surface: Any) -> int:
     _print_json(surface.export_state())
     return 0
 
 
-def _ghost_work_list(args: argparse.Namespace, work_queue_store) -> int:
+def _ghost_work_list(args: argparse.Namespace, work_queue_store: Any) -> int:
     items = [
         item.to_payload()
         for item in work_queue_store.list_items(
@@ -187,7 +188,7 @@ def _ghost_work_list(args: argparse.Namespace, work_queue_store) -> int:
     return 0
 
 
-def _ghost_work_transition(action: str, args: argparse.Namespace, work_queue_store) -> int:
+def _ghost_work_transition(action: str, args: argparse.Namespace, work_queue_store: Any) -> int:
     try:
         item = (
             work_queue_store.queue_item(args.item_id)
@@ -208,7 +209,7 @@ def _ghost_work_transition(action: str, args: argparse.Namespace, work_queue_sto
     return 0
 
 
-def _ghost_review(action: str, args: argparse.Namespace, store, hebbian_store) -> int:
+def _ghost_review(action: str, args: argparse.Namespace, store: Any, hebbian_store: Any) -> int:
     try:
         candidate = store.review_candidate(
             args.candidate_id,
@@ -254,14 +255,14 @@ def _ghost_review(action: str, args: argparse.Namespace, store, hebbian_store) -
     return 0
 
 
-def _ghost_state(hebbian_store) -> int:
+def _ghost_state(hebbian_store: Any) -> int:
     payload = hebbian_store.export_state()
     payload["ok"] = True
     _print_json(payload)
     return 0
 
 
-def _ghost_directive(args: argparse.Namespace, hebbian_store) -> int:
+def _ghost_directive(args: argparse.Namespace, hebbian_store: Any) -> int:
     from codey.ghost.directive import build_ghost_directive
 
     budget_arg = getattr(args, "budget", 900)
@@ -278,7 +279,7 @@ def _ghost_directive(args: argparse.Namespace, hebbian_store) -> int:
     return 0
 
 
-def _ghost_continuity(args: argparse.Namespace, continuity_store) -> int:
+def _ghost_continuity(args: argparse.Namespace, continuity_store: Any) -> int:
     from codey.ghost.continuity import build_ghost_continuity
 
     budget_arg = getattr(args, "budget", 900)
@@ -295,7 +296,7 @@ def _ghost_continuity(args: argparse.Namespace, continuity_store) -> int:
     return 0
 
 
-def _ghost_rebuild_state(args: argparse.Namespace, hebbian_store) -> int:
+def _ghost_rebuild_state(args: argparse.Namespace, hebbian_store: Any) -> int:
     if not getattr(args, "yes", False):
         _print_error_json("rebuild-state requires --yes")
         return 2
@@ -304,7 +305,7 @@ def _ghost_rebuild_state(args: argparse.Namespace, hebbian_store) -> int:
     return 0 if ok else 1
 
 
-def _ghost_rebuild_continuity(args: argparse.Namespace, continuity_store) -> int:
+def _ghost_rebuild_continuity(args: argparse.Namespace, continuity_store: Any) -> int:
     if not getattr(args, "yes", False):
         _print_error_json("rebuild-continuity requires --yes")
         return 2
@@ -313,7 +314,7 @@ def _ghost_rebuild_continuity(args: argparse.Namespace, continuity_store) -> int
     return 0 if ok else 1
 
 
-def _ghost_rebuild_affinity(args: argparse.Namespace, affinity_store) -> int:
+def _ghost_rebuild_affinity(args: argparse.Namespace, affinity_store: Any) -> int:
     if not getattr(args, "yes", False):
         _print_error_json("rebuild-affinity requires --yes")
         return 2
@@ -322,7 +323,7 @@ def _ghost_rebuild_affinity(args: argparse.Namespace, affinity_store) -> int:
     return 0 if ok else 1
 
 
-def _ghost_reset(args: argparse.Namespace, surface) -> int:
+def _ghost_reset(args: argparse.Namespace, surface: Any) -> int:
     if not getattr(args, "yes", False):
         _print_error_json("reset requires --yes")
         return 2
@@ -333,7 +334,7 @@ def _ghost_reset(args: argparse.Namespace, surface) -> int:
     return 0 if payload.get("ok") else 1
 
 
-def _ghost_delete_scope(args: argparse.Namespace, surface) -> int:
+def _ghost_delete_scope(args: argparse.Namespace, surface: Any) -> int:
     if not getattr(args, "yes", False):
         _print_error_json("delete-scope requires --yes")
         return 2
@@ -350,7 +351,7 @@ def _ghost_delete_scope(args: argparse.Namespace, surface) -> int:
     return 0 if payload.get("ok") else 1
 
 
-def _ghost_enable_disable(action: str, surface, store) -> int:
+def _ghost_enable_disable(action: str, surface: Any, store: Any) -> int:
     _status, payload = surface.dispatch_action(
         {"action": "enable_updates" if action == "enable" else "disable_updates"}
     )
@@ -425,7 +426,7 @@ def _print_json(payload: dict[str, object]) -> None:
     )
 
 
-def _add_ghost_subcommands(sub) -> None:
+def _add_ghost_subcommands(sub: Any) -> None:
     ghost_common = argparse.ArgumentParser(add_help=False)
     ghost_common.add_argument("--state-home", default="", help="local Codey state directory")
 
@@ -576,7 +577,7 @@ def main(argv: list[str] | None = None) -> int:
                 sp_agent.error("--review-source-run-id requires --session-id")
             if intent not in {"project", "review"}:
                 sp_agent.error("review source requires project or review intent")
-    return args.func(args)
+    return cast(int, args.func(args))
 
 
 if __name__ == "__main__":

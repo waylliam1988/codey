@@ -83,7 +83,7 @@ class HeadlessAppContext(AppContext):
         self._connect_provider = connect_provider
         self.shell_rejected = False
 
-    def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID):
+    def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID) -> Any:
         self.set_run_status("connecting")
         self.emit({"type": "status", "status": "connecting"})
         provider = self._connect_provider(provider_id, port=self.port)
@@ -91,7 +91,7 @@ class HeadlessAppContext(AppContext):
         self.emit({"type": "status", "status": "running"})
         return provider
 
-    def _on_event_emitted(self, payload_event: dict) -> None:
+    def _on_event_emitted(self, payload_event: dict[str, Any]) -> None:
         payload = machine_event_payload(payload_event)
         if payload is not None:
             self._emit_jsonl(payload)
@@ -112,7 +112,7 @@ class HeadlessAppContext(AppContext):
             self._emit_jsonl(rejected)
 
 
-def emit_jsonl(payload: dict[str, object], *, file=None) -> None:
+def emit_jsonl(payload: dict[str, object], *, file: Any = None) -> None:
     if file is None:
         file = sys.stdout
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -125,9 +125,9 @@ def run_headless(
     request: HeadlessRequest,
     *,
     emit_jsonl: Callable[[dict[str, object]], None],
-    agent_run: Callable | None = None,
-    collect_changes: Callable | None = None,
-    capture_provider_failure: Callable | None = None,
+    agent_run: Callable[..., Any] | None = None,
+    collect_changes: Callable[..., Any] | None = None,
+    capture_provider_failure: Callable[..., Any] | None = None,
     connect_provider: Callable[..., Any] = default_connect_provider,
     connect_reviewer: Callable[..., Any] | None = None,
 ) -> HeadlessResult:
@@ -275,9 +275,9 @@ def _run_headless_task(
     session_id: str,
     project: Path | None,
     pre_reserved_run_id: str,
-    agent_run: Callable | None,
-    collect_changes: Callable | None,
-    capture_provider_failure: Callable | None,
+    agent_run: Callable[..., Any] | None,
+    collect_changes: Callable[..., Any] | None,
+    capture_provider_failure: Callable[..., Any] | None,
     connect_reviewer: Callable[..., Any] | None,
     review_policy: str,
 ) -> tuple[HeadlessResult | None, BaseException | None]:

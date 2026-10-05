@@ -64,7 +64,7 @@ def prepare_review_input(
     project: str,
     task: str,
     writer_summary: str,
-    changes: dict,
+    changes: dict[str, Any],
     recent_log: str = "",
     change_brief: str = "",
     project_map: str = "",

@@ -7,6 +7,8 @@ Host-trust tables live in ``source_domains``; the similar historical name
 
 from __future__ import annotations
 
+from typing import Any
+
 MEDICAL_CONNECTOR_TERMS = frozenset({
     "biomedical",
     "cancer",
@@ -82,7 +84,7 @@ def preferred_connector_ids(
     return tuple(preferred)
 
 
-def _iter_terms(value: object):
+def _iter_terms(value: object) -> Any:
     if isinstance(value, str):
         yield from value.split()
         return

@@ -49,10 +49,10 @@ def _default_is_git_repository(_project: str | Path) -> bool:
 
 @dataclass(frozen=True)
 class AgentAccess:
-    run: Callable
+    run: Callable[..., Any]
     capture_provider_failure: Callable[..., ProviderFailure]
-    run_consensus: Callable | None = None
-    run_project_audit: Callable | None = None
+    run_consensus: Callable[..., Any] | None = None
+    run_project_audit: Callable[..., Any] | None = None
     is_git_repository: Callable[[str | Path], bool] = _default_is_git_repository
 
 
@@ -67,13 +67,13 @@ class PersistenceAccess:
 
 @dataclass(frozen=True)
 class VerificationAccess:
-    collect_changes: Callable
+    collect_changes: Callable[..., Any]
     workspace_revisions: Any
 
 
 @dataclass(frozen=True)
 class ReviewAccess:
-    run: Callable
+    run: Callable[..., Any]
     review_fix_turns: int = 12
     review_log_lines: int = 80
 
@@ -172,7 +172,7 @@ def blocked_result(result: RunResult, reason: str) -> RunResult:
 
 def safe_verification_map(
     project: str,
-    changes: dict,
+    changes: dict[str, Any],
     checks: tuple[object, ...],
     project_map: str,
     recommended_commands: tuple[str, ...] = (),
@@ -194,7 +194,7 @@ def record_review_input_prepared_trace(
     *,
     task: str,
     writer_summary: str,
-    changes: dict,
+    changes: dict[str, Any],
     recent_log: str,
     change_brief: str,
     project_map: str,
@@ -235,7 +235,7 @@ def managed_tool_fns(
         tool_id: str,
         _permission_profile: str,
         _phase: str,
-    ):
+    ) -> Any:
         return run_command_with_managed_output(
             root,
             rel,
@@ -368,7 +368,7 @@ class ProjectRun:
     result: RunResult | None = None
     inherited_green: bool = False
     task_changed: bool = False
-    task_changes: dict | None = None
+    task_changes: dict[str, Any] | None = None
     task_changes_dirty: bool = False
     review_cycle: Any = None
     files: tuple[str, ...] = ()

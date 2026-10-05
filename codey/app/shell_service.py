@@ -35,7 +35,7 @@ class ShellApprovalContinuationPlan:
     shell_results: tuple[dict[str, object], ...] = ()
 
 
-def shell_result_content(*, command: str, result: dict, approved: bool) -> str:
+def shell_result_content(*, command: str, result: dict[str, Any], approved: bool) -> str:
     """Structure the shell outcome text answered to the original call."""
     from codey.agents.shell_approval import shell_command_text
 
@@ -56,7 +56,7 @@ def shell_result_content(*, command: str, result: dict, approved: bool) -> str:
     return head
 
 
-def shell_result_row(pending: dict, result: dict, *, approved: bool) -> Any:
+def shell_result_row(pending: dict[str, Any], result: dict[str, Any], *, approved: bool) -> Any:
     """Build the turn-0 redelivery row answering the original shell call.
 
     原 call id 无有效值时返回 None（调用方仅走文本 continuation）。
@@ -149,7 +149,7 @@ def _approval_generation_current(ctx: TaskState, expected: int) -> bool:
     return int(expected or 0) == int(current or 0)
 
 
-def _stopped_shell_result() -> dict:
+def _stopped_shell_result() -> dict[str, Any]:
     """Refused-before/during-execution result: never approved, never continued."""
     return {
         "ok": False,
@@ -180,13 +180,13 @@ def safe_project_cwd(project: str | Path, rel: str) -> Path:
 
 def mint_shell_ticket(
     *,
-    lock,
-    approvals,
-    run_registry,
+    lock: Any,
+    approvals: Any,
+    run_registry: Any,
     approval_id: str,
     timeout: int,
     output_limit: int,
-) -> tuple[dict | None, ShellExecutionTicket | None]:
+) -> tuple[dict[str, Any] | None, ShellExecutionTicket | None]:
     """Atomically consume an approval and mint a spawn ticket.
 
     Pop, generation snapshot, stop-flag snapshot, and cwd resolution happen
@@ -236,7 +236,7 @@ def claim_shell_ticket(
     *,
     timeout: int,
     output_limit: int,
-) -> tuple[dict | None, ShellExecutionTicket | None]:
+) -> tuple[dict[str, Any] | None, ShellExecutionTicket | None]:
     """Claim an approval against Stop under the spawn gate.
 
     Without the gate here, a Stop landing between pop and the generation
@@ -254,7 +254,7 @@ def claim_shell_ticket(
         )
 
 
-def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
+def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[str, Any]:
     """Execute an already-claimed ticket. Final Stop check and Popen happen
     under the spawn gate; waiting happens outside the gate."""
     if not isinstance(ticket.command, str):
@@ -357,7 +357,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
     output = "\n\n".join(output_parts) or "(no output)"
     output, display_truncated = clip_middle(output, ticket.output_limit)
     truncated = bool(display_truncated or capture_truncated)
-    result: dict = {
+    result: dict[str, Any] = {
         "ok": True,
         "status": "exit",
         "error": None,
@@ -379,7 +379,7 @@ def execute_approved_shell(
     timeout: int | None = None,
     output_limit: int | None = None,
     expected_approval_generation: int | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Direct-execution entry (tests, headless). Approval-card flow must use
     ``shell_service.claim_shell_ticket`` + ``execute_shell_ticket`` instead."""
     if not isinstance(command, str):
@@ -432,7 +432,7 @@ def execute_approved_shell(
 def build_shell_approval_continuation(
     *,
     command: str,
-    result: dict,
+    result: dict[str, Any],
     post_approval_instructions: str = "",
     setup_context: str = "",
     followup_hints: str = "",
@@ -480,8 +480,8 @@ def build_shell_approval_continuation(
 
 def build_shell_approval_continuation_plan(
     *,
-    pending: dict,
-    result: dict,
+    pending: dict[str, Any],
+    result: dict[str, Any],
     active_run: RunSnapshot | None = None,
     shell_results: tuple[dict[str, object], ...] = (),
 ) -> ShellApprovalContinuationPlan:
@@ -519,7 +519,7 @@ def build_shell_approval_continuation_plan(
     )
 
 
-def shell_continuation_setup_context(pending: dict) -> str:
+def shell_continuation_setup_context(pending: dict[str, Any]) -> str:
     if pending.get("risk_label") not in {
         "dependency_install",
         "system_install",
@@ -533,7 +533,7 @@ def shell_continuation_setup_context(pending: dict) -> str:
     return safe_setup_context(project)
 
 
-def shell_followup_verification_candidates(project: str | Path, risk_label: object):
+def shell_followup_verification_candidates(project: str | Path, risk_label: object) -> Any:
     if risk_label not in {"dependency_install", "dev_server", "publish"}:
         return ()
     return safe_verification_candidates(project)
@@ -541,8 +541,8 @@ def shell_followup_verification_candidates(project: str | Path, risk_label: obje
 
 def shell_followup_hints(
     *,
-    pending: dict,
-    result: dict,
+    pending: dict[str, Any],
+    result: dict[str, Any],
 ) -> str:
     project = str(pending.get("project") or "").strip()
     return render_shell_followup(ShellFollowupInput(

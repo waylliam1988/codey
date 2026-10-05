@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, cast
 
 from codey.agents.handoff import (
     ConversationContext,
@@ -81,7 +81,7 @@ def build_conversation_plan(
                 source_ref="provider_send:conversation_handoff_summary",
                 capability_id="conversation_handoff",
             )
-            return provider.send(summary_prompt)
+            return cast(str, provider.send(summary_prompt))
 
         handoff = conversation.prepare_model_handoff(send_handoff_summary)
     prior_snapshot = conversation.snapshot

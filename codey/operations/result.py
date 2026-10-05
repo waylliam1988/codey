@@ -8,7 +8,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class ModeOutcome:
-    event: dict
+    event: dict[str, Any]
     research_result: Any | None = None
     research_pipeline_result: Any | None = None
     # Final user-visible events (reply/review/...) published by settlement only,

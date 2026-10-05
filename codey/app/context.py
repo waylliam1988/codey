@@ -203,7 +203,7 @@ class AppContext:
         with self.lock:
             store = getattr(self, attr_name)
             if store is not None:
-                return store
+                return cast(object | None, store)
             if self.state_home is None:
                 return None
             state_home = self.state_home
@@ -218,7 +218,7 @@ class AppContext:
                 setattr(self, attr_name, fresh)
                 return fresh
         _close_if_discarded(fresh)
-        return winner
+        return cast(object | None, winner)
 
     @property
     def ghost_inbox(self) -> GhostInboxStore | None:
@@ -320,7 +320,7 @@ class AppContext:
     @knowledge_store.setter
     def knowledge_store(self, value: KnowledgeStore | None) -> None:
         with self.lock:
-            self._knowledge_store = cast(KnowledgeStore, value) if value is not None else None
+            self._knowledge_store = value
             self._knowledge_store_enabled = value is not None
             if value is not None and self._knowledge_root is None and self.state_home is not None:
                 self._knowledge_root = self.state_home / "vault"
@@ -369,11 +369,11 @@ class AppContext:
         with self.lock:
             self._self_repair = value
 
-    def load_ui_state(self) -> dict:
+    def load_ui_state(self) -> dict[str, Any]:
         with self.ui_state_store_lock:
             return self.ui_state_store.load()
 
-    def save_ui_state(self, state: object, *, base_revision: int) -> dict:
+    def save_ui_state(self, state: object, *, base_revision: int) -> dict[str, Any]:
         with self.ui_state_store_lock:
             return self.ui_state_store.save(state, base_revision=base_revision)
 
@@ -482,11 +482,11 @@ class AppContext:
     def release_run(self, run_id: str) -> None:
         self.run_registry.release(run_id)
 
-    def finish_run(self, run_id: str, event: dict) -> bool:
+    def finish_run(self, run_id: str, event: dict[str, Any]) -> bool:
         payload = self.run_registry.finish(run_id, event)
         if payload is None:
             return False
-        expired: tuple[dict, ...] = ()
+        expired: tuple[dict[str, Any], ...] = ()
         if str(payload.get("stop_reason") or "") in {"done", "error", "max_turns", "no_progress", "stopped"}:
             with self._shell_spawn_gate, self.lock:
                 expired = self.approvals.expire_shell_results(
@@ -498,7 +498,7 @@ class AppContext:
             self.record_shell_result(expired_event)
         return True
 
-    def record_shell_result(self, event: dict) -> None:
+    def record_shell_result(self, event: dict[str, Any]) -> None:
         payload = self.run_registry.record_shell_result(event)
         self.emit(payload)
 
@@ -545,11 +545,11 @@ class AppContext:
         for event in events:
             self.record_shell_result(event)
 
-    def add_pending_shell_approval(self, approval_id: str, pending: dict) -> None:
+    def add_pending_shell_approval(self, approval_id: str, pending: dict[str, Any]) -> None:
         with self.lock:
             self.approvals.add_shell(approval_id, pending)
 
-    def pop_pending_shell_approval(self, approval_id: str) -> dict | None:
+    def pop_pending_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
         with self.lock:
             return self.approvals.pop_shell(approval_id)
 
@@ -557,15 +557,15 @@ class AppContext:
         with self.lock:
             return self.approvals.current_generation()
 
-    def pending_shell_approvals(self) -> dict[str, dict]:
+    def pending_shell_approvals(self) -> dict[str, dict[str, Any]]:
         with self.lock:
             return self.approvals.shell_snapshot()
 
-    def add_pending_teach(self, teach_id: str, pending: dict) -> None:
+    def add_pending_teach(self, teach_id: str, pending: dict[str, Any]) -> None:
         with self.lock:
             self.approvals.add_teach(teach_id, pending)
 
-    def pop_pending_teach(self, teach_id: str) -> dict | None:
+    def pop_pending_teach(self, teach_id: str) -> dict[str, Any] | None:
         with self.lock:
             return self.approvals.pop_teach(teach_id)
 
@@ -577,7 +577,7 @@ class AppContext:
         with self.lock:
             self.approvals.cancel_teach()
 
-    def pending_teach_requests(self) -> dict[str, dict]:
+    def pending_teach_requests(self) -> dict[str, dict[str, Any]]:
         with self.lock:
             return self.approvals.teach_snapshot()
 
@@ -601,7 +601,7 @@ class AppContext:
                     self.research_changes.pop(key, None)
                     self._research_change_sessions.pop(key, None)
 
-    def restore_research_changes(self, run_id: str) -> dict:
+    def restore_research_changes(self, run_id: str) -> dict[str, Any]:
         with self.lock:
             changes = self.research_changes.get(run_id)
         if changes is None:
@@ -673,7 +673,7 @@ class AppContext:
     def wait_for_ghost_sleep(self, timeout: float | None = None) -> bool:
         return self.ghost_sleep_daemon.wait(timeout)
 
-    def run_state_payload(self) -> dict:
+    def run_state_payload(self) -> dict[str, Any]:
         with self.lock:
             research_restore_runs = tuple(sorted(self.research_changes))
         return self.run_registry.payload(
@@ -681,11 +681,11 @@ class AppContext:
             research_restore_runs=research_restore_runs,
         )
 
-    def _pending_ui_event(self, active: RunSnapshot | None) -> dict | None:
+    def _pending_ui_event(self, active: RunSnapshot | None) -> dict[str, Any] | None:
         with self.lock:
             return self.approvals.pending_ui_event(active)
 
-    def emit(self, event: dict) -> None:
+    def emit(self, event: dict[str, Any]) -> None:
         with self.lock:
             payload = event_bus.stamp_run_scope(
                 dict(event),
@@ -700,10 +700,10 @@ class AppContext:
         self.event_bus.emit(payload)
         self._on_event_emitted(payload)
 
-    def _on_event_emitted(self, payload: dict) -> None:
+    def _on_event_emitted(self, payload: dict[str, Any]) -> None:
         """Transport hook: the bus and additional sinks receive the same scoped event."""
 
-    def _event_with_run_fields(self, event: dict) -> dict:
+    def _event_with_run_fields(self, event: dict[str, Any]) -> dict[str, Any]:
         payload = dict(event)
         event_type = str(payload.get("type") or "")
         run_id = str(payload.get("run_id") or "")
@@ -744,13 +744,13 @@ class AppContext:
         last_event_id: int,
         *,
         max_event_id: int | None = None,
-    ) -> list[tuple[int, dict]]:
+    ) -> list[tuple[int, dict[str, Any]]]:
         return self.event_bus.replay_events_after(
             last_event_id,
             max_event_id=max_event_id,
         )
 
-    def get_provider(self, provider_id: str):
+    def get_provider(self, provider_id: str) -> Any:
         """Thin seam for tests: connect via the single provider entry point."""
         from codey.app import provider_services
 

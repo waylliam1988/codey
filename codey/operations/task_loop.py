@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from codey.operations import kernel_events as _events
 from codey.operations import kernel_prompt as _prompt
@@ -158,7 +158,7 @@ def _receive_turn_plan(
     cancelled = _cancel_after_send(stop_flag, provider, reply, native, turn,
                                    propagate=propagate_provider_failure)
     if cancelled is not None:
-        return cancelled
+        return cast(_ReceivedPlan | KernelResult | None, cancelled)
     _events._emit_turn_event(on_event, turn, reply)
     length_action = _local_length_reply_action(
         reply, native=native, provider_id=provider_id, used=state.length_continuation_used, turns=turn,
@@ -596,7 +596,7 @@ def run_task_kernel(
             state.prompt, state.pending_reply = done_action
             continue
         if approval is not None:
-            return approval
+            return cast(KernelResult, approval)
         _events._emit_tool_starts(on_event, session, turn, calls)
         _outer_evidence = _outer_evidence_for_context(completion_context)
         results_or_failure = _call_execute_turn(
@@ -627,7 +627,7 @@ def run_task_kernel(
         stopped = _stop_no_progress(progress, results, session, provider, state.pending_messages,
                                     turns_used, stop_flag=stop_flag, propagate=propagate_provider_failure)
         if stopped is not None:
-            return stopped
+            return cast(KernelResult, stopped)
     return _finish_after_budget(
         session,
         provider,
@@ -665,7 +665,7 @@ def _stop_at_turn_start(
     return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
 
 
-def _cancel_after_send(stop_flag, provider, reply, native, turns_used, *, propagate):
+def _cancel_after_send(stop_flag: Any, provider: Any, reply: Any, native: Any, turns_used: Any, *, propagate: Any) -> Any:
     if not _stop_requested(stop_flag):
         return None
     # A cancellation arriving during a slow send wins over returned tool calls.
@@ -677,8 +677,8 @@ def _cancel_after_send(stop_flag, provider, reply, native, turns_used, *, propag
     return KernelResult(False, "stopped", turns_used, "stopped")
 
 
-def _stop_no_progress(progress, results, session, provider, messages, turns_used, *, propagate,
-                      stop_flag=None):
+def _stop_no_progress(progress: Any, results: Any, session: Any, provider: Any, messages: Any, turns_used: Any, *, propagate: Any,
+                      stop_flag: Any = None) -> Any:
     cancelled = _stop_requested(stop_flag)
     if not cancelled and not progress.observe(results, session):
         return None

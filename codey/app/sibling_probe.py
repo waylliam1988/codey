@@ -38,7 +38,7 @@ def borrow_open_provider(provider_id: str, owner_page: Any) -> Any | None:
     return provider_services.borrow_open_provider(provider_id, owner_page)
 
 
-def _sibling_candidates(ctx: TaskState, request_provider_id: str, deadline: float):
+def _sibling_candidates(ctx: TaskState, request_provider_id: str, deadline: float) -> Any:
     """Healthy sibling ids within the recovery deadline (shared preamble)."""
     supervisor = ctx.providers.supervisor
     for provider_id in provider_services.reviewer_candidates(
@@ -148,7 +148,7 @@ def bind_provider_handlers(ctx: TaskState) -> None:
     provider_flow.set_recovery_handler(functools.partial(handle_flow_recovery, ctx))
 
 
-def handle_control_teach(ctx: TaskState, request: provider_controls.ControlTeachRequest):
+def handle_control_teach(ctx: TaskState, request: provider_controls.ControlTeachRequest) -> Any:
     """Run the click-capture loop for one provider-control teach request."""
     while True:
         teach_id = "teach_" + uuid.uuid4().hex[:12]

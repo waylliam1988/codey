@@ -11,6 +11,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.changed_symbols import changed_symbol_names
@@ -100,7 +101,7 @@ class VerificationMap:
 
 def build_verification_map(
     project: str | Path,
-    changes: dict,
+    changes: dict[str, Any],
     *,
     checks_after_last_change: Sequence[object] = (),
     project_map: str = "",
@@ -172,7 +173,7 @@ def build_verification_map(
     )
 
 
-def render_verification_map(*args, **kwargs) -> str:
+def render_verification_map(*args: Any, **kwargs: Any) -> str:
     return build_verification_map(*args, **kwargs).render()
 
 
@@ -184,7 +185,7 @@ def _section(lines: list[str], title: str, values: Sequence[str], fallback: str 
         lines.append(f"- {fallback}")
 
 
-def _changed_paths(changes: dict) -> tuple[str, ...]:
+def _changed_paths(changes: dict[str, Any]) -> tuple[str, ...]:
     result: list[str] = []
     for item in changes.get("files") or []:
         if len(result) >= MAX_CHANGED_FILES or not isinstance(item, dict):

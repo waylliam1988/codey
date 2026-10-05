@@ -9,6 +9,7 @@ entries, decides the next bounded records, and commits them as one batch.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from typing import Any
 
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
@@ -108,7 +109,7 @@ class RuntimeMutationLine:
     ) -> RuntimeOperationState | None:
         accepted: RuntimeOperationState | None = None
 
-        def mutation(projection, entries):
+        def mutation(projection: Any, entries: Any) -> Any:
             nonlocal accepted
             existing = operation_state_from_entries(
                 entries,
@@ -142,7 +143,7 @@ class RuntimeMutationLine:
     ) -> RuntimeOperationState | None:
         committed: RuntimeOperationState | None = None
 
-        def mutation(projection, entries):
+        def mutation(projection: Any, entries: Any) -> Any:
             nonlocal committed
             current = _require_state(entries, session_id=session_id, run_id=run_id)
             op = projection.operations.get(current.operation_id)
@@ -185,7 +186,7 @@ class RuntimeMutationLine:
         """
         committed: RuntimeOperationState | None = None
 
-        def mutation(projection, entries):
+        def mutation(projection: Any, entries: Any) -> Any:
             nonlocal committed
             current = _require_state(entries, session_id=session_id, run_id=run_id)
             op = projection.operations.get(current.operation_id)
@@ -405,7 +406,7 @@ class RuntimeMutationLine:
     ) -> RuntimeEffectIntent:
         committed: RuntimeEffectIntent | None = None
 
-        def mutation(projection, entries):
+        def mutation(projection: Any, entries: Any) -> Any:
             nonlocal committed
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
             rows, prepared = build_provider_begin_rows(
@@ -434,7 +435,7 @@ class RuntimeMutationLine:
     ) -> RuntimeEffectSettlement:
         committed: RuntimeEffectSettlement | None = None
 
-        def mutation(projection, entries):
+        def mutation(projection: Any, entries: Any) -> Any:
             nonlocal committed
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
             rows, prepared = build_provider_settle_rows(
@@ -463,7 +464,7 @@ class RuntimeMutationLine:
     ) -> ToolBatchCommit:
         committed: ToolBatchCommit | None = None
 
-        def mutation(projection, entries):
+        def mutation(projection: Any, entries: Any) -> Any:
             nonlocal committed
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
             rows, batch_commit = build_tool_batch_rows(
@@ -491,7 +492,7 @@ class RuntimeMutationLine:
     ) -> RuntimeEffectSettlement:
         committed: RuntimeEffectSettlement | None = None
 
-        def mutation(projection, entries):
+        def mutation(projection: Any, entries: Any) -> Any:
             nonlocal committed
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
             rows, prepared = build_tool_settle_rows(
@@ -533,7 +534,7 @@ class RuntimeMutationLine:
     ) -> None:
         recovered_ids = tuple(recovered_effect_ids)
 
-        def mutation(projection, entries):
+        def mutation(projection: Any, entries: Any) -> Any:
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
             return build_delivery_recovered_rows(
                 projection,

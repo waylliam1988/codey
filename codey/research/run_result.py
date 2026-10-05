@@ -12,11 +12,11 @@ class ResearchRunResult:
     stop_reason: str
     turns: int
     queries: list[str] = field(default_factory=list)
-    search_results: list[dict] = field(default_factory=list)
-    opened_sources: list[dict] = field(default_factory=list)
-    coverage: dict = field(default_factory=dict)
-    citation_map: list[dict] = field(default_factory=list)
-    evidence_items: list[dict] = field(default_factory=list)
+    search_results: list[dict[str, Any]] = field(default_factory=list)
+    opened_sources: list[dict[str, Any]] = field(default_factory=list)
+    coverage: dict[str, Any] = field(default_factory=dict[str, Any])
+    citation_map: list[dict[str, Any]] = field(default_factory=list)
+    evidence_items: list[dict[str, Any]] = field(default_factory=list)
     counterpoints: list[str] = field(default_factory=list)
     quality_warnings: list[str] = field(default_factory=list)
     notes_created: list[str] = field(default_factory=list)

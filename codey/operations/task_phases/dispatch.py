@@ -71,9 +71,9 @@ def connect_and_build_frame(
     trace_sink: FailOpenPromptTrace,
     hooks: RunHooks,
     project_config_result: ProjectConfigLoadResult,
-    recovered_tool_outcomes: tuple = (),
+    recovered_tool_outcomes: tuple[Any, ...] = (),
     recovered_tool_result_batch_id: str = "",
-    settled_tool_outcomes: tuple = (),
+    settled_tool_outcomes: tuple[Any, ...] = (),
 ) -> tuple[RunFrame, Any, str]:
     """Run provider preflight and build the RunFrame; returns (frame, provider, provider_id)."""
     supervisor = state.providers.supervisor
@@ -255,7 +255,7 @@ def dispatch_run_mode(
         active_frame: RunFrame,
         active_work: RunWork,
         active_hooks: RunHooks,
-        **kwargs,
+        **kwargs: Any,
     ) -> ModeOutcome:
         return run_project_mode(
             project_completion_deps,
@@ -280,7 +280,7 @@ def dispatch_run_mode(
             ),
         )
 
-    def _run_planning_op(active_frame: RunFrame, active_work: RunWork, **kwargs) -> ModeOutcome:
+    def _run_planning_op(active_frame: RunFrame, active_work: RunWork, **kwargs: Any) -> ModeOutcome:
         return run_planning_readonly_mode(
             _planning_deps(deps),
             active_frame,

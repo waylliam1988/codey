@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Any, cast
 
 from playwright.sync_api import Locator, Page
 
@@ -180,7 +181,7 @@ def _is_python_edit_payload(payload: object) -> bool:
     return not (not isinstance(args, dict) or not str(args.get("path") or "").lower().endswith(".py"))
 
 
-def _normalize_python_edit_content(payload: dict) -> bool:
+def _normalize_python_edit_content(payload: dict[str, Any]) -> bool:
     args = payload.get("args")
     if not isinstance(args, dict):
         return False
@@ -202,7 +203,7 @@ def _normalize_python_edit_content(payload: dict) -> bool:
 
 
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
-    return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
+    return cast(Locator | None, driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach))
 
 
 def _send_button(
@@ -322,7 +323,7 @@ def _last_text(page: Page) -> str:
         text = "\n".join(part.strip() for part in markdown_parts if part.strip()).strip()
         if text:
             return text
-        return response.inner_text().strip()
+        return cast(str, response.inner_text().strip())
     except Exception:
         return ""
 

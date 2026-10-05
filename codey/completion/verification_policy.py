@@ -778,7 +778,7 @@ def _effective_source_priority(candidate: VerificationCandidate) -> int:
         priority_int = 0
     else:
         try:
-            priority_int = int(priority or 0)  # type: ignore[arg-type]
+            priority_int = int(priority or 0)
         except (TypeError, ValueError, OverflowError):
             priority_int = 0
     return max(priority_int, 100 if candidate.previously_passed else 0)

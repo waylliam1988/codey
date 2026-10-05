@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 from dataclasses import asdict
+from typing import Any
 
 from codey.research.ledger import (
     EvidenceItem,
@@ -20,7 +21,7 @@ from codey.research.ledger import (
 )
 
 
-def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evidence_start: int = 0) -> dict:
+def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evidence_start: int = 0) -> dict[str, Any]:
     if kind == "web_search" and ledger.searches:
         return {"search": asdict(ledger.searches[-1])}
     if kind == "source_search" and ledger.source_searches:
@@ -35,7 +36,7 @@ def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evid
     return {}
 
 
-def restore_ledger_observation(ledger: ResearchLedger, observation: dict) -> None:
+def restore_ledger_observation(ledger: ResearchLedger, observation: dict[str, Any]) -> None:
     """Apply one verified receipt, preserving source identity and timestamps.
 
     The entry stages the whole replay on a clone and commits only after all
@@ -66,7 +67,7 @@ def restore_ledger_observation(ledger: ResearchLedger, observation: dict) -> Non
         raise ValueError("invalid research observation fields")
 
 
-def _restore_source(ledger: ResearchLedger, observation: dict) -> None:
+def _restore_source(ledger: ResearchLedger, observation: dict[str, Any]) -> None:
     row = dict(observation["source"])
     row["quality"] = SourceQuality(**row["quality"])
     pages_read = row["pages_read"]

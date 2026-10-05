@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import threading
 import time as _time
+from typing import Any, cast
 
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.operations.task_state import TaskState
@@ -21,35 +22,35 @@ from codey.providers.supervisor import ProviderSupervisor
 from codey.utils.refs import clip, digest_text
 
 
-def _provider_registry():
+def _provider_registry() -> Any:
     """Import the connection registry on first use, never on module import."""
     from codey.providers import registry as _registry
 
     return _registry
 
 
-def provider_tab_availability() -> dict:
-    return _provider_registry().provider_tab_availability()
+def provider_tab_availability() -> dict[str, Any]:
+    return cast(dict[str, Any], _provider_registry().provider_tab_availability())
 
 
-def warm_provider_tabs(*args: object, **kwargs: object) -> dict:
-    return _provider_registry().warm_provider_tabs(*args, **kwargs)
+def warm_provider_tabs(*args: object, **kwargs: object) -> dict[str, Any]:
+    return cast(dict[str, Any], _provider_registry().warm_provider_tabs(*args, **kwargs))
 
 
 def connect_provider(*args: object, **kwargs: object) -> ChatProvider:
-    return _provider_registry().connect_provider(*args, **kwargs)
+    return cast(ChatProvider, _provider_registry().connect_provider(*args, **kwargs))
 
 
 def connect_existing_provider(provider_id: str) -> ChatProvider:
-    return _provider_registry().connect_existing_provider(provider_id)
+    return cast(ChatProvider, _provider_registry().connect_existing_provider(provider_id))
 
 
 def connect_fresh_provider_tab(provider_id: str, **kwargs: object) -> ChatProvider:
-    return _provider_registry().connect_fresh_provider_tab(provider_id, **kwargs)
+    return cast(ChatProvider, _provider_registry().connect_fresh_provider_tab(provider_id, **kwargs))
 
 
 def borrow_open_provider(provider_id: str, owner_page: object) -> ChatProvider | None:
-    return _provider_registry().borrow_open_provider(provider_id, owner_page)
+    return cast(ChatProvider | None, _provider_registry().borrow_open_provider(provider_id, owner_page))
 
 
 def reviewer_candidates(
@@ -133,7 +134,7 @@ def provider_availability_from_statuses(
     }
 
 
-def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict]:
+def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict[str, Any]]:
     statuses = statuses or {}
     return [
         {"id": provider_id, "label": label, "available": statuses.get(provider_id) is True}
@@ -141,7 +142,7 @@ def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict]:
     ]
 
 
-def provider_catalog() -> list[dict]:
+def provider_catalog() -> list[dict[str, Any]]:
     """Cheap static catalog: ids + labels only, never probes CDP or network."""
     return [
         {"id": provider_id, "label": label}
@@ -149,7 +150,7 @@ def provider_catalog() -> list[dict]:
     ]
 
 
-def provider_status_update(provider_id: str, available: bool) -> list[dict]:
+def provider_status_update(provider_id: str, available: bool) -> list[dict[str, Any]]:
     return [{
         "id": provider_id,
         "label": PROVIDER_LABELS.get(provider_id, provider_id),
@@ -161,12 +162,12 @@ def review_label(provider_id: str) -> str:
     return PROVIDER_LABELS.get(provider_id, provider_id)
 
 
-def provider_failover_order(providers) -> tuple[str, ...]:
+def provider_failover_order(providers: Any) -> tuple[str, ...]:
     """Order providers by open tabs first, then registry order."""
-    return providers.failover_order(provider_tab_availability)
+    return cast(tuple[str, ...], providers.failover_order(provider_tab_availability))
 
 
-def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID):
+def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID) -> Any:
     """Connect a provider and announce it on the session event stream."""
     ctx.set_run_status("connecting")
     ctx.emit({"type": "status", "status": "connecting"})
@@ -180,7 +181,7 @@ def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID
     return provider
 
 
-def run_provider_warmup(ctx: TaskState, runner=None) -> None:
+def run_provider_warmup(ctx: TaskState, runner: Any = None) -> None:
     if runner is None:
         runner = warm_provider_tabs
     try:
@@ -201,7 +202,7 @@ def run_provider_warmup(ctx: TaskState, runner=None) -> None:
             return
 
 
-def start_provider_warmup(ctx: TaskState, runner=None, *, delay_s: float = 0.0) -> None:
+def start_provider_warmup(ctx: TaskState, runner: Any = None, *, delay_s: float = 0.0) -> None:
     """Queue warmup; serve() passes a short delay to stay off the boot path."""
     import threading as _threading
 

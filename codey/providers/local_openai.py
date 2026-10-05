@@ -68,7 +68,7 @@ class LocalOpenAIProvider:
         self.context_window_tokens = context_window_tokens
         self.context_reserve_tokens = context_reserve_tokens
         self.context_keep_recent_tokens = context_keep_recent_tokens
-        self._messages: list[dict] = []
+        self._messages: list[dict[str, Any]] = []
         self._state_lock = threading.RLock()
         self._send_lock = threading.Lock()
         self._generation = 0
@@ -165,8 +165,8 @@ class LocalOpenAIProvider:
 
     def _assistant_turn_or_fail_closed(
         self,
-        candidate: list[dict],
-        message: dict,
+        candidate: list[dict[str, Any]],
+        message: dict[str, Any],
         *,
         generation: int | None = None,
     ) -> object:
@@ -257,7 +257,7 @@ class LocalOpenAIProvider:
         tools: list[dict[str, object]] | None = None,
         timeout: float | None = None,
     ) -> object:
-        pending: list[dict] = []
+        pending: list[dict[str, Any]] = []
         for item in results:
             pending.append({
                 "role": "tool",
@@ -293,9 +293,9 @@ class LocalOpenAIProvider:
 
     def _prepare_request(
         self,
-        pending_messages: list[dict],
+        pending_messages: list[dict[str, Any]],
         tools: list[dict[str, object]] | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Build, compact, and budget-check the next request without mutation.
 
         Copies history, appends the full pending batch at once (never
@@ -346,7 +346,7 @@ class LocalOpenAIProvider:
             )
         return candidate
 
-    def _request_payload(self, messages: list[dict], tools: list[dict[str, object]] | None) -> dict:
+    def _request_payload(self, messages: list[dict[str, Any]], tools: list[dict[str, object]] | None) -> dict[str, Any]:
         """One wire contract, also used by the diagnostic request recorder."""
         payload: dict[str, object] = {
             "model": self.model,
@@ -368,11 +368,11 @@ class LocalOpenAIProvider:
 
     def _post_chat(
         self,
-        messages: list[dict],
+        messages: list[dict[str, Any]],
         tools: list[dict[str, object]] | None = None,
         *,
         timeout: float | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         from codey.providers import error_classification as errors
 
         endpoint = f"{self.base_url}/chat/completions"
@@ -450,11 +450,11 @@ class LocalOpenAIProvider:
 
     def _complete_message(
         self,
-        messages: list[dict],
+        messages: list[dict[str, Any]],
         tools: list[dict[str, object]] | None = None,
         *,
         timeout: float | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         from codey.providers import error_classification as errors
 
         body = self._post_chat(messages, tools, timeout=timeout)
@@ -496,7 +496,7 @@ class LocalOpenAIProvider:
             out["tool_calls"] = raw_calls
         return out
 
-    def _complete(self, messages: list[dict], *, timeout: float | None = None) -> str:
+    def _complete(self, messages: list[dict[str, Any]], *, timeout: float | None = None) -> str:
         body = self._post_chat(messages, None, timeout=timeout)
         return _extract_reply(body)
 
@@ -516,7 +516,7 @@ def _looks_like_unsupported_tools_error(detail: object) -> bool:
     )
 
 
-def _parse_tool_calls(message: dict) -> tuple[list[dict[str, object]], int]:
+def _parse_tool_calls(message: dict[str, Any]) -> tuple[list[dict[str, object]], int]:
     """Parse raw tool_calls, returning the usable calls plus a drop count.
 
     A call without an id, without a name, or without a JSON-object
@@ -574,7 +574,7 @@ def _parse_tool_calls(message: dict) -> tuple[list[dict[str, object]], int]:
     return parsed, dropped
 
 
-def _store_assistant_message(message: dict) -> dict:
+def _store_assistant_message(message: dict[str, Any]) -> dict[str, Any]:
     stored: dict[str, object] = {"role": "assistant", "content": str(message.get("content") or "")}
     raw_calls = message.get("tool_calls")
     if isinstance(raw_calls, list) and raw_calls:
@@ -582,7 +582,7 @@ def _store_assistant_message(message: dict) -> dict:
     return stored
 
 
-def _extract_reply(body: dict) -> str:
+def _extract_reply(body: dict[str, Any]) -> str:
     try:
         choice = body["choices"][0]
     except (KeyError, IndexError, TypeError) as exc:
@@ -609,7 +609,7 @@ def _extract_reply(body: dict) -> str:
     raise RuntimeError("local model returned a choice without message content")
 
 
-def _load_response_json(raw: bytes, endpoint: str) -> dict:
+def _load_response_json(raw: bytes, endpoint: str) -> dict[str, Any]:
     text = raw.decode("utf-8", errors="replace")
     if not text.strip():
         raise _RetryableResponseError(

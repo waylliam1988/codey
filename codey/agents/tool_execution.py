@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from codey.agents.protocol import (
     canonical_project_path,
@@ -135,27 +135,27 @@ def execute_information_tool_call(
             for name in ("offset", "limit")
             if name in call.args
         }
-        return tool_fns.read_file(project, path, **read_options)
+        return cast(ToolOutcome, tool_fns.read_file(project, path, **read_options))
     if call.name == "ls":
-        return tool_fns.list_directory(project, path)
+        return cast(ToolOutcome, tool_fns.list_directory(project, path))
     if call.name == "search":
         search_options = {
             name: call.args[name]
             for name in ("offset", "limit")
             if name in call.args
         }
-        return tool_fns.search_files(
+        return cast(ToolOutcome, tool_fns.search_files(
             project,
             path,
             call_arg(call, "query"),
             **search_options,
-        )
+        ))
     if call.name == "references":
-        return tool_fns.find_references(
+        return cast(ToolOutcome, tool_fns.find_references(
             project,
             path,
             call_arg(call, "symbol"),
-        )
+        ))
     return ToolOutcome.error(f"unsupported information tool {call.name} (path={path})")
 
 

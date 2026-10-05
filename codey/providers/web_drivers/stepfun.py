@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import cast
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page
@@ -123,7 +124,7 @@ _SET_TEXTAREA_VALUE_JS = r"""
 }
 """
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
-    return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
+    return cast(Locator | None, driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach))
 
 
 def _send_button(
@@ -142,7 +143,7 @@ def _send_button(
                 continue
             try:
                 if control.is_enabled():
-                    return control
+                    return cast(Locator | None, control)
             except Exception:
                 continue
         if time.time() >= deadline:

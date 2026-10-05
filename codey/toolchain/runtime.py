@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from codey.policies.action import (
     DECISION_DENY,
@@ -214,7 +215,7 @@ class ToolOutcome:
         return normalized_managed_output(value)
 
 
-def _policy_error_outcome(decision) -> ToolOutcome:
+def _policy_error_outcome(decision: Any) -> ToolOutcome:
     message = str(getattr(decision, "display", "") or "action denied by policy")
     text = message if message.startswith("ERROR:") else f"ERROR: {message}"
     return ToolOutcome(

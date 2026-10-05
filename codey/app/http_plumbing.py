@@ -6,6 +6,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from typing import Any
 
 from codey import __version__
 from codey.env_names import APP_VERSION_PLACEHOLDER
@@ -102,7 +103,7 @@ def request_origin_allowed(handler: BaseHTTPRequestHandler) -> bool:
     return origin.rstrip("/").lower() in request_allowed_origins(handler)
 
 
-def send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
+def send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
@@ -225,7 +226,7 @@ def sse_replay_cursor(value: object) -> int | None:
 
 def write_sse_event(
     handler: BaseHTTPRequestHandler,
-    event: dict,
+    event: dict[str, Any],
     *,
     event_id: int = 0,
 ) -> bool:

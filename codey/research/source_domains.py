@@ -15,6 +15,8 @@ do not get free trust.
 
 from __future__ import annotations
 
+from typing import Any
+
 from codey.utils.refs import is_valid_hostname as _is_valid_hostname
 
 GOV_SUFFIXES = (
@@ -107,7 +109,7 @@ def host_matches(host: str, domain: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
-def matches_any(host: str, domains) -> bool:
+def matches_any(host: str, domains: Any) -> bool:
     """Fail-closed domain match.
 
     Malformed hostnames (empty labels, doubled dots, single labels, bad

@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codey.toolchain.definition import ToolDefinition
 
 
 def model_visible_contract_hash(kind: str, text: object) -> str:
@@ -20,26 +24,26 @@ def model_visible_contract_hash(kind: str, text: object) -> str:
 
 
 def render_coding_tool_contract_text(
-    definitions: tuple[object, ...] | None = None,
+    definitions: tuple[ToolDefinition, ...] | None = None,
 ) -> str:
     from codey.toolchain import definition as tool_defs
 
     definitions_to_render = tool_defs.TOOL_DEFINITIONS if definitions is None else definitions
     chunks: list[str] = []
-    for definition in definitions_to_render:  # type: ignore[attr-defined]
-        if not definition.examples:  # type: ignore[attr-defined]
+    for definition in definitions_to_render:
+        if not definition.examples:
             continue
-        examples = "\n".join(f"  {example}" for example in definition.examples)  # type: ignore[attr-defined]
-        chunks.append(f"{examples}\n    {definition.description}")  # type: ignore[attr-defined]
+        examples = "\n".join(f"  {example}" for example in definition.examples)
+        chunks.append(f"{examples}\n    {definition.description}")
     return "\n\n".join(chunks)
 
 
 def coding_model_tool_contract_hash(
-    definitions: tuple[object, ...] | None = None,
+    definitions: tuple[ToolDefinition, ...] | None = None,
 ) -> str:
     return model_visible_contract_hash(
         "coding_tool_contract",
-        render_coding_tool_contract_text(definitions),  # type: ignore[arg-type]
+        render_coding_tool_contract_text(definitions),
     )
 
 
@@ -195,7 +199,7 @@ def _is_full_writer_toolset(allowed_tool_names: set[str]) -> bool:
 
 
 def render_coding_system_prompt(
-    definitions: tuple[object, ...],
+    definitions: tuple[ToolDefinition, ...],
     *,
     allowed_tool_names: set[str],
 ) -> str:
@@ -210,7 +214,7 @@ def render_coding_system_prompt(
     does not show (or vice versa).
     """
 
-    tool_contract = render_coding_tool_contract_text(definitions)  # type: ignore[arg-type]
+    tool_contract = render_coding_tool_contract_text(definitions)
     allowed = _normalize_tool_names(set(allowed_tool_names or set()))
     defined = _defined_tool_names(tuple(definitions or ()))
     if allowed != defined:

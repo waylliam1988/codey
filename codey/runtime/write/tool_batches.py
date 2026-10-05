@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 from codey.runtime.core.operation_state import (
     RuntimeOperationTransitionError,
@@ -48,7 +49,7 @@ class ToolBatchCommit:
 
 
 def build_tool_batch_rows(
-    projection,
+    projection: Any,
     view: SessionView,
     *,
     session_id: str,
@@ -108,7 +109,7 @@ def build_tool_batch_rows(
 
 
 def build_tool_settle_rows(
-    projection,
+    projection: Any,
     view: SessionView,
     *,
     session_id: str,

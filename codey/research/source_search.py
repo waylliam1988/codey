@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
+from typing import Any
 
 from codey.utils.refs import coerce_int
 
@@ -21,7 +22,7 @@ class SourceSearchHit:
     page: int | None = None
     score: int = 0
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 

@@ -51,7 +51,7 @@ def read_manifest_text(path: Path, *, max_bytes: int) -> str:
         if isinstance(max_bytes, bool):
             return ""
         try:
-            limit = int(max_bytes)  # type: ignore[arg-type]
+            limit = int(max_bytes)
         except (TypeError, ValueError, OverflowError):
             return ""
         if path.stat().st_size > max(0, limit):

@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, cast
 
 from codey.operations.context import RunWork
 from codey.operations.project_completion_context import MAX_COMPLETION_REPAIR_ROUNDS
@@ -100,7 +100,7 @@ def open_run_trace(
     project: str | None,
     task_kind: str,
     provider_id: str,
-):
+) -> Any:
     if deps.run_traces is None:
         return None
     try:
@@ -123,7 +123,7 @@ def _current_workspace_state(
     store = deps.workspace_revisions
     if not project:
         return WorkspaceState(INITIAL_WORKSPACE_REVISION, "")
-    return store.current_state(project, ignored_paths=ignored_paths)
+    return cast(WorkspaceState, store.current_state(project, ignored_paths=ignored_paths))
 
 
 def open_run_ledger(

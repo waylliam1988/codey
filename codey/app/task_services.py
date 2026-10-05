@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from codey.operations.task_state import TaskSubmissionState
 
@@ -14,11 +14,11 @@ if TYPE_CHECKING:
 def build_task_deps(
     state: TaskSubmissionState,
     *,
-    agent_run: Callable | None = None,
-    collect_changes: Callable | None = None,
-    capture_provider_failure: Callable | None = None,
+    agent_run: Callable[..., Any] | None = None,
+    collect_changes: Callable[..., Any] | None = None,
+    capture_provider_failure: Callable[..., Any] | None = None,
     review_policy: str | None = None,
-    connect_reviewer: Callable | None = None,
+    connect_reviewer: Callable[..., Any] | None = None,
 ) -> TaskRunDeps:
     # Resolve services only when a task starts; importing the app must not
     # initialize browser connections or load the research runtime.

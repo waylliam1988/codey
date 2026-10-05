@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from codey.runtime.core import cancellation
 
@@ -365,7 +365,7 @@ class BrowserWorker:
         result = job.slot[0]
         if isinstance(result, Exception):
             raise result
-        return result
+        return cast(T, result)
 
 
 _WORKER: BrowserWorker | None = None

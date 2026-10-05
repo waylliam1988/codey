@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from codey.automation.browser import (
     DEFAULT_PORT,
@@ -106,7 +106,7 @@ def connect_provider(
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
     if normalized == "local":
-        return provider_type.connect()
+        return cast(ChatProvider, provider_type.connect())
     if open_if_missing and os.environ.get(WORKER_CHILD_ENV) != "1":
         override = load_enabled_override(normalized)
         if override is not None:
@@ -115,12 +115,12 @@ def connect_provider(
                 override,
                 port=port + PROVIDER_WORKER_PORT_OFFSETS.get(normalized, 100),
             )
-    return provider_type.connect(
+    return cast(ChatProvider, provider_type.connect(
         port=port,
         profile=profile,
         open_if_missing=open_if_missing,
         bring_to_front=bring_to_front,
-    )
+    ))
 
 
 def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | None:
@@ -183,7 +183,7 @@ def connect_fresh_provider_tab(
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
     if normalized == "local":
-        return provider_type.connect()
+        return cast(ChatProvider, provider_type.connect())
     if os.environ.get(WORKER_CHILD_ENV) != "1":
         override = load_enabled_override(normalized)
         if override is not None:
@@ -192,10 +192,10 @@ def connect_fresh_provider_tab(
                 override,
                 port=port + PROVIDER_WORKER_PORT_OFFSETS.get(normalized, 100),
             )
-    return provider_type.connect(
+    return cast(ChatProvider, provider_type.connect(
         port=port,
         profile=profile,
         open_if_missing=True,
         bring_to_front=False,
         fresh_tab=True,
-    )
+    ))

@@ -115,7 +115,7 @@ def _content_budget(budget_chars: int) -> int:
     if isinstance(budget_chars, bool):
         return 0
     try:
-        parsed = int(budget_chars or 0)  # type: ignore[arg-type]
+        parsed = int(budget_chars or 0)
     except (TypeError, ValueError, OverflowError):
         return 0
     return max(0, parsed - len(RETRIEVED_BLOCK_HEADER))
@@ -213,7 +213,7 @@ def _fit_blocks(
     if content <= 0:
         return []
     try:
-        limit = max(1, int(max_items or 1))  # type: ignore[arg-type]
+        limit = max(1, int(max_items or 1))
     except (TypeError, ValueError, OverflowError):
         limit = 1
     fitted: list[tuple[dict[str, object], str]] = []

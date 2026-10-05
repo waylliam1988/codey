@@ -18,7 +18,7 @@ class SeenInfoLRU:
             max_items = 256
         else:
             try:
-                max_items = int(max_items)  # type: ignore[arg-type]
+                max_items = int(max_items)
             except (TypeError, ValueError, OverflowError):
                 max_items = 256
         self.max_items = max(1, max_items)

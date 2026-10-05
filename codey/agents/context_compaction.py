@@ -9,6 +9,7 @@ outputs enter the summary as receipts, never verbatim.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from codey.agents.handoff import estimate_tokens
 
@@ -213,9 +214,9 @@ def compact_openai_messages(
     messages: Sequence[Mapping[str, object]],
     summary: str,
     cut_index: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     tail = [dict(m) for m in messages[cut_index:]]
-    summary_message: dict = {"role": "user", "content": f"{SUMMARY_PREFIX_TEXT}\n{summary}"}
+    summary_message: dict[str, Any] = {"role": "user", "content": f"{SUMMARY_PREFIX_TEXT}\n{summary}"}
     if tail and str(tail[0].get("role") or "") == "system":
         return [tail[0], summary_message, *tail[1:]]
     first = messages[0] if messages else None
@@ -225,7 +226,7 @@ def compact_openai_messages(
 
 
 def compact_openai_messages_in_place(
-    messages: list[dict],
+    messages: list[dict[str, Any]],
     *,
     tools: Sequence[Mapping[str, object]] | None = None,
     context_window_tokens: int = 128_000,

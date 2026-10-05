@@ -869,7 +869,7 @@ def _items_from_knowledge(
 ) -> list[GhostContinuityItem]:
     if store is None or getattr(store, "index", None) is None:
         return []
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     try:
         rows = list(
             store.index.recent(
@@ -1248,7 +1248,7 @@ def _clean_metadata(value: object) -> dict[str, object]:
 def _expires_at(now: str, days: int) -> str:
     parsed = parse_ts(now)
     try:
-        parsed_days = int(days or 1)  # type: ignore[arg-type]
+        parsed_days = int(days or 1)
     except (TypeError, ValueError, OverflowError):
         parsed_days = 1
     return (parsed + timedelta(days=max(1, parsed_days))).isoformat(timespec="seconds").replace("+00:00", "Z")

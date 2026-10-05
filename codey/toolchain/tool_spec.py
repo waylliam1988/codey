@@ -13,7 +13,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
 
@@ -630,7 +630,7 @@ def _json_value_equal(left: Any, right: Any) -> bool:
         return left.keys() == right.keys() and all(_json_value_equal(value, right[key]) for key, value in left.items())
     if isinstance(left, list):
         return len(left) == len(right) and all(_json_value_equal(a, b) for a, b in zip(left, right, strict=True))
-    return left == right
+    return cast(bool, left == right)
 
 
 def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, value: Any, *, strict: bool = False) -> str:

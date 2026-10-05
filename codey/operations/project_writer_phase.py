@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from codey.agents.consensus import render_project_context
 from codey.agents.request import AgentRequest
@@ -92,7 +92,7 @@ def _run_one_writer_attempt(
         )
     except Exception:
         writer_experiences = ""
-    return ctx.deps.agent.run(AgentRequest(
+    return cast(RunResult, ctx.deps.agent.run(AgentRequest(
         provider=spec.provider,
         project=Path(ctx.project),
         task=spec.task,
@@ -154,7 +154,7 @@ def _run_one_writer_attempt(
         },
         project_changes_required=bool(getattr(ctx.request, "project_changes_required", False) is True),
         research_tools=_writer_research_tools(ctx),
-    ))
+    )))
 
 
 def _writer_research_tools(ctx: ProjectRun) -> Any:
@@ -185,7 +185,7 @@ def _select_next_writer(ctx: ProjectRun, excluded: set[str]) -> str | None:
         preferred=preference,
     )
     if ctx.hooks.supervisor is not None:
-        return ctx.hooks.supervisor.select("", ranked_order, excluded=excluded)
+        return cast(str | None, ctx.hooks.supervisor.select("", ranked_order, excluded=excluded))
     return next((item for item in ranked_order if item not in excluded), None)
 
 

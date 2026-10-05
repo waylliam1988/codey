@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.runtime.observe.events import RunEvent
@@ -340,7 +341,7 @@ class ExecutionEvidence:
         self.checks_after_edit.clear()
         self._append_check(self.failed_checks_after_edit, item, MAX_FAILED_CHECKS)
 
-    def _record_run(self, args: dict, outcome: object) -> None:
+    def _record_run(self, args: dict[str, Any], outcome: object) -> None:
         command = str(args.get("command") or "").strip()
         cwd = str(args.get("path") or ".").strip() or "."
         if not command:
@@ -369,7 +370,7 @@ class ExecutionEvidence:
         )
         self.observe_check(item, succeeded=ok)
 
-    def _record_information(self, key, values: list, item, limit: int) -> None:
+    def _record_information(self, key: Any, values: list[Any], item: Any, limit: int) -> None:
         if key in self._seen_info:
             self.duplicate_info_tools += 1
         else:
@@ -407,7 +408,7 @@ class ExecutionEvidence:
         return value if isinstance(value, int) and not isinstance(value, bool) else default
 
     @staticmethod
-    def _unique(values) -> list[str]:
+    def _unique(values: Any) -> list[str]:
         result: list[str] = []
         for value in values:
             if value and value not in result:

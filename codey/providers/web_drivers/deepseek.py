@@ -15,6 +15,7 @@ elapsed since the send.
 from __future__ import annotations
 
 import time
+from typing import Any, cast
 
 from playwright.sync_api import Page
 
@@ -62,7 +63,7 @@ RATE_LIMIT_MAX_RETRIES = 2
 JSON_TOOL_STABLE_TICKS = 2
 
 
-def new_chat(page, timeout: float | None = None) -> None:
+def new_chat(page: Any, timeout: float | None = None) -> None:
     """Reset the page to a fresh DeepSeek conversation (clears prior context)."""
     cancellation.check()
     deadline = start_deadline(timeout)
@@ -89,7 +90,7 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     raise TimeoutError("DeepSeek chat input did not appear. Are you logged in?")
 
 
-def _message_box(page: Page, *, teach: bool = False):
+def _message_box(page: Page, *, teach: bool = False) -> Any:
     return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
 
 
@@ -97,7 +98,7 @@ def _response_count(page: Page) -> int:
     return driver_common.response_count(PROVIDER_ID, PROFILE, page)
 
 
-def _send_button(page: Page, *, timeout: float = 0.0, teach: bool = False):
+def _send_button(page: Page, *, timeout: float = 0.0, teach: bool = False) -> Any:
     message_box = _message_box(page)
     return controls.locate_control(
         page,
@@ -169,7 +170,7 @@ def _last_text(page: Page) -> str:
     response = controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
     if response is None:
         return ""
-    return response.evaluate(_EXTRACT_JS)
+    return cast(str, response.evaluate(_EXTRACT_JS))
 
 
 def _copy_last_text(page: Page) -> str:
@@ -286,7 +287,7 @@ def _click_rate_limit_retry(page: Page) -> bool:
 
 def _submit(
     page: Page,
-    message_box,
+    message_box: Any,
     baseline: int,
     baseline_text: str,
     submitted_text: str,

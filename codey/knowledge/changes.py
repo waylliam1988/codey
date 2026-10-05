@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from codey.storage.atomic_io import write_text_atomic
 from codey.workspace.changes import RestoreResult
@@ -67,7 +68,7 @@ class KnowledgeChanges:
     def updated(self) -> list[str]:
         return sorted(r for r in self._touched if self._before.get(r) is not None)
 
-    def summary(self) -> dict:
+    def summary(self) -> dict[str, Any]:
         return {"created": self.created, "updated": self.updated}
 
     def has_changes(self) -> bool:

@@ -10,6 +10,8 @@ importers do not move.
 
 from __future__ import annotations
 
+from typing import Any
+
 SETTLEMENT_STATUS_ERROR = "error"
 SETTLEMENT_STATUS_INTERRUPTED = "interrupted"
 SENT_STATE_MAYBE_SENT = "maybe_sent"
@@ -20,7 +22,7 @@ RECORD_KIND_ABANDONED = "abandoned"
 def keep_effect_pair_for_compaction(
     *,
     is_open: bool,
-    settlement_payload: dict | None,
+    settlement_payload: dict[str, Any] | None,
 ) -> bool:
     """Compaction retention policy for one intent/settlement pair.
 

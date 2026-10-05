@@ -32,7 +32,7 @@ def run_concept_tags(store: Any, note_ids: list[str], limit: int = 5) -> list[st
     return [concept for concept, _ in counts.most_common(limit)]
 
 
-def _source_meta(item: dict, quality_text: str = "") -> str:
+def _source_meta(item: dict[str, Any], quality_text: str = "") -> str:
     parts: list[str] = []
     if quality_text:
         parts.append(quality_text)
@@ -57,7 +57,7 @@ def _source_meta(item: dict, quality_text: str = "") -> str:
     return " · ".join(parts)
 
 
-def _evidence_locator(item: dict) -> str:
+def _evidence_locator(item: dict[str, Any]) -> str:
     locator = str(item.get("locator") or "")
     return f" {locator}" if locator else ""
 

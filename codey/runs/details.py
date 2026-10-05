@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from codey.runs.ledger_projection import RunLedgerProjection, load_run_projection
 from codey.runs.receipt import (
@@ -326,7 +326,7 @@ def _load_operation_state(
         return None
     if operation is None:
         return None
-    return operation
+    return cast(RuntimeOperationState | None, operation)
 
 
 def _operation_progress_row(

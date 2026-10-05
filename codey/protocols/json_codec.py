@@ -199,7 +199,7 @@ class JsonToolCodec:
         return self._model_tool_contract_hash
 
     @property
-    def definitions(self) -> tuple:
+    def definitions(self) -> tuple[Any, ...]:
         return self._definitions
 
     def is_allowed(self, tool_name: str) -> bool:

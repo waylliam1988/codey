@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import SupportsIndex, SupportsInt, TypeAlias, cast
+from typing import Any, SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
@@ -12,7 +12,7 @@ SCHEMA_VERSION = 1
 _INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 
-def _payload_task_start(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_task_start(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     return {
         **common,
         "project": clip_event_text(event.get("project") or "", 500),
@@ -22,18 +22,18 @@ def _payload_task_start(common: dict[str, object], event: dict) -> dict[str, obj
     }
 
 
-def _payload_status(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_status(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     return {
         **common,
         "status": clip_event_text(event.get("status") or event.get("text") or "", 80),
     }
 
 
-def _payload_info(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_info(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     return {**common, "text": clip_event_text(event.get("text") or "")}
 
 
-def _payload_shell_request(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_shell_request(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     command_fields = shell_command_event_fields(event)
     payload = {
         **common,
@@ -52,14 +52,14 @@ def _payload_shell_request(common: dict[str, object], event: dict) -> dict[str, 
     return payload
 
 
-def _payload_turn(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_turn(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     payload = {**common, "turn": _int_or_zero(event.get("turn"))}
     if event.get("note"):
         payload["note"] = clip_event_text(event.get("note") or "")
     return payload
 
 
-def _payload_tool_started(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_tool_started(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     payload = {
         **common,
         "turn": _int_or_zero(event.get("turn")),
@@ -75,7 +75,7 @@ def _payload_tool_started(common: dict[str, object], event: dict) -> dict[str, o
     return payload
 
 
-def _payload_tool(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_tool(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     payload = {
         **common,
         "turn": _int_or_zero(event.get("turn")),
@@ -105,7 +105,7 @@ def _payload_tool(common: dict[str, object], event: dict) -> dict[str, object]:
     return payload
 
 
-def _payload_task_done(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_task_done(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     payload = {
         **common,
         "summary": clip_event_text(event.get("summary") or ""),
@@ -133,7 +133,7 @@ def _payload_task_done(common: dict[str, object], event: dict) -> dict[str, obje
     return payload
 
 
-def _payload_review(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_review(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     payload = {**common, "text": clip_event_text(event.get("text") or "")}
     review = event.get("review")
     if isinstance(review, dict):
@@ -141,7 +141,7 @@ def _payload_review(common: dict[str, object], event: dict) -> dict[str, object]
     return payload
 
 
-def _payload_headless_close(common: dict[str, object], event: dict) -> dict[str, object]:
+def _payload_headless_close(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
     return {
         **common,
         "stop_reason": clip_event_text(event.get("stop_reason") or "", 80),
@@ -149,7 +149,7 @@ def _payload_headless_close(common: dict[str, object], event: dict) -> dict[str,
     }
 
 
-def machine_event_payload(event: dict) -> dict[str, object] | None:
+def machine_event_payload(event: dict[str, Any]) -> dict[str, object] | None:
     if not isinstance(event, dict):
         return None
     event_type = str(event.get("type") or "")
@@ -195,7 +195,7 @@ def _int_or_zero(value: object) -> int:
 
 def _copy_if_present(
     target: dict[str, object],
-    source: dict,
+    source: dict[str, Any],
     key: str,
     *,
     limit: int = MAX_EVENT_TEXT_CHARS,
@@ -205,7 +205,7 @@ def _copy_if_present(
         target[key] = clip_event_text(value, limit)
 
 
-def _receipt_display(receipt: dict) -> dict[str, object]:
+def _receipt_display(receipt: dict[str, Any]) -> dict[str, object]:
     display = receipt.get("display")
     if not isinstance(display, dict):
         return {}
@@ -219,7 +219,7 @@ def _receipt_display(receipt: dict) -> dict[str, object]:
     return section
 
 
-def _receipt_work(receipt: dict) -> dict[str, object]:
+def _receipt_work(receipt: dict[str, Any]) -> dict[str, object]:
     work = receipt.get("work")
     if not isinstance(work, dict):
         return {}
@@ -234,7 +234,7 @@ def _receipt_work(receipt: dict) -> dict[str, object]:
     return section
 
 
-def _receipt_verification(receipt: dict) -> dict[str, object]:
+def _receipt_verification(receipt: dict[str, Any]) -> dict[str, object]:
     verification = receipt.get("verification")
     if not isinstance(verification, dict):
         return {}
@@ -257,7 +257,7 @@ def _receipt_verification(receipt: dict) -> dict[str, object]:
     return section
 
 
-def _receipt_integrity(receipt: dict) -> dict[str, object]:
+def _receipt_integrity(receipt: dict[str, Any]) -> dict[str, object]:
     integrity = receipt.get("integrity")
     if not isinstance(integrity, dict):
         return {}
@@ -292,7 +292,7 @@ def _receipt_integrity(receipt: dict) -> dict[str, object]:
     return section
 
 
-def bounded_receipt(receipt: dict) -> dict[str, object]:
+def bounded_receipt(receipt: dict[str, Any]) -> dict[str, object]:
     """Bounded schema-v1 receipt projection for the JSONL stream."""
 
     payload: dict[str, object] = {}
@@ -314,7 +314,7 @@ def bounded_receipt(receipt: dict) -> dict[str, object]:
     return payload
 
 
-def _bounded_deferred_tool_call(row: dict) -> dict[str, object]:
+def _bounded_deferred_tool_call(row: dict[str, Any]) -> dict[str, object]:
     payload = {
         "tool_index": _int_or_zero(row.get("tool_index")),
         "tool_name": clip_event_text(row.get("tool_name") or "", 80),
@@ -324,7 +324,7 @@ def _bounded_deferred_tool_call(row: dict) -> dict[str, object]:
     return payload
 
 
-def _bounded_changes(changes: dict) -> dict[str, object]:
+def _bounded_changes(changes: dict[str, Any]) -> dict[str, object]:
     files = []
     for item in list(changes.get("files") or [])[:3]:
         if not isinstance(item, dict):
@@ -340,7 +340,7 @@ def _bounded_changes(changes: dict) -> dict[str, object]:
     }
 
 
-def _bounded_provider_failure(failure: dict) -> dict[str, object]:
+def _bounded_provider_failure(failure: dict[str, Any]) -> dict[str, object]:
     return {
         "kind": clip_event_text(failure.get("kind") or "", 80),
         "action": clip_event_text(failure.get("action") or "", 80),
@@ -348,7 +348,7 @@ def _bounded_provider_failure(failure: dict) -> dict[str, object]:
     }
 
 
-def _bounded_review(review: dict) -> dict[str, object]:
+def _bounded_review(review: dict[str, Any]) -> dict[str, object]:
     payload = {
         "verdict": clip_event_text(review.get("verdict") or "", 40),
         "status": clip_event_text(review.get("status") or "", 40),

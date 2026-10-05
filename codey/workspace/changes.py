@@ -10,7 +10,7 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from codey.runtime.core.cancellation import CapturedProcess
@@ -81,7 +81,7 @@ class ProjectWriteBusy(RuntimeError):
     """A second task tried to persist snapshots for a project already owned."""
 
 
-def _manifest_files_or_raise(payload: dict, manifest_path: Path) -> dict:
+def _manifest_files_or_raise(payload: dict[str, Any], manifest_path: Path) -> dict[str, Any]:
     """Return the top-level ``files`` index or raise ``StoreCorruption``.
 
     Per-entry dirt is skipped by callers; a missing/broken top-level index
@@ -270,7 +270,7 @@ class SnapshotStore:
         with with_file_lock(self._lock_target(resolved_root)):
             payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
             if payload is None:
-                files: dict = {}
+                files: dict[str, Any] = {}
             else:
                 files = _manifest_files_or_raise(payload, manifest_path)
             if rel in files:
@@ -393,7 +393,7 @@ class SnapshotStore:
             )
         return body
 
-    def _disk_total_bytes_locked(self, resolved_root: Path, files: dict) -> int:
+    def _disk_total_bytes_locked(self, resolved_root: Path, files: dict[str, Any]) -> int:
         # Disk-view size guard from manifest refs + stat sizes only.
         # Missing, renamed, linked, or non-regular bodies are corruption:
         # never silently skipped, never re-decoded here.
@@ -492,7 +492,7 @@ class SnapshotStore:
         self,
         resolved_root: Path,
         rel: str,
-        mutate,
+        mutate: Any,
     ) -> None:
         manifest_path = self.path_for(resolved_root)
         payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
@@ -690,7 +690,7 @@ class ChangeTracker:
             items.append(Snapshot(rel, before, after))
         return items
 
-    def collect(self, *, prune_clean: bool = False) -> dict:
+    def collect(self, *, prune_clean: bool = False) -> dict[str, Any]:
         """Render the current change set; read-only unless pruning."""
 
         snapshots = self.snapshots()
@@ -862,10 +862,10 @@ def is_git_repository(project: str | Path) -> bool:
     return proc.returncode == 0 and proc.stdout.strip() == "true"
 
 
-def parse_git_status(short_status: str) -> list[dict]:
+def parse_git_status(short_status: str) -> list[dict[str, Any]]:
     if "\x00" in (short_status or ""):
         return parse_git_status_nul(short_status)
-    files: list[dict] = []
+    files: list[dict[str, Any]] = []
     for line in (short_status or "").splitlines():
         if not line.strip():
             continue
@@ -885,12 +885,12 @@ def parse_git_status(short_status: str) -> list[dict]:
     return files
 
 
-def parse_git_status_nul(nul_status: str) -> list[dict]:
+def parse_git_status_nul(nul_status: str) -> list[dict[str, Any]]:
     from codey.utils.change_paths import safe_change_path
 
     if nul_status and not nul_status.endswith("\x00"):
         raise ValueError("incomplete Git status record")
-    files: list[dict] = []
+    files: list[dict[str, Any]] = []
     chunks = (nul_status or "").split("\x00")[:-1]
     index = 0
     while index < len(chunks):
@@ -1025,7 +1025,7 @@ def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
     return f"{header}\n{body}" if body else header, len(lines)
 
 
-def _git_failed_payload() -> dict:
+def _git_failed_payload() -> dict[str, Any]:
     return {
         "ok": False,
         "error": "git command failed; output incomplete",
@@ -1035,7 +1035,7 @@ def _git_failed_payload() -> dict:
     }
 
 
-def _git_missing_payload(exc: BaseException) -> dict:
+def _git_missing_payload(exc: BaseException) -> dict[str, Any]:
     return {
         "ok": False,
         "error": f"git unavailable: {exc}",
@@ -1045,7 +1045,7 @@ def _git_missing_payload(exc: BaseException) -> dict:
     }
 
 
-def _git_exit_payload(args: list[str], returncode: int, stderr: str = "") -> dict:
+def _git_exit_payload(args: list[str], returncode: int, stderr: str = "") -> dict[str, Any]:
     excerpt = _bounded_stderr_excerpt(stderr)
     detail = f": {excerpt}" if excerpt else ""
     return {
@@ -1092,7 +1092,7 @@ def _run_one_git_command(
     return proc, None
 
 
-def _resolve_git_root(root: Path) -> tuple[Path | None, dict | None]:
+def _resolve_git_root(root: Path) -> tuple[Path | None, dict[str, Any] | None]:
     from codey.runtime.core import cancellation as _cancellation
 
     try:
@@ -1129,7 +1129,7 @@ def _resolve_git_root(root: Path) -> tuple[Path | None, dict | None]:
     return Path(top.stdout.strip()).resolve(), None
 
 
-def _load_git_status_files(git_root: Path) -> tuple[list[dict] | None, dict | None]:
+def _load_git_status_files(git_root: Path) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None]:
     status_proc, error = _run_one_git_command(git_root, ["status", "--porcelain=v1", "-z"])
     if error is not None:
         return None, error
@@ -1149,7 +1149,7 @@ def _load_git_status_files(git_root: Path) -> tuple[list[dict] | None, dict | No
     return files, None
 
 
-def _load_git_numstat_stats(git_root: Path) -> tuple[dict[str, dict[str, int]] | None, dict | None]:
+def _load_git_numstat_stats(git_root: Path) -> tuple[dict[str, dict[str, int]] | None, dict[str, Any] | None]:
     unstaged_num, error = _run_one_git_command(git_root, ["diff", "--numstat", "-z"])
     if error is not None:
         return None, error
@@ -1174,7 +1174,7 @@ def _load_git_numstat_stats(git_root: Path) -> tuple[dict[str, dict[str, int]] |
     return stats, None
 
 
-def _load_git_diff_parts(git_root: Path) -> tuple[list[str] | None, bool, dict | None]:
+def _load_git_diff_parts(git_root: Path) -> tuple[list[str] | None, bool, dict[str, Any] | None]:
     unstaged_diff, error = _run_one_git_command(git_root, ["diff", "--no-ext-diff", "--"])
     if error is not None:
         return None, False, error
@@ -1193,7 +1193,7 @@ def _load_git_diff_parts(git_root: Path) -> tuple[list[str] | None, bool, dict |
 
 def _apply_untracked_diffs(
     git_root: Path,
-    files: list[dict],
+    files: list[dict[str, Any]],
     stats: dict[str, dict[str, int]],
     diff_parts: list[str],
 ) -> None:
@@ -1221,7 +1221,7 @@ def _finalize_git_diff(diff_parts: list[str], capture_truncated: bool) -> tuple[
     return diff, truncated
 
 
-def collect_git_changes(project: str | Path | None) -> dict:
+def collect_git_changes(project: str | Path | None) -> dict[str, Any]:
     if not project:
         return {"ok": False, "error": "project required", "files": [], "diff": ""}
     root = Path(project).expanduser().resolve()
@@ -1276,7 +1276,7 @@ def collect_git_changes(project: str | Path | None) -> dict:
 def _empty_snapshot_changes(
     project: str | Path | None,
     error: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     root = str(Path(project).expanduser().resolve()) if project else ""
     return {
         "ok": True,
@@ -1293,7 +1293,7 @@ def _empty_snapshot_changes(
 def collect_changes(
     project: str | Path | None,
     tracker: ChangeTracker | None = None,
-) -> dict:
+) -> dict[str, Any]:
     if not project:
         return {"ok": False, "error": "project required", "files": [], "diff": ""}
     git_data = collect_git_changes(project)
@@ -1317,7 +1317,7 @@ def restore_snapshot_changes(
     project: str | Path | None,
     tracker: ChangeTracker | None,
     paths: list[str] | None = None,
-) -> tuple[int, dict]:
+) -> tuple[int, dict[str, Any]]:
     if not project:
         return 400, {"ok": False, "error": "project required"}
     if tracker is None or not tracker.has_snapshots:

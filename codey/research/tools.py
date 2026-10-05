@@ -195,7 +195,7 @@ class ResearchTools:
             self.grounded_ids.add(note.id)
         return ResearchToolOutput(note.to_markdown(), ok=True)
 
-    def knowledge_write(self, args: dict) -> ResearchToolOutput:
+    def knowledge_write(self, args: dict[str, Any]) -> ResearchToolOutput:
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         existing_id, existing_note, updating, identity_error = _resolve_write_target(self.store, args)
@@ -303,7 +303,7 @@ class ResearchTools:
 
 def _resolve_write_target(
     store: KnowledgeStore,
-    args: dict,
+    args: dict[str, Any],
 ) -> tuple[str, KnowledgeNote | None, bool, str | None]:
     existing_id = str(args.get("id") or "").strip()
     if existing_id and not is_safe_id(existing_id):
@@ -316,7 +316,7 @@ def _resolve_write_target(
 
 
 def _validate_write_basis(
-    args: dict,
+    args: dict[str, Any],
     existing_note: KnowledgeNote | None,
 ) -> tuple[str, str, str, str | None]:
     note_type = str(
@@ -352,7 +352,7 @@ def _format_write_problem(problem: str | None) -> str | None:
 
 def _prepare_write_sources(
     tools: ResearchTools,
-    args: dict,
+    args: dict[str, Any],
     existing_note: KnowledgeNote | None,
     updating: bool,
     note_type: str,
@@ -385,9 +385,9 @@ def _prepare_write_sources(
 
 
 def _prepare_write_relations(
-    args: dict,
+    args: dict[str, Any],
     existing_note: KnowledgeNote | None,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     if "relations" in args:
         return clean_relations(args.get("relations"))
     return (
@@ -396,7 +396,7 @@ def _prepare_write_relations(
     )
 
 
-def _resolve_write_status(args: dict, existing_note: KnowledgeNote | None) -> str:
+def _resolve_write_status(args: dict[str, Any], existing_note: KnowledgeNote | None) -> str:
     status = str(
         args.get("status")
         if "status" in args
@@ -408,14 +408,14 @@ def _resolve_write_status(args: dict, existing_note: KnowledgeNote | None) -> st
 
 
 def _build_write_note(
-    args: dict,
+    args: dict[str, Any],
     existing_note: KnowledgeNote | None,
     existing_id: str,
     note_type: str,
     title: str,
     body: str,
     sources: list[str],
-    relations: list[dict],
+    relations: list[dict[str, Any]],
     tags: list[str],
     status: str,
     session_id: str,
@@ -487,7 +487,7 @@ def _finalize_write_note(
     return output
 
 
-def _as_int(value, default: int) -> int:
+def _as_int(value: Any, default: int) -> int:
     if isinstance(value, bool):
         return default
     if isinstance(value, str) and not value.strip().isascii():
@@ -498,7 +498,7 @@ def _as_int(value, default: int) -> int:
         return default
 
 
-def _as_float(value) -> float | None:
+def _as_float(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
     try:
@@ -510,12 +510,12 @@ def _as_float(value) -> float | None:
     return number
 
 
-def _as_opt_str(value) -> str | None:
+def _as_opt_str(value: Any) -> str | None:
     text = str(value).strip() if value not in (None, "") else ""
     return text or None
 
 
-def _as_str_list(value) -> list[str]:
+def _as_str_list(value: Any) -> list[str]:
     if isinstance(value, str):
         return [value.strip()] if value.strip() else []
     if isinstance(value, (list, tuple)):
@@ -523,7 +523,7 @@ def _as_str_list(value) -> list[str]:
     return []
 
 
-def _merge_relation_tags(tags: list[str], relations: list[dict]) -> list[str]:
+def _merge_relation_tags(tags: list[str], relations: list[dict[str, Any]]) -> list[str]:
     """Relation endpoints become tags so the Concept Graph can weight them."""
     known = {normalize_concept(tag) for tag in tags}
     merged = list(tags)

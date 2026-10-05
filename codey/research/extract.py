@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import re
 from html.parser import HTMLParser
+from typing import Any
 
 _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
 _BLOCK_TAGS = {
@@ -24,7 +25,7 @@ class _Extractor(HTMLParser):
         self._skip_depth = 0
         self._in_title = False
 
-    def handle_starttag(self, tag: str, attrs) -> None:
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
         elif tag == "title":

@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from codey.reviews.core import REVIEW_CONTRACT_VERSION, ReviewResult
 
@@ -203,7 +204,7 @@ def load_review_artifact(
                         scope=scope, identity=identity)
 
 
-def _validate_artifact_contract(payload, session_id, run_id, attempt_id):
+def _validate_artifact_contract(payload: Any, session_id: Any, run_id: Any, attempt_id: Any) -> None:
     for name, expected in (("schema_version", SCHEMA_VERSION), ("contract_version", REVIEW_CONTRACT_VERSION)):
         if type(payload.get(name)) is not int or payload[name] != expected:
             raise ValueError("review artifact version mismatch")
@@ -221,7 +222,7 @@ def _validate_artifact_contract(payload, session_id, run_id, attempt_id):
             raise ValueError("review artifact text invalid")
 
 
-def _read_findings(raw_findings, scope):
+def _read_findings(raw_findings: Any, scope: Any) -> list[Any]:
     from codey.reviews.core import ReviewFinding
 
     if not isinstance(raw_findings, list) or len(raw_findings) > MAX_FINDINGS_PERSISTED:
@@ -245,7 +246,7 @@ def _read_findings(raw_findings, scope):
     return findings
 
 
-def _unique_object(pairs):
+def _unique_object(pairs: Any) -> dict[Any, Any]:
     result = {}
     for key, value in pairs:
         if key in result:
@@ -254,7 +255,7 @@ def _unique_object(pairs):
     return result
 
 
-def _read_scope(payload):
+def _read_scope(payload: Any) -> Any:
     from codey.reviews.input import ReviewScope
 
     if not isinstance(payload, dict):
@@ -262,20 +263,57 @@ def _read_scope(payload):
     total = payload.get("total_changed_files")
     if type(total) is not int or total < 0:
         raise ValueError("review artifact scope count invalid")
-    fields = {"total_changed_files": total}
+    provided_files: tuple[str, ...]
+    excluded_files: tuple[str, ...]
+    exclusion_reasons: tuple[str, ...]
     for name in ("provided_files", "excluded_files", "exclusion_reasons"):
         rows = payload.get(name)
         if not isinstance(rows, list) or any(not isinstance(row, str) for row in rows):
             raise ValueError("review artifact scope list invalid")
-        fields[name] = tuple(rows)
+        values = tuple(rows)
+        if name == "provided_files":
+            provided_files = values
+        elif name == "excluded_files":
+            excluded_files = values
+        else:
+            exclusion_reasons = values
+    diff_truncated: bool
+    file_list_truncated: bool
+    context_truncated: bool
+    collection_incomplete: bool
+    required_context_truncated: bool
+    content_redacted: bool
     for name in ("diff_truncated", "file_list_truncated", "context_truncated", "collection_incomplete", "required_context_truncated", "content_redacted"):
         if type(payload.get(name)) is not bool:
             raise ValueError("review artifact scope flag invalid")
-        fields[name] = payload[name]
-    return ReviewScope(**fields)
+        value = payload[name]
+        if name == "diff_truncated":
+            diff_truncated = value
+        elif name == "file_list_truncated":
+            file_list_truncated = value
+        elif name == "context_truncated":
+            context_truncated = value
+        elif name == "collection_incomplete":
+            collection_incomplete = value
+        elif name == "required_context_truncated":
+            required_context_truncated = value
+        else:
+            content_redacted = value
+    return ReviewScope(
+        total_changed_files=total,
+        provided_files=provided_files,
+        excluded_files=excluded_files,
+        diff_truncated=diff_truncated,
+        file_list_truncated=file_list_truncated,
+        context_truncated=context_truncated,
+        collection_incomplete=collection_incomplete,
+        required_context_truncated=required_context_truncated,
+        content_redacted=content_redacted,
+        exclusion_reasons=exclusion_reasons,
+    )
 
 
-def _finding_id(finding) -> str:
+def _finding_id(finding: Any) -> str:
     stable = f"{finding.path}\x00{finding.issue}\x00{finding.suggested_fix}\x00{finding.hunk_index}\x00{finding.new_line}\x00{finding.old_line}"
     return "review_finding:" + hashlib.sha256(stable.encode("utf-8")).hexdigest()[:16]
 
@@ -362,7 +400,7 @@ def _safe_component(value: object) -> str:
     return value
 
 
-def load_recorded_review(state_home, session_id: str, run_id: str):
+def load_recorded_review(state_home: Any, session_id: str, run_id: str) -> Any:
     """Read finished ledger plus its verified artifact, with one-hop reuse lineage."""
     from dataclasses import replace
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from codey.research import report_quality
 from codey.research.ledger import ResearchLedger, normalize_evidence_stance
@@ -264,7 +265,7 @@ def _rewrite_source_id_refs(text: str, source_id_to_number: dict[str, int]) -> s
     return result
 
 
-def _source_id_replacement(text: str, item, number: int) -> str:
+def _source_id_replacement(text: str, item: Any, number: int) -> str:
     replacement = f"[{number}{item.page_suffix}]" if item.bracketed else f"[{number}]"
     if item.start > 0 and re.match(r"[A-Za-z0-9_]", text[item.start - 1]):
         replacement = " " + replacement

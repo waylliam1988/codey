@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from codey.research.guards import (
     clip_schema_ok as _clip_schema_ok,
@@ -897,7 +898,7 @@ def _valid_ledger_payload(payload: object) -> bool:
     )
 
 
-def _canonical_top_schema_ok(payload: dict) -> bool:
+def _canonical_top_schema_ok(payload: dict[str, Any]) -> bool:
     if set(payload) - _TOP_LEVEL_KEYS:
         return False
     if not _stable_ref_schema_ok("evidence_ledger", payload.get("ledger_ref")):

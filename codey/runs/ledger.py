@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from codey.providers.diagnostics import ProviderFailure
 from codey.runs.receipt import task_receipt_from_payload
@@ -269,10 +270,10 @@ class RunLedgerWriter:
 
     def append_changes_collected(
         self,
-        changes: dict | None,
+        changes: dict[str, Any] | None,
         *,
         checks_passed: bool | None = None,
-        receipt: dict | None = None,
+        receipt: dict[str, Any] | None = None,
     ) -> None:
         if not isinstance(changes, dict):
             changes = {}

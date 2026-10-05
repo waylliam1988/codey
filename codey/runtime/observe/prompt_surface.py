@@ -107,7 +107,7 @@ def build_prompt_surface_record(
         chars = 0
     else:
         try:
-            chars = max(0, int(prompt_chars or 0))  # type: ignore[arg-type]
+            chars = max(0, int(prompt_chars or 0))
         except (TypeError, ValueError, OverflowError):
             chars = 0
     return PromptSurfaceRecord(

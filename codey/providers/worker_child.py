@@ -8,6 +8,7 @@ import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from codey.automation.browser import DEFAULT_PROFILE
 from codey.providers.registry import PROVIDER_TYPES
@@ -111,14 +112,14 @@ def _adapter_logs_to_stderr() -> Iterator[None]:
     the protocol frames below always emit outside this guard.
     """
     old = sys.stdout
-    sys.stdout = sys.stderr  # type: ignore[assignment]
+    sys.stdout = sys.stderr
     try:
         yield
     finally:
         sys.stdout = old
 
 
-def _target_id(provider) -> str:
+def _target_id(provider: Any) -> str:
     session = None
     try:
         session = provider.session.page.context.new_cdp_session(provider.session.page)
@@ -136,7 +137,7 @@ def _target_id(provider) -> str:
                 detach()
 
 
-def _event(name: str, **payload) -> None:
+def _event(name: str, **payload: Any) -> None:
     data = {"event": name}
     data.update(payload)
     print(json.dumps(data, ensure_ascii=False, separators=(",", ":")), flush=True)
@@ -145,10 +146,10 @@ def _event(name: str, **payload) -> None:
 def _reply(
     request_id: str,
     ok: bool,
-    result=None,
+    result: Any = None,
     *,
     error: str = "",
-    failure: dict | None = None,
+    failure: dict[str, Any] | None = None,
 ) -> None:
     payload = {"id": request_id, "ok": ok}
     if ok:

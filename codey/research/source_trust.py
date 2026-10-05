@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from codey.research import source_domains
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
@@ -117,10 +118,10 @@ class SourceTrustProjection:
         return payload
 
 
-def _object_getter(source: object):
+def _object_getter(source: object) -> Any:
     """getattr-style getter with a None default for non-mapping sources."""
 
-    def get(name, default=None):
+    def get(name: Any, default: Any = None) -> Any:
         return getattr(source, name, default)
 
     return get

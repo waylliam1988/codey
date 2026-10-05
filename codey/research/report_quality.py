@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 from codey.research.ledger import ResearchLedger
 from codey.research.provenance import provenance_problem
@@ -49,10 +50,10 @@ class Citation:
     number: int
     title: str
     url: str
-    quality: dict = field(default_factory=dict)
+    quality: dict[str, Any] = field(default_factory=dict[str, Any])
     pages: tuple[int, ...] = ()
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "number": self.number,
             "title": self.title,
@@ -71,7 +72,7 @@ class ReportQualityReview:
     counterpoints: tuple[str, ...] = ()
     sections: Mapping[str, str] = field(default_factory=dict)
 
-    def citation_payload(self) -> list[dict]:
+    def citation_payload(self) -> list[dict[str, Any]]:
         return [item.to_dict() for item in self.citation_map]
 
 

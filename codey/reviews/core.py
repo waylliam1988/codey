@@ -181,7 +181,7 @@ def _strict_text(value: object) -> str:
 def parse_review_response(
     text: str,
     *,
-    changes: dict | ChangeSet | None = None,
+    changes: dict[str, Any] | ChangeSet | None = None,
 ) -> ReviewResult:
     """Parse a review response while tolerating light prose around JSON."""
     source = text or ""
@@ -292,7 +292,7 @@ def _canonical_finding_path(raw_path: str, change_set: ChangeSet | None) -> str:
     return canonical_path(raw_path, change_set)
 
 
-def review_result_payload(review: ReviewResult | None) -> dict:
+def review_result_payload(review: ReviewResult | None) -> dict[str, Any]:
     """The shared bounded event projection; findings remain in the artifact."""
     if review is None:
         return {"verdict": "unknown", "status": "unavailable", "origin": "fresh", "finding_count": 0}
@@ -312,7 +312,7 @@ def parse_review_with_repair(
     first_reply: str,
     send_repair_prompt: Callable[[str], str],
     *,
-    changes: dict | ChangeSet | None = None,
+    changes: dict[str, Any] | ChangeSet | None = None,
 ) -> ReviewResult:
     """Parse a reviewer reply, allowing one JSON-only repair turn."""
     try:
@@ -469,7 +469,7 @@ def _normalize_verdict(value: object, findings: list[ReviewFinding]) -> tuple[st
     return "unknown", "incomplete"
 
 
-def has_reviewable_changes(changes: dict) -> bool:
+def has_reviewable_changes(changes: dict[str, Any]) -> bool:
     return ChangeSet.from_changes(changes).has_reviewable_diff()
 
 
@@ -478,7 +478,7 @@ def render_review_prompt(
     project: str,
     task: str,
     writer_summary: str,
-    changes: dict,
+    changes: dict[str, Any],
     recent_log: str = "",
     change_brief: str = "",
     project_map: str = "",
@@ -630,7 +630,7 @@ def render_writer_followup(
     return "\n".join(lines)
 
 
-def _change_set(changes: dict | ChangeSet | None) -> ChangeSet | None:
+def _change_set(changes: dict[str, Any] | ChangeSet | None) -> ChangeSet | None:
     if isinstance(changes, ChangeSet):
         return changes
     if isinstance(changes, dict):

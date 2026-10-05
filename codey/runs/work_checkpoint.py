@@ -11,6 +11,7 @@ import hashlib
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
@@ -147,7 +148,7 @@ class WorkCheckpoint:
     stop_reason: str = ""
     workspace_changed: bool = False
 
-    def to_payload(self) -> dict:
+    def to_payload(self) -> dict[str, Any]:
         payload = {
             "schema_version": SCHEMA_VERSION,
             "run_id": self.run_id,

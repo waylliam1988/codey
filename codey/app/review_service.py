@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable
 from dataclasses import replace
+from typing import Any, cast
 
 from codey.app import provider_services as providers
 from codey.operations.task_state import TaskState
@@ -51,7 +52,7 @@ def run_review_attempt(
     project: str,
     task: str,
     writer_summary: str,
-    changes: dict,
+    changes: dict[str, Any],
     recent_log: str,
     change_brief: str,
     project_map: str,
@@ -59,7 +60,7 @@ def run_review_attempt(
     review_impact_map: str,
     execution_evidence: str,
     reviewer_id: str,
-    reviewer,
+    reviewer: Any,
     self_review: bool,
     trace_recorder: object | None = None,
     run_id: str = "",
@@ -126,7 +127,7 @@ def run_review_attempt(
             reviewer.close()
 
 
-def _early_snapshot_result(ctx, session_id, reviewer_id, prepared, snapshot):
+def _early_snapshot_result(ctx: Any, session_id: Any, reviewer_id: Any, prepared: Any, snapshot: Any) -> Any:
     if snapshot.ok:
         return None
     review = ReviewResult(
@@ -142,7 +143,7 @@ def _early_snapshot_result(ctx, session_id, reviewer_id, prepared, snapshot):
     return review
 
 
-def _stale_before_send(ctx, session_id, reviewer_id, prepared):
+def _stale_before_send(ctx: Any, session_id: Any, reviewer_id: Any, prepared: Any) -> Any:
     review = ReviewResult(
         verdict="unknown",
         summary="Review outdated · files changed",
@@ -156,7 +157,7 @@ def _stale_before_send(ctx, session_id, reviewer_id, prepared):
     return review
 
 
-def _send_review_prompt(reviewer, trace_recorder, prompt):
+def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any) -> Any:
     trace = FailOpenPromptTrace(trace_recorder)
     trace.call("record_permission_profile", "reviewer", phase="review")
     record_provider_send_prompt(
@@ -176,7 +177,7 @@ def _send_review_prompt(reviewer, trace_recorder, prompt):
         raise ReviewSendUnknown(str(exc)) from exc
 
 
-def _parse_with_single_repair(reviewer, trace_recorder, reply, prepared):
+def _parse_with_single_repair(reviewer: Any, trace_recorder: Any, reply: Any, prepared: Any) -> Any:
     def send_repair_prompt(repair: str) -> str:
         record_provider_send_prompt(
             trace_recorder,
@@ -187,7 +188,7 @@ def _parse_with_single_repair(reviewer, trace_recorder, reply, prepared):
             capability_id="review_runner",
         )
         try:
-            return reviewer.send(repair, timeout=REVIEW_TIMEOUT)
+            return cast(str, reviewer.send(repair, timeout=REVIEW_TIMEOUT))
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
@@ -197,9 +198,9 @@ def _parse_with_single_repair(reviewer, trace_recorder, reply, prepared):
 
 
 def _finalize_review(
-    ctx, session_id, project, reviewer_id, self_review,
-    prepared, snapshot, review, trace_recorder, run_id, review_policy=WEB_IF_AVAILABLE, model_id="",
-):
+    ctx: Any, session_id: Any, project: Any, reviewer_id: Any, self_review: Any,
+    prepared: Any, snapshot: Any, review: Any, trace_recorder: Any, run_id: Any, review_policy: Any = WEB_IF_AVAILABLE, model_id: Any = "",
+) -> Any:
     import uuid as _uuid
 
     from codey.reviews.identity import (
@@ -257,9 +258,9 @@ def _finalize_review(
 
 
 def _persist_attempt_artifact(
-    ctx, session_id, run_id, attempt_id, review,
-    scope_digest, prompt_digest, snapshot_digest, reviewer_id, self_review,
-    model_id, review_policy,
+    ctx: Any, session_id: Any, run_id: Any, attempt_id: Any, review: Any,
+    scope_digest: Any, prompt_digest: Any, snapshot_digest: Any, reviewer_id: Any, self_review: Any,
+    model_id: Any, review_policy: Any,
 ) -> str:
     if not run_id:
         return ""
@@ -295,7 +296,7 @@ def run_review(
     project: str,
     task: str,
     writer_summary: str,
-    changes: dict,
+    changes: dict[str, Any],
     recent_log: str,
     writer_id: str,
     change_brief: str = "",
@@ -307,7 +308,7 @@ def run_review(
     review_policy: str = WEB_IF_AVAILABLE,
     run_id: str = "",
     review_source_run_id: str = "",
-    connect_reviewer: Callable | None = None,
+    connect_reviewer: Callable[..., Any] | None = None,
 ) -> tuple[str, ReviewResult] | None:
     from codey.reviews.reuse import validate_source_run_id
 

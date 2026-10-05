@@ -10,6 +10,7 @@ import hashlib
 import re
 from collections import Counter
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlparse
 
 from codey.knowledge.store import KnowledgeStore
@@ -69,7 +70,7 @@ class GraphNode:
     excerpt: str = ""
     virtual: bool = False
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "label": self.label,
@@ -94,7 +95,7 @@ class GraphEdge:
     weight: float = 1.0
     virtual: bool = False
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": f"{self.src}->{self.dst}:{self.kind}",
             "src": self.src,
@@ -115,7 +116,7 @@ class ResearchGraphArtifact:
     edges: tuple[GraphEdge, ...] = ()
     warnings: tuple[str, ...] = ()
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "center_id": self.center_id,
             "focus_ids": list(self.focus_ids),
@@ -273,11 +274,11 @@ class KnowledgeGraphBuilder:
 
     def _trim_note_rows(
         self,
-        rows: list[dict],
+        rows: list[dict[str, Any]],
         focus_ids: tuple[str, ...],
         edges: tuple[GraphEdge, ...],
         limit: int,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         if len(rows) <= limit:
             return rows
         edge_bonus: dict[str, int] = {}
@@ -290,7 +291,7 @@ class KnowledgeGraphBuilder:
             edge_bonus[edge.dst] = max(edge_bonus.get(edge.dst, 0), bonus)
         focus = set(focus_ids)
 
-        def rank(row: dict) -> tuple:
+        def rank(row: dict[str, Any]) -> tuple[Any, ...]:
             note_id = str(row.get("id") or "")
             note_type = str(row.get("type") or "note")
             return (
@@ -303,7 +304,7 @@ class KnowledgeGraphBuilder:
 
         return sorted(rows, key=rank, reverse=True)[:limit]
 
-    def _note_node(self, row: dict, degree: int, focus_ids: tuple[str, ...]) -> GraphNode:
+    def _note_node(self, row: dict[str, Any], degree: int, focus_ids: tuple[str, ...]) -> GraphNode:
         note_id = str(row.get("id") or "")
         note_type = str(row.get("type") or "note") or "note"
         return GraphNode(
@@ -430,7 +431,7 @@ class KnowledgeGraphBuilder:
             return edges
         focus = set(focus_ids)
 
-        def rank(edge: GraphEdge) -> tuple:
+        def rank(edge: GraphEdge) -> tuple[Any, ...]:
             return (
                 1 if edge.src in focus or edge.dst in focus else 0,
                 _EDGE_PRIORITY.get(edge.kind, 0),
@@ -442,7 +443,7 @@ class KnowledgeGraphBuilder:
         return sorted(edges, key=rank, reverse=True)[:limit]
 
 
-def _degree(edges: tuple[GraphEdge, ...]) -> Counter:
+def _degree(edges: tuple[GraphEdge, ...]) -> Counter[Any]:
     degree: Counter[str] = Counter()
     for edge in edges:
         degree[edge.src] += 1
@@ -480,7 +481,7 @@ def _source_label(url: str) -> str:
     return _clip(host, 58)
 
 
-def _source_titles_from_rows(rows: list[dict]) -> dict[str, str]:
+def _source_titles_from_rows(rows: list[dict[str, Any]]) -> dict[str, str]:
     titles: dict[str, str] = {}
     for row in rows:
         body = str(row.get("body") or "")

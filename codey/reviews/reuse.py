@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import Any, cast
 
 from codey.reviews.core import ReviewResult
 from codey.reviews.identity import ReviewIdentity, identities_match
@@ -54,17 +55,17 @@ def try_reuse_review(
         source_identity = restored.identity
         if not identities_match(source_identity, current_identity):
             return None
-        return replace(
+        return cast(ReviewResult | None, replace(
             restored,
             origin="reused",
             identity=source_identity,
             source_run_id=restored.source_run_id or source,
-        )
+        ))
     except (ValueError, OSError):
         return None
 
 
-def _scope_matches_current(restored, current_scope) -> bool:
+def _scope_matches_current(restored: Any, current_scope: Any) -> bool:
     provided = set(current_scope.provided_files)
     for finding in restored.findings:
         if finding.path not in provided:

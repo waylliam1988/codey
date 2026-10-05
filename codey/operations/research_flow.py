@@ -43,7 +43,7 @@ class ResearchFlowDeps:
     knowledge_store: Any
     evidence_ledgers: Any
     search_factory: Callable[[], object]
-    run_research_advisors: Callable | None
+    run_research_advisors: Callable[..., Any] | None
     ghost_continuity: Callable[..., object]
     managed_outputs: Any = None
     runtime_mutations: Any = None
@@ -299,11 +299,11 @@ def run_research_pipeline(
         max_turns: int,
         chat_handoff: str,
         search: object,
-        tools=None,
+        tools: Any = None,
         iteration_context: str = "",
         topic_continuity_context: str = "",
-        topic_continuity_payload=None,
-    ):
+        topic_continuity_payload: Any = None,
+    ) -> Any:
         import functools
 
         from codey.operations.research_iteration import run_research_iteration as _canonical
@@ -334,15 +334,15 @@ def run_research_pipeline(
 
     def followup(
         *,
-        tools,
-        plan,
-        material,
+        tools: Any,
+        plan: Any,
+        material: Any,
         question: str,
         initial_summary: str = "",
         max_context_chars: int = 8000,
-        should_stop=None,
-        parent_policy=None,
-    ):
+        should_stop: Any = None,
+        parent_policy: Any = None,
+    ) -> Any:
         nonlocal followup_index
         followup_index += 1
         return run_evidence_followup(
@@ -405,7 +405,7 @@ def record_evidence_ledger_write(
     )
 
 
-def research_payload(result: Any, *, pipeline_result: Any | None = None) -> dict:
+def research_payload(result: Any, *, pipeline_result: Any | None = None) -> dict[str, Any]:
     payload = {
         "max_turns_used": int(getattr(result, "max_turns_used", 0) or 0),
         "synthesis_id": result.synthesis_id,

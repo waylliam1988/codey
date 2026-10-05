@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY as COMPLETION_REPAIR_CONTEXT_SOURCE_KEY,
@@ -94,7 +95,7 @@ def build_agent_context(
     project: Path,
     request_text: str,
     system_prompt_text: str,
-    profile,
+    profile: Any,
     list_directory: Callable[[Path, str], object],
     project_instructions: list[ProjectInstruction],
     project_facts: str,

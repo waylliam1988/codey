@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers.diagnostics import ProviderFailure
@@ -37,8 +38,8 @@ class RunRegistry:
         self._last_summary: str | None = None
         self._last_stop_reason: str | None = None
         self._last_provider_failure: ProviderFailure | None = None
-        self._last_terminal_event: dict | None = None
-        self._last_shell_result: dict | None = None
+        self._last_terminal_event: dict[str, Any] | None = None
+        self._last_shell_result: dict[str, Any] | None = None
 
     def _sync_slot_event(self) -> None:
         if self._active_run is None and not self._busy:
@@ -112,21 +113,21 @@ class RunRegistry:
         with self._lock:
             return self._last_provider_failure
 
-    def set_last_terminal_event(self, value: dict | None) -> None:
+    def set_last_terminal_event(self, value: dict[str, Any] | None) -> None:
         payload = dict(value) if value is not None else None
         with self._lock:
             self._last_terminal_event = payload
 
-    def last_terminal_event(self) -> dict | None:
+    def last_terminal_event(self) -> dict[str, Any] | None:
         with self._lock:
             return dict(self._last_terminal_event) if self._last_terminal_event else None
 
-    def set_last_shell_result(self, value: dict | None) -> None:
+    def set_last_shell_result(self, value: dict[str, Any] | None) -> None:
         payload = dict(value) if value is not None else None
         with self._lock:
             self._last_shell_result = payload
 
-    def last_shell_result(self) -> dict | None:
+    def last_shell_result(self) -> dict[str, Any] | None:
         with self._lock:
             return dict(self._last_shell_result) if self._last_shell_result else None
 
@@ -209,7 +210,7 @@ class RunRegistry:
             self._sync_slot_event()
             self._status = "idle"
 
-    def finish(self, run_id: str, event: dict) -> dict | None:
+    def finish(self, run_id: str, event: dict[str, Any]) -> dict[str, Any] | None:
         payload = dict(event)
         payload["run_id"] = run_id
         with self._lock:
@@ -226,7 +227,7 @@ class RunRegistry:
             self._status = "error" if self._last_stop_reason == "error" else "done"
             return payload
 
-    def record_shell_result(self, event: dict) -> dict:
+    def record_shell_result(self, event: dict[str, Any]) -> dict[str, Any]:
         payload = dict(event)
         with self._lock:
             self._last_shell_result = payload
@@ -250,9 +251,9 @@ class RunRegistry:
     def payload(
         self,
         *,
-        pending_event: Callable[[RunSnapshot | None], dict | None],
+        pending_event: Callable[[RunSnapshot | None], dict[str, Any] | None],
         research_restore_runs: tuple[str, ...],
-    ) -> dict:
+    ) -> dict[str, Any]:
         with self._lock:
             active = self._active_run
             terminal = dict(self._last_terminal_event) if self._last_terminal_event else None

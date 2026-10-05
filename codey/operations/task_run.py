@@ -64,14 +64,14 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class TaskRunDeps:
     state: TaskState
-    agent_run: Callable
-    collect_changes: Callable
-    run_review: Callable
-    capture_provider_failure: Callable
+    agent_run: Callable[..., Any]
+    collect_changes: Callable[..., Any]
+    run_review: Callable[..., Any]
+    capture_provider_failure: Callable[..., Any]
     workspace_revisions: Any
-    run_consensus: Callable | None = None
-    run_project_audit: Callable | None = None
-    run_research_advisors: Callable | None = None
+    run_consensus: Callable[..., Any] | None = None
+    run_project_audit: Callable[..., Any] | None = None
+    run_research_advisors: Callable[..., Any] | None = None
     project_facts: Any = None
     work_checkpoints: Any = None
     run_ledgers: Any = None
@@ -92,13 +92,13 @@ class TaskRunDeps:
         *,
         state: TaskState,
         stores: TaskSubmissionStores,
-        agent_run: Callable,
-        collect_changes: Callable,
-        run_review: Callable,
-        capture_provider_failure: Callable,
-        run_consensus: Callable | None = None,
-        run_project_audit: Callable | None = None,
-        run_research_advisors: Callable | None = None,
+        agent_run: Callable[..., Any],
+        collect_changes: Callable[..., Any],
+        run_review: Callable[..., Any],
+        capture_provider_failure: Callable[..., Any],
+        run_consensus: Callable[..., Any] | None = None,
+        run_project_audit: Callable[..., Any] | None = None,
+        run_research_advisors: Callable[..., Any] | None = None,
         search_factory: Callable[[], object] | None = None,
         is_git_repository: Callable[[str | Path], bool] | None = None,
         review_fix_turns: int = 12,
@@ -223,9 +223,9 @@ class _RunSetup:
 @dataclass
 class _PhaseWork:
     work: RunWork
-    recovered_tool_outcomes: tuple = ()
+    recovered_tool_outcomes: tuple[Any, ...] = ()
     recovered_tool_result_batch_id: str = ""
-    settled_tool_outcomes: tuple = ()
+    settled_tool_outcomes: tuple[Any, ...] = ()
 
 
 def _finish_trace_event(
@@ -525,7 +525,7 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
     ), None
 
 
-def _shell_redelivery_rows(payloads: Any) -> tuple:
+def _shell_redelivery_rows(payloads: Any) -> tuple[Any, ...]:
     """Rebuild shell decisions without coercing outcomes or changing identities."""
     from codey.agents.request import RecoveredToolOutcome
     from codey.agents.shell_approval import MAX_DEFERRED_TOOL_CALLS, valid_shell_call_id

@@ -55,7 +55,7 @@ class _PendingRequest:
     request_id: str
     method: str
     done: threading.Event = field(default_factory=threading.Event)
-    response: dict | None = None
+    response: dict[str, Any] | None = None
     error: str = ""
 
 
@@ -380,7 +380,7 @@ class WorkerChatProvider:
                     pending.error = reason
                 pending.done.set()
 
-    def _deliver_page(self, session: _WorkerSession, payload: dict) -> None:
+    def _deliver_page(self, session: _WorkerSession, payload: dict[str, Any]) -> None:
         with session.lock:
             if session.closed:
                 return
@@ -390,7 +390,7 @@ class WorkerChatProvider:
                 session.cdp_port = 0
             session.target_id = str(payload.get("target_id") or "")
 
-    def _deliver_response(self, session: _WorkerSession, payload: dict) -> None:
+    def _deliver_response(self, session: _WorkerSession, payload: dict[str, Any]) -> None:
         with session.lock:
             if session.closed:
                 return
@@ -469,7 +469,7 @@ class WorkerChatProvider:
                     raise self._timeout_error(method)
                 return
 
-    def _request(self, method: str, params: dict, timeout: float | None):
+    def _request(self, method: str, params: dict[str, Any], timeout: float | None) -> Any:
         # Verdict deadline governs gate wait, life-lock wait, stdin write,
         # and reply wait. Spawning is a bounded syscall checked before and
         # after; it never blocks on the pipe. Retire cleanup (page close,
@@ -517,7 +517,7 @@ class WorkerChatProvider:
             with contextlib.suppress(Exception):
                 self._life_lock.release()
 
-    def _request_locked(self, method: str, params: dict, deadline: float):
+    def _request_locked(self, method: str, params: dict[str, Any], deadline: float) -> Any:
         # Serialize before touching the session: a serialization failure
         # must never occupy the single-flight slot. A sticky terminal_error
         # (e.g. a failed stdin write) retires via _ensure on re-entry, so a
@@ -666,11 +666,11 @@ class WorkerChatProvider:
         self,
         session: _WorkerSession,
         pending: _PendingRequest,
-        response: dict | None,
+        response: dict[str, Any] | None,
         error: str,
         closed: bool,
         terminal_error: str,
-    ):
+    ) -> Any:
         if response is not None:
             if response.get("ok") is True:
                 return response.get("result")
@@ -736,7 +736,7 @@ class WorkerChatProvider:
         session: _WorkerSession,
         pending: _PendingRequest,
         deadline: float,
-    ):
+    ) -> Any:
         """Wait for the single verdict: Stop, then verdict, then close.
 
         Replacement is observed via our own closed flag, which retire and
@@ -913,7 +913,7 @@ class WorkerChatProvider:
         finally:
             if job is not None:
                 with contextlib.suppress(Exception):
-                    job.close()  # type: ignore[union-attr]
+                    job.close()
             joined = self._join_threads(self._session_threads(session))
             self._close_stopped_session_pipes(session)
         return joined
@@ -978,7 +978,7 @@ class WorkerChatProvider:
         )
 
 
-def _protocol_error(method: str, payload: dict) -> str | None:
+def _protocol_error(method: str, payload: dict[str, Any]) -> str | None:
     """Validate a matching-id reply shape. None means the frame is usable."""
     if not isinstance(payload.get("ok"), bool):
         return "provider worker sent a malformed frame"
@@ -992,7 +992,7 @@ def _protocol_error(method: str, payload: dict) -> str | None:
     return None
 
 
-def _failure_from_response(provider_id: str, method: str, response: dict) -> ProviderFailure:
+def _failure_from_response(provider_id: str, method: str, response: dict[str, Any]) -> ProviderFailure:
     raw = response.get("failure")
     if isinstance(raw, dict):
         return ProviderFailure(

@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from codey.providers import discovery as discovery
@@ -144,11 +144,11 @@ def end_task_context() -> None:
     provider_flow.end_task_context()
 
 
-def revival_send(provider_id: str):
+def revival_send(provider_id: str) -> Any:
     """Wrap one provider send in an atomic local-control recovery transaction."""
-    def decorate(func):
+    def decorate(func: Any) -> Any:
         @wraps(func)
-        def wrapped(page, *args, **kwargs):
+        def wrapped(page: Any, *args: Any, **kwargs: Any) -> Any:
             _begin_revival_send(provider_id, page)
             try:
                 result = func(page, *args, **kwargs)
@@ -1173,7 +1173,7 @@ def _wait_for_click(page: Any, deadline: float) -> dict[str, Any]:
         cancellation.check()
         captured = page.evaluate("window.__sessionTeachClick || null")
         if captured:
-            return captured
+            return cast(dict[str, Any], captured)
         cancellation.wait(0.1)
     raise TimeoutError("Timed out waiting for a click in the model page")
 

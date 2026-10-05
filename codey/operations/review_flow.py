@@ -6,6 +6,7 @@ import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any, cast
 
 from codey.completion.edit_scope import changed_paths_from_changes
 from codey.operations.context import RunFrame
@@ -23,8 +24,8 @@ from codey.task.model import execution_task
 @dataclass(frozen=True)
 class ReviewFlowDeps:
     state: TaskState
-    collect_changes: Callable
-    run_review: Callable
+    collect_changes: Callable[..., Any]
+    run_review: Callable[..., Any]
     is_git_repository: Callable[[str | Path], bool]
     review_log_lines: int = 80
 
@@ -38,13 +39,13 @@ def has_reviewable_diff(deps: ReviewFlowDeps, project: str | None) -> bool:
         return False
 
 
-def collect_review_changes(deps: ReviewFlowDeps, project: str | None) -> dict:
+def collect_review_changes(deps: ReviewFlowDeps, project: str | None) -> dict[str, Any]:
     if not project:
         return {"ok": False, "error": "project required", "files": [], "diff": ""}
-    return deps.collect_changes(project, review_change_tracker(deps, project))
+    return cast(dict[str, Any], deps.collect_changes(project, review_change_tracker(deps, project)))
 
 
-def review_change_tracker(deps: ReviewFlowDeps, project: str | None):
+def review_change_tracker(deps: ReviewFlowDeps, project: str | None) -> Any:
     if not project:
         return None
     try:
@@ -68,7 +69,7 @@ def run_review_mode(
     deps: ReviewFlowDeps,
     frame: RunFrame,
     *,
-    append_ledger: Callable | None = None,
+    append_ledger: Callable[..., Any] | None = None,
 ) -> ModeOutcome:
     state = deps.state
     request = frame.request

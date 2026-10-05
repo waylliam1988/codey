@@ -452,7 +452,7 @@ class ExecutionDelegate:
             return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
         return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
 
-    def _lower_knowledge_sources(self, args: dict) -> tuple[dict, str]:
+    def _lower_knowledge_sources(self, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
         import re
 
         sources = dict(getattr(self.session, "source_ids", {}) or {})
@@ -476,7 +476,7 @@ class ExecutionDelegate:
                 rows.append(resolved)
             lowered["sources"] = rows
         if isinstance(args.get("evidence"), list):
-            evidence: list[dict] = []
+            evidence: list[dict[str, Any]] = []
             for value in args["evidence"]:
                 if not isinstance(value, dict):
                     evidence.append(value)
@@ -492,7 +492,7 @@ class ExecutionDelegate:
             lowered["evidence"] = evidence
         return lowered, ""
 
-    def _resolve_alias_url(self, alias: str, args: dict) -> str:
+    def _resolve_alias_url(self, alias: str, args: dict[str, Any]) -> str:
         session = self.session
         key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}.get(alias, "")
         rid = str(args.get(key, "") or "").strip().lower() if key else ""
@@ -537,7 +537,7 @@ class ExecutionDelegate:
             lines.append(line)
         return "\n".join(lines), batch
 
-    def _ledger_final_url(self, args: dict) -> str:
+    def _ledger_final_url(self, args: dict[str, Any]) -> str:
         from codey.research.urls import opened_url
 
         requested = str(args.get("url", "") or "")

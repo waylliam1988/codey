@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from codey.task.model import derive_project_changes_required
 
@@ -58,7 +59,7 @@ def _explicit_readonly_task(task: str) -> bool:
     return any(marker.lower() in lowered for marker in _READONLY_MUST_NOT_CHANGE_MARKERS)
 
 
-def derive_entry_auth(body: dict | None, *, project: str | None = None) -> EntryAuth:
+def derive_entry_auth(body: dict[str, Any] | None, *, project: str | None = None) -> EntryAuth:
     """Derive entry auth from user submission only; never from model_hint.
 
     权限回答“可以做什么”，完成要求回答“必须做什么”：

@@ -15,6 +15,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import project_key, write_json_atomic
@@ -105,7 +106,7 @@ class WorkspaceIdentity:
             return cls()
         return cls.trusted_pair(audit.get("workspace_revision"), audit.get("workspace_fingerprint"))
 
-    def attach_to_audit(self, audit: dict) -> dict:
+    def attach_to_audit(self, audit: dict[str, Any]) -> dict[str, Any]:
         out = dict(audit)
         if self.trusted:
             out["workspace_revision"] = int(self.revision)

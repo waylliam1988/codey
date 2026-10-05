@@ -65,7 +65,7 @@ class RecoveredResultSpec:
     require_workspace_provenance: bool = False
 
 
-def sanitize_recovery_audit(audit: object) -> dict:
+def sanitize_recovery_audit(audit: object) -> dict[str, Any]:
     """Keep display fields; drop forgeable provenance keys (strict).
 
     Missing/``None`` audit uses ``{}``. A present-but-non-mapping audit
@@ -90,7 +90,7 @@ def sanitize_recovery_audit(audit: object) -> dict:
     return source
 
 
-def _strict_display_mapping(value: object, *, field: str) -> dict:
+def _strict_display_mapping(value: object, *, field: str) -> dict[str, Any]:
     """Strict display mapping: None/missing -> {}, non-mapping -> fail."""
     if value is None:
         return {}
@@ -427,7 +427,7 @@ def spec_from_persisted_record(
             raise RecoveryFailed("persisted replay excerpt must be a string")
     except Exception as exc:
         raise RecoveryFailed(f"persisted replay unreadable: {exc}") from exc
-    audit: dict = {}
+    audit: dict[str, Any] = {}
     try:
         name = record.get("name", "") if isinstance(record, Mapping) else ""
         if type(name) is not str:

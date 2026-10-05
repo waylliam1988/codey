@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from codey.agents.writer_failover import CheckpointView
 from codey.completion.verification_policy import VerificationCandidate
@@ -28,7 +29,7 @@ from codey.runtime.observe.execution_evidence import CheckEvidence
 class ReviewCycleResult:
     result: RunResult
     task_changed: bool
-    changes: dict | None
+    changes: dict[str, Any] | None
     changes_dirty: bool
     review_attempted: bool = False
     review_repair_attempted: bool = False
@@ -55,19 +56,19 @@ def change_state(changes: object) -> bool | None:
 class ReviewCoordinator:
     """Coordinate Review without owning reviewers, providers, or receipts."""
 
-    def __init__(self, collect_changes: Callable) -> None:
+    def __init__(self, collect_changes: Callable[..., Any]) -> None:
         self.collect_changes = collect_changes
 
     def run_cycle(
         self,
         *,
         project: str | Path,
-        tracker,
+        tracker: Any,
         session_id: str,
         task: str,
         result: RunResult,
         task_changed: bool,
-        changes: dict | None,
+        changes: dict[str, Any] | None,
         changes_dirty: bool,
         writer_id: str,
         recent_log: str,
@@ -78,8 +79,8 @@ class ReviewCoordinator:
         checks_before_review_followup: bool,
         stop_requested: Callable[[], bool],
         refresh_project_map: Callable[[], str],
-        build_verification_map: Callable[[dict, str], str],
-        run_review: Callable,
+        build_verification_map: Callable[[dict[str, Any], str], str],
+        run_review: Callable[..., Any],
         close_writer_for_review: Callable[[], None],
         repair_writer: Callable[[str, CheckpointView], RunResult],
         set_checkpoint_status: Callable[[str], None],
@@ -252,7 +253,7 @@ def _snapshot_still_current(project: str | Path, review: object) -> bool:
         return False
 
 
-def _changed_files(changes: dict | None) -> tuple[str, ...]:
+def _changed_files(changes: dict[str, Any] | None) -> tuple[str, ...]:
     return tuple(
         str(item.get("path") or "")
         for item in ((changes or {}).get("files") or [])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import cast
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page
@@ -88,7 +89,7 @@ def _visible_locator(page: Page, selector: str) -> Locator | None:
 
 
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
-    return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
+    return cast(Locator | None, driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach))
 
 
 def _fill_message(page: Page, textarea: Locator, text: str) -> str:
@@ -218,7 +219,7 @@ def _send_button(
         anchor=message_box,
     )
     if control is not None:
-        return control
+        return cast(Locator | None, control)
     if require_enabled:
         control = _qwen_enabled_send_button(page)
         if control is not None:
@@ -357,7 +358,7 @@ def _last_text(page: Page) -> str:
     if response is None:
         return ""
     try:
-        return response.inner_text().strip()
+        return cast(str, response.inner_text().strip())
     except Exception:
         return ""
 

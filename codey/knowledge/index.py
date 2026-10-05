@@ -11,6 +11,7 @@ import json
 import sqlite3
 import threading
 from pathlib import Path
+from typing import Any
 
 from codey.knowledge.note import KnowledgeNote
 
@@ -194,7 +195,7 @@ class KnowledgeIndex:
             )
             self._conn.commit()
 
-    def get(self, note_id: str) -> dict | None:
+    def get(self, note_id: str) -> dict[str, Any] | None:
         row = self._read_conn().execute("SELECT * FROM notes WHERE id=?", (note_id,)).fetchone()
         return dict(row) if row else None
 
@@ -217,7 +218,7 @@ class KnowledgeIndex:
         # into "everything".
         return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-    def search(self, query: str, limit: int = 8) -> list[dict]:
+    def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
         query = (query or "").strip()
         if not query:
             return []
@@ -259,7 +260,7 @@ class KnowledgeIndex:
         session_id: str = "",
         types: tuple[str, ...] = (),
         project: str = "",
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         clauses: list[str] = []
         args: list[object] = []
         if session_id:
@@ -280,7 +281,7 @@ class KnowledgeIndex:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def links_for(self, note_ids: list[str]) -> list[dict]:
+    def links_for(self, note_ids: list[str]) -> list[dict[str, Any]]:
         if not note_ids:
             return []
         marks = ",".join("?" * len(note_ids))
@@ -290,7 +291,7 @@ class KnowledgeIndex:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def notes_by_ids(self, note_ids: list[str]) -> list[dict]:
+    def notes_by_ids(self, note_ids: list[str]) -> list[dict[str, Any]]:
         ids = _unique(note_ids)
         if not ids:
             return []
@@ -304,7 +305,7 @@ class KnowledgeIndex:
         by_id = {str(row["id"]): dict(row) for row in rows}
         return [by_id[note_id] for note_id in ids if note_id in by_id]
 
-    def links_touching(self, note_ids: list[str]) -> list[dict]:
+    def links_touching(self, note_ids: list[str]) -> list[dict[str, Any]]:
         ids = _unique(note_ids)
         if not ids:
             return []
@@ -316,7 +317,7 @@ class KnowledgeIndex:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def replace_links_touching(self, note_ids: list[str], links: list[dict]) -> None:
+    def replace_links_touching(self, note_ids: list[str], links: list[dict[str, Any]]) -> None:
         ids = _unique(note_ids)
         if not ids:
             return
@@ -345,7 +346,7 @@ class KnowledgeIndex:
             )
             c.commit()
 
-    def sources_for(self, note_ids: list[str]) -> list[dict]:
+    def sources_for(self, note_ids: list[str]) -> list[dict[str, Any]]:
         ids = _unique(note_ids)
         if not ids:
             return []
@@ -356,7 +357,7 @@ class KnowledgeIndex:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def tags_for(self, note_ids: list[str], *, active_only: bool = False) -> list[dict]:
+    def tags_for(self, note_ids: list[str], *, active_only: bool = False) -> list[dict[str, Any]]:
         ids = _unique(note_ids)
         if not ids:
             return []
@@ -376,7 +377,7 @@ class KnowledgeIndex:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def concept_edge_rows(self, limit: int = 2048, *, session_id: str = "") -> list[dict]:
+    def concept_edge_rows(self, limit: int = 2048, *, session_id: str = "") -> list[dict[str, Any]]:
         """Declared concept relations from active notes, newest first.
 
         When a session is requested, rows from that session are read before the
@@ -397,7 +398,7 @@ class KnowledgeIndex:
             unique_keys=("note_id", "src", "dst", "kind"),
         )
 
-    def tag_concept_rows(self, limit: int = 4096, *, session_id: str = "") -> list[dict]:
+    def tag_concept_rows(self, limit: int = 4096, *, session_id: str = "") -> list[dict[str, Any]]:
         """Raw tag rows of active notes joined with note metadata.
 
         Session rows are read first for the same reason as `concept_edge_rows`:
@@ -425,7 +426,7 @@ class KnowledgeIndex:
         limit: int,
         session_id: str,
         unique_keys: tuple[str, ...],
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         session_id = str(session_id or "").strip()
         conn = self._read_conn()
         rows = []
@@ -491,8 +492,8 @@ def _unique(values: list[str]) -> list[str]:
     return out
 
 
-def _unique_rows(rows: list[dict], limit: int, keys: tuple[str, ...]) -> list[dict]:
-    out: list[dict] = []
+def _unique_rows(rows: list[dict[str, Any]], limit: int, keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     seen: set[tuple[str, ...]] = set()
     for row in rows:
         key = tuple(str(row.get(item) or "") for item in keys)

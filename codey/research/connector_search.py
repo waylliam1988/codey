@@ -13,6 +13,7 @@ import math
 import time
 import urllib.error
 import urllib.request
+from typing import Any, cast
 from urllib.parse import urlencode
 
 from codey.policies.network import check_fetch_url
@@ -70,7 +71,7 @@ class ConnectorAwareSearchProvider:
 
     def __init__(
         self,
-        base_provider,
+        base_provider: Any,
         *,
         registry: SourceConnectorRegistry | None = None,
         connector_ids: tuple[str, ...] = CONNECTOR_SEARCH_IDS,
@@ -100,7 +101,7 @@ class ConnectorAwareSearchProvider:
         self.last_search_failures: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}
 
-    def search(self, query: str, limit: int = 8) -> list[dict]:
+    def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
         query = " ".join(str(query or "").split())
         if not query:
             return []
@@ -125,7 +126,7 @@ class ConnectorAwareSearchProvider:
             base_results = []  # Real connector hits survive a browser failure.
         return _merge_results(connector_results, base_results, limit=result_limit)
 
-    def fetch(self, url: str) -> dict:
+    def fetch(self, url: str) -> dict[str, Any]:
         target = str(url or "").strip()
         hit = self._hits_by_url.get(canonical_key(target))
         if hit is None:
@@ -143,14 +144,14 @@ class ConnectorAwareSearchProvider:
                 raise
             except Exception as exc:
                 self._record_error(hit.connector_id, "fetch", exc)
-        return self.base_provider.fetch(target)
+        return cast(dict[str, Any], self.base_provider.fetch(target))
 
     def close(self) -> None:
         close = getattr(self.base_provider, "close", None)
         if callable(close):
             close()
 
-    def _base_search(self, query: str, *, limit: int) -> list[dict]:
+    def _base_search(self, query: str, *, limit: int) -> list[dict[str, Any]]:
         try:
             return list(self.base_provider.search(query, limit=limit))
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -172,8 +173,8 @@ class ConnectorAwareSearchProvider:
         *,
         limit: int,
         safe_query: SafeConnectorQuery | None = None,
-    ) -> list[dict]:
-        results: list[dict] = []
+    ) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
         safe_query = safe_query or safe_connector_query(query, limit=12)
         if not safe_query.terms:
             self._record_skip("connector", "search", safe_query.skip_reason or "connector_query_empty")
@@ -407,7 +408,7 @@ def _connector_query(safe_terms: tuple[str, ...], connector_id: str) -> str:
     return " ".join(terms)
 
 
-def _result_from_hit(hit: SourceHit) -> dict:
+def _result_from_hit(hit: SourceHit) -> dict[str, Any]:
     if not hit.canonical_url:
         return {}
     label = "PubMed" if hit.connector_id == "pubmed" else "arXiv"
@@ -418,7 +419,7 @@ def _result_from_hit(hit: SourceHit) -> dict:
     }
 
 
-def _page_from_fetched(fetched: FetchedSource) -> dict:
+def _page_from_fetched(fetched: FetchedSource) -> dict[str, Any]:
     document = fetched.to_source_document()
     return {"status": "ok",
         "url": document.final_url,
@@ -430,8 +431,8 @@ def _page_from_fetched(fetched: FetchedSource) -> dict:
     }
 
 
-def _merge_results(connector_results: list[dict], base_results: list[dict], *, limit: int) -> list[dict]:
-    merged: list[dict] = []
+def _merge_results(connector_results: list[dict[str, Any]], base_results: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
     seen_connector: set[str] = set()
     seen_base: set[str] = set()
     for row in connector_results:
@@ -478,7 +479,7 @@ _CONNECTOR_MAX_REDIRECTS = 5
 _CONNECTOR_OPENER = build_no_redirect_opener()
 
 
-def _open_connector_url(req, timeout: float):
+def _open_connector_url(req: Any, timeout: float) -> Any:
     return _CONNECTOR_OPENER.open(req, timeout=timeout)
 
 
@@ -517,7 +518,7 @@ def _read_url_text(url: str, *, timeout: float) -> str:
                     current_url = next_url
                     continue
                 data = response.read(1024 * 1024)
-                return data.decode(response_charset(response.headers), errors="replace")
+                return cast(str, data.decode(response_charset(response.headers), errors="replace"))
         except urllib.error.HTTPError as exc:
             if _is_redirect_status(exc.code):
                 try:

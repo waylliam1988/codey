@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import time
+from typing import cast
 
 from playwright.sync_api import Locator, Page
 
@@ -69,7 +70,7 @@ def _visible_locator(page: Page, selector: str) -> Locator | None:
 
 
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
-    return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
+    return cast(Locator | None, driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach))
 
 
 def _dismiss_known_notice(page: Page) -> bool:

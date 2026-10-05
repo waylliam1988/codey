@@ -1,17 +1,19 @@
 """Refresh request-supplied verification hints without treating them as proof."""
 from __future__ import annotations
 
+from typing import Any
+
 from codey.completion.verification_policy import select_verification_candidate
 
 
-def _validate_candidates(rows: object) -> tuple:
+def _validate_candidates(rows: object) -> tuple[Any, ...]:
     from codey.completion.verification_policy import VerificationCandidate
 
     if rows is None:
         raise ValueError("verification candidates loader returned None")
     if not isinstance(rows, (list, tuple)):
         raise ValueError("verification candidates must be a list or tuple")
-    cleaned: list = []
+    cleaned: list[Any] = []
     for item in rows:
         if not isinstance(item, VerificationCandidate):
             raise ValueError("verification candidate must be a VerificationCandidate")
@@ -23,7 +25,7 @@ def _validate_candidates(rows: object) -> tuple:
     return tuple(cleaned)
 
 
-def refresh_verification_candidates(session) -> None:
+def refresh_verification_candidates(session: Any) -> None:
     if not session.edited_files or getattr(session, "verification_forbidden", False) is True:
         return
     epoch = max(session.edited_files.values())

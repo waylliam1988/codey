@@ -30,7 +30,7 @@ def provider_fallback_policy_decision(
     from_provider: str,
     to_provider: str,
     phase: str,
-):
+) -> Any:
     return evaluate_action(ActionSubject(
         kind="provider_fallback",
         phase=phase,
@@ -184,7 +184,7 @@ def ensure_provider_fallback_allowed(
     from_provider: str,
     to_provider: str,
     phase: str,
-):
+) -> Any:
     decision = provider_fallback_policy_decision(
         from_provider=from_provider,
         to_provider=to_provider,

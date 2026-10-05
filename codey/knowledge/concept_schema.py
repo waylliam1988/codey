@@ -9,6 +9,7 @@ only; the builder lives in concepts.py).
 from __future__ import annotations
 
 import re
+from typing import Any
 
 CONCEPT_EDGE_KINDS = ("affects", "uses", "causes", "part_of", "enables", "relates")
 MAX_RELATIONS_PER_NOTE = 8
@@ -44,7 +45,7 @@ def normalize_concept(value: object) -> str:
 
 def clean_relations(
     raw: object, *, limit: int = MAX_RELATIONS_PER_NOTE
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Normalize declared concept relations; return (relations, warnings).
 
     Lenient by design: bad items are dropped with a warning instead of
@@ -54,7 +55,7 @@ def clean_relations(
         return [], []
     if not isinstance(raw, (list, tuple)):
         return [], ["relations must be a list of objects"]
-    relations: list[dict] = []
+    relations: list[dict[str, Any]] = []
     warnings: list[str] = []
     seen: set[tuple[str, str, str]] = set()
     for item in raw:

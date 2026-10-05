@@ -18,6 +18,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -100,7 +101,7 @@ class BrowserExecutable:
 @dataclass(frozen=True)
 class CdpEndpoint:
     port: int
-    process: subprocess.Popen | None = None
+    process: subprocess.Popen[Any] | None = None
 
 
 def _browser_profile(kind: str) -> Path:
@@ -151,7 +152,7 @@ def _launch_browser(
     start_url: str,
     *,
     browser_path: str | Path | None = None,
-) -> subprocess.Popen:
+) -> subprocess.Popen[Any]:
     if browser_path:
         executable = Path(browser_path).expanduser()
         if not executable.is_file():
@@ -175,7 +176,7 @@ def _launch_browser(
         "--no-default-browser-check",
     ]
     args.append(start_url)
-    kwargs: dict = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    kwargs: dict[str, Any] = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     return subprocess.Popen(args, **kwargs)
@@ -234,7 +235,7 @@ def _candidate_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
     return tuple(ports)
 
 
-def _read_cdp_json(port: int, path: str, timeout: float = 1.0):
+def _read_cdp_json(port: int, path: str, timeout: float = 1.0) -> Any:
     if not _port_open(port):
         return None
     try:
@@ -252,7 +253,7 @@ def _cdp_available(port: int = DEFAULT_PORT) -> bool:
     return isinstance(data, dict) and bool(data.get("webSocketDebuggerUrl") or data.get("Browser"))
 
 
-def list_cdp_targets(port: int = DEFAULT_PORT, timeout: float = 1.0) -> list[dict]:
+def list_cdp_targets(port: int = DEFAULT_PORT, timeout: float = 1.0) -> list[dict[str, Any]]:
     """Read Chromium CDP targets without starting Playwright or opening pages."""
     data = _read_cdp_json(port, "/json/list", timeout=timeout)
     if not isinstance(data, list):
@@ -527,7 +528,7 @@ class Session:
     pw: Playwright
     browser: Browser
     page: Page
-    process: subprocess.Popen | None = None
+    process: subprocess.Popen[Any] | None = None
     close_page_on_close: bool = False
     cdp_port: int = 0
 
@@ -542,7 +543,7 @@ class Session:
                 _terminate_browser_process(self.process)
 
 
-def _terminate_browser_process(process: subprocess.Popen) -> None:
+def _terminate_browser_process(process: subprocess.Popen[Any]) -> None:
     try:
         if process.poll() is not None:
             return

@@ -213,7 +213,7 @@ def findings_from_proof_review(
     for key in sorted(groups):
         kind, target, claim_ref, evidence_ref, source_ref, analysis_run_ref = key
         group = groups[key]
-        reasons = tuple(bounded_refs(group["reasons"], limit=MAX_FINDING_REASONS))  # type: ignore[arg-type]
+        reasons = tuple(bounded_refs(group["reasons"], limit=MAX_FINDING_REASONS))
         if not reasons:
             continue
         findings.append(ReviewFindingRecord(
@@ -228,7 +228,7 @@ def findings_from_proof_review(
                 reasons,
             ),
             kind=kind,
-            severity=str(group["severity"]),  # type: ignore[arg-type]
+            severity=str(group["severity"]),
             target_ref=target,
             claim_ref=claim_ref,
             evidence_ref=evidence_ref,

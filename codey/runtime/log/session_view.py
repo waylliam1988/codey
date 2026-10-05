@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 from codey.runtime.core.operation_state import (
     DRIVER_REPAIR,
@@ -142,7 +143,7 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
     return PendingRuntimeFacts()
 
 
-def require_open_view(projection, view: SessionView) -> RuntimeOperationState:
+def require_open_view(projection: Any, view: SessionView) -> RuntimeOperationState:
     if view.state is None:
         raise RuntimeOperationTransitionError("operation state is missing")
     operation_is_open(projection, view.state)

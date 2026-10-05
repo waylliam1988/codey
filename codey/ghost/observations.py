@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from codey.ghost import _common
 from codey.ghost.event_log import GhostEventLog
@@ -38,7 +39,7 @@ class GhostObservationCorruptedError(OSError):
     """Observation log is unreadable (mid-file corruption)."""
 
 
-def _blocked_error(read) -> GhostObservationCorruptedError:
+def _blocked_error(read: Any) -> GhostObservationCorruptedError:
     detail = ";".join(read.warnings) or "observations.jsonl:corrupted"
     return GhostObservationCorruptedError(
         f"observations log is blocked, delete/export refused: {detail}"
