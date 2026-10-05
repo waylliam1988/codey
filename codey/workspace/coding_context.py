@@ -18,7 +18,7 @@ class CodingContext:
     verification_forbidden: bool = False
 
 
-def render_coding_context(context: CodingContext) -> str:
+def render_coding_context(context: CodingContext, *, native: bool = False) -> str:
     read_files = _clean_paths(context.read_files)
     eligible_files = _clean_paths(context.edit_eligible_files)
     changed_files = _clean_paths(context.changed_files)
@@ -53,7 +53,7 @@ def render_coding_context(context: CodingContext) -> str:
         else:
             lines.extend((
                 "- Suggested verification for current changes:",
-                f"  {_run_json(candidate)}",
+                f"  {_verification_text(candidate) if native else _run_json(candidate)}",
             ))
         status = (
             "passed after the latest edit"
@@ -64,6 +64,7 @@ def render_coding_context(context: CodingContext) -> str:
     lines.extend((
         "",
         "This is context, not a fixed tool order. Continue with the next useful coding action.",
+        "Call exactly one native tool and wait for its result." if native else
         "Reply with exactly one JSON object and no other text.",
     ))
     return "\n".join(lines)

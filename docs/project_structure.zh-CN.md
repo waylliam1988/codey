@@ -61,6 +61,9 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/operations/task_run.py`、`task_phases/` | 运行资源生命周期、provider 接入、回调与终态结算 |
 | `codey/operations/task_entry.py`、`task_session.py` | 入口策略与任务事实 |
 | `codey/operations/task_loop.py` | 唯一生产模型工具循环，依赖分为 transport/execution/observation |
+| `codey/operations/task_guidance.py`、`research/completion_guidance.py` | 任务组装入口选择领域拥有的完成指导；内核接收文本，不定义 Research 工作流 |
+| `codey/operations/project_prompt_context.py`、`workspace/coding_context.py` | 经现有验证判定准备不可变编码事实，再无 I/O 地渲染 JSON/native 上下文 |
+| `codey/operations/kernel_prompt.py`、`research/tool_contract.py` | 组合已提供的指导、上下文及协议说明；逻辑 note ID 用法由共用工具定义负责 |
 | `codey/toolchain/tool_spec.py` | 工具定义、schema 与按权限生成的本轮快照 |
 | `codey/operations/kernel_protocol.py` | JSON/native 归一及当前快照校验 |
 | `codey/operations/kernel_execution.py`、`task_execution.py` | 执行边界及领域适配器 |

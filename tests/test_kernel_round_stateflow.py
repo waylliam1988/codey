@@ -392,18 +392,17 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
 
 
 class PromptAndTransportHygieneTests(unittest.TestCase):
-    def test_coding_context_failure_keeps_base_prompt_with_diagnostic(self) -> None:
-        from codey.operations import kernel_prompt as prompt
+    def test_coding_context_preparation_failure_returns_no_context_with_diagnostic(self) -> None:
+        from codey.operations.project_prompt_context import prepare_coding_context
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
 
-        session = SimpleNamespace(
-            coding_context_enabled=True, task_kind="project",
-            read_files={"a.py"}, edited_files={}, verifications=[],
-        )
-        with mock.patch("codey.workspace.coding_context.render_coding_context",
+        session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.read"})), read_files={"a.py"})
+        with mock.patch("codey.operations.project_prompt_context.project_completion_checks",
                         side_effect=RuntimeError("context boom")), self.assertLogs(
-                            "codey.operations.kernel_prompt", level="WARNING") as logs:
-            text = prompt._coding_context_for_session(session)
-        self.assertEqual(text, "")
+                            "codey.operations.project_prompt_context", level="WARNING") as logs:
+            context = prepare_coding_context(session)
+        self.assertIsNone(context)
         self.assertTrue(any("coding" in message.lower() or "context" in message.lower()
                             for message in logs.output))
 

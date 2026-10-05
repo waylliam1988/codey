@@ -69,8 +69,9 @@ def test_research_done_keeps_bounded_followup_questions_for_synthesis():
 
 @pytest.mark.parametrize("verification", ["failed", "stale", "no-identity"])
 def test_coding_context_never_calls_failed_or_stale_verification_fresh(verification):
-    from codey.operations.kernel_prompt import _coding_context_for_session
+    from codey.operations.project_prompt_context import prepare_coding_context
     from codey.operations.task_session import TaskSession
+    from codey.workspace.coding_context import render_coding_context
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.read", "project.write"})))
     session.edited_files = {"a.py": 2}
@@ -79,15 +80,17 @@ def test_coding_context_never_calls_failed_or_stale_verification_fresh(verificat
     session.verifications = [{"passed": verification != "failed", "exit_code": 1 if verification == "failed" else 0,
                               "revision": 1 if verification == "stale" else 2,
                               "workspace_revision": 2, "workspace_fingerprint": "" if verification == "no-identity" else "a" * 64}]
-    assert "Changed files needing verification" in _coding_context_for_session(session)
+    context = prepare_coding_context(session)
+    assert context is not None
+    assert "Changed files needing verification" in render_coding_context(context)
 
 
 def test_coding_context_without_project_read_grant_is_not_rendered():
-    from codey.operations.kernel_prompt import _coding_context_for_session
+    from codey.operations.project_prompt_context import prepare_coding_context
+    from codey.operations.task_session import TaskSession
 
-    session = SimpleNamespace(policy=TaskPolicy(grants=frozenset({"control"})), task_kind="project",
-                              read_files={"secret.py"}, edited_files={}, verifications=[])
-    assert _coding_context_for_session(session) == ""
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), read_files={"secret.py"})
+    assert prepare_coding_context(session) is None
 
 
 @pytest.mark.parametrize("calls", [

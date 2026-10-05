@@ -7,13 +7,11 @@ they never send, execute, or hold task state.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolResult
-
-logger = logging.getLogger(__name__)
+from codey.workspace.coding_context import CodingContext, render_coding_context
 
 __all__ = [
     "kernel_prompt_for_session",
@@ -43,6 +41,8 @@ def kernel_prompt_for_session(
     controller_allowed: Any = None,
     native: bool = False,
     tool_names: Any = None,
+    task_guidance: str = "",
+    coding_context: CodingContext | None = None,
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
     handoff = str(getattr(session, "handoff", "") or "").strip()
@@ -61,33 +61,12 @@ def kernel_prompt_for_session(
         parts.append(f"Factual handoff from prior work:\n{handoff}")
     if context_text:
         parts.append(f"Project context:\n{context_text}")
-    current = _coding_context_for_session(session)
-    if current:
-        parts.append(current)
-    if bool(getattr(getattr(session, "policy", None), "strict_research", False)):
-        parts.append(
-            "Research evidence rules: search results are leads, not evidence. "
-            "Use web_search, then open_result or open_url before citing a source. "
-            "Save short exact excerpts with knowledge_write. Use only local tool "
-            "results as evidence, including when a web model has built-in browsing. "
-            "Finish with done and these report sections: 结论, 关键证据, 反证与限制, "
-            "来源质量, 搜索覆盖, 来源. Cite only sources opened and saved in this run.\n\n"
-            "Strict research completion checklist: Do not call done before knowledge_write "
-            "has saved evidence from an opened source. After a completion rejection, use "
-            "knowledge_read to inspect the saved evidence and repair the report before "
-            "trying done again. Do not repeat knowledge_write for the same evidence; add "
-            "a new evidence excerpt only when the opened source supports a new claim. "
-            "For knowledge_read, pass the note id exactly as returned by knowledge_write; "
-            "do not prepend facts/ or append .md.\n\n"
-            "Report format is strict: use these literal Markdown headings, each on its own line: "
-            "## 结论, ## 关键证据, ## 反证与限制, ## 来源质量, ## 搜索覆盖, ## 来源. "
-            "Do not replace headings with bold labels or inline prose. Put [1]-style citations "
-            "in 结论 and 关键证据; 反证与限制 must cite [n] or explicitly say 未找到强反证 "
-            "and state what was searched. A valid no-counter example is exactly: "
-            "- 未找到强反证；本轮仅检索并打开上述来源。[1]. In 来源, list each cited source as "
-            "[1] Title - https://...; "
-            "use only URLs opened and saved in this run."
-        )
+    if coding_context is not None:
+        current = render_coding_context(coding_context, native=native)
+        if current:
+            parts.append(current)
+    if task_guidance:
+        parts.append(task_guidance)
     parts.append(f"Visible tools: {names}")
     if contract_text:
         if native:
@@ -106,40 +85,6 @@ def kernel_prompt_for_session(
             r'For example: "content":"first line\nsecond line\n".'
         )
     return "\n\n".join(parts)
-
-
-def _coding_context_for_session(session: TaskSession) -> str:
-    if not bool(getattr(session, "coding_context_enabled", True)):
-        return ""
-    if getattr(session, "task_kind", "") not in {"project", "hybrid", "planning"}:
-        return ""
-    try:
-        if not session.policy.allows("project.read"):
-            return ""
-        from codey.operations.project_completion_checks import project_completion_checks
-        from codey.operations.project_verification import refresh_verification_candidates
-        from codey.workspace.coding_context import CodingContext, render_coding_context
-
-        refresh_verification_candidates(session)
-        fresh = any(row.check_id == "relevant_verification" and row.status == "pass"
-                    for row in project_completion_checks(session))
-        return render_coding_context(
-            CodingContext(
-                read_files=tuple(sorted(getattr(session, "read_files", set()) or set())),
-                edit_eligible_files=tuple(sorted(getattr(session, "read_files", set()) or set()))
-                if session.policy.allows("project.write") else (),
-                changed_files=tuple(sorted(getattr(session, "edited_files", {}).keys())),
-                verification_fresh=fresh,
-                verification_forbidden=getattr(session, "verification_forbidden", False) is True,
-                selected_verification=getattr(session, "selected_verification", None),
-            )
-        )
-    except Exception as exc:
-        # Optional enrichment only: a render failure is an observable
-        # diagnostic, never a permission-style failure. The task continues
-        # with the base prompt.
-        logger.warning("coding context unavailable: %s", str(exc)[:120])
-        return ""
 
 
 def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:

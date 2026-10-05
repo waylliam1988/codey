@@ -232,6 +232,7 @@ def test_unified_kernel_passes_authoritative_research_ledger_to_gate() -> None:
 
 def test_explicit_research_prompt_explains_evidence_and_report_contract() -> None:
     from codey.operations.kernel_prompt import kernel_prompt_for_session
+    from codey.operations.task_guidance import task_guidance_for_policy
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
 
@@ -240,7 +241,7 @@ def test_explicit_research_prompt_explains_evidence_and_report_contract() -> Non
                           strict_research=True),
         task_kind="research", task_text="question",
     )
-    prompt = kernel_prompt_for_session(session)
+    prompt = kernel_prompt_for_session(session, task_guidance=task_guidance_for_policy(session.policy))
     for required in ("web_search", "open_result", "knowledge_write", "结论", "关键证据",
                      "反证与限制", "来源质量", "搜索覆盖", "来源"):
         assert required in prompt
@@ -248,6 +249,7 @@ def test_explicit_research_prompt_explains_evidence_and_report_contract() -> Non
 
 def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
     from codey.operations.kernel_prompt import kernel_prompt_for_session
+    from codey.operations.task_guidance import task_guidance_for_policy
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
 
@@ -259,7 +261,7 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
         task_kind="research",
         task_text="question",
     )
-    prompt = kernel_prompt_for_session(session)
+    prompt = kernel_prompt_for_session(session, task_guidance=task_guidance_for_policy(session.policy))
     for required in (
         "Strict research completion checklist",
         "Do not call done before knowledge_write",

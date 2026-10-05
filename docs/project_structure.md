@@ -63,6 +63,9 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/operations/task_run.py`, `task_phases/` | Run resource lifecycle, provider setup, callbacks and terminal settlement |
 | `codey/operations/task_entry.py`, `task_session.py` | Entry policy and per-task facts |
 | `codey/operations/task_loop.py` | One production model/tool loop; typed transport/execution/observation dependencies |
+| `codey/operations/task_guidance.py`, `research/completion_guidance.py` | Task composition selects domain-owned completion guidance; the kernel receives text, not a Research workflow |
+| `codey/operations/project_prompt_context.py`, `workspace/coding_context.py` | Prepare immutable coding facts with the existing verification decision, then render JSON/native context without I/O |
+| `codey/operations/kernel_prompt.py`, `research/tool_contract.py` | Compose supplied guidance/context and protocol instructions; logical note-ID usage belongs to the shared tool definition |
 | `codey/toolchain/tool_spec.py` | Tool definitions, schemas and permission-aware turn snapshots |
 | `codey/operations/kernel_protocol.py` | JSON/native normalization and validation against the current snapshot |
 | `codey/operations/kernel_execution.py`, `task_execution.py` | Execution boundary and domain adapters |

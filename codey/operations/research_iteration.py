@@ -6,6 +6,7 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -189,6 +190,7 @@ def run_research_iteration(
     outcome = run_task_kernel(
         session,
         request=KernelRunRequest(
+            task_guidance=task_guidance_for_policy(session.policy),
             transport=KernelTransportDeps(
                 provider=active_provider,
                 run_id=run_id,

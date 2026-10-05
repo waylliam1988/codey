@@ -2,6 +2,23 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Domain-owned task guidance (2026-10-05)
+
+- Move strict Research completion guidance into `research/completion_guidance.py`.
+  Task entry, project adapter and Research iteration supply `KernelRunRequest.task_guidance`;
+  the shared prompt renderer no longer selects Research workflows.
+- Derive report headings from the existing report contract. Preserve the exact
+  full-grant Research guidance and adapt restricted guidance to granted capabilities.
+- Prepare an immutable coding context before rendering. Prompt rendering no longer
+  refreshes verification candidates, scans the workspace or updates task facts.
+- Fix contradictory JSON instructions in native coding context. Keep logical note-ID
+  usage in the shared tool contract without advertising a hidden write tool.
+- Delete the old coding-context helper without a forwarding shim. Add 30 regressions,
+  mandatory machine contracts and live-gate hashes for the new prompt owners.
+- Final validation: **7312 passed, 29 skipped, 1500 subtests passed in 487.20s**;
+  machine gate **370 passed**; Ruff and full-tree mypy passed. See `TEST_REPORT.md`
+  for the initial failures, reviewed golden changes and verification limits.
+
 ## Unreleased - Convergent audit (2026-10-05)
 
 - Completed five independent production, test-quality, architecture, UX/performance,

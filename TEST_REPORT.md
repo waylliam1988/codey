@@ -1,5 +1,70 @@
 # Codey Test Report
 
+## Task guidance ownership and pure rendering (2026-10-05)
+
+Base commit: `2820a9d2`. Production changes and all regression tests were finalized
+before the final full run; this report and the other documentation were updated
+after its result. Version remains 0.5.11; this work does not publish a release.
+
+### TDD and production wiring
+
+- Six new files contain **30 cases**: `test_kernel_prompt_task_guidance_ownership.py`,
+  `test_kernel_prompt_rendering_has_no_side_effects.py`,
+  `test_native_coding_context_uses_native_instructions.py`,
+  `test_task_guidance_reaches_production_entries.py`,
+  `test_prepared_coding_context_is_immutable.py`, and
+  `test_local_gate_hashes_task_guidance_sources.py`.
+- The first 15 target cases failed before implementation. The native-provider
+  fixture was corrected to implement the complete native transport interface;
+  a separate pre-fix run then reproduced both the contradictory native/JSON
+  instruction and the verification-loader side effect. The metadata case and
+  two hidden-write description cases were also demonstrated red before their
+  corresponding fixes: **18 red cases**, plus **12 control/integration cases**.
+- Formal task entry, project adapter and Research iteration inject guidance into
+  the same kernel. Ordinary web-enabled coding receives no strict Research
+  guidance. A third task's arbitrary guidance works through JSON and native.
+- Full-grant Research guidance retains its exact pre-refactor SHA-256:
+  `a12196236980017040833f30e7c39dbe6932eeb4f867c5c2d668d7e2cac453a4`.
+  Report headings use `REQUIRED_SECTIONS`/`section_title`; note-ID rules use
+  the shared tool contract. Tool descriptions gain the new ID guidance, so
+  the entire prompt envelope is not claimed byte-identical.
+- Coding context is prepared outside the renderer with the actual completion
+  context, including workspace ignores. Its immutable projection is detached
+  from mutable session facts. The old `_coding_context_for_session` is deleted;
+  existing tests call the new owner, without a compatibility forwarder.
+- A finite enumeration checks all **64** grant/denial combinations for web,
+  knowledge-read and knowledge-write guidance, with control fixed as granted.
+  This covers the named tool instructions in this renderer, not arbitrary
+  natural-language semantics or a whole-program no-bug proof.
+
+### Regression and full-suite results
+
+| Check | Result |
+| --- | --- |
+| Initial affected regression selection | 324 passed, 387 subtests, 29.97s |
+| Legacy parity and machine-gate rejection tests | 695 passed, 8.54s |
+| First full `python -m pytest -q -o faulthandler_timeout=120 -ra` | 7308 passed, 29 skipped, **2 failed**, 1500 subtests, 526.87s |
+| Post-fix prompt/golden/tool-definition selection | 53 passed, 19 subtests, 2.56s |
+| Post-fix tool-snapshot/entry/architecture selection | 160 passed, 385 subtests, 21.53s |
+| Final `python -m tools.machine_contract_gate` | **370 passed**, zero skips, 56.62s |
+| Final full `python -m pytest -q -o faulthandler_timeout=120 -ra` | **7312 passed, 29 skipped, 1500 subtests passed, zero failures, 487.20s** |
+
+The first full run caught an obsolete golden expectation and a cross-tool
+reference in the new `knowledge_read` description. JSON/native snapshot tests
+first reproduced the latter; the description now explains the logical ID
+without naming the hidden `knowledge_write` tool. Only the knowledge-read line
+in the two Research golden files was updated. The original strict-snapshot
+assertion was retained and passes; no assertion was weakened or skip added.
+
+Before the final full run: `python -m ruff check .`, `python -m mypy codey`
+(**375 source files, zero errors**), `python -m compileall -q codey tests tools`,
+all packaged JavaScript syntax checks and `git diff --check` passed.
+
+Environment: Windows, Python 3.12.8. The 29 existing skips cover unavailable
+symlink privileges, POSIX-specific contracts and opt-in real-browser E2E.
+No live model or UI gate was run for this change; model quality, latency/token
+improvements and Python 3.11/3.13 execution are not claimed by these results.
+
 ## Local model desktop gate and convergent audit (2026-10-05)
 
 本轮完成五个独立审查轮次：A 生产行为、B 测试质量、C 架构/兼容层、D 用户体验/性能、E 修复后反向调用方扫描，并追加 F 调用关系/状态流和 G 测试/fixture/fallback/冷启动扫描。每轮都重新扫描生产代码、测试代码和入口/兼容边界；新增候选数为 A 1、B 1、C 0、D 1、E 1、F 0、G 0。最近两轮 F/G 没有新的可稳定复现问题：F 复核修复后的调用方和状态流，G 复核 fixture、fallback、冷启动和 provider history，均未发现回归。

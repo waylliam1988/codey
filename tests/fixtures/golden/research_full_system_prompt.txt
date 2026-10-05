@@ -15,7 +15,7 @@ Tools:
 - {"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":"1-5"}}  read a page's text; for PDFs, pages selects bounded page ranges
 - {"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}  search within a source already opened with open_url; returns locators, offsets, and PDF pages
 - {"tool":"knowledge_search","args":{"query":"..."}}  search your existing local notes FIRST
-- {"tool":"knowledge_read","args":{"id":"<note id>"}}  read one existing note in full
+- {"tool":"knowledge_read","args":{"id":"<note id>"}}  read one existing note in full. For knowledge_read, pass the note id exactly as returned; do not prepend facts/ or append .md.
 - {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}  save small source/fact/hypothesis/conclusion/question notes; final reports must use done
 - {"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}
 - {"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}

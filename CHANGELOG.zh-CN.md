@@ -2,6 +2,21 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 任务指导归属与纯渲染（2026-10-05）
+
+- 严格 Research 完成指导迁入 `research/completion_guidance.py`；任务入口、project
+  adapter 和 Research iteration 通过 `KernelRunRequest.task_guidance` 注入，通用提示
+  渲染器不再判断 Research 工作流。
+- 报告标题复用已有报告契约；完整授权下的 Research 指导逐字保持一致，受限任务的
+  指导遵守授权与显式否决。
+- 编排层先准备不可变 CodingContext；提示渲染不再刷新验证候选、扫描工作区或修改事实。
+- 修复 native 编码上下文要求回复 JSON 的冲突；逻辑 note ID 用法归工具契约，工具说明
+  不提及当前快照隐藏的写工具。
+- 删除旧上下文 helper，不保留转发 shim；新增 30 个回归用例，接入 machine gate，
+  并补齐实机 gate 对新提示所有者的代码指纹。
+- 最终验证：**7312 passed、29 skipped、1500 subtests passed，487.20 秒**；machine
+  gate **370 passed**；Ruff、全树 mypy 通过。首轮失败、golden 变更及验证边界见 `TEST_REPORT.md`。
+
 ## 未发布 - 收敛式审查（2026-10-05）
 
 - 完成生产行为、测试质量、架构兼容层、用户体验/性能和修复后调用方五轮独立审查。

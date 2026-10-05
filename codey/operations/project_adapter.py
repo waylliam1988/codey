@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from codey.agents.request import AgentRequest
 from codey.operations.provider_session import ConversationProvider
+from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -210,6 +211,7 @@ def run(request: AgentRequest) -> RunResult:
     outcome = run_task_kernel(
         session,
         request=KernelRunRequest(
+            task_guidance=task_guidance_for_policy(session.policy),
             transport=KernelTransportDeps(
                 provider=provider,
                 run_id=request.run_id,

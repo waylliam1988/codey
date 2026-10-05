@@ -27,10 +27,12 @@ from codey.operations.kernel_protocol import build_turn_snapshot as _build_turn_
 from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
 from codey.operations.kernel_trace import record_turn
+from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import effect_coordinates
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.toolchain.tool_spec import thaw_schema_value
+from codey.workspace.coding_context import render_coding_context
 
 if TYPE_CHECKING:  # Annotations only; the loop never re-exports TaskSession.
     from codey.operations.task_session import TaskSession
@@ -107,6 +109,7 @@ class KernelRunRequest:
     transport: KernelTransportDeps
     execution: KernelExecutionDeps = KernelExecutionDeps()
     observation: KernelObservationDeps = KernelObservationDeps()
+    task_guidance: str = ""
 
 
 @dataclass
@@ -422,6 +425,8 @@ def _kernel_startup(
     provider_id: object,
     user_task: object,
     context_text: str,
+    task_guidance: str,
+    completion_context: Any,
     initial_results: list[ToolResult] | None,
     provider_session_changed: bool,
     delivered: Mapping[str, ToolResult] | None,
@@ -437,6 +442,8 @@ def _kernel_startup(
         session, user_task=str(user_task or ""), contract_text=initial_snapshot.contract_text,
         context_text=context_text, controller_allowed=initial_snapshot.allowed,
         native=native, tool_names=initial_snapshot.tool_names,
+        task_guidance=task_guidance,
+        coding_context=prepare_coding_context(session, completion_context=completion_context),
     )
     native_tools = [thaw_schema_value(row) for row in initial_snapshot.native_tools]
     pending_native_messages: list[dict[str, Any]] | None = None
@@ -516,6 +523,8 @@ def run_task_kernel(
             provider_id=provider_id,
             user_task=user_task,
             context_text=context_text,
+            task_guidance=request.task_guidance,
+            completion_context=completion_context,
             initial_results=initial_results,
             provider_session_changed=bool(provider_session_changed),
             delivered=delivered,
@@ -621,7 +630,8 @@ def run_task_kernel(
                 turns=turns_used,
                 stop_reason="recovery_failure",
             )
-        advance = _advance_after_results(native, results, session, state.pending_messages)
+        advance = _advance_after_results(native, results, session, state.pending_messages,
+                                         completion_context=completion_context)
         if isinstance(advance, KernelResult):
             return advance
         state.pending_messages, state.prompt = advance
@@ -757,6 +767,8 @@ def _advance_after_results(
     results: list[ToolResult],
     session: TaskSession,
     pending_native_messages: list[dict[str, Any]] | None,
+    *,
+    completion_context: Any = None,
 ) -> tuple[list[dict[str, Any]] | None, str] | KernelResult:
     """Deliver native receipts or build the next text prompt."""
     if native:
@@ -772,7 +784,8 @@ def _advance_after_results(
         if messages:
             return messages, ""
     base_prompt = _prompt._format_results(results, session)
-    current_context = _prompt._coding_context_for_session(session)
+    prepared = prepare_coding_context(session, completion_context=completion_context)
+    current_context = render_coding_context(prepared) if prepared is not None else ""
     if current_context:
         base_prompt = f"{base_prompt}\n\n{current_context}"
     return pending_native_messages, base_prompt

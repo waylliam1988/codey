@@ -15,6 +15,13 @@ PROTOCOL_DIRECT_ANSWER = "direct_answer"
 PROTOCOL_NATIVE_SEARCH_LEAK = "native_search_leak"
 PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
+def knowledge_read_id_guidance(*, source_tool: str = "") -> str:
+    source = f" by {source_tool}" if source_tool else ""
+    return (
+        f"For knowledge_read, pass the note id exactly as returned{source}; "
+        "do not prepend facts/ or append .md."
+    )
+
 
 @dataclass(frozen=True)
 class ToolArg:
@@ -76,7 +83,7 @@ TOOL_CONTRACTS = {
         name="knowledge_read",
         required={"id": str},
         example='{"tool":"knowledge_read","args":{"id":"<note id>"}}',
-        description="read one existing note in full",
+        description="read one existing note in full. " + knowledge_read_id_guidance(),
     ),
     "knowledge_write": ToolContract(
         name="knowledge_write",

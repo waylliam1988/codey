@@ -99,7 +99,8 @@ python tools/local_model_ui_gate.py --json
 只能记录为未运行，不能替代 headless gate 或静态 UI 契约测试。该 gate 使用临时项目和
 临时 server state，不写入默认项目或本地 provider 配置。
 
-Research UI gate 只发送用户任务；研究完成条件由生产 `kernel_prompt.py` 注入，包含先搜索并打开来源、
+Research UI gate 只发送用户任务；研究完成指导由生产 `research/completion_guidance.py` 定义，
+正式入口按授权通过 `KernelRunRequest.task_guidance` 交给 `kernel_prompt.py` 组合，包含先搜索并打开来源、
 用 `knowledge_write` 保存精确摘录、六个独立 Markdown 章节、`[n]` 引用、固定反证模板、原样传递
 note id，以及拒绝后的 `knowledge_read` 恢复步骤。`local-model-provider-history.jsonl` 保存本次运行的
 完整 request/response/tool error；gate 的 history 分析只统计每轮最后一个 tool message，避免把重放的旧错误
@@ -108,6 +109,10 @@ note id，以及拒绝后的 `knowledge_read` 恢复步骤。`local-model-provid
 UI 重绘问题。补充生产 prompt 后，模型曾在严格完成门下完成 `web_search -> open_url -> knowledge_write -> done`，
 但后续复测仍暴露报告质量、搜索超时和服务端 HTTP 200 非 JSON 风险。完成门没有放宽；非 JSON 只在 provider
 边界进行一次有限重试，持续异常仍失败。
+
+machine gate 必跑任务指导归属、提示渲染无副作用、native 编码指令、正式入口消费和
+不可变编码上下文测试。实机 gate 的 production hashes 同时记录领域指导、报告契约、
+工具 ID 规则及上下文准备/渲染模块；指纹只用于实验诊断，不充当完成证明。
 
 实机要求：
 

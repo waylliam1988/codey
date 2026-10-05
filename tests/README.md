@@ -39,6 +39,19 @@ Live release checks stay separate from deterministic contract checks.
 
 ## Kernel
 
+- `test_kernel_prompt_task_guidance_ownership.py`: domain-owned guidance,
+  unchanged full-grant text, report-contract headings, JSON/native injection
+  and exhaustive guidance grant/denial checks.
+- `test_kernel_prompt_rendering_has_no_side_effects.py`: rendering does not
+  refresh verification or mutate session facts.
+- `test_native_coding_context_uses_native_instructions.py`: native transport
+  never receives contradictory JSON reply instructions from coding context.
+- `test_task_guidance_reaches_production_entries.py`: actual task entry,
+  project adapter and Research iteration consume the supplied guidance.
+- `test_prepared_coding_context_is_immutable.py`: candidate refresh, detached
+  immutable projections, completion-context forwarding and native rendering.
+- `test_local_gate_hashes_task_guidance_sources.py`: live-gate metadata hashes
+  the actual owners of prompt guidance and context.
 - `test_task_kernel_remaining.py`: JSON/native parity, policy snapshots,
   hybrid/readonly behavior, completion and recovery contracts.
 - `test_task_entry_cutover.py`: public task entry and end-to-end mode wiring.

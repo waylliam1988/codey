@@ -75,6 +75,12 @@ completion gate。`project_adapter` 保留 AgentRequest/RunResult 边界；
 execution、observation；不再提供旧 keyword 适配。运行回调由 `task_phases/hooks`
 的一次运行实例持有，任务提交资源由 `TaskSubmissionStores` 显式捕获。
 
+严格 Research 指导由 `research/completion_guidance` 定义，领域入口按原策略选择并
+通过 `KernelRunRequest.task_guidance` 传入。`kernel_prompt` 只组合文字，不选择
+Research 工作流，也不刷新验证或扫描工作区。`project_prompt_context` 在编排阶段
+取得现有验证判定并准备不可变 `CodingContext`；渲染器按 JSON/native 展示。
+报告标题与 note ID 规则复用各自正式契约，不维护第二份章节或工具参数规则。
+
 - 文本 `read_files / parallel` 在解析期整批校验后降低为有序只读调用；native
   只用各自显式 ID，不为 wrapper 编造 child ID。执行和恢复仍按每个 effect 结算。
 - `KernelProgress` 只观察变化、结果指纹与 SeenInfo，不生成 completion proof。

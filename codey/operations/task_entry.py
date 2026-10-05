@@ -16,6 +16,7 @@ from typing import Any, cast
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.kernel_session_recovery import restore_task_session
 from codey.operations.result import ModeOutcome
+from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -344,6 +345,7 @@ def _run_entry_kernel(
         result = run_task_kernel(
             session,
             request=KernelRunRequest(
+                task_guidance=task_guidance_for_policy(session.policy),
                 transport=KernelTransportDeps(
                     provider=active_provider,
                     run_id=frame.run_id,
