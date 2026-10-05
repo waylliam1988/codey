@@ -14,6 +14,8 @@ Research 根因证据：未增强提示时序列为 `web_search -> open_url -> d
 
 剩余风险：KoboldCpp/12B 的研究质量反馈仍可能导致多轮 `done` 重试；外部 StepFun/CDP 不可用时 research 会按严格规则失败；系统默认 PATH 没有 Node，需要发布环境显式提供 Node 或使用 Playwright driver 路径。上述限制均未被伪装成通过。
 
+实现提交：`81328d82`（`Add real local model desktop UI gate`）。该提交及本报告元数据提交已推送到 `origin/master`。
+
 ## Iterative audit closure (2026-10-05)
 
 本轮独立审查共 7 轮，修复 5 个确定性问题（1 个运行时 cleanup 状态问题、4 组严格 mypy 动态边界问题）。完整候选台账、每轮扫描范围、排除证据和最终环境限制见[迭代审查收口](docs/review-audit-2026-10-05.zh-CN.md)。
