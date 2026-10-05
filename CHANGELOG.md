@@ -8,6 +8,12 @@
   and post-fix call-site review rounds.
 - Added the opt-in real local-model desktop UI gate for chat, coding, review,
   research, and ghost/local-context drawer flows, with per-run provider history.
+- Extended the same gate to web providers. The Qwen research-only run passed:
+  provider selection, the Research receipt, and all four Evidence/Sources/Graph/Notes
+  drawer tabs were verified; its successful main sequence was `web_search -> open_url ->
+  knowledge_write -> done`, followed by one bounded evidence-only `knowledge_write`.
+  The history has one `done`, zero completion rejections, and zero JSONL parse or
+  transport errors.
 - Fixed gate-only bootstrap, terminal-field, research-session, and history-isolation
   defects with regression tests; production completion rules remain strict.
 - Research history proved that repeated `done` came from completion-gate feedback
@@ -24,9 +30,10 @@
   finalizer without inventing evidence.
 - The real KoboldCpp 12B research-only gate completed with one `done`, zero
   completion rejections, and no repeated evidence writes.
-- Final full run: 7289 passed, 14 skipped, 5 environment failures, 1497 subtests
-  in 471.05s. The five failures are Node.js launch failures before JavaScript
-  execution (`WinError 2`); no production assertion failure was observed.
+- GitHub CI for `6c811c31` passed on Windows Python 3.11, 3.12, and 3.13:
+  each full `pytest` run recorded **7298 passed, 13 skipped, 1497 subtests**
+  (344.08s, 607.47s, and 462.40s respectively). The Linux boundary suite
+  recorded 169 passed and the machine contract gate 341 passed.
 
 ## Unreleased - Pytest performance hygiene (2026-10-05)
 

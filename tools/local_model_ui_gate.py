@@ -29,12 +29,13 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from playwright.sync_api import Page, expect, sync_playwright
 
 from codey.app import provider_services, sibling_probe
 from codey.app import server as codey_server
+from codey.app.context import AppContext
 from codey.env_names import (
     LOCAL_OPENAI_API_KEY_ENV,
     LOCAL_OPENAI_BASE_URL_ENV,
@@ -42,8 +43,10 @@ from codey.env_names import (
 )
 from codey.knowledge.store import KnowledgeStore
 from codey.providers import controls as provider_controls
+from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.providers.local_openai import LocalOpenAIProvider
+from codey.providers.web_provider import WebChatProvider
 
 UI_CASES = ("chat", "coding", "review", "research", "ghost")
 
@@ -58,7 +61,15 @@ def parse_cases(raw: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 
-def _preflight() -> tuple[str, str]:
+def _preflight(provider_id: str = "local") -> tuple[str, str]:
+    provider_id = str(provider_id or "local").strip().lower()
+    if provider_id != "local":
+        if provider_id not in PROVIDER_LABELS or provider_id == "local":
+            raise RuntimeError(f"unsupported UI gate provider: {provider_id}")
+        statuses = provider_services.provider_tab_availability()
+        if not statuses.get(provider_id, False):
+            raise RuntimeError(f"web provider {provider_id} is unavailable")
+        return provider_id, PROVIDER_LABELS[provider_id]
     base_url = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
     if not base_url:
         raise RuntimeError(
@@ -189,8 +200,23 @@ def analyze_provider_history(path: str | Path) -> dict[str, object]:
         if row_type == "error":
             transport_errors += 1
             continue
+        if row_type == "response" and isinstance(row.get("text"), str):
+            try:
+                response_obj = json.loads(row["text"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                response_obj = None
+            if isinstance(response_obj, dict):
+                name = response_obj.get("tool")
+                if isinstance(name, str) and name:
+                    tool_calls.append(name)
+                    if name == "done":
+                        done_calls += 1
+            continue
         if row_type != "response":
             if row_type == "request":
+                content = str(row.get("text") or "")
+                if "ERROR: Not done yet" in content:
+                    completion_rejections += 1
                 payload = row.get("payload")
                 messages = payload.get("messages") if isinstance(payload, dict) else None
                 # Provider requests replay the full conversation.  Only the
@@ -264,13 +290,61 @@ def _record_local_provider_history(path: Path) -> Iterator[None]:
             raise
         with lock:
             _append_jsonl(path, {"type": "response", "model": self.model, "payload": response})
-        return cast(dict[str, Any], response)
+        return response
 
-    LocalOpenAIProvider._post_chat = post_chat
+    LocalOpenAIProvider._post_chat = post_chat  # type: ignore[method-assign]  # noqa: B010
     try:
         yield
     finally:
-        LocalOpenAIProvider._post_chat = original
+        LocalOpenAIProvider._post_chat = original  # type: ignore[method-assign]  # noqa: B010
+
+
+@contextmanager
+def _record_web_provider_history(path: Path) -> Iterator[None]:
+    """Record the real web provider conversation without changing its driver."""
+    original_send = WebChatProvider.send
+    original_new_chat = WebChatProvider.new_chat
+    lock = threading.Lock()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.unlink(missing_ok=True)
+
+    def new_chat(self: WebChatProvider, timeout: float | None = None) -> None:
+        with lock:
+            _append_jsonl(path, {"type": "new_chat", "provider": self.spec.provider_id})
+        return original_new_chat(self, timeout)
+
+    def send(self: WebChatProvider, text: str, timeout: float | None = None) -> str:
+        with lock:
+            _append_jsonl(path, {
+                "type": "request",
+                "provider": self.spec.provider_id,
+                "text": text,
+            })
+        try:
+            response = original_send(self, text, timeout)
+        except Exception as exc:
+            with lock:
+                _append_jsonl(path, {
+                    "type": "error",
+                    "provider": self.spec.provider_id,
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
+            raise
+        with lock:
+            _append_jsonl(path, {
+                "type": "response",
+                "provider": self.spec.provider_id,
+                "text": response,
+            })
+        return response
+
+    WebChatProvider.new_chat = new_chat  # type: ignore[method-assign]  # noqa: B010
+    WebChatProvider.send = send  # type: ignore[method-assign]  # noqa: B010
+    try:
+        yield
+    finally:
+        WebChatProvider.new_chat = original_new_chat  # type: ignore[method-assign]  # noqa: B010
+        WebChatProvider.send = original_send  # type: ignore[method-assign]  # noqa: B010
 
 
 def _send_task(page: Page, base_url: str, prompt: str) -> dict[str, Any]:
@@ -324,6 +398,7 @@ def _exercise_page(
     *,
     launch_url: str,
     cases: tuple[str, ...],
+    provider_id: str,
 ) -> dict[str, Any]:
     page.goto(launch_url, wait_until="domcontentloaded")
     expect(page.locator("#provider-button")).to_be_enabled(timeout=15_000)
@@ -331,14 +406,15 @@ def _exercise_page(
     # Selecting Local is a real browser action.  It also opens the config popover;
     # closing it verifies the local setup path without writing user state.
     page.locator("#provider-button").click()
-    local_item = page.locator('[data-provider="local"]')
+    local_item = page.locator(f'[data-provider="{provider_id}"]')
     expect(local_item).to_be_visible()
     local_item.click()
-    expect(page.locator("#provider-name")).to_have_text("Local")
+    expect(page.locator("#provider-name")).to_have_text(PROVIDER_LABELS[provider_id])
     expect(page.locator("#provider-dot")).to_have_class(re.compile(r"\bok\b"), timeout=15_000)
-    expect(page.locator("#local-config-pop")).to_have_attribute("aria-hidden", "false")
-    page.locator("#local-config-close").click()
-    expect(page.locator("#local-config-pop")).to_have_attribute("aria-hidden", "true")
+    if provider_id == "local":
+        expect(page.locator("#local-config-pop")).to_have_attribute("aria-hidden", "false")
+        page.locator("#local-config-close").click()
+        expect(page.locator("#local-config-pop")).to_have_attribute("aria-hidden", "true")
 
     checks: list[str] = []
     event: dict[str, Any] = {}
@@ -419,8 +495,8 @@ def _exercise_page(
     return {
         "ok": True,
         "checks": [
-            "real local provider selected in browser",
-            "local config popover open and close",
+            f"real {provider_id} provider selected in browser",
+            *(["local config popover open and close"] if provider_id == "local" else []),
             *checks,
         ],
         "screenshot": str(screenshot),
@@ -434,7 +510,8 @@ def run_local_model_ui_gate(
     artifacts: str | Path | None = None,
     cases: str = ",".join(UI_CASES),
 ) -> dict[str, Any]:
-    base_url, model = _preflight()
+    provider_id = str(os.environ.get("UI_GATE_PROVIDER", "local") or "local").strip().lower()
+    base_url, model = _preflight(provider_id)
     selected_cases = parse_cases(cases)
     artifact_dir = Path(artifacts or ".e2e-artifacts").resolve()
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -447,7 +524,7 @@ def run_local_model_ui_gate(
     httpd: codey_server.CodeyHTTPServer | None = None
     page_errors: list[str] = []
     try:
-        state = codey_server.AppContext(temp_root / "state")
+        state = AppContext(temp_root / "state")
         _configure_research_store(state, temp_root, selected_cases)
         codey_server.STATE = state
         provider_controls.set_teach_handler(
@@ -458,9 +535,16 @@ def run_local_model_ui_gate(
         httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
-        host, port = httpd.server_address
+        address = httpd.server_address
+        host = str(address[0])
+        port = int(address[1])
         server_url = f"http://{host}:{port}/"
-        with _record_local_provider_history(history_path), sync_playwright() as playwright:
+        recorder = (
+            _record_local_provider_history(history_path)
+            if provider_id == "local"
+            else _record_web_provider_history(history_path)
+        )
+        with recorder, sync_playwright() as playwright:
                 browser = playwright.chromium.launch(channel="msedge", headless=not headed)
                 context = browser.new_context(viewport={"width": 1380, "height": 900})
                 page = context.new_page()
@@ -473,6 +557,7 @@ def run_local_model_ui_gate(
                         artifact_dir,
                         launch_url=_browser_launch_url(httpd, server_url),
                         cases=selected_cases,
+                        provider_id=provider_id,
                     )
                 except Exception as exc:
                     failure_artifact = _save_screenshot(page, artifact_dir / "local-model-ui-failure.png")
@@ -487,6 +572,7 @@ def run_local_model_ui_gate(
         result.update({
             "base_url": base_url,
             "model": model,
+            "provider": provider_id,
             "server_url": server_url,
             "cases": list(selected_cases),
             "provider_history": str(history_path),
@@ -519,9 +605,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--artifacts", default=".e2e-artifacts")
     parser.add_argument("--cases", default=",".join(UI_CASES))
+    parser.add_argument("--provider", default=None, choices=tuple(PROVIDER_LABELS))
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.provider:
+            os.environ["UI_GATE_PROVIDER"] = args.provider
         data = run_local_model_ui_gate(
             headed=args.headed,
             artifacts=args.artifacts,

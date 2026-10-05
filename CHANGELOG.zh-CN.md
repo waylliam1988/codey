@@ -7,6 +7,10 @@
 - 完成生产行为、测试质量、架构兼容层、用户体验/性能和修复后调用方五轮独立审查。
 - 新增可选的真实本地模型桌面 UI gate，覆盖 chat、coding、review、research、ghost/local context
   drawer，并按运行保存 provider 历史。
+- 同一 gate 现支持网页 provider。Qwen research-only 实机通过：验证 provider 选择、Research
+  receipt 以及 Evidence/Sources/Graph/Notes 四个抽屉页；成功主序列为
+  `web_search -> open_url -> knowledge_write -> done`，之后还有一次有界 evidence-only
+  `knowledge_write`；history 共一次 `done`，零完成门拒绝，零 JSONL 解析错误和 transport 错误。
 - 以回归测试锁定并修复 gate 层 bootstrap、终态字段、research 无项目会话和 history 隔离问题；
   生产完成规则保持严格。
 - Research 历史证明重复 `done` 来自提示未前置完成条件后收到完成门反馈，不是 JSON 兼容问题；
@@ -17,8 +21,9 @@
 - `knowledge_write` 结果明确区分逻辑 `note_id` 与 `storage_path`，报告最终化器兼容粗体冒号段落标签，
   不会凭空生成证据。
 - 真实 KoboldCpp 12B research-only gate 以一次 `done`、零完成门拒绝和零重复证据写入通过。
-- 最终全量：7289 通过、14 跳过、5 个环境失败、1497 个子测试，耗时 471.05 秒。
-  5 项均在执行 JavaScript 前因找不到 `node`（`WinError 2`）失败，没有生产断言失败。
+- `6c811c31` 的 GitHub CI 在 Windows Python 3.11、3.12、3.13 全部通过：每次全量
+  `pytest` 均为 **7298 通过、13 跳过、1497 个子测试**（分别耗时 344.08、607.47、
+  462.40 秒）。Linux 文件边界回归 169 项通过，机器契约门 341 项通过。
 
 ## 未发布 - Pytest 性能卫生（2026-10-05）
 

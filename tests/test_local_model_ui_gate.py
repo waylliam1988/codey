@@ -73,6 +73,21 @@ class LocalModelUiGateTests(unittest.TestCase):
         self.assertEqual(report["parse_errors"], 0)
         self.assertEqual(report["transport_errors"], 0)
 
+    def test_history_analysis_counts_web_provider_json_tool_calls(self) -> None:
+        rows = [
+            {"type": "request", "provider": "qwen", "text": "prompt"},
+            {"type": "response", "provider": "qwen", "text": '{"tool":"web_search","args":{}}'},
+            {"type": "request", "provider": "qwen", "text": "ERROR: Not done yet (research_evidence_missing)"},
+            {"type": "response", "provider": "qwen", "text": '{"tool":"done","args":{}}'},
+        ]
+        with tempfile.TemporaryDirectory() as root:
+            path = gate.Path(root) / "history.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+            report = gate.analyze_provider_history(path)
+        self.assertEqual(report["tool_calls"], ("web_search", "done"))
+        self.assertEqual(report["done_calls"], 1)
+        self.assertEqual(report["completion_rejections"], 1)
+
     def test_parse_cases_accepts_requested_ui_modes_and_rejects_unknown(self) -> None:
         self.assertEqual(
             gate.parse_cases("chat,coding,review,research,ghost"),
@@ -130,6 +145,22 @@ class LocalModelUiGateTests(unittest.TestCase):
             RuntimeError, "LOCAL_OPENAI_BASE_URL"
         ):
             gate._preflight()
+
+    def test_preflight_accepts_available_web_provider(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            gate.provider_services,
+            "provider_tab_availability",
+            return_value={"qwen": True},
+        ):
+            self.assertEqual(gate._preflight("qwen"), ("qwen", "Qwen"))
+
+    def test_preflight_rejects_unavailable_web_provider(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            gate.provider_services,
+            "provider_tab_availability",
+            return_value={"qwen": False},
+        ), self.assertRaisesRegex(RuntimeError, "qwen.*unavailable"):
+            gate._preflight("qwen")
 
     def test_preflight_uses_endpoint_default_model(self) -> None:
         endpoint = LocalEndpoint("http://127.0.0.1:1234/v1", ("model-from-probe",))

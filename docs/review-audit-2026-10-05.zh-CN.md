@@ -1,6 +1,7 @@
 # Codey 迭代审查收口（2026-10-05）
 
-本轮完成 7 轮独立审查。最终全量 pytest 只运行一次；其后没有再改生产代码或测试代码。
+本轮完成 7 轮独立审查。本地审查阶段最终全量 pytest 只运行一次；目标 commit
+推送后的 GitHub CI 三版本全量结果见文末补录。
 
 ## 轮次记录
 
@@ -43,4 +44,18 @@
 
 剩余风险是 Node.js 缺失导致的浏览器 JavaScript 行为未在本机执行，以及真实搜索/provider/CDP、12B 报告质量和完整浏览器 E2E 的环境依赖；这些限制不被用作审查收敛证明。
 
-审查实现提交：本轮代码修改尚未提交。文档更新完成并通过 diff 检查后才创建 commit/push。
+审查实现提交：目标 commit `6c811c31` 已推送；本次仅补录 CI 与网页 provider gate 报告。
+
+## 目标 commit 的 CI 与网页 provider gate 补录
+
+目标 commit `6c811c31ba62883457bb0041d050c26632c61f77` 已推送，GitHub CI
+run [37300670289](https://github.com/waylliam1988/codey/actions/runs/37300670289)
+全部成功。Windows Python 3.11、3.12、3.13 的全量 pytest 均为 **7298 passed、
+13 skipped、1497 subtests passed**，耗时分别为 344.08、607.47、462.40 秒；Linux
+文件边界回归为 169 passed，machine contract gate 为 341 passed。
+
+补录的 Qwen 网页 provider research-only UI gate 也通过。`.e2e-artifacts/qwen-gate-research/`
+保存了 screenshot 和 provider history；history 的序列为
+成功主序列为 `web_search -> open_url -> knowledge_write -> done`，之后还有一次有界
+evidence-only `knowledge_write`；`done` 1 次，completion rejection、JSONL parse error、
+transport error 均为 0，并实际打开 Research 的 Evidence、Sources、Graph、Notes 四个面板。

@@ -8,14 +8,16 @@
 
 真实 KoboldCpp UI gate（`http://127.0.0.1:5001/v1`，模型 `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`）结果：`chat,coding,review,ghost` 通过，检查 provider 选择、真实 chat、coding 变更、Review/details、Changes drawer 和 Local context/Changes 互斥；research UI 路径也实际打开了 Research 的 Evidence/Sources/Graph/Notes 面板。每次运行历史保存在独立 `.e2e-artifacts/.../local-model-provider-history.jsonl`，包含完整 request/response/tool error。UI gate 的 research prompt 只发送用户任务，严格完成清单、Markdown 章节、引用和恢复规则均由生产 `kernel_prompt.py` 提供。
 
+目标 commit `6c811c31ba62883457bb0041d050c26632c61f77` 之后，Qwen 网页 provider 的 research-only UI gate 通过。产物为 `.e2e-artifacts/qwen-gate-research/local-model-provider-history.jsonl` 和 `local-model-ui.png`；history 的成功主序列为 `web_search -> open_url -> knowledge_write -> done`，之后还有一次有界 evidence-only `knowledge_write`；共一次 `done`，零 completion rejection、零 JSONL parse error、零 transport error。Research receipt 和 Evidence/Sources/Graph/Notes 四个面板均通过。
+
 Research 根因证据：最初序列为 `web_search -> open_url -> done`，随后 `research_evidence_missing`；后续还出现 `report_no_report_sections`、`research_report_quality_failed`，以及模型把 note id 改写成 `facts/...md` 的 `knowledge_read` 失败。JSONL 解析错误和 transport 错误均为 0。生产 prompt 已增加 `knowledge_write` 前置、六个独立 `##` 章节、`[n]` 引用、固定反证模板、原样传递 note id 和拒绝后的 `knowledge_read` 恢复步骤；完成门保持严格。一次增强 prompt 运行曾达到 `stop_reason=done`，但后续 research-only 复测也复现了 DuckDuckGo `search_timeout`/`no_progress`，以及 KoboldCpp HTTP 200 非 JSON 的 provider_failure。结论是：原问题是生产引导不足叠加 12B 的严格报告收敛边界，不是 UI gate 自带协议，也不是 JSON/tool-call 解析错误；非 JSON 处理只在 provider 边界增加一次有限重试。
 Research 根因证据：最初序列为 `web_search -> open_url -> done`，随后 `research_evidence_missing`；后续还出现 `report_no_report_sections`、`research_report_quality_failed`，以及模型把 note id 改写成 `facts/...md` 的 `knowledge_read` 失败。JSONL 解析错误和 transport 错误均为 0。生产 prompt 已增加 `knowledge_write` 前置、六个独立 `##` 章节、`[n]` 引用、固定反证模板、原样传递 note id 和拒绝后的 `knowledge_read` 恢复步骤；完成门保持严格。一次增强 prompt 运行曾达到 `stop_reason=done`，但后续 research-only 复测也复现了 DuckDuckGo `search_timeout`/`no_progress`，以及 KoboldCpp HTTP 200 非 JSON 的 provider_failure。回放最终失败报告后确认质量门误把正文代码标识符 `os.path` 识别为未打开域名；新增失败回归并修复 provenance 过滤，12B research-only gate 随后以一次 `done`、零 completion rejection、零重复写入通过。结论是：原问题是生产引导不足叠加 12B 的严格报告收敛边界，另有一个确定性的 provenance 误报；不是 UI gate 自带协议，也不是 JSON/tool-call 解析错误。
 
-质量门：Ruff、compileall、测试收集（7308 tests）、全树 mypy（372 files）、`git diff --check` 均通过；受影响定向测试通过。最终全量命令为 `pytest -q`，原始统计：**7289 passed, 14 skipped, 5 failed, 1497 subtests passed in 471.05s (0:07:51)**。5 项全部在启动外部 `node` 前因 `FileNotFoundError: [WinError 2]` 失败，涉及 operator bootstrap 3 项和 SSE browser 2 项；没有修改 skip/xfail，也没有把环境限制伪装成通过。
+质量门：目标 commit 的 GitHub CI [run 37300670289](https://github.com/waylliam1988/codey/actions/runs/37300670289) 的 Ruff、全树 mypy、JavaScript syntax 和 machine gate 均通过。Windows 三个 Python 版本的全量命令均为 `python -m pytest -q -o faulthandler_timeout=120`：3.11 为 **7298 passed, 13 skipped, 1497 subtests passed in 344.08s**，3.12 为 **7298 passed, 13 skipped, 1497 subtests passed in 607.47s**，3.13 为 **7298 passed, 13 skipped, 1497 subtests passed in 462.40s**。Linux 文件边界回归 169 项、machine contract gate 341 项均通过；本地无需再次运行全量 pytest。
 
 剩余风险：KoboldCpp/12B 的研究质量反馈仍可能导致多轮 `done` 重试；外部 StepFun/CDP 不可用时 research 会按严格规则失败；系统默认 PATH 没有 Node，需要发布环境显式提供 Node 或使用 Playwright driver 路径。上述限制均未被伪装成通过。
 
-实现变更包括 provenance 误报修复、bold-colon 报告段落归一化和 note-id/storage-path 明确输出；文档更新后提交并推送。
+实现变更包括 provenance 误报修复、bold-colon 报告段落归一化和 note-id/storage-path 明确输出；UI gate 的网页 provider 扩展记录在目标 commit `6c811c31`，本次只补充报告元数据。
 
 推送后的独立 research-only 复测仍保留在 `.e2e-artifacts/research-run/local-model-provider-history.jsonl`：模型成功完成搜索、来源打开和 `knowledge_write`，随后 KoboldCpp 在 HTTP 200 响应中返回非 JSON，终态为 `provider_failure`；本次 history 无 JSONL 解析错误或 transport error。该复测确认模型/服务端输出稳定性仍是风险，不改变已经通过的增强提示成功运行，也没有因此放宽完成门或修改内核。
 
