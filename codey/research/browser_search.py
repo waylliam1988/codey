@@ -458,13 +458,11 @@ class BrowserSearchProvider:
                     self._discard_fetch_page_on_browser_thread(page)
                     return fallback
                 self._discard_fetch_page_on_browser_thread(page)
-                return {"status": "ok",
-                    "url": final_url,
-                    "title": title,
-                    "text": "ERROR: page had no usable visible content after navigation: "
-                    + _fetch_page_failure_kind(text),
-                    "truncated": False,
-                }
+                return _fetch_failure(
+                    final_url,
+                    "page had no usable visible content after navigation: " + _fetch_page_failure_kind(text),
+                    title=title,
+                )
             truncated = len(text) > _MAX_PAGE_CHARS
             if truncated:
                 text = text[:_MAX_PAGE_CHARS]
@@ -857,6 +855,7 @@ def _download_text_fallback(url: str) -> dict[str, Any]:
                 current_url = redirect["url"]
                 redirects += 1
                 continue
+            _close_response(exc)
             return _fetch_failure(current_url, f'HTTP fallback could not load page: HTTP {exc.code}')
         except urllib.error.URLError as exc:
             return _fetch_failure(current_url, f'HTTP fallback could not load page: {exc}')
@@ -889,13 +888,13 @@ def _download_text_fallback(url: str) -> dict[str, Any]:
             html = data.decode(response_charset(headers), errors="replace")
             text = extract_text(html)
             if not _usable_fetch_page_text(text):
-                return {"status": "ok",
-                    "url": final_url,
-                    "title": extract_title(html),
-                    "text": "ERROR: HTTP fallback had no usable visible content: "
-                    + _fetch_page_failure_kind(text),
-                    "truncated": truncated,
-                }
+                failure = _fetch_failure(
+                    final_url,
+                    "HTTP fallback had no usable visible content: " + _fetch_page_failure_kind(text),
+                    title=extract_title(html),
+                )
+                failure["truncated"] = truncated
+                return failure
             text_truncated = len(text) > _MAX_PAGE_CHARS
             if text_truncated:
                 text = text[:_MAX_PAGE_CHARS]
@@ -939,6 +938,7 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, Any]:
                 current_url = redirect["url"]
                 redirects += 1
                 continue
+            _close_response(exc)
             return _pdf_skipped(
                 current_url, mime_type or "application/pdf", f"PDF could not be downloaded: HTTP {exc.code}"
             )

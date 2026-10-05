@@ -8,6 +8,7 @@ the provider runtime.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import urllib.error
 import urllib.request
@@ -76,6 +77,8 @@ def probe_local_endpoint_detail(
         with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read(MODELS_RESPONSE_MAX_BYTES + 1)
     except urllib.error.HTTPError as exc:
+        with contextlib.suppress(Exception):
+            exc.close()
         if exc.code in (401, 403):
             return None, "auth"
         return None, "unreachable"

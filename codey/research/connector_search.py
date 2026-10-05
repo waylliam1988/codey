@@ -216,7 +216,7 @@ class ConnectorAwareSearchProvider:
                 return self._search_pubmed(safe_query, limit)
             if connector_id == "arxiv":
                 return self._search_arxiv(safe_query, limit)
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             self._record_error(connector_id, "search", exc)
@@ -529,6 +529,7 @@ def _read_url_text(url: str, *, timeout: float) -> str:
                     continue
                 finally:
                     _close_response(exc)
+            _close_response(exc)
             raise ValueError(f"connector request failed: {exc}") from exc
         except urllib.error.URLError as exc:
             raise ValueError(f"connector request failed: {exc}") from exc

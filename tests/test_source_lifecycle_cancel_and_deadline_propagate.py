@@ -35,3 +35,21 @@ def test_connector_lifecycle_exception_never_calls_browser_fallback(stage, error
     with patch.object(provider, "_fetchable_hit_for_url", lookup), patch("codey.research.connector_search.fetch_recorded_hit", side_effect=error("stop")), pytest.raises(error):
         provider.fetch("https://example.com/guide")
     base.fetch.assert_not_called()
+
+
+@pytest.mark.parametrize("error", [TaskCancelled, DeadlineExceeded, TimeoutError])
+def test_connector_search_distinguishes_task_deadline_from_endpoint_timeout(error):
+    base = SimpleNamespace(search=Mock(return_value=[]))
+    provider = ConnectorAwareSearchProvider(base, connector_ids=("arxiv",), rate_limit=False)
+    with patch.object(provider, "_search_arxiv", side_effect=error("budget")) as connector:
+        if error is TimeoutError:
+            assert provider.search("quantum astronomy evidence") == []
+            base.search.assert_called_once()
+            assert provider.last_connector_errors == [{"connector_id": "arxiv", "action": "search", "error": "TimeoutError"}]
+        else:
+            with pytest.raises(error, match="budget"):
+                provider.search("quantum astronomy evidence")
+            base.search.assert_not_called()
+            assert provider.last_connector_errors == []
+    connector.assert_called_once()
+    assert provider._search_deadline is None

@@ -1,5 +1,104 @@
 # Codey Test Report
 
+## Iterative whole-project hygiene audit (2026-10-05)
+
+本次从 `75964afe94ebaa35b401b3ae9ed7ad2b893e4a1b` 开始，完成 **7 轮独立审查**。
+本节与下方历史任务的测试记录分开；本次只执行 **一次最终全量 pytest**，
+且仅在 A–G 收敛、定向测试和所有前置检查通过后执行。
+完整候选表、复现命令、失败输出、根因、回归、修复、受影响测试、再次扫描状态，
+以及逐位置 skip/fallback 清单见 [审查清单](docs/audit-2026-10-05-iteration.md)。
+
+| 轮次 | 独立扫描范围 | 新候选 | 结果 |
+| --- | --- | ---: | --- |
+| A 生产行为 | 状态迁移、正式桌面/CLI/headless 入口、provider/history/retry、HTTP/SSE、恢复、资源与 writer 生命周期 | 3 | 修复 A01/A02；排除当前调用下的 A03 |
+| B 测试质量 | 全树测试 AST、弱断言、mock/fixture 语义、失败分支、skip、前置 home 隔离与正式入口 | 3 | B01–B03 均有执行/调用证据，未确认行为缺陷 |
+| C 架构兼容层 | 全树导入/引用、死代码、重复函数、单一 kernel、源数据/状态投影所有权、冷启动 | 3 | 删除 C01 未使用转发方法；C02/C03 为现有所有权与设计 |
+| D UX/性能 | HTTP 错误流、空白/challenge 页面状态、connector deadline/fallback、JS reconcile、外部资源隔离 | 3 | D01–D03 均先复现失败再修复 |
+| E 反向审查 | 所有修复的调用方、其他入口、fixture、副作用、fallback、成功与失败对照 | 0 | 275 passed，22 subtests |
+| F 调用/状态流 | 新导入调用图、reserve/finish/release、provenance/replay、真实进程 kill/restart、并发、race、soak | 0 | 254 passed，4 环境 skip，34 subtests |
+| G fixture/fallback/冷启动 | 新 fixture、55 个显式 skip 位置、60 个 fallback 关键词文件、独立冷进程、机器契约 | 0 | 冷启动 69 passed；机器契约 373 passed，零 skip |
+
+最近两轮 F/G 无新可稳定复现候选的依据不同：F 从当前调用图与状态流验证单一 writer、
+终态、真实崩溃恢复和幂等性；G 从 fixture、fallback、正式入口与冷进程重新验证失败
+不会成为成功或 evidence，普通 endpoint 超时仍可 fallback。并非因一次定向测试或静态
+检查通过而停止，也不把环境限制作为收敛证明。
+
+修复 **5 个行为问题 + 1 个架构卫生问题**：
+
+- A01：合法 JSON 前缀不足声明的 HTTP body 长度仍可分发，甚至消耗 bootstrap token。
+  新回归先得到 `200 != 400`；现在在分发/交换前返回 400，完整 body 对照保留。
+- A02：桌面退出或 warmup 失败不关闭监听 socket；线程启动失败时调用 `shutdown()`
+  会死锁。两个真实 socket 断言先失败，独立子进程先超时；现在关闭 listener，且只在
+  服务线程已启动时 shutdown，关闭失败也执行 lease 释放。
+- C01：Affinity 的 `_source_specs` 私有转发方法无调用者。全树静态引用、现有 owner
+  测试、冷进程真实 source→persist→reopen 以及无当前 export/protocol 支持对象的证据
+  齐备后删除；正式 `sync_from_sources` 继续直接调用 source owner。
+- D01：local model discovery、HTML/PDF fallback 和 connector 的非 redirect HTTPError
+  流未关闭。12 个失败回归保持异常对象存活以排除 GC；修复保留 auth/error/skipped
+  分类及 redirect 安全检查。
+- D02：空白/challenge DOM 或 HTTP 页面带 `status=ok`，会被 gateway 记录为 evidence。
+  4 个 acquisition→gateway→ledger 回归先失败；现在返回 canonical error/detail，
+  保留原显示文字/title/truncation，合法 `ERROR:` 开头文章对照仍成功。
+- D03：connector 搜索吞掉任务级 DeadlineExceeded 后继续 browser fallback。先修正
+  未命中 arXiv 的测试查询，再于未修改生产代码上确认仅 deadline 失败；现在传播任务
+  deadline/取消，普通 endpoint TimeoutError 的 fallback 和 diagnostics 对照保留。
+
+共新增 **28 个用例**，其中 **23 个确认的 pre-fix red 用例、5 个对照用例**；没有
+弱化旧断言、添加 skip/xfail 或改变共享 fixture。每项修复后都重新扫描生产、测试、
+调用方和架构/兼容边界。原有 stress、真实独立进程及崩溃验证全部保留。
+
+排除项：A03 当前生产调用在获取 lease 的同一线程释放，headless close 在同步任务
+结束后执行；B01 AST 找到的 `assert True` 是生成的样本内容，零空转测试；B02 两个
+历史 owner-presence guard 当前 owner 存在且测试执行；B03 home 在导入前隔离、子进程
+继承，provider discovery fixture 为 opt-in；C02 六组短 leaf guard/domain wrapper
+拥有现有调用方；C03 auto 和 Research 入口调用同一 kernel，历史 iterator 只在测试
+support 中。具体测试和调用证据均在候选表。
+
+最终全量之前的检查：
+
+| 检查 | 原始结果 |
+| --- | --- |
+| A01 / A02 受影响选择 | 99 passed；240 passed、1 skipped、6 subtests |
+| A 生产选择 / B 测试质量 | 514 passed、3 环境 skipped、30 subtests；211 passed、400 subtests |
+| C Affinity / 所有权边界 | 122 passed；486 passed、444 subtests |
+| D01 / D02 / D03 受影响选择 | 197 / 217 / 214 passed，各 7 subtests |
+| D UX/JavaScript | 257 passed、1 opt-in skipped、22 subtests |
+| E / F / G 冷启动 | 275 / 254 / 69 passed；详细 skip/subtest 数见上表和清单 |
+| `python -m tools.machine_contract_gate` | 373 passed，55.58s，零失败/skip |
+| `python -m ruff check .` | All checks passed! |
+| `python -m mypy codey` | Success: no issues found in 375 source files |
+| `python -m compileall -q codey tests tools` | 通过 |
+| Node `--check` | 全部 12 个 packaged JavaScript 通过 |
+| `python -m pytest --collect-only -q` | 7369 tests collected in 3.19s |
+| `git diff --check` | 通过 |
+
+唯一一次最终全量命令及原始统计：
+
+```text
+python -m pytest -q -o faulthandler_timeout=120 -ra
+7340 passed, 29 skipped, 1500 subtests passed in 477.50s (0:07:57)
+exit code: 0
+```
+
+全量前后核对 1170 个生产/测试/工具 Python、JS、HTML、CSS 文件的 SHA-256，
+**0 个变化**。全量后只更新报告文档和 CHANGELOG，不再修改生产代码或测试代码。
+本地原始 red/green、扫描、前置检查和全量日志位于被忽略的
+`artifacts/hygiene-audit/`；没有把运行缓存或外部用户状态加入提交。
+
+环境与剩余风险：Windows、Python 3.12.8、Git 2.54.0.windows.1。Node 最初不在 PATH，
+后来找到现有 Playwright driver 的 Node v24.13.0，仅给检查进程添加 PATH，实际 JS
+与机器契约均执行。29 个最终 skip 为 22 个 symlink 权限、4 个 POSIX 合约、2 个
+O_NOFOLLOW 不可用、1 个显式 opt-in 真 provider/browser E2E；零 xfail，本次未添加
+skip。未运行新的真实模型/在线站点 release gate；模型能力、站点 DOM 漂移、实时
+网络延迟及 Python 3.11/3.13/Linux 执行不由本机结果保证。challenge 文本识别仍是
+启发式；DNS fake-IP/TUN 兼容是现有设计，应用层 guard 无法证明防 DNS rebinding；
+任意外部跨线程 lease 释放不在已验证调用范围内；两个历史 owner-presence skip 的
+未来弱化风险已明确记录。这不是整个程序不存在 bug 的形式化证明。
+
+原审查修复提交（文档合并前）：`6142f1a98a7e3e63d622cf7ab63935e5d10e7b2b`。
+已成功推送至 `https://github.com/waylliam1988/codey.git` 的 `master` 分支，exit code 0。
+全量测试后仅修改报告文档，未再次运行全量 pytest。
+
 ## Task guidance ownership and pure rendering (2026-10-05)
 
 Base commit: `2820a9d2`. Production changes and all regression tests were finalized

@@ -337,7 +337,11 @@ class Handler(BaseHTTPRequestHandler):
                 set_timeout = None
         try:
             try:
-                return self.rfile.read(length)
+                body = self.rfile.read(length)
+                if len(body) != length:
+                    self._send_json(400, {"error": "incomplete request body"})
+                    return None
+                return body
             except TimeoutError:
                 self._send_json(408, {"error": "request body timeout"})
                 return None
@@ -507,6 +511,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
     except LockTimeout as exc:
         raise RuntimeError("该 state home 已在使用") from exc
     httpd: CodeyHTTPServer | None = None
+    http_thread_started = False
     try:
         httpd = CodeyHTTPServer((host, port), Handler)
         actual_port = httpd.server_address[1]
@@ -520,11 +525,15 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
                 httpd.serve_forever()
 
         threading.Thread(target=_run_httpd, daemon=True).start()
+        http_thread_started = True
         provider_services.start_provider_warmup(get_state(), delay_s=2.0)
     except BaseException:
         if httpd is not None:
+            if http_thread_started:
+                with contextlib.suppress(Exception):
+                    httpd.shutdown()
             with contextlib.suppress(Exception):
-                httpd.shutdown()
+                httpd.server_close()
         with contextlib.suppress(Exception):
             server_lease.release()
         raise
@@ -554,6 +563,11 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
             print("\n[codey] shutting down")
     finally:
         assert httpd is not None
-        httpd.shutdown()
-        with contextlib.suppress(Exception):
-            server_lease.release()
+        try:
+            httpd.shutdown()
+        finally:
+            try:
+                httpd.server_close()
+            finally:
+                with contextlib.suppress(Exception):
+                    server_lease.release()

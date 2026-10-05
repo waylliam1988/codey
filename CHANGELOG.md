@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Iterative HTTP and Research hygiene (2026-10-05)
+
+- Complete seven independent production, test, architecture, UX, reverse-call,
+  state-flow and fixture/cold-start audit rounds; the last two found no new
+  reproducible candidates. Record all candidates, exclusions, skips and fallback owners.
+- Reject incomplete HTTP bodies before control dispatch or bootstrap-token exchange.
+  Close the desktop HTTP listener on normal/failed startup exit and prevent shutdown
+  deadlock when its thread cannot start; release the server lease during cleanup.
+- Close non-redirect HTTP error streams in local-model discovery and Research
+  HTML/PDF/connector acquisition. Preserve error classification and redirect policy.
+- Return structured errors for blank/challenge pages so they cannot become evidence.
+  Propagate task deadlines from connector search while retaining endpoint-timeout fallback.
+- Remove the unreferenced Affinity source forwarding method with cold-process
+  source/persistence/replay coverage. Add 28 regressions and controls, including
+  23 demonstrated pre-fix failures; preserve shared fixtures and stress tests.
+- One final full run: **7340 passed, 29 skipped, 1500 subtests passed in 477.50s**;
+  machine contracts **373 passed**, Ruff/mypy/compile/JS/collection checks passed.
+  No production/test edits followed the full run. Details and limits: `TEST_REPORT.md`.
+
 ## Unreleased - Domain-owned task guidance (2026-10-05)
 
 - Move strict Research completion guidance into `research/completion_guidance.py`.

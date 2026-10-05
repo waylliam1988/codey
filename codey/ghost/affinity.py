@@ -774,27 +774,6 @@ class GhostAffinityStore:
                 False, False, before, before, self.last_warnings, warning_cleaner=_bounded_warnings
             )
 
-    def _source_specs(
-        self,
-        *,
-        hebbian_store: Any,
-        work_queue_store: Any,
-        research_interest_candidates: Iterable[Any],
-        run_projection: Any,
-        terminal_event: Mapping[str, object] | None,
-        session_id: str,
-        project: str,
-    ) -> tuple[list[Any], list[Any]]:
-        return collect_source_specs(
-            hebbian_store=hebbian_store,
-            work_queue_store=work_queue_store,
-            research_interest_candidates=research_interest_candidates,
-            run_projection=run_projection,
-            terminal_event=terminal_event,
-            session_id=session_id,
-            project=project,
-        )
-
     def _load_state_for_read_unlocked(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
         # One read performs one full replay: _read_and_replay_unlocked both
         # validates and projects in a single replay_affinity_events call.

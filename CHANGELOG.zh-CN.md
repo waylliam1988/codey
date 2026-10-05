@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - HTTP 与 Research 迭代卫生审查（2026-10-05）
+
+- 完成 A–G 七轮独立审查；最后两轮未发现新的可稳定复现候选，候选、排除项、skip、
+  fallback 所有权及环境限制均记录于审查清单。
+- 不完整 HTTP body 在控制分发或 bootstrap token 交换前返回 400；桌面正常退出与
+  启动失败关闭 listener，线程未启动时避免 shutdown 死锁，清理始终释放 server lease。
+- local model discovery、Research HTML/PDF/connector 关闭非 redirect HTTPError 流，
+  保留原错误分类及 redirect policy。
+- 空白/challenge 页返回结构化错误，不再进入 evidence；connector search 传播任务
+  deadline，普通 endpoint 超时继续保留 fallback。
+- 删除无人引用的 Affinity source 转发方法，冷进程验证 source→persist→reopen。
+  新增 28 个回归与对照用例，其中 23 个先确认失败；共享 fixture 与 stress 测试保留。
+- 唯一一次最终全量：**7340 passed、29 skipped、1500 subtests passed，477.50 秒**；
+  machine gate **373 passed**；Ruff/mypy/compile/JS/collection 通过。全量后未修改生产
+  或测试代码，验证边界与完整记录见 `TEST_REPORT.md`。
+
 ## 未发布 - 任务指导归属与纯渲染（2026-10-05）
 
 - 严格 Research 完成指导迁入 `research/completion_guidance.py`；任务入口、project
