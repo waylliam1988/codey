@@ -14,6 +14,11 @@ from __future__ import annotations
 import contextlib
 import time
 from collections.abc import Callable
+from dataclasses import replace
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codey.providers.local_config import LocalProviderConfig
 
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.automation.browser_worker import submit as submit_browser_task
@@ -47,6 +52,7 @@ def run_task(
     get_state: Callable[[], TaskSubmissionState],
     review_policy: str | None = None,
     review_source_run_id: str = "",
+    local_config: LocalProviderConfig | None = None,
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
     # must not load operations/service modules/research (see test_server_lazy_state).
@@ -68,6 +74,13 @@ def run_task(
             review_policy=review_policy,
             capture_provider_failure=capture_provider_failure,
         )
+        if local_config is not None:
+            from codey.app.provider_services import open_local_model_session
+
+            def connect_selected(provider: str) -> object:
+                return open_local_model_session(state, local_config) if provider == "local" else state.get_provider(provider)
+
+            deps = replace(deps, connect_provider=connect_selected)
     except Exception:
         # Init-phase failure happens before TaskRuntime owns the slot: release
         # a preset reservation so the worker exception cannot pin busy forever.
@@ -125,6 +138,7 @@ def submit_task(
     get_state: Callable[[], TaskSubmissionState],
     abort_if_stopped: bool = False,
     review_source_run_id: str = "",
+    local_config: LocalProviderConfig | None = None,
 ) -> str | None:
     # Fail fast on config error before taking the slot; the validated value is
     # passed through so the worker never re-reads the environment (no race).
@@ -141,6 +155,8 @@ def submit_task(
     )
     if reserved is None:
         return None
+    if local_config is not None:
+        state.run_registry.bind_local_config(reserved.run_id, local_config)
     try:
         accepted = submit_browser_task(
             run_task,
@@ -162,6 +178,7 @@ def submit_task(
             get_state=lambda: state,
             review_policy=review_policy,
             review_source_run_id=review_source_run_id,
+            local_config=local_config,
         )
     except Exception:
         state.release_run(reserved.run_id)
@@ -187,6 +204,7 @@ def submit_task_after_slot_release(
     previous_run_id: str = "",
     timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
     initial_shell_results: tuple[dict[str, object], ...] = (),
+    local_config: LocalProviderConfig | None = None,
 ) -> str | None:
     deadline = time.monotonic() + max(0.0, timeout)
     while True:
@@ -211,6 +229,7 @@ def submit_task_after_slot_release(
             abort_if_stopped=True,
             previous_run_id=previous_run_id,
             initial_shell_results=tuple(initial_shell_results or ()),
+            local_config=local_config,
         )
         if run_id is not None:
             return run_id

@@ -36,6 +36,12 @@
   </div>
   <div class="project-empty" id="search-empty" hidden>No matching chats</div>
   <div class="session-list" id="session-list"></div>
+  <div class="sidebar-footer">
+    <button class="sidebar-row" id="btn-settings" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24"><path d="m9 3-.7 2.4-2 .9L4 5.7 2 9l1.7 1.7v2.6L2 15l2 3.3 2.3-.6 2 .9L9 21h6l.7-2.4 2-.9 2.3.6 2-3.3-1.7-1.7v-2.6L22 9l-2-3.3-2.3.6-2-.9L15 3Z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span class="label">Settings</span>
+    </button>
+  </div>
 </aside>
 
 <main>
@@ -65,7 +71,7 @@
         <textarea id="task" placeholder="Send a message to Codey…" rows="1"></textarea>
       <div class="composer-bar">
         <div class="provider-chooser">
-          <button class="provider-button" id="provider-button" title="Model" disabled>
+          <button class="provider-button" id="provider-button" aria-label="Choose model" disabled>
             <span class="dot" id="provider-dot"></span>
             <span class="name" id="provider-name">DeepSeek</span>
             <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
@@ -75,6 +81,13 @@
                  do not hand-edit a second copy here. -->
             <div class="provider-probe-warning" id="provider-probe-warning" hidden>Provider status unavailable</div>
           </div>
+        </div>
+        <div class="effort-chooser" id="effort-chooser" hidden>
+          <button class="provider-button effort-button" id="effort-button" aria-label="Thinking effort" aria-haspopup="dialog" aria-controls="effort-menu" aria-expanded="false">
+            <span id="effort-name">High</span>
+            <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="provider-menu effort-menu" id="effort-menu" role="dialog" aria-label="Thinking effort" aria-hidden="true"></div>
         </div>
         <span class="send-hint" id="send-hint">Enter</span>
         <div class="action-slot">
@@ -91,31 +104,47 @@
   </div>
 </main>
 
-<div class="local-config-pop" id="local-config-pop" aria-hidden="true">
-  <h4>Local model</h4>
-  <p id="local-config-summary">Open Ollama, KoboldCPP, or LM Studio, then connect.</p>
-  <div class="local-config-candidates" id="local-config-candidates"></div>
-  <input id="local-base-url" placeholder="http://127.0.0.1:11434/v1" autocomplete="off" />
-  <input id="local-model-name" list="local-model-options" placeholder="model id" autocomplete="off" />
-  <datalist id="local-model-options"></datalist>
-  <input id="local-api-key" type="password" placeholder="API key (blank keeps saved key)" autocomplete="off" />
-  <div class="local-context-presets" id="local-context-presets">
-    <button type="button" data-context-window="32768">32k</button>
-    <button type="button" data-context-window="131072">128k</button>
-    <button type="button" data-context-window="262144">262k</button>
+<dialog class="settings-dialog" id="local-config-pop" aria-labelledby="settings-title">
+  <div class="settings-head"><h2 id="settings-title">Settings</h2>
+    <button class="btn-icon" id="settings-dismiss" aria-label="Close settings"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
   </div>
-  <input id="local-context-window" placeholder="context window tokens" autocomplete="off" inputmode="numeric" />
-  <select id="local-native-tools-mode">
-    <option value="auto">Native tools: Auto</option>
-    <option value="on">Native tools: On</option>
-    <option value="off">Native tools: Off</option>
-  </select>
-  <div class="local-config-actions">
-    <button class="text-btn" id="local-config-close">Close</button>
-    <button class="text-btn primary" id="local-config-save">Connect</button>
-  </div>
-  <div class="local-config-error" id="local-config-error"></div>
-</div>
+  <form id="local-config-form" class="settings-body">
+    <div class="settings-section-label">Connections</div>
+    <h3>Local model</h3>
+    <p class="settings-hint" id="local-config-summary">Loading connection…</p>
+    <div class="local-config-candidates" id="local-config-candidates"></div>
+    <label class="settings-field" for="local-base-url">Address
+      <input id="local-base-url" class="settings-mono" placeholder="http://127.0.0.1:11434/v1" autocomplete="off" required />
+    </label>
+    <label class="settings-field" for="local-model-name">Default model
+      <input id="local-model-name" class="settings-mono" list="local-model-options" placeholder="Model ID" autocomplete="off" />
+    </label>
+    <datalist id="local-model-options"></datalist>
+    <label class="settings-field" for="local-api-key"><span>API key <span class="settings-optional" id="local-key-status">Optional</span></span>
+      <input id="local-api-key" type="password" placeholder="Optional" autocomplete="off" />
+    </label>
+    <details class="settings-advanced" id="local-advanced"><summary>Advanced</summary>
+      <label class="settings-field" for="local-display-name"><span>Display name <span class="settings-optional">Optional</span></span>
+        <input id="local-display-name" placeholder="Use the model name" maxlength="160" autocomplete="off" />
+      </label>
+      <label class="settings-field" for="local-context-preset">Context limit
+        <select id="local-context-preset"><option value="32768">32,768 tokens</option><option value="131072">131,072 tokens</option><option value="262144">262,144 tokens</option><option value="custom">Custom…</option></select>
+      </label>
+      <label class="settings-field" id="local-custom-context" for="local-context-window" hidden>Custom limit (tokens)
+        <input id="local-context-window" inputmode="numeric" type="number" min="1" step="1" />
+      </label>
+      <p class="settings-hint">Match the context loaded by your model server.</p>
+      <label class="settings-field" for="local-native-tools-mode">Tool calling
+        <select id="local-native-tools-mode"><option value="auto">Automatic</option><option value="on">Native</option><option value="off">Compatibility</option></select>
+      </label>
+      <p class="settings-hint">Compatibility uses text-based tool requests. Command approval still applies.</p>
+    </details>
+    <div class="local-config-error" id="local-config-error" role="status"></div>
+    <div class="local-config-actions"><button type="button" class="text-btn" id="local-config-close">Close</button>
+      <button type="submit" class="text-btn primary" id="local-config-save">Connect</button>
+    </div>
+  </form>
+</dialog>
 
 <div class="ctx-menu" id="proj-menu">
   <button data-act="newchat">New chat here</button>
@@ -129,6 +158,7 @@
 <div class="ctx-menu" id="top-menu">
   <button data-act="rename">Rename chat</button>
   <button data-act="local-context">Local context</button>
+  <button data-act="settings">Settings</button>
   <button data-act="clear" class="danger" data-confirm="Confirm clear">Clear messages</button>
 </div>
 <div class="ctx-menu" id="local-context-menu"></div>
@@ -189,6 +219,7 @@
 <script src="/assets/changes_drawer.js?v=__APP_VERSION__"></script>
 <script src="/assets/local_context_drawer.js?v=__APP_VERSION__"></script>
 <script src="/assets/run_details.js?v=__APP_VERSION__"></script>
+<script src="/assets/settings.js?v=__APP_VERSION__"></script>
 <script src="/assets/provider_ui.js?v=__APP_VERSION__"></script>
 <script src="/assets/ui_state.js?v=__APP_VERSION__"></script>
 <script src="/assets/sse.js?v=__APP_VERSION__"></script>
@@ -1169,7 +1200,7 @@ function applyRunState(data) {
   } else {
     setStatus('', 'ok');
   }
-  $('provider-button').disabled = busy;
+  $('provider-button').disabled = $('effort-button').disabled = busy;
   markResearchRestoreAvailability(data.research_restore_runs || []);
   updateSend();
   updateComposerContext();
@@ -1568,7 +1599,7 @@ async function boot() {
     PROVIDER_LABELS,
     DEFAULT_PROVIDER,
     currentProviderId,
-    setActiveProvider,
+    setActiveProvider, activeSession, persistActiveNow,
   });
   window.CodeySse.init({
     setStatus,
@@ -1579,7 +1610,7 @@ async function boot() {
       runningRunId = runId || null;
       runningSessionId = runningRunId ? sessionId : null;
     },
-    setProviderBusy: busy => { $('provider-button').disabled = !!busy; },
+    setProviderBusy: busy => { $('provider-button').disabled = !!busy; $('effort-button').disabled = !!busy; },
     updateSend,
     updateComposerContext,
   });

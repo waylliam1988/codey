@@ -264,6 +264,20 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
         # and avoids spurious revision bumps from _content_equal.
         entry["researchRuns"] = _clean_research_runs(item.get("researchRuns"))
         entry["research"] = _clean_research(item.get("research"))
+        selection = item.get("localSelection")
+        if isinstance(selection, dict):
+            allowed = {"off", "minimal", "low", "medium", "high", "max"}
+            effort = selection.get("effort")
+            if not isinstance(effort, str) or effort not in allowed:
+                effort = "off" if selection.get("thinking") is False else "high" if selection.get("thinking") is True else None
+            history = selection.get("efforts")
+            efforts = {str(key)[:1000]: value for key, value in list(history.items())[:50] if isinstance(value, str) and value in allowed} if isinstance(history, dict) else {}
+            entry["localSelection"] = {
+                "base_url": _str(selection.get("base_url")),
+                "model": _str(selection.get("model")),
+                "effort": effort,
+                "efforts": efforts,
+            }
         sessions.append(entry)
     return sessions
 

@@ -85,6 +85,7 @@ class TaskRunDeps:
     review_log_lines: int = 80
     runtime_mutations: RuntimeMutationLine | None = None
     runtime_effects: RuntimeEffectStore | None = None
+    connect_provider: Callable[[str], Any] | None = None
 
     @classmethod
     def from_submission_stores(

@@ -68,6 +68,7 @@ function updateSend() {
   $('stop').setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
   $('stop').title = owner ? 'Stop ' + owner.title : 'Stop';
   $('provider-button').disabled = running || !!sendingSessionId;
+  if ($('effort-button')) $('effort-button').disabled = $('provider-button').disabled;
   if (window.CodeyConversationUI) window.CodeyConversationUI.updateNotice();
 }
 
@@ -89,7 +90,7 @@ function setActiveProvider(id) {
   deps.persistActiveNow();
   deps.syncProviderUI(provider);
   deps.updateComposerContext();
-  if (provider === 'local') deps.openLocalProviderConfig();
+  if (provider === 'local' && !window.CodeyProviderUI.localReady()) deps.openLocalProviderConfig();
 }
 
 function clearDraftIfUnchanged(sessionId, draft, revision = null) {
@@ -122,7 +123,8 @@ async function sendTaskFromSession(sessionId, task, providerId = '', onSendStart
     const r = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent }),
+      body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent,
+        ...window.CodeyProviderUI.runSelection(s, provider) }),
     });
     if (!r.ok) {
       deps.addSendError(sessionId, '', '', text);
@@ -187,6 +189,7 @@ async function continueTask(sessionId) {
         continue_task: true,
         provider: PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider(),
         intent: 'project',
+        ...window.CodeyProviderUI.runSelection(s, PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()),
       }),
     });
     if (r.status === 409 || !r.ok) {

@@ -546,6 +546,9 @@ class AppContext:
 
     def add_pending_shell_approval(self, approval_id: str, pending: dict[str, Any]) -> None:
         with self.lock:
+            config = self.run_registry.local_config_for(str(pending.get("run_id") or ""))
+            if config is not None and pending.get("provider") == "local":
+                pending = {**pending, "_local_config": config}
             self.approvals.add_shell(approval_id, pending)
 
     def pop_pending_shell_approval(self, approval_id: str) -> dict[str, Any] | None:

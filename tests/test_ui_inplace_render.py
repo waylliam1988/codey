@@ -553,7 +553,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         f"homepage/scripts failed :: diag={_format_diagnostics(diag)}"
                     ) from exc
                 result = page.evaluate("""async () => {
-                    window.CodeyProviderUI.openLocalConfig();
+                    await window.CodeyProviderUI.openLocalConfig();
                     document.getElementById('local-base-url').value = 'http://127.0.0.1:9/v1';
                     document.getElementById('local-model-name').value = 'm';
                     const realFetch = window.fetch.bind(window);
@@ -569,7 +569,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     await new Promise((r) => setTimeout(r, 300));
                     const pop = document.getElementById('local-config-pop');
                     return {
-                        open: pop.classList.contains('open'),
+                        open: pop.open,
                         error: document.getElementById('local-config-error').textContent,
                     };
                 }""")

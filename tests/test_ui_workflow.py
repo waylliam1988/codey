@@ -82,6 +82,155 @@ def test_long_answer_is_visible_and_pointer_selection_survives_tool_update(page)
     expect(page.get_by_role("button", name="Collapse", exact=True)).to_be_visible()
 
 
+def model_settings_route(page, *, thinking=True):
+    local = {"connected": True, "base_url": "http://127.0.0.1:5001/v1", "model": "koboldcpp/Gemma4-12B-Q4",
+             "display_name": "Gemma4 12B", "models": ["koboldcpp/Gemma4-12B-Q4", "second-model"],
+             "context": {"context_window_tokens": 262144}, "native_tools_mode": "auto", "has_api_key": True,
+             "thinking_options": ["off", "minimal", "low", "medium", "high"] if thinking else []}
+    page.route("**/api/local_provider", lambda route: route.fulfill(json={"ok": True, "local": local}))
+    return local
+
+
+def test_settings_is_quiet_modal_with_advanced_dark_controls_and_focus_return(page):
+    model_settings_route(page)
+    page.locator("#btn-settings").click()
+    expect(page.get_by_role("dialog", name="Settings", exact=True)).to_be_visible()
+    expect(page.locator("#local-base-url")).to_have_value("http://127.0.0.1:5001/v1")
+    expect(page.locator("#local-native-tools-mode")).to_be_hidden()
+    expect(page.locator("#local-config-save")).to_have_text("Save changes")
+    page.get_by_text("Advanced", exact=True).click()
+    for selector in ("#local-context-preset-button", "#local-native-tools-mode-button"):
+        control = page.locator(selector)
+        expect(control).to_be_visible()
+        assert control.evaluate("e => getComputedStyle(e).backgroundColor") == "rgb(28, 28, 28)"
+    expect(page.locator("#local-context-window")).to_be_hidden()
+    page.locator("#local-context-preset-button").click()
+    selected = page.locator('#local-context-preset-menu [aria-selected="true"]')
+    assert selected.evaluate("e => getComputedStyle(e).backgroundColor") in {"rgb(47, 47, 47)", "rgb(42, 42, 42)"}
+    page.get_by_role("option", name="Custom…", exact=True).click()
+    expect(page.locator("#local-context-window")).to_have_value("262144")
+    page.keyboard.press("Escape")
+    expect(page.get_by_role("dialog", name="Settings", exact=True)).to_be_hidden()
+    expect(page.locator("#btn-settings")).to_be_focused()
+    page.keyboard.press("Control+,")
+    expect(page.get_by_role("dialog", name="Settings", exact=True)).to_be_visible()
+    page.set_viewport_size({"width": 640, "height": 480})
+    box = page.get_by_role("dialog", name="Settings", exact=True).bounding_box()
+    assert box["y"] >= 12 and box["y"] + box["height"] <= 468
+
+
+def test_actual_model_and_supported_thinking_are_per_chat_and_sent_to_runtime(page):
+    local = model_settings_route(page)
+    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    page.locator("#provider-button").click()
+    page.locator('.provider-item[data-provider="local"]').first.click()
+    expect(page.locator("#provider-name")).to_have_text("Gemma4 12B")
+    expect(page.locator("#effort-name")).to_have_text("High")
+    for selector in ("#provider-button", "#effort-button", "#provider-menu .provider-item"):
+        assert page.locator(selector).evaluate_all("rows => rows.every(row => !row.hasAttribute('title'))")
+    page.locator("#effort-button").click()
+    assert page.locator('#effort-menu button').evaluate_all("rows => rows.every(row => !row.hasAttribute('title'))")
+    expect(page.locator("#provider-menu")).to_be_hidden()
+    page.get_by_role("button", name="Thinking effort: Low", exact=True).click()
+    expect(page.locator("#effort-name")).to_have_text("Low")
+    expect(page.locator("#effort-button")).to_be_focused()
+    page.locator("#provider-button").click()
+    expect(page.locator("#effort-menu")).to_be_hidden()
+    expect(page.locator("#provider-menu .provider-action")).to_have_count(0)
+    page.locator('.provider-item[data-model="second-model"]').click()
+    expect(page.locator("#effort-button")).to_be_hidden()
+    page.locator("#provider-button").click()
+    page.locator('.provider-item[data-model="koboldcpp/Gemma4-12B-Q4"]').click()
+    expect(page.locator("#effort-name")).to_have_text("Low")
+    page.evaluate("switchSession('b')")
+    expect(page.locator("#effort-button")).to_be_hidden()
+    page.evaluate("switchSession('a')")
+    page.locator("#effort-button").click()
+    page.evaluate("CodeyProviderUI.applyStatus([{id:'local',available:true}])")
+    expect(page.locator('#effort-menu [data-effort="low"]')).to_be_focused()
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("Enter")
+    expect(page.locator("#effort-name")).to_have_text("Med")
+    page.locator("#effort-button").click()
+    page.keyboard.press("Escape")
+    expect(page.locator("#effort-button")).to_be_focused()
+    requests = []
+    page.route("**/api/run", lambda route: (requests.append(route.request.post_data_json), route.fulfill(json={"ok":True,"run_id":"settings-qa"})))
+    page.locator("#task").fill("Say hello")
+    with page.expect_request("**/api/run"):
+        page.locator("#send").click()
+    assert requests[0]["local_selection"] == {"base_url":local["base_url"],"model":local["model"],"effort":"medium"}
+
+
+@pytest.mark.parametrize(('old', 'expected'), [(False,'Off'),(True,'High'),(None,'High')])
+def test_legacy_thinking_selection_migrates_to_concrete_effort(page, old, expected):
+    local = model_settings_route(page)
+    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    page.evaluate("""([local, old]) => {
+        const s=CodeyUiState.current().sessions.find(s=>s.id==='a');
+        s.provider='local'; s.localSelection={base_url:local.base_url,model:local.model,thinking:old};
+        CodeyProviderUI.sync('local');
+    }""", [local,old])
+    expect(page.locator("#effort-name")).to_have_text(expected)
+
+
+@pytest.mark.parametrize('size', [(1280,800),(720,560),(480,420)])
+def test_supported_effort_controls_and_menu_fit_short_windows(page, size):
+    local = model_settings_route(page)
+    page.evaluate('CodeyProviderUI.applyLocalMetadata', local)
+    page.locator('#provider-button').click()
+    page.locator('.provider-item[data-provider="local"]').first.click()
+    page.set_viewport_size({'width':size[0], 'height':size[1]})
+    page.locator('#task').fill('Long input\n' * 25)
+    for selector in ['#provider-button','#effort-button','#send']:
+        box = page.locator(selector).bounding_box()
+        assert box['x'] >= 0 and box['x'] + box['width'] <= size[0]
+        assert box['y'] >= 0 and box['y'] + box['height'] <= size[1]
+    page.locator('#provider-button').click()
+    model_menu = page.locator('#provider-menu').bounding_box()
+    arrow = page.locator('#effort-button .chev').bounding_box()
+    assert abs(model_menu['x'] + model_menu['width'] - arrow['x'] - arrow['width']) < 1
+    page.locator('#effort-button').click()
+    menu = page.locator('#effort-menu').bounding_box()
+    assert menu['x'] >= 0 and menu['x'] + menu['width'] <= size[0]
+    assert menu['y'] >= 0 and menu['y'] + menu['height'] <= size[1]
+    page.keyboard.press('Home')
+    page.keyboard.press('Enter')
+    expect(page.locator('#effort-name')).to_have_text('Off')
+    # Text changes and resizing an already open menu must move its right edge too.
+    for effort in ('minimal', 'medium'):
+        page.locator('#effort-button').click()
+        page.locator(f'#effort-menu [data-effort="{effort}"]').click()
+        page.locator('#provider-button').click()
+        page.wait_for_function("""() => {
+            const menu = document.getElementById('provider-menu').getBoundingClientRect();
+            const arrow = document.querySelector('#effort-button .chev').getBoundingClientRect();
+            return Math.abs(menu.right - arrow.right) < 1;
+        }""")
+        page.keyboard.press('Escape')
+    local['display_name'] = 'A much longer model name'
+    page.evaluate('CodeyProviderUI.applyLocalMetadata', local)
+    page.locator('#provider-button').click()
+    page.set_viewport_size({'width':size[0] - 40, 'height':size[1]})
+    page.wait_for_function("""() => {
+        const menu = document.getElementById('provider-menu').getBoundingClientRect();
+        const arrow = document.querySelector('#effort-button .chev').getBoundingClientRect();
+        return Math.abs(menu.right - arrow.right) < 1;
+    }""")
+
+
+def test_unknown_or_web_model_has_no_fake_thinking_control(page):
+    local = model_settings_route(page, thinking=False)
+    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    page.locator("#provider-button").click()
+    expect(page.locator("#effort-button")).to_be_hidden()
+    page.locator('.provider-item[data-provider="local"]').first.click()
+    page.locator("#provider-button").click()
+    expect(page.locator("#effort-button")).to_be_hidden()
+    expect(page.locator("#effort-separator")).to_have_count(0)
+    expect(page.locator("#provider-menu input")).to_have_count(0)
+
+
 def test_chat_drafts_and_caret_are_isolated(page):
     task = page.locator("#task")
     task.fill("alpha draft")

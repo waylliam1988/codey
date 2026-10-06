@@ -55,6 +55,7 @@ class LocalOpenAIProvider:
         context_reserve_tokens: int | None = None,
         context_keep_recent_tokens: int | None = None,
         thinking_enabled: bool | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         """Runtime only: the target is already resolved (no env/discovery)."""
         if not base_url.strip():
@@ -71,6 +72,7 @@ class LocalOpenAIProvider:
         self.context_reserve_tokens = context_reserve_tokens
         self.context_keep_recent_tokens = context_keep_recent_tokens
         self.thinking_enabled = thinking_enabled
+        self.reasoning_effort = reasoning_effort
         self._response_reasoning = ""
         self._last_reasoned_reply: tuple[str, str] | None = None
         self._messages: list[dict[str, Any]] = []
@@ -79,15 +81,19 @@ class LocalOpenAIProvider:
         self._generation = 0
 
     @classmethod
-    def connect(cls) -> LocalOpenAIProvider:
+    def connect(cls, *, config: _local_config.LocalProviderConfig | None = None,
+                verify_thinking: bool = False) -> LocalOpenAIProvider:
         """Connect to the single selected target (address + model + key).
 
         Offline is a hard error for preflight failover. An explicit
         address never falls back to another service, and probing uses the
         same key the provider sends with.
         """
-        config = _local_config.load_local_config()
-        selection = _local_config.select_local_target(config)
+        captured = config is not None
+        config = config if captured else _local_config.load_local_config()
+        assert config is not None
+        selection = (_local_config.LocalTargetSelection(config.base_url, config.model, config.api_key, "config")
+                     if captured else _local_config.select_local_target(config))
         endpoint = _local_discovery.resolve_local_endpoint(
             base_url=selection.base_url,
             model=selection.model,
@@ -105,6 +111,15 @@ class LocalOpenAIProvider:
                 "no OpenAI-compatible /models endpoint"
             )
         effective = _local_config.resolve_effective_local_config(config, selection, endpoint)
+        if verify_thinking and config.thinking_enabled is not None:
+            from codey.providers.local_selection import model_metadata
+
+            metadata = model_metadata(effective.base_url, effective.model, api_key=effective.api_key)
+            options = metadata.get("thinking_options")
+            if not isinstance(options, list) or not options:
+                raise ValueError("This model does not advertise a supported thinking control.")
+            if config.reasoning_effort is not None and config.reasoning_effort not in options:
+                raise ValueError("This model does not support the selected thinking effort.")
         if not effective.model:
             raise RuntimeError(
                 f"local model at {effective.base_url} returned no usable model"
@@ -117,6 +132,7 @@ class LocalOpenAIProvider:
             context_reserve_tokens=effective.context.context_reserve_tokens,
             context_keep_recent_tokens=effective.context.context_keep_recent_tokens,
             thinking_enabled=config.thinking_enabled if selection.base_url == config.base_url else None,
+            reasoning_effort=config.reasoning_effort if selection.base_url == config.base_url else None,
         )
 
     @property
@@ -384,6 +400,8 @@ class LocalOpenAIProvider:
         }
         if self.thinking_enabled is not None:
             payload["chat_template_kwargs"] = {"enable_thinking": self.thinking_enabled}
+        if self.reasoning_effort is not None:
+            payload["reasoning_effort"] = "none" if self.reasoning_effort == "off" else self.reasoning_effort
         if tools:
             payload["tools"] = tools
             # Kernel turns require a call (including done). Ordinary answers

@@ -167,6 +167,12 @@ function normalizeSessions(value) {
       projectId: raw.projectId || null,
       provider: PROVIDERS.includes(raw.provider) ? raw.provider : DEFAULT_PROVIDER,
       research: !!raw.research,
+      ...(raw.localSelection && typeof raw.localSelection === 'object' ? {localSelection: {
+        base_url: String(raw.localSelection.base_url || ''), model: String(raw.localSelection.model || ''),
+        effort: ['off','minimal','low','medium','high','max'].includes(raw.localSelection.effort) ? raw.localSelection.effort
+          : raw.localSelection.thinking === false ? 'off' : raw.localSelection.thinking === true ? 'high' : null,
+        efforts: Object.fromEntries(Object.entries(raw.localSelection.efforts || {}).slice(0,50).filter(([key,value]) => key.length <= 1000 && ['off','minimal','low','medium','high','max'].includes(value))),
+      }} : {}),
     };
     return hydrateSessionIndexes(s);
   });

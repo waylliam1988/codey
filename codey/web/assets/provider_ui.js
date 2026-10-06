@@ -26,6 +26,13 @@ function init(nextDeps) {
   providerUpdatedAt = Object.fromEntries(PROVIDERS.map(id => [id, 0]));
   buildProviderMenu();
   bindHandlers();
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(syncModelMenuWidth);
+    observer.observe($('provider-button'));
+    observer.observe($('effort-button'));
+  }
+  window.CodeySettings.init({$:deps.$, applyLocalMetadata});
+  refreshLocalMetadata();
 }
 
 function buildProviderMenu() {
@@ -36,42 +43,57 @@ function buildProviderMenu() {
   menu.setAttribute('aria-label', 'Choose model');
   $('provider-button').setAttribute('aria-controls', 'provider-menu');
   $('provider-button').setAttribute('aria-haspopup', 'dialog');
+  const focusedKey = document.activeElement?.dataset?.key;
   menu.querySelectorAll('.provider-item').forEach((btn) => btn.remove());
   for (const id of PROVIDERS) {
+    const localModels = id === 'local' && localReady() ? [...new Set([localMetadata.model, ...(localMetadata.models || [])])] : [''];
+    for (const model of localModels) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'provider-item';
-    btn.dataset.provider = id;
+    btn.dataset.provider = id; btn.dataset.model = model; btn.dataset.key = model ? 'local:' + model : id;
     const dot = document.createElement('span');
     dot.className = 'dot ' + providerAvailability(id);
     dot.setAttribute('aria-hidden', 'true');
     const label = document.createElement('span');
     label.className = 'label';
-    label.textContent = providerLabel(id);
+    label.textContent = model ? modelTitle(model) : providerLabel(id);
+    btn.setAttribute('aria-label', model || providerLabel(id));
     const check = document.createElement('span');
     check.className = 'check';
     check.setAttribute('aria-hidden', 'true');
     check.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg>';
     btn.append(dot, label, check);
     btn.onclick = () => {
+      if ($('provider-button').disabled) return;
+      if (id === 'local' && model && deps.activeSession) {
+        const s = deps.activeSession(); if (s) {
+          const previous = sessionSelection(s);
+          const efforts = previous.base_url === localMetadata.base_url ? {...previous.efforts} : {};
+          if (previous.model && previous.effort) efforts[previous.model] = previous.effort;
+          s.localSelection = {base_url:localMetadata.base_url, model, effort:efforts[model] || null, efforts};
+        }
+      }
       setActiveProvider(id);
       closeMenu(true);
     };
     if (warning) menu.insertBefore(btn, warning);
     else menu.appendChild(btn);
   }
+  }
   syncProviderUI(currentProviderId());
-  highlightedProvider = currentProviderId();
+  highlightedProvider = selectedKey();
   highlightModel();
+  if (focusedKey) modelRows().find(row => row.dataset.key === focusedKey)?.focus();
 }
 
 function modelRows() { return Array.from($('provider-menu').querySelectorAll('.provider-item')); }
 
 function highlightModel() {
-  $('provider-menu').querySelectorAll('.provider-item').forEach(row => row.classList.toggle('keyboard-active', row.dataset.provider === highlightedProvider));
+  $('provider-menu').querySelectorAll('.provider-item').forEach(row => row.classList.toggle('keyboard-active', row.dataset.key === highlightedProvider));
 }
 
-function closeMenu(restoreFocus = false) {
+function closeModelMenu(restoreFocus = false) {
   $('provider-menu').classList.remove('open');
   $('provider-menu').setAttribute('aria-hidden', 'true');
   $('provider-button').classList.remove('open');
@@ -79,16 +101,34 @@ function closeMenu(restoreFocus = false) {
   if (restoreFocus) $('provider-button').focus();
 }
 
+function closeMenu(restoreFocus = false) {
+  closeEffortMenu();
+  closeModelMenu(restoreFocus);
+}
+
+function syncModelMenuWidth() {
+  const menu = $('provider-menu');
+  if (!menu.classList.contains('open')) return;
+  const arrow = $('effort-chooser').hidden ? null : $('effort-button').querySelector('.chev');
+  const bounds = arrow?.getBoundingClientRect?.();
+  if (!bounds) { menu.style.removeProperty('--model-menu-width'); return; }
+  const left = $('provider-button').getBoundingClientRect().left;
+  menu.style.setProperty('--model-menu-width', Math.max(0, bounds.right - left) + 'px');
+}
+
 function openMenu() {
+  closeEffortMenu();
   const menu = $('provider-menu');
   menu.classList.add('open');
   menu.setAttribute('aria-hidden', 'false');
   $('provider-button').classList.add('open');
   $('provider-button').setAttribute('aria-expanded', 'true');
-  highlightedProvider = currentProviderId();
+  syncModelMenuWidth();
+  highlightedProvider = selectedKey();
   highlightModel();
-  (modelRows().find(row => row.dataset.provider === highlightedProvider) || modelRows()[0])?.focus();
+  (modelRows().find(row => row.dataset.key === highlightedProvider) || modelRows()[0])?.focus();
   refreshProviderStatus();
+  refreshLocalMetadata();
 }
 
 function applyRecommended(data) {
@@ -160,14 +200,20 @@ function providerLabel(id) {
 function providerAvailability(id) { return providerStatus[id] ? 'ok' : ''; }
 function syncProviderUI(providerId) {
   const id = PROVIDERS.includes(providerId) ? providerId : DEFAULT_PROVIDER;
-  $('provider-name').textContent = providerLabel(id);
-  $('provider-dot').className = 'dot ' + providerAvailability(id);
+  const selection = sessionSelection();
+  $('provider-name').textContent = id === 'local' && selection.model ? modelTitle(selection.model) : providerLabel(id);
+  const staleConnection = id === 'local' && selection.base_url && localMetadata.base_url && selection.base_url !== localMetadata.base_url;
+  $('provider-button').setAttribute('aria-label', 'Choose model: ' + $('provider-name').textContent +
+    (staleConnection ? '. Connection changed; select the model again.' : ''));
+  $('provider-dot').className = 'dot ' + (staleConnection ? '' : providerAvailability(id));
   document.querySelectorAll('.provider-item').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.provider === id);
-    btn.setAttribute('aria-pressed', String(btn.dataset.provider === id));
+    btn.classList.toggle('active', btn.dataset.provider === id && (!btn.dataset.model || btn.dataset.model === selection.model));
+    btn.setAttribute('aria-pressed', String(btn.dataset.provider === id && (!btn.dataset.model || btn.dataset.model === selection.model)));
     const dot = btn.querySelector('.dot');
     if (dot) dot.className = 'dot ' + providerAvailability(btn.dataset.provider);
   });
+  syncThinking();
+  syncModelMenuWidth();
 }
 let refreshTimer = null;
 let lastRequestId = 0;
@@ -216,85 +262,92 @@ async function _doRefreshProviderStatus() {
   }
 }
 
-async function openLocalProviderConfig() {
-  const pop = $('local-config-pop');
-  pop.classList.add('open');
-  pop.setAttribute('aria-hidden', 'false');
-  $('local-config-error').textContent = '';
-  $('local-api-key').value = '';
+function openLocalProviderConfig() { return window.CodeySettings.open(); }
+function closeLocalProviderConfig() { return window.CodeySettings.close(); }
+
+let localMetadata = {}, localRequest = 0;
+function localReady() { return !!(localMetadata.connected && localMetadata.model); }
+function sessionSelection(s = deps.activeSession?.()) {
+const old = s?.localSelection || {base_url:localMetadata.base_url || '', model:localMetadata.model || ''};
+  return {...old, effort:old.effort || (old.thinking === false ? 'off' : old.thinking === true ? 'high' : null), efforts:old.efforts || {}};
+}
+function selectedKey() {
+  const id = currentProviderId();
+  return id === 'local' ? 'local:' + sessionSelection().model : id;
+}
+function modelTitle(model) {
+  return model === localMetadata.model ? (localMetadata.display_name || model.split('/').pop()) : model.split('/').pop();
+}
+function thinkingOptions() {
+  const selection = sessionSelection();
+  return currentProviderId() === 'local' && selection.base_url === localMetadata.base_url && selection.model === localMetadata.model
+    ? (localMetadata.thinking_options || []) : [];
+}
+const effortLabels = {off:'Off', minimal:'Mini', low:'Low', medium:'Med', high:'High', max:'Max'};
+function selectedEffort() {
+  const options = thinkingOptions(), selected = sessionSelection().effort;
+  return options.includes(selected) ? selected : options.includes('high') ? 'high' : options.find(value => value !== 'off') || 'off';
+}
+function closeEffortMenu(restoreFocus = false) {
+  const menu = $('effort-menu'); if (!menu) return;
+  menu.classList.remove('open'); menu.setAttribute('aria-hidden', 'true');
+  $('effort-button').classList.remove('open'); $('effort-button').setAttribute('aria-expanded', 'false');
+  if (restoreFocus && !$('effort-chooser').hidden) $('effort-button').focus();
+}
+function syncThinking() {
+  const button = $('effort-button'); if (!button) return;
+  const options = thinkingOptions(), value = selectedEffort();
+  $('effort-chooser').hidden = !options.length;
+  button.disabled = $('provider-button').disabled;
+  const label = effortLabels[value] || value;
+  $('effort-name').textContent = label;
+  button.setAttribute('aria-label', 'Thinking effort: ' + label);
+  const menu = $('effort-menu');
+  const signature = JSON.stringify([sessionSelection().base_url, sessionSelection().model, options, value]);
+  if (menu.dataset.signature === signature) return;
+  const restoreFocus = menu.contains(document.activeElement);
+  closeEffortMenu(restoreFocus); menu.dataset.signature = signature; menu.replaceChildren();
+  options.forEach(option => {
+    const row = document.createElement('button'); row.type = 'button'; row.className = 'provider-action';
+    row.dataset.effort = option; row.textContent = effortLabels[option] || option;
+    row.setAttribute('aria-label', 'Thinking effort: ' + row.textContent);
+    row.setAttribute('aria-pressed', String(value === option));
+    row.onclick = () => {
+      const s = deps.activeSession(); if (!s || $('provider-button').disabled) return;
+      const selection = sessionSelection(s);
+      s.localSelection = {base_url:selection.base_url, model:selection.model, effort:option,
+        efforts:{...selection.efforts, [selection.model]:option}};
+      deps.persistActiveNow(); syncProviderUI('local'); closeEffortMenu(true);
+    };
+    menu.appendChild(row);
+  });
+}
+function applyLocalMetadata(local) {
+  localRequest++;
+  const next = local && typeof local === 'object' ? local : {};
+  if (JSON.stringify(next) === JSON.stringify(localMetadata)) return;
+  localMetadata = next;
+  if (typeof localMetadata.connected === 'boolean') {
+    providerStatus.local = localMetadata.connected;
+    providerUpdatedAt.local = Date.now();
+  }
+  buildProviderMenu();
+}
+async function refreshLocalMetadata() {
+  const request = ++localRequest;
   try {
-    const r = await fetch('/api/local_provider');
+    const r = await fetch('/api/local_provider', {cache:'no-store'});
     if (!r.ok) return;
     const data = await r.json();
-    const local = data.local || {};
-    $('local-config-summary').textContent = local.connected && local.base_url
-      ? `Connected to ${local.base_url}`
-      : 'Open Ollama, KoboldCPP, or LM Studio, then connect.';
-    if (local.base_url) $('local-base-url').value = local.base_url;
-    if (local.model) $('local-model-name').value = local.model;
-    const models = Array.isArray(local.models) ? local.models : [];
-    $('local-model-options').innerHTML = models
-      .map(m => `<option value="${escapeHtml(m)}"></option>`).join('');
-    const cands = Array.isArray(local.candidates) ? local.candidates : [];
-    $('local-config-candidates').innerHTML = cands.length
-      ? cands.map(url => `<button type="button" data-url="${escapeHtml(url)}">${escapeHtml(url)}</button>`).join('')
-      : '';
-    document.querySelectorAll('#local-config-candidates button').forEach((btn) => {
-      btn.onclick = () => { $('local-base-url').value = btn.dataset.url || ''; };
-    });
-    const windowTokens = local.context && local.context.context_window_tokens;
-    if (windowTokens) $('local-context-window').value = String(windowTokens);
-    $('local-native-tools-mode').value = local.native_tools_mode || 'auto';
-    if (local.context_error) $('local-config-error').textContent = String(local.context_error);
-    else if (local.error) $('local-config-error').textContent = String(local.error);
-    document.querySelectorAll('#local-context-presets button').forEach((btn) => {
-      btn.onclick = () => { $('local-context-window').value = btn.dataset.contextWindow || ''; };
-    });
+    if (request === localRequest && data.local) applyLocalMetadata(data.local);
   } catch {}
 }
-
-function closeLocalProviderConfig() {
-  $('local-config-pop').classList.remove('open');
-  $('local-config-pop').setAttribute('aria-hidden', 'true');
-}
-
-async function saveLocalProviderConfig() {
-  const base_url = $('local-base-url').value.trim();
-  const model = $('local-model-name').value.trim();
-  const api_key = $('local-api-key').value.trim();
-  const contextWindow = $('local-context-window').value.trim();
-  const nativeToolsMode = $('local-native-tools-mode').value;
-  if (!base_url) return;
-  $('local-config-error').textContent = '';
-  $('local-config-save').disabled = true;
-  $('local-config-save').textContent = 'Connecting';
-  try {
-    // Reserve/keep derive server-side from the window preset; the page
-    // never computes budgets itself.
-    const payload = { base_url, model, native_tools_mode: nativeToolsMode };
-    if (api_key) payload.api_key = api_key;
-    if (contextWindow) payload.context_window_tokens = contextWindow;
-    const r = await fetch('/api/local_provider', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok || !data.ok) {
-      $('local-config-error').textContent = data.error || 'could not connect';
-      return;
-    }
-    providerStatus.local = true;
-    providerUpdatedAt.local = Date.now();
-    syncProviderUI(currentProviderId());
-    closeLocalProviderConfig();
-    refreshProviderStatus();
-  } catch {
-    $('local-config-error').textContent = 'could not reach the server';
-  } finally {
-    $('local-config-save').disabled = false;
-    $('local-config-save').textContent = 'Connect';
-  }
+function runSelection(s, provider) {
+  if (provider !== 'local') return {};
+  const selection = sessionSelection(s);
+const options = thinkingOptions();
+  const effort = options.length ? selectedEffort() : selection.effort;
+  return selection.base_url && selection.model ? {local_selection:{base_url:selection.base_url, model:selection.model, effort}} : {};
 }
 
 function bindHandlers() {
@@ -311,33 +364,49 @@ $('provider-menu').addEventListener('keydown', e => {
   const rows = modelRows();
   if (!rows.length) return;
   const focused = rows.indexOf(document.activeElement);
-  let index = focused >= 0 ? focused : rows.findIndex(row => row.dataset.provider === highlightedProvider);
+  let index = focused >= 0 ? focused : rows.findIndex(row => row.dataset.key === highlightedProvider);
   if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
     e.preventDefault();
     index = e.key === 'Home' ? 0 : e.key === 'End' ? rows.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length;
-    highlightedProvider = rows[index].dataset.provider;
+    highlightedProvider = rows[index].dataset.key;
     highlightModel();
     rows[index].scrollIntoView({ block: 'nearest' });
     rows[index].focus();
   }
 });
 $('provider-menu').addEventListener('focusout', () => {
-  queueMicrotask(() => { if (!$('provider-menu').contains(document.activeElement) && document.activeElement !== $('provider-button')) closeMenu(); });
+  setTimeout(() => { if (!$('provider-menu').contains(document.activeElement) && document.activeElement !== $('provider-button')) closeModelMenu(); }, 0);
 });
-document.addEventListener('click', (e) => {
+document.addEventListener('click', e => {
   if (!$('provider-menu').contains(e.target) && !$('provider-button').contains(e.target)) {
-    closeMenu();
+    closeModelMenu();
   }
-  if (
-    $('local-config-pop').classList.contains('open') &&
-    !$('local-config-pop').contains(e.target) &&
-    !e.target.closest('.provider-item')
-  ) {
-    closeLocalProviderConfig();
+  if (!$('effort-menu').contains(e.target) && !$('effort-button').contains(e.target)) closeEffortMenu();
+});
+$('effort-button').onclick = e => {
+  e.stopPropagation();
+  if ($('provider-button').disabled || !thinkingOptions().length) return;
+  if ($('effort-menu').classList.contains('open')) { closeEffortMenu(true); return; }
+  closeMenu();
+  const menu = $('effort-menu'); menu.classList.add('open'); menu.setAttribute('aria-hidden','false');
+  $('effort-button').classList.add('open'); $('effort-button').setAttribute('aria-expanded','true');
+  (menu.querySelector('[aria-pressed="true"]') || menu.firstElementChild)?.focus();
+  refreshLocalMetadata();
+};
+$('effort-menu').addEventListener('keydown', e => {
+  if (e.isComposing) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeEffortMenu(true); return; }
+  const rows = Array.from($('effort-menu').children), index = rows.indexOf(document.activeElement);
+  if (['ArrowDown','ArrowUp','Home','End'].includes(e.key) && rows.length) {
+    e.preventDefault();
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? rows.length-1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length;
+    rows[next].scrollIntoView({block:'nearest'}); rows[next].focus();
   }
 });
-$('local-config-close').onclick = closeLocalProviderConfig;
-$('local-config-save').onclick = saveLocalProviderConfig;
+$('effort-menu').addEventListener('focusout', () => setTimeout(() => {
+  if (!$('effort-menu').contains(document.activeElement) && document.activeElement !== $('effort-button')) closeEffortMenu();
+}, 0));
+
 }
 
 window.CodeyProviderUI = {
@@ -348,6 +417,7 @@ window.CodeyProviderUI = {
   adoptCatalog: adoptBackendCatalog,
   applyStatus: applyProviderStatus,
   refreshStatus: refreshProviderStatus,
+  localReady, runSelection, applyLocalMetadata,
   openLocalConfig: openLocalProviderConfig,
   closeLocalConfig: closeLocalProviderConfig,
   closeMenu,

@@ -31,6 +31,7 @@ class RunRegistry:
         self._slot_available.set()
         self._busy = False
         self._active_run: RunSnapshot | None = None
+        self._local_config: Any = None
         self._project: str | None = None
         self._task: str | None = None
         self._provider_id = DEFAULT_PROVIDER_ID
@@ -59,6 +60,15 @@ class RunRegistry:
     def current(self) -> RunSnapshot | None:
         with self._lock:
             return self._active_run
+
+    def bind_local_config(self, run_id: str, config: Any) -> None:
+        with self._lock:
+            if self._active_run is not None and self._active_run.run_id == run_id:
+                self._local_config = config
+
+    def local_config_for(self, run_id: str) -> Any:
+        with self._lock:
+            return self._local_config if self._active_run is not None and self._active_run.run_id == run_id else None
 
     def replace_active(self, current_run_id: str, run: RunSnapshot) -> bool:
         with self._lock:
@@ -206,6 +216,7 @@ class RunRegistry:
             if self._active_run is None or self._active_run.run_id != run_id:
                 return
             self._active_run = None
+            self._local_config = None
             self._busy = False
             self._sync_slot_event()
             self._status = "idle"
@@ -219,6 +230,7 @@ class RunRegistry:
                 return None
             payload.setdefault("session_id", run.session_id)
             self._active_run = None
+            self._local_config = None
             self._busy = False
             self._sync_slot_event()
             self._last_terminal_event = payload

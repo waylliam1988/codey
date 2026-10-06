@@ -162,6 +162,7 @@ Uppercase, muted, no background. Never use colored section headers.
 - **Active session:** `--active` background.
 - **Secondary actions:** revealed on hover or keyboard focus; visible on devices without hover. `⋯` opens a context menu. Do not show permanent `+` / `×` icon clusters.
 - `New chat`, `Add project`, and magnifier + `Search` share a 34px row height and 1px gaps. Search opens a same-height input in place and filters chat titles and project names locally. The input has a transparent background, no visible border or focus ring, and its text aligns with the Search label. Escape clears and closes search; an empty search also closes on blur. Search temporarily expands matching groups without changing saved project expansion.
+- A monochrome gear + `Settings` row sits at the sidebar bottom, sharing the sidebar action alignment and 34px height. The topbar more menu and `Ctrl+,` open the same settings dialog when the sidebar is collapsed.
 
 Context menus (`.ctx-menu`):
 
@@ -300,7 +301,7 @@ Choose folder · Research                     ← composer-context (11.5px, --mu
 ┌─────────────────────────────────────────┐
 │ Send a message to Codey…                │
 │                                         │
-│ ● DeepSeek ⌄                 Enter  ↗   │
+│ ● Gemma4 12B ⌄ Low ⌄       Enter  ↗   │
 └─────────────────────────────────────────┘
 ```
 
@@ -310,6 +311,10 @@ Choose folder · Research                     ← composer-context (11.5px, --mu
 - **Provider picker:** borderless; status dot + label + chevron. This is the only visible provider/model selector in the composer. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.
 - **Send / Stop:** 34px square **icon buttons** (`.icon-btn`) with 16px icons, transparent until hover; enabled Send uses `--text` and the original paper-plane outline. Send and Stop occupy one fixed position. No filled accent send button.
 - **Model menu:** directly show the short catalog without a search input. Opening focuses the current model. Arrow keys navigate, Enter selects, Escape closes and returns focus. Do not invent unsupported model/effort controls. Menus have a viewport-bounded scroll area.
+- The local connection shows its actual model name, with an optional display name and the complete request ID available in Settings. The short catalog lists returned local model IDs and existing website names; never invent a website's selected model version. The model menu contains only models; connection configuration belongs in Settings.
+- A separate borderless effort selector sits beside the model name: `Gemma4 12B ⌄ Low ⌄`. The selector disappears for unsupported connections and website models. Accessible copy names `Thinking effort`; visible labels are `Off / Mini / Low / Med / High / Max`, filtered by verified capabilities. The two borderless selectors sit 2px apart, without a separator. The model menu's right edge aligns with the effort selector's chevron and adjusts to the current labels; without an effort selector it uses a 160px width. The effort menu uses a 160px width. Both menus are bounded by the viewport. Long model labels use ellipsis and retain their complete accessible name. Model and effort triggers and menu rows have no native hover tooltips. Each selector has its own menu, keyboard focus, and dismissal. Opening one closes the other.
+- Thinking controls require verified connection/model metadata. Active KoboldCpp Jinja and a matching `enable_thinking` template support Off/High; verified versions 1.112.2–1.117.x additionally support minimal/low/medium budgets. High uses the native unrestricted thinking budget within the total output limit. Mini/Med map to minimal/medium. Show the concrete initial level rather than Default or On. Every non-Off choice explicitly enables thinking; do not fabricate distinct Max behavior. Returned reasoning and configurable thinking are independent capabilities.
+- Local model and thinking choices belong to the chat, persist with it, and are captured at admission for the next request. Connection address, credentials, context limit, tool calling, and default model live in Settings. Pending command continuation retains the admitted selection. A changed connection cannot silently carry a stale chat selection or credential to another endpoint.
 - `Enter` hint: immediately before Send/Stop with a 6px gap, visible on composer focus/hover only, `--faint`. `Enter` sends; `Shift+Enter` inserts a newline.
 - **Drafts and submission:** text and caret/selection belong to a chat, retained in memory across chat switches and removed when that chat is deleted. Choosing a folder changes context without sending. Admission shows `Sending…`, prevents duplicate requests, and only consumes the accepted draft snapshot; failures preserve editing and Retry never overwrites a later draft.
 - **Pending approval:** one neutral `Approval required · Review command` entry appears above the frame, pointing to the original command card and its chat. Enter never approves a command globally. The command card remains the single approval surface.
@@ -351,6 +356,13 @@ Research is also **session-level**. It lives in the composer context row, never 
 - SVG stroke icons, ~1.8px stroke, `currentColor`, no fill (except send/stop glyphs where needed).
 - Monochrome only — icons inherit `--text-dim` → `--text` on hover.
 - No emoji, no colored icon sets.
+
+### 5.11 Settings
+
+- Use one viewport-bounded dark dialog, about 560px wide, with a `Settings` heading, quiet close icon, and labeled connection fields. Native dialog modality keeps keyboard focus inside; Escape/backdrop dismissal returns focus to the trigger. No second right workbench drawer.
+- `Address`, `Default model`, and `API key` form the basic connection view. A saved key stays masked and is never returned to the browser. `Connect` becomes `Save changes` for an existing connection; rejected saves retain the form and show one error line.
+- `Advanced` defaults closed and contains optional `Display name`, `Context limit`, and `Tool calling`. Context presets live in one dark listbox menu with exact token counts and `Custom…`; a custom input appears only when selected. The limit must match the model server's loaded context, not imply that Codey enlarges it.
+- Tool calling offers `Automatic / Native / Compatibility`. Compatibility changes the request protocol; shell approval remains in force. Inputs, select triggers, and listbox options use existing tokens, 34px heights, and 6px radii; no browser-default white buttons. Pointer focus retains the quiet border; keyboard focus uses a restrained gray outline.
 
 ---
 
@@ -426,7 +438,7 @@ These existed in earlier iterations and were intentionally removed:
 
 ## 10. Implementation notes
 
-- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `research_runs.js`, `changes_drawer.js`, `local_context_drawer.js`, `run_details.js`, `provider_ui.js`, `ui_state.js`, `sse.js`, `composer.js`, `conversation_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
+- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `research_runs.js`, `changes_drawer.js`, `local_context_drawer.js`, `run_details.js`, `provider_ui.js`, `settings.js`, `ui_state.js`, `sse.js`, `composer.js`, `conversation_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
 - **Do not fork the palette:** all color/spacing tokens stay in `tokens.css`; never redefine them per module or per page. `tests/test_ui_architecture.py` ratchets inline `<style>` to zero and only lets the inline `<script>` budget go down.
 - **Dark mode only:** there is no light theme. New surfaces should assume dark gray backgrounds and light text.
 - **Accessibility:** interactive rows and disclosures use native buttons and gray focus-visible outlines. Hidden sidebar/drawers are inert. Menus return focus on Escape; drawer keyboard focus stays within the open inspection surface and returns to its trigger on close. Respect reduced-motion preferences. When adding color is unavoidable, pair with text labels (never color alone).

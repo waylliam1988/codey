@@ -181,6 +181,19 @@ def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID
     return provider
 
 
+def open_local_model_session(ctx: TaskState, config: Any) -> Any:
+    """Use the admitted chat selection, never the current settings form."""
+    from codey.providers.local_openai import LocalOpenAIProvider
+
+    ctx.set_run_status("connecting")
+    ctx.emit({"type": "status", "status": "connecting"})
+    provider = LocalOpenAIProvider.connect(config=config, verify_thinking=True)
+    ctx.set_run_status("running")
+    ctx.emit({"type": "status", "status": "running"})
+    ctx.emit({"type": "providers", "providers": provider_status_update("local", True)})
+    return provider
+
+
 def run_provider_warmup(ctx: TaskState, runner: Any = None) -> None:
     if runner is None:
         runner = warm_provider_tabs

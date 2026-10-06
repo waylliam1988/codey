@@ -50,6 +50,7 @@ def connect_provider_with_preflight(
     record_provider_failure: Callable[[str, ProviderFailure], None],
     append_ledger: Callable[[Callable[[RunLedgerWriter], None]], None],
     trace_sink: Any,
+    connect: Callable[[str], Any] | None = None,
 ) -> ProviderPreflightResult:
     preflight_tried: set[str] = set()
     preflight_switches = 0
@@ -85,7 +86,7 @@ def connect_provider_with_preflight(
     while True:
         preflight_tried.add(provider_id)
         try:
-            provider = state.get_provider(provider_id)
+            provider = (connect or state.get_provider)(provider_id)
         except TaskCancelled:
             raise
         except ProviderActionError:

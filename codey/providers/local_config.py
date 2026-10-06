@@ -65,6 +65,8 @@ class LocalProviderConfig:
     native_tools_mode: str = NATIVE_TOOLS_AUTO
     context: LocalContextBudget | None = None
     thinking_enabled: bool | None = None
+    display_name: str = ""
+    reasoning_effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -282,6 +284,7 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
         native_tools_mode=mode,
         context=context,
         thinking_enabled=raw.get("thinking_enabled") if type(raw.get("thinking_enabled")) is bool else None,
+        display_name=str(raw.get("display_name") or "")[:160],
     )
 
 
@@ -324,6 +327,8 @@ def config_to_payload(config: LocalProviderConfig) -> dict[str, object]:
         }
     if config.thinking_enabled is not None:
         payload["thinking_enabled"] = config.thinking_enabled
+    if config.display_name:
+        payload["display_name"] = config.display_name[:160]
     return payload
 
 
@@ -372,6 +377,11 @@ def parse_local_config_update(
         )
     context = previous.context
     thinking = previous.thinking_enabled if base_url == previous.base_url.rstrip("/") else None
+    display_name = previous.display_name if base_url == previous.base_url.rstrip("/") and model == previous.model else ""
+    if "display_name" in body:
+        if not isinstance(body["display_name"], str) or len(body["display_name"]) > 160:
+            return None, "display_name must be at most 160 characters"
+        display_name = body["display_name"].strip()
     if "thinking_enabled" in body:
         if body["thinking_enabled"] is not None and type(body["thinking_enabled"]) is not bool:
             return None, "thinking_enabled must be true, false, or null"
@@ -395,6 +405,7 @@ def parse_local_config_update(
             native_tools_mode=mode,
             context=context,
             thinking_enabled=thinking,
+            display_name=display_name,
         ),
         "",
     )

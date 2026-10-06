@@ -136,7 +136,22 @@ def provider_catalog_response() -> tuple[int, dict[str, Any]]:
 
 
 def local_provider_response() -> tuple[int, dict[str, Any]]:
-    return 200, {"ok": True, "local": local_bootstrap_payload()}
+    local = local_bootstrap_payload()
+    _attach_local_metadata(local)
+    return 200, {"ok": True, "local": local}
+
+
+def _attach_local_metadata(local: dict[str, Any]) -> None:
+    from codey.providers.local_selection import model_metadata
+
+    config = load_local_config()
+    selection = select_local_target(config)
+    local["saved_display_name"] = config.display_name
+    local.update(model_metadata(
+        str(local.get("base_url") or ""), str(local.get("model") or ""),
+        api_key=selection.api_key,
+        display_name=config.display_name if selection.model == config.model and selection.base_url == config.base_url else "",
+    ) if local.get("connected") else {"display_name": config.display_name, "thinking_options": []})
 
 
 def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
@@ -173,6 +188,7 @@ def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
         native_tools_mode=parsed.native_tools_mode,
         context=parsed.context,
         thinking_enabled=parsed.thinking_enabled,
+        display_name=parsed.display_name,
     ))
     # One probe only: branching on a single detail result keeps the verdict
     # consistent even if the endpoint flaps between two requests.
@@ -194,6 +210,7 @@ def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
             native_tools_mode=parsed.native_tools_mode,
             context=parsed.context,
             thinking_enabled=parsed.thinking_enabled,
+            display_name=parsed.display_name,
         )
         save_local_config(saved)
     except (OSError, ValueError) as exc:
@@ -206,7 +223,9 @@ def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
         endpoint.base_url,
         ((wanted,) if wanted else ()) + tuple(m for m in endpoint.models if m != wanted),
     )
-    return 200, {"ok": True, "local": assemble_bootstrap_payload(saved, saved_selection, ordered, [])}
+    local = assemble_bootstrap_payload(saved, saved_selection, ordered, [])
+    _attach_local_metadata(local)
+    return 200, {"ok": True, "local": local}
 
 
 def research_unconfigured_response() -> tuple[int, dict[str, Any]]:
@@ -479,6 +498,15 @@ def run_submit_response(
     }
     if review_source_run_id:
         submit_kwargs["review_source_run_id"] = review_source_run_id
+    if "local_selection" in body:
+        if provider_id != "local":
+            return 400, {"error": "local_selection requires a local model"}
+        from codey.providers.local_selection import capture_local_run_config
+
+        try:
+            submit_kwargs["local_config"] = capture_local_run_config(body["local_selection"])
+        except ValueError as exc:
+            return 400, {"error": str(exc)}
     try:
         run_id = submit_task(
             session_id,
@@ -576,6 +604,7 @@ def shell_approval_response(
                 "project",
                 previous_run_id=str(pending.get("run_id") or ""),
                 initial_shell_results=tuple(continuation_plan.shell_results or ()),
+                **({"local_config": pending["_local_config"]} if pending.get("_local_config") is not None else {}),
             )
             continued = continuation_run is not None
         return 200, {"ok": True, "approved": False, "continued": continued, "event": event}
@@ -644,6 +673,7 @@ def shell_approval_response(
                 "project",
                 previous_run_id=str(pending.get("run_id") or ""),
                 initial_shell_results=tuple(continuation_plan.shell_results or ()),
+                **({"local_config": pending["_local_config"]} if pending.get("_local_config") is not None else {}),
             )
             continued = continuation_run is not None
             continuation_stopped = not continued and ctx.run_registry.stop_flag.is_set()

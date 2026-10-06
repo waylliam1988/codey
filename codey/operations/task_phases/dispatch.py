@@ -96,6 +96,7 @@ def connect_and_build_frame(
         record_provider_failure=hooks.record_provider_failure,
         append_ledger=hooks.append_ledger,
         trace_sink=trace_sink,
+        connect=deps.connect_provider,
     )
     provider = preflight.provider
     provider_id = preflight.provider_id

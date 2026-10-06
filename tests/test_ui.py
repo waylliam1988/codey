@@ -14,6 +14,7 @@ LOCAL_CONTEXT_DRAWER_JS = (ASSET_DIR / "local_context_drawer.js").read_text(enco
 RUN_DETAILS_JS = (ASSET_DIR / "run_details.js").read_text(encoding="utf-8")
 RENDER_JS = (ASSET_DIR / "render.js").read_text(encoding="utf-8")
 PROVIDER_UI_JS = (ASSET_DIR / "provider_ui.js").read_text(encoding="utf-8")
+SETTINGS_JS = (ASSET_DIR / "settings.js").read_text(encoding="utf-8")
 UI_STATE_JS = (ASSET_DIR / "ui_state.js").read_text(encoding="utf-8")
 SSE_JS = (ASSET_DIR / "sse.js").read_text(encoding="utf-8")
 COMPOSER_JS = (ASSET_DIR / "composer.js").read_text(encoding="utf-8")
@@ -44,11 +45,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('id="provider-button"', HTML)
         self.assertIn('id="provider-menu"', HTML)
         self.assertIn('id="local-config-pop"', HTML)
-        self.assertIn("blank keeps saved key", HTML)
+        self.assertIn("Leave blank to keep saved key", SETTINGS_JS)
         self.assertNotIn("local-clear-api-key", HTML)
         self.assertNotIn("Clear saved key", HTML)
         self.assertNotIn("clear_api_key", HTML)
-        self.assertIn("fetch('/api/local_provider')", PROVIDER_UI_JS)
+        self.assertIn("fetch('/api/local_provider',", PROVIDER_UI_JS)
         # Menu items are generated from the backend catalog (no static copy).
         self.assertNotIn('data-provider="deepseek"', HTML)
         self.assertIn("deepseek", UI_STATE_JS)
@@ -124,7 +125,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_context_handoff_stays_hidden(self) -> None:
         self.assertIn("JSON.stringify({ session_id: s.id })", HTML)
         self.assertNotIn("/compact", HTML)
-        self.assertNotIn("context limit", HTML.lower())
+        self.assertNotIn("context limit", HTML.lower().split("<dialog")[0])
         self.assertNotIn("context compression", HTML.lower())
         self.assertNotIn("handoff summary", HTML.lower())
 
@@ -287,7 +288,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("$('task').value =", retry_block)
 
     def test_provider_selector_is_enabled_when_idle(self) -> None:
-        self.assertIn("$('provider-button').disabled = busy", HTML)
+        self.assertIn("$('provider-button').disabled = $('effort-button').disabled = busy", HTML)
         self.assertIn("$('provider-button').disabled = false", HTML)
         self.assertNotIn("btn.disabled = !providerStatus", HTML)
 
@@ -332,16 +333,16 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("return shellStatus === 'exit' ? 'Executed' : 'Failed'", RENDER_JS)
 
     def test_local_save_failure_keeps_popover_open(self) -> None:
-        start = PROVIDER_UI_JS.index("async function saveLocalProviderConfig()")
-        block = PROVIDER_UI_JS[start:start + 2000]
+        start = SETTINGS_JS.index("async function save()")
+        block = SETTINGS_JS[start:start + 2400]
         self.assertIn("if (!r.ok || !data.ok) {", block)
         failure_at = block.index("if (!r.ok || !data.ok) {")
-        close_at = block.index("closeLocalProviderConfig();")
+        close_at = block.index("close();")
         return_at = block.index("return;", failure_at)
         # Failure sets the error and returns before closing the popover.
         self.assertLess(failure_at, return_at)
         self.assertLess(return_at, close_at)
-        self.assertIn("local.context_error", PROVIDER_UI_JS)
+        self.assertIn("local.context_error", SETTINGS_JS)
 
     def test_shell_approval_applies_http_result_without_waiting_for_sse(self) -> None:
         start = HTML.index("async function approveCommand")
@@ -461,7 +462,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('<strong>Research</strong>', HTML)
         self.assertIn("function currentIntentForSession(sessionId)", HTML)
         self.assertIn("return sessionProjectPath(sessionId) ? 'hybrid' : 'research';", HTML)
-        self.assertIn("body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent })", COMPOSER_JS)
+        self.assertIn("body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent,", COMPOSER_JS)
         self.assertIn("type: 'research_done'", HTML)
         self.assertIn("Research restored:", HTML)
         self.assertIn("if (restore) restore.disabled = !current || !current.restoreable;", HTML)
@@ -693,7 +694,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("Switch provider", HTML)
         self.assertNotIn("Switch model", HTML)
         self.assertNotIn('title="Provider"', HTML)
-        self.assertIn('title="Model"', HTML)
+        self.assertIn('id="provider-button" aria-label="Choose model"', HTML)
+        self.assertNotIn('id="provider-button" title=', HTML)
         err_start = UI_SOURCE.index("} else if (m.type === 'err') {")
         err_end = UI_SOURCE.index("} else if (m.type === 'info') {", err_start)
         err_block = UI_SOURCE[err_start:err_end]
@@ -1123,7 +1125,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (typeof onSendStarted === 'function') onSendStarted();", send_block)
         self.assertIn("deps.pushMsgToSession(sessionId, { type: 'user', text });", send_block)
         self.assertIn("const project = deps.sessionProjectPath(sessionId);", send_block)
-        self.assertIn("JSON.stringify({ session_id: sessionId, project, task: text, provider, intent })", send_block)
+        self.assertIn("JSON.stringify({ session_id: sessionId, project, task: text, provider, intent,", send_block)
         self.assertIn("await deps.acceptRunResponse(r, sessionId);", send_block)
         self.assertIn("return true;", send_block)
 
@@ -1447,6 +1449,7 @@ function makeElement(tag) {
     setSelectionRange: () => {},
     append: (...kids) => { el.children.push(...kids); },
     appendChild: (kid) => { el.children.push(kid); return kid; },
+    replaceChildren: (...kids) => { el.children = kids; },
     remove: () => {
       const i = menuButtons.indexOf(el);
       if (i >= 0) menuButtons.splice(i, 1);
@@ -1456,6 +1459,7 @@ function makeElement(tag) {
     classList: { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false },
     addEventListener: () => {},
     closest: () => null,
+    contains: () => false,
     click: () => {},
   };
   return el;
@@ -1489,6 +1493,7 @@ global.document = {
     if (id === 'provider-button') return fakeButtons['provider-button'] || (fakeButtons['provider-button'] = fakeButton());
     if (id === 'provider-name') return { textContent: '' };
     if (id === 'provider-dot') return { className: '' };
+    if (['effort-button','effort-name','effort-chooser','effort-menu'].includes(id)) return fakeButtons[id] || (fakeButtons[id] = makeElement('button'));
     if (id === 'local-config-pop') return fakePop;
     if (id === 'local-config-close') return fakeButtons['local-config-close'] || (fakeButtons['local-config-close'] = fakeButton());
     if (id === 'local-config-save') return fakeButtons['local-config-save'] || (fakeButtons['local-config-save'] = fakeButton());
@@ -1501,7 +1506,7 @@ global.document = {
   addEventListener: () => {},
 };
 global.localStorage = { getItem: () => null, setItem: () => {} };
-global.window = {};
+global.window = {CodeySettings:{init:()=>{}, open:()=>{}, close:()=>{}}};
 global.navigator = {};
 const uiStateSrc = loadAsset('assets/ui_state.js');
 const providerUiSrc = loadAsset('assets/provider_ui.js');
