@@ -343,8 +343,19 @@ function setDrawerOpen(id, open) {
   // wrappers keep their names; they delegate here.
   const el = document.getElementById(id);
   if (!el) return;
+  if (open && !el.classList.contains('open')) {
+    el._returnFocus = document.activeElement;
+    el.inert = false;
+  }
   el.classList.toggle('open', !!open);
   el.setAttribute('aria-hidden', open ? 'false' : 'true');
+  el.inert = !open;
+  if (open) {
+    const close = el.querySelector('[id$="-close"]');
+    if (close) close.focus({ preventScroll: true });
+  } else if (el.contains(document.activeElement) && el._returnFocus && el._returnFocus.isConnected) {
+    el._returnFocus.focus({ preventScroll: true });
+  }
 }
 
 function bindUiStatePagehide() {

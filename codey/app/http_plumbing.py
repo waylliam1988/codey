@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 from collections import OrderedDict
@@ -137,7 +138,15 @@ def send_file(
 
 
 def send_index(handler: BaseHTTPRequestHandler) -> None:
-    entry = _cached_file(WEB_DIR / "index.html", transform_name="index")
+    # Source checkouts can change without a package version bump. Include the
+    # actual assets so existing desktop caches cannot mix old CSS/JS with new HTML.
+    revision = hashlib.sha256()
+    for asset in sorted((WEB_DIR / "assets").glob("*")):
+        if asset.is_file() and asset.suffix in WEB_ASSET_TYPES:
+            revision.update(asset.name.encode("utf-8"))
+            revision.update(_cached_file(asset, transform_name="raw").body)
+    asset_version = f"{__version__}-{revision.hexdigest()[:16]}"
+    entry = _cached_file(WEB_DIR / "index.html", transform_name=f"index:{asset_version}")
     if _request_etag_matches(handler, entry.etag):
         _send_not_modified(handler, entry.etag)
         return
@@ -160,8 +169,9 @@ def _cached_file(path: Path, *, transform_name: str) -> _StaticCacheEntry:
             _STATIC_CACHE.move_to_end(key)
             return cached
     body = path.read_bytes()
-    if transform_name == "index":
-        body = body.decode("utf-8").replace(APP_VERSION_PLACEHOLDER, __version__).encode("utf-8")
+    if transform_name.startswith("index:"):
+        asset_version = transform_name.removeprefix("index:")
+        body = body.decode("utf-8").replace(APP_VERSION_PLACEHOLDER, asset_version).encode("utf-8")
     entry = _StaticCacheEntry(
         signature=signature,
         body=body,

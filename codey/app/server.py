@@ -542,7 +542,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         import webview
 
         icon = WEB_DIR / "icon.ico"
-        webview.create_window("Codey", launch_url, width=1380, height=900)
+        webview.create_window("Codey", launch_url, width=1380, height=900, text_select=True)
         start_kwargs = {
             "private_mode": False,
             "storage_path": str(DEFAULT_STATE_HOME / "webview"),

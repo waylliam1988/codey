@@ -10,6 +10,7 @@ let PROVIDER_LABELS = {};
 let DEFAULT_PROVIDER = '';
 let providerStatus = {};
 let providerUpdatedAt = {};
+let highlightedProvider = '';
 
 function $(id) { return deps.$(id); }
 function escapeHtml(text) { return deps.escapeHtml(text); }
@@ -31,6 +32,10 @@ function buildProviderMenu() {
   const menu = deps.$('provider-menu');
   if (!menu) return;
   const warning = deps.$('provider-probe-warning');
+  menu.setAttribute('role', 'dialog');
+  menu.setAttribute('aria-label', 'Choose model');
+  $('provider-button').setAttribute('aria-controls', 'provider-menu');
+  $('provider-button').setAttribute('aria-haspopup', 'dialog');
   menu.querySelectorAll('.provider-item').forEach((btn) => btn.remove());
   for (const id of PROVIDERS) {
     const btn = document.createElement('button');
@@ -50,13 +55,40 @@ function buildProviderMenu() {
     btn.append(dot, label, check);
     btn.onclick = () => {
       setActiveProvider(id);
-      menu.classList.remove('open');
-      deps.$('provider-button').classList.remove('open');
+      closeMenu(true);
     };
     if (warning) menu.insertBefore(btn, warning);
     else menu.appendChild(btn);
   }
   syncProviderUI(currentProviderId());
+  highlightedProvider = currentProviderId();
+  highlightModel();
+}
+
+function modelRows() { return Array.from($('provider-menu').querySelectorAll('.provider-item')); }
+
+function highlightModel() {
+  $('provider-menu').querySelectorAll('.provider-item').forEach(row => row.classList.toggle('keyboard-active', row.dataset.provider === highlightedProvider));
+}
+
+function closeMenu(restoreFocus = false) {
+  $('provider-menu').classList.remove('open');
+  $('provider-menu').setAttribute('aria-hidden', 'true');
+  $('provider-button').classList.remove('open');
+  $('provider-button').setAttribute('aria-expanded', 'false');
+  if (restoreFocus) $('provider-button').focus();
+}
+
+function openMenu() {
+  const menu = $('provider-menu');
+  menu.classList.add('open');
+  menu.setAttribute('aria-hidden', 'false');
+  $('provider-button').classList.add('open');
+  $('provider-button').setAttribute('aria-expanded', 'true');
+  highlightedProvider = currentProviderId();
+  highlightModel();
+  (modelRows().find(row => row.dataset.provider === highlightedProvider) || modelRows()[0])?.focus();
+  refreshProviderStatus();
 }
 
 function applyRecommended(data) {
@@ -132,6 +164,7 @@ function syncProviderUI(providerId) {
   $('provider-dot').className = 'dot ' + providerAvailability(id);
   document.querySelectorAll('.provider-item').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.provider === id);
+    btn.setAttribute('aria-pressed', String(btn.dataset.provider === id));
     const dot = btn.querySelector('.dot');
     if (dot) dot.className = 'dot ' + providerAvailability(btn.dataset.provider);
   });
@@ -268,15 +301,32 @@ function bindHandlers() {
 $('provider-button').onclick = (e) => {
   if ($('provider-button').disabled) return;
   e.stopPropagation();
-  const menu = $('provider-menu');
-  menu.classList.toggle('open');
-  $('provider-button').classList.toggle('open', menu.classList.contains('open'));
-  if (menu.classList.contains('open')) refreshProviderStatus();
+  if ($('provider-menu').classList.contains('open')) closeMenu(true);
+  else openMenu();
 };
+$('provider-button').setAttribute('aria-expanded', 'false');
+$('provider-menu').addEventListener('keydown', e => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(true); return; }
+  const rows = modelRows();
+  if (!rows.length) return;
+  const focused = rows.indexOf(document.activeElement);
+  let index = focused >= 0 ? focused : rows.findIndex(row => row.dataset.provider === highlightedProvider);
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+    e.preventDefault();
+    index = e.key === 'Home' ? 0 : e.key === 'End' ? rows.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length;
+    highlightedProvider = rows[index].dataset.provider;
+    highlightModel();
+    rows[index].scrollIntoView({ block: 'nearest' });
+    rows[index].focus();
+  }
+});
+$('provider-menu').addEventListener('focusout', () => {
+  queueMicrotask(() => { if (!$('provider-menu').contains(document.activeElement) && document.activeElement !== $('provider-button')) closeMenu(); });
+});
 document.addEventListener('click', (e) => {
   if (!$('provider-menu').contains(e.target) && !$('provider-button').contains(e.target)) {
-    $('provider-menu').classList.remove('open');
-    $('provider-button').classList.remove('open');
+    closeMenu();
   }
   if (
     $('local-config-pop').classList.contains('open') &&
@@ -300,5 +350,6 @@ window.CodeyProviderUI = {
   refreshStatus: refreshProviderStatus,
   openLocalConfig: openLocalProviderConfig,
   closeLocalConfig: closeLocalProviderConfig,
+  closeMenu,
 };
 })();

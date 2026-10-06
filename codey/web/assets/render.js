@@ -314,10 +314,7 @@ function renderAssistantBody(body, text, toggle) {
     renderMarkdown(body, value);
     return { collapsed: false, long: false };
   }
-  // Long text: preview first, never full sync render before folding.
-  renderMarkdown(body, previewSlice(value));
-  body.classList.add('collapsed');
-  if (toggle) toggle.textContent = 'Expand';
+  // Answers stay visible; only an explicit Collapse shows a bounded preview.
   let expanded = false;
   let renderToken = 0;
   const expand = () => {
@@ -336,7 +333,9 @@ function renderAssistantBody(body, text, toggle) {
     renderMarkdown(body, previewSlice(value));
     body.classList.add('collapsed');
   };
-  return { collapsed: true, long: true, expand, collapse, isExpanded: () => expanded };
+  expand();
+  if (toggle) { toggle.textContent = 'Collapse'; toggle.setAttribute('aria-expanded', 'true'); }
+  return { collapsed: false, long: true, expand, collapse, isExpanded: () => expanded };
 }
 
 // ============================ tool line rendering ============================
@@ -370,7 +369,9 @@ function createToolGroup(kind) {
   const group = document.createElement('div');
   group.className = 'tool-group collapsed';
   group.dataset.foldkind = kind;
-  const summary = document.createElement('div');
+  const summary = document.createElement('button');
+  summary.type = 'button';
+  summary.setAttribute('aria-expanded', 'false');
   summary.className = 'tool-group-summary';
   const dot = document.createElement('span'); dot.className = 'tl-dot'; dot.textContent = '·';
   const kindEl = document.createElement('span'); kindEl.className = 'tg-kind'; kindEl.textContent = kind;
@@ -379,7 +380,10 @@ function createToolGroup(kind) {
   summary.append(dot, kindEl, count, chev);
   const body = document.createElement('div');
   body.className = 'tool-group-body';
-  summary.onclick = () => group.classList.toggle('collapsed');
+  summary.onclick = () => {
+    group.classList.toggle('collapsed');
+    summary.setAttribute('aria-expanded', String(!group.classList.contains('collapsed')));
+  };
   group.append(summary, body);
   return group;
 }

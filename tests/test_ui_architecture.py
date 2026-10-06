@@ -15,7 +15,7 @@ HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")
 
 # Ratchet budgets. Lower these as checkpoints land; never increase.
 INLINE_STYLE_LINE_BUDGET = 0
-INLINE_SCRIPT_LINE_BUDGET = 1650
+INLINE_SCRIPT_LINE_BUDGET = 1608
 
 VERSION_SUFFIX = "?v=__APP_VERSION__"
 
@@ -82,6 +82,7 @@ class AssetReferenceTests(unittest.TestCase):
                 "/assets/ui_state.js",
                 "/assets/sse.js",
                 "/assets/composer.js",
+                "/assets/conversation_ui.js",
             ],
         )
 

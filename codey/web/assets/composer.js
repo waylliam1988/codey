@@ -6,6 +6,9 @@
 let deps = null;
 let PROVIDERS = [];
 let handlersBound = false;
+let draftSessionId = '';
+let sendingSessionId = '';
+const drafts = new Map();
 
 function liveDefaultProvider() {
   return window.CodeyUiState.DEFAULT_PROVIDER;
@@ -20,6 +23,31 @@ function init(nextDeps) {
   deps = nextDeps;
   PROVIDERS = deps.PROVIDERS;
   bindHandlers();
+  syncSession();
+}
+
+function captureDraft() {
+  if (!draftSessionId) return;
+  const t = $('task');
+  const previous = drafts.get(draftSessionId);
+  drafts.set(draftSessionId, { text: t.value, start: t.selectionStart, end: t.selectionEnd,
+    revision: (previous ? previous.revision : 0) + (previous && previous.text === t.value ? 0 : 1) });
+}
+
+function syncSession() {
+  if (!deps || draftSessionId === activeId()) return;
+  captureDraft();
+  draftSessionId = activeId();
+  const draft = drafts.get(draftSessionId) || { text: '', start: 0, end: 0 };
+  $('task').value = draft.text;
+  $('task').setSelectionRange(draft.start, draft.end);
+  resizeTask();
+  updateSend();
+}
+
+function forgetDraft(id) {
+  drafts.delete(id);
+  if (draftSessionId === id) { draftSessionId = ''; $('task').value = ''; }
 }
 
 function resizeTask() {
@@ -31,14 +59,20 @@ function resizeTask() {
 function updateSend() {
   const has = $('task').value.trim();
   const running = !!runningSessionId();
-  $('send').disabled = !has || running;
+  $('send').disabled = !has || running || !!sendingSessionId;
   $('send').style.display = running ? 'none' : '';
   $('stop').style.display = running ? '' : 'none';
-  $('send-hint').textContent = running ? 'Stop' : 'Enter';
+  $('send-hint').textContent = sendingSessionId ? 'Sending…' : running ? 'Stop' : 'Enter';
+  $('send').setAttribute('aria-label', sendingSessionId ? 'Sending message' : 'Send message');
+  const owner = deps.findSession(runningSessionId());
+  $('stop').setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
+  $('stop').title = owner ? 'Stop ' + owner.title : 'Stop';
+  $('provider-button').disabled = running || !!sendingSessionId;
+  if (window.CodeyConversationUI) window.CodeyConversationUI.updateNotice();
 }
 
 function toggleResearchForActive() {
-  if (runningSessionId()) return;
+  if (runningSessionId() || sendingSessionId) return;
   const s = deps.activeSession();
   if (!s) return;
   s.research = !s.research;
@@ -58,8 +92,12 @@ function setActiveProvider(id) {
   if (provider === 'local') deps.openLocalProviderConfig();
 }
 
-function clearDraftIfUnchanged(sessionId, draft) {
-  if (activeId() !== sessionId || $('task').value.trim() !== draft) return;
+function clearDraftIfUnchanged(sessionId, draft, revision = null) {
+  captureDraft();
+  const stored = drafts.get(sessionId);
+  if (!stored || stored.text.trim() !== draft || (revision !== null && stored.revision !== revision)) return;
+  drafts.delete(sessionId);
+  if (activeId() !== sessionId) return;
   $('task').value = '';
   resizeTask();
   updateSend();
@@ -68,13 +106,15 @@ function clearDraftIfUnchanged(sessionId, draft) {
 
 async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null) {
   const text = String(task || '').trim();
-  if (!text || runningSessionId()) return false;
+  if (!text || runningSessionId() || sendingSessionId) return false;
   const s = deps.findSession(sessionId);
   if (!s) return false;
   const provider = PROVIDERS.includes(providerId)
     ? providerId
     : (PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider());
-  if (typeof onSendStarted === 'function') onSendStarted();
+  sendingSessionId = sessionId;
+  updateSend();
+  deps.updateComposerContext();
   deps.pushMsgToSession(sessionId, { type: 'user', text });
   const project = deps.sessionProjectPath(sessionId);
   const intent = deps.currentIntentForSession(sessionId);
@@ -84,15 +124,19 @@ async function sendTaskFromSession(sessionId, task, providerId = '', onSendStart
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent }),
     });
-    if (r.status === 409) { deps.addSendError(sessionId); return true; }
     if (!r.ok) {
-      deps.addSendError(sessionId);
-      return true;
+      deps.addSendError(sessionId, '', '', text);
+      return false;
     }
+    if (typeof onSendStarted === 'function') onSendStarted();
     await deps.acceptRunResponse(r, sessionId);
   } catch {
-    deps.addSendError(sessionId);
-    return true;
+    deps.addSendError(sessionId, '', '', text);
+    return false;
+  } finally {
+    sendingSessionId = '';
+    updateSend();
+    deps.updateComposerContext();
   }
   return true;
 }
@@ -102,11 +146,21 @@ async function sendActiveDraft() {
   const task = $('task').value.trim();
   const provider = currentProviderId();
   if (!task) return;
-  await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));
+  captureDraft();
+  const revision = drafts.get(sessionId).revision;
+  await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));
+}
+
+function retryTask(sessionId, submittedText = '') {
+  const s = deps.findSession(sessionId);
+  if (!s) return;
+  const original = [...s.messages].reverse().find(m => m.type === 'user' && m.text);
+  const text = submittedText || (original && original.text);
+  if (text) return sendTaskFromSession(sessionId, text, s.provider);
 }
 
 async function continueTask(sessionId) {
-  if (runningSessionId()) return;
+  if (runningSessionId() || sendingSessionId) return;
   const s = deps.findSession(sessionId);
   if (!s) return;
   const p = deps.sessionProject(s);
@@ -120,6 +174,8 @@ async function continueTask(sessionId) {
     'Use the existing project context and finish the original user request.',
     'If the work is complete, reply with a JSON done tool call.'
   ].join(' ');
+  sendingSessionId = sessionId;
+  updateSend();
   try {
     const r = await fetch('/api/run', {
       method: 'POST',
@@ -141,13 +197,16 @@ async function continueTask(sessionId) {
   } catch {
     deps.addSendError(sessionId);
     return;
+  } finally {
+    sendingSessionId = '';
+    updateSend();
   }
 }
 
 function bindHandlers() {
   if (handlersBound) return;
   handlersBound = true;
-  $('task').addEventListener('input', () => { resizeTask(); updateSend(); deps.updateComposerContext(); });
+  $('task').addEventListener('input', () => { captureDraft(); resizeTask(); updateSend(); deps.updateComposerContext(); });
   $('task').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
@@ -160,7 +219,7 @@ function bindHandlers() {
     if (target.id === 'ctx-folder') {
       const s = deps.activeSession();
       if (!s || deps.sessionProject(s) || deps.projectPickerBusy()) return;
-      deps.attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });
+      deps.attachCurrentChatToPickedProject({ sendDraft: false });
     } else if (target.id === 'ctx-research') {
       toggleResearchForActive();
     }
@@ -178,6 +237,11 @@ function bindHandlers() {
 
 window.CodeyComposer = {
   init,
+  syncSession,
+  captureDraft,
+  forgetDraft,
+  isSending: () => !!sendingSessionId,
+  retryTask,
   resizeTask,
   updateSend,
   toggleResearchForActive,

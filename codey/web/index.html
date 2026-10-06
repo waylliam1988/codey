@@ -26,7 +26,15 @@
       <svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
       <span class="label">Add project</span>
     </button>
+    <div class="sidebar-search">
+      <button class="sidebar-row search-toggle" id="chat-search-toggle" aria-label="Search chats" aria-controls="chat-search" aria-expanded="false">
+        <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        <span class="label">Search</span>
+      </button>
+      <input class="chat-search" id="chat-search" type="search" placeholder="Search chats" aria-label="Search chats" hidden />
+    </div>
   </div>
+  <div class="project-empty" id="search-empty" hidden>No matching chats</div>
   <div class="session-list" id="session-list"></div>
 </aside>
 
@@ -47,13 +55,14 @@
   <div class="chat-area" id="chat-area">
     <div class="chat-inner" id="chat"></div>
   </div>
+  <div class="latest-row"><button class="link-btn" id="back-to-latest" hidden>Back to latest</button></div>
 
   <div class="composer-wrap">
     <div class="composer">
       <div class="composer-context" id="composer-context"></div>
+      <div class="composer-notice" id="composer-notice" role="status" hidden></div>
       <div class="composer-box">
         <textarea id="task" placeholder="Send a message to Codey…" rows="1"></textarea>
-      </div>
       <div class="composer-bar">
         <div class="provider-chooser">
           <button class="provider-button" id="provider-button" title="Model" disabled>
@@ -76,6 +85,7 @@
             <svg viewBox="0 0 24 24"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg>
           </button>
         </div>
+      </div>
       </div>
     </div>
   </div>
@@ -123,10 +133,10 @@
 </div>
 <div class="ctx-menu" id="local-context-menu"></div>
 
-<section class="changes-drawer" id="changes-drawer" aria-hidden="true">
+<section class="changes-drawer" id="changes-drawer" aria-hidden="true" inert>
   <div class="changes-head">
     <div class="changes-title">
-      <strong>Changes</strong>
+      <strong>Changes</strong><span id="changes-scope"></span>
       <span id="changes-subtitle">Not loaded</span>
     </div>
     <button class="drawer-btn" id="changes-copy">Copy diff</button>
@@ -139,10 +149,10 @@
   </div>
 </section>
 
-<section class="changes-drawer" id="research-drawer" aria-hidden="true">
+<section class="changes-drawer" id="research-drawer" aria-hidden="true" inert>
   <div class="changes-head">
     <div class="changes-title">
-      <strong>Research</strong>
+      <strong>Research</strong><span id="research-scope"></span>
       <span id="research-subtitle">Not loaded</span>
     </div>
     <button class="drawer-btn" id="research-use-project">Use in Project</button>
@@ -154,7 +164,7 @@
   </div>
 </section>
 
-<section class="changes-drawer" id="local-context-drawer" aria-hidden="true">
+<section class="changes-drawer" id="local-context-drawer" aria-hidden="true" inert>
   <div class="changes-head">
     <div class="changes-title">
       <strong>Local context</strong>
@@ -181,6 +191,7 @@
 <script src="/assets/ui_state.js?v=__APP_VERSION__"></script>
 <script src="/assets/sse.js?v=__APP_VERSION__"></script>
 <script src="/assets/composer.js?v=__APP_VERSION__"></script>
+<script src="/assets/conversation_ui.js?v=__APP_VERSION__"></script>
 <script>
 // ============================ state & storage ============================
 const $ = (id) => document.getElementById(id);
@@ -263,7 +274,7 @@ function updateComposerContext() {
   const s = activeSession();
   const p = activeProject();
   const proj = p ? p.name : 'Choose folder';
-  const disabled = !!runningSessionId;
+  const disabled = !!runningSessionId || window.CodeyComposer.isSending();
   const folderDisabled = disabled || !!p || projectPickerBusy;
   const researchActive = !!(s && s.research);
   const pieces = [
@@ -281,7 +292,7 @@ function syncResearchUI() {
   const s = activeSession();
   const active = !!(s && s.research);
   btn.classList.toggle('active', active);
-  btn.disabled = !!runningSessionId;
+  btn.disabled = !!runningSessionId || window.CodeyComposer.isSending();
   btn.title = active ? 'Research is on for this chat' : 'Research';
 }
 function currentIntentForSession(sessionId) {
@@ -308,6 +319,7 @@ function renderSidebar() {
   }
 
   for (const p of projects) {
+    if (!window.CodeyConversationUI.matchesProject(p)) continue;
     const node = document.createElement('div');
     node.className = 'project-node';
 
@@ -337,7 +349,7 @@ function renderSidebar() {
         cancelProjectRename,
       ));
     } else {
-      const main = document.createElement('div');
+      const main = document.createElement('button');
       main.className = 'project-main';
       main.textContent = p.name;
       row.appendChild(main);
@@ -357,10 +369,10 @@ function renderSidebar() {
 
     node.appendChild(row);
 
-    if (p.expanded) {
+    if (p.expanded || window.CodeyConversationUI.isSearching()) {
       const children = document.createElement('div');
       children.className = 'project-children';
-      const projectSessions = sessions.filter(s => s.projectId === p.id);
+      const projectSessions = sessions.filter(s => s.projectId === p.id && window.CodeyConversationUI.matchesSession(s));
       if (!projectSessions.length) {
         const empty = document.createElement('div');
         empty.className = 'project-empty';
@@ -378,7 +390,7 @@ function renderSidebar() {
   looseLabel.className = 'group-label';
   looseLabel.textContent = 'CHATS';
   list.appendChild(looseLabel);
-  const loose = sessions.filter(s => !sessionProject(s));
+  const loose = sessions.filter(s => !sessionProject(s) && window.CodeyConversationUI.matchesSession(s));
   if (!loose.length) {
     const empty = document.createElement('div');
     empty.className = 'project-empty';
@@ -401,9 +413,10 @@ function sessionNode(s) {
     return item;
   }
   item.onclick = (e) => { if (!e.target.closest('button')) switchSession(s.id); };
-  const title = document.createElement('span');
+  const title = document.createElement('button');
   title.className = 'session-title';
   title.textContent = s.title || 'Untitled';
+  title.onclick = () => switchSession(s.id);
   item.appendChild(title);
   const more = document.createElement('button');
   more.className = 'session-more'; more.textContent = '⋯'; more.title = 'More';
@@ -432,7 +445,7 @@ function renameInputEl(value, commit, cancel) {
   input.onmousedown = (e) => e.stopPropagation();
   input.onclick = (e) => e.stopPropagation();
   input.onkeydown = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); finish(commit, input.value); }
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); finish(commit, input.value); }
     else if (e.key === 'Escape') { e.preventDefault(); finish(cancel); }
   };
   input.onblur = () => finish(commit, input.value);
@@ -497,32 +510,7 @@ function armDanger(btn, run) {
 
 // ============================ chat rendering ============================
 function renderChat(forceBottom = false) {
-  const s = activeSession();
-  const chat = $('chat');
-  if (!s) return;
-  const p = activeProject();
-  const titleEl = $('sess-title');
-  if (p) {
-    titleEl.innerHTML = `<span class="crumb-proj">${escapeHtml(p.name)}</span><span class="crumb-sep">/</span><span class="crumb-chat">${escapeHtml(s.title || 'New chat')}</span>`;
-  } else {
-    titleEl.innerHTML = `<span class="crumb-chat">${escapeHtml(s.title || 'New chat')}</span>`;
-  }
-  syncProviderUI(currentProviderId());
-  updateComposerContext();
-  syncResearchUseProjectButton();
-
-  if (!s.messages.length) {
-    chat.innerHTML = `
-      <div class="welcome">
-        <h1>Codey</h1>
-        <p>Send a message to start.</p>
-      </div>`;
-    return;
-  }
-
-  chat.innerHTML = '';
-  for (const m of s.messages) appendMessageNode(chat, m);
-  scrollChat(forceBottom);
+  window.CodeyConversationUI.renderChat(forceBottom);
 }
 
 function statusRow(prefix, text, opts = {}) {
@@ -594,12 +582,12 @@ function appendMessageNode(chat, m) {
     const body = document.createElement('div');
     body.className = 'body md';
     div.appendChild(body);
-    const toggle = document.createElement('div');
+    const toggle = document.createElement('button');
     toggle.className = 'toggle';
     const ctl = window.CodeyRender.renderAssistantBody(body, m.text || '', toggle);
     if (ctl.long) {
-      toggle.textContent = 'Expand';
-      toggle.onclick = () => { const on = ctl.isExpanded(); if (on) ctl.collapse(); else ctl.expand(); toggle.textContent = on ? 'Expand' : 'Collapse'; };
+      toggle.textContent = 'Collapse';
+      toggle.onclick = () => { const on = ctl.isExpanded(); if (on) ctl.collapse(); else ctl.expand(); toggle.textContent = on ? 'Expand' : 'Collapse'; toggle.setAttribute('aria-expanded', String(!on)); };
       div.appendChild(toggle);
     }
     addMessageCopyButton(div, messageCopyText(m));
@@ -642,6 +630,7 @@ function appendMessageNode(chat, m) {
   } else if (m.type === 'changes') {
     const div = document.createElement('div');
     div.className = 'msg changes';
+    div.dataset.project = m.project || currentProjectPath();
     const head = document.createElement('div');
     head.className = 'changes-head-row';
     const label = document.createElement('span');
@@ -664,7 +653,7 @@ function appendMessageNode(chat, m) {
       for (const f of files) {
         const row = document.createElement('div');
         row.className = 'changes-file';
-        row.innerHTML = `<span class="cf-status">${escapeHtml(f.status || 'M')}</span><span class="cf-path">${escapeHtml(f.path || '')}</span><span class="cf-stat">+${f.additions || 0} -${f.deletions || 0}</span>`;
+        row.innerHTML = `<span class="cf-status">${escapeHtml(f.status || 'M')}</span><button class="cf-path link-btn">${escapeHtml(f.path || '')}</button><span class="cf-stat">+${f.additions || 0} -${f.deletions || 0}</span>`;
         list.appendChild(row);
       }
       div.appendChild(list);
@@ -675,6 +664,7 @@ function appendMessageNode(chat, m) {
     div.className = 'msg shell';
     const card = document.createElement('div');
     card.className = 'shell-card';
+    card.dataset.approvalId = m.id; card.tabIndex = -1;
     const title = document.createElement('div');
     title.className = 'sc-title';
     title.textContent = 'Approval required';
@@ -747,7 +737,7 @@ function appendMessageNode(chat, m) {
     chat.appendChild(statusRow('Error', m.text || '', {
       err: true,
       actions: window.CodeyRunDetails.actionsForMessage(m, [
-        { label: 'Retry', disabled: !!runningSessionId, onclick: () => retryTask(m.sessionId || activeId) },
+        { label: 'Retry', disabled: !!runningSessionId, onclick: () => retryTask(m.sessionId || activeId, m.retryTask) },
       ]),
     }));
   } else if (m.type === 'info') {
@@ -759,16 +749,12 @@ function appendMessageNode(chat, m) {
 }
 
 function scrollChat(force = false) {
-  const area = $('chat-area');
-  // Follow only when forced or already near the bottom.
-  if (force || (area.scrollHeight - area.scrollTop - area.clientHeight < 120)) {
-    area.scrollTop = area.scrollHeight;
-  }
+  window.CodeyConversationUI.scrollChat(force);
 }
 
 // ============================ session ops ============================
 function switchSession(id) {
-  activeId = id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat(true);
+  activeId = id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();
 }
 function openProject(projectId) {
   const p = projectById(projectId);
@@ -804,6 +790,7 @@ async function deleteSession(id) {
   if (!await forgetSessionState(id)) return;
   const fallbackProvider = currentProviderId();
   sessions = sessions.filter(s => s.id !== id);
+  window.CodeyConversationUI.forget(id);
   if (!sessions.length) {
     const s = defaultSession(null, fallbackProvider);
     sessions = [s];
@@ -849,6 +836,7 @@ async function deleteProject(id) {
   );
   if (!cleared.every(Boolean)) return;
   projects = projects.filter(x => x.id !== id);
+  sessions.filter(s => s.projectId === id).forEach(s => window.CodeyConversationUI.forget(s.id));
   sessions = sessions.filter(s => s.projectId !== id);
   if (!sessions.length) sessions = [defaultSession(null, liveDefaultProvider())];
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
@@ -970,10 +958,12 @@ function openMenuAt(menu, anchor) {
   if (top + mr.height > window.innerHeight - 8) top = rect.top - mr.height - 4;
   menu.style.left = Math.max(8, left) + 'px';
   menu.style.top = Math.max(8, top) + 'px';
+  window.CodeyConversationUI.menuOpened(menu, anchor);
 }
 function closeAllMenus() {
   disarmDangerButtons();
   document.querySelectorAll('.ctx-menu.open').forEach(m => m.classList.remove('open'));
+  window.CodeyConversationUI.menusClosed();
 }
 function openProjectMenu(anchor, projectId) {
   closeAllMenus();
@@ -1379,10 +1369,12 @@ function addToSession(sid, m) {
   ensureSessionIndexes(s);
   if (m.eventKey && s._eventKeys.has(m.eventKey)) return false;
   if ((m.type === 'limit' || m.type === 'pause' || m.type === 'teach' || m.type === 'err') && !m.sessionId) m.sessionId = sid;
+  const follow = sid === activeId && window.CodeyConversationUI.isFollowing();
   s.messages.push(m);
   window.CodeyUiState.trackSessionMessage(s, m);
   persistActive();
-  if (sid === activeId) { appendMessageNode($('chat'), m); scrollChat(); }
+  if (sid === activeId) { if (s.messages.length === 1) renderChat(); else { appendMessageNode($('chat'), m); scrollChat(follow); } }
+  window.CodeyConversationUI.updateNotice();
   return true;
 }
 
@@ -1441,8 +1433,8 @@ function removeShellRequest(sessionId, approvalId) {
   dropSessionMessages(sessionId, (m) => m.type === 'shell_request' && m.id === approvalId);
 }
 
-function addSendError(sessionId, eventKey = '', runId = '') {
-  addToSession(sessionId, { type: 'err', text: 'Could not send the message', sessionId, eventKey, runId });
+function addSendError(sessionId, eventKey = '', runId = '', retryText = '') {
+  addToSession(sessionId, { type: 'err', text: 'Could not send the message', sessionId, eventKey, runId, retryTask: retryText });
 }
 
 async function resumeTeaching(teachId, sessionId) {
@@ -1457,16 +1449,8 @@ async function resumeTeaching(teachId, sessionId) {
   } catch {}
 }
 
-function retryTask(sessionId) {
-  const s = sessions.find(x => x.id === sessionId);
-  if (!s) return;
-  const lastUser = [...s.messages].reverse().find(m => m.type === 'user' && m.text);
-  if (!lastUser) return;
-  syncProviderUI(s.provider || liveDefaultProvider());
-  $('task').value = lastUser.text;
-  resizeTask();
-  updateSend();
-  $('send').click();
+function retryTask(sessionId, retryText = '') {
+  return window.CodeyComposer.retryTask(sessionId, retryText);
 }
 
 function sessionProjectPath(sid) {
@@ -1533,6 +1517,7 @@ function closeLocalContextDrawer() {
 }
 
 function handleLocalContextScopeChanged() {
+  closeChangesDrawer(); window.CodeyResearchDrawer.close();
   if (window.CodeyLocalContextDrawer) window.CodeyLocalContextDrawer.handleScopeChanged();
 }
 
@@ -1654,29 +1639,7 @@ $('research-use-project').onclick = () => attachCurrentChatToPickedProject({ sen
 $('changes-refresh').onclick = () => {
   if (activeChangesProject) loadChangesDrawer(activeChangesProject);
 };
-$('changes-restore').onclick = async () => {
-  if (!activeChangesProject || !lastChangesData || lastChangesData.mode === 'git') return;
-  $('changes-restore').disabled = true;
-  $('changes-restore').textContent = 'Restoring';
-  try {
-    const data = await restoreChanges(activeChangesProject);
-    if (!data.ok) {
-      const detail = data.conflicts && data.conflicts.length
-        ? `Conflict: ${data.conflicts.join(', ')}`
-        : (data.error || 'Restore failed');
-      $('changes-subtitle').textContent = detail;
-      $('changes-restore').disabled = false;
-      return;
-    }
-    $('changes-restore').textContent = 'Restored';
-    await loadChangesDrawer(activeChangesProject);
-    setTimeout(() => { $('changes-restore').textContent = 'Restore'; }, 1200);
-  } catch (err) {
-    $('changes-subtitle').textContent = String(err);
-  } finally {
-    if ($('changes-restore').textContent !== 'Restored') $('changes-restore').textContent = 'Restore';
-  }
-};
+$('changes-restore').onclick = () => window.CodeyChangesDrawer.restore();
 $('changes-copy').onclick = async () => {
   const diff = lastChangesData && lastChangesData.diff ? lastChangesData.diff : '';
   if (!diff) return;
@@ -1697,10 +1660,12 @@ $('btn-add-project').onclick = pickProject;
 $('toggle-sidebar').onclick = () => {
   document.body.classList.add('sidebar-collapsed');
   $('show-sidebar').style.display = '';
+  $('aside').inert = true; $('show-sidebar').focus();
 };
 $('show-sidebar').onclick = () => {
   document.body.classList.remove('sidebar-collapsed');
   $('show-sidebar').style.display = 'none';
+  $('aside').inert = false; $('toggle-sidebar').focus();
 };
 $('topbar-more').onclick = (e) => {
   e.stopPropagation();
@@ -1719,8 +1684,7 @@ document.addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('.rename-input')) return;
     closeAllMenus();
     closeOtherDrawers();
-    $('provider-menu').classList.remove('open');
-    $('provider-button').classList.remove('open');
+    window.CodeyProviderUI.closeMenu($('provider-menu').classList.contains('open'));
     if (window.CodeyProviderUI) window.CodeyProviderUI.closeLocalConfig();
   }
 });
@@ -1741,6 +1705,7 @@ async function boot() {
   window.CodeyResearchDrawer.init({
     $,
     getActiveId: () => activeId,
+    getSessionTitle: id => (sessions.find(s => s.id === id) || {}).title || 'Chat',
     getCurrentRun: currentResearchRun,
     getResearchGraphDepth: () => researchGraphDepth,
     setResearchGraphDepth: value => { researchGraphDepth = value; },
@@ -1754,6 +1719,7 @@ async function boot() {
   window.CodeyChangesDrawer.init({
     $,
     fetchChanges,
+    restoreChanges,
     escapeHtml,
     setActiveProject: value => { activeChangesProject = value; syncChangesRefreshButton(); },
     setLastData: value => { lastChangesData = value; },
@@ -1814,6 +1780,10 @@ async function boot() {
     projectPickerBusy: () => projectPickerBusy,
     attachCurrentChatToPickedProject,
   });
+  window.CodeyConversationUI.init({ activeSession, activeProject, getSessions: () => sessions,
+    getActiveId: () => activeId, getRunningSessionId: () => runningSessionId, sessionProject,
+    currentProjectPath, currentProviderId, syncProviderUI, updateComposerContext,
+    syncResearchUseProjectButton, appendMessageNode, switchSession, renderSidebar, closeAllMenus, closeOtherDrawers });
   renderSidebar();
   renderChat();
   resizeTask();

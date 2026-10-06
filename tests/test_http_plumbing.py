@@ -28,6 +28,26 @@ class _Handler:
 
 
 class HttpPlumbingTests(unittest.TestCase):
+    def test_asset_edit_changes_index_urls_and_invalidates_index_etag(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            web_dir = Path(td)
+            assets = web_dir / "assets"
+            assets.mkdir()
+            css = assets / "app.css"
+            css.write_text("body { color: gray; }", encoding="utf-8")
+            (web_dir / "index.html").write_text(
+                '<link href="/assets/app.css?v=__APP_VERSION__">', encoding="utf-8"
+            )
+            with mock.patch.object(http_plumbing, "WEB_DIR", web_dir):
+                first = _Handler()
+                http_plumbing.send_index(first)
+                css.write_text("body { color: white; }", encoding="utf-8")
+                second = _Handler({"If-None-Match": first.sent_headers["ETag"]})
+                http_plumbing.send_index(second)
+            self.assertEqual(second.status, 200)
+            self.assertNotEqual(first.wfile.getvalue(), second.wfile.getvalue())
+            self.assertNotEqual(first.sent_headers["ETag"], second.sent_headers["ETag"])
+
     def test_send_file_uses_etag_revalidation(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "asset.js"

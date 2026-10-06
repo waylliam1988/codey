@@ -158,7 +158,8 @@ Uppercase, muted, no background. Never use colored section headers.
 - **Project row:** name only; full path in `title` tooltip, not inline.
 - **Active project:** 2px left bar in `--text`, not colored background.
 - **Active session:** `--active` background.
-- **Secondary actions:** hidden until hover — `⋯` opens a context menu. Do not show permanent `+` / `×` icon clusters.
+- **Secondary actions:** revealed on hover or keyboard focus; visible on devices without hover. `⋯` opens a context menu. Do not show permanent `+` / `×` icon clusters.
+- `New chat`, `Add project`, and magnifier + `Search` share a 34px row height and 1px gaps. Search opens a same-height input in place and filters chat titles and project names locally. The input has a transparent background, no visible border or focus ring, and its text aligns with the Search label. Escape clears and closes search; an empty search also closes on blur. Search temporarily expands matching groups without changing saved project expansion.
 
 Context menus (`.ctx-menu`):
 
@@ -172,6 +173,7 @@ Context menus (`.ctx-menu`):
 - **Status area:**
   - Idle: empty (no dot, no “Connected” label)
   - Running / connecting: CSS **spinner** + short label (`Running`, `Connecting to Edge…`)
+  - When another chat owns the run: `Running in <chat> · Open`. Stop names the same chat; the single-run limit still applies.
   - Error: small dot + `--err-text` label (`Disconnected`)
 - No colored status chips in the top bar.
 
@@ -261,6 +263,8 @@ File stats stay gray in the stream; weak tint only inside diff drawer.
 
 **Assistant long replies:** render expanded by default. If the reply is long, show a quiet `Collapse` text action below it; clicking it folds the body and changes the action to `Expand`. Do not default to collapsed answers.
 
+**Reading and copying:** prose, code, paths, commands, diff, and error details support native pointer selection and copying. Message/code Copy actions complement selection. New output follows only while the reader is near the end; otherwise a quiet `Back to latest` action is available. Chat switching restores reading position. Metadata refresh preserves unchanged message DOM and explicit disclosure state. Hidden chat DOM is cached for at most six recent chats; older chats retain their reading offset.
+
 **Shell approval:**
 
 ```
@@ -287,16 +291,20 @@ No marketing copy, no emoji.
 Choose folder · Research                     ← composer-context (11.5px, --muted)
 ┌─────────────────────────────────────────┐
 │ Send a message to Codey…                │
+│                                         │
+│ ● DeepSeek ⌄                 Enter  ↗   │
 └─────────────────────────────────────────┘
-● DeepSeek ⌄              Enter     ■  ▶
 ```
 
-- Box: `--bg-2`, 1px `--border`, radius 10px; focus border `--text-dim` (not blue).
+- Box: `--bg-2`, 1px `--border`, radius 10px; focus border `--text-dim` (not blue). Text input and the bottom model/action row share this frame so their task scope reads as one control.
 - **Context row:** only `Choose folder` and `Research` stay in the quiet line above the input.
 - **Research token:** visible by default as text, not as a framed button. Hover changes text to `--text`; active Research uses brighter text only. No border, background, chip, underline, font-weight change, or accent color.
 - **Provider picker:** borderless; status dot + label + chevron. This is the only visible provider/model selector in the composer. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.
-- **Send / Stop:** square **icon buttons** (`.icon-btn`), transparent until hover. No filled accent send button.
-- `Enter` hint: visible on composer focus/hover only, `--faint`. `Enter` sends; `Shift+Enter` inserts a newline.
+- **Send / Stop:** 34px square **icon buttons** (`.icon-btn`) with 16px icons, transparent until hover; enabled Send uses `--text` and the original paper-plane outline. Send and Stop occupy one fixed position. No filled accent send button.
+- **Model menu:** directly show the short catalog without a search input. Opening focuses the current model. Arrow keys navigate, Enter selects, Escape closes and returns focus. Do not invent unsupported model/effort controls. Menus have a viewport-bounded scroll area.
+- `Enter` hint: immediately before Send/Stop with a 6px gap, visible on composer focus/hover only, `--faint`. `Enter` sends; `Shift+Enter` inserts a newline.
+- **Drafts and submission:** text and caret/selection belong to a chat, retained in memory across chat switches and removed when that chat is deleted. Choosing a folder changes context without sending. Admission shows `Sending…`, prevents duplicate requests, and only consumes the accepted draft snapshot; failures preserve editing and Retry never overwrites a later draft.
+- **Pending approval:** one neutral `Approval required · Review command` entry appears above the frame, pointing to the original command card and its chat. Enter never approves a command globally. The command card remains the single approval surface.
 
 Provider is **session-level** — it lives in the bottom provider picker, not duplicated in the context row or elsewhere.
 
@@ -307,11 +315,13 @@ Research is also **session-level**. It lives in the composer context row, never 
 - Fixed right panel, `--bg-2`, slides in from the right.
 - Header actions: text buttons, no borders (`drawer-btn`).
 - File list: mono paths, gray stats; expand row to show diff.
+- Identify the bound project and `Working tree` or `Snapshot` scope. Change-summary file links open and expand the exact file. Switching chats/projects closes old inspection surfaces; late loads/restore responses cannot overwrite a new scope.
 - Diff lines: see §2 tint exception.
 
 ### 5.8 Research drawer
 
 - Same fixed right panel language as the changes drawer.
+- Identify the bound chat; switching chats closes the drawer, and late note responses do not render into a different chat's drawer.
 - Header actions are text buttons, no borders.
 - Notes and sources are plain rows with title, type, bounded Markdown preview, source chips, and path or URL when useful.
 - Notes text uses Research note card/body styles, not diff/code block styling. Source chips are derived from saved provenance (`note.sources`, citation map, opened sources), not from arbitrary body text.
@@ -408,10 +418,12 @@ These existed in earlier iterations and were intentionally removed:
 
 ## 10. Implementation notes
 
-- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `research_runs.js`, `changes_drawer.js`, `local_context_drawer.js`, `run_details.js`, `provider_ui.js`, `ui_state.js`, `sse.js`, `composer.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
+- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `research_runs.js`, `changes_drawer.js`, `local_context_drawer.js`, `run_details.js`, `provider_ui.js`, `ui_state.js`, `sse.js`, `composer.js`, `conversation_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
 - **Do not fork the palette:** all color/spacing tokens stay in `tokens.css`; never redefine them per module or per page. `tests/test_ui_architecture.py` ratchets inline `<style>` to zero and only lets the inline `<script>` budget go down.
 - **Dark mode only:** there is no light theme. New surfaces should assume dark gray backgrounds and light text.
-- **Accessibility:** maintain keyboard focus on interactive rows; prefer visible hover states over permanent color coding. When adding color is unavoidable, pair with text labels (never color alone).
+- **Accessibility:** interactive rows and disclosures use native buttons and gray focus-visible outlines. Hidden sidebar/drawers are inert. Menus return focus on Escape; drawer keyboard focus stays within the open inspection surface and returns to its trigger on close. Respect reduced-motion preferences. When adding color is unavoidable, pair with text labels (never color alone).
+- **Desktop text selection:** create the pywebview window with `text_select=True`; its default suppresses native page selection. Do not counter the host setting with global CSS overrides.
+- **Asset freshness:** versioned asset URLs include the current CSS/JS content revision, so source updates also invalidate existing desktop caches without requiring a package version bump.
 
 ---
 
@@ -419,10 +431,7 @@ These existed in earlier iterations and were intentionally removed:
 
 These are compatible extensions — implement using the rules above:
 
-- Tool-line collapse (`read × 5 files`)
-- Inline rename instead of `prompt()`
 - Toast notifications (gray panel, mono optional, no green/red toast backgrounds)
-- Minimal Markdown in assistant messages (sans body; code blocks in mono)
 - Provider health: offline = default solid gray `.dot`, online = `.dot.ok` — do not add a second green usage
 - Top bar `Export markdown`, etc. — menu pattern same as `.ctx-menu`
 

@@ -6,6 +6,7 @@
   let deps = null;
   const NOTE_PREVIEW_CHARS = 1500;
   const expandedResearchNoteIds = new Set();
+  let boundSessionId = '';
 
 function init(nextDeps) {
   deps = nextDeps;
@@ -23,11 +24,15 @@ function disposeResearchGraph() {
 
 function openResearchDrawer(sessionId) {
   if (deps.closeOtherDrawers) deps.closeOtherDrawers('research');
+  boundSessionId = sessionId;
   window.CodeyUiState.setDrawerOpen('research-drawer', true);
+  const scope = $('research-scope');
+  if (scope && deps.getSessionTitle) scope.textContent = deps.getSessionTitle(sessionId);
   renderResearchDrawer(sessionId);
 }
 
 function closeResearchDrawer() {
+  boundSessionId = '';
   disposeResearchGraph();
   window.CodeyUiState.setDrawerOpen('research-drawer', false);
   $('research-drawer').classList.remove('graph-open');
@@ -558,7 +563,7 @@ async function loadResearchRunNotes(run, sessionId) {
   } catch {
     for (const id of ids) researchNoteCache[id] = { __state: 'error' };
   }
-  if (currentResearchRun(sessionId) === run && $('research-drawer').classList.contains('open')) {
+  if (boundSessionId === sessionId && currentResearchRun(sessionId) === run && $('research-drawer').classList.contains('open')) {
     renderResearchDrawer(sessionId);
   }
 }

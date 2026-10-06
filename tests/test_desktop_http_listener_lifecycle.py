@@ -36,6 +36,7 @@ def test_desktop_exit_closes_listener_and_releases_lease(tmp_path, monkeypatch, 
         else:
             server.serve(port=0)
             fake_webview.start.assert_called_once()
+            assert fake_webview.create_window.call_args.kwargs.get("text_select") is True
         assert len(instances) == 1
         assert instances[0].socket.fileno() == -1
         with acquire_lease(tmp_path / ".server.lock"):

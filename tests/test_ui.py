@@ -17,6 +17,7 @@ PROVIDER_UI_JS = (ASSET_DIR / "provider_ui.js").read_text(encoding="utf-8")
 UI_STATE_JS = (ASSET_DIR / "ui_state.js").read_text(encoding="utf-8")
 SSE_JS = (ASSET_DIR / "sse.js").read_text(encoding="utf-8")
 COMPOSER_JS = (ASSET_DIR / "composer.js").read_text(encoding="utf-8")
+CONVERSATION_UI_JS = (ASSET_DIR / "conversation_ui.js").read_text(encoding="utf-8")
 TOKENS_CSS = (ASSET_DIR / "tokens.css").read_text(encoding="utf-8")
 APP_CSS = (ASSET_DIR / "app.css").read_text(encoding="utf-8")
 STYLE_SOURCE = TOKENS_CSS + "\n" + APP_CSS
@@ -111,7 +112,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_run_and_continue_requests_keep_session_provider(self) -> None:
         self.assertIn("window.CodeyComposer.init({", HTML)
-        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", COMPOSER_JS)
+        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));", COMPOSER_JS)
         send_click = COMPOSER_JS[COMPOSER_JS.index("async function sendActiveDraft()"):COMPOSER_JS.index("async function continueTask")]
         self.assertIn("const provider = currentProviderId();", send_click)
         self.assertIn("PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()", COMPOSER_JS)
@@ -279,12 +280,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("closeLocalContextDrawer();", block)
 
     def test_retry_uses_current_session_model_picker(self) -> None:
-        retry_start = HTML.index("function retryTask(sessionId)")
-        retry_end = HTML.index("function sessionProjectPath", retry_start)
-        retry_block = HTML[retry_start:retry_end]
-        self.assertIn("syncProviderUI(s.provider || liveDefaultProvider())", retry_block)
-        self.assertIn("$('send').click()", retry_block)
-        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", COMPOSER_JS)
+        retry_start = COMPOSER_JS.index("function retryTask(sessionId, submittedText")
+        retry_end = COMPOSER_JS.index("async function continueTask", retry_start)
+        retry_block = COMPOSER_JS[retry_start:retry_end]
+        self.assertIn("sendTaskFromSession(sessionId, text, s.provider)", retry_block)
+        self.assertNotIn("$('task').value =", retry_block)
 
     def test_provider_selector_is_enabled_when_idle(self) -> None:
         self.assertIn("$('provider-button').disabled = busy", HTML)
@@ -378,7 +378,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("commandTruncated: !!data.command_truncated", HTML)
 
     def test_provider_status_is_quiet_and_refreshes_on_menu_open(self) -> None:
-        self.assertIn("if (menu.classList.contains('open')) refreshProviderStatus();", PROVIDER_UI_JS)
+        open_block = PROVIDER_UI_JS[PROVIDER_UI_JS.index("function openMenu()"):PROVIDER_UI_JS.index("function applyRecommended")]
+        self.assertIn("refreshProviderStatus();", open_block)
         self.assertIn("if (data.type === 'providers')", HTML)
         self.assertIn("applyProviderStatus(data.providers)", HTML)
         self.assertIn("providerUpdatedAt[item.id] > snapshotTime", PROVIDER_UI_JS)
@@ -682,12 +683,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("existingNode.replaceWith(", replace_block)
 
     def test_send_failures_render_inline_error(self) -> None:
-        self.assertIn("function addSendError(sessionId, eventKey = '', runId = '')", HTML)
+        self.assertIn("function addSendError(sessionId, eventKey = '', runId = '', retryText = '')", HTML)
         self.assertIn("Could not send the message", HTML)
-        self.assertIn("if (r.status === 409) { deps.addSendError(sessionId); return true; }", COMPOSER_JS)
+        self.assertIn("deps.addSendError(sessionId, '', '', text);", COMPOSER_JS)
         self.assertIn("if (r.status === 409 || !r.ok) {", COMPOSER_JS)
         self.assertIn("await deps.acceptRunResponse(r, sessionId)", COMPOSER_JS)
-        self.assertGreaterEqual(COMPOSER_JS.count("} catch {\n    deps.addSendError(sessionId);"), 2)
+        self.assertIn("} catch {\n    deps.addSendError(sessionId, '', '', text);", COMPOSER_JS)
         self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [", HTML)
         self.assertNotIn("Switch provider", HTML)
         self.assertNotIn("Switch model", HTML)
@@ -777,7 +778,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_changes_drawer_supports_snapshot_mode_and_restore(self) -> None:
         self.assertIn('id="changes-restore"', HTML)
         self.assertIn("Reading changes", CHANGES_DRAWER_JS)
-        self.assertIn("data.mode === 'git' ? 'Git' : 'Snapshot'", CHANGES_DRAWER_JS)
+        self.assertIn("data.mode === 'git' ? 'Working tree' : 'Snapshot'", CHANGES_DRAWER_JS)
         self.assertIn("$('changes-restore').hidden = data.mode === 'git';", CHANGES_DRAWER_JS)
         self.assertIn("/api/changes/restore", HTML)
         self.assertNotIn("Reading git diff", UI_SOURCE)
@@ -813,12 +814,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         update_block = COMPOSER_JS[update_start:update_end]
         self.assertIn("$('send').style.display = running ? 'none' : ''", update_block)
         self.assertIn("$('stop').style.display = running ? '' : 'none'", update_block)
-        self.assertIn("$('send-hint').textContent = running ? 'Stop' : 'Enter'", update_block)
+        self.assertIn("sendingSessionId ? 'Sending…' : running ? 'Stop' : 'Enter'", update_block)
         self.assertNotIn("$('send-hint').style.display", update_block)
 
     def test_welcome_keeps_status_copy_without_example_cards(self) -> None:
-        self.assertIn("Send a message to start.", HTML)
-        self.assertIn("<h1>Codey</h1>", HTML)
+        self.assertIn("Send a message to start.", CONVERSATION_UI_JS)
+        self.assertIn("<h1>Codey</h1>", CONVERSATION_UI_JS)
         self.assertNotIn("打个招呼", HTML)
         self.assertNotIn("生成 snake.py", HTML)
         self.assertNotIn("写 README", HTML)
@@ -1047,7 +1048,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_start_coding_from_this_chat_attaches_without_new_chat(self) -> None:
         self.assertIn("function sessionProject(s)", HTML)
         self.assertIn("return sessionProject(activeSession());", HTML)
-        self.assertIn("const loose = sessions.filter(s => !sessionProject(s));", HTML)
+        self.assertIn("const loose = sessions.filter(s => !sessionProject(s) && window.CodeyConversationUI.matchesSession(s));", HTML)
         self.assertIn("const p = sessionProject(s);", HTML[HTML.index("function sessionProjectPath"):HTML.index("async function fetchChanges")])
         self.assertIn("const p = deps.sessionProject(s);", COMPOSER_JS[COMPOSER_JS.index("async function continueTask"):COMPOSER_JS.index("function bindHandlers")])
         self.assertIn("function attachSessionToProject(projectId, sessionId = activeId)", HTML)
@@ -1078,14 +1079,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("function providerLabel(id)", HTML)
         self.assertNotIn("ctx-provider", PROVIDER_UI_JS)
         self.assertIn('id="provider-button"', HTML)
-        self.assertIn("$('task').addEventListener('input', () => { resizeTask(); updateSend(); deps.updateComposerContext(); });", COMPOSER_JS)
+        self.assertIn("$('task').addEventListener('input', () => { captureDraft(); resizeTask(); updateSend(); deps.updateComposerContext(); });", COMPOSER_JS)
 
         context_start = COMPOSER_JS.index("$('composer-context').onclick")
         context_end = COMPOSER_JS.index("$('composer-context').addEventListener", context_start)
         context_block = COMPOSER_JS[context_start:context_end]
         self.assertIn("const target = e.target.closest('.ctx-token');", context_block)
         self.assertIn("if (target.id === 'ctx-folder')", context_block)
-        self.assertIn("deps.attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });", context_block)
+        self.assertIn("deps.attachCurrentChatToPickedProject({ sendDraft: false });", context_block)
         self.assertIn("toggleResearchForActive();", context_block)
         self.assertNotIn("ctx-provider", context_block)
         self.assertNotIn("openLocalProviderConfig();", context_block)
@@ -1107,17 +1108,17 @@ class ProviderSelectorUiTests(unittest.TestCase):
         send_block = COMPOSER_JS[send_start:send_end]
         self.assertIn("const sessionId = activeId();", send_block)
         self.assertIn("const provider = currentProviderId();", send_block)
-        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", send_block)
+        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));", send_block)
         self.assertNotIn("pickProjectPath", send_block)
         self.assertNotIn("attachCurrentChatToPickedProject", send_block)
 
     def test_draft_to_project_send_uses_stable_session_id(self) -> None:
         self.assertIn("async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null)", COMPOSER_JS)
-        self.assertIn("function clearDraftIfUnchanged(sessionId, draft)", COMPOSER_JS)
+        self.assertIn("function clearDraftIfUnchanged(sessionId, draft, revision = null)", COMPOSER_JS)
         send_start = COMPOSER_JS.index("async function sendTaskFromSession")
         send_end = COMPOSER_JS.index("async function sendActiveDraft", send_start)
         send_block = COMPOSER_JS[send_start:send_end]
-        self.assertIn("if (!text || runningSessionId()) return false;", send_block)
+        self.assertIn("if (!text || runningSessionId() || sendingSessionId) return false;", send_block)
         self.assertIn("if (!s) return false;", send_block)
         self.assertIn("if (typeof onSendStarted === 'function') onSendStarted();", send_block)
         self.assertIn("deps.pushMsgToSession(sessionId, { type: 'user', text });", send_block)
@@ -1145,11 +1146,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         clear_start = COMPOSER_JS.index("function clearDraftIfUnchanged")
         clear_end = COMPOSER_JS.index("async function sendTaskFromSession", clear_start)
         clear_block = COMPOSER_JS[clear_start:clear_end]
-        self.assertIn("if (activeId() !== sessionId || $('task').value.trim() !== draft) return;", clear_block)
+        self.assertIn("stored.text.trim() !== draft", clear_block)
+        self.assertIn("stored.revision !== revision", clear_block)
         self.assertIn("$('task').value = '';", clear_block)
 
         send_click = COMPOSER_JS[COMPOSER_JS.index("async function sendActiveDraft()"):COMPOSER_JS.index("async function continueTask")]
-        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", send_click)
+        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));", send_click)
         self.assertNotIn("$('task').value = '';", send_click)
 
     def test_no_content_based_implementation_trigger_in_send_flow(self) -> None:
@@ -1325,7 +1327,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         group_block = RENDER_JS[group_start:group_end]
         self.assertIn("group.className = 'tool-group collapsed';", group_block)
         self.assertIn("group.dataset.foldkind = kind;", group_block)
-        self.assertIn("summary.onclick = () => group.classList.toggle('collapsed');", group_block)
+        self.assertIn("group.classList.toggle('collapsed');", group_block)
+        self.assertIn("summary.setAttribute('aria-expanded'", group_block)
         self.assertNotIn("persist", group_block)
 
         # monochrome, cardless folding CSS: hidden body, chevron rotate, no colors.
@@ -1381,7 +1384,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
             HTML,
         )
         self.assertIn("defaultSession(null, liveDefaultProvider())", HTML)
-        self.assertIn("s.provider || liveDefaultProvider()", HTML)
+        self.assertIn("sendTaskFromSession(sessionId, text, s.provider)", COMPOSER_JS)
         # composer.js fallbacks use the live helper with an includes-guard
         # (no bare `||` that would submit a removed id verbatim).
         self.assertIn("PROVIDERS.includes(id) ? id : liveDefaultProvider()", COMPOSER_JS)
@@ -1441,13 +1444,14 @@ function makeElement(tag) {
     className: '', dataset: {}, textContent: '', innerHTML: '',
     onclick: null, disabled: false, value: '', style: {},
     setAttribute: () => {},
+    setSelectionRange: () => {},
     append: (...kids) => { el.children.push(...kids); },
     appendChild: (kid) => { el.children.push(kid); return kid; },
     remove: () => {
       const i = menuButtons.indexOf(el);
       if (i >= 0) menuButtons.splice(i, 1);
     },
-    querySelector: () => ({ className: '' }),
+    querySelector: (sel) => el.children.find(child => child.className === sel.slice(1)) || { className: '', textContent: '' },
     querySelectorAll: () => [],
     classList: { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false },
     addEventListener: () => {},
@@ -1457,6 +1461,9 @@ function makeElement(tag) {
   return el;
 }
 const fakeMenu = {
+  querySelector: () => fakeSearch,
+  setAttribute: () => {},
+  addEventListener: () => {},
   querySelectorAll: (sel) => {
     if (sel === '.provider-item') return menuButtons.slice();
     return [];
@@ -1466,8 +1473,9 @@ const fakeMenu = {
   classList: { remove: () => {}, toggle: () => {}, contains: () => false },
   contains: () => false,
 };
+const fakeSearch = { value: '', hidden: false, focus: () => {} };
 const fakeButtons = {};
-function fakeButton() { return { onclick: null, disabled: false, classList: { add: () => {}, remove: () => {}, toggle: () => {} } }; }
+function fakeButton() { return { onclick: null, disabled: false, setAttribute: () => {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } }; }
 const fakePop = { classList: { add: () => {}, remove: () => {}, contains: () => false }, contains: () => false, setAttribute: () => {} };
 global.document = {
   createElement: (tag) => makeElement(tag),
@@ -1484,9 +1492,9 @@ global.document = {
     if (id === 'local-config-pop') return fakePop;
     if (id === 'local-config-close') return fakeButtons['local-config-close'] || (fakeButtons['local-config-close'] = fakeButton());
     if (id === 'local-config-save') return fakeButtons['local-config-save'] || (fakeButtons['local-config-save'] = fakeButton());
-    if (id === 'task') return { value: '', style: {}, disabled: false, addEventListener: () => {}, click: () => {} };
+    if (id === 'task') return { value: '', style: {}, disabled: false, scrollHeight:40, setSelectionRange: () => {}, addEventListener: () => {}, click: () => {} };
     if (id === 'composer-context') return { onclick: null, addEventListener: () => {} };
-    if (id === 'send' || id === 'stop') return { onclick: null, disabled: false, click: () => {} };
+    if (id === 'send' || id === 'stop') return { onclick: null, disabled: false, style: {}, setAttribute: () => {}, click: () => {} };
     if (id === 'send-hint') return { textContent: '' };
     return null;
   },
