@@ -2,6 +2,17 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - UI/test hygiene convergence (2026-10-06)
+
+- Complete eight audit stages over production behavior, test quality, architecture,
+  UX/performance, reverse callers, state flow, fixtures/fallbacks, and post-failure
+  correction. Isolate headless secondary advisor hooks in the lifecycle fixture so it
+  cannot probe a real browser provider, and exclude repository-ignored `artifacts/`
+  from Project Map navigation.
+- Add regression coverage for both deterministic failures. Final gates pass with
+  **7407 passed, 29 skipped, 1500 subtests passed in 505.27s**; Ruff, mypy,
+  compileall, collection and diff checks pass.
+
 ## Unreleased - Iterative HTTP and Research hygiene (2026-10-05)
 
 - Complete seven independent production, test, architecture, UX, reverse-call,

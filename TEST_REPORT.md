@@ -1,5 +1,62 @@
 # Codey Test Report
 
+## Iterative whole-project hygiene audit (2026-10-06)
+
+本轮以当前 HEAD `60878f81` 为基线，完成 **8 个审查阶段、A–G 七轮独立扫描加一次
+修复后纠偏扫描**。候选台账、原始失败输出和每次修复后的重扫记录保存在忽略目录
+`artifacts/hygiene-audit-2026-10-06.md`；本节是最终收敛摘要。
+
+| 阶段 | 扫描范围 | 新候选 | 结果 |
+| --- | --- | ---: | --- |
+| A 生产行为 | 最新 provider/UI/task 入口、状态迁移、生命周期、取消/超时、HTTP/SSE、冷启动 | 0 | 428 项定向回归通过；无新候选 |
+| B 测试质量 | 767 个测试/support/manual 文件 AST、弱断言、mock/fixture、失败分支、skip/xfail、正式入口 | 0 | 无空测试函数、无 xfail；skip 与 subprocess 证据充分 |
+| C 架构兼容层 | 376 个生产模块调用图、死代码、重复 leaf、kernel/状态投影所有权、冷启动 | 0 | 192 测试、389 subtests；无新 loop/shim |
+| D UX/性能 | UI/SSE/HTTP 错误流、重连、重复发送、外部资源隔离、Node 行为 | 0 | 98 项浏览器/HTTP/UI 定向测试通过（含 bundled Node） |
+| E 修复后反向审查 | provider 快照、shell approval、headless secondary hooks、UI 持久化和调用方 | 1 | B04：shell denial fixture 会触发真实 consensus/audit provider；先超时再隔离 |
+| F 调用关系/状态流 | reserve/start/connect/finish/release、恢复、幂等、fallback、事件身份 | 0 | B04 修复后无新增状态流问题 |
+| G fixture/fallback/冷启动 | fixture、fallback、兼容层、显式 skip、fresh import、机器契约 | 0 | 无新可复现候选 |
+| 修复后纠偏扫描 | 全量失败回溯、Project Map 与 ignored artifacts、受影响调用方和架构边界 | 1 | C04：根目录 `artifacts/` 污染 Project Map；先红后修复并重扫通过 |
+
+E 发现的 B04 是测试环境隔离缺陷：`test_headless_real_kernel_lifecycle` 的脚本
+provider 不拥有可选二级 advisor/audit，导致无浏览器 PATH 时进入真实 DeepSeek 控件并在
+120 秒超时。补丁只隔离 `run_consensus`/`run_project_audit`，不改变生产路径；27 项
+headless/task 回归通过。纠偏扫描发现 C04：仓库 `.gitignore` 明确忽略的根目录
+`artifacts/` 未被共享 Project Map 排除，生成的模型探测文件会抢占 deterministic hint。
+新增 `test_map_excludes_generated_artifacts_directory` 先失败，再将 `artifacts` 加入
+`codey/workspace/map.py` 的 `EXCLUDED_DIRS`；Project Map、scope hint、manual/context
+共 36 项回归通过。
+
+最近两轮独立扫描 F/G 没有新问题的依据不同：F 从调用方和状态流验证 B04 修复没有
+改变 run identity、terminal settlement、provider fallback 或 recovery；G 从全新进程、
+fixture、skip/fallback 和架构边界重新验证没有真实调用方缺失或冷启动污染。两轮之后的
+纠偏扫描只处理了全量测试暴露的 C04，并再次完成生产/测试/架构重扫。
+
+排除项包括：五个默认 PATH 下的 Node `WinError 2` 失败（Playwright bundled Node 可用，
+因此是环境限制而非生产 bug）、一个浏览器二进制能力 skip、生成 fixture 中的 `assert True`、
+以及 domain-owned leaf duplicate。没有新增 skip/xfail 来制造绿色，也没有删除 stress、
+独立进程或崩溃验证。
+
+最终闸门原始结果：Ruff `All checks passed!`；mypy `Success: no issues found in 376 source
+files`；compileall 通过；`pytest --collect-only -q` 收集 **7436 tests**；`git diff --check`
+通过；受影响回归 **495 passed, 2 skipped, 2 subtests**，纠偏后 Project Map/架构选择
+**249 passed, 389 subtests**。Node-only checks 使用
+`C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\site-packages\playwright\driver\node.exe`。
+
+最终全量命令（唯一一次收敛后全量运行，PATH 注入上述 bundled Node）及原始统计：
+
+```text
+python -m pytest -q
+7407 passed, 29 skipped, 1500 subtests passed in 505.27s (0:08:25)
+exit code: 0
+```
+
+剩余风险：真实 web provider/CDP/model 质量仍依赖外部服务；浏览器二进制 E2E 在当前机仍
+有一个能力 skip；默认 shell PATH 没有 Node，但测试闸门已使用本机 Playwright bundled
+Node。实现提交为 `34e03ad7483427289ed4985e25f054249a79c9a1`，报告 hash 补录提交为
+`66975ccece4c9bb068cde283899f92743d179892`；两者已成功推送到
+`https://github.com/waylliam1988/codey.git` 的 `origin/master`（`60878f81..66975cce`，
+exit 0）。
+
 ## Iterative whole-project hygiene audit (2026-10-05)
 
 本次从 `75964afe94ebaa35b401b3ae9ed7ad2b893e4a1b` 开始，完成 **7 轮独立审查**。

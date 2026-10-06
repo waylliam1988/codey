@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.runtime.core.operation_state import RuntimeOperationStore
@@ -58,11 +59,17 @@ def test_headless_shell_denial_cancels_without_transition_error(tmp_path, monkey
         {"tool": "shell", "args": {"command": "mkdir -p unapproved", "path": "."}},
     ])
     rows = []
-    result = run_headless(
-        HeadlessRequest(project=project, task="Create a file, asking for approval if needed.",
-                        provider_id="local", intent="project", max_turns=3, state_home=state),
-        emit_jsonl=rows.append, connect_provider=lambda *a, **kw: provider,
-    )
+    # This lifecycle test owns one scripted provider.  Project startup also
+    # has optional secondary advisor/audit hooks; isolate those hooks so the
+    # test cannot probe real browser providers before the shell denial branch.
+    with patch("codey.app.consensus_service.run_consensus", return_value=None), patch(
+        "codey.app.consensus_service.run_project_audit", return_value=(),
+    ):
+        result = run_headless(
+            HeadlessRequest(project=project, task="Create a file, asking for approval if needed.",
+                            provider_id="local", intent="project", max_turns=3, state_home=state),
+            emit_jsonl=rows.append, connect_provider=lambda *a, **kw: provider,
+        )
     assert result.stop_reason == "stopped", rows
     assert result.exit_code == 1
     assert any(row.get("type") == "shell_rejected" for row in rows)

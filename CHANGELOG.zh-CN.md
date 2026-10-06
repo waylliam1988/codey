@@ -2,6 +2,14 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - UI 与测试卫生收敛（2026-10-06）
+
+- 完成生产行为、测试质量、架构、UX/性能、反向调用方、状态流、fixture/fallback 与
+  修复后纠偏共八个审查阶段。隔离 headless 生命周期测试的二级 advisor hook，避免无
+  浏览器环境触发真实 provider；Project Map 排除仓库忽略的 `artifacts/`。
+- 为两个确定性问题补充回归。最终闸门通过：**7407 passed、29 skipped、1500 subtests，
+  505.27 秒**；Ruff、mypy、compileall、收集和 diff 检查通过。
+
 ## 未发布 - HTTP 与 Research 迭代卫生审查（2026-10-05）
 
 - 完成 A–G 七轮独立审查；最后两轮未发现新的可稳定复现候选，候选、排除项、skip、

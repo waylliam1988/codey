@@ -64,6 +64,9 @@ EXCLUDED_DIRS = {
     ".turbo",
     "dist",
     "build",
+    # Root-level runtime/probe artifacts are ignored by the repository and
+    # must not steer project navigation or symbol hints.
+    "artifacts",
     "target",
     "coverage",
 }

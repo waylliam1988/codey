@@ -443,6 +443,21 @@ class ProjectMapTests(unittest.TestCase):
         if link is not None:
             self.assertNotIn("linked.py", rendered)
 
+    def test_map_excludes_generated_artifacts_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("def app():\n    return 1\n", encoding="utf-8")
+            (root / "artifacts" / "browser").mkdir(parents=True)
+            (root / "artifacts" / "browser" / "captured.py").write_text(
+                "def captured_model_settings():\n    return 1\n", encoding="utf-8"
+            )
+
+            rendered = project_map.render_project_map(root, task="model settings")
+
+        self.assertIn("app.py", rendered)
+        self.assertNotIn("artifacts", rendered)
+        self.assertNotIn("captured_model_settings", rendered)
+
     def test_configured_ignored_paths_are_project_relative_prefixes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
