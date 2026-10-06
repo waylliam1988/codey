@@ -57,6 +57,10 @@ MESSAGE_KEYS = {
     "toolKey",
     "activity",
     "pending",
+    "reasoning",
+    "toolName",
+    "turn",
+    "state",
 }
 
 
@@ -123,6 +127,9 @@ def _clean_message(message: object) -> dict[str, Any] | None:
             clean[key] = _int(value)
         elif value is None:
             clean[key] = None
+        elif key == "reasoning":
+            if isinstance(value, str):
+                clean[key] = value[:64_000]
         elif key in {"text", "output", "result", "command"}:
             clean[key] = _str(value, MAX_STRING)
         else:

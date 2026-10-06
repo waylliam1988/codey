@@ -56,6 +56,8 @@ def _payload_turn(common: dict[str, object], event: dict[str, Any]) -> dict[str,
     payload = {**common, "turn": _int_or_zero(event.get("turn"))}
     if event.get("note"):
         payload["note"] = clip_event_text(event.get("note") or "")
+    if isinstance(event.get("reasoning"), str) and event["reasoning"].strip():
+        payload["reasoning"] = clip_event_text(event["reasoning"], 64_000)
     return payload
 
 
@@ -171,6 +173,9 @@ def machine_event_payload(event: object) -> dict[str, object] | None:
         return _payload_shell_request(common, event)
     if event_type == "turn":
         return _payload_turn(common, event)
+    if event_type == "reasoning":
+        return {**common, "turn": _int_or_zero(event.get("turn")),
+                "text": clip_event_text(event.get("text") or "", 64_000)}
     if event_type == "tool_started":
         return _payload_tool_started(common, event)
     if event_type == "tool":

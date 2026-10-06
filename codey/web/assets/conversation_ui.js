@@ -21,12 +21,13 @@ function captureView() {
   if (!session) { views.delete(shownId); return; }
   views.delete(shownId);
   views.set(shownId, { messages: session.messages.slice(), nodes: Array.from($('chat').childNodes),
-    scroll: $('chat-area').scrollTop, following: isFollowing() });
+    disclosures: window.CodeyProcess.capture($('chat')), scroll: $('chat-area').scrollTop, following: isFollowing() });
   const cached = Array.from(views.values()).filter(view => view.nodes);
   for (const old of cached.slice(0, Math.max(0, cached.length - 6))) { old.nodes = null; old.messages = null; }
 }
 function unchanged(view, session) {
-  return view && view.nodes && view.messages && view.messages.length === session.messages.length && view.messages.every((m, i) => m === session.messages[i]);
+  return view && view.nodes && view.messages && view.messages.length === session.messages.length
+    && view.messages.every((m, i) => m === session.messages[i] || JSON.stringify(m) === JSON.stringify(session.messages[i]));
 }
 function renderChat(forceBottom = false) {
   if (!deps) return;
@@ -54,11 +55,13 @@ function renderChat(forceBottom = false) {
   if (unchanged(saved, s)) {
     if (changing) chat.replaceChildren(...saved.nodes);
   } else {
+    const disclosures = changing ? saved?.disclosures : window.CodeyProcess.capture(chat);
     chat.replaceChildren();
     if (!s.messages.length) {
       const welcome = document.createElement('div'); welcome.className = 'welcome';
       welcome.innerHTML = '<h1>Codey</h1><p>Send a message to start.</p>'; chat.append(welcome);
     } else for (const m of s.messages) deps.appendMessageNode(chat, m);
+    window.CodeyProcess.restore(chat, disclosures);
   }
   shownId = s.id;
   $('chat-area').scrollTop = scroll;

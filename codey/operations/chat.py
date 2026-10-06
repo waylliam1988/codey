@@ -15,6 +15,7 @@ from codey.operations.prompting import (
     record_local_context_trace,
     record_secondary_input_prepared_trace,
 )
+from codey.operations.provider_session import provider_reasoning
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState
 from codey.runtime.core import cancellation
@@ -128,6 +129,13 @@ def run_chat_mode(
     # Settlement owns final display: persist the experience observation first,
     # then publish reply + task_done. Modes never emit final events themselves.
     result = RunResult(reply, "done", 1)
+    display: list[dict[str, Any]] = []
+    reasoning = provider_reasoning(frame.provider, reply) if consulted is None else ""
+    if reasoning:
+        display.append({"type": "reasoning", "run_id": frame.run_id,
+                        "session_id": request.session_id, "turn": 1, "text": reasoning[:64_000]})
+    display.append({"type": "reply", "run_id": frame.run_id,
+                    "session_id": request.session_id, "text": reply})
     return ModeOutcome({
         "type": "task_done",
         "run_id": frame.run_id,
@@ -138,12 +146,7 @@ def run_chat_mode(
         "max_turns": request.max_turns,
         "provider": frame.provider_id,
         "mode": "chat",
-    }, display=({
-        "type": "reply",
-        "run_id": frame.run_id,
-        "session_id": request.session_id,
-        "text": reply,
-    },))
+    }, display=tuple(display))
 
 
 __all__ = ["run_chat_mode"]

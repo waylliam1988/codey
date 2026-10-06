@@ -41,35 +41,50 @@ function addMessageCopyButton(div, text) {
   btn.type = 'button';
   btn.title = 'Copy';
   btn.setAttribute('aria-label', 'Copy message');
-  btn.innerHTML = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V7a2 2 0 0 1 2-2h8"/></svg>';
+  const icon = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V7a2 2 0 0 1 2-2h8"/></svg>';
+  btn.innerHTML = icon;
+  const feedback = document.createElement('span'); feedback.className = 'copy-feedback';
+  feedback.setAttribute('role', 'status');
+  let reset = null;
   btn.onclick = async (e) => {
     e.stopPropagation();
     const ok = await copyText(value);
     btn.classList.toggle('copied', ok);
     btn.title = ok ? 'Copied' : 'Could not copy';
-    setTimeout(() => {
+    btn.setAttribute('aria-label', btn.title);
+    btn.innerHTML = ok ? '<svg class="copy-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg>' : icon;
+    feedback.textContent = ok ? '' : 'Could not copy';
+    if (reset) clearTimeout(reset);
+    reset = setTimeout(() => {
       btn.classList.remove('copied');
       btn.title = 'Copy';
+      btn.setAttribute('aria-label', 'Copy message');
+      btn.innerHTML = icon; feedback.textContent = '';
     }, 1200);
   };
-  div.appendChild(btn);
+  div.append(btn, feedback);
 }
 
 function applyBold(segment) {
   return segment.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
 }
 function renderInlineMd(text) {
-  const escaped = escapeHtml(text);
-  const re = /`([^`]+)`/g;
+  const re = /`([^`\n]+)`|\[([^\]\n]+)\]\(([^\s)]+)\)/g;
   let out = '';
   let last = 0;
   let m;
-  while ((m = re.exec(escaped)) !== null) {
-    out += applyBold(escaped.slice(last, m.index));
-    out += `<code class="md-ic">${m[1]}</code>`;
+  while ((m = re.exec(text)) !== null) {
+    out += applyBold(escapeHtml(text.slice(last, m.index)));
+    if (m[1] !== undefined) out += `<code class="md-ic">${escapeHtml(m[1])}</code>`;
+    else {
+      let safe = false;
+      try { safe = ['http:', 'https:'].includes(new URL(m[3]).protocol); } catch {}
+      out += safe ? `<a class="md-link" href="${escapeHtml(m[3])}" target="_blank" rel="noopener noreferrer">${applyBold(escapeHtml(m[2]))}</a>`
+        : escapeHtml(m[0]);
+    }
     last = re.lastIndex;
   }
-  out += applyBold(escaped.slice(last));
+  out += applyBold(escapeHtml(text.slice(last)));
   return out;
 }
 function addCodeCopyButton(pre, text) {
@@ -84,14 +99,19 @@ function addCodeCopyButton(pre, text) {
     e.stopPropagation();
     const ok = await copyText(value);
     btn.classList.toggle('copied', ok);
-    btn.textContent = ok ? 'Copied' : 'Copy';
-    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = 'Copy'; }, 1200);
+    btn.textContent = ok ? 'Copied' : 'Could not copy';
+    btn.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = 'Copy'; btn.setAttribute('aria-label', 'Copy code'); }, 1200);
   };
   pre.appendChild(btn);
 }
-function appendCodeBlock(container, code) {
+function appendCodeBlock(container, code, language = '') {
   const pre = document.createElement('pre');
   pre.className = 'md-code';
+  if (language) {
+    const label = document.createElement('div'); label.className = 'code-language'; label.textContent = language;
+    pre.append(label);
+  }
   const el = document.createElement('code');
   el.textContent = code;
   pre.appendChild(el);
@@ -142,6 +162,13 @@ function scheduleIdleChunk(fn) {
 function renderMarkdown(container, text) {
   const lines = String(text == null ? '' : text).split('\n');
   let listStack = [];
+  const tableCells = line => {
+    const value = line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '');
+    return value.split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, '|'));
+  };
+  const isTable = index => index + 1 < lines.length && lines[index].includes('|')
+    && tableCells(lines[index + 1]).every(cell => /^:?-{3,}:?$/.test(cell))
+    && tableCells(lines[index]).length === tableCells(lines[index + 1]).length;
   const flushList = () => {
     if (listStack.length) container.appendChild(listStack[0].el);
     listStack = [];
@@ -150,7 +177,9 @@ function renderMarkdown(container, text) {
     const match = line.match(/^(\s*)([-*]|\d+[.)])\s+(.*)$/);
     if (!match) return false;
     const spaces = match[1].replace(/\t/g, '    ').length;
-    let depth = Math.floor(spaces / 2);
+    while (listStack.length && spaces < listStack[listStack.length - 1].indent) listStack.pop();
+    let depth = listStack.length && spaces > listStack[listStack.length - 1].indent
+      ? listStack.length : Math.max(0, listStack.length - 1);
     const tag = /^\d/.test(match[2]) ? 'ol' : 'ul';
     if (depth > listStack.length) depth = listStack.length;
     if (depth === 0 && listStack[0] && listStack[0].tag !== tag) flushList();
@@ -165,7 +194,7 @@ function renderMarkdown(container, text) {
         parent.lastLi.appendChild(next);
       }
       listStack = listStack.slice(0, depth);
-      listStack[depth] = { el: next, tag, lastLi: null };
+      listStack[depth] = { el: next, tag, indent: spaces, lastLi: null };
     }
     const li = document.createElement('li');
     li.innerHTML = renderInlineMd(match[3]);
@@ -184,13 +213,30 @@ function renderMarkdown(container, text) {
     if (/^\s*```/.test(line)) {
       flushList();
       const buf = [];
+      const language = line.replace(/^\s*```/, '').trim();
       i++;
       while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
       i++;
-      appendCodeBlock(container, buf.join('\n'));
+      appendCodeBlock(container, buf.join('\n'), language);
       continue;
     }
     if (!line.trim()) { flushList(); i++; continue; }
+    if (isTable(i)) {
+      flushList();
+      const wrapper = document.createElement('div'); wrapper.className = 'md-table-wrap';
+      const table = document.createElement('table'); table.className = 'md-table';
+      const head = document.createElement('thead'), body = document.createElement('tbody');
+      const columns = tableCells(line);
+      const addRow = (target, cells, tag) => {
+        const row = document.createElement('tr');
+        columns.forEach((_, col) => { const cell = document.createElement(tag); cell.innerHTML = renderInlineMd(cells[col] || ''); row.append(cell); });
+        target.append(row);
+      };
+      addRow(head, columns, 'th'); i += 2;
+      while (i < lines.length && lines[i].trim() && lines[i].includes('|')) addRow(body, tableCells(lines[i++]), 'td');
+      table.append(head, body); wrapper.append(table); container.append(wrapper);
+      continue;
+    }
     const heading = line.match(/^(#{1,6})\s+(.*)$/);
     if (heading) {
       flushList();
@@ -220,7 +266,7 @@ function renderMarkdown(container, text) {
     }
     flushList();
     const para = [];
-    while (i < lines.length && lines[i].trim() && !isBreak(lines[i])) {
+    while (i < lines.length && lines[i].trim() && !isBreak(lines[i]) && !isTable(i)) {
       para.push(lines[i]);
       i++;
     }
@@ -252,6 +298,7 @@ function hasStatefulBlocks(text) {
   const value = String(text == null ? '' : text);
   if (/^\s*```/m.test(value)) return true;
   if (/^\s*>\s?/m.test(value)) return true;
+  if (/\|.*\n\s*\|?\s*:?-{3,}/.test(value)) return true;
   let items = 0;
   const re = /^(\s*)([-*]|\d+[.)])\s+/gm;
   let m;
@@ -343,13 +390,15 @@ const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);
 function toolRowEl(m, compact) {
   const row = document.createElement('div');
   row.className = 'tool-line' + (compact ? ' compact' : '');
+  if (m.error) row.classList.add('error');
+  if (m.turn) row.title = 'Step ' + m.turn;
   if (m.pending) row.classList.add('pending');
   if (!compact) {
     const dot = document.createElement('span'); dot.className = 'tl-dot'; dot.textContent = '·';
     const kind = document.createElement('span'); kind.className = 'tl-kind'; kind.textContent = m.kind || '';
     row.append(dot, kind);
   }
-  const path = document.createElement('span'); path.className = 'tl-path'; path.textContent = m.path || '';
+  const path = document.createElement('span'); path.className = 'tl-path'; path.textContent = m.path || m.command || '';
   const arrow = document.createElement('span'); arrow.className = 'tl-arrow'; arrow.textContent = '→';
   const result = document.createElement('span'); result.className = 'tl-result' + (m.error ? ' err' : ''); result.textContent = m.pending ? (m.activity || m.result || 'Working') : (m.result || '');
   row.append(path, arrow, result);
@@ -401,7 +450,9 @@ function standaloneToolEl(m) {
 }
 function appendToToolGroup(group, m) {
   const body = group.querySelector('.tool-group-body');
-  body.appendChild(toolRowEl(m, true));
+  const row = toolRowEl(m, true);
+  if (m.toolKey) row.dataset.toolKey = m.toolKey;
+  body.appendChild(row);
   group.querySelector('.tg-count').textContent = foldCountLabel(m.kind, body.children.length);
 }
 function appendOrFoldTool(chat, m) {
@@ -416,6 +467,7 @@ function appendOrFoldTool(chat, m) {
       kind: m.kind,
       path: last.dataset.toolPath || '',
       result: last.dataset.toolResult || '',
+      toolKey: last.dataset.toolKey || '',
       error: false,
     });
     appendToToolGroup(group, m);

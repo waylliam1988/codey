@@ -9,6 +9,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from dataclasses import replace
 from typing import Any, cast
 
 from codey.providers import local_config as _local_config
@@ -53,6 +54,7 @@ class LocalOpenAIProvider:
         context_window_tokens: int | None = None,
         context_reserve_tokens: int | None = None,
         context_keep_recent_tokens: int | None = None,
+        thinking_enabled: bool | None = None,
     ) -> None:
         """Runtime only: the target is already resolved (no env/discovery)."""
         if not base_url.strip():
@@ -68,6 +70,9 @@ class LocalOpenAIProvider:
         self.context_window_tokens = context_window_tokens
         self.context_reserve_tokens = context_reserve_tokens
         self.context_keep_recent_tokens = context_keep_recent_tokens
+        self.thinking_enabled = thinking_enabled
+        self._response_reasoning = ""
+        self._last_reasoned_reply: tuple[str, str] | None = None
         self._messages: list[dict[str, Any]] = []
         self._state_lock = threading.RLock()
         self._send_lock = threading.Lock()
@@ -111,6 +116,7 @@ class LocalOpenAIProvider:
             context_window_tokens=effective.context.context_window_tokens,
             context_reserve_tokens=effective.context.context_reserve_tokens,
             context_keep_recent_tokens=effective.context.context_keep_recent_tokens,
+            thinking_enabled=config.thinking_enabled if selection.base_url == config.base_url else None,
         )
 
     @property
@@ -121,23 +127,40 @@ class LocalOpenAIProvider:
         with self._state_lock:
             self._generation += 1
             self._messages = []
+            self._last_reasoned_reply = None
 
     def close(self) -> None:
         with self._state_lock:
             self._generation += 1
             self._messages = []
+            self._last_reasoned_reply = None
 
     def normalize_reply(self, reply: str) -> object:
         """Normalize provider-specific text frames before kernel parsing."""
         from codey.providers.local_response_codec import normalize_local_reply
 
-        return normalize_local_reply(reply)
+        normalized = normalize_local_reply(reply)
+        reasoning = self.reasoning_for_reply(reply)
+        if not reasoning:
+            return normalized
+        from codey.providers.base import AssistantTurn
+
+        return replace(normalized, reasoning=reasoning) if isinstance(normalized, AssistantTurn) else AssistantTurn(
+            text=reply, reasoning=reasoning,
+        )
+
+    def reasoning_for_reply(self, reply: str) -> str:
+        """Optional display data for the latest accepted plain exchange only."""
+        with self._state_lock:
+            previous = self._last_reasoned_reply
+            return previous[1] if previous is not None and previous[0] == reply else ""
 
     def abandon_inflight(self) -> None:
         """Invalidate a still-running send so its late reply skips history."""
         with self._state_lock:
             self._generation += 1
             self._messages = []
+            self._last_reasoned_reply = None
 
     def _acquire_send(self) -> None:
         if not self._send_lock.acquire(blocking=False):
@@ -151,6 +174,7 @@ class LocalOpenAIProvider:
                 candidate = self._prepare_request(
                     [{"role": "user", "content": text}], tools=None,
                 )
+                self._response_reasoning = ""
             reply = self._complete(candidate, timeout=timeout)
             with self._state_lock:
                 # Commit only on a usable reply: an HTTP failure leaves the
@@ -159,6 +183,9 @@ class LocalOpenAIProvider:
                 if generation == self._generation:
                     self._messages = candidate
                     self._messages.append({"role": "assistant", "content": reply})
+                    self._last_reasoned_reply = (reply, self._response_reasoning)
+                    if self._response_reasoning:
+                        self._messages[-1]["reasoning_content"] = self._response_reasoning
             return reply
         finally:
             self._send_lock.release()
@@ -224,6 +251,7 @@ class LocalOpenAIProvider:
         self._messages.append(_store_assistant_message(message))
         return AssistantTurn(
             text=text,
+            reasoning=_reasoning_text(message),
             tool_calls=tuple(
                 ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=cast(dict[str, Any], call.get("arguments")) if isinstance(call.get("arguments"), dict) else {})
                 for call in parsed
@@ -354,6 +382,8 @@ class LocalOpenAIProvider:
             "temperature": self.temperature,
             "stream": False,
         }
+        if self.thinking_enabled is not None:
+            payload["chat_template_kwargs"] = {"enable_thinking": self.thinking_enabled}
         if tools:
             payload["tools"] = tools
             # Kernel turns require a call (including done). Ordinary answers
@@ -484,6 +514,9 @@ class LocalOpenAIProvider:
             "content": message.get("content") or "",
             "_finish_reason": str(choice.get("finish_reason") or ""),
         }
+        reasoning = _reasoning_text(message)
+        if reasoning:
+            out["reasoning_content"] = reasoning
         if kind == errors.ProviderErrorKind.OUTPUT_LENGTH:
             # Preserve a text-only length stop as a continuable assistant turn.
             # Tool calls are parsed below and malformed/truncated arguments
@@ -498,7 +531,12 @@ class LocalOpenAIProvider:
 
     def _complete(self, messages: list[dict[str, Any]], *, timeout: float | None = None) -> str:
         body = self._post_chat(messages, None, timeout=timeout)
-        return _extract_reply(body)
+        reply = _extract_reply(body)
+        choices = body.get("choices")
+        choice = choices[0] if isinstance(choices, list) and choices else None
+        message = choice.get("message") if isinstance(choice, dict) else None
+        self._response_reasoning = _reasoning_text(message)
+        return reply
 
 
 def _looks_like_unsupported_tools_error(detail: object) -> bool:
@@ -576,10 +614,23 @@ def _parse_tool_calls(message: dict[str, Any]) -> tuple[list[dict[str, object]],
 
 def _store_assistant_message(message: dict[str, Any]) -> dict[str, Any]:
     stored: dict[str, object] = {"role": "assistant", "content": str(message.get("content") or "")}
+    reasoning = _reasoning_text(message)
+    if reasoning:
+        stored["reasoning_content"] = reasoning
     raw_calls = message.get("tool_calls")
     if isinstance(raw_calls, list) and raw_calls:
         stored["tool_calls"] = raw_calls
     return stored
+
+
+def _reasoning_text(message: object) -> str:
+    if not isinstance(message, dict):
+        return ""
+    for key in ("reasoning_content", "reasoning", "thinking"):
+        value = message.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
 
 
 def _extract_reply(body: dict[str, Any]) -> str:

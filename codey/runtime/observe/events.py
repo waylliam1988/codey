@@ -53,10 +53,11 @@ class RunEvent:
     reply: str = ""
     note: str = ""
     metadata: dict[str, object] = field(default_factory=dict)
+    reasoning: str = ""
 
     @classmethod
-    def turn_started(cls, turn: int, reply: str, note: str = "") -> RunEvent:
-        return cls("turn", turn=turn, reply=reply, note=note)
+    def turn_started(cls, turn: int, reply: str, note: str = "", *, reasoning: str = "") -> RunEvent:
+        return cls("turn", turn=turn, reply=reply, note=note, reasoning=reasoning)
 
     @classmethod
     def tool_started(
@@ -155,7 +156,12 @@ def run_event_ui_payload(
         }
         if event.note:
             payload["note"] = event.note
+        if event.reasoning.strip():
+            payload["reasoning"] = event.reasoning[:64_000]
         return payload
+    if event.kind == "reasoning" and event.reasoning.strip():
+        return {"type": "reasoning", "run_id": run_id, "session_id": session_id,
+                "turn": event.turn, "text": event.reasoning[:64_000]}
     if event.kind == "info":
         text = event.message
         names = str(_event_metadata(event).get("names") or "")

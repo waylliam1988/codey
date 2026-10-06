@@ -64,6 +64,7 @@ class LocalProviderConfig:
     api_key: str = ""
     native_tools_mode: str = NATIVE_TOOLS_AUTO
     context: LocalContextBudget | None = None
+    thinking_enabled: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -280,6 +281,7 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
         api_key=api_key_text,
         native_tools_mode=mode,
         context=context,
+        thinking_enabled=raw.get("thinking_enabled") if type(raw.get("thinking_enabled")) is bool else None,
     )
 
 
@@ -320,6 +322,8 @@ def config_to_payload(config: LocalProviderConfig) -> dict[str, object]:
             "context_reserve_tokens": int(config.context.context_reserve_tokens),
             "context_keep_recent_tokens": int(config.context.context_keep_recent_tokens),
         }
+    if config.thinking_enabled is not None:
+        payload["thinking_enabled"] = config.thinking_enabled
     return payload
 
 
@@ -367,6 +371,11 @@ def parse_local_config_update(
             "context_reserve_tokens or context_keep_recent_tokens"
         )
     context = previous.context
+    thinking = previous.thinking_enabled if base_url == previous.base_url.rstrip("/") else None
+    if "thinking_enabled" in body:
+        if body["thinking_enabled"] is not None and type(body["thinking_enabled"]) is not bool:
+            return None, "thinking_enabled must be true, false, or null"
+        thinking = body["thinking_enabled"]
     if window is not None:
         preset = context_budget_for_window(window)
         context = LocalContextBudget(
@@ -385,6 +394,7 @@ def parse_local_config_update(
             api_key=api_key,
             native_tools_mode=mode,
             context=context,
+            thinking_enabled=thinking,
         ),
         "",
     )

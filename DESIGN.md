@@ -14,6 +14,7 @@ Codey is a **local developer and research tool**, not a consumer chat app. The U
 - **No decoration** — no emoji, no gradients for status, no “chat bubble” aesthetics, no brand-blue/purple accents.
 - **One persistent exception color** — the provider availability dot (`#4ec9b0`). Research graph hover may reuse the same token transiently inside the canvas; the rest of the chrome stays monochrome.
 - **English in the UI** — labels, buttons, placeholders, and system messages use English (`New chat`, `You`, `Codey`, `Allow`, …).
+  User messages, model answers, and returned thinking text retain their original language; the English rule applies to fixed application copy.
 
 When in doubt: remove color, remove chrome, remove copy.
 
@@ -87,6 +88,7 @@ use `--ok-dot` for hover states.
 | Role | Size | Weight | Font | Notes |
 |------|------|--------|------|-------|
 | Body | 13px | 400 | sans | `line-height: 1.6` globally |
+| Conversation prose | 14px | 400 | sans | `line-height: 1.7`; grows naturally with content |
 | Composer input | 13.5px | 400 | sans | Slightly larger for typing |
 | Group label | 10.5px | 400 | sans | `uppercase`, `letter-spacing: 1px`, `--muted` |
 | Message role label | 10.5px | 500 | sans | `YOU` / `CODEY`, uppercase |
@@ -194,13 +196,17 @@ Assistant reply in sans, --text.
 
 **Role label:** `YOU` / `CODEY` above each block.
 
-**Turn divider:**
+**Process disclosure:** one group per user request; continuation after approval uses the same group. Ordinary tools and optional thinking belong inside it. The final answer stays outside and expanded; errors and approval cards remain visible outside the disclosure.
 
 ```
-Turn 2 ───────────────────────────────
+▸ Worked · read 4 files · edited 2 files · ran 1 command
+
+Assistant reply remains fully visible here.
 ```
 
-Left label + 1px `--border` line extending right.
+Running copy is `Working · <current action>` or `Working · Waiting for reply`; terminal copy reflects the actual result (`Worked`, `Failed`, `Stopped`, `Paused`, `Waiting for approval`). Count completed, successful actions only, and changed files only for edits. Completed groups default to closed; explicit user disclosure choices survive updates. Step numbers are available inside the disclosure. Legacy records without run identifiers may retain their original Turn dividers.
+
+`Thinking` appears only for nonempty reasoning text returned separately by the model. It defaults to closed, retains its source language, and has a Copy action. Never infer thinking from wait time, parse it out of answer text, or scrape model websites to manufacture this section. The same rendering applies to every connection.
 
 **Tool lines:** `.tool-line` grid — dot · kind (7ch) · path · → · result. Errors: result text `--err-text` only.
 
@@ -265,6 +271,8 @@ File stats stay gray in the stream; weak tint only inside diff drawer.
 
 **Reading and copying:** prose, code, paths, commands, diff, and error details support native pointer selection and copying. Message/code Copy actions complement selection. New output follows only while the reader is near the end; otherwise a quiet `Back to latest` action is available. Chat switching restores reading position. Metadata refresh preserves unchanged message DOM and explicit disclosure state. Hidden chat DOM is cached for at most six recent chats; older chats retain their reading offset.
 
+Copy success uses a temporary gray checkmark or `Copied`, with an accessible name; no success accent. Markdown links allow HTTP(S) only, tables scroll horizontally when necessary, and fenced code preserves whitespace with a quiet language label. Model output is escaped, never rendered as arbitrary HTML.
+
 **Shell approval:**
 
 ```
@@ -296,7 +304,7 @@ Choose folder · Research                     ← composer-context (11.5px, --mu
 └─────────────────────────────────────────┘
 ```
 
-- Box: `--bg-2`, 1px `--border`, radius 10px; focus border `--text-dim` (not blue). Text input and the bottom model/action row share this frame so their task scope reads as one control.
+- Box: `--bg-2`, 1px `--border`, radius 10px; keep the same quiet border while typing. Text input and the bottom model/action row share this frame so their task scope reads as one control.
 - **Context row:** only `Choose folder` and `Research` stay in the quiet line above the input.
 - **Research token:** visible by default as text, not as a framed button. Hover changes text to `--text`; active Research uses brighter text only. No border, background, chip, underline, font-weight change, or accent color.
 - **Provider picker:** borderless; status dot + label + chevron. This is the only visible provider/model selector in the composer. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.

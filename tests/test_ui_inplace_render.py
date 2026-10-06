@@ -167,6 +167,160 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             if hasattr(cls, "state_patch"):
                 cls.state_patch.stop()
 
+    def test_process_history_and_explicit_disclosures_survive_reconciliation(self) -> None:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(self.httpd.launch_url(self.base_url))
+                page.wait_for_function("typeof window.appendMessageNode === 'function'")
+                result = page.evaluate("""() => {
+                    const sid = 'history-process';
+                    const messages = [
+                        {type:'user', text:'First request'},
+                        {type:'turn', n:1, runId:'old', reasoning:'* Inspect this.\\n* Keep the answer separate.'},
+                        {type:'tool', kind:'read', path:'one.py', runId:'old', toolKey:'old:1'},
+                        {type:'tool', kind:'read', path:'extra.py', runId:'old', toolKey:'old:2'},
+                        {type:'asst', text:'Finished first request.', runId:'old'},
+                        {type:'user', text:'Second request'},
+                        {type:'run_state', state:'running', runId:'new'},
+                        {type:'turn', n:1, runId:'new'},
+                        {type:'tool_pending', kind:'read', path:'two.py', runId:'new', toolKey:'new:1'},
+                    ];
+                    const snapshot = rows => ({active_id:sid, projects:[], sessions:[{
+                        id:sid, title:'History', provider:'local', messages:rows, terminalRuns:[]
+                    }]});
+                    window.CodeyUiState.apply(snapshot(messages)); window.renderChat(true);
+                    const chat = document.getElementById('chat');
+                    const first = chat.querySelector('.process-group');
+                    const historical = !first.open && first.querySelector('summary').textContent.startsWith('Worked');
+                    first.querySelector('summary').click();
+                    first.querySelector('.thinking > summary').click();
+                    first.querySelector('.tool-group-summary').click();
+                    const originalAnswer = chat.querySelector('.msg.asst .body');
+                    const originalRange = document.createRange(); originalRange.selectNodeContents(originalAnswer);
+                    getSelection().removeAllRanges(); getSelection().addRange(originalRange);
+                    const originalSelected = getSelection().toString();
+                    // Equal backend snapshots preserve message DOM and pointer selection.
+                    window.CodeyUiState.apply(snapshot(JSON.parse(JSON.stringify(messages)))); window.renderChat();
+                    const snapshotStable = originalAnswer === chat.querySelector('.msg.asst .body')
+                        && getSelection().toString() === originalSelected;
+                    // A genuinely changed snapshot rebuilds while keeping disclosure choices.
+                    window.CodeyUiState.apply(snapshot([...messages, {type:'info', text:'Reconciled'}])); window.renderChat();
+                    const rebuilt = chat.querySelector('.process-group');
+                    const kept = rebuilt.open && rebuilt.querySelector('.thinking').open
+                        && !rebuilt.querySelector('.tool-group').classList.contains('collapsed');
+                    const answer = chat.querySelector('.msg.asst .body');
+                    const range = document.createRange(); range.selectNodeContents(answer);
+                    getSelection().removeAllRanges(); getSelection().addRange(range);
+                    const selected = getSelection().toString();
+                    window.replaceSessionMessage(sid, m => m.toolKey === 'new:1', {type:'tool', kind:'read', path:'two.py',
+                        result:'3 lines', runId:'new', toolKey:'new:1'});
+                    return {historical, kept, snapshotStable, groups:chat.querySelectorAll('.process-group').length,
+                        selected, after:getSelection().toString(), sameAnswer:answer === chat.querySelector('.msg.asst .body'),
+                        reasoningList:!!rebuilt.querySelector('.thinking .md-list'),
+                        blankThinking:chat.querySelectorAll('.thinking').length};
+                }""")
+                self.assertTrue(result["historical"])
+                self.assertTrue(result["kept"])
+                self.assertTrue(result["snapshotStable"])
+                self.assertEqual(result["groups"], 2)
+                self.assertEqual(result["blankThinking"], 1)
+                self.assertTrue(result["sameAnswer"])
+                self.assertTrue(result["reasoningList"])
+                self.assertEqual(result["selected"], result["after"])
+            finally:
+                browser.close()
+
+    def test_process_group_keeps_final_answer_approval_and_errors_visible(self) -> None:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(self.httpd.launch_url(self.base_url))
+                page.wait_for_function("typeof window.appendMessageNode === 'function'")
+                result = page.evaluate("""() => {
+                    const chat = document.getElementById('chat'); chat.replaceChildren();
+                    const rows = [
+                        {type:'user', text:'Fix the issue'},
+                        {type:'turn', n:1, runId:'r', reasoning:'Inspect the source.'},
+                        {type:'tool', kind:'read', path:'a.py', result:'12 lines', runId:'r', toolKey:'r:1:0'},
+                        {type:'turn', n:2, runId:'r'},
+                        {type:'tool', kind:'read', path:'b.py', result:'20 lines', runId:'r', toolKey:'r:2:0'},
+                        {type:'tool', kind:'run', path:'', result:'exit 1', error:true, runId:'r', toolKey:'r:2:1'},
+                        {type:'shell_request', id:'approval1', command:'npm test', cwd:'.', runId:'r'},
+                        {type:'asst', text:'The final answer stays readable.', runId:'r'},
+                        {type:'run_state', state:'failed', runId:'r'},
+                    ];
+                    rows.forEach(m => window.appendMessageNode(chat, m));
+                    const group = chat.querySelector('.process-group');
+                    if (!group) throw new Error('No process group');
+                    const visible = node => !!node && !!node.getClientRects().length;
+                    const answer = chat.querySelector('.msg.asst .body');
+                    const approval = chat.querySelector('[data-approval-id]');
+                    const error = chat.querySelector('.tool-line.error');
+                    const thinking = group.querySelector('.thinking');
+                    const closed = !group.open;
+                    group.open = true;
+                    return {closed, answer:visible(answer), approval:visible(approval), error:visible(error),
+                        reasoning:thinking?.textContent, thinkingClosed:thinking && !thinking.open,
+                        toolGroups:group.querySelectorAll('.tool-group').length,
+                        summary:group.querySelector('summary').textContent,
+                        turnDividers:chat.querySelectorAll(':scope > .turn-divider').length};
+                }""")
+                self.assertTrue(result["closed"])
+                self.assertTrue(result["answer"])
+                self.assertTrue(result["approval"])
+                self.assertTrue(result["error"])
+                self.assertTrue(result["thinkingClosed"])
+                self.assertIn("Inspect the source.", result["reasoning"])
+                self.assertEqual(result["toolGroups"], 1)
+                self.assertIn("Failed", result["summary"])
+                self.assertEqual(result["turnDividers"], 0)
+            finally:
+                browser.close()
+
+    def test_markdown_tables_links_and_copy_feedback_are_safe_and_readable(self) -> None:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(self.httpd.launch_url(self.base_url))
+                page.wait_for_function("typeof window.appendMessageNode === 'function'")
+                result = page.evaluate("""async () => {
+                    const chat = document.getElementById('chat'); chat.replaceChildren();
+                    const text = '[Docs](https://example.com/docs) [bad](javascript:alert)\\n\\n'
+                        + '| Name | Result |\\n| --- | --- |\\n| 中文 | **OK** |\\n\\n'
+                        + '<img src=x onerror=alert(1)>\\n\\n```js\\nconst x = 1;\\n```'
+                        + '\\n\\n* Parent\\n    * First\\n    * Second';
+                    window.appendMessageNode(chat, {type:'asst', text});
+                    let copied = '';
+                    Object.defineProperty(navigator, 'clipboard', {configurable:true,
+                        value:{writeText:async value => {copied=value;}}});
+                    const button = chat.querySelector('.msg-copy'); button.click();
+                    await new Promise(resolve => setTimeout(resolve, 20));
+                    return {tables:chat.querySelectorAll('table').length, cells:chat.querySelectorAll('td').length,
+                        links:chat.querySelectorAll('a').length, href:chat.querySelector('a')?.getAttribute('href'),
+                        dangerous:chat.querySelectorAll('img, script, a[href^="javascript:"]').length,
+                        copied, label:button.getAttribute('aria-label'), check:!!button.querySelector('.copy-check'),
+                        codeCopy:!!chat.querySelector('.code-copy'),
+                        siblings:chat.querySelectorAll('.md-list > li > .md-list > li').length,
+                        extraNesting:chat.querySelectorAll('.md-list .md-list .md-list').length};
+                }""")
+                self.assertEqual(result["tables"], 1)
+                self.assertEqual(result["cells"], 2)
+                self.assertEqual(result["links"], 1)
+                self.assertEqual(result["href"], "https://example.com/docs")
+                self.assertEqual(result["dangerous"], 0)
+                self.assertIn("| Name |", result["copied"])
+                self.assertEqual(result["label"], "Copied")
+                self.assertTrue(result["check"])
+                self.assertTrue(result["codeCopy"])
+                self.assertEqual(result["siblings"], 2)
+                self.assertEqual(result["extraNesting"], 0)
+            finally:
+                browser.close()
+
     def test_in_place_tool_render_preserves_assistant_dom_and_selection_and_respects_scroll(self) -> None:
         diag: dict[str, object] = {}
         with sync_playwright() as pw:

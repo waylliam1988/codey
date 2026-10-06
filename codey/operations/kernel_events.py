@@ -54,7 +54,8 @@ def _emit_turn_event(on_event: Callable[[Any], None] | None, turn: int, reply: A
     from codey.runtime.observe.events import RunEvent
 
     display = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or "")
-    on_event(RunEvent.turn_started(turn, str(display)))
+    reasoning = getattr(reply, "reasoning", "")
+    on_event(RunEvent.turn_started(turn, str(display), reasoning=reasoning if isinstance(reasoning, str) else ""))
 
 
 def _event_call(session: TaskSession, call: ToolCall) -> ToolCall:

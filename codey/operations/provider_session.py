@@ -41,6 +41,15 @@ def normalize_provider_reply(provider: Any, reply: Any) -> Any:
     return normalize(reply) if callable(normalize) else reply
 
 
+def provider_reasoning(provider: Any, reply: str) -> str:
+    """Read optional display text only from a declared provider hook."""
+    for provider_type in type(provider).__mro__:
+        if "reasoning_for_reply" in provider_type.__dict__:
+            value = provider.reasoning_for_reply(reply)
+            return value.strip() if isinstance(value, str) else ""
+    return ""
+
+
 class ProviderAdapter:
     def __init__(self, provider: Any) -> None:
         self.provider = provider
@@ -56,6 +65,9 @@ class ProviderAdapter:
 
     def normalize_reply(self, reply: Any) -> Any:
         return normalize_provider_reply(self.provider, reply)
+
+    def reasoning_for_reply(self, reply: str) -> str:
+        return provider_reasoning(self.provider, reply)
 
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
         return getattr(self.provider, name)(*args, **kwargs)

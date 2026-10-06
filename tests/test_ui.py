@@ -166,7 +166,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_run_details_is_quiet_inline_entry_not_new_drawer(self) -> None:
         self.assertIn('<script src="/assets/run_details.js?v=__APP_VERSION__"></script>', HTML)
         self.assertIn("window.CodeyRunDetails.init({", HTML)
-        self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [action])", HTML)
+        self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [action])", UI_SOURCE)
         self.assertIn("function actionForMessage(message)", RUN_DETAILS_JS)
         self.assertIn("fetch('/api/run_details?'", RUN_DETAILS_JS)
         self.assertIn("panel.className = 'run-details';", RUN_DETAILS_JS)
@@ -323,7 +323,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         for status in ("wait_error", "output_read_error", "drain_timeout"):
             self.assertIn(status, RENDER_JS)
         self.assertIn("shellStatusVerb", RENDER_JS)
-        self.assertIn("window.CodeyRender.shellStatusVerb(m.shellStatus, m.approved)", HTML)
+        self.assertIn("window.CodeyRender.shellStatusVerb(m.shellStatus, m.approved)", UI_SOURCE)
         self.assertIn(": 'Failed'", RENDER_JS)
         # Real denial has no status: missing/empty status plus approved=false
         # must read as Denied, while only approved exit reads as Executed.
@@ -367,10 +367,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("eventKey: sseEventKey(data", block)
 
     def test_shell_approval_renders_risk_explanation(self) -> None:
-        self.assertIn("title.textContent = 'Approval required'", HTML)
-        self.assertIn("className = 'sc-note'", HTML)
-        self.assertIn("${riskTitle || 'Shell command'}", HTML)
-        self.assertIn("full sha256", HTML)
+        self.assertIn("title.textContent = 'Approval required'", UI_SOURCE)
+        self.assertIn("className = 'sc-note'", UI_SOURCE)
+        self.assertIn("${riskTitle || 'Shell command'}", UI_SOURCE)
+        self.assertIn("full sha256", UI_SOURCE)
         self.assertIn("riskLabel: data.risk_label", HTML)
         self.assertIn("riskTitle: data.risk_title", HTML)
         self.assertIn("riskDetail: data.risk_detail", HTML)
@@ -417,18 +417,18 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_status_rows_use_continue_and_retry_links(self) -> None:
         self.assertIn(".link-btn", STYLE_SOURCE)
-        self.assertIn("Continue", HTML)
-        self.assertIn("Retry", HTML)
-        self.assertIn("Resume", HTML)
+        self.assertIn("Continue", UI_SOURCE)
+        self.assertIn("Retry", UI_SOURCE)
+        self.assertIn("Resume", UI_SOURCE)
 
     def test_control_teaching_uses_plain_paused_status_row(self) -> None:
         self.assertIn("data.type === 'teach_request'", HTML)
-        self.assertIn("Click the control in the model page", HTML)
+        self.assertIn("Click the control in the model page", UI_SOURCE)
         self.assertIn("resumeTeaching", HTML)
         self.assertIn("/api/teach/resume", HTML)
-        teach_start = HTML.index("} else if (m.type === 'teach') {")
-        teach_end = HTML.index("} else if (m.type === 'err') {", teach_start)
-        teach_block = HTML[teach_start:teach_end]
+        teach_start = UI_SOURCE.index("} else if (m.type === 'teach') {")
+        teach_end = UI_SOURCE.index("} else if (m.type === 'err') {", teach_start)
+        teach_block = UI_SOURCE[teach_start:teach_end]
         self.assertNotIn("DOM", teach_block)
         self.assertNotIn("selector", teach_block.lower())
         self.assertNotIn("override", teach_block.lower())
@@ -443,8 +443,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("text: receiptSummary(data.receipt)", HTML)
         self.assertIn("const receiptSummary = window.CodeyRender.receiptSummary;", HTML)
         self.assertIn("const receiptChangedCount = window.CodeyRender.receiptChangedCount;", HTML)
-        self.assertIn("label: 'View diff'", HTML)
-        self.assertIn("onclick: () => openChangesDrawer(m.project)", HTML)
+        self.assertIn("label: 'View diff'", UI_SOURCE)
+        self.assertIn("onclick: () => openChangesDrawer(m.project)", UI_SOURCE)
         self.assertIn("let shownReceipt = false", HTML)
         self.assertIn("shownReceipt = true", HTML)
         self.assertIn("data.changed && !shownReceipt", HTML)
@@ -472,7 +472,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("...run, restoreable: false", HTML)
         self.assertIn('<script src="/assets/research_runs.js?v=__APP_VERSION__"></script>', HTML)
         self.assertIn("window.CodeyResearchRuns.init({", HTML)
-        self.assertIn("window.CodeyResearchDrawer.open(m.sessionId || activeId)", HTML)
+        self.assertIn("window.CodeyResearchDrawer.open(m.sessionId || activeId)", UI_SOURCE)
         self.assertNotIn("CodeyResearchDrawer", RESEARCH_RUNS_JS)
         self.assertNotIn("disposeGraph", RESEARCH_RUNS_JS)
         self.assertNotIn("coreNoteIdsForRun", RESEARCH_RUNS_JS)
@@ -624,13 +624,13 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (data.type === 'turn')", HTML)
         self.assertIn("if (data.type === 'tool')", HTML)
         self.assertIn("if (data.type === 'info')", HTML)
-        turn_start = HTML.index("if (data.type === 'turn')")
-        turn_end = HTML.index("if (data.type === 'tool_started')", turn_start)
-        turn_block = HTML[turn_start:turn_end]
+        turn_start = UI_SOURCE.index("if (data.type === 'turn')")
+        turn_end = UI_SOURCE.index("if (data.type === 'tool_started')", turn_start)
+        turn_block = UI_SOURCE[turn_start:turn_end]
         self.assertIn("note: (data.note || '').toString()", turn_block)
-        render_start = HTML.index("} else if (m.type === 'turn') {")
-        render_end = HTML.index("} else if (m.type === 'asst') {", render_start)
-        render_block = HTML[render_start:render_end]
+        render_start = UI_SOURCE.index("} else if (m.type === 'turn') {")
+        render_end = UI_SOURCE.index("} else if (m.type === 'asst') {", render_start)
+        render_block = UI_SOURCE[render_start:render_end]
         self.assertIn("const note = (m.note || '').toString().trim();", render_block)
         self.assertIn("label.textContent = `Turn ${m.n}${note ? ` ${note}` : ''}`;", render_block)
         self.assertNotIn("const turnMatch = line.match", HTML)
@@ -646,14 +646,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
             RENDER_JS,
         )
 
-        pending_render_start = HTML.index("} else if (m.type === 'tool_pending') {")
-        pending_render_end = HTML.index("} else if (m.type === 'done') {", pending_render_start)
-        pending_render_block = HTML[pending_render_start:pending_render_end]
+        pending_render_start = UI_SOURCE.index("} else if (m.type === 'tool_pending') {")
+        pending_render_end = UI_SOURCE.index("} else if (m.type === 'done') {", pending_render_start)
+        pending_render_block = UI_SOURCE[pending_render_start:pending_render_end]
         self.assertIn("chat.appendChild(standaloneToolEl(m));", pending_render_block)
 
-        started_start = HTML.index("if (data.type === 'tool_started')")
-        started_end = HTML.index("if (data.type === 'tool')", started_start)
-        started_block = HTML[started_start:started_end]
+        started_start = UI_SOURCE.index("if (data.type === 'tool_started')")
+        started_end = UI_SOURCE.index("if (data.type === 'tool')", started_start)
+        started_block = UI_SOURCE[started_start:started_end]
         self.assertIn("const rawToolId = (data.tool_id || '').toString();", started_block)
         self.assertIn("const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';", started_block)
         self.assertIn("s._toolKeys.has(toolKey)", started_block)
@@ -661,9 +661,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("pending: true", started_block)
         self.assertIn("activity: (data.activity || '').toString().slice(0, 200)", started_block)
 
-        final_start = HTML.index("if (data.type === 'tool')", started_end)
-        final_end = HTML.index("if (data.type === 'info')", final_start)
-        final_block = HTML[final_start:final_end]
+        final_start = UI_SOURCE.index("if (data.type === 'tool')", started_end)
+        final_end = UI_SOURCE.index("if (data.type === 'info')", final_start)
+        final_block = UI_SOURCE[final_start:final_end]
         self.assertIn("const rawToolId = (data.tool_id || '').toString();", final_block)
         self.assertIn("const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';", final_block)
         self.assertIn("const toolStatus = (data.status || (data.ok === false ? 'error' : 'ok')).toString();", final_block)
@@ -673,9 +673,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("item => item.type === 'tool_pending' && item.toolKey === toolKey", final_block)
         self.assertIn("addToSession(sid, message);", final_block)
 
-        replace_start = HTML.index("function replaceSessionMessage")
-        replace_end = HTML.index("function markTerminalRun", replace_start)
-        replace_block = HTML[replace_start:replace_end]
+        replace_start = UI_SOURCE.index("function replaceSessionMessage")
+        replace_end = UI_SOURCE.index("function markTerminalRun", replace_start)
+        replace_block = UI_SOURCE[replace_start:replace_end]
         self.assertIn("const index = s.messages.findIndex(predicate);", replace_block)
         self.assertIn("s.messages[index] = message;", replace_block)
         self.assertIn("renderChat(); scrollChat();", replace_block)
@@ -689,14 +689,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (r.status === 409 || !r.ok) {", COMPOSER_JS)
         self.assertIn("await deps.acceptRunResponse(r, sessionId)", COMPOSER_JS)
         self.assertIn("} catch {\n    deps.addSendError(sessionId, '', '', text);", COMPOSER_JS)
-        self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [", HTML)
+        self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [", UI_SOURCE)
         self.assertNotIn("Switch provider", HTML)
         self.assertNotIn("Switch model", HTML)
         self.assertNotIn('title="Provider"', HTML)
         self.assertIn('title="Model"', HTML)
-        err_start = HTML.index("} else if (m.type === 'err') {")
-        err_end = HTML.index("} else if (m.type === 'info') {", err_start)
-        err_block = HTML[err_start:err_end]
+        err_start = UI_SOURCE.index("} else if (m.type === 'err') {")
+        err_end = UI_SOURCE.index("} else if (m.type === 'info') {", err_start)
+        err_block = UI_SOURCE[err_start:err_end]
         self.assertIn("Retry", err_block)
         self.assertNotIn("Continue", err_block)
         self.assertNotIn("alert('Failed to start:", HTML)
@@ -714,7 +714,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_routine_failures_do_not_use_native_alerts(self) -> None:
         self.assertNotIn("alert(", HTML)
         self.assertIn("setStatus('Could not add project', 'err')", HTML)
-        self.assertIn("Approval required", HTML)
+        self.assertIn("Approval required", UI_SOURCE)
         self.assertIn("Could not send approval", HTML)
         self.assertIn("function showCommandApprovalError", HTML)
         self.assertNotIn("Failed to pick folder", HTML)
@@ -725,12 +725,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("data.type === 'review'", HTML)
         self.assertIn(
             "{ type: 'review', text: data.text, sessionId: sid, runId, eventKey: sseEventKey(data) }",
-            HTML,
+            UI_SOURCE,
         )
-        self.assertIn("statusRow('Review'", HTML)
-        review_start = HTML.index("} else if (m.type === 'review') {")
-        review_end = HTML.index("} else if (m.type === 'changes') {", review_start)
-        review_block = HTML[review_start:review_end]
+        self.assertIn("statusRow('Review'", UI_SOURCE)
+        review_start = UI_SOURCE.index("} else if (m.type === 'review') {")
+        review_end = UI_SOURCE.index("} else if (m.type === 'changes') {", review_start)
+        review_block = UI_SOURCE[review_start:review_end]
         self.assertNotIn("CodeyRunDetails", review_block)
         self.assertNotIn("Review mode", HTML)
 
@@ -835,8 +835,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".msg:hover .msg-copy", STYLE_SOURCE)
         self.assertIn(".msg:focus-within .msg-copy", STYLE_SOURCE)
         self.assertIn("aria-label', 'Copy message'", RENDER_JS)
-        self.assertIn("addMessageCopyButton(div, messageCopyText(m))", HTML)
-        self.assertIn("copyText: text", HTML)
+        self.assertIn("addMessageCopyButton(div, messageCopyText(m))", UI_SOURCE)
+        self.assertIn("copyText: text", UI_SOURCE)
         self.assertIn('<script src="/assets/render.js?v=__APP_VERSION__"></script>', HTML)
         self.assertIn("window.CodeyRender = {", RENDER_JS)
         self.assertIn("const copyText = window.CodeyRender.copyText;", HTML)
@@ -894,12 +894,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_assistant_replies_render_minimal_markdown(self) -> None:
         self.assertIn("function renderMarkdown(container, text)", RENDER_JS)
         self.assertIn("function renderInlineMd(text)", RENDER_JS)
-        self.assertIn("const escaped = escapeHtml(text);", RENDER_JS)
+        self.assertIn("escapeHtml(text.slice(last, m.index))", RENDER_JS)
         self.assertIn("<strong>$1</strong>", RENDER_JS)
-        self.assertIn("body.className = 'body md'", HTML)
+        self.assertIn("body.className = 'body md'", UI_SOURCE)
         self.assertNotIn("body.className = 'body md collapsed'", HTML)
-        self.assertIn("toggle.className = 'toggle';", HTML)
-        self.assertIn("window.CodeyRender.renderAssistantBody(body", HTML)
+        self.assertIn("toggle.className = 'toggle';", UI_SOURCE)
+        self.assertIn("window.CodeyRender.renderAssistantBody(body", UI_SOURCE)
         self.assertIn("function renderMarkdownChunked(container, text", RENDER_JS)
         self.assertNotIn("body.textContent = m.text;", UI_SOURCE)
         self.assertIn("/^#{1,6}\\s+/.test(line)", RENDER_JS)
@@ -909,7 +909,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".md-ic", STYLE_SOURCE)
         self.assertIn(".md-list", STYLE_SOURCE)
         self.assertIn(".md-list .md-list", STYLE_SOURCE)
-        self.assertIn("const escaped = escapeHtml(text);", RENDER_JS)
+        self.assertIn("escapeHtml(text.slice(last, m.index))", RENDER_JS)
         self.assertIn("el.className = 'md-quote';", RENDER_JS)
         self.assertIn(".md-quote", STYLE_SOURCE)
         self.assertIn("let listStack = [];", RENDER_JS)
@@ -938,9 +938,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_inline_code_spans_are_not_bolded(self) -> None:
         self.assertIn("function applyBold(segment)", RENDER_JS)
-        self.assertIn("out += applyBold(escaped.slice(last, m.index));", RENDER_JS)
-        self.assertIn("${m[1]}</code>", RENDER_JS)
-        self.assertIn("out += applyBold(escaped.slice(last));", RENDER_JS)
+        self.assertIn("out += applyBold(escapeHtml(text.slice(last, m.index)));", RENDER_JS)
+        self.assertIn("${escapeHtml(m[1])}</code>", RENDER_JS)
+        self.assertIn("out += applyBold(escapeHtml(text.slice(last)));", RENDER_JS)
 
     def test_markdown_stays_monochrome_without_syntax_highlighting(self) -> None:
         md_css_start = APP_CSS.index("assistant markdown")
@@ -952,7 +952,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_code_blocks_have_quiet_copy_button(self) -> None:
         self.assertIn("function addCodeCopyButton(pre, text)", RENDER_JS)
-        self.assertIn("function appendCodeBlock(container, code)", RENDER_JS)
+        self.assertIn("function appendCodeBlock(container, code, language", RENDER_JS)
         self.assertIn("className = 'code-copy'", RENDER_JS)
         self.assertIn("aria-label', 'Copy code'", RENDER_JS)
         self.assertIn("el.textContent = code", RENDER_JS)
@@ -1281,7 +1281,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         # count labels pluralize correctly, incl. the irregular "searches".
         self.assertIn("search: ['search', 'searches'],", RENDER_JS)
         self.assertIn("read: ['file', 'files'],", RENDER_JS)
-        self.assertNotIn("noun + (n === 1 ? '' : 's')", UI_SOURCE)
+        self.assertNotIn("noun + (n === 1 ? '' : 's')", RENDER_JS)
 
         # edit / run / shell are deliberately absent from the foldable set.
         set_line = "const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);"
@@ -1291,9 +1291,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
         # the tool branch folds read-only, non-error rows and keeps the rest as
         # standalone tool lines (edit/run/shell/error stay visible).
-        tool_start = HTML.index("} else if (m.type === 'tool') {")
-        tool_end = HTML.index("} else if (m.type === 'done') {", tool_start)
-        tool_block = HTML[tool_start:tool_end]
+        tool_start = UI_SOURCE.index("} else if (m.type === 'tool') {")
+        tool_end = UI_SOURCE.index("} else if (m.type === 'done') {", tool_start)
+        tool_block = UI_SOURCE[tool_start:tool_end]
         self.assertIn("if (FOLDABLE_TOOL_KINDS.has(m.kind) && !m.error) {", tool_block)
         self.assertIn("appendOrFoldTool(chat, m);", tool_block)
         self.assertIn("chat.appendChild(standaloneToolEl(m));", tool_block)

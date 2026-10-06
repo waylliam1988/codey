@@ -31,7 +31,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
+from codey.operations.provider_session import provider_reasoning
 from codey.operations.result import ModeOutcome
+from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 
 AUTO_ACTION_KINDS = ("research", "project", "planning_readonly", "review")
@@ -221,6 +223,9 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
     # existing error settlement instead of re-issuing the just-abandoned slow
     # request through a baseline runner.
     raw = frame.provider.send(prompt)
+    reasoning = provider_reasoning(frame.provider, raw)
+    if reasoning:
+        hooks.on_event(RunEvent("reasoning", turn=1, reasoning=reasoning))
     decision = parse_auto_first_output(raw)
     if decision.kind == AUTO_DIRECT_ANSWER_KIND:
         return _finish_auto_answer(frame, work, hooks, deps, state, prompt, decision.answer)

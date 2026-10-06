@@ -172,6 +172,7 @@ def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
         api_key=probe_api_key,
         native_tools_mode=parsed.native_tools_mode,
         context=parsed.context,
+        thinking_enabled=parsed.thinking_enabled,
     ))
     # One probe only: branching on a single detail result keeps the verdict
     # consistent even if the endpoint flaps between two requests.
@@ -192,6 +193,7 @@ def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
             api_key=previous.api_key if same_target and not parsed.api_key else parsed.api_key,
             native_tools_mode=parsed.native_tools_mode,
             context=parsed.context,
+            thinking_enabled=parsed.thinking_enabled,
         )
         save_local_config(saved)
     except (OSError, ValueError) as exc:

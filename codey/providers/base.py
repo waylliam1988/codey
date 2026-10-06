@@ -17,6 +17,7 @@ class AssistantTurn:
     text: str = ""
     tool_calls: tuple[ProviderToolCall, ...] = ()
     raw: Mapping[str, object] = field(default_factory=dict)
+    reasoning: str = ""
 
 
 class ChatProvider(Protocol):

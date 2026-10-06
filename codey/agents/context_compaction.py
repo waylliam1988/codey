@@ -25,6 +25,9 @@ def estimate_message_tokens(message: Mapping[str, object]) -> int:
     content = message.get("content")
     text = content if isinstance(content, str) else str(content or "")
     total = estimate_tokens(f"{role}\n{text}")
+    reasoning = message.get("reasoning_content")
+    if isinstance(reasoning, str) and reasoning:
+        total += estimate_tokens(reasoning)
     tool_calls = message.get("tool_calls")
     if isinstance(tool_calls, list):
         import json as _json
