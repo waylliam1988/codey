@@ -42,9 +42,17 @@ Always use CSS variables from `:root`. Do not hard-code one-off hex values in co
 | Token        | Value     | Use |
 |-------------|-----------|-----|
 | `--text`    | `#e6e6e6` | Primary body |
-| `--text-dim`| `#a0a0a0` | Secondary body, tool output |
+| `--text-dim`| `#a0a0a0` | Secondary body, tool output, readable explanations and enabled secondary actions |
 | `--muted`   | `#6b6b6b` | Labels, group titles, placeholders |
 | `--faint`   | `#4a4a4a` | Separators (`·`, `→`), disabled hints |
+
+Necessary small explanations and enabled secondary actions remain readable:
+composer context actions and thinking effort, Settings explanations, provider
+probe explanations, and sidebar empty/search-empty states use `--text-dim`.
+These ordinary small-text roles target at least 4.5:1 contrast against their
+actual surface. Keep hierarchy through size, placement, spacing, and weight;
+group labels, placeholders, separators, and disabled hints retain their
+existing muted/faint roles. Do not globally brighten the palette.
 
 ### Semantic (minimal)
 
@@ -163,6 +171,7 @@ Uppercase, muted, no background. Never use colored section headers.
 - **Secondary actions:** revealed on hover or keyboard focus; visible on devices without hover. `⋯` opens a context menu. Do not show permanent `+` / `×` icon clusters.
 - `New chat`, `Add project`, and magnifier + `Search` share a 34px row height and 1px gaps. Search opens a same-height input in place and filters chat titles and project names locally. The input has a transparent background, no visible border or focus ring, and its text aligns with the Search label. Escape clears and closes search; an empty search also closes on blur. Search temporarily expands matching groups without changing saved project expansion.
 - Project names match independently of their chats: a matching empty project remains visible with `No chats`. Search shows only groups with matches, or a single `No matches` state when nothing matches. Temporary expansion uses an expanded chevron and returns to the saved state when search closes.
+- Sidebar empty states (`No projects`, `No chats`, `No matches`) use 12px `--text-dim`; group labels retain `--muted`.
 - A nonempty search shows a small SVG clear icon at the input's right edge, using `--text-dim` and `--text` on hover, with no fill, border, or background. Replace the browser's native colored clear control. Its accessible name is `Clear search`; pointer click or keyboard activation clears the query and returns focus to the open input. Empty or closed search hides the icon.
 - A monochrome gear + `Settings` row sits at the sidebar bottom, sharing the sidebar action alignment and 34px height. The topbar more menu and `Ctrl+,` open the same settings dialog when the sidebar is collapsed.
 - The sidebar's existing right divider has a 6px transparent drag target, with a `col-resize` cursor and a single gray line on hover/focus. It is a keyboard-focusable vertical separator named `Resize sidebar`; Left/Right adjust by 10px, Home/End reach the available bounds, and double-click restores 260px. Pointer capture keeps dragging stable outside the divider. Escape, pointer cancellation, or window blur cancels an active drag. Disable width animation and text selection only during the drag; release immediately restores ordinary selection. Hiding the sidebar hides the separator.
@@ -307,7 +316,7 @@ No marketing copy, no emoji.
 ### 5.6 Composer
 
 ```
-Choose folder · Research                     ← composer-context (11.5px, --muted)
+Choose folder · Research                     ← enabled context actions (11.5px, --text-dim)
 ┌─────────────────────────────────────────┐
 │ Send a message to Codey…                │
 │                                         │
@@ -317,13 +326,14 @@ Choose folder · Research                     ← composer-context (11.5px, --mu
 
 - Composer wrapper: separate from chat with spacing, without a full-width top divider. Keep the topbar's existing subtle bottom divider.
 - Box: `--bg-2`, 1px `--border`, radius 10px; keep the same quiet border while typing. Text input and the bottom model/action row share this frame so their task scope reads as one control.
-- **Context row:** only `Choose folder` and `Research` stay in the quiet line above the input.
+- **Context row:** only `Choose folder` and `Research` stay in the quiet line above the input. Enabled actions use `--text-dim`; the separator stays `--faint`. Disabled inactive actions retain `--muted` and 0.55 opacity; active Research retains `--text`, including when disabled at 0.55 opacity.
 - **Research token:** visible by default as text, not as a framed button. Hover changes text to `--text`; active Research uses brighter text only. No border, background, chip, underline, font-weight change, or accent color.
 - **Provider picker:** borderless; status dot + label + chevron. This is the only visible provider/model selector in the composer. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.
 - **Send / Stop:** 34px square **icon buttons** (`.icon-btn`) with 16px icons, transparent until hover; enabled Send uses `--text` and the original paper-plane outline. Send and Stop occupy one fixed position. No filled accent send button.
 - **Model menu:** directly show the short catalog without a search input. Opening focuses the current model. Arrow keys navigate, Enter selects, Escape closes and returns focus. Do not invent unsupported model/effort controls. Menus have a viewport-bounded scroll area.
 - The local connection shows its actual model name, with an optional display name and the complete request ID available in Settings. The short catalog lists returned local model IDs and existing website names; never invent a website's selected model version. The model menu contains only models; connection configuration belongs in Settings.
 - A separate borderless effort selector sits beside the model name: `Gemma4 12B ⌄ Low ⌄`. The selector disappears for unsupported connections and website models. Accessible copy names `Thinking effort`; visible labels are `Off / Mini / Low / Med / High / Max`, filtered by verified capabilities. The two borderless selectors sit 2px apart, without a separator. The model menu's right edge aligns with the effort selector's chevron and adjusts to the current labels; without an effort selector it uses a 160px width. The effort menu uses a 160px width. Both menus are bounded by the viewport. Long model labels use ellipsis and retain their complete accessible name. Model and effort triggers and menu rows have no native hover tooltips. Each selector has its own menu, keyboard focus, and dismissal. Opening one closes the other.
+- The enabled effort trigger uses `--text-dim`, becoming `--text` on hover or while its menu is open; disabled effort retains `--muted` and 0.55 opacity. A provider probe explanation uses 11.5px `--text-dim` in the existing model menu.
 - Thinking controls require verified connection/model metadata. Active KoboldCpp Jinja and a matching `enable_thinking` template support Off/High; verified versions 1.112.2–1.117.x additionally support minimal/low/medium budgets. High uses the native unrestricted thinking budget within the total output limit. Mini/Med map to minimal/medium. Show the concrete initial level rather than Default or On. Every non-Off choice explicitly enables thinking; do not fabricate distinct Max behavior. Returned reasoning and configurable thinking are independent capabilities.
 - Local model and thinking choices belong to the chat, persist with it, and are captured at admission for the next request. Connection address, credentials, context limit, tool calling, and default model live in Settings. Pending command continuation retains the admitted selection. A changed connection cannot silently carry a stale chat selection or credential to another endpoint.
 - `Enter` hint: immediately before Send/Stop with a 6px gap, visible on composer focus/hover only, `--faint`. `Enter` sends; `Shift+Enter` inserts a newline.
@@ -372,9 +382,10 @@ Research is also **session-level**. It lives in the composer context row, never 
 
 - Use one viewport-bounded dark dialog, about 560px wide, with a `Settings` heading, quiet close icon, and labeled connection fields. Native dialog modality keeps keyboard focus inside; Escape/backdrop dismissal returns focus to the trigger. No second right workbench drawer.
 - `Address`, `Default model`, and `API key` form the basic connection view. A saved key stays masked and is never returned to the browser. `Connect` becomes `Save changes` for an existing connection; rejected saves retain the form and show one error line.
+- Connection and Advanced explanations use 11.5px `--text-dim`. Loading failures and validation errors retain `--err-text`; section labels, optional metadata, and placeholders retain `--muted`.
 - Initial connection loading disables the form while leaving dismissal available. Failed loading replaces `Loading connection…` with `Could not load connection` and an adjacent gray `Retry` text action. Retry reloads inside the same dialog, prevents duplicate loads, and ignores replies from closed dialogs. Successful keyboard retry moves focus to `Address` if the user has not moved focus elsewhere. Save failures retain edits and use the existing error line; they do not offer a load Retry that could replace those edits.
 - `Advanced` defaults closed and contains optional `Display name`, `Context limit`, and `Tool calling`. Context presets live in one dark listbox menu with exact token counts and `Custom…`; a custom input appears only when selected. The limit must match the model server's loaded context, not imply that Codey enlarges it.
-- Tool calling offers `Automatic / Native / Compatibility`. Compatibility changes the request protocol; shell approval remains in force. Inputs, select triggers, and listbox options use existing tokens, 34px heights, and 6px radii; no browser-default white buttons. Pointer focus retains the quiet border; keyboard focus uses a restrained gray outline.
+- Tool calling offers `Automatic / Native / Compatibility`. Compatibility changes the request protocol; shell approval remains in force. Inputs, select triggers, and listbox options use existing tokens, 34px heights, and 6px radii; no browser-default white buttons. Text inputs retain their single quiet border during pointer and keyboard focus, without an extra outline or focus shadow; the caret and text selection communicate editing. Select triggers and other buttons retain restrained gray keyboard focus outlines.
 
 ---
 

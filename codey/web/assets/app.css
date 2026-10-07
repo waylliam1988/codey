@@ -143,7 +143,7 @@
   .project-children { padding-left: 14px; }
   .project-empty {
     margin: 1px 0 4px 22px;
-    color: var(--faint); font-size: 12px;
+    color: var(--text-dim); font-size: 12px;
     padding: 4px 8px;
   }
 
@@ -670,6 +670,7 @@
     font: inherit;
     cursor: pointer;
   }
+  .ctx-token:not(:disabled) { color: var(--text-dim); }
   .ctx-token:hover:not(:disabled) { color: var(--text); }
   .ctx-token.active {
     color: var(--text);
@@ -783,14 +784,15 @@
   .provider-probe-warning {
     padding: 6px 10px 4px;
     font-size: 11.5px;
-    color: var(--muted);
+    color: var(--text-dim);
   }
   .provider-probe-warning[hidden] { display: none; }
 
   .sidebar-footer { flex-shrink: 0; padding: 6px; }
   .sidebar-footer .sidebar-row { width: 100%; height: 34px; }
   .effort-chooser { position: relative; display: inline-flex; flex-shrink: 0; margin-left: -4px; }
-  .effort-button { color: var(--muted); padding: 4px 6px; gap: 5px; }
+  .effort-button { color: var(--text-dim); padding: 4px 6px; gap: 5px; }
+  .effort-button:disabled { color: var(--muted); }
   .provider-chooser { max-width: calc(100% - 180px); }
   .provider-button .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .provider-item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -815,7 +817,7 @@
   .settings-body { padding: 8px 20px 18px; }
   .settings-section-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
   .settings-body h3 { font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
-  .settings-hint { font-size: 11.5px; line-height: 1.6; color: var(--muted); margin: 4px 0 12px; }
+  .settings-hint { font-size: 11.5px; line-height: 1.6; color: var(--text-dim); margin: 4px 0 12px; }
   .settings-load-status { display: flex; align-items: baseline; gap: 10px; }
   .settings-load-status .load-error { color: var(--err-text); }
   .settings-load-status .link-btn { flex-shrink: 0; font-size: 11.5px; }
@@ -827,7 +829,8 @@
     outline: none; min-width: 0;
   }
   .settings-dialog input::placeholder { color: var(--muted); }
-  .settings-dialog input:focus-visible, .settings-dialog select:focus-visible { outline: 1px solid var(--muted); outline-offset: 2px; }
+  .settings-dialog input:focus-visible { outline: none; box-shadow: none; }
+  .settings-dialog select:focus-visible { outline: 1px solid var(--muted); outline-offset: 2px; }
   .settings-dialog option { background: var(--panel); color: var(--text); }
   .settings-select-wrap { position: relative; min-width: 0; }
   .settings-select {
