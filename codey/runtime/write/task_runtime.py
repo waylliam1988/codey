@@ -83,6 +83,7 @@ class TaskRuntime:
                 turn_budget=_turn_budget(request),
                 max_repair_rounds=1,
                 task_kind=resolve_task_kind(request),
+                model_selection=request.model_selection or None,
             )
             if accepted is None:
                 if self.on_unstarted_failure is not None:

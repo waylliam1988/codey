@@ -341,10 +341,9 @@ class LocalProbeReasonTests(unittest.TestCase):
         self.assertEqual(reason, "auth")
 
     def test_malformed_reply_raises_instead_of_empty(self) -> None:
-        from codey.providers import local_openai as local_module
 
         with self.assertRaises(RuntimeError):
-            local_module._extract_reply({"choices": []})
+            __import__("codey.providers.api_chat", fromlist=["_extract_reply"])._extract_reply({"choices": []})
 
     def test_non_json_models_is_not_an_endpoint(self) -> None:
         from codey.providers import local_discovery as local_module
@@ -402,7 +401,7 @@ class LocalProbeReasonTests(unittest.TestCase):
     def test_save_probes_models_exactly_once(self) -> None:
         import json as json_module
 
-        from codey.providers import local_openai as local_module
+        from codey.providers import local_discovery as local_module
 
         response = mock.Mock()
         response.read.return_value = json_module.dumps(

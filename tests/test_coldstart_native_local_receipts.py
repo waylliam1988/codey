@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from codey.providers.base import tools_from_specs
+
 
 def test_native_done_exposed_as_function() -> None:
     from codey.toolchain.openai_tools import native_tool_names, render_openai_tools
@@ -26,14 +28,14 @@ def test_native_codec_system_prompt_is_native_only() -> None:
     policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
     session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
     snapshot = build_turn_snapshot(session, native=True)
-    assert snapshot.native_tools
+    assert tools_from_specs(snapshot.frozen_specs)
     # Native contract is function-call wording, not JSON-object wording.
     import json as _json
 
     from codey.toolchain.tool_spec import thaw_schema_value
 
-    text = _json.dumps([thaw_schema_value(t) for t in snapshot.native_tools])
-    assert "function" in text.lower()
+    text = _json.dumps([{"name":t.name,"description":t.description,"parameters":thaw_schema_value(t.parameters)} for t in tools_from_specs(snapshot.frozen_specs)])
+    assert "parameters" in text.lower()
 
 
 def test_native_codec_hash_is_native_not_json() -> None:
@@ -47,7 +49,7 @@ def test_native_codec_hash_is_native_not_json() -> None:
     session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
     snapshot = build_turn_snapshot(session, native=True)
     assert snapshot.contract_text
-    assert snapshot.native_tools
+    assert tools_from_specs(snapshot.frozen_specs)
 
 
 def test_native_done_parses_and_respects_permissions() -> None:
@@ -270,7 +272,7 @@ def test_mutation_queue_batches_different_files_and_serializes_side_effects(tmp_
 
 def test_tool_turn_results_sort_back_to_tool_index(tmp_path: Path) -> None:
     from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_transport import _native_tool_messages
+    from codey.operations.kernel_transport import _native_tool_results
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
@@ -288,5 +290,5 @@ def test_tool_turn_results_sort_back_to_tool_index(tmp_path: Path) -> None:
         run_id="r1", turn=1, project_path=tmp_path,
     )
     assert [r.call.call_id for r in results] == ["c0", "c1"]
-    messages = _native_tool_messages(results, session)
-    assert [m["tool_call_id"] for m in messages] == ["c0", "c1"]
+    messages = _native_tool_results(results, session)
+    assert [m.call_id for m in messages] == ["c0", "c1"]

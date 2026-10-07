@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.runtime.core import cancellation
 from codey.runtime.core.output_capture import BoundedByteCapture
 
@@ -509,9 +510,9 @@ class TruncationPropagationTests(unittest.TestCase):
 
 class LocalPrepareRequestTests(unittest.TestCase):
     def _provider(self):
-        from codey.providers.local_openai import LocalOpenAIProvider
+        from codey.providers.api_provider import ApiProvider
 
-        return LocalOpenAIProvider(
+        return ApiProvider(
             base_url="http://127.0.0.1:9/v1",
             model="test",
             context_window_tokens=200,
@@ -543,13 +544,10 @@ class LocalPrepareRequestTests(unittest.TestCase):
             "tool_calls": [{"id": "call_1"}, {"id": "call_2"}],
         })
         before = [dict(message) for message in provider._messages]
-        tools = [{
-            "type": "function",
-            "function": {"name": "read", "description": "x" * 3000},
-        }]
+        tools = [ProviderToolDefinition("read", "x" * 3000, {"type": "object"})]
         results = [
-            {"tool_call_id": "call_1", "content": "y" * 3000},
-            {"tool_call_id": "call_2", "content": "z" * 3000},
+            ProviderToolResult("call_1", "y" * 3000),
+            ProviderToolResult("call_2", "z" * 3000),
         ]
         with mock.patch.object(
             provider, "_post_chat",

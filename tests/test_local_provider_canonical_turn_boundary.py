@@ -6,7 +6,8 @@ import pytest
 
 from codey.operations.kernel_protocol import normalize_turn
 from codey.policies.task_policy import TaskPolicy
-from codey.providers.local_openai import LocalOpenAIProvider
+from codey.providers.api_provider import ApiProvider
+from codey.providers.base import TurnFinish
 
 
 def _reply(monkeypatch, *, content, calls=None, finish="stop"):
@@ -14,10 +15,10 @@ def _reply(monkeypatch, *, content, calls=None, finish="stop"):
     if calls is not None:
         message["tool_calls"] = calls
     monkeypatch.setattr(
-        LocalOpenAIProvider, "_post_chat",
+        ApiProvider, "_post_chat",
         lambda *args, **kwargs: {"choices": [{"finish_reason": finish, "message": message}]},
     )
-    return LocalOpenAIProvider("http://127.0.0.1:9/v1", "gemma")
+    return ApiProvider("http://127.0.0.1:9/v1", "gemma")
 
 
 def test_native_text_frame_becomes_receiptable_call_and_canonical_history(monkeypatch):
@@ -35,7 +36,7 @@ def test_truncated_complete_looking_frame_never_becomes_call(monkeypatch):
     provider = _reply(monkeypatch, content='<|tool_call>call:tool:done{summary:"finished"}<tool_call|>', finish="length")
     turn = provider.send_turn("finish", [])
     assert turn.tool_calls == ()
-    assert turn.raw["continuable_length"] is True
+    assert turn.finish is TurnFinish.OUTPUT_LIMIT
     assert "tool_calls" not in provider._messages[-1]
 
 

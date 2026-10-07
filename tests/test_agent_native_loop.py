@@ -4,7 +4,7 @@ from pathlib import Path
 
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
-from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 from codey.runtime.core.models import ToolCall
 
 
@@ -29,12 +29,15 @@ class FakeStructuredProvider:
 
     def send_tool_results(self, results, tools=None, timeout=None) -> AssistantTurn:
         self.tool_payloads.append(tools)
-        assert results and results[0]["tool_call_id"]
-        assert results[0]["role"] == "tool"
+        assert results and results[0].call_id
+
         return self._turns.pop(0)
 
     def close(self) -> None:
         return None
+
+    def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        return self.send_tool_results(results, [])
 
 
 def _policy():
@@ -62,8 +65,8 @@ def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
     policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
     session = TaskSession(policy=policy, task_kind="project", project=str(tmp_path), max_turns=5)
     snapshot = build_turn_snapshot(session, native=True)
-    assert snapshot.native_tools
-    names = {str(t.get("function", {}).get("name") or t.get("name") or "") for t in snapshot.native_tools}
+    assert tools_from_specs(snapshot.frozen_specs)
+    names = {t.name for t in tools_from_specs(snapshot.frozen_specs)}
     assert "read_file" in names, f"real snapshot must contain read_file: {names}"
     assert "done" in names, f"real snapshot must contain done: {names}"
 

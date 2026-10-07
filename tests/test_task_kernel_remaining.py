@@ -290,6 +290,9 @@ class WebOnlyLoopTests(unittest.TestCase):
                 self.tool_results_sent.append(messages)
                 return turns.pop(0)
 
+            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+                return self.send_tool_results(results, [])
+
         session = TaskSession(policy=policy, task_kind="hybrid", project="demo", max_turns=8)
         outcome = run_task_kernel(
             session,

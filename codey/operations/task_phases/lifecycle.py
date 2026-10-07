@@ -194,6 +194,10 @@ def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> 
         mutations = getattr(deps, "runtime_mutations", None)
         if mutations is None:
             raise RuntimeOperationTransitionError("runtime mutation line is missing")
+        receipt = event.get("receipt")
+        proof = receipt.get("completion_proof") if isinstance(receipt, dict) else None
+        proof = proof if isinstance(proof, dict) else {}
+        delivery = event.get("final_delivery")
         work.operation = mutations.mark_terminal(
             work.operation.session_id,
             work.operation.run_id,
@@ -202,6 +206,9 @@ def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> 
             turns=terminal_turns(work, turns=event.get("turns"), max_turns=max_turns),
             max_turns=max_turns,
             provider=str(event.get("provider") or ""),
+            final_delivery=delivery if isinstance(delivery, str) else None,
+            proof_ref=str(proof.get("proof_id") or ""),
+            proof_status=str(proof.get("status") or ""),
         )
     except (OSError, ValueError, RuntimeOperationTransitionError):
         work.operation = None

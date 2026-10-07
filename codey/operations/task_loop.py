@@ -30,8 +30,8 @@ from codey.operations.kernel_trace import record_turn
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import effect_coordinates
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
+from codey.providers.base import ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
-from codey.toolchain.tool_spec import thaw_schema_value
 from codey.workspace.coding_context import render_coding_context
 
 if TYPE_CHECKING:  # Annotations only; the loop never re-exports TaskSession.
@@ -54,6 +54,7 @@ class KernelResult:
     turns: int
     stop_reason: str
     proof: Any | None = None
+    delivery: str = "not_required"
 
 
 @dataclass(frozen=True)
@@ -118,7 +119,7 @@ class _ProviderTurnState:
 
     prompt: str
     pending_reply: Any = None
-    pending_messages: list[dict[str, Any]] | None = None
+    pending_messages: list[ProviderToolResult] | None = None
     invalid_turns: int = 0
     length_continuation_used: bool = False
 
@@ -137,7 +138,7 @@ class _KernelStartup:
     native: bool
     identity_ref: str
     state: _ProviderTurnState
-    native_tools: list[dict[str, Any]]
+    native_tools: list[ProviderToolDefinition]
     snapshot: Any
     pending_recovery: bool
 
@@ -163,8 +164,8 @@ def _receive_turn_plan(
     if cancelled is not None:
         return cast(_ReceivedPlan | KernelResult | None, cancelled)
     _events._emit_turn_event(on_event, turn, reply)
-    length_action = _local_length_reply_action(
-        reply, native=native, provider_id=provider_id, used=state.length_continuation_used, turns=turn,
+    length_action = _length_reply_action(
+        reply, native=native, used=state.length_continuation_used, turns=turn,
     )
     if isinstance(length_action, KernelResult):
         return length_action
@@ -189,13 +190,12 @@ def _receive_turn_plan(
     return _ReceivedPlan(plan, reply)
 
 
-def _local_length_reply_action(
-    reply: Any, *, native: bool, provider_id: object, used: bool, turns: int,
+def _length_reply_action(
+    reply: Any, *, native: bool, used: bool, turns: int,
 ) -> KernelResult | str | None:
-    if not native or str(provider_id or "") != "local":
+    if not native:
         return None
-    raw = getattr(reply, "raw", None)
-    if not isinstance(raw, Mapping) or raw.get("continuable_length") is not True:
+    if getattr(reply, "finish", None) is not TurnFinish.OUTPUT_LIMIT:
         return None
     if used:
         return KernelResult(
@@ -445,8 +445,8 @@ def _kernel_startup(
         task_guidance=task_guidance,
         coding_context=prepare_coding_context(session, completion_context=completion_context),
     )
-    native_tools = [thaw_schema_value(row) for row in initial_snapshot.native_tools]
-    pending_native_messages: list[dict[str, Any]] | None = None
+    native_tools = tools_from_specs(initial_snapshot.frozen_specs)
+    pending_native_messages: list[ProviderToolResult] | None = None
     prompt, pending_native_messages = _apply_recovery_first(
         session,
         native,
@@ -455,7 +455,7 @@ def _kernel_startup(
         pending_native_messages,
         provider_session_changed=bool(provider_session_changed),
         format_results=_prompt._format_results,
-        native_tool_messages=_transport._native_tool_messages,
+        native_tool_messages=_transport._native_tool_results,
     )
     return _KernelStartup(
         executors=runnable, delivered=delivered_map, max_turns=max_turns,
@@ -710,7 +710,7 @@ def _rebuild_turn_snapshot(
     """Rebuild one per-round snapshot; KernelResult on controller failure."""
     try:
         snapshot = _build_turn_snapshot(session, native=native)
-        turn_native_tools = [thaw_schema_value(row) for row in snapshot.native_tools]
+        turn_native_tools = tools_from_specs(snapshot.frozen_specs)
     except Exception as exc:
         return KernelResult(
             completed=False, summary=f"controller configuration error: {exc}",
@@ -766,14 +766,14 @@ def _advance_after_results(
     native: bool,
     results: list[ToolResult],
     session: TaskSession,
-    pending_native_messages: list[dict[str, Any]] | None,
+    pending_native_messages: list[ProviderToolResult] | None,
     *,
     completion_context: Any = None,
-) -> tuple[list[dict[str, Any]] | None, str] | KernelResult:
+) -> tuple[list[ProviderToolResult] | None, str] | KernelResult:
     """Deliver native receipts or build the next text prompt."""
     if native:
         try:
-            messages = _transport._native_tool_messages(results, session)
+            messages = _transport._native_tool_results(results, session)
         except ValueError as exc:
             return KernelResult(
                 completed=False,
@@ -794,7 +794,7 @@ def _advance_after_results(
 def _finish_after_budget(
     session: TaskSession,
     provider: Any,
-    pending_native_messages: list[dict[str, Any]] | None,
+    pending_native_messages: list[ProviderToolResult] | None,
     pending_reply: Any,
     turns_used: int,
     *,
@@ -858,31 +858,33 @@ def _handle_done_reply(
         # session can continue and the provider chain stays legal. A failed
         # receipt never counts as closed: surface provider failure / pending
         # delivery instead of claiming completion.
-        if native and not isinstance(reply, str):
+        has_calls = native and not isinstance(reply, str) and bool(getattr(reply, "tool_calls", ()))
+        if has_calls:
             try:
-                followup = _transport._take_answered_reply(
-                    provider,
-                    reply,
-                    native=True,
-                    native_tools=[],
-                    followup=f"OK: done accepted: {session.last_done_text[:500]}",
+                followup = provider.acknowledge_tool_results(
+                    [ProviderToolResult(call.id, f"OK: done accepted: {session.last_done_text[:500]}")
+                     for call in reply.tool_calls], native_tools,
                 )
                 if followup is not None and not isinstance(followup, str):
                     _transport.close_native_reply(
                         provider,
                         followup,
                         "task already completed; tool call was not executed",
+                        declared_tools=native_tools,
                     )
             except Exception as exc:
                 return KernelResult(
                     completed=False,
                     summary=f"provider failed delivering done receipt: {exc}",
                     turns=int(session.turn or 0),
-                    stop_reason="provider_failure",
+                    stop_reason="delivery_pending",
+                    proof=getattr(verdict, "proof", None),
+                    delivery="unknown" if getattr(exc, "provider_failure_kind", "") == "submission_uncertain" else "failed",
                 )
         return KernelResult(
             completed=True, summary=session.last_done_text, turns=int(session.turn or 0), stop_reason="done",
             proof=getattr(verdict, "proof", None),
+            delivery="success" if has_calls else "not_required",
         )
     try:
         pending = _transport._take_answered_reply(provider, reply, native, native_tools, verdict.followup)

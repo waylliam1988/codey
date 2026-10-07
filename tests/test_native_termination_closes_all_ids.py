@@ -27,8 +27,11 @@ def test_protocol_threshold_closes_current_call_id() -> None:
                 SimpleNamespace(id="invalid-last-id", name="unknown_tool_xyz", arguments={}),
             ))
         def send_tool_results(self, messages, tools):
-            closed.extend(m["tool_call_id"] for m in messages)
+            closed.extend(m.call_id for m in messages)
             return SimpleNamespace(tool_calls=())
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
 
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         out = run_task_kernel(

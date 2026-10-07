@@ -56,7 +56,7 @@ class ProviderAdapter:
 
     def __getattr__(self, name: str) -> Any:
         value = getattr(self.provider, name)
-        if name in {"send_turn", "send_tool_results"} and callable(value):
+        if name in {"send_turn", "send_tool_results", "acknowledge_tool_results"} and callable(value):
             return lambda *args, **kwargs: self._send(name, *args, **kwargs)
         return value
 

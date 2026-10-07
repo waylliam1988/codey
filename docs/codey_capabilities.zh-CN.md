@@ -5,7 +5,10 @@
 ## 模型接入
 
 - 网页 provider：DeepSeek、MiMo、StepFun、Qwen、GLM。
-- 本地 provider：任意 OpenAI-compatible endpoint，可选 API key。
+- 本地 provider：OpenAI-compatible endpoint，可选 API key，在 Settings → Advanced
+  明确选择 Chat Completions 或 Responses。
+- OpenCode Zen：合作公共连接动态获取协议受支持的零费用模型；每次请求资格由上游
+  检查，免费列表不保证所有任务模式都可用。实机范围见[测试报告](../TEST_REPORT.md)。
 - 网页 provider 不需要 API key；你在专用 Edge 或 Chrome profile 里登录已有账号。
 - 不同网站的浏览器自动化代码隔离在各自 adapter 里，网页改版时尽量只修对应 adapter。
 
@@ -36,10 +39,13 @@
 有 Git 会增强体验，但没有 Git 也能用非 Git diff 和 restore 开始工作。
 
 桌面与 CLI/headless project 共用服务组合和审查策略：优先可用的网页 Reviewer，
-否则在策略允许时开新会话自审。具体问题最多进入一次 Writer repair；审查通过
+API Writer 有可用独立模型时使用第二个模型，否则在策略允许时开新会话自审。
+独立 API Review 使用选定模型本身。具体问题最多进入一次 Writer repair；审查通过
 不能代替新鲜验证。CLI 提供全部任务 intent、明确联网/写入授权、继续会话及
 显式审查复用。嵌入测试门可固定 Reviewer 连接器；展示与非交互 shell 审批保持
 入口各自的适配。
+桌面、CLI 与 headless 的模型/协议/effort 在正式操作日志冻结，重启恢复沿用原选择；
+凭据仍由后端连接配置持有。
 
 文本工具支持有界只读批次 `read_files / parallel`：整批校验后按顺序执行。
 结果不变的重复循环会有界停止，新信息与成功编辑继续推进。

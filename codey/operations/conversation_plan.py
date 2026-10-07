@@ -57,7 +57,7 @@ def build_conversation_plan(
     provider_session_changed = state.provider_session_changed(
         provider_id,
         session_id,
-    )
+    ) or getattr(provider, "has_transport_history", None) is False
     can_summarize_current_chat = (
         conversation.initialized
         and provider_id == conversation.provider_id

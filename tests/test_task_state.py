@@ -75,6 +75,7 @@ class MovedGlueTests(unittest.TestCase):
         ctx = SimpleNamespace(
             set_run_status=mock.Mock(),
             emit=events.append,
+            current_run=lambda: None,
         )
         with mock.patch.object(
             provider_services, "connect_provider", return_value=provider

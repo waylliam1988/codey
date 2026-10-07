@@ -116,9 +116,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));", COMPOSER_JS)
         send_click = COMPOSER_JS[COMPOSER_JS.index("async function sendActiveDraft()"):COMPOSER_JS.index("async function continueTask")]
         self.assertIn("const provider = currentProviderId();", send_click)
-        self.assertIn("PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()", COMPOSER_JS)
+        self.assertIn("provider: s.provider || liveDefaultProvider()", COMPOSER_JS)
         self.assertIn("intent: 'project'", COMPOSER_JS)
-        self.assertIn("provider: PROVIDERS.includes(raw.provider)", UI_STATE_JS)
+        self.assertIn("typeof raw.provider === 'string'", UI_STATE_JS)
         self.assertIn("Continue the unfinished task in this same conversation.", COMPOSER_JS)
         self.assertNotIn("Continue the unfinished Codey task", HTML)
 
@@ -1371,36 +1371,26 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("typeof window.CodeyUiState.setProviders", adopt_body)
         self.assertNotIn("PROVIDERS = ", adopt_body)
 
-    def test_post_boot_default_fallback_reads_live_source(self) -> None:
-        # P2 red-first: index.html + composer.js must not freeze DEFAULT_PROVIDER
-        # at boot. Fallbacks for missing/removed session providers must read the
-        # live catalog source at use time.
+    def test_new_chat_default_is_live_and_stored_provider_is_preserved(self) -> None:
         for name, src in (("index.html", HTML), ("composer.js", COMPOSER_JS)):
             with self.subTest(asset=name):
                 self.assertIn("function liveDefaultProvider()", src)
                 self.assertIn("window.CodeyUiState.DEFAULT_PROVIDER", src)
-        # index.html fallbacks use the live helper.
         self.assertIn(
-            "PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()",
+            "s.provider || liveDefaultProvider()",
             HTML,
         )
         self.assertIn("defaultSession(null, liveDefaultProvider())", HTML)
         self.assertIn("sendTaskFromSession(sessionId, text, s.provider)", COMPOSER_JS)
-        # composer.js fallbacks use the live helper with an includes-guard
-        # (no bare `||` that would submit a removed id verbatim).
         self.assertIn("PROVIDERS.includes(id) ? id : liveDefaultProvider()", COMPOSER_JS)
-        self.assertIn("s.provider) ? s.provider : liveDefaultProvider()", COMPOSER_JS)
-        self.assertNotIn("s.provider ||", COMPOSER_JS)
-        # P2-continue red lock: continueTask must not submit a removed provider
-        # id verbatim; it must use the same includes-guard as sendTaskFromSession.
+        self.assertIn("providerId || s.provider || liveDefaultProvider()", COMPOSER_JS)
         continue_start = COMPOSER_JS.index("async function continueTask(sessionId)")
         continue_end = COMPOSER_JS.index("function bindHandlers()", continue_start)
         continue_block = COMPOSER_JS[continue_start:continue_end]
         self.assertIn(
-            "PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()",
+            "provider: s.provider || liveDefaultProvider()",
             continue_block,
         )
-        self.assertNotIn("provider: s.provider ||", continue_block)
         # Cold-start residue red lock: helpers must read the live object
         # directly (the page already dereferences it at parse time).
         self.assertIn("return window.CodeyUiState.DEFAULT_PROVIDER;", HTML)
@@ -1584,13 +1574,13 @@ async function main() {
   window.CodeyComposer.setActiveProvider('removed-id');
   if (liveSession.provider !== 'mimo') throw new Error('composer fallback must use live default mimo, got ' + liveSession.provider);
   if (syncedTo !== 'mimo') throw new Error('composer sync must target live default mimo, got ' + syncedTo);
-  // continueTask must also guard removed ids (not `s.provider ||`).
+  // A stored connection stays attached; the backend rejects unavailable ids.
   liveSession.provider = 'removed-id';
   runBodies.length = 0;
   await window.CodeyComposer.continueTask('s1');
   const continued = runBodies.find((r) => r.url === '/api/run' && r.body && r.body.continue_task);
   if (!continued) throw new Error('continueTask did not POST /api/run with continue_task');
-  if (continued.body.provider !== 'mimo') throw new Error('continueTask must send live default mimo, got ' + continued.body.provider);
+  if (continued.body.provider !== 'removed-id') throw new Error('continueTask must preserve the stored provider, got ' + continued.body.provider);
   console.log('EXECUTABLE_SHRINK_LIVE_OK');
 }
 main().catch((e) => { console.error(e && e.stack || e); process.exit(1); });

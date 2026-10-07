@@ -12,6 +12,7 @@ from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.capabilities import KNOWN_TASK_GRANTS
 from codey.policies.task_policy import TaskPolicy
+from codey.providers.base import tools_from_specs
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
@@ -93,6 +94,6 @@ def test_every_capability_subset_has_same_json_native_boundary_and_exact_roundtr
             assert TaskPolicy.from_payload(policy.to_payload()) == policy
             snapshot = build_turn_snapshot(TaskSession(policy=policy), native=True)
             assert all(spec.grant in grants - denied for spec in snapshot.frozen_specs)
-            native_names = {row["function"]["name"] for row in snapshot.native_tools}
+            native_names = {row.name for row in tools_from_specs(snapshot.frozen_specs)}
             assert native_names == set(snapshot.tool_names) - {"parallel", "read_files"}
     print(f"capability enumeration: {2 ** len(vocabulary)} subsets x 2 denial states")

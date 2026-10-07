@@ -6,8 +6,8 @@ from unittest import mock
 import pytest
 
 from codey.operations.kernel_events import _emit_turn_event
-from codey.providers.base import AssistantTurn
-from codey.providers.local_openai import LocalOpenAIProvider
+from codey.providers.api_provider import ApiProvider
+from codey.providers.base import AssistantTurn, ProviderToolDefinition
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 
 
@@ -20,13 +20,13 @@ def response(message: dict, finish: str = "stop") -> mock.MagicMock:
 
 
 def test_reasoning_is_separate_from_answer_and_preserved_for_tool_history() -> None:
-    provider = LocalOpenAIProvider("http://localhost:9/v1", "test")
+    provider = ApiProvider("http://localhost:9/v1", "test")
     message = {"content": "", "reasoning_content": "Inspect first.", "tool_calls": [{
         "id": "c1", "type": "function",
         "function": {"name": "read_file", "arguments": '{"path":"app.py"}'},
     }]}
-    with mock.patch("codey.providers.local_openai.urllib.request.urlopen", return_value=response(message, "tool_calls")):
-        turn = provider.send_turn("fix", [{"type": "function"}])
+    with mock.patch("codey.providers.api_transport.open_request", return_value=response(message, "tool_calls")):
+        turn = provider.send_turn("fix", [ProviderToolDefinition('done', '', {})])
     assert turn.reasoning == "Inspect first."
     assert turn.text == ""
     assert turn.tool_calls[0].name == "read_file"
@@ -35,8 +35,8 @@ def test_reasoning_is_separate_from_answer_and_preserved_for_tool_history() -> N
 
 @pytest.mark.parametrize("value", [None, "", " \n\t", {"text": "not a string"}])
 def test_empty_or_malformed_reasoning_does_not_create_content(value: object) -> None:
-    provider = LocalOpenAIProvider("http://localhost:9/v1", "test")
-    with mock.patch("codey.providers.local_openai.urllib.request.urlopen", return_value=response({
+    provider = ApiProvider("http://localhost:9/v1", "test")
+    with mock.patch("codey.providers.api_transport.open_request", return_value=response({
         "content": "Answer", "reasoning_content": value,
     })):
         turn = provider.send_turn("question")
@@ -45,8 +45,8 @@ def test_empty_or_malformed_reasoning_does_not_create_content(value: object) -> 
 
 
 def test_plain_send_keeps_string_contract_and_exposes_only_matching_reasoning() -> None:
-    provider = LocalOpenAIProvider("http://localhost:9/v1", "test")
-    with mock.patch("codey.providers.local_openai.urllib.request.urlopen", return_value=response({
+    provider = ApiProvider("http://localhost:9/v1", "test")
+    with mock.patch("codey.providers.api_transport.open_request", return_value=response({
         "content": "391", "reasoning_content": "Calculate 17 times 23.",
     })):
         reply = provider.send("multiply")
@@ -68,8 +68,8 @@ def test_reasoning_reaches_existing_turn_event_without_changing_tool_text() -> N
 
 
 def test_thinking_options_are_explicit_and_not_sent_to_every_endpoint() -> None:
-    ordinary = LocalOpenAIProvider("http://localhost:9/v1", "test")
-    thinking = LocalOpenAIProvider("http://localhost:9/v1", "test", thinking_enabled=True)
+    ordinary = ApiProvider("http://localhost:9/v1", "test")
+    thinking = ApiProvider("http://localhost:9/v1", "test", thinking_enabled=True)
     assert "chat_template_kwargs" not in ordinary._request_payload([], None)
     assert thinking._request_payload([], None)["chat_template_kwargs"] == {"enable_thinking": True}
 
@@ -83,8 +83,8 @@ def test_reasoning_counts_toward_the_next_request_context_budget() -> None:
 
 
 def test_plain_reply_without_reasoning_cannot_reuse_previous_thoughts() -> None:
-    provider = LocalOpenAIProvider("http://localhost:9/v1", "test")
-    with mock.patch("codey.providers.local_openai.urllib.request.urlopen", side_effect=[
+    provider = ApiProvider("http://localhost:9/v1", "test")
+    with mock.patch("codey.providers.api_transport.open_request", side_effect=[
         response({"content": "Same answer", "reasoning_content": "Previous thought"}),
         response({"content": "Same answer"}),
     ]):

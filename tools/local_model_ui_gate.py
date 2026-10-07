@@ -43,9 +43,9 @@ from codey.env_names import (
 )
 from codey.knowledge.store import KnowledgeStore
 from codey.providers import controls as provider_controls
+from codey.providers.api_provider import ApiProvider
 from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.local_discovery import probe_local_endpoint_detail
-from codey.providers.local_openai import LocalOpenAIProvider
 from codey.providers.web_provider import WebChatProvider
 
 UI_CASES = ("chat", "coding", "review", "research", "ghost")
@@ -256,7 +256,7 @@ def analyze_provider_history(path: str | Path) -> dict[str, object]:
 @contextmanager
 def _record_local_provider_history(path: Path) -> Iterator[None]:
     """Record provider payloads for this gate without changing provider behavior."""
-    original = LocalOpenAIProvider._post_chat
+    original = ApiProvider._post_chat
     lock = threading.Lock()
     # A gate artifact describes one run.  Do not mix old failures into the
     # current run's diagnosis when the same artifact directory is reused.
@@ -264,7 +264,7 @@ def _record_local_provider_history(path: Path) -> Iterator[None]:
     path.unlink(missing_ok=True)
 
     def post_chat(
-        self: LocalOpenAIProvider,
+        self: ApiProvider,
         messages: list[dict[str, Any]],
         tools: list[dict[str, object]] | None = None,
         *,
@@ -292,11 +292,11 @@ def _record_local_provider_history(path: Path) -> Iterator[None]:
             _append_jsonl(path, {"type": "response", "model": self.model, "payload": response})
         return response
 
-    LocalOpenAIProvider._post_chat = post_chat  # type: ignore[method-assign]  # noqa: B010
+    ApiProvider._post_chat = post_chat  # type: ignore[method-assign]  # noqa: B010
     try:
         yield
     finally:
-        LocalOpenAIProvider._post_chat = original  # type: ignore[method-assign]  # noqa: B010
+        ApiProvider._post_chat = original  # type: ignore[method-assign]  # noqa: B010
 
 
 @contextmanager

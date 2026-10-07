@@ -5,6 +5,7 @@ from unittest import mock
 import pytest
 
 from codey.providers.local_config import LocalProviderConfig
+from codey.providers.local_connection import connect_local
 
 
 def test_display_name_roundtrips_and_resets_for_another_target():
@@ -87,21 +88,20 @@ def test_session_selection_survives_backend_state_roundtrip(tmp_path):
     from codey.storage.ui_state_store import UiStateStore
 
     store = UiStateStore(tmp_path)
-    selection = {"base_url": "http://localhost:5001/v1", "model": "chosen", "thinking": False}
-    store.save({"active_id": "a", "sessions": [{"id": "a", "localSelection": selection}], "projects": []}, base_revision=0)
-    assert store.load()["sessions"][0]["localSelection"] == {"base_url":selection["base_url"],"model":"chosen","effort":"off","efforts":{}}
+    selection = {"connection_id":"local", "base_url": "http://localhost:5001/v1", "model": "chosen", "effort": "off"}
+    store.save({"active_id": "a", "sessions": [{"id": "a", "modelSelection": selection}], "projects": []}, base_revision=0)
+    assert store.load()["sessions"][0]["modelSelection"] == {"connection_id":"local", "base_url":selection["base_url"],"model":"chosen","effort":"off","efforts":{}}
 
 
 def test_runtime_connect_uses_snapshot_and_rejects_unknown_thinking_control():
     from codey.providers.local_discovery import LocalEndpoint
-    from codey.providers.local_openai import LocalOpenAIProvider
 
     config = LocalProviderConfig(base_url="http://localhost:5001/v1", model="chosen", thinking_enabled=False)
     with mock.patch("codey.providers.local_discovery.resolve_local_endpoint", return_value=LocalEndpoint(config.base_url, ("chosen",))), mock.patch("codey.providers.local_selection.model_metadata", return_value={"thinking_options": ["off", "high"]}):
-        provider = LocalOpenAIProvider.connect(config=config, verify_thinking=True)
+        provider = connect_local(config=config, verify_thinking=True)
     assert provider.model == "chosen" and provider.thinking_enabled is False
     with mock.patch("codey.providers.local_discovery.resolve_local_endpoint", return_value=LocalEndpoint(config.base_url, ("chosen",))), mock.patch("codey.providers.local_selection.model_metadata", return_value={"thinking_options": []}), pytest.raises(ValueError, match="thinking"):
-        LocalOpenAIProvider.connect(config=config, verify_thinking=True)
+        connect_local(config=config, verify_thinking=True)
 
 
 def test_autodiscovered_model_can_be_selected_without_saving_a_new_connection():
@@ -119,13 +119,14 @@ def test_approval_keeps_admitted_model_and_never_exposes_key_in_status(tmp_path)
     state = AppContext(tmp_path)
     try:
         run = state.reserve_run(session_id="a", project=None, task="read", provider_id="local")
-        config = LocalProviderConfig(base_url="http://localhost/v1", model="chosen", api_key="secret", thinking_enabled=False)
-        state.run_registry.bind_local_config(run.run_id, config)
+        from codey.runtime.core.api_selection import ApiRunSelection
+        config = ApiRunSelection("local", "revision", "chosen", "openai-completions", True, thinking_enabled=False)
+        state.run_registry.bind_api_selection(run.run_id, config)
         state.add_pending_shell_approval("approval", {"run_id":run.run_id, "provider":"local", "session_id":"a"})
         assert "secret" not in str(state.run_state_payload())
         state.release_run(run.run_id)
-        assert state.run_registry.local_config_for(run.run_id) is None
-        assert state.pop_pending_shell_approval("approval")["_local_config"] is config
+        assert state.run_registry.api_selection_for(run.run_id) is None
+        assert state.pop_pending_shell_approval("approval")["_api_selection"] is config
     finally:
         state.close()
 
@@ -136,14 +137,13 @@ def test_approval_keeps_admitted_model_and_never_exposes_key_in_status(tmp_path)
 ])
 def test_effort_selection_is_captured_and_sent_on_the_wire(effort, enabled, wire):
     from codey.providers.local_discovery import LocalEndpoint
-    from codey.providers.local_openai import LocalOpenAIProvider
     from codey.providers.local_selection import capture_local_run_config
 
     saved = LocalProviderConfig(base_url='http://localhost:5001/v1', model='gemma')
     with mock.patch('codey.providers.local_selection.load_local_config', return_value=saved):
         snapshot = capture_local_run_config({'base_url':saved.base_url, 'model':'gemma', 'effort':effort})
     with mock.patch('codey.providers.local_discovery.resolve_local_endpoint', return_value=LocalEndpoint(saved.base_url, ('gemma',))), mock.patch('codey.providers.local_selection.model_metadata', return_value={'thinking_options':['off','minimal','low','medium','high']}):
-        provider = LocalOpenAIProvider.connect(config=snapshot, verify_thinking=True)
+        provider = connect_local(config=snapshot, verify_thinking=True)
     payload = provider._request_payload([{'role':'user','content':'hello'}], None)
     assert payload['chat_template_kwargs'] == {'enable_thinking':enabled}
     assert payload['reasoning_effort'] == wire
@@ -163,20 +163,19 @@ def test_kobold_budget_options_are_version_specific_and_unknown_effort_rejected(
 
 def test_runtime_rejects_an_effort_not_in_current_model_capabilities():
     from codey.providers.local_discovery import LocalEndpoint
-    from codey.providers.local_openai import LocalOpenAIProvider
 
     config = LocalProviderConfig(base_url='http://localhost/v1', model='m', thinking_enabled=True, reasoning_effort='max')
     with mock.patch('codey.providers.local_discovery.resolve_local_endpoint', return_value=LocalEndpoint(config.base_url, ('m',))), mock.patch('codey.providers.local_selection.model_metadata', return_value={'thinking_options':['off','high']}), pytest.raises(ValueError, match='effort'):
-        LocalOpenAIProvider.connect(config=config, verify_thinking=True)
+        connect_local(config=config, verify_thinking=True)
 
 
 def test_effort_history_survives_reload_and_malformed_values_are_bounded(tmp_path):
     from codey.storage.ui_state_store import UiStateStore
 
     store = UiStateStore(tmp_path)
-    selection = {'base_url':'http://localhost/v1','model':'m','effort':'low','efforts':{'m':'low','bad':[]}}
-    store.save({'sessions':[{'id':'a','localSelection':selection}],'active_id':'a','projects':[]}, base_revision=0)
-    assert store.load()['sessions'][0]['localSelection'] == {**selection,'efforts':{'m':'low'}}
+    selection = {'connection_id':'local','base_url':'http://localhost/v1','model':'m','effort':'low','efforts':{'m':'low','bad':[]}}
+    store.save({'sessions':[{'id':'a','modelSelection':selection}],'active_id':'a','projects':[]}, base_revision=0)
+    assert store.load()['sessions'][0]['modelSelection'] == {**selection,'efforts':{'m':'low'}}
 
 
 @pytest.mark.parametrize('invalid', [[], {}, 1, 'default', 'on'])

@@ -9,6 +9,7 @@ entries, decides the next bounded records, and commits them as one batch.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from typing import Any
 
 from codey.runtime.core.operation_state import (
@@ -96,6 +97,19 @@ class RuntimeMutationLine:
     def __init__(self, session_log: RuntimeSessionLog) -> None:
         self.session_log = session_log
 
+    def admit_reviewer_selection(self, session_id: str, run_id: str, payload: dict[str, object]) -> RuntimeOperationState | None:
+        from codey.runtime.core.operation_payload import _parse_model_selection
+
+        admitted = _parse_model_selection(payload)
+
+        def transition(state: RuntimeOperationState) -> RuntimeOperationState:
+            if state.reviewer_selection and state.reviewer_selection != admitted:
+                raise RuntimeOperationTransitionError("admitted reviewer selection is immutable")
+            return replace(state, reviewer_selection=admitted)
+
+        return self._commit_state(session_id, run_id, transition)
+
+
     def accept_operation(
         self,
         *,
@@ -106,6 +120,7 @@ class RuntimeMutationLine:
         turn_budget: int,
         max_repair_rounds: int,
         task_kind: str = "task",
+        model_selection: dict[str, object] | None = None,
     ) -> RuntimeOperationState | None:
         accepted: RuntimeOperationState | None = None
 
@@ -117,6 +132,8 @@ class RuntimeMutationLine:
                 run_id=run_id,
             )
             if existing is not None:
+                if model_selection is not None and existing.model_selection != model_selection:
+                    raise RuntimeOperationTransitionError("admitted API selection is immutable")
                 operation_is_open(projection, existing)
                 accepted = existing
                 return ()
@@ -128,6 +145,7 @@ class RuntimeMutationLine:
                 turn_budget=turn_budget,
                 max_repair_rounds=max_repair_rounds,
                 task_kind=task_kind,
+                model_selection=model_selection,
             )
             accepted = state
             return start_entries(projection, state)
@@ -255,7 +273,7 @@ class RuntimeMutationLine:
         policy: dict[str, object],
     ) -> RuntimeOperationState | None:
         """Persist the entry authorization snapshot on the operation state."""
-        from codey.runtime.core.operation_state import _parse_task_policy
+        from codey.runtime.core.operation_payload import _parse_task_policy
 
         normalized = _parse_task_policy(policy)
         return self._commit_state(
@@ -379,6 +397,9 @@ class RuntimeMutationLine:
         max_turns: int,
         provider: str,
         blocked_reason: str | None = None,
+        final_delivery: str | None = None,
+        proof_ref: str = "",
+        proof_status: str = "",
     ) -> RuntimeOperationState | None:
         return self._commit_state(
             session_id,
@@ -391,6 +412,9 @@ class RuntimeMutationLine:
                 max_turns=max_turns,
                 provider=provider,
                 blocked_reason=blocked_reason,
+                final_delivery=final_delivery,
+                proof_ref=proof_ref,
+                proof_status=proof_status,
             ),
         )
 

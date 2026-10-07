@@ -94,6 +94,7 @@ def test_project_done_event_carries_kernel_proof():
 
     from codey.operations.completion_gate import evaluate
     from codey.operations.project_completion_flow import _build_project_done_event
+    from codey.runtime.core.run_result import RunResult
 
     verdict = evaluate(_session(), "all done", context={"run_id": "r-proj"})
     assert verdict.proof is not None
@@ -102,7 +103,7 @@ def test_project_done_event_carries_kernel_proof():
     ctx = SimpleNamespace(
         frame=SimpleNamespace(run_id="r-proj", provider_id="local"),
         request=SimpleNamespace(session_id="s-proj", max_turns=4),
-        result=SimpleNamespace(summary="all done", stop_reason="done", turns=2),
+        result=RunResult(summary="all done", stop_reason="done", turns=2, proof=verdict.proof),
         receipt=receipt,
         research_result=None,
         research_pipeline_result=None,

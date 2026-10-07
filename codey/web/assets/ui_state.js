@@ -166,13 +166,15 @@ function normalizeSessions(value) {
         : [],
       createdAt: raw.createdAt || Date.now(),
       projectId: raw.projectId || null,
-      provider: PROVIDERS.includes(raw.provider) ? raw.provider : DEFAULT_PROVIDER,
+      provider: typeof raw.provider === 'string' && raw.provider.trim() && raw.provider.length <= 100
+        ? raw.provider : DEFAULT_PROVIDER,
       research: !!raw.research,
-      ...(raw.localSelection && typeof raw.localSelection === 'object' ? {localSelection: {
-        base_url: String(raw.localSelection.base_url || ''), model: String(raw.localSelection.model || ''),
-        effort: ['off','minimal','low','medium','high','max'].includes(raw.localSelection.effort) ? raw.localSelection.effort
-          : raw.localSelection.thinking === false ? 'off' : raw.localSelection.thinking === true ? 'high' : null,
-        efforts: Object.fromEntries(Object.entries(raw.localSelection.efforts || {}).slice(0,50).filter(([key,value]) => key.length <= 1000 && ['off','minimal','low','medium','high','max'].includes(value))),
+      ...(raw.modelSelection && typeof raw.modelSelection === 'object' ? {modelSelection: {
+        connection_id: String(raw.modelSelection.connection_id || ''),
+        base_url: String(raw.modelSelection.base_url || ''), model: String(raw.modelSelection.model || ''),
+        effort: ['off','minimal','low','medium','high','xhigh','max'].includes(raw.modelSelection.effort) ? raw.modelSelection.effort
+          : null,
+        efforts: Object.fromEntries(Object.entries(raw.modelSelection.efforts || {}).slice(0,50).filter(([key,value]) => key.length <= 1000 && ['off','minimal','low','medium','high','xhigh','max'].includes(value))),
       }} : {}),
     };
     return hydrateSessionIndexes(s);

@@ -52,6 +52,9 @@ class FakeStructuredProvider:
     def close(self) -> None:
         return None
 
+    def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        return self.send_tool_results(results, [])
+
 
 def test_native_overflow_is_provider_failure_without_retry(tmp_path: Path) -> None:
     class OverflowProvider(FakeStructuredProvider):
@@ -67,6 +70,9 @@ def test_native_overflow_is_provider_failure_without_retry(tmp_path: Path) -> No
         def send_turn(self, prompt: str, tools=None, timeout=None) -> AssistantTurn:
             self.fallback_prompts.append(prompt)
             return self._turns.pop(0)
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
 
     provider = OverflowProvider()
     (tmp_path / "app.py").write_text("hello\n", encoding="utf-8")
@@ -127,6 +133,9 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
             self.tool_sends += 1
             self.tool_results_seen.append(list(results))
             raise ContextOverflowError("full")
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
 
     def _policy() -> TaskPolicy:
         return TaskPolicy(grants=frozenset({"project.read", "control"}))

@@ -248,6 +248,8 @@ def _build_project_done_event(ctx: ProjectRun) -> dict[str, Any]:
             ctx.research_result, pipeline_result=ctx.research_pipeline_result,
         )
     receipt_payload = ctx.receipt.to_dict()
+    if ctx.result.proof is not None:
+        receipt_payload["completion_proof"] = ctx.result.proof.to_payload()
     return task_done_event(
         run_id=ctx.frame.run_id,
         session_id=ctx.request.session_id,
@@ -262,6 +264,7 @@ def _build_project_done_event(ctx: ProjectRun) -> dict[str, Any]:
         receipt=receipt_payload,
         changes=changes_payload,
         research=research_payload,
+        final_delivery=ctx.result.delivery,
     )
 
 

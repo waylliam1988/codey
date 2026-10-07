@@ -158,10 +158,13 @@ class ScriptedProvider:
 
     def send_tool_results(self, messages, tools, **_kwargs):
         from codey.providers.base import AssistantTurn
-        self.receipts.extend(row["tool_call_id"] for row in messages)
-        if any(row["content"].startswith("OK:") or "budget exhausted" in row["content"] for row in messages):
+        self.receipts.extend(row.call_id for row in messages)
+        if any(row.content.startswith("OK:") or "budget exhausted" in row.content for row in messages):
             return AssistantTurn(text="closed", tool_calls=())
         return self.send_turn("native results", tools)
+
+    def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        return self.send_tool_results(results, [])
 
 
 def coding_loop(case, legacy):

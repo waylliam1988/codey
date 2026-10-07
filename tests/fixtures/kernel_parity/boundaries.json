@@ -128,6 +128,19 @@
         "tests/test_no_unreferenced_pre_kernel_facades.py",
         "tests/test_session_log_receipt_recovery_preserves_facts.py"
       ]
+    },
+    "codey/providers/local_openai.py": {
+      "current_owners": [
+        "codey/providers/api_provider.py",
+        "codey/providers/api_chat.py",
+        "codey/providers/api_responses.py",
+        "codey/providers/local_connection.py"
+      ],
+      "tests": [
+        "tests/test_provider_neutral_tool_boundaries.py",
+        "tests/test_api_chat_native_turns_and_history.py",
+        "tests/test_responses_protocol_tool_history_and_stream_completion.py"
+      ]
     }
   },
   "entry_chains": {

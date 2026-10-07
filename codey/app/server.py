@@ -66,6 +66,8 @@ POST_BODY_READ_TIMEOUT = 10.0
 class CodeyHTTPServer(ThreadingHTTPServer):
     """Keep routine browser disconnects out of the local server log."""
 
+    request_queue_size = 32
+
     def __init__(self, server_address: tuple[str, int], request_handler_class: type[BaseHTTPRequestHandler]) -> None:
         super().__init__(server_address, request_handler_class)
         self.operator_auth = OperatorAuth(self.server_address[1])
@@ -244,6 +246,7 @@ _GET_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
     "/api/providers": lambda ctx, _query: app_api.providers_response(ctx),
     "/api/provider_catalog": lambda _ctx, _query: app_api.provider_catalog_response(),
     "/api/local_provider": lambda _ctx, _query: app_api.local_provider_response(),
+    "/api/api_models": lambda _ctx, _query: app_api.api_models_response(),
     "/api/research/graph": app_api.research_graph_response,
     "/api/run_details": app_api.run_details_response,
     "/api/run_review": app_api.run_review_response,

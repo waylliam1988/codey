@@ -7,8 +7,8 @@ import unittest
 from typing import Any
 from unittest import mock
 
+from codey.providers.api_provider import ApiProvider
 from codey.providers.local_discovery import LocalEndpoint
-from codey.providers.local_openai import LocalOpenAIProvider
 from tools import local_model_ui_gate as gate
 
 
@@ -24,9 +24,9 @@ class LocalModelUiGateTests(unittest.TestCase):
             state.knowledge_store.close()
 
     def test_provider_history_records_request_and_response(self) -> None:
-        provider = LocalOpenAIProvider("http://127.0.0.1:1/v1", "model")
+        provider = ApiProvider("http://127.0.0.1:1/v1", "model")
         with tempfile.TemporaryDirectory() as root, mock.patch.object(
-            LocalOpenAIProvider,
+            ApiProvider,
             "_post_chat",
             return_value={"choices": []},
         ):

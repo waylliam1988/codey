@@ -16,6 +16,7 @@ from codey.automation.browser import (
 )
 from codey.providers.base import ChatProvider
 from codey.providers.catalog import (  # noqa: F401 -- re-exported static catalog
+    API_CONNECTIONS,
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
     PROVIDER_WORKER_PORT_OFFSETS,
@@ -41,7 +42,6 @@ __all__ = [
 ]
 from codey.providers.ids import normalize_provider_id
 from codey.providers.local_config import local_endpoint_available
-from codey.providers.local_openai import LocalOpenAIProvider
 from codey.providers.web_provider import (
     DeepSeekWebProvider,
     GlmWebProvider,
@@ -58,7 +58,6 @@ PROVIDER_TYPES: dict[str, Any] = {
     "stepfun": StepFunWebProvider,
     "qwen": QwenWebProvider,
     "glm": GlmWebProvider,
-    "local": LocalOpenAIProvider,
 }
 
 
@@ -102,11 +101,13 @@ def connect_provider(
             normalized = DEFAULT_PROVIDER_ID
         else:
             raise ValueError(f"unsupported provider: {provider_id}")
+    if normalized in API_CONNECTIONS:
+        from codey.providers.api_connections import capture_selection, open_selection
+
+        return open_selection(capture_selection(normalized))
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
-    if normalized == "local":
-        return cast(ChatProvider, provider_type.connect())
     if open_if_missing and os.environ.get(WORKER_CHILD_ENV) != "1":
         override = load_enabled_override(normalized)
         if override is not None:
@@ -128,7 +129,7 @@ def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | No
     from codey.automation.browser import _url_host_matches
 
     normalized = normalize_provider_id(provider_id)
-    if normalized == "local":
+    if normalized in API_CONNECTIONS:
         return None
     marker = PROVIDER_URL_CONTAINS.get(normalized)
     if not marker:
@@ -152,6 +153,10 @@ def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | No
     if page is None:
         return None
     session = _BorrowedSession(page)
+    if normalized in API_CONNECTIONS:
+        from codey.providers.api_connections import capture_selection, open_selection
+
+        return open_selection(capture_selection(normalized))
     provider_type = PROVIDER_TYPES.get(normalized)
     return provider_type(session) if provider_type is not None else None
 
@@ -179,11 +184,13 @@ def connect_fresh_provider_tab(
             normalized = DEFAULT_PROVIDER_ID
         else:
             raise ValueError(f"unsupported provider: {provider_id}")
+    if normalized in API_CONNECTIONS:
+        from codey.providers.api_connections import capture_selection, open_selection
+
+        return open_selection(capture_selection(normalized))
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
-    if normalized == "local":
-        return cast(ChatProvider, provider_type.connect())
     if os.environ.get(WORKER_CHILD_ENV) != "1":
         override = load_enabled_override(normalized)
         if override is not None:

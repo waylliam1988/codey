@@ -1,7 +1,7 @@
 """Canonical local-model configuration (single source of truth).
 
 Owns the ``local-openai.json`` shape, context-budget math, native-tools
-mode, and the bootstrap payload. ``local_openai.py`` keeps only the provider
+mode, and the bootstrap payload. ``api_provider.py`` keeps only the provider
 runtime; ``app/api.py`` parses through this module instead of understanding
 local config itself.
 """
@@ -67,6 +67,8 @@ class LocalProviderConfig:
     thinking_enabled: bool | None = None
     display_name: str = ""
     reasoning_effort: str | None = None
+    api_protocol: str = "openai-completions"
+    connection_revision: str = ""
 
 
 @dataclass(frozen=True)
@@ -258,6 +260,9 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
     if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
         raise ValueError(f"unsupported local config schema_version: {schema_version!r}")
     mode = parse_native_tools_mode(raw.get("native_tools_mode")) or NATIVE_TOOLS_AUTO
+    protocol = raw.get("api_protocol", "openai-completions")
+    if protocol not in {"openai-completions", "openai-responses"}:
+        raise ValueError("unsupported API protocol")
     context_raw = raw.get("context")
     context: LocalContextBudget | None = None
     base_url_raw = raw.get("base_url")
@@ -285,6 +290,9 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
         context=context,
         thinking_enabled=raw.get("thinking_enabled") if type(raw.get("thinking_enabled")) is bool else None,
         display_name=str(raw.get("display_name") or "")[:160],
+        reasoning_effort=raw.get("reasoning_effort"),
+        api_protocol=protocol,
+        connection_revision=str(raw.get("connection_revision") or ""),
     )
 
 
@@ -318,6 +326,8 @@ def config_to_payload(config: LocalProviderConfig) -> dict[str, object]:
         "model": config.model.strip(),
         "api_key": config.api_key,
         "native_tools_mode": config.native_tools_mode,
+        "api_protocol": config.api_protocol,
+        "connection_revision": config.connection_revision,
     }
     if config.context is not None:
         payload["context"] = {
@@ -329,6 +339,8 @@ def config_to_payload(config: LocalProviderConfig) -> dict[str, object]:
         payload["thinking_enabled"] = config.thinking_enabled
     if config.display_name:
         payload["display_name"] = config.display_name[:160]
+    if config.reasoning_effort is not None:
+        payload["reasoning_effort"] = config.reasoning_effort
     return payload
 
 
@@ -348,6 +360,9 @@ def parse_local_config_update(
     """
     if not isinstance(body, Mapping):
         return None, "request body must be an object"
+    protocol = body.get("api_protocol", previous.api_protocol)
+    if not isinstance(protocol, str) or protocol not in {"openai-completions", "openai-responses"}:
+        return None, "unsupported API protocol"
     base_url = str(body.get("base_url") or "").strip().rstrip("/")
     if not base_url:
         return None, "base_url required"
@@ -406,6 +421,8 @@ def parse_local_config_update(
             context=context,
             thinking_enabled=thinking,
             display_name=display_name,
+            api_protocol=protocol,
+            connection_revision=previous.connection_revision if base_url == previous.base_url.rstrip("/") else "",
         ),
         "",
     )
@@ -554,6 +571,7 @@ def assemble_bootstrap_payload(
         "has_api_key": bool(selection.api_key),
         "native_tools_mode": config.native_tools_mode,
         "native_tools": native_tools,
+        "api_protocol": config.api_protocol,
         "context": context_payload,
         "context_window_tokens": context_window,
         "context_reserve_tokens": context_reserve,

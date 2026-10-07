@@ -266,15 +266,16 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
         entry["research"] = _clean_research(item.get("research"))
         if item.get("titleRenamed") is True:
             entry["titleRenamed"] = True
-        selection = item.get("localSelection")
+        selection = item.get("modelSelection")
         if isinstance(selection, dict):
-            allowed = {"off", "minimal", "low", "medium", "high", "max"}
+            allowed = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
             effort = selection.get("effort")
             if not isinstance(effort, str) or effort not in allowed:
                 effort = "off" if selection.get("thinking") is False else "high" if selection.get("thinking") is True else None
             history = selection.get("efforts")
             efforts = {str(key)[:1000]: value for key, value in list(history.items())[:50] if isinstance(value, str) and value in allowed} if isinstance(history, dict) else {}
-            entry["localSelection"] = {
+            entry["modelSelection"] = {
+                "connection_id": _str(selection.get("connection_id"), 40),
                 "base_url": _str(selection.get("base_url")),
                 "model": _str(selection.get("model")),
                 "effort": effort,

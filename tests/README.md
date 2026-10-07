@@ -64,6 +64,47 @@ Live release checks stay separate from deterministic contract checks.
 - `test_work_checkpoint_flow.py` and `test_recovery_ownership_regression.py`:
   interruption, resume and idempotence.
 
+## API protocols, frozen selection and Zen
+
+- `test_provider_neutral_tool_boundaries.py`,
+  `test_web_chat_responses_share_authorization_and_completion.py`: neutral tool
+  definitions/results/finish state and equal task authorization/completion across
+  browser JSON, Chat Completions and Responses.
+- `test_api_chat_native_turns_and_history.py`: Chat native turns, history commit,
+  call IDs and terminal result delivery.
+- `test_responses_protocol_tool_history_and_stream_completion.py`,
+  `test_responses_compaction_preserves_complete_exchanges.py`: actual fake HTTP/SSE,
+  call_id, encrypted reasoning replay, flat schema, complete history groups,
+  incomplete native arguments and plain text truncation fail closed before commit.
+- `test_api_transport_response_uncertainty.py`,
+  `test_api_generation_deadline_interrupts_partial_frame.py`,
+  `test_api_stream_terminal_and_cancelled_generation.py`: one wire attempt,
+  total deadline under trickled partial frames, valid terminals, cancellation
+  and no late history/tool submission.
+- `test_api_selection_cold_start_persistence.py`,
+  `test_local_api_protocol_configuration_and_frozen_capabilities.py`,
+  `test_headless_api_model_selection_admission.py`: real formal storage/restart,
+  changed Settings, no credentials in snapshots and admission across entries.
+- `test_api_fresh_transport_recovers_facts_without_old_calls.py`: fresh protocol
+  window receives settled facts without old call history or repeated writes.
+- `test_terminal_delivery_preserves_completion_proof.py`,
+  `test_terminal_tools_are_previously_declared.py`,
+  `test_project_and_machine_outputs_preserve_final_delivery.py`: completion proof
+  versus failed/unknown result delivery, bounded prior declarations and output parity.
+- `test_api_reviewer_uses_distinct_model_and_identity.py`: independent model for
+  Writer review, frozen identity and selected model for standalone read-only review.
+- `test_zen_catalog_free_protocols_and_scoped_identity.py`,
+  `test_zen_review_access_observations_expire_without_replay.py`,
+  `test_zen_tool_names_preserve_authorization_and_call_identity.py`: dynamic free
+  catalog, outages/removal, HTTP error-stream cleanup, scoped headers, short-lived
+  real access observations and tool-name mapping without extra authorization.
+- `test_dynamic_api_model_menu_and_per_chat_effort.py`,
+  `test_api_connection_removal_and_ui_model_selection.py`,
+  `test_api_connections_do_not_enter_browser_failover.py`: actual JavaScript/UI
+  menu and target-chat effort, removed connection identity and failover isolation.
+- `test_desktop_boot_connection_burst_fits_accept_queue.py`: real simultaneous
+  local HTTP connections fit the desktop's accept queue before serving assets.
+
 ## Boundary Sweeps
 
 - `test_operator_auth_blocks_unauthenticated_http.py`,
@@ -88,9 +129,9 @@ Live release checks stay separate from deterministic contract checks.
   `test_tool_schema_enum_distinguishes_json_booleans.py`, and
   `test_output_capture_generated_utf8_boundaries.py`: independently known
   schema witnesses and byte-slice oracles, with fixed reproducible seeds.
-- `test_local_request_diagnostics_match_wire_attempts.py` and
+- `test_api_generation_observations_no_replay.py` and
   `test_gate_diagnostics_report_physical_attempts.py`: actual request bytes,
-  retry accounting and diagnostic failure isolation.
+  one-attempt accounting and diagnostic failure isolation.
 - `test_sse_cursor_reconnect_boundaries.py`,
   `test_sse_browser_dedup_reset_and_buffer_gap.py`,
   `test_headless_tool_status_requires_exact_boolean.py`, and

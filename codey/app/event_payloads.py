@@ -119,6 +119,8 @@ def _payload_task_done(common: dict[str, object], event: dict[str, Any]) -> dict
     }
     if event.get("changed") is not None:
         payload["changed"] = bool(event.get("changed"))
+    if event.get("final_delivery") in {"not_required", "success", "failed", "unknown"}:
+        payload["final_delivery"] = event["final_delivery"]
     _copy_if_present(payload, event, "ledger_path", limit=500)
     receipt = event.get("receipt")
     if isinstance(receipt, dict):

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from codey.protocols.json_scanner import balanced_json_spans
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
@@ -35,7 +35,6 @@ class TurnSnapshot:
 
     allowed: tuple[str, ...] | None
     contract_text: str
-    native_tools: tuple[dict[str, Any], ...]
     tool_names: tuple[str, ...] = ()
     policy: Any = None
     frozen_specs: tuple[Any, ...] = ()
@@ -151,7 +150,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     # (unlimited). Callers must treat the exception as a per-turn config
     # error and stop.
     allowed = controller_allowed_for_session(session)
-    from codey.toolchain.tool_spec import _freeze_schema_value, visible_tool_names_for_snapshot
+    from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
     names = tuple(visible_tool_names_for_snapshot(session.policy, allowed))
     frozen = _frozen_specs_for_names(names)
@@ -161,36 +160,10 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     # JSON 与 native 契约同源：都从同一冻结定义生成，不再查实时注册表。
     contract_now = _contract(session.policy, controller_allowed=allowed,
                              specs=frozen_by_name) if _contract is not None else ""
-    native_now: list[dict[str, Any]] = []
-    if native:
-        try:
-            from codey.toolchain.tool_spec import _schema_for_spec as _schema_fn
-            rebuilt: list[dict[str, Any]] = []
-            by_name = {getattr(s, "name", ""): s for s in frozen}
-            for name in names:
-                if name in {"parallel", "read_files"}:
-                    continue
-                spec = by_name.get(name)
-                if spec is None:
-                    continue
-                rebuilt.append({
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "description": spec.description or "\n".join(spec.json_examples),
-                        "parameters": _schema_fn(spec),
-                    },
-                })
-            rebuilt.sort(key=lambda item: item["function"]["name"])
-            native_now = rebuilt
-        except Exception as exc:
-            # 构建失败即停本轮：绝不回退到实时注册表的旧 schema。
-            raise RuntimeError(f"native tool snapshot rebuild failed: {exc}") from exc
     executors = _frozen_custom_executors(names)
     return TurnSnapshot(
         allowed=allowed,
         contract_text=str(contract_now or ""),
-        native_tools=tuple(cast(dict[str, Any], _freeze_schema_value(row)) for row in native_now),
         tool_names=names,
         policy=session.policy,
         frozen_specs=frozen,

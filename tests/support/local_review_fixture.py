@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 
-from codey.providers.local_openai import LocalOpenAIProvider
+from codey.providers.api_provider import ApiProvider
 
 
-class ScriptedLocal(LocalOpenAIProvider):
+class ScriptedLocal(ApiProvider):
     def __init__(self, name, replies, timeline):
         super().__init__("http://localhost:5001/v1", "scripted-model")
         self.label = name

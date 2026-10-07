@@ -779,7 +779,7 @@ def _metadata(target: attempts.GateTarget) -> dict:
         "production_hashes": {
             path: hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
             for path in ("codey/toolchain/constants.py", "codey/toolchain/definition.py", "codey/toolchain/runtime.py",
-                         "codey/providers/local_openai.py", "codey/operations/kernel_transport.py",
+                         "codey/providers/api_provider.py", "codey/operations/kernel_transport.py",
                          "codey/app/event_payloads.py", "codey/app/event_bus.py", "codey/app/context.py",
                          "codey/app/headless_runner.py", "codey/app/task_services.py", "codey/task/entry_auth.py",
                          "codey/operations/kernel_recovery.py",

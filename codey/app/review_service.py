@@ -362,6 +362,15 @@ def run_review(
             review_source_run_id=source,
         )
     cancellation.check()
+    api_reviewer = _selected_api_reviewer(ctx, session_id, run_id, writer_id) if self_review_allowed else None
+    if api_reviewer is not None:
+        reviewer_id, reviewer = api_reviewer
+        return run_review_attempt(ctx, session_id=session_id, project=project, task=task,
+            writer_summary=writer_summary, changes=changes, recent_log=recent_log,
+            change_brief=change_brief, project_map=project_map, verification_map=verification_map,
+            review_impact_map=review_impact_map, execution_evidence=execution_evidence,
+            reviewer_id=reviewer_id, reviewer=reviewer, self_review=False, trace_recorder=trace_recorder,
+            run_id=run_id, review_policy=review_policy, review_source_run_id=source)
     if not self_review_allowed:
         emit_review(ctx, session_id, "Review unavailable: no web reviewer is open.")
         return None
@@ -398,6 +407,27 @@ def run_review(
     if last_error is not None:
         raise last_error
     raise RuntimeError("no review model available")
+
+
+def _selected_api_reviewer(ctx: TaskState, session_id: str, run_id: str, writer_id: str) -> tuple[str, Any] | None:
+    from codey.providers.api_connections import capture_reviewer_selection, open_selection
+    from codey.runtime.core.api_selection import ApiRunSelection
+    from codey.runtime.core.operation_state import RuntimeOperationStore
+
+    writer = ctx.run_registry.api_selection_for(run_id)
+    if not isinstance(writer, ApiRunSelection) or writer.connection_id != writer_id:
+        return None
+    operation = RuntimeOperationStore(ctx.runtime_log).load(session_id, run_id) if getattr(ctx, "runtime_log", None) is not None else None
+    if operation is not None and operation.reviewer_selection:
+        selection = ApiRunSelection.from_payload(operation.reviewer_selection)
+    else:
+        try:
+            selection = writer if operation is not None and operation.task_kind == "review" else capture_reviewer_selection(writer)
+        except ValueError:
+            return None
+        if operation is not None:
+            ctx.runtime_mutations.admit_reviewer_selection(session_id, run_id, selection.to_payload())
+    return selection.connection_id, open_selection(selection)
 
 
 __all__ = [

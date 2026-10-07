@@ -2,6 +2,25 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 共享 API 协议与 Zen 免费模型（2026-10-07）
+
+- 用共同 API 生成 runtime 与独立 Chat Completions/Responses codec 替代 Local 专用
+  传输；工具声明、结果和回复结束状态中立，授权与完成仍经过同一任务内核。
+- 每次生成只发送一次，HTTP/SSE 必须有有效终止并遵守总截止；不完整工具/普通文本
+  不执行，取消后的迟到回复不提交。最终交付与完成证明分别记录。
+- 桌面、CLI、headless 正式保存不含秘密的模型/协议/能力选择，支持冷启动恢复。
+  新增 `agent --model/--effort`、Local 协议选择及原有菜单内的动态 Zen 免费模型。
+- Zen 目录/缓存、合作请求头及工具名称映射隔离于可删除连接包；Writer 可用另一
+  API 模型 Review，独立只读 Review 使用选定模型本身，保持既有审查策略。
+- 按 TDD 修复目标聊天 effort、独立 Review 模型选择、残缺响应总截止、异常目录
+  隔离、HTTP 错误流释放、普通 Responses 截断，以及桌面资源并发连接队列。
+- 真实 Codey 验证：Muse Spark 1.3（Responses）修改并验证代码，Space Bunny
+  （Chat Completions）独立审查通过；独立只读 Review、动态菜单和 Settings 验收通过。
+  上游资格与任务模式限制明确保留，不会未知后换模型重发。
+- 最终闸门：**7595 passed、7 skipped、1501 subtests，605.00 秒**；机器契约
+  **430 passed**；Ruff、mypy（388 文件）、编译、JavaScript（18 文件）、diff 通过。
+  全量失败、修复和访问限制见 `TEST_REPORT.md`。没有发布或修改版本号。
+
 ## 未发布 - UI 与测试卫生收敛（2026-10-06）
 
 - 完成生产行为、测试质量、架构、UX/性能、反向调用方、状态流、fixture/fallback 与

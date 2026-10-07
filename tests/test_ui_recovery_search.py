@@ -277,7 +277,7 @@ def test_local_rejection_immediately_offers_enabled_model_action(page):
 
     def reject(route):
         submissions.append(route.request.post_data_json)
-        route.fulfill(status=400, json={"reason": "local_selection_invalid"})
+        route.fulfill(status=400, json={"reason": "model_selection_invalid"})
 
     page.route("**/api/run", reject)
     page.locator("#task").fill("original local task")
@@ -300,7 +300,7 @@ def test_local_rejection_choose_model_returns_to_original_chat_without_sending(p
         window.runCalls = 0;
         window.fetch = (url, options) => url === '/api/run'
             ? (runCalls++, new Promise(resolve => window.finishRejectedSend = () => resolve(
-                new Response(JSON.stringify({reason:'local_selection_invalid',error:'private details'}),{status:400}))))
+                new Response(JSON.stringify({reason:'model_selection_invalid',error:'private details'}),{status:400}))))
             : realFetch(url, options);
     }""")
     page.locator("#task").fill("original local task")
@@ -312,7 +312,7 @@ def test_local_rejection_choose_model_returns_to_original_chat_without_sending(p
     expect(page.locator("#task")).to_have_value("beta draft")
     page.evaluate("switchSession('a')")
     error = page.locator(".status-row.err")
-    expect(error).to_contain_text("Select the local model again")
+    expect(error).to_contain_text("Select the model again")
     expect(error.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     page.evaluate("switchSession('b')")
     # The receipt action retains its own chat even if invoked after navigation.
@@ -330,12 +330,12 @@ def test_local_rejection_choose_model_returns_to_original_chat_without_sending(p
     expect(page.locator("#task")).to_have_value("beta draft")
 
 
-def test_invalid_local_selection_has_stable_recovery_reason_and_is_not_submitted():
+def test_invalid_model_selection_has_stable_recovery_reason_and_is_not_submitted():
     submit = mock.Mock()
     with mock.patch("codey.providers.local_selection.capture_local_run_config", side_effect=ValueError("changed")):
         status, payload = api.run_submit_response({
-            "task": "hello", "provider": "local", "local_selection": {"model": "old"},
+            "task": "hello", "provider": "local", "model_selection": {"model": "old"},
         }, submit)
     assert status == 400
-    assert payload["reason"] == "local_selection_invalid"
+    assert payload["reason"] == "model_selection_invalid"
     submit.assert_not_called()

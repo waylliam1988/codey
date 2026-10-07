@@ -262,6 +262,7 @@ def run(request: AgentRequest) -> RunResult:
         checks_ran=bool(session.verifications),
         proof=outcome.proof,
         facts=session,
+        delivery=outcome.delivery,
     )
     if request.conversation is not None:
         from codey.agents.handoff import ConversationSnapshot

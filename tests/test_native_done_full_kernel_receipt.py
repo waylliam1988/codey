@@ -24,7 +24,7 @@ class _SeqNativeProvider:
         )
 
     def send_tool_results(self, messages, tools):
-        self.answered.append([m["tool_call_id"] for m in messages])
+        self.answered.append([m.call_id for m in messages])
         self.results_calls += 1
         if self.results_calls == 1:
             # 回答 done-1 后，模型又提出后续调用 followup-1，必须被收口关闭且不执行
@@ -32,6 +32,9 @@ class _SeqNativeProvider:
                 tool_calls=(SimpleNamespace(id="followup-1", name="read_file", arguments={"path": "a.py"}),),
             )
         return SimpleNamespace(tool_calls=())
+
+    def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        return self.send_tool_results(results, [])
 
 
 def test_done_receipt_closes_followup_via_real_kernel(tmp_path) -> None:

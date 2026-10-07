@@ -26,13 +26,13 @@ from codey.operations.project_audit_advisor import (
     run_project_audit as run_project_audit_core,
 )
 from codey.operations.task_state import TaskState
-from codey.providers.catalog import PROVIDER_LABELS
+from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
 
 
 def connect_consensus_provider(selected_provider: Any, provider_id: str) -> Any:
     """Use an already-open sibling tab while a Writer provider is active."""
 
-    if provider_id == "local":
+    if provider_id in API_CONNECTIONS:
         return providers.connect_existing_provider(provider_id)
     owner_page = getattr(getattr(selected_provider, "session", None), "page", None)
     if owner_page is not None:

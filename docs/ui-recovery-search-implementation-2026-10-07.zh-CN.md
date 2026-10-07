@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Settings 首次加载失败 | 上方仍是 `Loading connection…`，下方要求关闭重开 | 原位置显示 `Could not load connection` 和灰色 `Retry`；同一窗口内重试 |
 | 别的聊天占用运行 | `Could not send the message` | 确认运行所属聊天后显示 `Another chat is running · Open` |
-| 本地模型选择失效 | 通用发送错误 | `Select the local model again · Choose model`，打开原有模型菜单 |
+| API 模型选择失效 | 通用发送错误 | `Select the model again · Choose model`，打开原有模型菜单 |
 | 浏览器工作线程暂时忙碌 | 通用发送错误 | `Codey is temporarily busy · Retry` |
 | 原因无法确定 | 通用发送错误 | 保持简短的通用提示及原有 Retry，不根据任意错误字符串猜原因 |
 | 搜索空项目名称 | 项目被过滤掉，出现没有匹配聊天的提示 | 项目仍可找到，展开显示 `No chats` |
@@ -24,7 +24,7 @@
 - 跳转和模型选择属于原始失败聊天，不自动发送任务。另一个聊天的草稿保持独立。
 - 发送 Retry 使用原始失败请求文本，后续编辑的新草稿不被覆盖。
 - 项目自身名称独立匹配；聊天标题匹配仍能显示所属项目。搜索临时展开的箭头与实际显示一致，退出搜索恢复保存的展开状态。
-- 本地选择校验失败的后端响应提供稳定的 `local_selection_invalid` 原因标识；失败请求不会交给执行器。
+- API 选择校验失败的后端响应提供稳定的 `model_selection_invalid` 原因标识；失败请求不会交给执行器。Local 与 Zen 共用此契约，连接失效不会偷偷改用默认模型。
 
 ## TDD 记录
 

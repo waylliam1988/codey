@@ -108,8 +108,8 @@ function clearDraftIfUnchanged(sessionId, draft, revision = null) {
 async function reportSendFailure(sessionId, text, response) {
   const data = await response.json().catch(() => null);
   let message = '', sendFailure = '', runOwner = '';
-  if (response.status === 400 && data?.reason === 'local_selection_invalid') {
-    message = 'Select the local model again'; sendFailure = 'local_selection';
+  if (response.status === 400 && data?.reason === 'model_selection_invalid') {
+    message = 'Select the model again'; sendFailure = 'model_selection';
   } else if (response.status === 503 && data?.error === 'browser worker busy') {
     message = 'Codey is temporarily busy'; sendFailure = 'worker_busy';
   } else if (response.status === 409 && data?.error === 'busy') {
@@ -130,7 +130,7 @@ function recoveryActions(message) {
       if (deps.findSession(message.runOwner)) deps.switchSession(message.runOwner);
     }}];
   }
-  if (message.sendFailure === 'local_selection') {
+  if (message.sendFailure === 'model_selection') {
     return [{label:'Choose model', disabled:!!runningSessionId(), onclick:e => {
       if (!deps.findSession(sessionId) || runningSessionId() || sendingSessionId) return;
       e?.stopPropagation();
@@ -146,9 +146,7 @@ async function sendTaskFromSession(sessionId, task, providerId = '', onSendStart
   if (!text || runningSessionId() || sendingSessionId) return false;
   const s = deps.findSession(sessionId);
   if (!s) return false;
-  const provider = PROVIDERS.includes(providerId)
-    ? providerId
-    : (PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider());
+  const provider = providerId || s.provider || liveDefaultProvider();
   sendingSessionId = sessionId;
   updateSend();
   deps.updateComposerContext();
@@ -223,9 +221,9 @@ async function continueTask(sessionId) {
         project: p.path,
         task,
         continue_task: true,
-        provider: PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider(),
+        provider: s.provider || liveDefaultProvider(),
         intent: 'project',
-        ...window.CodeyProviderUI.runSelection(s, PROVIDERS.includes(s.provider) ? s.provider : liveDefaultProvider()),
+        ...window.CodeyProviderUI.runSelection(s, s.provider || liveDefaultProvider()),
       }),
     });
     if (r.status === 409 || !r.ok) {

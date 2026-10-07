@@ -11,16 +11,20 @@ from __future__ import annotations
 from codey.env_names import PROVIDER_WORKER_CHILD_ENV
 
 DEFAULT_PROVIDER_ID = "deepseek"
+API_CONNECTIONS = {
+    "local": ("Local", "codey.providers.local_connection"),
+    "zen": ("OpenCode Zen", "codey.providers.zen.connection"),
+}
 PROVIDER_LABELS = {
     "deepseek": "DeepSeek",
     "mimo": "MiMo",
     "stepfun": "StepFun",
     "qwen": "Qwen",
     "glm": "GLM",
-    "local": "Local",
+    **{key: registration[0] for key, registration in API_CONNECTIONS.items()},
 }
 WEB_PROVIDER_LABELS = {
-    key: label for key, label in PROVIDER_LABELS.items() if key != "local"
+    key: label for key, label in PROVIDER_LABELS.items() if key not in API_CONNECTIONS
 }
 PROVIDER_WORKER_PORT_OFFSETS = {
     "deepseek": 101,

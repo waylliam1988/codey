@@ -75,11 +75,11 @@ def probe_endpoint() -> tuple[str, tuple[str, ...]]:
 
 
 def run_p0() -> dict:
-    from codey.providers.local_openai import LocalOpenAIProvider
+    from codey.providers.api_provider import ApiProvider
 
     base_url, models = probe_endpoint()
     model = models[0] if models else "local-model"
-    provider = LocalOpenAIProvider(base_url, model, timeout=TIMEOUT)
+    provider = ApiProvider(base_url, model, timeout=TIMEOUT)
     t0 = time.time()
     try:
         reply = provider.send("Reply with exactly: PROBE_OK", timeout=TIMEOUT)

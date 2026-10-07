@@ -17,7 +17,7 @@ from codey.automation.browser_worker import submit as submit_browser_task
 from codey.operations.task_state import TaskState
 from codey.providers.base import ChatProvider
 from codey.providers.capabilities import rank_providers
-from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS  # noqa: F401
+from codey.providers.catalog import API_CONNECTIONS, DEFAULT_PROVIDER_ID, PROVIDER_LABELS  # noqa: F401
 from codey.providers.supervisor import ProviderSupervisor
 from codey.utils.refs import clip, digest_text
 
@@ -69,7 +69,7 @@ def reviewer_candidates(
         provider_id
         for provider_id in PROVIDER_LABELS
         if provider_id != writer
-        and provider_id != "local"
+        and provider_id not in API_CONNECTIONS
         and supervisor.is_available(provider_id)
     )
     return rank_providers(candidates, mode="review")
@@ -171,26 +171,17 @@ def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID
     """Connect a provider and announce it on the session event stream."""
     ctx.set_run_status("connecting")
     ctx.emit({"type": "status", "status": "connecting"})
-    provider = connect_provider(provider_id)
+    from codey.providers.api_connections import open_selection
+
+    run = ctx.current_run()
+    selection = ctx.run_registry.api_selection_for(run.run_id) if run is not None else None
+    provider = open_selection(selection) if selection is not None and selection.connection_id == provider_id else connect_provider(provider_id)
     ctx.set_run_status("running")
     ctx.emit({"type": "status", "status": "running"})
     ctx.emit({
         "type": "providers",
         "providers": provider_status_update(provider_id, True),
     })
-    return provider
-
-
-def open_local_model_session(ctx: TaskState, config: Any) -> Any:
-    """Use the admitted chat selection, never the current settings form."""
-    from codey.providers.local_openai import LocalOpenAIProvider
-
-    ctx.set_run_status("connecting")
-    ctx.emit({"type": "status", "status": "connecting"})
-    provider = LocalOpenAIProvider.connect(config=config, verify_thinking=True)
-    ctx.set_run_status("running")
-    ctx.emit({"type": "status", "status": "running"})
-    ctx.emit({"type": "providers", "providers": provider_status_update("local", True)})
     return provider
 
 

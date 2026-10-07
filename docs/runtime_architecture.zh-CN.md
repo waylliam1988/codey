@@ -23,6 +23,7 @@ Observe ◄───────────────────────
 
 ```text
 runtime/core/     operation / state / reducer / ports / outcome / models / cancellation
+                  api_selection / operation_payload
 runtime/log/      session_log / projection / session_view / compaction
 runtime/effects/  effect_records / delivery / replay_* / safe_tool_replay
 runtime/write/    mutation_line / drive / task_runtime
@@ -65,6 +66,15 @@ runtime/observe/  events / evidence / prompt_* / terminalizer
 每个真实外部效果先写 intent，效果后写 settlement；safe 读可重放，
 unsafe 永不自动重复。storage/session 层不知道 agent 语义，progress 和
 outcome 不自动变成完成证据，完成只认 proof + verification。
+
+API 任务的 `model_selection` 在 admit 时写入正式 operation state，独立
+Reviewer 的 `reviewer_selection` 在发送前冻结。两者只保存连接版本、模型、协议、
+能力和参数；凭据由连接配置提供，不写入日志或前端。重启恢复不从当前 Settings
+替换原选择；原连接失效就明确阻塞。协议历史归 Provider，不成为第二套任务事实。
+
+`final_delivery` 与 completion proof 分开记录。发送结束工具结果仍是有界生成请求，
+并非专用网络 ACK；返回的新工具不能执行，只能在有限预算内关闭调用链。
+交付 failed/unknown 不丢弃完成证明或已执行变更，恢复处理交付事实，不重新写文件。
 
 ## 统一 kernel 的行为边界与 parity
 

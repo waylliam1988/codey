@@ -6,7 +6,11 @@ overview, not a release gate.
 ## Model Access
 
 - Web providers: DeepSeek, MiMo, StepFun, Qwen, and GLM.
-- Local provider: any OpenAI-compatible endpoint with an optional API key.
+- Local provider: an OpenAI-compatible endpoint with an optional API key and
+  explicit Chat Completions or Responses protocol in Settings → Advanced.
+- OpenCode Zen: dynamically discovered supported zero-cost models using the
+  agreed public partner connection. The service checks access for every request;
+  a free listing does not guarantee all task modes. See [live validation](../TEST_REPORT.md).
 - No API key is required for web providers; you log in through a dedicated Edge
   or Chrome browser profile.
 - Provider-specific browser code is isolated in adapters, so website breakage
@@ -45,12 +49,16 @@ Git improves the workflow when available, but Codey keeps non-Git diff and
 restore paths so beginners can start without learning Git first.
 
 Desktop and CLI/headless project tasks use one service composition and the
-same review policy: prefer an available web Reviewer, otherwise use a fresh
-self-review if allowed. Concrete findings enter at most one Writer repair;
-review approval does not replace fresh verification. CLI exposes all task
+same review policy: prefer an available web Reviewer, otherwise use an
+independent second API model when available, or fresh self-review if allowed.
+Standalone API review uses the selected model itself. Concrete findings enter at
+most one Writer repair; review approval does not replace fresh verification. CLI exposes all task
 intents, explicit network/write grants, session continuation and review reuse.
 Embedded gates may explicitly pin a Reviewer connector. Presentation and
 noninteractive shell approval remain entry-specific.
+
+API model/protocol/effort choices are frozen in the formal operation log for
+desktop, CLI and headless recovery; credentials stay in backend connection storage.
 
 Text tool calls support bounded read-only batches: `read_files` and `parallel`
 validate the whole batch before running its actions in order. Repeated unchanged

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
-from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 
 
 class _ContinuableProvider:
@@ -16,7 +16,7 @@ class _ContinuableProvider:
         if len(self.prompts) == 1:
             return AssistantTurn(
                 text="partial reasoning",
-                raw={"finish_reason": "length", "continuable_length": True},
+                finish=TurnFinish.OUTPUT_LIMIT,
             )
         return AssistantTurn(
             tool_calls=(ProviderToolCall(
@@ -25,8 +25,11 @@ class _ContinuableProvider:
         )
 
     def send_tool_results(self, results, tools=None, timeout=None):
-        assert results and results[0]["tool_call_id"] == "done-1"
+        assert results and results[0].call_id == "done-1"
         return AssistantTurn()
+
+    def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        return self.send_tool_results(results, [])
 
 
 class _AlwaysLengthProvider:
@@ -40,12 +43,15 @@ class _AlwaysLengthProvider:
         self.prompts.append(str(prompt))
         return AssistantTurn(
             text="Tests passed; task complete.",
-            raw={"finish_reason": "length", "continuable_length": True},
+            finish=TurnFinish.OUTPUT_LIMIT,
         )
 
     def send_tool_results(self, results, tools=None, timeout=None):
         del results, tools, timeout
         raise AssertionError("length probe must not execute tools")
+
+    def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        return self.send_tool_results(results, [])
 
 
 def test_kernel_consumes_one_local_length_continuation_before_done():
@@ -79,7 +85,7 @@ def test_kernel_consumes_one_local_length_continuation_before_done():
     assert "truncated" in provider.prompts[1]
 
 
-def test_non_local_native_provider_does_not_get_local_length_continuation(monkeypatch):
+def test_every_native_provider_gets_one_typed_length_continuation(monkeypatch):
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
@@ -98,7 +104,8 @@ def test_non_local_native_provider_does_not_get_local_length_continuation(monkey
         ),
     )
     assert not result.completed
-    assert all("Your previous response was truncated" not in prompt for prompt in provider.prompts)
+    assert any("Your previous response was truncated" in prompt for prompt in provider.prompts)
+    assert result.stop_reason == "provider_failure"
 
 
 def test_second_local_length_stop_is_provider_failure() -> None:
@@ -143,7 +150,7 @@ def test_plain_text_after_length_never_completes() -> None:
             del tools, timeout
             self.prompts.append(str(prompt))
             if len(self.prompts) == 1:
-                return AssistantTurn(text="partial", raw={"continuable_length": True})
+                return AssistantTurn(text="partial", finish=TurnFinish.OUTPUT_LIMIT)
             return AssistantTurn(text="Tests passed. Task complete.")
 
     provider = Provider()

@@ -11,7 +11,8 @@
 Version: `0.5.11`
 
 Codey connects browser AI accounts you already use, such as DeepSeek, MiMo,
-StepFun, Qwen, and GLM, or a local OpenAI-compatible model, to a controlled
+StepFun, Qwen, and GLM, a local OpenAI-compatible model, or supported free
+OpenCode Zen models, to a controlled
 workspace on your own computer.
 
 Its purpose is access equity. AI-assisted programming should not require paid
@@ -56,7 +57,17 @@ single-use and expires after five minutes; restart Codey to obtain a new link
 when it has expired or been consumed. This does not require another AI account.
 
 To use a local model, choose `Local` and provide an OpenAI-compatible base URL,
-model id, and optional API key.
+model id, and optional API key. Settings → Advanced → `API protocol` explicitly
+selects Chat Completions (`/chat/completions`) or Responses (`/responses`).
+`Tool calling` separately selects native or text-based tool requests.
+
+Free Zen models appear in the same model menu, from the public directory and
+live endpoint listing. Supported zero-cost models are refreshed automatically;
+network failure retains the bounded cache. No registration or personal key is
+required by this partner connection, but eligibility and tool restrictions are
+checked by the service for each request. A free listing does not guarantee access
+to every task mode. Muse coding and Space Bunny review were verified; see
+[test results and access limits](TEST_REPORT.md).
 
 ## CLI
 
@@ -72,6 +83,9 @@ python -m codey agent --provider qwen --project E:\my-project --max-turns 10 "Fi
 
 # Emit JSONL events for scripts or CI wrappers
 python -m codey agent --json --provider qwen --project E:\my-project "Fix the failing tests"
+
+# Choose a free API model; protocol follows its current catalog entry
+python -m codey agent --provider zen --model muse-spark-1.3-contributor-free --project E:\my-project "Fix the failing tests"
 ```
 
 `agent` uses the same task services and authorization rules as the desktop.
@@ -83,6 +97,10 @@ is optional for chat/Research. `--readonly` selects read-only planning;
 requires the same session and `--review-source-run-id` with a prior run's ID.
 Noninteractive shell approval remains denied. The single-message `chat` command
 is a provider utility; `agent --intent chat` uses the recorded task flow.
+API tasks accept `--model`; `--effort` requires it and must match advertised
+capabilities. Desktop, CLI and headless admission persist the chosen model,
+protocol and generation settings. Later Settings changes do not alter that run;
+an unavailable original connection blocks recovery explicitly.
 
 CLI, browser events and headless JSONL share run identity and tool status.
 Recovery retains the original requirements and can deliver settled results;
@@ -94,15 +112,19 @@ Read-only review uses the selected Reviewer, validates findings against the
 actual input scope and checks whether the workspace changed. Partial or
 unavailable results are explicit; review approval does not replace tests.
 An explicit `review_source_run_id` can reuse a finished result only in the same
-session/project with matching input, known local target/settings and a current
+session/project with matching input, known API target/settings and a current
 snapshot. No source means a fresh review. Run Details shows bounded status;
 `GET /api/run_review` returns verified stored findings through the authenticated
 run API. See [current review ownership](docs/project_structure.md).
 
 Desktop and CLI/headless project runs use the same automatic review phase.
-Under the default policy, an available web Reviewer is preferred; otherwise a
-fresh self-review can use the Writer's model. Concrete findings enter at most
-one Writer repair. Plain non-Git folders are supported. `--review-policy
+Under the default policy, an available web Reviewer is preferred. Otherwise an
+API Writer first selects a different model from its connection when available;
+the existing policy decides whether fresh self-review is allowed when no
+independent model is available. A standalone read-only API review uses the
+selected model itself. Unknown delivery is never retried through another model.
+Concrete findings enter at most one Writer repair. Plain non-Git folders are
+supported. `--review-policy
 require_web` requires a web Reviewer; embedded gates can explicitly pin a
 Reviewer connector. Review approval never replaces fresh verification.
 See [desktop/CLI parity evidence](docs/desktop-cli-task-parity-2026-10-04.zh-CN.md).
@@ -127,6 +149,11 @@ which records manifests and digests rather than raw prompts.
 Browser providers can change their websites. Codey keeps provider adapters
 isolated so a broken web page integration can be fixed without changing the
 agent core.
+
+Zen's agreed upstream headers and tool-name mapping live only in its connection
+package. They are absent from Local requests and assistant prompts. Generation
+requests are sent once; interrupted/unknown replies are not automatically replayed.
+Completion proof and final result delivery are recorded separately.
 
 ## Development
 

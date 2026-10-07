@@ -189,16 +189,9 @@ def _git_basis(root: Path) -> str | None:
 
 
 def review_model_identity(provider: object) -> str:
-    """Hash known local target/settings; a web provider name is not a model ID."""
-    from codey.providers.local_openai import LocalOpenAIProvider
-
-    if not isinstance(provider, LocalOpenAIProvider):
-        return ""
-    settings = {name: getattr(provider, name) for name in (
-        "base_url", "model", "temperature", "system_prompt", "context_window_tokens",
-        "context_reserve_tokens", "context_keep_recent_tokens",
-    )}
-    return hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    """Provider-owned non-secret identity; a web label cannot prove a model."""
+    identity = getattr(provider, "model_identity", "")
+    return identity if isinstance(identity, str) else ""
 
 
 def identities_match(first: object, second: object) -> bool:

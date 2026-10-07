@@ -10,6 +10,7 @@ from __future__ import annotations
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.providers.base import tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolResult
 
 
@@ -132,8 +133,8 @@ def test_native_tools_derive_from_same_frozen_specs():
     snapshot = build_turn_snapshot(session, native=True)
     frozen_names = {str(getattr(s, "name", "")) for s in snapshot.frozen_specs}
     schema_names = {
-        str((item.get("function") or {}).get("name") or "")
-        for item in snapshot.native_tools
+        item.name
+        for item in tools_from_specs(snapshot.frozen_specs)
     }
     assert schema_names, "native schema 不得为空"
     assert schema_names <= frozen_names, f"schema 与冻结定义漂移：{schema_names - frozen_names}"

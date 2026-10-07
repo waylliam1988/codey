@@ -24,7 +24,7 @@ def test_invalid_task_configuration_does_not_create_project_or_state(tmp_path, k
     assert not project.exists() and not state.exists()
 
 
-def test_require_web_without_web_reviewer_never_self_reviews(tmp_path, monkeypatch):
+def test_require_web_without_web_reviewer_never_self_reviews(tmp_path, monkeypatch, scripted_local_api_connection):
     project = tmp_path / "project"
     project.mkdir()
     (project / "app.py").write_text("value = 2\n", encoding="utf-8")

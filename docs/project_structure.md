@@ -15,7 +15,7 @@ codey/
   policies/     Task grants, action guards, network and command boundaries
   operations/   Task entry, shared kernel, execution adapters, completion and recovery wiring
   agents/       Project request/result, prompts, context, review and approval helpers
-  providers/    Browser/local adapters, response codecs, sessions, worker and health
+  providers/    Browser adapters, shared API runtime, protocol codecs, connection packages and health
   protocols/    Shared JSON/native plan codecs and framing
   toolchain/    Shared tool specifications, schema checks and project tool implementations
   completion/   Completion contracts, engine, verification and edit integrity
@@ -73,7 +73,12 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/operations/project_completion_checks.py`, `research_completion_checks.py` | Project and source/strict-Research check providers |
 | `codey/operations/kernel_session_recovery.py`, `kernel_receipts.py` | Restore original policy/facts and settled results; validate receipt identity |
 | `codey/providers/local_response_codec.py` | Local response envelopes and model dialects, before the kernel |
-| `codey/agents/context_compaction.py`, `providers/local_openai.py` | Exact native history pairing before compaction/request; actual serialized-request diagnostic hook |
+| `codey/providers/base.py` | Protocol-neutral tool definitions/results and explicit assistant finish state |
+| `codey/providers/api_provider.py`, `api_transport.py` | Shared generation lock, candidate commit, cancellation, deadline and one bounded POST; unknown outcomes are never replayed |
+| `codey/providers/api_chat.py`, `api_responses.py` | Protocol-owned tools, results, wire history, complete-exchange compaction and reply decoding; Responses replays reasoning items and uses call_id |
+| `codey/providers/api_connections.py`, `local_connection.py` | Lazy connection factories and admitted Local configuration; shared runtime does not import Zen |
+| `codey/providers/zen/` | Public/free dynamic catalog, cache, scoped partner identity, wire tool names and bounded plain-access observations; removable with its API_CONNECTIONS registration |
+| `codey/runtime/core/api_selection.py`, `operation_payload.py` | Non-secret frozen API selection and strict admission/delivery payload validation |
 | `codey/research/source_gateway.py`, `tools.py` | Explicit acquisition/tool outcomes; cancellation/deadlines propagate without fallback acquisition |
 | `codey/app/context.py`, `event_bus.py`, `event_payloads.py` | Common run identity/mode and strict status publication; replay bus and pure bounded machine-event/receipt projection |
 | `codey/app/headless_runner.py`, `cli.py`, `web/assets/sse.js` | Consume common events as JSONL, CLI text and browser reconciliation without inferring success |
@@ -88,7 +93,7 @@ Using web tools in ordinary coding does not automatically require research notes
 | Owner | Consumer / boundary |
 | --- | --- |
 | `reviews/core.py`, `findings.py` | Bounded reply parsing, actionable findings and common review event metadata |
-| `reviews/input.py`, `identity.py` | Actual safe prompt/scope, local model/settings identity, bounded file and Git-basis snapshot checks |
+| `reviews/input.py`, `identity.py` | Actual safe prompt/scope, API model/settings identity, bounded file and Git-basis snapshot checks |
 | `reviews/persistence.py`, `reuse.py` | One verified artifact read, finished-ledger lineage and explicit same-session/project reuse |
 | `app/review_service.py` | Single input preparation, actual Reviewer selection, one format repair, persistence; unknown send failures are not retried through another Reviewer |
 | `reviews/coordinator.py`, `operations/project_review_phase.py` | Current-snapshot findings may enter the existing single Writer repair |
@@ -106,6 +111,13 @@ Model identity describes configured target/model/settings, not immutable model
 weights. Snapshot inventories and file reads have finite bounds; scan failures
 or exhausted bounds decline trust. These are explicit limits, not a whole-project
 no-bug proof or a guarantee against arbitrary concurrent writes.
+
+API project Writers admit an independent model from the same connection when
+available; standalone read-only review uses its selected model. Reviewer choice
+is frozen in the formal operation log before sending. Existing web preference,
+require-web policy, self-review policy and one-repair limit remain authoritative.
+Plain access observations are short-lived service facts, not permanent capability
+promises; an unknown request never causes another-model replay.
 
 `runtime/core` owns state/contracts, `runtime/log` canonical log projections,
 `runtime/effects` effect/result delivery, `runtime/write` admitted mutations,
@@ -125,10 +137,20 @@ return `status` (`ok/error/skipped`), plus a failure `detail` when applicable;
 `ResearchToolOutput.ok` stays explicit until it becomes the common `ToolResult`.
 Native history requires one result per unique call ID in each tool group.
 
+Admission records `model_selection` and, when used, `reviewer_selection` in the
+canonical operation state: connection revision, model, protocol, capabilities
+and generation settings, without credentials. Cold restart reuses this choice;
+changed Settings do not replace it, and an unavailable connection blocks recovery.
+Protocol history is in-memory and protocol-owned. Without reusable history,
+recovery creates a fresh window with original task requirements and settled facts,
+never repeating a settled write. `final_delivery` records success/failed/unknown
+separately from completion proof; delivery failure does not erase completed effects.
+
 The manual gate recorder observes bytes at the local provider's request
 boundary. Request hashes diagnose changes; they grant no permission and prove
 neither semantic equivalence nor completion. It distinguishes logical exchanges
-from the explicit `urlopen` attempts, including the existing transport retries.
+from the single bounded HTTP attempt. HTTP uncertainty, bounded model continuation
+after an explicit output limit, and task recovery are separate mechanisms.
 
 Ghost work queues and affinity each separate `*_model`, `*_sources`,
 `*_events` and the store module. These are domain owners, not generic framework

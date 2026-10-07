@@ -12,9 +12,10 @@ from pathlib import Path
 
 
 class ProviderNotSentSettlementTests(unittest.TestCase):
-    def test_prep_and_overflow_settle_not_sent_for_safe_retry(self) -> None:
+    def test_prep_overflow_and_known_transport_refusal_settle_not_sent(self) -> None:
         from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
         from codey.providers import error_classification as errors
+        from codey.providers.api_transport import GenerationNotSentError
         from codey.runtime.effects.effect_records import SENT_STATE_NOT_SENT, RuntimeEffectStore
         from codey.runtime.log.session_log import RuntimeSessionLog
         from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -27,7 +28,7 @@ class ProviderNotSentSettlementTests(unittest.TestCase):
                 provider_id="local", turn_budget=5, max_repair_rounds=1, task_kind="project",
             )
             line.mark_writer_running("s1", "r1", provider_id="local")
-            for exc in (errors.RequestPrepError("prep boom"), errors.ContextOverflowError("full")):
+            for exc in (errors.RequestPrepError("prep boom"), errors.ContextOverflowError("full"), GenerationNotSentError("connection refused")):
                 sink = KernelEffectSink(line, session_id="s1", run_id="r1", provider_id="local")
 
                 class BoomProvider:
@@ -40,7 +41,7 @@ class ProviderNotSentSettlementTests(unittest.TestCase):
                 BoomProvider.__name__ = f"BoomProvider_{type(exc).__name__}"
 
                 recorded = KernelRecordedProvider(BoomProvider(exc), sink)
-                with self.assertRaises((errors.RequestPrepError, errors.ContextOverflowError)):
+                with self.assertRaises((errors.RequestPrepError, errors.ContextOverflowError, GenerationNotSentError)):
                     recorded.send("hello")
                 store = RuntimeEffectStore(log)
                 sends = [r for r in store.load_effects("s1", "r1") if r.intent.effect_category == "provider_send"]

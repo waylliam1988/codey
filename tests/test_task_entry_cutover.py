@@ -1265,6 +1265,9 @@ def test_native_writer_uses_same_durable_delivery_chain(tmp_path, monkeypatch) -
             sent.extend(messages)
             return AssistantTurn(text='{"tool":"done","args":{"summary":"read app.py"}}')
 
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
+
     result = run(AgentRequest(
         provider=Provider(), project=tmp_path, task="read app.py", max_turns=3,
         fresh_chat=False, session_id="s", run_id="r", provider_id="local",
@@ -1272,7 +1275,7 @@ def test_native_writer_uses_same_durable_delivery_chain(tmp_path, monkeypatch) -
         conversation=conversation,
     ))
     assert result.stop_reason == "done"
-    assert sent[0]["tool_call_id"] == "c1"
+    assert sent[0].call_id == "c1"
     assert conversation.used_tokens > 0
     assert ToolResultDeliveryStore(log).load_batches("s", "r")[0].is_delivered
 
@@ -1303,6 +1306,9 @@ def test_native_final_turn_answers_tool_call_before_budget_stop(tmp_path, monkey
             messages.extend(results)
             return AssistantTurn(text="acknowledged")
 
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
+
     outcome = run_task_kernel(
         session,
         request=KernelRunRequest(
@@ -1316,7 +1322,7 @@ def test_native_final_turn_answers_tool_call_before_budget_stop(tmp_path, monkey
         ),
     )
     assert outcome.stop_reason == "max_turns"
-    assert messages and messages[0]["tool_call_id"] == "call-1"
+    assert messages and messages[0].call_id == "call-1"
 
 
 def test_native_budget_stop_rejects_following_dangling_tool_call(tmp_path, monkeypatch) -> None:
@@ -1349,6 +1355,9 @@ def test_native_budget_stop_rejects_following_dangling_tool_call(tmp_path, monke
                 ))
             return AssistantTurn(text="acknowledged")
 
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
+
     run_task_kernel(
         session,
         request=KernelRunRequest(
@@ -1362,8 +1371,8 @@ def test_native_budget_stop_rejects_following_dangling_tool_call(tmp_path, monke
         ),
     )
     assert len(messages) == 2
-    assert messages[1][0]["tool_call_id"] == "call-2"
-    assert "budget" in messages[1][0]["content"]
+    assert messages[1][0].call_id == "call-2"
+    assert "budget" in messages[1][0].content
 
 
 def test_unified_writer_keeps_managed_output_receipt_in_event(tmp_path) -> None:

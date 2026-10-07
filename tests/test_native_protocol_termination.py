@@ -42,8 +42,11 @@ class _ThresholdProvider:
 
     def send_tool_results(self, results, tools=None, timeout=None) -> AssistantTurn:
         for row in list(results or ()):
-            self.receipt_ids.append(str(row.get("tool_call_id", "")))
+            self.receipt_ids.append(str(row.call_id))
         return self._replies.pop(0)
+
+    def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        return self.send_tool_results(results, [])
 
 
 def test_protocol_threshold_close_answers_followup_call_ids_without_executing():

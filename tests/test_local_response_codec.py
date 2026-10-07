@@ -5,8 +5,8 @@ from unittest import mock
 
 from codey.operations.kernel_protocol import normalize_turn
 from codey.operations.kernel_transport import call_provider_send
+from codey.providers.api_provider import ApiProvider
 from codey.providers.base import AssistantTurn
-from codey.providers.local_openai import LocalOpenAIProvider
 from codey.providers.local_response_codec import (
     normalize_local_reply,
     parse_local_tool_markup,
@@ -47,7 +47,7 @@ def test_local_gemma_invalid_literal_stays_plain_text() -> None:
 
 
 def test_local_provider_normalize_reply_returns_standard_turn() -> None:
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="gemma-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="gemma-test")
 
     turn = provider.normalize_reply(
         '<|tool_call>call:tool:read_file{args:{path:"app.py"}}<tool_call|>'

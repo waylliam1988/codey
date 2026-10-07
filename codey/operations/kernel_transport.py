@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from codey.operations.provider_session import normalize_provider_reply
+from codey.providers.base import ProviderToolResult
 
 
 class NativeBudgetExhausted(RuntimeError):
@@ -34,8 +35,8 @@ def send_kernel_reply(
     prompt: str,
     native_tools: Any,
     pending_reply: Any,
-    pending_native_messages: list[dict[str, Any]] | None,
-) -> tuple[Any, Any, list[dict[str, Any]] | None]:
+    pending_native_messages: list[ProviderToolResult] | None,
+) -> tuple[Any, Any, list[ProviderToolResult] | None]:
     """Send exactly one provider message and clear the consumed pending slot."""
     if pending_reply is not None:
         return pending_reply, None, pending_native_messages
@@ -67,7 +68,7 @@ def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
     return bool(supports_native_tools(probe, str(provider_id or "")))
 
 
-def _native_tool_messages(results: Any, session: Any) -> list[dict[str, Any]]:
+def _native_tool_results(results: Any, session: Any) -> list[ProviderToolResult]:
     from codey.operations.kernel_prompt import _result_context
 
     rows = list(results or [])
@@ -81,14 +82,14 @@ def _native_tool_messages(results: Any, session: Any) -> list[dict[str, Any]]:
             "mixed native batch: some results lack call ids; "
             "refusing to deliver a partial native chain"
         )
-    messages: list[dict[str, Any]] = []
+    messages: list[ProviderToolResult] = []
     for result in rows:
         call_id = str(getattr(result.call, "call_id", "") or "")
         if not call_id:
             # JSON-originated calls in a native session have no chain id;
             # synthesize a follow-up prompt instead of a tool message.
             return []
-        messages.append({"role": "tool", "tool_call_id": call_id, "content": _result_context(result, session)})
+        messages.append(ProviderToolResult(call_id, _result_context(result, session)))
     return messages
 
 
@@ -122,16 +123,17 @@ def _take_answered_reply(
         content = f"ERROR: {content}"
     return call_provider_send_results(
         provider,
-        [{"role": "tool", "tool_call_id": i, "content": content} for i in ids],
+        [ProviderToolResult(i, content) for i in ids],
         native_tools,
     )
 
 
 def _drain_native_budget(
     provider: Any,
-    messages: list[dict[str, Any]],
+    messages: list[ProviderToolResult],
     *,
     error: str = "turn budget exhausted; tool call was not executed",
+    declared_tools: Any = (),
 ) -> None:
     """Deliver the final native batch when the turn budget is exhausted.
 
@@ -143,17 +145,13 @@ def _drain_native_budget(
     for _ in range(4):
         # The task has ended: close ids without inviting another tool call.
         # Still bound and receipt calls from an endpoint ignoring withdrawal.
-        reply = call_provider_send_results(provider, messages, [])
+        reply = provider.acknowledge_tool_results(messages, list(declared_tools))
         ids = [str(getattr(call, "id", "") or "") for call in (getattr(reply, "tool_calls", ()) or ())]
         ids = list(dict.fromkeys(item for item in ids if item))
         if not ids:
             return None
         messages = [
-            {
-                "role": "tool",
-                "tool_call_id": call_id,
-                "content": f"ERROR: {error}",
-            }
+            ProviderToolResult(call_id, f"ERROR: {error}")
             for call_id in ids
         ]
     raise NativeBudgetExhausted("native tool chain exceeded budget drain limit")
@@ -184,21 +182,20 @@ def repair_native_dangling(
         return None
     return call_provider_send_results(
         provider,
-        [{"role": "tool", "tool_call_id": item, "content": f"ERROR: {error}"} for item in ids],
+        [ProviderToolResult(item, f"ERROR: {error}") for item in ids],
         native_tools,
     )
 
 
-def close_native_reply(provider: Any, reply: Any, error: str) -> None:
+def close_native_reply(provider: Any, reply: Any, error: str, *, declared_tools: Any = ()) -> None:
     """Close a terminal reply and bounded follow-on calls without executing them."""
     if isinstance(reply, str):
         return
     ids = list(dict.fromkeys(str(getattr(call, "id", "") or "")
                             for call in (getattr(reply, "tool_calls", ()) or ())))
-    messages = [{"role": "tool", "tool_call_id": key, "content": f"ERROR: {error}"}
-                for key in ids if key]
+    messages = [ProviderToolResult(key, f"ERROR: {error}") for key in ids if key]
     if messages:
-        _drain_native_budget(provider, messages, error=error)
+        _drain_native_budget(provider, messages, error=error, declared_tools=declared_tools)
 
 
 __all__ = [

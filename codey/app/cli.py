@@ -96,6 +96,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         ) if enabled),
         continue_task=args.continue_task,
         review_policy=args.review_policy,
+        model_selection={"model": args.model, **({"effort": args.effort} if args.effort is not None else {})} if args.model else {},
     )
     if json_mode:
         result = run_headless(
@@ -548,6 +549,8 @@ def main(argv: list[str] | None = None) -> int:
     sp_agent.add_argument("--max-turns", type=int, default=None)
     sp_agent.add_argument("--port", type=int, default=9222)
     sp_agent.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
+    sp_agent.add_argument("--model", default="", help="explicit API model; protocol comes from connection settings or catalog")
+    sp_agent.add_argument("--effort", choices=("off", "minimal", "low", "medium", "high", "xhigh", "max"), default=None)
     sp_agent.add_argument("--json", action="store_true", help="emit JSONL events on stdout")
     modes = sp_agent.add_mutually_exclusive_group()
     modes.add_argument("--intent", choices=("auto", "chat", "project", "hybrid", "research", "review", "planning_readonly"), help="task mode")
@@ -569,6 +572,12 @@ def main(argv: list[str] | None = None) -> int:
 
     args = ap.parse_args(argv)
     if args.cmd == "agent":
+        from codey.providers.catalog import API_CONNECTIONS
+
+        if args.model and args.provider not in API_CONNECTIONS:
+            sp_agent.error("--model requires an API connection")
+        if args.effort is not None and not args.model:
+            sp_agent.error("--effort requires --model")
         intent = _agent_intent(args)
         if args.continue_task and not args.session_id:
             sp_agent.error("--continue requires --session-id")

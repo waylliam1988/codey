@@ -1,6 +1,6 @@
 """原生混合批次必须显式拒绝：有 ID 与无 ID 不得混送。
 
-kernel_transport._native_tool_messages 遇到混合批次抛 ValueError，
+kernel_transport._native_tool_results 遇到混合批次抛 ValueError，
 task_loop 终止为 protocol，不回退文本。跨提供者文本交付只发生在
 明确的 provider_session_changed 分支。
 """
@@ -25,7 +25,7 @@ class MixedCallIdBatchTests(unittest.TestCase):
             ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "b.py"}, call_id=""), model_text="b"),
         ]
         with self.assertRaises(ValueError):
-            t._native_tool_messages(mixed, session)
+            t._native_tool_results(mixed, session)
 
     def test_all_idless_returns_empty_for_text_fallback(self) -> None:
         from codey.operations import kernel_transport as t
@@ -38,7 +38,7 @@ class MixedCallIdBatchTests(unittest.TestCase):
         idless = [
             ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "a.py"}, call_id=""), model_text="a"),
         ]
-        self.assertEqual(t._native_tool_messages(idless, session), [])
+        self.assertEqual(t._native_tool_results(idless, session), [])
 
     def test_kernel_stops_protocol_and_preserves_receipts_on_mixed_batch(self) -> None:
         import tempfile
@@ -72,6 +72,9 @@ class MixedCallIdBatchTests(unittest.TestCase):
             def close(self) -> None:
                 return None
 
+            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+                return self.send_tool_results(results, [])
+
         with tempfile.TemporaryDirectory() as td:
             project = Path(td)
             (project / "a.py").write_text("hello\n", encoding="utf-8")
@@ -96,7 +99,7 @@ class MixedCallIdBatchTests(unittest.TestCase):
                     "codey.operations.kernel_transport.provider_uses_native", return_value=True
                 ),
                 mock.patch(
-                    "codey.operations.kernel_transport._native_tool_messages",
+                    "codey.operations.kernel_transport._native_tool_results",
                     side_effect=ValueError("mixed native batch: test"),
                 ),
             ):

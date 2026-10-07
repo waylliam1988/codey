@@ -141,7 +141,9 @@ def _record_completion_evidence(ctx: ProjectRun) -> None:
 
     with contextlib.suppress(Exception):
         ctx.task_session.verification_forbidden = bool(ctx.verification_forbidden is True)
-    ctx.proof = None
+    ctx.proof = ctx.result.proof if ctx.result.stop_reason == "delivery_pending" else None
+    if ctx.proof is not None:
+        ctx.decision = replace(ctx.decision, proof=ctx.proof)
     if ctx.result.stop_reason == "done":
         from codey.operations.completion_gate import evaluate
 

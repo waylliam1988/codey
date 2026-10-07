@@ -323,7 +323,7 @@ def test_native_protocol_repair_answers_duplicate_id_once():
         id="c1", name="read_file", arguments={"path": path}) for path in ("a.py", "b.py")))
     provider = SimpleNamespace(send_tool_results=lambda messages, _tools: receipts.extend(messages))
     repair_native_dangling(provider, reply, True, [], "duplicate id")
-    assert [row["tool_call_id"] for row in receipts] == ["c1"]
+    assert [row.call_id for row in receipts] == ["c1"]
 
 
 def test_native_cancellation_closes_followon_ids_without_executing():
@@ -341,10 +341,10 @@ def test_native_cancellation_closes_followon_ids_without_executing():
                 if len(receipts) == 1 else AssistantTurn(text="closed", tool_calls=()))
 
     reply = AssistantTurn(text="", tool_calls=(ProviderToolCall(id="c1", name="edit", arguments={}),))
-    result = _cancel_after_send(stop, SimpleNamespace(send_tool_results=send_results), reply, True, 1,
+    result = _cancel_after_send(stop, SimpleNamespace(acknowledge_tool_results=send_results), reply, True, 1,
                                propagate=False)
     assert result.stop_reason == "stopped"
-    assert [row["tool_call_id"] for row in receipts] == ["c1", "c2"]
+    assert [row.call_id for row in receipts] == ["c1", "c2"]
 
 
 def test_verification_refresh_drops_a_candidate_removed_by_a_later_edit():

@@ -271,6 +271,9 @@ class DoneReceiptFailureTests(unittest.TestCase):
             def send_tool_results(self, messages, tools, timeout=None):
                 raise RuntimeError("delivery boom")
 
+            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+                return self.send_tool_results(results, [])
+
         from unittest.mock import patch
 
         with (
@@ -291,7 +294,7 @@ class DoneReceiptFailureTests(unittest.TestCase):
                 ),
             )
         self.assertFalse(result.completed)
-        self.assertIn(result.stop_reason, ("provider_failure", "pending_delivery"))
+        self.assertIn(result.stop_reason, ("delivery_pending",))
 
 
 class CrossProviderRecoveryTests(unittest.TestCase):

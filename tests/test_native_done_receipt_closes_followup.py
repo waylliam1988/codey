@@ -14,6 +14,9 @@ def test_done_receipt_followup_is_closed_without_execution() -> None:
                 tool_calls=(SimpleNamespace(id="followup-1"),),
             )
 
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
+
     provider = Provider()
     first = SimpleNamespace(tool_calls=(SimpleNamespace(id="done-1"),))
     followup = kernel_transport._take_answered_reply(
@@ -21,4 +24,4 @@ def test_done_receipt_followup_is_closed_without_execution() -> None:
     )
 
     assert followup is not None
-    assert provider.calls[0][0]["tool_call_id"] == "done-1"
+    assert provider.calls[0][0].call_id == "done-1"

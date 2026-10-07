@@ -53,6 +53,7 @@ def task_done_event(
     changes: dict[str, Any] | None = None,
     research: dict[str, Any] | None = None,
     review: dict[str, Any] | None = None,
+    final_delivery: str = "not_required",
 ) -> dict[str, object]:
     event: dict[str, object] = {
         "type": "task_done",
@@ -77,6 +78,8 @@ def task_done_event(
         event["research"] = research
     if review is not None:
         event["review"] = review
+    if final_delivery != "not_required":
+        event["final_delivery"] = final_delivery
     return event
 
 

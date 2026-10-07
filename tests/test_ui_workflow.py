@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 from unittest import mock
+from urllib.parse import urlsplit
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
@@ -35,6 +36,9 @@ def ui_browser(tmp_path_factory):
 def page(ui_browser):
     browser, url = ui_browser
     page = browser.new_page(viewport={"width": 1280, "height": 800})
+    boot_errors = []
+    page.on("pageerror", lambda error: boot_errors.append(str(error)))
+    page.on("requestfailed", lambda request: boot_errors.append(f"{urlsplit(request.url).path}: {request.failure}"))
     page.add_init_script("window.EventSource = class { static OPEN = 1; readyState = 1; close() {} };")
     catalog = [{"id": key, "label": label, "available": True} for key, label in
                [("deepseek", "DeepSeek"), ("mimo", "MiMo"), ("stepfun", "StepFun"),
@@ -58,7 +62,12 @@ def page(ui_browser):
     page.goto(url)
     # Desktop provider probes / other suites can compete for browser startup.
     # Readiness is a functional condition, not a five-second performance budget.
-    expect(page.locator("#provider-button")).to_be_enabled(timeout=15000)
+    try:
+        expect(page.locator("#provider-button")).to_be_enabled(timeout=15000)
+    except AssertionError as exc:
+        diagnostic = page.locator(".status-row").all_text_contents()
+        page.close()
+        raise AssertionError(f"UI boot failed: {boot_errors}; status: {diagnostic}") from exc
     page.wait_for_function("window.CodeyUiState.current().active_id === 'a'")
     yield page
     page.close()
@@ -83,12 +92,26 @@ def test_long_answer_is_visible_and_pointer_selection_survives_tool_update(page)
     expect(page.get_by_role("button", name="Collapse", exact=True)).to_be_visible()
 
 
+def api_connection_payload(local):
+    model = local.get("model", "")
+    return {"id": "local", "base_url": local.get("base_url", ""), "default_model": model,
+            "models": [{"id": name, "name": local.get("display_name") or name,
+                        "efforts": local.get("thinking_options", []) if name == model else []}
+                       for name in dict.fromkeys([*local.get("models", []), *([model] if model else [])])]}
+
+
+def apply_model_metadata(page, local):
+    page.evaluate("CodeyProviderUI.applyApiModels", [api_connection_payload(local)])
+    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+
+
 def model_settings_route(page, *, thinking=True):
     local = {"connected": True, "base_url": "http://127.0.0.1:5001/v1", "model": "koboldcpp/Gemma4-12B-Q4",
              "display_name": "Gemma4 12B", "models": ["koboldcpp/Gemma4-12B-Q4", "second-model"],
              "context": {"context_window_tokens": 262144}, "native_tools_mode": "auto", "has_api_key": True,
              "thinking_options": ["off", "minimal", "low", "medium", "high"] if thinking else []}
     page.route("**/api/local_provider", lambda route: route.fulfill(json={"ok": True, "local": local}))
+    page.route("**/api/api_models", lambda route: route.fulfill(json={"ok": True, "connections": [api_connection_payload(local)]}))
     return local
 
 
@@ -106,14 +129,15 @@ def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
         monkeypatch.delenv(key, raising=False)
     model = 'koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M'
     base_url = 'http://127.0.0.1:5001/v1'
-    selection = {'base_url': base_url, 'model': model, 'effort': 'low', 'efforts': {model: 'low'}}
+    selection = {'connection_id': 'local', 'base_url': base_url, 'model': model, 'effort': 'low', 'efforts': {model: 'low'}}
     state = {'active_id': 'a', 'sessions': [
-        {'id': 'a', 'title': 'Local chat', 'provider': 'local', 'messages': [], 'localSelection': selection},
+        {'id': 'a', 'title': 'Local chat', 'provider': 'local', 'messages': [], 'modelSelection': selection},
     ], 'projects': []}
     saved = LocalProviderConfig(base_url=base_url, model=model, display_name=display_name) if remembered else LocalProviderConfig()
     local = {'connected': True, 'base_url': base_url, 'model': model, 'models': [model]}
     page.route('**/api/ui_state', lambda route: route.fulfill(json={'ok': True, 'state': state}))
     page.route('**/api/local_provider', lambda route: route.fulfill(json=api.local_provider_response()[1]))
+    page.route('**/api/api_models', lambda route: route.fulfill(json={'connections': [api_connection_payload(api.local_provider_response()[1]['local'])]}))
     # Prevent unrelated availability refreshes from claiming the offline model is up.
     page.route('**/api/providers', lambda route: route.fulfill(json={
         'default': 'deepseek', 'providers': [{'id': 'local', 'label': 'Local', 'available': local['connected']}],
@@ -130,7 +154,7 @@ def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
             expect(page.locator('#provider-button')).to_be_enabled(timeout=15000)
             expect(page.locator('#provider-name')).to_have_text(expected)
             expect(page.locator('#provider-dot')).to_have_class('dot ok' if connected else 'dot ')
-            assert page.evaluate("CodeyUiState.current().sessions[0].localSelection") == selection
+            assert page.evaluate("CodeyUiState.current().sessions[0].modelSelection") == selection
             expect(page.locator('#effort-chooser')).to_be_hidden()
 
 
@@ -164,7 +188,7 @@ def test_settings_is_quiet_modal_with_advanced_dark_controls_and_focus_return(pa
 
 def test_actual_model_and_supported_thinking_are_per_chat_and_sent_to_runtime(page):
     local = model_settings_route(page)
-    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    apply_model_metadata(page, local)
     page.locator("#provider-button").click()
     page.locator('.provider-item[data-provider="local"]').first.click()
     expect(page.locator("#provider-name")).to_have_text("Gemma4 12B")
@@ -202,16 +226,16 @@ def test_actual_model_and_supported_thinking_are_per_chat_and_sent_to_runtime(pa
     page.locator("#task").fill("Say hello")
     with page.expect_request("**/api/run"):
         page.locator("#send").click()
-    assert requests[0]["local_selection"] == {"base_url":local["base_url"],"model":local["model"],"effort":"medium"}
+    assert requests[0]["model_selection"] == {"connection_id":"local","base_url":local["base_url"],"model":local["model"],"effort":"medium"}
 
 
-@pytest.mark.parametrize(('old', 'expected'), [(False,'Off'),(True,'High'),(None,'High')])
-def test_legacy_thinking_selection_migrates_to_concrete_effort(page, old, expected):
+@pytest.mark.parametrize(('old', 'expected'), [('off','Off'),('high','High'),(None,'High')])
+def test_saved_effort_selection_remains_per_chat(page, old, expected):
     local = model_settings_route(page)
-    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    apply_model_metadata(page, local)
     page.evaluate("""([local, old]) => {
         const s=CodeyUiState.current().sessions.find(s=>s.id==='a');
-        s.provider='local'; s.localSelection={base_url:local.base_url,model:local.model,thinking:old};
+        s.provider='local'; s.modelSelection={connection_id:'local',base_url:local.base_url,model:local.model,effort:old};
         CodeyProviderUI.sync('local');
     }""", [local,old])
     expect(page.locator("#effort-name")).to_have_text(expected)
@@ -220,7 +244,7 @@ def test_legacy_thinking_selection_migrates_to_concrete_effort(page, old, expect
 @pytest.mark.parametrize('size', [(1280,800),(720,560),(480,420)])
 def test_supported_effort_controls_and_menu_fit_short_windows(page, size):
     local = model_settings_route(page)
-    page.evaluate('CodeyProviderUI.applyLocalMetadata', local)
+    apply_model_metadata(page, local)
     page.locator('#provider-button').click()
     page.locator('.provider-item[data-provider="local"]').first.click()
     page.set_viewport_size({'width':size[0], 'height':size[1]})
@@ -252,7 +276,7 @@ def test_supported_effort_controls_and_menu_fit_short_windows(page, size):
         }""")
         page.keyboard.press('Escape')
     local['display_name'] = 'A much longer model name'
-    page.evaluate('CodeyProviderUI.applyLocalMetadata', local)
+    apply_model_metadata(page, local)
     page.locator('#provider-button').click()
     page.set_viewport_size({'width':size[0] - 40, 'height':size[1]})
     page.wait_for_function("""() => {
@@ -264,7 +288,7 @@ def test_supported_effort_controls_and_menu_fit_short_windows(page, size):
 
 def test_unknown_or_web_model_has_no_fake_thinking_control(page):
     local = model_settings_route(page, thinking=False)
-    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    apply_model_metadata(page, local)
     page.locator("#provider-button").click()
     expect(page.locator("#effort-button")).to_be_hidden()
     page.locator('.provider-item[data-provider="local"]').first.click()

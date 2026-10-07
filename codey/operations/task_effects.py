@@ -163,7 +163,8 @@ class KernelRecordedProvider(ProviderAdapter):
             # Overflow deterministically produced no usable reply and prep
             # failures sent nothing: settle NOT_SENT so the same batch can
             # safely retry/supersede. All other faults stay MAYBE_SENT.
-            sent_state = SENT_STATE_NOT_SENT if overflow_or_prep else SENT_STATE_MAYBE_SENT
+            not_sent = overflow_or_prep or getattr(exc, "provider_failure_kind", "") == "not_submitted"
+            sent_state = SENT_STATE_NOT_SENT if not_sent else SENT_STATE_MAYBE_SENT
             sink.mutations.settle_provider_effect(
                 sink.session_id, sink.run_id,
                 RuntimeEffectSettlement(

@@ -413,6 +413,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.core.operation",
             "codey.runtime.core.operation_reducer",
             "codey.runtime.core.operation_state",
+            "codey.runtime.core.api_selection",
+            "codey.runtime.core.operation_payload",
             "codey.runtime.core.outcome",
             "codey.runtime.core.output_capture",
             "codey.runtime.observe.prompt_envelope",
@@ -439,6 +441,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         kernel_files = (
             "core/operation.py",
             "core/operation_state.py",
+            "core/api_selection.py",
+            "core/operation_payload.py",
             "core/operation_reducer.py",
             "core/outcome.py",
             "core/models.py",
@@ -585,6 +589,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.effects.effect_records",
             "codey.runtime.effects.tool_result_delivery",
             "codey.runtime.core.operation_state",
+            "codey.runtime.core.api_selection",
+            "codey.runtime.core.operation_payload",
         ):
             self.assertNotIn(token, drive_imports)
 
@@ -1945,10 +1951,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(session_log, name))
 
-    def test_local_openai_runtime_has_no_config_or_discovery_facades(self) -> None:
-        # Local model has one owner per concern: local_openai is the provider
+    def test_api_provider_runtime_has_no_config_or_discovery_facades(self) -> None:
+        # Local model has one owner per concern: api_provider is the provider
         # runtime, local_config owns persistence, local_discovery owns probes.
-        import codey.providers.local_openai as local_openai
+        import codey.providers.api_provider as api_provider
 
         for name in (
             "LocalEndpoint",
@@ -1965,7 +1971,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "save_local_config",
         ):
             with self.subTest(name=name):
-                self.assertFalse(hasattr(local_openai, name))
+                self.assertFalse(hasattr(api_provider, name))
 
     def test_runtime_core_has_no_unconsumed_contract_stubs(self) -> None:
         import codey.runtime.core.operation as operation

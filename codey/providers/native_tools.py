@@ -16,6 +16,9 @@ def supports_native_tools(provider: Any, provider_id: str = "") -> bool:
         and callable(getattr(provider, "send_tool_results", None))
     ):
         return False
+    frozen = getattr(provider, "native_tools", None)
+    if type(frozen) is bool:
+        return frozen
     raw = os.environ.get(NATIVE_TOOLS_ENV, "").strip().lower()
     if raw in {"1", "true", "yes", "y", "on"}:
         return True

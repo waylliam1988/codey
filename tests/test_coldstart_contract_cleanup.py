@@ -371,7 +371,7 @@ class AgentCliStrictTests(unittest.TestCase):
                 max_turns=None,
                 readonly=False,
                 auto=False,
-                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None,
+                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None, model="", effort=None,
             )
             with (
                 mock.patch(

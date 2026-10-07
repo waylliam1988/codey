@@ -9,6 +9,17 @@ import pytest
 
 
 @pytest.fixture
+def scripted_local_api_connection(monkeypatch):
+    """A non-network admission scope for tests that inject a scripted provider."""
+    from codey.providers import local_selection
+    from codey.providers.local_config import LocalProviderConfig
+
+    config = LocalProviderConfig(base_url="http://scripted.test/v1", model="scripted-fixture", connection_revision="scripted-fixture")
+    monkeypatch.setattr("codey.providers.local_config.load_local_config", lambda: config)
+    monkeypatch.setattr(local_selection, "load_local_config", lambda: config)
+
+
+@pytest.fixture
 def no_external_advisor_models(monkeypatch):
     """Scripted entry tests select real services without probing user models."""
     from codey.app.provider_services import reset_provider_availability_cache

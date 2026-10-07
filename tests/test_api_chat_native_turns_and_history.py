@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 
-from codey.providers import local_openai as local_module
-from codey.providers.local_openai import LocalOpenAIProvider
+from codey.providers import api_transport
+from codey.providers.api_provider import ApiProvider
+from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 
 
 class _FakeResponse:
@@ -31,12 +32,12 @@ def _install_fake(monkeypatch, body: dict) -> list[dict]:
         seen.append(json.loads(request.data.decode("utf-8")))
         return _FakeResponse(json.dumps(body).encode("utf-8"))
 
-    monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(api_transport, "open_request", fake_urlopen)
     return seen
 
 
 def test_send_turn_posts_tools_and_records_tool_calls(monkeypatch) -> None:
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {
         "choices": [{
             "finish_reason": "tool_calls",
@@ -51,8 +52,8 @@ def test_send_turn_posts_tools_and_records_tool_calls(monkeypatch) -> None:
         }]
     }
     seen = _install_fake(monkeypatch, body)
-    turn = provider.send_turn("read app", [{"type": "function", "function": {"name": "read"}}])
-    assert seen[0]["tools"] == [{"type": "function", "function": {"name": "read"}}]
+    turn = provider.send_turn("read app", [ProviderToolDefinition('read', '', {})])
+    assert seen[0]["tools"] == [{"type": "function", "function": {"name": "read", "description": "", "parameters": {}}}]
     assert seen[0]["tool_choice"] == "required"
     assert turn.tool_calls[0].id == "call_1"
     assert turn.tool_calls[0].name == "read"
@@ -61,13 +62,13 @@ def test_send_turn_posts_tools_and_records_tool_calls(monkeypatch) -> None:
 
 
 def test_send_tool_results_posts_role_tool(monkeypatch) -> None:
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     provider._messages.append({"role": "assistant", "content": "", "tool_calls": [{"id": "call_1"}]})
     body = {"choices": [{"finish_reason": "stop", "message": {"content": "done"}}]}
     seen = _install_fake(monkeypatch, body)
     turn = provider.send_tool_results(
-        [{"tool_call_id": "call_1", "content": "file contents"}],
-        [{"type": "function", "function": {"name": "read"}}],
+        [ProviderToolResult('call_1', 'file contents')],
+        [ProviderToolDefinition('read', '', {})],
     )
     tool_msgs = [m for m in seen[0]["messages"] if m.get("role") == "tool"]
     assert tool_msgs and tool_msgs[0]["tool_call_id"] == "call_1"
@@ -75,7 +76,7 @@ def test_send_tool_results_posts_role_tool(monkeypatch) -> None:
 
 
 def test_length_finish_reason_raises_not_parsed(monkeypatch) -> None:
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {"choices": [{"finish_reason": "length", "message": {"content": '{"tool":'}}]}
     _install_fake(monkeypatch, body)
     try:
@@ -92,23 +93,22 @@ def test_unsupported_tools_hint_points_at_canonical_shape(monkeypatch) -> None:
 
     import pytest
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     detail = b'{"error": {"message": "unsupported parameter: tool_choice"}}'
 
     def fake_urlopen(request, timeout=None):
         raise urllib.error.HTTPError(request.full_url, 400, "Bad Request", {}, io.BytesIO(detail))
 
-    monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
-    with pytest.raises(RuntimeError, match="rejected native tools") as excinfo:
-        provider._post_chat([{"role": "user", "content": "hi"}], [{"type": "function"}])
+    monkeypatch.setattr(api_transport, "open_request", fake_urlopen)
+    with pytest.raises(RuntimeError, match="HTTP 400") as excinfo:
+        provider._post_chat([{"role": "user", "content": "hi"}], [ProviderToolDefinition('done', '', {})])
     message = str(excinfo.value)
-    assert "NATIVE_TOOLS=0" in message
-    assert '"native_tools_mode":"off"' in message
+    assert "unsupported parameter: tool_choice" in message
     assert '{"native_tools": false}' not in message
 
 
 def test_chat_response_uses_bounded_read(monkeypatch) -> None:
-    from codey.providers.local_openai import _CHAT_RESPONSE_MAX_BYTES
+    from codey.providers.api_transport import MAX_RESPONSE_BYTES as _CHAT_RESPONSE_MAX_BYTES
 
     responses: list[_FakeResponse] = []
 
@@ -118,8 +118,8 @@ def test_chat_response_uses_bounded_read(monkeypatch) -> None:
         responses.append(fake)
         return fake
 
-    monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    monkeypatch.setattr(api_transport, "open_request", fake_urlopen)
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     assert provider.send("hi") == "ok"
     assert responses and responses[0].read_sizes
     assert responses[0].read_sizes[0] == _CHAT_RESPONSE_MAX_BYTES + 1
@@ -128,16 +128,15 @@ def test_chat_response_uses_bounded_read(monkeypatch) -> None:
 def test_chat_response_over_limit_is_rejected(monkeypatch) -> None:
     import pytest
 
-    from codey.providers import local_openai as provider_module
 
-    monkeypatch.setattr(provider_module, "_CHAT_RESPONSE_MAX_BYTES", 16)
+    monkeypatch.setattr(api_transport, "MAX_RESPONSE_BYTES", 16)
 
     def fake_urlopen(request, timeout=None):
         return _FakeResponse(b"x" * 32)
 
-    monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
-    with pytest.raises(RuntimeError, match="exceeded 16 bytes"):
+    monkeypatch.setattr(api_transport, "open_request", fake_urlopen)
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    with pytest.raises(RuntimeError, match="exceeded its byte limit"):
         provider.send("hi")
 
 
@@ -153,7 +152,7 @@ def test_concurrent_sends_do_not_interleave_history(monkeypatch) -> None:
         assert release_network.wait(timeout=10.0)
         return "reply-A"
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     monkeypatch.setattr(provider, "_complete", fake_complete)
     errors: list[BaseException] = []
 
@@ -189,12 +188,15 @@ def test_close_discards_late_reply(monkeypatch) -> None:
         assert release_network.wait(timeout=10.0)
         return "late-reply"
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     monkeypatch.setattr(provider, "_complete", fake_complete)
     result: list[str] = []
 
     def do_send() -> None:
-        result.append(provider.send("old"))
+        try:
+            result.append(provider.send("old"))
+        except api_transport.GenerationUnknownError as exc:
+            result.append(exc)
 
     thread = threading.Thread(target=do_send)
     thread.start()
@@ -202,7 +204,8 @@ def test_close_discards_late_reply(monkeypatch) -> None:
     provider.close()
     release_network.set()
     thread.join(timeout=10.0)
-    assert result == ["late-reply"]
+    assert len(result) == 1
+    assert isinstance(result[0], api_transport.GenerationUnknownError)
     assert provider._messages == []
 
 
@@ -211,7 +214,7 @@ def test_send_failure_leaves_history_unchanged(monkeypatch) -> None:
 
     import pytest
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {"choices": [{"finish_reason": "stop", "message": {"content": "first"}}]}
     _install_fake(monkeypatch, body)
     assert provider.send("first") == "first"
@@ -220,8 +223,8 @@ def test_send_failure_leaves_history_unchanged(monkeypatch) -> None:
     def failing_urlopen(request, timeout=None):
         raise urllib.error.URLError("network down")
 
-    monkeypatch.setattr(local_module.urllib.request, "urlopen", failing_urlopen)
-    with pytest.raises(RuntimeError, match="could not reach"):
+    monkeypatch.setattr(api_transport, "open_request", failing_urlopen)
+    with pytest.raises(RuntimeError, match="outcome unknown"):
         provider.send("second")
     # The unanswered user message must not linger for the next send.
     assert provider._messages == before
@@ -234,16 +237,16 @@ def test_send_failure_leaves_history_unchanged(monkeypatch) -> None:
 def test_tool_results_retry_posts_single_result(monkeypatch) -> None:
     import urllib.error
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     provider._messages.append({"role": "assistant", "content": "", "tool_calls": [{"id": "call_1"}]})
     before = [dict(message) for message in provider._messages]
 
     def failing_urlopen(request, timeout=None):
         raise urllib.error.URLError("network down")
 
-    monkeypatch.setattr(local_module.urllib.request, "urlopen", failing_urlopen)
+    monkeypatch.setattr(api_transport, "open_request", failing_urlopen)
     try:
-        provider.send_tool_results([{"tool_call_id": "call_1", "content": "out"}])
+        provider.send_tool_results([ProviderToolResult('call_1', 'out')])
     except RuntimeError:
         pass
     else:
@@ -252,7 +255,7 @@ def test_tool_results_retry_posts_single_result(monkeypatch) -> None:
 
     body = {"choices": [{"finish_reason": "stop", "message": {"content": "done"}}]}
     seen = _install_fake(monkeypatch, body)
-    turn = provider.send_tool_results([{"tool_call_id": "call_1", "content": "out"}])
+    turn = provider.send_tool_results([ProviderToolResult('call_1', 'out')])
     assert turn.text == "done"
     tool_msgs = [m for m in seen[0]["messages"] if m.get("role") == "tool"]
     assert [m.get("tool_call_id") for m in tool_msgs] == ["call_1"]
@@ -271,12 +274,15 @@ def test_stale_turn_skips_history_after_abandon(monkeypatch) -> None:
         assert release_network.wait(timeout=10.0)
         return {"content": "late", "_finish_reason": "stop"}
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     monkeypatch.setattr(provider, "_complete_message", fake_complete_message)
     result: list = []
 
     def do_send() -> None:
-        result.append(provider.send_turn("old"))
+        try:
+            result.append(provider.send_turn("old"))
+        except api_transport.GenerationUnknownError as exc:
+            result.append(exc)
 
     thread = threading.Thread(target=do_send)
     thread.start()
@@ -285,7 +291,7 @@ def test_stale_turn_skips_history_after_abandon(monkeypatch) -> None:
     release_network.set()
     thread.join(timeout=10.0)
     assert len(result) == 1
-    assert result[0].raw.get("stale_generation") is True
+    assert isinstance(result[0], api_transport.GenerationUnknownError)
     assert provider._messages == []
 
 
@@ -314,24 +320,24 @@ def test_http_error_body_is_bounded(monkeypatch) -> None:
             closed.append(True)
             super().close()
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
 
     def fake_urlopen(request, timeout=None):
         raise TrackedError(
             request.full_url, 500, "Server Error", {}, BoundedErrorIO(b"e" * 5000),
         )
 
-    monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(api_transport, "open_request", fake_urlopen)
     with pytest.raises(RuntimeError):
         provider._post_chat([{"role": "user", "content": "hi"}])
-    assert seen_sizes and seen_sizes[0] == 2001
+    assert seen_sizes and seen_sizes[0] == 2000
     assert closed == [True]
 
 
 def test_content_filter_is_explicit_error_and_leaves_history(monkeypatch) -> None:
     import pytest
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {
         "choices": [{
             "finish_reason": "content_filter",
@@ -357,7 +363,7 @@ def test_content_filter_is_explicit_error_and_leaves_history(monkeypatch) -> Non
 def test_malformed_tool_calls_shape_is_protocol_error(monkeypatch) -> None:
     import pytest
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {
         "choices": [{
             "finish_reason": "tool_calls",
@@ -369,11 +375,11 @@ def test_malformed_tool_calls_shape_is_protocol_error(monkeypatch) -> None:
         provider.send_turn("do work")
     assert provider._messages == []
     with pytest.raises(RuntimeError, match="malformed tool_calls"):
-        local_module._parse_tool_calls({"content": "", "tool_calls": "nope"})
+        __import__("codey.providers.api_chat", fromlist=["_parse_tool_calls"])._parse_tool_calls({"content": "", "tool_calls": "nope"})
 
 
 def test_done_illegal_json_fails_closed_without_history(monkeypatch) -> None:
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {
         "choices": [{
             "finish_reason": "tool_calls",
@@ -397,7 +403,7 @@ def test_done_illegal_json_fails_closed_without_history(monkeypatch) -> None:
 
 
 def test_regular_tool_illegal_json_fails_closed_without_history(monkeypatch) -> None:
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {
         "choices": [{
             "finish_reason": "tool_calls",
@@ -419,7 +425,7 @@ def test_regular_tool_illegal_json_fails_closed_without_history(monkeypatch) -> 
 
 
 def test_legal_empty_object_arguments_pass_through(monkeypatch) -> None:
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {
         "choices": [{
             "finish_reason": "tool_calls",
@@ -442,7 +448,7 @@ def test_legal_empty_object_arguments_pass_through(monkeypatch) -> None:
 
 def test_blank_and_null_arguments_fail_closed_without_history(monkeypatch) -> None:
     for raw in ("", "   ", "null", "123"):
-        provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+        provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
         body = {
             "choices": [{
                 "finish_reason": "tool_calls",

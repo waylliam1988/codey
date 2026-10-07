@@ -288,6 +288,9 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
             def send_tool_results(self, messages, tools, timeout=None):
                 raise TimeoutError("receipt boom")
 
+            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+                return self.send_tool_results(results, [])
+
         reply = self._native_reply([self._native_call("c1")])
         with self.assertRaises(TimeoutError):
             transport.repair_native_dangling(
@@ -299,6 +302,9 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
         class BoomProvider:
             def send_tool_results(self, messages, tools, timeout=None):
                 raise TimeoutError("receipt boom")
+
+            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+                return self.send_tool_results(results, [])
 
         reply = self._native_reply([self._native_call("d1", "done", {"summary": "x"})])
         with self.assertRaises(TimeoutError):
@@ -323,6 +329,9 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
             def send_tool_results(self, messages, tools, timeout=None):
                 receipts.append(list(messages))
                 raise TimeoutError("receipt boom")
+
+            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+                return self.send_tool_results(results, [])
 
         session = TaskSession(policy=_project_policy(), task_kind="project",
                               project="", max_turns=4)
@@ -362,6 +371,9 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
                 receipts.append(list(messages))
                 raise TimeoutError("receipt boom")
 
+            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+                return self.send_tool_results(results, [])
+
         session = TaskSession(policy=_strict_research_policy(),
                               task_kind="research", project="", max_turns=4)
         result = run_task_kernel(
@@ -388,7 +400,7 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
         session = SimpleNamespace()
         call = ToolCall("web_search", {"query": "q"}, "")
         result = ToolResult(ok=True, call=call, model_text="found")
-        self.assertEqual(transport._native_tool_messages([result], session), [])
+        self.assertEqual(transport._native_tool_results([result], session), [])
 
 
 class PromptAndTransportHygieneTests(unittest.TestCase):

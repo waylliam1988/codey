@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from codey.providers.catalog import API_CONNECTIONS
 from codey.providers.ids import normalize_provider_id
 
 ProviderFit = Literal["ok", "avoid"]
@@ -66,8 +67,8 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         research_fit=FIT_OK,
         review_fit=FIT_OK,
     ),
-    "local": ProviderCapability(
-        provider_id="local",
+    **{connection_id: ProviderCapability(
+        provider_id=connection_id,
         coding_fit=FIT_OK,
         research_fit=FIT_OK,
         review_fit=FIT_OK,
@@ -76,7 +77,7 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         context_window_tokens=32_768,
         context_reserve_tokens=8_192,
         context_keep_recent_tokens=12_000,
-    ),
+    ) for connection_id in API_CONNECTIONS},
 }
 
 

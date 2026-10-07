@@ -18,7 +18,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from codey.providers.local_openai import LocalOpenAIProvider
+from codey.providers.api_provider import ApiProvider
 from codey.runtime.core.cancellation import start_process, wait_process
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -90,10 +90,10 @@ def create_run_dir(parent: Path) -> Path:
     return directory
 
 
-class RecordingProvider(LocalOpenAIProvider):
+class RecordingProvider(ApiProvider):
     """Observe parsed provider exchanges, including failed logical sends.
 
-    Internal HTTP retries remain production behavior. Logical sends and
+    Unknown HTTP outcomes are not automatically resent. Logical sends and
     physical HTTP attempts are recorded separately from the actual wire
     bytes. No authorization headers are saved.
     """

@@ -293,6 +293,9 @@ def test_issue6_native_prompt_and_done_closure(monkeypatch):
         def send_tool_results(self, messages, tools, timeout=None):
             sent_batches.append(messages)
             return AssistantTurn(text="acked")
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
     # Need opened evidence so strict gate could pass? use non-strict project-less session
     s2 = TaskSession(policy=policy, task_kind="research", max_turns=2)
     # Monkeypatch gate to complete immediately to isolate closure behavior
@@ -310,7 +313,7 @@ def test_issue6_native_prompt_and_done_closure(monkeypatch):
             ),
         )
     assert sent_batches, "accepted native done must still send tool result for its call id"
-    assert any(m.get("tool_call_id") == "done-1" for batch in sent_batches for m in batch)
+    assert any(m.call_id == "done-1" for batch in sent_batches for m in batch)
 
 
 def test_issue7_required_checks_are_enforced():

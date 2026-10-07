@@ -65,7 +65,7 @@ def exercise(page, url, window):
             status, data = {
                 "worker": (503, {"error": "browser worker busy", "hint": "retry"}),
                 "busy": (409, {"error": "busy"}),
-                "local": (400, {"reason": "local_selection_invalid", "error": "private detail"}),
+                "local": (400, {"reason": "model_selection_invalid", "error": "private detail"}),
                 "unknown": (500, {"error": "private detail"}),
             }[mode["run"]]
         route.fulfill(status=status, json=data)

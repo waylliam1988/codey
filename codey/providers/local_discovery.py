@@ -2,7 +2,7 @@
 
 Owns the well-known OpenAI-compatible candidates (LM Studio, Ollama,
 KoboldCPP, generic) and the ``/models`` probe. Probing runs in parallel so a
-growing candidate list never slows cold start. ``local_openai.py`` keeps only
+growing candidate list never slows cold start. ``api_provider.py`` keeps only
 the provider runtime.
 """
 

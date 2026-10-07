@@ -1,7 +1,11 @@
 """The formal headless review must call its configured provider and report failure honestly."""
 from unittest.mock import patch
 
+import pytest
+
 from codey.app.headless_runner import HeadlessRequest, run_headless
+
+pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
 
 
 class Reviewer:

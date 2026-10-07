@@ -97,6 +97,7 @@ def connect_and_build_frame(
         append_ledger=hooks.append_ledger,
         trace_sink=trace_sink,
         connect=deps.connect_provider,
+        allow_switch=not bool(request.model_selection),
     )
     provider = preflight.provider
     provider_id = preflight.provider_id

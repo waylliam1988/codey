@@ -143,7 +143,7 @@ def test_approved_shell_result_answers_original_call_id_natively():
         def send_tool_results(self, messages, tools):
             self.answers += 1
             if self.answers == 1:
-                ids = [m["tool_call_id"] for m in messages]
+                ids = [m.call_id for m in messages]
                 assert ids == ["shell-native-9"], f"首发必须回答原调用：{ids}"
                 executed.append("answered")
                 return AssistantTurn(
@@ -151,6 +151,9 @@ def test_approved_shell_result_answers_original_call_id_natively():
                     tool_calls=(ProviderToolCall(id="done-1", name="done", arguments={"summary": "continued"}),),
                 )
             return AssistantTurn(text="ack")
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
 
     session = TaskSession(
         policy=TaskPolicy(grants=frozenset({"control", "project.read"})),

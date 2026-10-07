@@ -11,7 +11,8 @@
 版本：`0.5.11`
 
 Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、StepFun、Qwen 和
-GLM，也可以连接本地 OpenAI-compatible 模型，然后把它们接到你电脑上的受控工作区。
+GLM，也可以连接本地 OpenAI-compatible 模型或支持的 OpenCode Zen 免费模型，
+然后把它们接到你电脑上的受控工作区。
 
 它的目的有一点“平权”：AI 编程不应该只属于买得起高价 API 或昂贵订阅的人。Codey
 让新手和独立开发者可以先用自己已经能访问的网页 AI，在本地看到改动、运行测试、查看
@@ -50,7 +51,15 @@ Codey 打开的本地 UI 会自动完成操作者认证。原生窗口无法打�
 新链接。这不需要额外的 AI 账号。
 
 如果要用本地模型，选择 `Local`，填写 OpenAI-compatible base URL、model id 和可选
-API key。
+API key。在 Settings → Advanced → `API protocol` 明确选择 Chat Completions
+（`/chat/completions`）或 Responses（`/responses`）；`Tool calling` 另外控制
+原生工具调用或文本工具请求。
+
+Zen 免费模型直接进入原有模型菜单，取公开目录与实际 endpoint 列表的交集，
+只收录明确零费用且协议受支持的模型。目录自动刷新，断网保留有界缓存。
+本合作连接不要求注册或个人密钥，但每次请求的资格与工具限制仍由上游检查；
+免费列表不代表所有任务模式都能访问。已验证 Muse 编码与 Space Bunny 审查，
+具体范围见[测试报告](TEST_REPORT.md)。
 
 ## 命令行
 
@@ -66,6 +75,9 @@ python -m codey agent --provider qwen --project E:\my-project --max-turns 10 "�
 
 # 输出 JSONL 事件流，方便脚本、CI 或 benchmark 消费
 python -m codey agent --json --provider qwen --project E:\my-project "修复失败的测试"
+
+# 指定免费 API 模型，协议来自当前目录
+python -m codey agent --provider zen --model muse-spark-1.3-contributor-free --project E:\my-project "修复失败的测试"
 ```
 
 `agent` 与桌面共用任务服务和授权规则，默认是 `project`；`--auto` 自动选路，
@@ -75,6 +87,9 @@ python -m codey agent --json --provider qwen --project E:\my-project "修复失�
 审查复用使用同一会话及 `--review-source-run-id` 指定的历史 run ID。
 非交互 shell 审批仍拒绝。单次 `chat` 命令是 provider 工具；
 `agent --intent chat` 才走记录运行事实的任务流程。
+API 任务可用 `--model`；`--effort` 要求同时指定模型，并符合公布的能力。
+桌面、CLI 与 headless 在接纳任务时正式保存模型、协议和生成参数。
+之后修改 Settings 不改变旧任务；原连接不可用时，恢复会明确阻塞。
 
 CLI、网页事件和 headless JSONL 共用运行身份与工具状态。恢复保留原任务要求；
 已结算结果可继续交付，未结算的危险写操作不会被盲目重试。
@@ -83,12 +98,15 @@ CLI、网页事件和 headless JSONL 共用运行身份与工具状态。恢复�
 
 只读审查使用实际选定的 Reviewer，按真实输入范围校验问题并检查工作区是否变化。
 部分范围或不可用结果会明确显示；审查通过不能替代测试。显式
-`review_source_run_id` 只在同会话/项目、输入与已知本地模型配置匹配、快照仍有效时
+`review_source_run_id` 只在同会话/项目、输入与已知 API 模型配置匹配、快照仍有效时
 复用已完成结果；不提供来源就进行新审查。Run Details 展示有界状态，经过认证的
 `GET /api/run_review` 从正式存储恢复问题。详见[当前职责地图](docs/project_structure.zh-CN.md)。
 
 桌面与 CLI/headless project 共用自动审查阶段。默认优先使用可用网页 Reviewer，
-否则可用 Writer 的模型开启新自审会话；具体问题最多修复一次，普通非 Git 文件夹
+API Writer 在目录中有可用独立模型时先选择另一个模型 Review；独立只读 Review
+使用用户选定模型本身，没有独立模型时仍按原策略决定是否自审。
+未知交付不会换模型重发。其他情况下可用 Writer 模型开启新自审会话；
+具体问题最多修复一次，普通非 Git 文件夹
 也可使用。`--review-policy require_web` 要求网页 Reviewer，嵌入测试门可显式固定
 Reviewer 连接器。审查通过不能代替新鲜验证。
 详见[桌面/CLI 一致性验收](docs/desktop-cli-task-parity-2026-10-04.zh-CN.md)。
@@ -110,6 +128,9 @@ action policy、completion proof 和 Research evidence 检查。审计视图使�
 
 网页 provider 会改版。Codey 把不同网站的 adapter 隔离起来，所以网页坏了主要修对应
 adapter，不需要改 agent 核心。
+
+Zen 约定的上游请求头与工具名称映射只位于独立连接包，不进入 Local 请求或提示词。
+生成请求只发送一次，断流或结果未知时不自动重发；完成证明与最终结果交付分别记录。
 
 ## 开发
 

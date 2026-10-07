@@ -32,7 +32,7 @@ function init(nextDeps) {
     observer.observe($('effort-button'));
   }
   window.CodeySettings.init({$:deps.$, applyLocalMetadata});
-  refreshLocalMetadata();
+  refreshLocalMetadata(); refreshApiModels();
 }
 
 function buildProviderMenu() {
@@ -46,18 +46,21 @@ function buildProviderMenu() {
   const focusedKey = document.activeElement?.dataset?.key;
   menu.querySelectorAll('.provider-item').forEach((btn) => btn.remove());
   for (const id of PROVIDERS) {
-    const localModels = id === 'local' && localReady() ? [...new Set([localMetadata.model, ...(localMetadata.models || [])])] : [''];
+    const connection = apiModels[id];
+    const localModels = connection ? (connection.models || []).map(item => item.id) : [''];
+    if (connection && !localModels.length) localModels.push('');
     for (const model of localModels) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'provider-item';
-    btn.dataset.provider = id; btn.dataset.model = model; btn.dataset.key = model ? 'local:' + model : id;
+    btn.dataset.provider = id; btn.dataset.model = model; btn.dataset.key = model ? id + ':' + model : id;
+    btn.disabled = !!connection && !model;
     const dot = document.createElement('span');
     dot.className = 'dot ' + providerAvailability(id);
     dot.setAttribute('aria-hidden', 'true');
     const label = document.createElement('span');
     label.className = 'label';
-    label.textContent = model ? modelTitle(model) : providerLabel(id);
+    label.textContent = model ? modelTitle(model, id) : providerLabel(id);
     btn.setAttribute('aria-label', model || providerLabel(id));
     const check = document.createElement('span');
     check.className = 'check';
@@ -66,12 +69,12 @@ function buildProviderMenu() {
     btn.append(dot, label, check);
     btn.onclick = () => {
       if ($('provider-button').disabled) return;
-      if (id === 'local' && model && deps.activeSession) {
+      if (connection && model && deps.activeSession) {
         const s = deps.activeSession(); if (s) {
-          const previous = sessionSelection(s);
-          const efforts = previous.base_url === localMetadata.base_url ? {...previous.efforts} : {};
+          const previous = sessionSelection(s, id);
+          const efforts = previous.connection_id === id && previous.base_url === (connection.base_url || '') ? {...previous.efforts} : {};
           if (previous.model && previous.effort) efforts[previous.model] = previous.effort;
-          s.localSelection = {base_url:localMetadata.base_url, model, effort:efforts[model] || null, efforts};
+          s.modelSelection = {connection_id:id, base_url:connection.base_url || '', model, effort:efforts[model] || null, efforts};
         }
       }
       setActiveProvider(id);
@@ -128,7 +131,7 @@ function openMenu() {
   highlightModel();
   (modelRows().find(row => row.dataset.key === highlightedProvider) || modelRows()[0])?.focus();
   refreshProviderStatus();
-  refreshLocalMetadata();
+  refreshLocalMetadata(); refreshApiModels();
 }
 
 function applyRecommended(data) {
@@ -195,13 +198,13 @@ async function adoptBackendCatalog() {
 }
 
 function providerLabel(id) {
-  return PROVIDER_LABELS[id] || PROVIDER_LABELS[DEFAULT_PROVIDER];
+  return PROVIDER_LABELS[id] || id || PROVIDER_LABELS[DEFAULT_PROVIDER];
 }
 function providerAvailability(id) { return providerStatus[id] ? 'ok' : ''; }
 function syncProviderUI(providerId) {
-  const id = PROVIDERS.includes(providerId) ? providerId : DEFAULT_PROVIDER;
+  const id = providerId || DEFAULT_PROVIDER;
   const selection = sessionSelection();
-  $('provider-name').textContent = id === 'local' && selection.model ? modelTitle(selection.model) : providerLabel(id);
+  $('provider-name').textContent = selection.model ? modelTitle(selection.model, id) : providerLabel(id);
   const staleConnection = id === 'local' && selection.base_url && localMetadata.base_url && selection.base_url !== localMetadata.base_url;
   $('provider-button').setAttribute('aria-label', 'Choose model: ' + $('provider-name').textContent +
     (staleConnection ? '. Connection changed; select the model again.' : ''));
@@ -267,29 +270,30 @@ function closeLocalProviderConfig() { return window.CodeySettings.close(); }
 
 let localMetadata = {}, localRequest = 0;
 function localReady() { return !!(localMetadata.connected && localMetadata.model); }
-function sessionSelection(s = deps.activeSession?.()) {
-const old = s?.localSelection || {base_url:localMetadata.base_url || '', model:localMetadata.model || ''};
-  return {...old, effort:old.effort || (old.thinking === false ? 'off' : old.thinking === true ? 'high' : null), efforts:old.efforts || {}};
+function sessionSelection(s = deps.activeSession?.(), id = currentProviderId()) {
+  const connection = apiModels[id] || {};
+  const stored = s?.modelSelection;
+  const old = stored?.connection_id === id ? stored : {connection_id:id, base_url:connection.base_url || '', model:connection.default_model || connection.models?.[0]?.id || ''};
+  return {...old, effort:old.effort || null, efforts:old.efforts || {}};
 }
 function selectedKey() {
   const id = currentProviderId();
-  return id === 'local' ? 'local:' + sessionSelection().model : id;
+  return apiModels[id] ? id + ':' + sessionSelection().model : id;
 }
-function modelTitle(model) {
-  if (model === localMetadata.model && localMetadata.display_name) return localMetadata.display_name;
-  // A restored chat can retain its model while offline discovery returns none.
+function modelTitle(model, id = currentProviderId()) {
+  const record = apiModels[id]?.models?.find(item => item.id === model);
+  if (record?.name) return record.name;
   const leaf = model.split('/').pop();
   const short = leaf.match(/^([A-Za-z][\w.]*?)[-_](\d+(?:\.\d+)?[Bb])(?=[-_]|$)/);
   return short ? `${short[1]} ${short[2].toUpperCase()}` : leaf;
 }
-function thinkingOptions() {
-  const selection = sessionSelection();
-  return currentProviderId() === 'local' && selection.base_url === localMetadata.base_url && selection.model === localMetadata.model
-    ? (localMetadata.thinking_options || []) : [];
+function thinkingOptions(s = deps.activeSession?.(), id = currentProviderId()) {
+  const selection = sessionSelection(s, id);
+  return apiModels[id]?.models?.find(item => item.id === selection.model)?.efforts || [];
 }
-const effortLabels = {off:'Off', minimal:'Mini', low:'Low', medium:'Med', high:'High', max:'Max'};
-function selectedEffort() {
-  const options = thinkingOptions(), selected = sessionSelection().effort;
+const effortLabels = {off:'Off', minimal:'Mini', low:'Low', medium:'Med', high:'High', xhigh:'XHigh', max:'Max'};
+function selectedEffort(s = deps.activeSession?.(), id = currentProviderId()) {
+  const options = thinkingOptions(s, id), selected = sessionSelection(s, id).effort;
   return options.includes(selected) ? selected : options.includes('high') ? 'high' : options.find(value => value !== 'off') || 'off';
 }
 function closeEffortMenu(restoreFocus = false) {
@@ -319,9 +323,9 @@ function syncThinking() {
     row.onclick = () => {
       const s = deps.activeSession(); if (!s || $('provider-button').disabled) return;
       const selection = sessionSelection(s);
-      s.localSelection = {base_url:selection.base_url, model:selection.model, effort:option,
+      s.modelSelection = {connection_id:currentProviderId(), base_url:selection.base_url, model:selection.model, effort:option,
         efforts:{...selection.efforts, [selection.model]:option}};
-      deps.persistActiveNow(); syncProviderUI('local'); closeEffortMenu(true);
+      deps.persistActiveNow(); syncProviderUI(currentProviderId()); closeEffortMenu(true);
     };
     menu.appendChild(row);
   });
@@ -331,6 +335,7 @@ function applyLocalMetadata(local) {
   const next = local && typeof local === 'object' ? local : {};
   if (JSON.stringify(next) === JSON.stringify(localMetadata)) return;
   localMetadata = next;
+  refreshApiModels();
   if (typeof localMetadata.connected === 'boolean') {
     providerStatus.local = localMetadata.connected;
     providerUpdatedAt.local = Date.now();
@@ -346,12 +351,27 @@ async function refreshLocalMetadata() {
     if (request === localRequest && data.local) applyLocalMetadata(data.local);
   } catch {}
 }
+let apiModels = {}, apiModelsRequest = 0;
+function applyApiModels(connections) {
+  apiModels = Object.fromEntries(connections.map(connection => [connection.id, connection]));
+  buildProviderMenu();
+}
+async function refreshApiModels() {
+  const request = ++apiModelsRequest;
+  try {
+    const r = await fetch('/api/api_models', {cache:'no-store'});
+    if (!r.ok) return;
+    const data = await r.json();
+    if (request !== apiModelsRequest || !Array.isArray(data.connections)) return;
+    applyApiModels(data.connections);
+  } catch {}
+}
 function runSelection(s, provider) {
-  if (provider !== 'local') return {};
-  const selection = sessionSelection(s);
-const options = thinkingOptions();
-  const effort = options.length ? selectedEffort() : selection.effort;
-  return selection.base_url && selection.model ? {local_selection:{base_url:selection.base_url, model:selection.model, effort}} : {};
+  const selection = sessionSelection(s, provider);
+  if (!apiModels[provider] && !selection.model) return {};
+  const options = thinkingOptions(s, provider);
+  const effort = options.length ? selectedEffort(s, provider) : selection.effort;
+  return selection.model ? {model_selection:{connection_id:provider, base_url:selection.base_url, model:selection.model, effort}} : {};
 }
 
 function bindHandlers() {
@@ -395,7 +415,7 @@ $('effort-button').onclick = e => {
   const menu = $('effort-menu'); menu.classList.add('open'); menu.setAttribute('aria-hidden','false');
   $('effort-button').classList.add('open'); $('effort-button').setAttribute('aria-expanded','true');
   (menu.querySelector('[aria-pressed="true"]') || menu.firstElementChild)?.focus();
-  refreshLocalMetadata();
+  refreshLocalMetadata(); refreshApiModels();
 };
 $('effort-menu').addEventListener('keydown', e => {
   if (e.isComposing) return;
@@ -421,7 +441,7 @@ window.CodeyProviderUI = {
   adoptCatalog: adoptBackendCatalog,
   applyStatus: applyProviderStatus,
   refreshStatus: refreshProviderStatus,
-  localReady, runSelection, applyLocalMetadata,
+  localReady, runSelection, applyLocalMetadata, applyApiModels,
   openLocalConfig: openLocalProviderConfig,
   closeLocalConfig: closeLocalProviderConfig,
   closeMenu,

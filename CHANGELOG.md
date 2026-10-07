@@ -2,6 +2,32 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Shared API protocols and free Zen models (2026-10-07)
+
+- Replace the Local-only transport with one API generation runtime and separate
+  Chat Completions/Responses codecs. Keep tool declarations, results and reply
+  finish state neutral; preserve the shared authorization and completion kernel.
+- Send each generation once, enforce HTTP/SSE terminal and total-deadline checks,
+  reject incomplete calls/plain text before execution, and discard cancelled late
+  replies. Record final delivery separately from completion proof.
+- Persist non-secret model/protocol/capability selections for desktop, CLI and
+  headless cold recovery. Add `agent --model/--effort`, a Local protocol selector
+  and dynamic free Zen entries in the existing quiet model menu.
+- Isolate Zen catalog/cache, partner headers and tool-name mapping in one removable
+  connection package. Support a different API model for Writer review and the
+  selected model for standalone read-only review, preserving existing policies.
+- Use TDD to fix target-chat effort selection, standalone review selection,
+  trickled-response deadlines, malformed catalog isolation, HTTP error-stream
+  cleanup, plain Responses truncation and desktop asset connection bursts.
+- Live Codey validation: Muse Spark 1.3 (Responses) edits and verifies code;
+  Space Bunny (Chat Completions) independently approves it. Standalone read-only
+  review and the real dynamic menu/Settings also pass. Upstream eligibility and
+  per-mode restrictions remain explicit; no automatic alternate-model replay.
+- Final gates: **7595 passed, 7 skipped, 1501 subtests passed in 605.00s**;
+  machine contracts **430 passed**, Ruff, mypy (388 files), compile, JavaScript
+  (18 files) and diff checks passed. Full-run failures, fixes and access limits
+  are recorded in `TEST_REPORT.md`. No release/version change.
+
 ## Unreleased - UI/test hygiene convergence (2026-10-06)
 
 - Complete eight audit stages over production behavior, test quality, architecture,

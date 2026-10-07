@@ -1,5 +1,110 @@
 # Codey Test Report
 
+## Shared API protocols, cold recovery and live Zen review (2026-10-07)
+
+基线：`3a1bcae1401052a6d15eeba95fd6328d3e6f25c9`，Windows、Python 3.12。
+本节只描述这一批未发布改动；下方历史全量统计保持原样。
+离线红/绿输出、最终检查、实机运行日志与截图在 Git 忽略目录
+`.e2e-artifacts/zen-codey-2026-10-07/`，未提交用户状态、凭据或生成材料。
+
+### 实现与确定性验证
+
+- 共同 `ApiProvider` 管生成锁、候选提交、取消及有限结束交付；Chat 与 Responses
+  各自拥有 wire 格式/历史。工具定义、结果、回复 finish 中立，同一内核处理授权、
+  执行、完成。旧 `local_openai.py` 删除，消费者/测试/工具迁移，没有转发 facade。
+- 真正的假 HTTP/SSE 验证 flat Responses tools、`strict:false`、`call_id`、
+  `function_call_output`、加密 reasoning items 回传、完整交换组裁剪、有效终止、
+  断流未知、取消迟到、失败候选不提交，以及网页 JSON/Chat/Responses 判断一致。
+  普通 Responses 文本输出截断在历史提交前抛 `OutputLengthError`；原生路径保留
+  typed `OUTPUT_LIMIT` 和有限续写。不完整工具参数不执行。
+- HTTP 生成单次 POST、不跟随 redirect、不自动重发未知请求。总 deadline 包括
+  持续到达的残缺 JSON/SSE 行；socket shutdown/close 中断读取。输出截断续写、
+  HTTP 重试和任务恢复不混用。final delivery 与 completion proof 分开记录和投影，
+  已完成修改不因结果交付失败而丢失。
+- 桌面/CLI/headless 共用 `model_selection`；正式日志冻结连接版本、模型、协议、
+  能力与生成参数，不含凭据。真实关闭/重建 AppContext，修改 Settings 后恢复仍
+  使用原模型/协议；连接改变或被删除则阻塞。新窗口交接原要求/结算事实，不重复写入。
+- Zen 的目录、缓存、合作请求头、wire 工具名和 plain-access 观察只在独立连接包。
+  动态目录取公开 metadata 与 endpoint listing 交集，零费用及协议明确筛选，
+  ETag/TTL/有界缓存支持刷新与断网。已知拒绝只影响后续新任务候选，未知请求不
+  切模型重发；访问观察最多 64 项、15 分钟，不作为永久模型能力。
+- API Writer 使用同连接的独立第二模型 Review；独立只读 Review 则用选定模型。
+  reviewer selection 在发送前正式冻结，网页优先/require-web/自审策略与一次修复保持。
+  UI 动态目录沿用原有模型菜单，effort 属于目标聊天；Settings Advanced 增加协议。
+  删除连接后旧聊天可读、保留原模型身份，不偷偷换默认模型发送。
+
+确定性 bug 和新增行为契约均先测试锁定再实现；访问观察是新增契约，其他下列项是
+可复现缺陷，不以假想问题作为修复依据：
+
+| 问题 | pre-fix 证据 / 主要回归 |
+| --- | --- |
+| 当前可见聊天的 effort 被误用于另一个聊天发送 | `per-chat-effort-red.txt`；`test_dynamic_api_model_menu_and_per_chat_effort.py` |
+| 独立只读 Review 错误挑选第二个模型 | `standalone-api-review-red.txt`；`test_api_reviewer_uses_distinct_model_and_identity.py` |
+| 残缺响应持续到达可绕过 socket timeout | `deadline-replay-red.txt`；`test_api_generation_deadline_interrupts_partial_frame.py` |
+| Responses 工具调用后紧跟 assistant message 被误判为未回答调用 | `deadline-replay-red.txt` 中真实历史回传失败；`test_responses_protocol_tool_history_and_stream_completion.py` |
+| 异常模型 metadata 影响其他正常免费模型 | `catalog-metadata-red.txt`；`test_zen_catalog_free_protocols_and_scoped_identity.py` |
+| 普通访问成功/明确拒绝没有按短期真实观察排序 | `review-access-red.txt` / `review-access-priority-red.txt`；`test_zen_review_access_observations_expire_without_replay.py` |
+| 桌面并发资源连接超过默认 accept queue，资产请求失败 | `desktop-boot-queue-red.txt`；真实暂停 accept 时 16 个连接；`test_desktop_boot_connection_burst_fits_accept_queue.py` |
+| 普通 Responses 截断 JSON 被当成完整文本且提交历史 | `plain-responses-limit-red.txt`：JSON/SSE 两项 `DID NOT RAISE`；50 项相关回归通过 |
+| Zen 非 304 HTTP 错误流未关闭 | `catalog-error-stream-red.txt`：403 `stream.closed=False`，304 对照成功；17 项 Zen 回归通过 |
+
+### 全量过程与最终闸门
+
+不是一次全量即通过。较早一轮在发现独立 Review 选择错误后主动中止；随后首轮
+完整全量得到 **10 failed、7579 passed、7 skipped、1 error、1494 subtests，600.14s**。
+原始记录：`pytest-full-initial-failures.txt`。问题包含旧 CLI Namespace/假 result/
+TaskState fixture 未迁移、新 API 注册静态断言和历史 parity 所有权 disposition
+未更新、旧 UI 静默默认切换契约、导航测试在全文 idle render 前定位，以及桌面资源
+连接失败。逐项修复/迁移并回归：核心 **752 passed、17 subtests**；全部 UI
+**240 passed、1 skipped、2 subtests**。没有新增 skip/xfail、弱化安全断言或生产 fallback。
+导航只修测试等待真实全文 DOM 的时机，没有改变生产导航行为。
+
+另一次全量约 49% 时，为已锁定的普通 Responses 截断问题主动停止，原始部分输出
+保存在 `pytest-full-interrupted-for-plain-responses-fix.txt`。修复与回测之后再完成
+所有前置闸门，然后运行下方最终完整轮。历史 parity baseline 未改，新 owner 的
+disposition 在 `tests/fixtures/kernel_parity/boundaries.json` 明确记录。
+
+| 最终全量之前的检查 | 实际结果 |
+| --- | --- |
+| `python -m ruff check .` | All checks passed! |
+| `python -m mypy codey` | Success: no issues found in 388 source files |
+| JavaScript Node `--check` | 18 文件，包含 index inline script，通过 |
+| `python -m compileall -q codey tests tools` | 通过 |
+| `git diff --check` / `git diff --cached --check` | 通过 |
+| `python -m tools.machine_contract_gate` | 430 passed in 71.40s，零失败/skip |
+
+Node 22.20.0 通过隔离工具目录加入 PATH，测试真实执行 JavaScript。
+最终全量原始日志 `pytest-full-final.txt`，命令/结果：
+
+```text
+python -X utf8 -m pytest -q -ra -o faulthandler_timeout=120
+7595 passed, 7 skipped, 1501 subtests passed in 605.00s (0:10:05)
+exit code: 0
+```
+
+7 个 skip：Windows 不稳定/不支持 POSIX executable/permission bits（2）、POSIX
+process groups（1）、POSIX absolute paths（1）、O_NOFOLLOW（2），以及需要显式
+`RUN_BROWSER_E2E=1` 的真实网页 provider E2E（1）。本批没有新增 skip。
+全量前后核对 **1235 个生产/测试/工具文件 SHA-256，0 变化**；全量结束后只修改文档。
+
+### 真实 Codey 验收与限制
+
+| 实机路径 | 事实 |
+| --- | --- |
+| Muse Spark 1.3 headless | 生产入口、Responses、exit 0、done、2 turns，读取真实 marker |
+| Space Bunny headless | 生产入口、Chat Completions、exit 0、done、2 turns、final delivery success |
+| Muse Writer → Space Bunny Reviewer | run `run_2095ea4d4521485aa062f7bab30de399`；修复 `calc.add` 减法为加法并运行 unittest；独立审查 approved/complete；Writer/Reviewer model_id 不同且正式冻结；completion proof complete、final delivery success、exit 0 |
+| Space Bunny 独立只读 Review | run `run_f20d94d1007541b189771c668d863978`；实际选定模型、approved/complete、exit 0，输入文件字节不变 |
+| 桌面真实目录与 Settings | `live-menu-console.txt`：Muse Spark 1.3 Free、errors=[]；实际截图 `live-zen-model-menu.png` / `live-local-protocol-settings.png` 已检查 |
+
+合作约定的 OpenCode 请求头只作用于 Zen，不进提示词、不用于 Local。
+真实观察：Muse 的精简/只读工具集合收到 403，完整经过授权的编码工具集合与上游
+工具名可成功；不会为访问而追加未授权工具。因此没有宣称 Muse 聊天、Research
+或只读 Review 都可用。Big Pickle/Exo 普通 Review 当时明确 403，Space Bunny
+成功；这些是带时效的服务事实。免费目录会变化，上游资格/限流/工具限制仍可能
+拒绝请求，不自动换模型重发。实机样本证明接线与生命周期，不证明审查质量或
+所有目录模型长期可用。本批不执行 release，不改变版本号。
+
 ## Iterative whole-project hygiene audit (2026-10-06)
 
 本轮以当前 HEAD `60878f81` 为基线，完成 **8 个审查阶段、A–G 七轮独立扫描加一次

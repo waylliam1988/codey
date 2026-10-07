@@ -20,6 +20,9 @@ def test_native_first_send_does_not_demand_json_from_read_file_context(monkeypat
         def send_tool_results(self, messages, tools):
             raise AssertionError("no native tool calls were issued")
 
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
+
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
                           read_files={"app.py"}, max_turns=1)
     run_task_kernel(session, request=KernelRunRequest(

@@ -447,6 +447,7 @@ def _run_entry_kernel(
         "session_id": request.session_id,
         "summary": summary,
         "stop_reason": result.stop_reason,
+        "final_delivery": result.delivery,
         "turns": max(result.turns, session.turn),
         "max_turns": request.max_turns,
         "provider": frame.provider_id,
@@ -573,13 +574,61 @@ def run_task_submission(deps: Any, request: TaskSubmission) -> None:
     )
     from codey.runtime.write.task_runtime import TaskRuntime
 
+    def prepare(request: TaskSubmission) -> TaskSubmission | None:
+        prepared = prepare_submission(deps.state, request)
+        if prepared is None:
+            return None
+        try:
+            return _admit_api_selection(deps.state, prepared)
+        except Exception:
+            release_unstarted_submission(deps.state, prepared)
+            raise
+
+    def execute(request: TaskSubmission) -> Any:
+        if not request.model_selection:
+            return execute_task_run(deps, request)
+        from codey.runtime.core.api_selection import ApiRunSelection
+
+        selection = ApiRunSelection.from_payload(request.model_selection)
+
+        def connect_selected(provider_id: str) -> Any:
+            if provider_id != selection.connection_id:
+                raise ValueError("admitted API connection cannot switch during this run")
+            return (deps.connect_provider or deps.state.get_provider)(provider_id)
+
+        return execute_task_run(replace(deps, connect_provider=connect_selected), request)
+
     runtime = TaskRuntime(
         deps.state.runtime_log,
-        lambda submission: execute_task_run(deps, submission),
-        prepare=lambda submission: prepare_submission(deps.state, submission),
+        execute,
+        prepare=prepare,
         on_unstarted_failure=lambda submission: release_unstarted_submission(deps.state, submission),
     )
     runtime.run(request)
+
+
+def _admit_api_selection(state: Any, request: TaskSubmission) -> TaskSubmission:
+    from codey.providers.api_connections import capture_selection, connection_for
+    from codey.providers.catalog import API_CONNECTIONS
+    from codey.runtime.core.api_selection import ApiRunSelection
+    from codey.runtime.core.operation_state import RuntimeOperationStore
+
+    existing = RuntimeOperationStore(state.runtime_log).load(request.session_id, request.previous_run_id or request.run_id)
+    payload = existing.model_selection if existing is not None else request.model_selection
+    if payload:
+        selection = ApiRunSelection.from_payload(payload)
+        if request.provider_id != selection.connection_id:
+            raise ValueError("recovery must use the admitted API connection")
+        # Validate availability and credential scope before starting any request.
+        connection_for(selection.connection_id).validate_selection(selection)
+    elif request.provider_id in API_CONNECTIONS:
+        if existing is not None:
+            raise ValueError("original API selection is unavailable; cannot guess a recovery model")
+        selection = capture_selection(request.provider_id)
+    else:
+        return request
+    state.run_registry.bind_api_selection(request.run_id, selection)
+    return replace(request, model_selection=selection.to_payload())
 
 
 __all__ = [

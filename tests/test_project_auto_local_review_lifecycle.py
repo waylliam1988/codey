@@ -7,7 +7,7 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.reviews.persistence import load_recorded_review
 from tests.support.local_review_fixture import ScriptedLocal, fixture_project, writer_turns
 
-pytestmark = pytest.mark.usefixtures("no_external_advisor_models")
+pytestmark = pytest.mark.usefixtures("no_external_advisor_models", "scripted_local_api_connection")
 
 
 @pytest.mark.parametrize("finding", [False, True])

@@ -53,7 +53,8 @@ class ProviderCatalogColdTests(unittest.TestCase):
         )
         self.assertEqual(registry.WORKER_CHILD_ENV, catalog.WORKER_CHILD_ENV)
         self.assertEqual(registry.provider_ids(), catalog.provider_ids())
-        self.assertEqual(set(registry.PROVIDER_TYPES), set(catalog.PROVIDER_LABELS))
+        self.assertEqual(set(registry.PROVIDER_TYPES), set(catalog.WEB_PROVIDER_LABELS))
+        self.assertEqual(set(registry.PROVIDER_TYPES) | set(catalog.API_CONNECTIONS), set(catalog.PROVIDER_LABELS))
 
 
 if __name__ == "__main__":

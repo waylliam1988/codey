@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from codey.providers.base import tools_from_specs
+
 
 def _strict_policy():
     from codey.policies.task_policy import TaskPolicy
@@ -36,7 +38,7 @@ def test_baseline_arm_hides_source_search_after_open():
     assert "open_url" in snapshot.tool_names
     assert "knowledge_write" in snapshot.tool_names
     assert "source_search" not in snapshot.tool_names
-    schema_names = {str((item.get("function") or {}).get("name") or "") for item in snapshot.native_tools}
+    schema_names = {item.name for item in tools_from_specs(snapshot.frozen_specs)}
     assert "source_search" not in schema_names
     assert "source_search" not in snapshot.contract_text
 
@@ -46,7 +48,7 @@ def test_source_search_arm_shows_source_search_after_open():
 
     snapshot = build_turn_snapshot(_opened_session(), native=True)
     assert "source_search" in snapshot.tool_names
-    schema_names = {str((item.get("function") or {}).get("name") or "") for item in snapshot.native_tools}
+    schema_names = {item.name for item in tools_from_specs(snapshot.frozen_specs)}
     assert "source_search" in schema_names
 
 

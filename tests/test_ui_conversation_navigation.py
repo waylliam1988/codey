@@ -222,6 +222,9 @@ def test_preview_escapes_user_content_and_stays_within_reading_viewport(page):
         addToSession('a',{type:'user',text:'<img src=x onerror="window.navXss=true"> ' + 'x'.repeat(400)});
         addToSession('a',{type:'asst',text:'<script>window.navXss=true</script>\\n' + 'Long preview '.repeat(200)});
     }""")
+    # The long answer renders in an idle callback. Its final height must exist
+    # before calculating a reading position, otherwise scrollTop is clamped.
+    expect(page.locator('#chat > .msg.asst .body').last).to_contain_text('Long preview ' * 200)
     read_turn(page, 28)
     page.locator('.conversation-tick').last.hover()
     preview = page.get_by_role('tooltip')

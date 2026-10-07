@@ -1,6 +1,6 @@
 """Mixed native batch stops the kernel with receipts preserved.
 
-Repro: the old test only asserted _native_tool_messages() raises
+Repro: the old test only asserted _native_tool_results() raises
 ValueError, never how the main loop stops or keeps receipts after tool
 execution. A custom executor could also return a ToolResult carrying its
 own call; without validation the native chain loses the receipt.
@@ -44,6 +44,9 @@ class _FakeNativeProvider:
     def close(self) -> None:
         return None
 
+    def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        return self.send_tool_results(results, [])
+
 
 class MixedBatchKernelStopsWithReceiptsTests(unittest.TestCase):
     def test_mixed_call_id_batch_is_explicitly_rejected(self) -> None:
@@ -56,7 +59,7 @@ class MixedBatchKernelStopsWithReceiptsTests(unittest.TestCase):
             ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "b.py"}, call_id=""), model_text="b"),
         ]
         with self.assertRaises(ValueError):
-            t._native_tool_messages(mixed, session)
+            t._native_tool_results(mixed, session)
 
     def test_kernel_stops_protocol_and_keeps_receipts_on_call_id_mismatch(self) -> None:
         # Custom executor returns a ToolResult with its own unrelated call;

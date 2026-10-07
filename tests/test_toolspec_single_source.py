@@ -139,11 +139,11 @@ class ToolSpecSingleSourceTests(unittest.TestCase):
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
         ok = ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "a"}, call_id="call_1"), model_text="hi")
-        messages = t._native_tool_messages([ok], session)
-        self.assertEqual(messages[0]["tool_call_id"], "call_1")
+        messages = t._native_tool_results([ok], session)
+        self.assertEqual(messages[0].call_id, "call_1")
         missing = ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "b"}), model_text="hi")
         with self.assertRaises(ValueError):
-            t._native_tool_messages([ok, missing], session)
+            t._native_tool_results([ok, missing], session)
 
 
 if __name__ == "__main__":

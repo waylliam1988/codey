@@ -13,7 +13,7 @@ from codey.app import provider_services, shell_service
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
 from codey.ghost.control_surface import GhostControlSurface
-from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
+from codey.providers.catalog import API_CONNECTIONS, DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_config import (
     LocalProviderConfig,
     assemble_bootstrap_payload,
@@ -141,6 +141,18 @@ def local_provider_response() -> tuple[int, dict[str, Any]]:
     return 200, {"ok": True, "local": local}
 
 
+def api_models_response() -> tuple[int, dict[str, Any]]:
+    from codey.providers.api_connections import connection_for
+
+    payload: list[dict[str, Any]] = []
+    for connection_id in API_CONNECTIONS:
+        try:
+            payload.append(connection_for(connection_id).model_payload())
+        except (OSError, ValueError, RuntimeError) as exc:
+            payload.append({"id": connection_id, "label": API_CONNECTIONS[connection_id][0], "models": [], "error": str(exc)[:240]})
+    return 200, {"connections": payload}
+
+
 def _attach_local_metadata(local: dict[str, Any]) -> None:
     from codey.providers.local_selection import model_metadata
 
@@ -213,6 +225,8 @@ def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
             context=parsed.context,
             thinking_enabled=parsed.thinking_enabled,
             display_name=parsed.display_name,
+            api_protocol=parsed.api_protocol,
+            connection_revision=parsed.connection_revision,
         )
         save_local_config(saved)
     except (OSError, ValueError) as exc:
@@ -500,15 +514,15 @@ def run_submit_response(
     }
     if review_source_run_id:
         submit_kwargs["review_source_run_id"] = review_source_run_id
-    if "local_selection" in body:
-        if provider_id != "local":
-            return 400, {"error": "local_selection requires a local model"}
-        from codey.providers.local_selection import capture_local_run_config
+    if "model_selection" in body:
+        if provider_id not in API_CONNECTIONS:
+            return 400, {"error": "model_selection requires an API model"}
+        from codey.providers.api_connections import capture_selection
 
         try:
-            submit_kwargs["local_config"] = capture_local_run_config(body["local_selection"])
+            submit_kwargs["model_selection"] = capture_selection(provider_id, body["model_selection"])
         except ValueError as exc:
-            return 400, {"error": str(exc), "reason": "local_selection_invalid"}
+            return 400, {"error": str(exc), "reason": "model_selection_invalid"}
     try:
         run_id = submit_task(
             session_id,
@@ -606,7 +620,7 @@ def shell_approval_response(
                 "project",
                 previous_run_id=str(pending.get("run_id") or ""),
                 initial_shell_results=tuple(continuation_plan.shell_results or ()),
-                **({"local_config": pending["_local_config"]} if pending.get("_local_config") is not None else {}),
+                **({"model_selection": pending["_api_selection"]} if pending.get("_api_selection") is not None else {}),
             )
             continued = continuation_run is not None
         return 200, {"ok": True, "approved": False, "continued": continued, "event": event}
@@ -675,7 +689,7 @@ def shell_approval_response(
                 "project",
                 previous_run_id=str(pending.get("run_id") or ""),
                 initial_shell_results=tuple(continuation_plan.shell_results or ()),
-                **({"local_config": pending["_local_config"]} if pending.get("_local_config") is not None else {}),
+                **({"model_selection": pending["_api_selection"]} if pending.get("_api_selection") is not None else {}),
             )
             continued = continuation_run is not None
             continuation_stopped = not continued and ctx.run_registry.stop_flag.is_set()

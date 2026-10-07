@@ -41,6 +41,9 @@ def _native_provider(replies, delivered):
             # After real delivery, emit no further calls (chain closes).
             return SimpleNamespace(text="done-text", tool_calls=())
 
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
+
     # Force native protocol.
     import codey.providers.native_tools as nt
 
@@ -102,9 +105,9 @@ def test_cancel_between_turns_delivers_executed_result(tmp_path):
 
     assert result.stop_reason == "stopped"
     # c1's real result must have been delivered exactly once.
-    c1 = [m for m in delivered if m.get("tool_call_id") == "c1"]
+    c1 = [m for m in delivered if m.call_id == "c1"]
     assert len(c1) == 1
-    assert "file-content" in str(c1[0].get("content") or "")
+    assert "file-content" in str(c1[0].content or "")
 
 
 def test_delivery_failure_reports_provider_failure(tmp_path):
@@ -126,6 +129,9 @@ def test_delivery_failure_reports_provider_failure(tmp_path):
 
         def send_tool_results(self, messages, tools):
             raise RuntimeError("sink down")
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
 
     orig = nt.supports_native_tools
     nt.supports_native_tools = lambda _p, _pid="": True

@@ -228,14 +228,14 @@ def test_mutation_groups_drive_execution_order(tmp_path: Path) -> None:
 
 
 def test_local_context_defaults_come_from_capability() -> None:
+    from codey.providers.api_provider import ApiProvider
     from codey.providers.capabilities import capability_for
-    from codey.providers.local_openai import LocalOpenAIProvider
 
     capability = capability_for("local")
     assert capability.context_window_tokens == 32_768
     assert capability.context_reserve_tokens == 8_192
     assert capability.context_keep_recent_tokens == 12_000
-    provider = LocalOpenAIProvider(
+    provider = ApiProvider(
         base_url="http://127.0.0.1:9/v1",
         model="qwen-test",
         context_window_tokens=capability.context_window_tokens,

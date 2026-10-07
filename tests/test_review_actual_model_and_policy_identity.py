@@ -2,12 +2,12 @@
 from types import SimpleNamespace
 
 from codey.app.review_service import run_review_attempt
-from codey.providers.local_openai import LocalOpenAIProvider
+from codey.providers.api_provider import ApiProvider
 from codey.reviews.identity import identities_match, scope_digest_for
 from codey.reviews.input import ReviewScope
 
 
-class LocalReviewer(LocalOpenAIProvider):
+class LocalReviewer(ApiProvider):
     def __init__(self, model="model-a", base_url="http://localhost:5001/v1"):
         super().__init__(base_url, model)
         self.sent = []

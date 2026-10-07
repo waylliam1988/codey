@@ -14,8 +14,9 @@ from codey.operations.task_loop import (
 )
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers import local_openai
-from codey.providers.local_openai import LocalOpenAIProvider
+from codey.providers import api_transport
+from codey.providers.api_provider import ApiProvider
+from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 
 
 class _Response:
@@ -39,9 +40,9 @@ def _call(name, args, call_id="c1"):
     }]}}
 
 
-TOOLS = [{"type": "function", "function": {"name": "done", "parameters": {
+TOOLS = [ProviderToolDefinition("done", "", {
     "type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"],
-}}}]
+})]
 
 
 @pytest.mark.parametrize("method", ["send_turn", "send_tool_results"])
@@ -52,18 +53,19 @@ def test_active_native_http_request_requires_a_tool(monkeypatch, method):
         seen.append(json.loads(request.data))
         return _Response(_call("done", {"summary": "finished"}))
 
-    monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
-    provider = LocalOpenAIProvider("http://model.test/v1", "test")
+    monkeypatch.setattr(api_transport, "open_request", reply)
+    provider = ApiProvider("http://model.test/v1", "test")
     if method == "send_turn":
         turn = provider.send_turn("finish", TOOLS)
     else:
         provider._messages.append({"role": "assistant", "content": "", "tool_calls": [
             {"id": "prior", "type": "function", "function": {"name": "read_file", "arguments": "{}"}},
         ]})
-        turn = provider.send_tool_results([{"tool_call_id": "prior", "content": "read"}], TOOLS)
+        turn = provider.send_tool_results([ProviderToolResult('prior', 'read')], TOOLS)
     assert seen[0]["tool_choice"] == "required"
     assert seen[0]["parallel_tool_calls"] is False
-    assert seen[0]["tools"] == TOOLS
+    assert seen[0]["tools"][0]["function"]["name"] == "done"
+    assert seen[0]["tools"][0]["function"]["parameters"] == TOOLS[0].parameters
     assert turn.tool_calls[0].name == "done"
 
 
@@ -74,13 +76,13 @@ def test_plain_text_and_terminal_receipt_do_not_force_tools(monkeypatch):
         seen.append(json.loads(request.data))
         return _Response({"finish_reason": "stop", "message": {"content": "ok"}})
 
-    monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
-    provider = LocalOpenAIProvider("http://model.test/v1", "test")
+    monkeypatch.setattr(api_transport, "open_request", reply)
+    provider = ApiProvider("http://model.test/v1", "test")
     assert provider.send("hello") == "ok"
     provider._messages.append({"role": "assistant", "content": "", "tool_calls": [
         {"id": "done1", "type": "function", "function": {"name": "done", "arguments": "{}"}},
     ]})
-    provider.send_tool_results([{"tool_call_id": "done1", "content": "OK: done accepted"}], [])
+    provider.send_tool_results([ProviderToolResult('done1', 'OK: done accepted')], [])
     assert all("tools" not in payload and "tool_choice" not in payload
                and "parallel_tool_calls" not in payload for payload in seen)
     assert "max_tokens" not in seen[0]
@@ -96,14 +98,14 @@ def test_gate_records_the_actual_required_request(monkeypatch, tmp_path):
         wire.append(json.loads(request.data))
         return _Response(_call("done", {"summary": "finished"}))
 
-    monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
+    monkeypatch.setattr(api_transport, "open_request", reply)
     target = GateTarget("http://model.test/v1", "test", 32768, 8192, 12000)
     provider = RecordingProvider(target, tmp_path)
     provider.send_turn("finish", TOOLS)
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
     assert rows[0]["payload"] == wire[0]
     assert rows[0]["payload"]["tool_choice"] == "required"
-    provider.send_tool_results([{"tool_call_id": "c1", "content": "OK: done accepted"}], [])
+    provider.send_tool_results([ProviderToolResult('c1', 'OK: done accepted')], [])
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
     requests = [row["payload"] for row in rows if row["type"] == "request"]
     assert requests == wire
@@ -116,7 +118,7 @@ def test_gate_metadata_includes_the_provider_and_transport_being_tested(monkeypa
 
     monkeypatch.setattr(gate, "_server_observations", lambda url: {})
     metadata = gate._metadata(GateTarget("http://model.test/v1", "test", 32768, 8192, 12000))
-    assert {"codey/providers/local_openai.py", "codey/operations/kernel_transport.py",
+    assert {"codey/providers/api_provider.py", "codey/operations/kernel_transport.py",
             "codey/operations/task_loop.py"} <= metadata["production_hashes"].keys()
 
 
@@ -128,8 +130,8 @@ def test_plain_native_turn_without_tools_keeps_its_answer_budget(monkeypatch, to
         seen.append(json.loads(request.data))
         return _Response({"finish_reason": "stop", "message": {"content": "full answer"}})
 
-    monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
-    provider = LocalOpenAIProvider("http://model.test/v1", "test")
+    monkeypatch.setattr(api_transport, "open_request", reply)
+    provider = ApiProvider("http://model.test/v1", "test")
     assert provider.send_turn("explain", tools).text == "full answer"
     assert "max_tokens" not in seen[0]
 
@@ -150,13 +152,13 @@ def test_real_kernel_does_not_enter_optional_answer_branch(monkeypatch):
         }})
 
     monkeypatch.setenv("NATIVE_TOOLS", "1")
-    monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
+    monkeypatch.setattr(api_transport, "open_request", reply)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=3)
     result = run_task_kernel(
         session,
         request=KernelRunRequest(
             transport=KernelTransportDeps(
-                provider=LocalOpenAIProvider("http://model.test/v1", "test"),
+                provider=ApiProvider("http://model.test/v1", "test"),
                 provider_id="local",
                 run_id="required-tool-choice",
             ),
@@ -193,14 +195,14 @@ def test_terminal_kernel_receipts_close_ids_without_advertising_tools(monkeypatc
         return _Response({"finish_reason": "stop", "message": {"content": "ack"}})
 
     monkeypatch.setenv("NATIVE_TOOLS", "1")
-    monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
+    monkeypatch.setattr(api_transport, "open_request", reply)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
                           project=str(tmp_path), max_turns=1)
     result = run_task_kernel(
         session,
         request=KernelRunRequest(
             transport=KernelTransportDeps(
-                provider=LocalOpenAIProvider("http://model.test/v1", "test"),
+                provider=ApiProvider("http://model.test/v1", "test"),
                 provider_id="local",
                 run_id=f"terminal-{terminal}",
                 stop_flag=stop,
@@ -239,7 +241,7 @@ def test_rejected_reply_at_last_turn_still_closes_the_followup_id(monkeypatch, t
         return _Response({"finish_reason": "stop", "message": {"content": "ack"}})
 
     monkeypatch.setenv("NATIVE_TOOLS", "1")
-    monkeypatch.setattr(local_openai.urllib.request, "urlopen", reply)
+    monkeypatch.setattr(api_transport, "open_request", reply)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.write"}),
                                            required_checks=("project_changes_required",)),
                           project=str(tmp_path), max_turns=1)
@@ -248,7 +250,7 @@ def test_rejected_reply_at_last_turn_still_closes_the_followup_id(monkeypatch, t
         session,
         request=KernelRunRequest(
             transport=KernelTransportDeps(
-                provider=LocalOpenAIProvider("http://model.test/v1", "test"),
+                provider=ApiProvider("http://model.test/v1", "test"),
                 provider_id="local",
                 run_id="reject-last-turn",
             ),

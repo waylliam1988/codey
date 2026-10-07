@@ -1,5 +1,4 @@
 """Task guidance belongs to task composition, not to the shared prompt renderer."""
-
 import ast
 import hashlib
 import inspect
@@ -11,7 +10,7 @@ from codey.operations import kernel_prompt, task_loop
 from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn
+from codey.providers.base import AssistantTurn, tools_from_specs
 
 
 def _guidance(policy):
@@ -46,6 +45,9 @@ def test_shared_kernel_sends_arbitrary_task_guidance_in_both_protocols(native, m
 
         def send_tool_results(self, messages, tools):
             raise AssertionError("no native tool calls were issued")
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})),
                           task_kind="third_task", max_turns=1)
@@ -106,7 +108,7 @@ def test_note_id_usage_is_owned_by_the_shared_tool_contract(native):
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "knowledge.read"})))
     snapshot = build_turn_snapshot(session, native=native)
     if native:
-        descriptions = {row["function"]["name"]: row["function"]["description"] for row in snapshot.native_tools}
+        descriptions = {row.name: row.description for row in tools_from_specs(snapshot.frozen_specs)}
         assert knowledge_read_id_guidance() in descriptions["knowledge_read"]
     else:
         assert knowledge_read_id_guidance() in snapshot.contract_text
@@ -123,8 +125,8 @@ def test_note_reader_description_does_not_advertise_a_hidden_write_tool(native):
     assert "knowledge_read" in snapshot.tool_names
     assert "knowledge_write" not in snapshot.tool_names
     if native:
-        description = next(row["function"]["description"] for row in snapshot.native_tools
-                           if row["function"]["name"] == "knowledge_read")
+        description = next(row.description for row in tools_from_specs(snapshot.frozen_specs)
+                           if row.name == "knowledge_read")
     else:
         description = snapshot.contract_text
     assert "knowledge_write" not in description

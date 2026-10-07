@@ -10,7 +10,7 @@ from codey.env_names import REVIEW_POLICY_ENV
 from tests.support.local_review_fixture import ScriptedLocal, fixture_project, writer_turns
 
 
-@pytest.mark.usefixtures("no_external_advisor_models")
+@pytest.mark.usefixtures("no_external_advisor_models", "scripted_local_api_connection")
 @pytest.mark.parametrize("finding", [False, True])
 def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, monkeypatch, capsys, finding):
     monkeypatch.setenv("NATIVE_TOOLS", "0")

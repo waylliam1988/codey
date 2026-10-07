@@ -28,6 +28,7 @@ from codey.operations.kernel_recovery_context import (
     verified_persisted_identity,
 )
 from codey.operations.task_session import turn_effect_id
+from codey.providers.base import ProviderToolResult
 from codey.runtime.core.models import ToolCall, ToolResult
 
 __all__ = [
@@ -76,12 +77,12 @@ def apply_recovery_first(
     native: bool,
     pending_initial: list[Any],
     prompt: str,
-    pending_native_messages: list[dict[str, Any]] | None,
+    pending_native_messages: list[ProviderToolResult] | None,
     *,
     provider_session_changed: bool,
     format_results: Any,
     native_tool_messages: Any,
-) -> tuple[str, list[dict[str, Any]] | None]:
+) -> tuple[str, list[ProviderToolResult] | None]:
     """Deliver recovered results before accepting new model tool calls.
 
     Any formatting or native-message construction failure raises

@@ -1,7 +1,7 @@
 """Native delivery via the production task kernel.
 
 Migrated from the old agent result-delivery codec to the production entry:
-``run_task_kernel`` + ``execute_turn`` + ``_native_tool_messages`` +
+``run_task_kernel`` + ``execute_turn`` + ``_native_tool_results`` +
 ``apply_recovery_first`` + ``KernelEffectSink``/``KernelRecordedProvider`` +
 ``TaskSession``/``TaskPolicy`` + ``normalize_turn``/``build_turn_snapshot``.
 """
@@ -24,7 +24,8 @@ from codey.operations.task_loop import (
 )
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.providers import api_transport
+from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 from codey.providers.error_classification import ContextOverflowError
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
@@ -57,6 +58,9 @@ class FakeStructuredProvider:
 
     def close(self) -> None:
         return None
+
+    def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        return self.send_tool_results(results, [])
 
 
 def _native_policy() -> TaskPolicy:
@@ -100,8 +104,8 @@ def test_native_delivery_records_effect_and_batch(tmp_path: Path) -> None:
     log, _line, sink = _effect_harness(tmp_path, "s", "r")
     session = _native_session(tmp_path)
     snapshot = build_turn_snapshot(session, native=True)
-    assert snapshot.native_tools
-    names = {str((t.get("function") or {}).get("name") or "") for t in snapshot.native_tools}
+    assert tools_from_specs(snapshot.frozen_specs)
+    names = {t.name for t in tools_from_specs(snapshot.frozen_specs)}
     assert {"read_file", "done"} <= names
     recorded = KernelRecordedProvider(provider, sink)
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
@@ -131,11 +135,11 @@ def test_native_delivery_records_effect_and_batch(tmp_path: Path) -> None:
     # First native delivery carried the read result for c1.
     assert provider.tool_results_seen
     sent = provider.tool_results_seen[0][0]
-    assert sent["role"] == "tool" and sent["tool_call_id"] == "c1"
-    assert "hello" in str(sent["content"])
+    assert sent.call_id == "c1"
+    assert "hello" in str(sent.content)
     # Done receipt closed the chain.
     assert any(
-        m.get("tool_call_id") == "c2"
+        m.call_id == "c2"
         for batch in provider.tool_results_seen[1:]
         for m in batch
     )
@@ -173,6 +177,9 @@ def test_native_overflow_fails_closed_without_fallback(tmp_path: Path) -> None:
         def send_turn(self, prompt: str, tools=None, timeout=None) -> AssistantTurn:
             self.fallback_prompts.append(prompt)
             return self._turns.pop(0)
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
 
     provider = OverflowProvider()
     (tmp_path / "app.py").write_text("hello\n", encoding="utf-8")
@@ -247,8 +254,8 @@ def test_native_protocol_error_answers_chain(tmp_path: Path) -> None:
     assert result.stop_reason == "done"
     assert result.summary == "recovered"
     answered = provider.tool_results_seen[0][0]
-    assert answered["tool_call_id"] == "c1"
-    assert str(answered["content"]).startswith("ERROR:")
+    assert answered.call_id == "c1"
+    assert str(answered.content).startswith("ERROR:")
 
 
 def test_compaction_noop_cut_leaves_messages_untouched() -> None:
@@ -287,6 +294,9 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
             self.tool_sends += 1
             self.tool_results_seen.append(list(results))
             raise ContextOverflowError("full")
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
 
     provider = StrictOverflowProvider()
     log, _line, sink = _effect_harness(tmp_path, "sess-native-1", "run-native-1")
@@ -341,8 +351,8 @@ def test_recovered_native_delivery_marks_delivered(tmp_path: Path) -> None:
     pending = [
         ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "app.py"}, call_id="c1"), model_text="hello"),
     ]
-    messages = kernel_transport._native_tool_messages(pending, session)
-    assert len(messages) == 1 and messages[0]["tool_call_id"] == "c1"
+    messages = kernel_transport._native_tool_results(pending, session)
+    assert len(messages) == 1 and messages[0].call_id == "c1"
     prompt, recovered = apply_recovery_first(
         session,
         True,
@@ -351,7 +361,7 @@ def test_recovered_native_delivery_marks_delivered(tmp_path: Path) -> None:
         None,
         provider_session_changed=False,
         format_results=_prompt._format_results,
-        native_tool_messages=kernel_transport._native_tool_messages,
+        native_tool_messages=kernel_transport._native_tool_results,
     )
     assert recovered == messages
     provider = FakeStructuredProvider([
@@ -380,9 +390,7 @@ def test_recovered_native_delivery_marks_delivered(tmp_path: Path) -> None:
         )
     assert result.stop_reason == "done"
     assert provider.tool_results_seen
-    assert provider.tool_results_seen[0][0]["tool_call_id"] == "c1"
-    assert provider.tool_results_seen[0][0]["role"] == "tool"
-
+    assert provider.tool_results_seen[0][0].call_id == "c1"
 
 def test_native_success_leaves_no_pending_context_rows(tmp_path: Path) -> None:
     """Successful native delivery leaves no pending chain: done closes cleanly."""
@@ -452,8 +460,8 @@ def test_native_too_many_calls_answered_in_full(tmp_path: Path) -> None:
         )
     assert result.stop_reason == "done"
     answered = provider.tool_results_seen[0]
-    assert [m["tool_call_id"] for m in answered] == [f"c{i}" for i in range(MAX_ACCIDENTAL_TOOL_CALLS + 1)]
-    assert all(str(m["content"]).startswith("ERROR:") for m in answered)
+    assert [m.call_id for m in answered] == [f"c{i}" for i in range(MAX_ACCIDENTAL_TOOL_CALLS + 1)]
+    assert all(str(m.content).startswith("ERROR:") for m in answered)
 
 
 def test_idless_turn_restarts_fresh_chat_instead_of_dangling(tmp_path: Path) -> None:
@@ -491,7 +499,7 @@ def test_idless_turn_restarts_fresh_chat_instead_of_dangling(tmp_path: Path) -> 
     assert len(provider.sent_prompts) >= 2
     # Only the valid done id needed a receipt.
     assert provider.tool_results_seen
-    assert provider.tool_results_seen[-1][0]["tool_call_id"] == "d"
+    assert provider.tool_results_seen[-1][0].call_id == "d"
 
 
 def test_native_mixed_done_answered_in_full(tmp_path: Path) -> None:
@@ -526,15 +534,15 @@ def test_native_mixed_done_answered_in_full(tmp_path: Path) -> None:
         )
     assert result.stop_reason == "done"
     answered = provider.tool_results_seen[0]
-    assert [m["tool_call_id"] for m in answered] == ["d", "r"]
-    assert all(str(m["content"]).startswith("ERROR:") for m in answered)
+    assert [m.call_id for m in answered] == ["d", "r"]
+    assert all(str(m.content).startswith("ERROR:") for m in answered)
 
 
 def test_native_helpers_execute_and_format(tmp_path: Path) -> None:
     """Direct production helpers: execute_turn + snapshot + transport."""
     session = _native_session(tmp_path)
     snapshot = build_turn_snapshot(session, native=True)
-    assert snapshot.native_tools
+    assert tools_from_specs(snapshot.frozen_specs)
     results = execute_turn(
         session,
         [ToolCall(name="read_file", args={"path": "app.py"}, call_id="c0")],
@@ -550,8 +558,8 @@ def test_native_helpers_execute_and_format(tmp_path: Path) -> None:
     )
     assert not plan.protocol_error
     assert plan.calls[0].call_id == "c0"
-    messages = kernel_transport._native_tool_messages(results, session)
-    assert messages and messages[0]["tool_call_id"] == "c0"
+    messages = kernel_transport._native_tool_results(results, session)
+    assert messages and messages[0].call_id == "c0"
     import pytest as _pytest
 
     mixed = [
@@ -559,14 +567,13 @@ def test_native_helpers_execute_and_format(tmp_path: Path) -> None:
         ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "b.py"}, call_id=""), model_text="b"),
     ]
     with _pytest.raises(ValueError):
-        kernel_transport._native_tool_messages(mixed, session)
+        kernel_transport._native_tool_results(mixed, session)
 
 
 def test_local_malformed_tool_calls_fail_closed(monkeypatch) -> None:
     import json as _json
 
-    from codey.providers import local_openai as local_module
-    from codey.providers.local_openai import LocalOpenAIProvider
+    from codey.providers.api_provider import ApiProvider
 
     bodies: list[dict] = []
 
@@ -592,9 +599,9 @@ def test_local_malformed_tool_calls_fail_closed(monkeypatch) -> None:
             bodies.append(_json.loads(request.data.decode("utf-8")))
             return _FakeResponse(_json.dumps(body).encode("utf-8"))
 
-        monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(api_transport, "open_request", fake_urlopen)
 
-    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     _install(_body({
         "content": "here",
         "tool_calls": [

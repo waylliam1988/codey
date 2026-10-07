@@ -24,7 +24,8 @@ from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_run import TaskRunDeps
-from codey.providers.local_openai import LocalOpenAIProvider
+from codey.providers.api_chat import encode_tools
+from codey.providers.api_provider import ApiProvider
 from codey.runtime.core.cancellation import start_process, wait_process
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
@@ -47,7 +48,7 @@ def _append(path: Path, row: dict) -> None:
         stream.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-class _ScriptedLocalProvider(LocalOpenAIProvider):
+class _ScriptedLocalProvider(ApiProvider):
     """Deterministic HTTP boundary; all history/codec behavior remains production."""
 
     def __init__(self, target: GateTarget, directory: Path, stage: str):
@@ -57,7 +58,7 @@ class _ScriptedLocalProvider(LocalOpenAIProvider):
 
     def _post_chat(self, messages, tools=None, *, timeout=None):
         self.responses += 1
-        _append(self.directory / "scripted-requests.jsonl", {"messages": messages, "tools": tools})
+        _append(self.directory / "scripted-requests.jsonl", {"messages": messages, "tools": encode_tools(tools)})
         if tools == []:
             return {"choices": [{"message": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}]}
         if self.stage == "prepare":
@@ -80,6 +81,14 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
     config = json.loads((directory / "recovery-input.json").read_text(encoding="utf-8"))
     target = GateTarget(**config["target"])
     project, state_home = Path(config["project"]), Path(config["state"])
+    from codey.providers import local_config
+
+    local_config.DEFAULT_STATE_HOME = state_home
+    local_config.save_local_config(local_config.LocalProviderConfig(
+        base_url=target.base_url, model=target.model, connection_revision="isolated-gate-target",
+        native_tools_mode="on" if target.protocol == "native" else "off",
+        context=local_config.LocalContextBudget(target.context_window_tokens, target.context_reserve_tokens, target.context_keep_recent_tokens),
+    ))
     os.environ["NATIVE_TOOLS"] = "1" if target.protocol == "native" else "0"
     provider = (_ScriptedLocalProvider(target, directory, stage) if scripted else make_provider(target, directory))
     def emit(row):

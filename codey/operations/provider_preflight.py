@@ -51,7 +51,10 @@ def connect_provider_with_preflight(
     append_ledger: Callable[[Callable[[RunLedgerWriter], None]], None],
     trace_sink: Any,
     connect: Callable[[str], Any] | None = None,
+    allow_switch: bool = True,
 ) -> ProviderPreflightResult:
+    if not allow_switch:
+        supervisor = None
     preflight_tried: set[str] = set()
     preflight_switches = 0
     if supervisor is not None:

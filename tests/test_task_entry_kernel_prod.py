@@ -280,6 +280,9 @@ class LoopPromptTests(unittest.TestCase):
                 self.assertIn("d1", ids)
                 return AssistantTurn(text='{"tool":"done","args":{"summary":"结论 x 来源 y"}}')
 
+            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+                return self.send_tool_results(results, [])
+
         session = TaskSession(policy=policy, task_kind="research", project="", max_turns=4)
         run_task_kernel(
             session,

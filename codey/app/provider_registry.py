@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from codey.providers.catalog import PROVIDER_LABELS
+from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
 from codey.providers.supervisor import ProviderSupervisor
 
 logger = logging.getLogger(__name__)
@@ -34,12 +34,12 @@ class ProviderRegistry:
         opened = tuple(
             provider_id
             for provider_id in PROVIDER_LABELS
-            if provider_id != "local" and statuses.get(provider_id)
+            if provider_id not in API_CONNECTIONS and statuses.get(provider_id)
         )
         return opened + tuple(
             provider_id
             for provider_id in PROVIDER_LABELS
-            if provider_id != "local" and provider_id not in opened
+            if provider_id not in API_CONNECTIONS and provider_id not in opened
         )
 
     def self_repair_candidates(

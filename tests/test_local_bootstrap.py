@@ -6,6 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from codey.providers import api_transport
+from codey.providers.local_connection import connect_local
+
 
 def test_context_budget_presets() -> None:
     from codey.providers.local_config import context_budget_for_window
@@ -236,7 +239,6 @@ def test_connect_offline_raises_without_second_probe(monkeypatch) -> None:
     import pytest
 
     from codey.providers import local_config as canonical
-    from codey.providers.local_openai import LocalOpenAIProvider
 
     saved = canonical.LocalProviderConfig(
         base_url="http://127.0.0.1:9/v1", model="chosen", api_key="secret",
@@ -255,7 +257,7 @@ def test_connect_offline_raises_without_second_probe(monkeypatch) -> None:
         "codey.providers.local_discovery.resolve_local_endpoint", fake_resolve,
     )
     with pytest.raises(RuntimeError, match="could not reach local model at http://127.0.0.1:9/v1"):
-        LocalOpenAIProvider.connect()
+        connect_local()
     # Single resolution pass with the saved credentials, no silent fallback.
     assert resolve_calls == [{
         "base_url": "http://127.0.0.1:9/v1", "model": "chosen", "api_key": "secret",
@@ -266,7 +268,6 @@ def test_connect_online_preserves_saved_model_and_key(monkeypatch) -> None:
     from types import SimpleNamespace as _NS
 
     from codey.providers import local_config as canonical
-    from codey.providers.local_openai import LocalOpenAIProvider
 
     saved = canonical.LocalProviderConfig(
         base_url="http://127.0.0.1:11434/v1", model="chosen", api_key="secret",
@@ -280,7 +281,7 @@ def test_connect_online_preserves_saved_model_and_key(monkeypatch) -> None:
         "codey.providers.local_discovery.resolve_local_endpoint",
         lambda *, base_url="", model="", api_key="": live,
     )
-    provider = LocalOpenAIProvider.connect()
+    provider = connect_local()
     assert provider.base_url == "http://127.0.0.1:11434/v1"
     assert provider.model == "chosen"
     assert provider.api_key == "secret"
@@ -291,7 +292,6 @@ def test_explicit_address_never_falls_back_to_another_service(monkeypatch) -> No
 
     from codey.providers import local_config as canonical
     from codey.providers import local_discovery as discovery
-    from codey.providers.local_openai import LocalOpenAIProvider
 
     saved = canonical.LocalProviderConfig(
         base_url="http://127.0.0.1:1111/v1", model="alpha", api_key="key1",
@@ -313,7 +313,7 @@ def test_explicit_address_never_falls_back_to_another_service(monkeypatch) -> No
         base_url=saved.base_url, model=saved.model, api_key=saved.api_key,
     ) is None
     with pytest.raises(RuntimeError, match="http://127.0.0.1:1111/v1"):
-        LocalOpenAIProvider.connect()
+        connect_local()
 
 
 def test_env_only_target_uses_env_group(monkeypatch) -> None:
@@ -321,7 +321,6 @@ def test_env_only_target_uses_env_group(monkeypatch) -> None:
 
     from codey.providers import local_config as canonical
     from codey.providers import local_discovery as discovery
-    from codey.providers.local_openai import LocalOpenAIProvider
 
     config = canonical.LocalProviderConfig(
         base_url="http://127.0.0.1:1111/v1", model="alpha", api_key="key1",
@@ -347,7 +346,7 @@ def test_env_only_target_uses_env_group(monkeypatch) -> None:
     )
     assert endpoint is not None and endpoint.base_url == "http://127.0.0.1:2222/v1"
     assert seen == {"base_url": "http://127.0.0.1:2222/v1", "api_key": "key2"}
-    provider = LocalOpenAIProvider.connect()
+    provider = connect_local()
     assert (provider.base_url, provider.model, provider.api_key) == (
         "http://127.0.0.1:2222/v1", "beta", "key2",
     )
@@ -394,8 +393,6 @@ def test_probe_and_send_share_target_and_key(monkeypatch) -> None:
 
     from codey.providers import local_config as canonical
     from codey.providers import local_discovery as discovery
-    from codey.providers import local_openai as provider_module
-    from codey.providers.local_openai import LocalOpenAIProvider
 
     config = canonical.LocalProviderConfig(
         base_url="http://127.0.0.1:11434/v1", model="chosen", api_key="secret",
@@ -433,8 +430,8 @@ def test_probe_and_send_share_target_and_key(monkeypatch) -> None:
         sent["auth"] = str(request.get_header("Authorization") or "")
         return FakeChatResponse()
 
-    monkeypatch.setattr(provider_module.urllib.request, "urlopen", fake_urlopen)
-    provider = LocalOpenAIProvider.connect()
+    monkeypatch.setattr(api_transport, "open_request", fake_urlopen)
+    provider = connect_local()
     assert provider.send("hi") == "ok"
     assert probe_seen == {"base_url": "http://127.0.0.1:11434/v1", "api_key": "secret"}
     assert sent["url"].startswith("http://127.0.0.1:11434/v1/chat/completions")

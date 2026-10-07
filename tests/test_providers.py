@@ -7,14 +7,15 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey.providers import (
+    api_provider,
     local_config,
     local_discovery,
-    local_openai,
     registry,
     web_driver,
     web_provider,
 )
 from codey.providers.diagnostics import FAILURE_RESPONSE_MISSING, ProviderActionError
+from codey.providers.local_connection import connect_local
 from codey.providers.web_drivers import deepseek, glm, mimo, qwen, stepfun
 from codey.providers.web_provider import (
     DeepSeekWebProvider,
@@ -327,7 +328,7 @@ class ProviderRegistryTests(unittest.TestCase):
     def test_provider_registry_surfaces_stay_in_sync(self) -> None:
         ids = set(registry.provider_ids())
 
-        self.assertEqual(ids, set(registry.PROVIDER_TYPES))
+        self.assertEqual(ids, set(registry.PROVIDER_TYPES) | set(registry.API_CONNECTIONS))
         self.assertEqual(set(registry.WEB_PROVIDER_LABELS), set(registry.PROVIDER_URL_CONTAINS))
         self.assertIn("local", ids)
         self.assertNotIn("local", registry.PROVIDER_URL_CONTAINS)
@@ -335,7 +336,7 @@ class ProviderRegistryTests(unittest.TestCase):
     def test_provider_ids_are_ordered_for_ui(self) -> None:
         self.assertEqual(
             registry.provider_ids(),
-            ("deepseek", "mimo", "stepfun", "qwen", "glm", "local"),
+            ("deepseek", "mimo", "stepfun", "qwen", "glm", "local", "zen"),
         )
 
     def test_provider_tab_availability_returns_all_registered_providers(self) -> None:
@@ -370,7 +371,8 @@ class ProviderRegistryTests(unittest.TestCase):
             mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen),
             mock.patch.object(registry.StepFunWebProvider, "connect", return_value=stepfun),
             mock.patch.object(registry.GlmWebProvider, "connect", return_value=glm),
-            mock.patch.object(registry.LocalOpenAIProvider, "connect", return_value=local),
+            mock.patch("codey.providers.api_connections.capture_selection", return_value=object()),
+            mock.patch("codey.providers.api_connections.open_selection", return_value=local),
         ):
             self.assertIs(registry.connect_provider("deepseek", port=9222), deepseek)
             self.assertIs(registry.connect_provider("qwen", port=9222), qwen)
@@ -379,15 +381,15 @@ class ProviderRegistryTests(unittest.TestCase):
             self.assertIs(registry.connect_provider("local", port=9222), local)
 
     def test_local_provider_requires_resolved_target(self) -> None:
-        provider = local_openai.LocalOpenAIProvider(
+        provider = api_provider.ApiProvider(
             base_url="http://127.0.0.1:11434/v1", model="qwen",
         )
         self.assertEqual(provider.base_url, "http://127.0.0.1:11434/v1")
         self.assertEqual(provider.model, "qwen")
         with self.assertRaises(ValueError):
-            local_openai.LocalOpenAIProvider(base_url="", model="qwen")
+            api_provider.ApiProvider(base_url="", model="qwen")
         with self.assertRaises(ValueError):
-            local_openai.LocalOpenAIProvider(base_url="http://127.0.0.1:11434/v1", model="")
+            api_provider.ApiProvider(base_url="http://127.0.0.1:11434/v1", model="")
 
     def test_local_connect_prefers_remembered_config(self) -> None:
         endpoint = local_discovery.LocalEndpoint("http://127.0.0.1:5001/v1", ("chosen", "gemma"))
@@ -413,7 +415,7 @@ class ProviderRegistryTests(unittest.TestCase):
             ),
             mock.patch.object(local_discovery, "resolve_local_endpoint", return_value=endpoint) as resolve,
         ):
-            provider = local_openai.LocalOpenAIProvider.connect()
+            provider = connect_local()
 
         self.assertEqual(provider.base_url, endpoint.base_url)
         self.assertEqual(provider.model, "chosen")

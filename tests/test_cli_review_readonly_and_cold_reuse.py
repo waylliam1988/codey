@@ -7,7 +7,7 @@ from codey.env_names import REVIEW_POLICY_ENV
 from tests.support.local_review_fixture import ScriptedLocal
 
 
-def test_cli_review_cold_start_reuses_without_new_chat_or_send(tmp_path, monkeypatch, capsys):
+def test_cli_review_cold_start_reuses_without_new_chat_or_send(tmp_path, monkeypatch, capsys, scripted_local_api_connection):
     project = tmp_path / "project"
     project.mkdir()
     source = project / "app.py"
@@ -22,7 +22,7 @@ def test_cli_review_cold_start_reuses_without_new_chat_or_send(tmp_path, monkeyp
     pending = iter(reviewers)
     monkeypatch.setenv(REVIEW_POLICY_ENV, "web_if_available")
     monkeypatch.setattr("codey.app.review_service.providers.reviewer_candidates", lambda *_: ())
-    monkeypatch.setattr("codey.app.review_service.providers.connect_fresh_provider_tab", lambda *_: next(pending))
+    monkeypatch.setattr("codey.providers.api_connections.open_selection", lambda *_: next(pending))
     options = ["agent", "--intent", "review", "--provider", "local", "--project", str(project),
                "--state-home", str(tmp_path / "state"), "--session-id", "s", "--json"]
     assert cli.main([*options, "Review changes"]) == 0

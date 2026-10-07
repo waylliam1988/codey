@@ -7,14 +7,18 @@ ledger; UI events and run traces are observation only.
 
 from __future__ import annotations
 
-import copy
 import hashlib
-import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
+from codey.runtime.core.operation_payload import (
+    RuntimeOperationTransitionError,
+    _parse_final_delivery,
+    _parse_model_selection,
+    _parse_task_policy,
+)
 from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
 from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_log import RuntimeSessionLog
@@ -146,6 +150,9 @@ _KNOWN_PAYLOAD_KEYS = frozenset(
         "updated_at",
         "task_kind",
         "task_policy",
+        "model_selection",
+        "reviewer_selection",
+        "final_delivery",
         "writer_attempt",
         "turns_used",
         "stop_reason",
@@ -181,8 +188,7 @@ _BLOCKABLE_PROOF_STATUSES = frozenset({"failed", "blocked"})
 _REPAIR_SOURCE_PROOF_STATUSES = frozenset({"failed"})
 
 
-class RuntimeOperationTransitionError(Exception):
-    """An operation state transition violated the closed leaf table."""
+
 
 
 @dataclass(frozen=True)
@@ -244,6 +250,9 @@ class RuntimeOperationState:
     updated_at: str
     task_kind: str = "task"
     task_policy: dict[str, object] = field(default_factory=dict)
+    model_selection: dict[str, object] = field(default_factory=dict)
+    reviewer_selection: dict[str, object] = field(default_factory=dict)
+    final_delivery: str = "not_required"
     writer_attempt: int = 1
     turns_used: int = 0
     stop_reason: str = ""
@@ -285,6 +294,12 @@ class RuntimeOperationState:
             "turn": self.turn,
             "tool_index": self.tool_index,
         }
+        if self.final_delivery != "not_required":
+            payload["final_delivery"] = _parse_final_delivery(self.final_delivery)
+        if self.model_selection:
+            payload["model_selection"] = _parse_model_selection(self.model_selection)
+        if self.reviewer_selection:
+            payload["reviewer_selection"] = _parse_model_selection(self.reviewer_selection)
         if self.task_policy:
             payload["task_policy"] = dict(self.task_policy)
         if self.terminal is not None:
@@ -364,6 +379,9 @@ class RuntimeOperationState:
                 updated_at=_text(payload.get("updated_at"), "updated_at", limit=40),
                 task_kind=_text(payload.get("task_kind"), "task_kind"),
                 task_policy=_parse_task_policy(payload.get("task_policy")),
+                model_selection=_parse_model_selection(payload.get("model_selection")),
+                reviewer_selection=_parse_model_selection(payload.get("reviewer_selection")),
+                final_delivery=_parse_final_delivery(payload.get("final_delivery", "not_required")),
                 writer_attempt=writer_attempt,
                 turns_used=turns_used,
                 stop_reason=stop_reason,
@@ -390,23 +408,6 @@ def _parse_operation_identity(payload: dict[str, object]) -> tuple[str, str, str
     if leaf not in LEAVES:
         raise RuntimeOperationTransitionError("unknown operation leaf")
     return session_id, run_id, operation_id, lane, leaf
-
-
-def _parse_task_policy(value: object) -> dict[str, object]:
-    """Preserve opaque authorization data; TaskPolicy owns its schema.
-
-    Runtime storage must neither drop newly added fields nor turn invalid
-    values into valid ones. Semantic validation belongs to the policy owner.
-    """
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise RuntimeOperationTransitionError("task_policy must be an object")
-    try:
-        json.dumps(value, allow_nan=False)
-        return copy.deepcopy(value)
-    except (TypeError, ValueError) as exc:
-        raise RuntimeOperationTransitionError("task_policy must be JSON data") from exc
 
 
 def _parse_operation_counts(payload: dict[str, object]) -> tuple[int, int, int, int, int, int]:
@@ -624,6 +625,7 @@ def new_operation_state(
     max_repair_rounds: int,
     task_kind: str = "task",
     task_policy: dict[str, object] | None = None,
+    model_selection: dict[str, object] | None = None,
 ) -> RuntimeOperationState:
     session = _canonical_id(session_id)
     run = _canonical_id(run_id)
@@ -642,6 +644,7 @@ def new_operation_state(
         updated_at=now,
         task_kind=_text(task_kind, "task_kind"),
         task_policy=_parse_task_policy(task_policy),
+        model_selection=_parse_model_selection(model_selection),
     )
 
 
@@ -948,7 +951,16 @@ def mark_terminal(
     max_turns: int,
     provider: str,
     blocked_reason: str | None = None,
+    final_delivery: str | None = None,
+    proof_ref: str = "",
+    proof_status: str = "",
 ) -> RuntimeOperationState:
+    delivery = state.final_delivery if final_delivery is None else _parse_final_delivery(final_delivery)
+    if proof_ref:
+        if not _COMPLETION_PROOF_REF_RE.fullmatch(proof_ref) or proof_status not in _RECORDED_PROOF_STATUSES:
+            raise RuntimeOperationTransitionError("invalid terminal completion proof")
+        if state.completion_proof_ref and state.completion_proof_ref != proof_ref:
+            raise RuntimeOperationTransitionError("terminal cannot replace completion proof")
     verdict = _text(
         state.blocked_reason if blocked_reason is None else blocked_reason,
         "blocked_reason",
@@ -968,13 +980,16 @@ def mark_terminal(
     if terminal.max_turns != state.turn_budget:
         raise RuntimeOperationTransitionError("terminal max_turns must match budget")
     if state.leaf == LEAF_TERMINAL:
-        if state.terminal is not None and state.terminal.identity() == terminal.identity():
+        if state.terminal is not None and state.terminal.identity() == terminal.identity() and state.final_delivery == delivery:
             return state
         raise RuntimeOperationTransitionError("terminal state is immutable")
     return _transition(
         state,
         LEAF_TERMINAL,
         terminal=terminal,
+        final_delivery=delivery,
+        completion_proof_ref=proof_ref or state.completion_proof_ref,
+        completion_proof_status=proof_status or state.completion_proof_status,
         blocked_reason=terminal.blocked_reason,
     )
 

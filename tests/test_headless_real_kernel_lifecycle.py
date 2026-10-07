@@ -4,9 +4,13 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import pytest
+
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.log.session_log import RuntimeSessionLog
+
+pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
 
 
 class ScriptedProvider:

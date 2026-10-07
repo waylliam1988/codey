@@ -8,6 +8,7 @@ import pytest
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.providers.base import tools_from_specs
 from codey.toolchain.runtime import EditBlock, edit_file
 
 
@@ -52,5 +53,5 @@ def test_advertised_multiline_example_changes_only_the_uniquely_anchored_functio
     assert path.read_text() == "def first():\n    return old_value\n\ndef process():\n    return new_value\n"
     assert "same replacement" in spec.description
     if native:
-        schema = next(tool["function"] for tool in snapshot.native_tools if tool["function"]["name"] == "edit")
-        assert schema["description"] == spec.description
+        schema = next(tool for tool in tools_from_specs(snapshot.frozen_specs) if tool.name == "edit")
+        assert schema.description == spec.description

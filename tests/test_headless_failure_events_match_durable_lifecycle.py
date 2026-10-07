@@ -47,6 +47,9 @@ def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tm
         def close(self):
             self.closed = True
 
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return self.send_tool_results(results, [])
+
     provider = Provider()
 
     def connect(*args, **kwargs):
@@ -54,6 +57,13 @@ def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tm
             raise OSError("connection unavailable")
         return provider
 
+    from codey.providers import api_connections, local_connection
+    from codey.runtime.core.api_selection import ApiRunSelection
+
+    selection = ApiRunSelection("local", "fixture", "fixture", "openai-completions", True)
+    monkeypatch.setattr(api_connections, "capture_selection", lambda *a: selection)
+    monkeypatch.setattr(local_connection, "validate_selection", lambda s: None)
+    monkeypatch.setattr(api_connections, "open_selection", lambda s: connect())
     result = run_headless(HeadlessRequest(project=project, task="Create made.py and verify it.", provider_id="local",
                                          max_turns=3, state_home=state, project_changes_required=True),
                           emit_jsonl=rows.append, connect_provider=connect)
@@ -73,6 +83,6 @@ def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tm
     else:
         assert (project / "made.py").read_text() == "x = 1\n"
         assert provider.calls == 1
-        assert provider.receipts[0]["tool_call_id"] == "c1"
+        assert provider.receipts[0].call_id == "c1"
         effects = RuntimeEffectStore(log).load_effects(result.session_id, result.run_id)
         assert len([effect for effect in effects if effect.intent.effect_category == "tool_call" and effect.is_settled]) == 1

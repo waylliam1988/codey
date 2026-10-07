@@ -12,7 +12,7 @@ import json
 import sys
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +54,7 @@ class HeadlessRequest:
     review_source_run_id: str = ""
     continue_task: bool = False
     review_policy: str | None = None
+    model_selection: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -86,7 +87,14 @@ class HeadlessAppContext(AppContext):  # type: ignore[misc,unused-ignore]
     def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID) -> Any:
         self.set_run_status("connecting")
         self.emit({"type": "status", "status": "connecting"})
-        provider = self._connect_provider(provider_id, port=self.port)
+        run = self.current_run()
+        selection = self.run_registry.api_selection_for(run.run_id) if run is not None else None
+        if selection is not None and self._connect_provider is default_connect_provider:
+            from codey.providers.api_connections import open_selection
+
+            provider = open_selection(selection)
+        else:
+            provider = self._connect_provider(provider_id, port=self.port)
         self.set_run_status("running")
         self.emit({"type": "status", "status": "running"})
         return provider
@@ -303,6 +311,11 @@ def _run_headless_task(
             "project_changes_required": request.project_changes_required,
             "sources_open_required": request.sources_open_required,
         }, project=str(project) if project is not None else None)
+        selection_payload: dict[str, Any] = {}
+        if request.model_selection:
+            from codey.providers.api_connections import capture_selection
+
+            selection_payload = capture_selection(request.provider_id, request.model_selection).to_payload()
         run_task_submission(
             deps,
             TaskSubmission(
@@ -320,6 +333,7 @@ def _run_headless_task(
                 project_changes_required=auth.project_changes_required,
                 denied_capabilities=auth.denied_capabilities,
                 review_source_run_id=request.review_source_run_id,
+                model_selection=selection_payload,
             ),
         )
         terminal = dict(state.run_registry.last_terminal_event() or {})

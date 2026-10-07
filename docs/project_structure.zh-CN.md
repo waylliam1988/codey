@@ -14,7 +14,7 @@ codey/
   policies/     任务授权、动作、网络与命令边界
   operations/   任务入口、共同内核、执行适配、完成与恢复接线
   agents/       项目请求/结果、提示、上下文、审查及审批辅助
-  providers/    网页/本地适配器、回复 codec、会话、worker 与健康状态
+  providers/    网页适配器、共享 API runtime、协议 codec、连接包与健康状态
   protocols/    共用 JSON/native 计划 codec 与消息 framing
   toolchain/    共同工具定义、schema 校验与项目工具实现
   completion/   完成契约、引擎、验证与编辑完整性
@@ -71,7 +71,12 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/operations/project_completion_checks.py`、`research_completion_checks.py` | 项目、来源与严格 Research 检查提供者 |
 | `codey/operations/kernel_session_recovery.py`、`kernel_receipts.py` | 恢复原策略/事实/结算结果，并验证收据身份 |
 | `codey/providers/local_response_codec.py` | 本地响应信封与模型方言，在进入内核前归一 |
-| `codey/agents/context_compaction.py`、`providers/local_openai.py` | 压缩/发送前精确配对原生历史；实际序列化请求的诊断观察点 |
+| `codey/providers/base.py` | 协议中立工具声明/结果与明确的回复结束状态 |
+| `codey/providers/api_provider.py`、`api_transport.py` | 共用生成锁、候选提交、取消、总截止与单次有界 POST；未知结果不重发 |
+| `codey/providers/api_chat.py`、`api_responses.py` | 各自拥有工具、结果、wire 历史、完整交换组裁剪和回复解码；Responses 保留 reasoning items 并使用 call_id |
+| `codey/providers/api_connections.py`、`local_connection.py` | lazy 连接工厂与冻结 Local 配置；共享 runtime 不导入 Zen |
+| `codey/providers/zen/` | 动态免费目录、缓存、限定合作身份、wire 工具名与有界普通文本访问观察；删除包及 API_CONNECTIONS 注册即可移除 |
+| `codey/runtime/core/api_selection.py`、`operation_payload.py` | 无秘密的冻结 API 选择，以及严格接纳/交付 payload 校验 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |
 | `codey/app/context.py`、`event_bus.py`、`event_payloads.py` | 公共出口补全运行身份和模式、严格状态；总线负责重放，纯投影模块生成有界机器事件与收据 |
 | `codey/app/headless_runner.py`、`cli.py`、`web/assets/sse.js` | 消费公共事件，负责 JSONL、CLI 文字与网页协调，不另行推断成功 |
@@ -86,7 +91,7 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | 所有者 | 消费者 / 边界 |
 | --- | --- |
 | `reviews/core.py`、`findings.py` | 有界回复解析、可执行问题与公共审查事件元数据 |
-| `reviews/input.py`、`identity.py` | 实际安全 prompt/范围、本地模型配置身份、有界文件与 Git 基准快照 |
+| `reviews/input.py`、`identity.py` | 实际安全 prompt/范围、API 模型配置身份、有界文件与 Git 基准快照 |
 | `reviews/persistence.py`、`reuse.py` | 单次校验读取、已完成 ledger 来源链、显式同会话/项目复用 |
 | `app/review_service.py` | 单次准备、实际 Reviewer 选择、一次格式修复及保存；未知发送失败不切 Reviewer 重发 |
 | `reviews/coordinator.py`、`operations/project_review_phase.py` | 当前快照有效的问题进入既有一次 Writer repair |
@@ -103,6 +108,11 @@ HTTP / CLI → 共用任务服务 + 入口授权
 预算；读取失败或超预算不授予信任。这些边界不构成全库无 bug 的证明，也不能消除任意
 并发外部写入造成的竞争。详见[本轮审计](review-audit-2026-10-04.zh-CN.md)。
 
+API project Writer 在同一连接有可用独立模型时接纳另一个模型；独立只读 Review
+使用用户选定模型本身。Reviewer 在发送前保存到正式操作日志。
+既有网页优先、require-web、自审策略与最多一次修复仍生效。
+普通文本访问观察是短期服务事实，不是永久能力；未知请求不会换模型重发。
+
 `runtime/core` 管状态/契约，`runtime/log` 管规范日志投影，`runtime/effects`
 管 effect/结果交付，`runtime/write` 管获准变更，`runtime/observe` 管只读观察。
 runtime 不依赖任务编排层。细节见 [runtime 架构](runtime_architecture.zh-CN.md)。
@@ -116,9 +126,17 @@ Research fetch 适配器返回 `status`（`ok/error/skipped`），失败时还�
 `ResearchToolOutput.ok` 保持显式，直到转换为共同 `ToolResult`。
 每组原生工具历史要求：每个唯一 call ID 恰有一个配对结果。
 
+接纳时把 `model_selection`、必要时的 `reviewer_selection` 写入 canonical
+operation state，保存连接版本、模型、协议、能力和生成参数，不保存凭据。
+冷启动沿用原选择，Settings 改动不覆盖旧任务；原连接不可用就阻塞恢复。
+协议历史由各适配器在内存中拥有，没有可复用历史时，新窗口接收原任务要求和
+已结算事实，不重复已结算写入。`final_delivery` 单独保存 success/failed/unknown，
+交付失败不会擦掉已成立的完成证明或已执行效果。
+
 手工 gate recorder 在本地 provider 请求边界观察实际字节。请求 hash 用于诊断变化，
 不授予权限、不证明语义等价或任务完成。逻辑 exchange 与显式 `urlopen` 尝试分别计数，
-后者包含现有 transport retry。
+后者只有单次有界 HTTP 尝试。HTTP 结果未知、明确输出截断后的有限续写和任务恢复
+是三个独立机制，不共享一个含糊的 retry。
 
 Ghost 工作队列与 affinity 已分别拆成 `*_model`、`*_sources`、`*_events` 和
 Store 模块；它们是领域所有者，不是新的通用框架。continuity 与 Hebbian 保留

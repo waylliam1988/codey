@@ -73,7 +73,7 @@ function init(next) {
     if (custom) $('local-context-window').focus();
     else $('local-context-window').value = $('local-context-preset').value;
   };
-  makeSelect('local-context-preset'); makeSelect('local-native-tools-mode');
+  makeSelect('local-context-preset'); makeSelect('local-native-tools-mode'); makeSelect('local-api-protocol');
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === ',') {
       e.preventDefault(); e.stopImmediatePropagation();
@@ -141,6 +141,7 @@ async function loadConnection() {
     $('local-context-preset').value = ['32768','131072','262144'].includes(tokens) ? tokens : 'custom';
     $('local-custom-context').hidden = $('local-context-preset').value !== 'custom';
     $('local-native-tools-mode').value = local.native_tools_mode || 'auto';
+    $('local-api-protocol').value = local.api_protocol || 'openai-completions';
     selects.forEach(select => select.sync());
     if (local.context_error) $('local-config-error').textContent = local.context_error;
     else if (local.error) $('local-config-error').textContent = local.error;
@@ -177,6 +178,7 @@ async function save() {
   const base_url = $('local-base-url').value.trim(), model = $('local-model-name').value.trim();
   if (!base_url) return;
   const payload = {base_url, model, display_name:$('local-display-name').value.trim(),
+    api_protocol:$('local-api-protocol').value,
     native_tools_mode:$('local-native-tools-mode').value, context_window_tokens:$('local-context-window').value.trim()};
   const key = $('local-api-key').value.trim(); if (key) payload.api_key = key;
   $('local-config-error').textContent = '';

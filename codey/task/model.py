@@ -7,7 +7,7 @@ tool execution imports.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 TaskKind = Literal["chat", "project", "research", "review", "planning"]
@@ -50,6 +50,7 @@ class TaskSubmission:
     # review may be reused when every identity and scope condition matches.
     # Empty means fresh review; never a file path.
     review_source_run_id: str = ""
+    model_selection: dict[str, object] = field(default_factory=dict)
 
 
 def derive_project_changes_required(

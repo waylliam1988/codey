@@ -17,6 +17,7 @@ class RunResult:
     proof: Any | None = None
     # In-memory task facts shared with post-review completion; never serialized.
     facts: Any | None = field(default=None, repr=False, compare=False)
+    delivery: str = "not_required"
 
 
 __all__ = ["RunResult"]

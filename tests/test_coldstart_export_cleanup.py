@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Submodule imports such as ``from codey.providers import controls`` stay legal.
 PROVIDERS_EXPORTS = {
     "ChatProvider",
-    "LocalOpenAIProvider",
+    "ApiProvider",
     "DEFAULT_PROVIDER_ID",
     "PROVIDER_LABELS",
     "borrow_open_provider",
@@ -291,6 +291,9 @@ class NativeToolsUnifyTests(unittest.TestCase):
 
             def send_tool_results(self, *a, **k):
                 return None
+
+            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+                return self.send_tool_results(results, [])
 
         class _Plain:
             pass
