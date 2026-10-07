@@ -1,5 +1,82 @@
 # Codey Test Report
 
+## Zen live gates, native auto and verified defect fixes (2026-10-07–08)
+
+基线：`8e3f8fbad3904dbae72889a3cd2c349c968d7f0e`，Windows、Python 3.12。
+本轮按真实 release/UI gate 的失败补确定性测试，再修复、回归。原始材料保存在
+Git 忽略目录 `.e2e-artifacts/zen-gates-2026-10-07/`；跨日重试另存
+`.e2e-artifacts/zen-gates-2026-10-08/`。未发布、未改变版本号。
+
+### 确定性红/绿闭环
+
+| 已复现问题 / 新行为契约 | 测试与证据 |
+| --- | --- |
+| gate 只按 Local/Chat 接线，不能准确观察 Zen/Responses | `test_live_api_gates_use_selected_connection_and_protocol.py`；`gate-selection-red/green.txt`、`gate-metrics-red/green.txt`、`ui-local-responses-recorder-red/green.txt`。现在通过正式冻结选择与生产 transport 录制实际请求，不录请求头、不增加生成 |
+| gate 强制 Writer 自审，不能验证真实第二模型 | `test_project_review_gate_requires_real_automatic_flow.py`；`independent-review-gate-red/green.txt`。Zen 走正式独立 Reviewer 选择，Local 固定目标自审仍保留；真实模型、只读哈希和持久结果独立检查 |
+| “不要修改现有测试”被当成全局只读 | `test_entry_authorization_preserving_tests_is_not_global_readonly.py`；`scoped-readonly-red/green.txt`。后续 `scoped-readonly-global-list-red/green.txt` 锁定 tests or any other files 仍全局禁止。局部文件约束不是新路径授权系统；gate 用原测试哈希另行检查 |
+| 新聊天丢失当前 API 模型/effort，实机误发另一模型 | `test_ui_new_chat_preserves_selected_api_model_and_effort.py`；`new-chat-model-red/green.txt`。同连接继承当前聊天选择，efforts map 独立复制 |
+| native auto 首轮使用无工具文本请求，Muse 编码前即被拒绝 | `test_native_auto_first_turn_preserves_tools_budget_and_authorization.py`；`native-auto-red/green.txt`、`native-auto-busy-red/green.txt`。首轮使用原授权快照，收到的 typed turn 交给同一内核，计入原预算，不重复生成；普通问候不抢写锁，写锁失败关闭原 call IDs |
+| 取消/预算/无进展/协议阈值关闭时遗漏原声明 | `test_native_cancel_and_budget_close_preserve_authorized_tool_declarations.py`；`terminal-declarations-red/green.txt`、`terminal-other-declarations-red.txt`。五条路径保留实际声明，关闭调用、不执行新工具；最终入口/终止回归 `terminal-and-entry-green.txt` 为 83 passed |
+| UI process group 开合调用未导出的 updateLatest | `test_ui_process_group_toggle_updates_latest_without_page_errors.py`；`process-toggle-red/green.txt`。真实浏览器验证展开/收起无 pageerror |
+| TLS 握手 EOF 尚未发送 HTTP，却被归为结果未知 | `test_api_transport_tls_handshake_retries_only_before_http_submission.py`；`tls-submission-red/green.txt`，13 项相关回归通过。只在确认未提交生成且为 TLS EOF 时允许一次连接重试，共享 deadline；HTTP 发送后断流仍 unknown、不重发，证书失败不重连 |
+| 官方摘录中的 os.path.isreserved() 被认成未打开网站，Research 反复拒绝 done | `test_research_provenance_python_path_api_is_not_an_unopened_source.py`；`research-provenance-red/green.txt`，162 passed、7 subtests。实际保存请求经 finalizer 离线重放锁定根因；精确识别 Python API，真实 URL 负对照仍拒绝 |
+
+`--turn-budget` 显式设置并存档任务轮次预算，默认场景预算保持。HTTP 生成重试、
+模型截断续写和任务恢复没有混用；部分参数不执行，未知结果不换模型重发。
+低级 recovery 提交使用完整冻结 selection，两进程恢复继续验证结算编辑不重执行。
+
+### 最终离线闸门
+
+前置机器契约首轮 **3 failed、466 passed**，受影响面首轮 **1 failed、1523 passed**：
+旧 SimpleNamespace frame 缺新 entry_initial_turn、旧 gate target fixture 缺 provider_id。
+迁移这些 fixture，并检查其余共同入口 fixture；不在生产添加旧字段 fallback。
+相关小组 8 passed，随后入口/终止小组 83 passed，最终机器契约全绿。
+
+全量开始前已完成 Ruff、mypy、编译、JavaScript、diff 与机器契约；之后代码冻结：
+
+| 检查 | 实际结果 |
+| --- | --- |
+| `python -m ruff check codey tests tools` | All checks passed! |
+| `python -m mypy codey` | Success: no issues found in 388 source files |
+| `python -m compileall -q codey tools`、`python -m compileall -q tests` | 通过 |
+| Node `--check` | 18 文件，包含 index inline script，通过 |
+| `git diff --check` | 通过，只有行尾标准化提示 |
+| `python tools/machine_contract_gate.py` | **471 passed in 62.97s**，无失败/skip |
+| `python -X utf8 -m pytest -q -ra -o faulthandler_timeout=120` | **7638 passed、7 skipped、1501 subtests passed in 587.39s** |
+
+全量原始日志：`pytest-full-final.txt`；Node 22.20.0 从隔离工具目录加入 PATH。
+七个 skip 为 Windows 不支持的 POSIX 文件位/进程组/绝对路径、两项 O_NOFOLLOW，
+以及原有 `RUN_BROWSER_E2E=1` opt-in；没有新增 skip/xfail。
+新增两个浏览器回归实际执行。全量后只更新文档，代码/测试/工具哈希核对原
+`final-code-manifest.json`，未在全量之后修改实现。
+
+### 实机事实与尚未通过的门槛
+
+- Muse `muse-spark-1.3-contributor-free`，Responses：`muse-ui-final-console.txt`
+  的 coding/review/ghost UI gate 为 **ok=true**。真实编码、验证、changed done、
+  Changes、Review/details、Local context 互斥均通过；7 次真实请求、零传输错误，
+  每次携带 8 项原授权工具。这里的 review 只证明面板，不是独立模型审查。
+- Space Bunny `space-bunny-free`，Chat Completions：`space-release-final/summary.json`
+  的 15 项为 **11 通过、4 失败**。edit/references 用旧默认预算耗尽，research 的
+  provenance 根因已离线复现修复，project_review 未通过。此矩阵跨越代码修复过程，
+  不能冒充最终冻结版本完整验收。Space UI Research 同样保存了反复完成拒绝的状态与
+  请求，修复后因上游限额未能完成实机回测。
+- `muse-release-verification` 的完整 15 项尝试仍有 429；隔离 ghost 通过不代表模型
+  成功。`space-ui-verification` 首个 chat 即被 429 挡住。早期 Muse 编码与两进程
+  recovery 成功记录保留，不覆盖失败结果。
+- 用户要求重试后再次执行；跨日后又于 **2026-10-08 00:00（Asia/Taipei）** 执行
+  `muse-retry` 的 auto/project_review 和 `space-retry` 的 research（24-turn budget）。
+  三项均收到完整 HTTP **429 FreeUsageLimitError: Rate limit exceeded**，尚未进入
+  模型生成。失败证据保留，未自动重复 POST、换模型或扩权造绿。
+- Muse 的无工具/只读精简声明仍会 **403 FreeTierError**；合法非执行输出声明
+  submit_answer/submit_review 的探测也拒绝。不能把免费目录当作所有任务资格，
+  不能为只读任务加入未授权 edit/run 来迎合上游。另六款免费模型的 plain 探测
+  同样 403，因此不能据此承诺 Muse 独立只读 Review 可用。
+
+结论：Codey 已确认的确定性缺陷和离线门槛修绿，Muse 真实 UI 编码有成功证据；
+**两模型完整 release/UI 矩阵尚未全绿**，剩余实机回测受上游 429/任务资格限制阻塞。
+需要额度与相应调用资格恢复后重新跑固定矩阵；本轮不 release。
+
 ## Shared API protocols, cold recovery and live Zen review (2026-10-07)
 
 基线：`3a1bcae1401052a6d15eeba95fd6328d3e6f25c9`，Windows、Python 3.12。

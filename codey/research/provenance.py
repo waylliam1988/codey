@@ -24,6 +24,7 @@ _GENERIC_HOST_LABELS = {
 }
 _NON_SOURCE_DOTTED_IDENTIFIERS = {
     "os.path",
+    "os.path.isreserved",
 }
 
 

@@ -5,7 +5,7 @@
 控制器只验结构性权限（有无项目、模式是否支持），不做关键词语义判断；
 语义服从是模型在本次调用内的职责。
 
-动作标记为纯文本首行（无 JSON、无隐藏通道，解析失败即为普通回答，
+网页文本协议的动作标记为纯文本首行（无 JSON、无隐藏通道，解析失败即为普通回答，
 不存在泄露问题）：
 
 ```text
@@ -14,6 +14,8 @@ PLAN: <一句话计划，可引用用户原话>
 ```
 
 首输出直接用于回答或执行动作，绝不作为被丢弃的“新路由轮”。
+原生 API 首调用直接使用冻结且经过授权筛选的工具声明；结构化调用及
+其原始快照交给同一任务内核，计入同一轮次预算，不再次生成首轮。
 有项目的普通问候不会在动作选定前抢占项目写锁；真正选择编辑类动作后
 再由本模块取得相应资源。恢复中的工具结果仍按现有安全恢复路径处理
 （调用方在首调用前检查待交付结果与历史事实，直接恢复原任务）。
@@ -158,6 +160,7 @@ class AutoRunDeps:
     research_available: bool = True
     continue_task: Callable[..., ModeOutcome] | None = None
     review_task: Callable[[Any], ModeOutcome] | None = None
+    prepare_native_provider: Callable[[Any], Any] | None = None
 
 
 def _local_context_text(deps: AutoRunDeps, *, session_id: str, project: str) -> str:
@@ -205,6 +208,10 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
     )
     if experiences.strip():
         prompt = f"{prompt}\n\n{experiences.strip()}"
+    from codey.operations.kernel_transport import provider_uses_native
+
+    if provider_uses_native(frame.provider, provider_id=frame.provider_id):
+        return _run_native_auto(frame, work, hooks, deps, ghost_context, experiences)
     if frame.fresh_chat:
         # Open the one task window. Tool continuation records this exchange
         # and keeps the window and first-turn budget.
@@ -258,6 +265,48 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
     return _continue_direct_candidate(frame, work, hooks, deps, followup)
 
 
+def _run_native_auto(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps,
+                     ghost_context: str, experiences: str) -> ModeOutcome:
+    """Receive once with authorized tools; execute that same turn in the kernel."""
+    from codey.operations.kernel_prompt import kernel_prompt_for_session
+    from codey.operations.kernel_protocol import InitialNativeTurn, build_turn_snapshot
+    from codey.operations.project_prompt_context import prepare_coding_context
+    from codey.operations.provider_session import reply_text_for_accounting
+    from codey.operations.task_entry import build_task_policy_for_entry, start_task_session
+    from codey.operations.task_guidance import task_guidance_for_policy
+    from codey.providers.base import TurnFinish, tools_from_specs
+    from codey.task.model import execution_task
+
+    policy = frame.entry_policy or build_task_policy_for_entry(frame.request, frame.task_kind)
+    frame.entry_policy = policy
+    session = start_task_session(frame, work, policy, frame.task_kind)
+    snapshot = build_turn_snapshot(session, native=True)
+    prompt = kernel_prompt_for_session(
+        session, user_task=execution_task(frame.request), contract_text=snapshot.contract_text,
+        context_text="\n\n".join(p for p in (ghost_context, experiences) if p.strip()),
+        controller_allowed=snapshot.allowed, native=True, tool_names=snapshot.tool_names,
+        task_guidance=task_guidance_for_policy(policy), coding_context=prepare_coding_context(session),
+    )
+    prompt += "\nIf the request can be answered directly without tools, answer it directly."
+    provider = deps.prepare_native_provider(frame) if deps.prepare_native_provider else frame.provider
+    if frame.fresh_chat:
+        provider.new_chat()
+    with contextlib.suppress(Exception):
+        record_provider_send_prompt(frame.trace, name="auto_outbound_prompt", text=prompt,
+                                    purpose="authorized native auto first turn",
+                                    source_ref="provider_send:auto", capability_id="auto_runner")
+    reply = provider.send_turn(prompt, tools_from_specs(snapshot.frozen_specs))
+    if not reply.tool_calls and reply.finish is TurnFinish.COMPLETE:
+        if reply.reasoning:
+            hooks.on_event(RunEvent("reasoning", turn=1, reasoning=reply.reasoning))
+        return _finish_auto_answer(frame, work, hooks, deps, deps.state, prompt, reply.text)
+    _record_direct_exchange(frame, deps.state, prompt, reply_text_for_accounting(reply))
+    frame.entry_initial_turn = InitialNativeTurn(reply, snapshot, prompt)
+    # session.turn stays zero: the kernel consumes the received turn as turn 1,
+    # including its truncation/cancellation checks and original frozen specs.
+    return _continue_direct_candidate(frame, work, hooks, deps, "")
+
+
 def _record_direct_exchange(frame: Any, state: Any, prompt: str, reply: str) -> None:
     request = frame.request
     if frame.fresh_chat:
@@ -286,12 +335,28 @@ def _direct_outcome(frame: Any, reason: str, *, stop_reason: str, proof: Any = N
                  "session_id": frame.request.session_id, "text": reason},) if stop_reason == "done" else ())
 
 
+def _close_initial_turn(frame: Any, deps: AutoRunDeps, reason: str, stop_reason: str) -> ModeOutcome:
+    from codey.operations.kernel_transport import close_native_reply
+    from codey.providers.base import tools_from_specs
+
+    initial, frame.entry_initial_turn = getattr(frame, "entry_initial_turn", None), None
+    if initial is not None:
+        provider = deps.prepare_native_provider(frame) if deps.prepare_native_provider else frame.provider
+        try:
+            close_native_reply(provider, initial.reply, f"{reason}; call not executed",
+                               declared_tools=tools_from_specs(initial.snapshot.frozen_specs))
+        except Exception as exc:
+            return _direct_outcome(frame, f"Result delivery failed: {type(exc).__name__}: {exc}",
+                                   stop_reason="provider_failure")
+    return _direct_outcome(frame, reason, stop_reason=stop_reason)
+
+
 def _continue_direct_candidate(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps, followup: str) -> ModeOutcome:
     session = frame.entry_session
     if session.turn >= session.max_turns:
-        return _direct_outcome(frame, followup, stop_reason="max_turns")
+        return _close_initial_turn(frame, deps, followup, "max_turns")
     if deps.continue_task is None:
-        return _direct_outcome(frame, followup, stop_reason="blocked")
+        return _close_initial_turn(frame, deps, followup, "blocked")
     deps.open_ledger_for(session.task_kind)
     project = frame.project_text
     leased = False
@@ -299,10 +364,10 @@ def _continue_direct_candidate(frame: Any, work: Any, hooks: Any, deps: AutoRunD
         try:
             leased = deps.acquire_writer(project) is True
         except Exception as exc:
-            return _direct_outcome(frame, f"Project writer lease failed: {type(exc).__name__}: {exc}",
-                                   stop_reason="blocked")
+            return _close_initial_turn(frame, deps, f"Project writer lease failed: {type(exc).__name__}: {exc}",
+                                       "blocked")
         if not leased:
-            return _direct_outcome(frame, "Project writer is busy; retry later.", stop_reason="stopped")
+            return _close_initial_turn(frame, deps, "Project writer is busy; retry later.", "stopped")
     try:
         return deps.continue_task(frame, work, hooks, followup=followup)
     finally:

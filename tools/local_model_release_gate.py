@@ -34,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -571,6 +572,7 @@ def run_chat_case(target: attempts.GateTarget, case_dir: Path) -> dict:
 
 def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) -> dict:
     task, intent, max_turns = _task_for(case)
+    max_turns = target.turn_budget or max_turns
     input_path = case_dir / "input.json"
     config = json.loads(input_path.read_text(encoding="utf-8"))
     root = Path(config["project"])
@@ -587,7 +589,8 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
         baseline_files = fixture_file_hashes(root)
         attempts.write_json(case_dir / "baseline-files.json", baseline_files)
         request = HeadlessRequest(
-            project=root, task=task, provider_id=PROVIDER_ID,
+            project=root, task=task, provider_id=target.provider_id,
+            model_selection=({"model": target.model} if target.provider_id != "local" else {}),
             max_turns=max_turns, intent=intent, state_home=state_home,
             sources_open_required=(case == "hybrid"),
             project_changes_required=(case in attempts.OBJECTIVE_CASES),
@@ -598,7 +601,7 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
             request, emit_jsonl=record_event,
             connect_provider=lambda provider_id, **kwargs: _connect_gate_provider(provider_id, target, case_dir),
             connect_reviewer=(lambda provider_id: _connect_gate_provider(provider_id, target, case_dir))
-            if intent in {"project", "hybrid", "auto", "review"} else None,
+            if intent in {"project", "hybrid", "auto", "review"} and target.provider_id == "local" else None,
         )
         dt = round(time.perf_counter() - t0, 1)
         done = next((r for r in reversed(rows) if str(r.get("type") or "") == "task_done"), None)
@@ -655,8 +658,8 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
 
 
 def _connect_gate_provider(provider_id: str, target: attempts.GateTarget, directory: Path):
-    if provider_id != PROVIDER_ID:
-        raise RuntimeError(f"gate pins provider {PROVIDER_ID}; refusing failover to {provider_id}")
+    if provider_id != target.provider_id:
+        raise RuntimeError(f"gate pins provider {target.provider_id}; refusing failover to {provider_id}")
     return attempts.make_provider(target, directory)
 
 
@@ -720,10 +723,16 @@ def run_ghost_case() -> dict:
 
 
 def _worker(case: str, directory: Path) -> int:
-    from codey.env_names import NATIVE_TOOLS_ENV
-
     config = json.loads((directory / "input.json").read_text(encoding="utf-8"))
     target = attempts.GateTarget(**config["target"])
+    recorder = attempts.record_api_generations(directory / "provider.jsonl") if target.provider_id != "local" else nullcontext()
+    with recorder, attempts.isolate_gate_secondary_models(target):
+        return _run_worker(case, directory, target)
+
+
+def _run_worker(case: str, directory: Path, target: attempts.GateTarget) -> int:
+    from codey.env_names import NATIVE_TOOLS_ENV
+
     os.environ[NATIVE_TOOLS_ENV] = "1" if target.protocol == "native" else "0"
     try:
         if case == "chat":
@@ -798,10 +807,11 @@ def _metadata(target: attempts.GateTarget) -> dict:
                          "codey/app/review_service.py", "codey/operations/project_review_phase.py",
                          "codey/runtime/core/operation_state.py")
         },
-        "server_observations": _server_observations(target.base_url),
+        "server_observations": _server_observations(target.base_url) if target.provider_id == "local" else {},
         "chat_template": "not_reported", "quantization": "model_name_only; not independently verified",
         "sampling_seed": "not_sent",
-        "output_budget": "active turns: server_default; terminal receipts: max_tokens=1",
+        "output_budget": {"configured": target.api_selection.get("output_tokens", "server_default"),
+                          "actual_requests": "see per-case provider_metrics.output_budget"},
     }
 
 
@@ -822,6 +832,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--timeout", type=_positive_int, default=600, help="whole-case wall deadline in seconds")
     ap.add_argument("--protocol", choices=("native", "json"), default="native")
     ap.add_argument("--model", default="", help="exact /models id; otherwise use its first id")
+    ap.add_argument("--provider", choices=("local", "zen"), default="local")
+    ap.add_argument("--turn-budget", type=_positive_int, default=0,
+                    help="explicit per-task model turn budget; otherwise use scenario defaults")
     ap.add_argument("--run-dir", type=Path, help="new artifact directory; existing directories are rejected")
     ap.add_argument("--worker-case", choices=CASES, help=argparse.SUPPRESS)
     ap.add_argument("--worker-dir", type=Path, help=argparse.SUPPRESS)
@@ -842,15 +855,30 @@ def main(argv: list[str] | None = None) -> int:
     try:
         from codey.providers.local_config import load_local_config, resolve_local_context_budget
 
-        base_url, models = probe_endpoint()
-        model = args.model or (models[0] if models else "")
-        if not model or model not in models:
-            raise ValueError(f"selected model is not in /models: {model!r}")
-        budget = resolve_local_context_budget(load_local_config())
-        target = attempts.GateTarget(
-            base_url, model, budget.context_window_tokens, budget.context_reserve_tokens,
-            budget.context_keep_recent_tokens, protocol=args.protocol, request_timeout=min(args.timeout, TIMEOUT),
-        )
+        if args.provider == "local":
+            base_url, models = probe_endpoint()
+            model = args.model or (models[0] if models else "")
+            if not model or model not in models:
+                raise ValueError(f"selected model is not in /models: {model!r}")
+            budget = resolve_local_context_budget(load_local_config())
+            target = attempts.GateTarget(
+                base_url, model, budget.context_window_tokens, budget.context_reserve_tokens,
+                budget.context_keep_recent_tokens, protocol=args.protocol, request_timeout=min(args.timeout, TIMEOUT),
+                api_protocol=load_local_config().api_protocol,
+                turn_budget=args.turn_budget,
+            )
+        else:
+            from codey.providers.api_connections import capture_selection
+            from codey.providers.zen.identity import ZEN_BASE_URL
+
+            if not args.model or args.protocol != "native":
+                raise ValueError("Zen gate requires an explicit model and native tool protocol")
+            admitted = capture_selection(args.provider, {"model": args.model})
+            model = admitted.model_id
+            target = attempts.GateTarget(ZEN_BASE_URL, model, admitted.context_window_tokens,
+                admitted.context_reserve_tokens, admitted.context_keep_recent_tokens,
+                provider_id=args.provider, api_selection=admitted.to_payload(), request_timeout=min(args.timeout, TIMEOUT),
+                turn_budget=args.turn_budget)
         attempts.write_json(directory / "metadata.json", _metadata(target))
         _log(f"[gate] model={model} protocol={args.protocol} repeat={args.repeat}")
         results = attempts.run_attempts(selected, directory, target, repeat=args.repeat, timeout=args.timeout)

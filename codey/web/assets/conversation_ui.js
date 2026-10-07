@@ -436,7 +436,7 @@ function init(nextDeps) {
   window.CodeyConversationNav.init({getActiveId:nextDeps.getActiveId});
 }
 
-window.CodeyConversationUI = { init, renderChat, scrollChat, captureView, isFollowing, updateNotice,
+window.CodeyConversationUI = { init, renderChat, scrollChat, captureView, isFollowing, updateLatest, updateNotice,
   matchesSession, matchesProject, appendGroupLabel, updateSearch, isSearching: () => !!query(),
   isRenamingSession: id => titleEdit?.id === id, forget, openFile, menuOpened, menusClosed };
 })();

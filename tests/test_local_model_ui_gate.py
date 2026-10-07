@@ -7,8 +7,10 @@ import unittest
 from typing import Any
 from unittest import mock
 
+from codey.providers import api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.local_discovery import LocalEndpoint
+from tests.test_api_generation_observations_no_replay import Response
 from tools import local_model_ui_gate as gate
 
 
@@ -26,18 +28,16 @@ class LocalModelUiGateTests(unittest.TestCase):
     def test_provider_history_records_request_and_response(self) -> None:
         provider = ApiProvider("http://127.0.0.1:1/v1", "model")
         with tempfile.TemporaryDirectory() as root, mock.patch.object(
-            ApiProvider,
-            "_post_chat",
-            return_value={"choices": []},
+            api_transport, "open_request", return_value=Response(b'{"choices":[]}'),
         ):
             path = os.path.join(root, "provider.jsonl")
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write('{"type":"stale"}\n')
-            with gate._record_local_provider_history(gate.Path(path)):
+            with gate._provider_history_recorder("local", gate.Path(path)):
                 provider._post_chat([], None)
             with open(path, encoding="utf-8") as handle:
                 rows = [json.loads(line) for line in handle]
-        self.assertEqual([row["type"] for row in rows], ["request", "response"])
+        self.assertEqual([row["type"] for row in rows], ["request", "wire_attempt", "wire_attempt", "response"])
         self.assertEqual(rows[0]["payload"]["model"], "model")
 
     def test_history_analysis_classifies_done_retry_as_completion_rejection(self) -> None:

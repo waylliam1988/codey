@@ -6,6 +6,11 @@
 
 后续 2026-10-03 的提交后审查、边界修复与测试迁移见 [本轮审查](kernel_review_2026-10-03.zh-CN.md)。
 
+2026-10-08 增补：native auto 首轮携带原授权工具快照；完整直接回答仍过共同门，
+结构化调用通过 `InitialNativeTurn` 交给同一内核，计作首轮、不重复生成。
+网页文本 ACTION 保留。取消、无进展、协议阈值及预算关闭保留此前实际工具声明，
+关闭已收到的调用、不执行新调用。对应确定性测试与实机限制见 TEST_REPORT 最新节。
+
 ## 结论的准确范围
 
 本轮已修复审查中复现的确定性问题，最终全量为 **6399 passed、29 skipped、1495 subtests passed，396.40 秒**。
@@ -39,7 +44,7 @@
 | `runtime/core/operation_state.py::_parse_task_policy` | 无损保存 JSON 数据；不另写一套领域授权 schema |
 | `task_phases/dispatch.py::dispatch_run_mode` | 首个工具/auto 调用前持久化；恢复加载原策略，包括还没有工具结算的运行 |
 | `task_entry.py::start_task_session` | 共同入口的任务会话所有者；续跑不得替换策略 |
-| `auto_loop.py::run_auto_mode` | 一次首调用；回答过共同门；普通工具 ACTION 和未完成回答均继续同一内核，不通过模式标签重新授权 |
+| `auto_loop.py::run_auto_mode` / `_run_native_auto` | 一次首调用；文本 ACTION 或授权 native 工具；回答过共同门，收到的 typed turn 与原快照交给同一内核，不通过模式标签重新授权 |
 | `recovery.py::recover_effects_for_resume` | 分开处理交付状态和持久事实；读取已结算原收据，不重跑这些工具 |
 | `kernel_session_recovery.py::restore_task_session` | 项目及共同入口共用恢复；暂存事实和账本，整批成功才发布；未交付结果只构建一次 |
 | `research/ledger_receipts.py` | 编码及恢复精确 Research 观察；完整正文、PDF 页和证据留在现有受管收据中，模型窗口保持有界 |

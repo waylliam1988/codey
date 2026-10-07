@@ -15,7 +15,9 @@ import tempfile
 import time
 import uuid
 from collections import Counter
-from dataclasses import asdict, dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from codey.providers.api_provider import ApiProvider
@@ -23,6 +25,7 @@ from codey.runtime.core.cancellation import start_process, wait_process
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OBJECTIVE_CASES = frozenset({"create", "edit", "references", "hybrid", "auto", "tests", "project_review"})
+_TERMINAL_RECEIPT: ContextVar[bool] = ContextVar("gate_terminal_receipt", default=False)
 
 # These labels are deliberately about the task contract, not implementation
 # details. Unknown/new cases stay visible as their own kind until the matrix
@@ -78,6 +81,10 @@ class GateTarget:
     protocol: str = "native"
     temperature: float = 0.0
     request_timeout: float = 600.0
+    provider_id: str = "local"
+    api_selection: dict = field(default_factory=dict)
+    api_protocol: str = "openai-completions"
+    turn_budget: int = 0
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -103,6 +110,7 @@ class RecordingProvider(ApiProvider):
             context_window_tokens=target.context_window_tokens,
             context_reserve_tokens=target.context_reserve_tokens,
             context_keep_recent_tokens=target.context_keep_recent_tokens,
+            api_protocol=target.api_protocol,
         )
         self.directory = directory
         self.exchange_number = 0
@@ -124,7 +132,8 @@ class RecordingProvider(ApiProvider):
 
     def _observe_http_attempt(self, *, attempt, data, phase, response_bytes, seconds):
         if phase == "request" and attempt == 1:
-            self._record({"type": "request", "exchange": self.exchange_number, "payload": json.loads(data)})
+            self._record({"type": "request", "exchange": self.exchange_number, "payload": json.loads(data),
+                          "terminal": _TERMINAL_RECEIPT.get()})
         self._record({
             "type": "wire_attempt", "exchange": self.exchange_number, "attempt": attempt, "phase": phase,
             "request_sha256": hashlib.sha256(data).hexdigest(), "request_bytes": len(data),
@@ -136,9 +145,97 @@ class RecordingProvider(ApiProvider):
         with (self.directory / "provider.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
 
+    def _responses_exchange(self, pending, tools, timeout, **kwargs):
+        self.exchange_number += 1
+        number = self.exchange_number
+        started = time.perf_counter()
+        try:
+            turn = super()._responses_exchange(pending, tools, timeout, **kwargs)
+        except Exception as exc:
+            self._record({"type": "error", "exchange": number, "error": f"{type(exc).__name__}: {exc}"})
+            raise
+        self._record({"type": "response", "exchange": number, "payload": dict(turn.raw),
+                      "seconds": time.perf_counter() - started})
+        return turn
 
-def make_provider(target: GateTarget, directory: Path) -> RecordingProvider:
+
+def make_provider(target: GateTarget, directory: Path):
+    if target.provider_id != "local":
+        from codey.providers.api_connections import open_selection
+        from codey.runtime.core.api_selection import ApiRunSelection
+
+        provider = open_selection(ApiRunSelection.from_payload(target.api_selection))
+        provider.recorder_id = uuid.uuid4().hex
+        provider.runtime._gate_recorder_id = provider.recorder_id
+        provider.runtime.timeout = target.request_timeout
+        return provider
     return RecordingProvider(target, directory)
+
+
+@contextmanager
+def record_api_generations(path: Path):
+    """Observe the production HTTP call for either protocol; never save headers."""
+    import threading
+    from unittest.mock import patch
+
+    from codey.providers import api_transport
+
+    original = api_transport.generate
+    lock = threading.Lock()
+    counter = 0
+
+    def append(row):
+        with lock, path.open("a", encoding="utf8") as stream:
+            stream.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    def generate(url, payload, headers, **kwargs):
+        nonlocal counter
+        with lock:
+            counter += 1
+            exchange = counter
+        callback = kwargs.get("observe")
+        runtime = getattr(callback, "__self__", None)
+        identity = getattr(runtime, "_gate_recorder_id", "ui")
+        common = {"exchange": exchange, "recorder_id": identity, "model": payload.get("model"),
+                  "terminal": _TERMINAL_RECEIPT.get()}
+        append({**common, "type": "request", "payload": payload})
+        def observe(**event):
+            append({**common, "type": "wire_attempt", **{key:value for key,value in event.items() if key != "data"}})
+            if callback is not None:
+                callback(**event)
+        kwargs["observe"] = observe
+        started = time.perf_counter()
+        try:
+            body = original(url, payload, headers, **kwargs)
+        except Exception as exc:
+            append({**common, "type": "error", "error": f"{type(exc).__name__}: {exc}"})
+            raise
+        append({**common, "type": "response", "payload": body, "seconds": time.perf_counter() - started})
+        return body
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    original_acknowledge = ApiProvider.acknowledge_tool_results
+
+    def acknowledge(provider, *args, **kwargs):
+        token = _TERMINAL_RECEIPT.set(True)
+        try:
+            return original_acknowledge(provider, *args, **kwargs)
+        finally:
+            _TERMINAL_RECEIPT.reset(token)
+
+    with patch.object(api_transport, "generate", generate), patch.object(ApiProvider, "acknowledge_tool_results", acknowledge):
+        yield
+
+
+@contextmanager
+def isolate_gate_secondary_models(target: GateTarget):
+    """A pinned live gate must not call the user's unrelated secondary models."""
+    from unittest.mock import patch
+
+    from codey.app import provider_services
+
+    with patch.object(provider_services, "provider_availability", return_value={target.provider_id: True}):
+        yield
 
 
 def case_scope(case: str) -> str:
@@ -160,7 +257,8 @@ def _has_truncation(result: dict) -> bool:
     metrics = result.get("provider_metrics")
     if not isinstance(metrics, dict):
         return False
-    return any(str(reason or "").lower() == "length" for reason in metrics.get("active_finish_reasons", ()))
+    return any(str(reason or "").lower() in {"length", "max_output_tokens"}
+               for reason in metrics.get("active_finish_reasons", ()))
 
 
 def _failure_kind(result: dict) -> str:
@@ -219,17 +317,33 @@ def _provider_metrics(directory: Path) -> dict:
                 incomplete = True  # The owned worker was interrupted mid-write.
             else:
                 raise
-    requests = {(row.get("recorder_id"), row["exchange"]): row["payload"] for row in rows if row["type"] == "request"}
+    request_rows = {(row.get("recorder_id"), row["exchange"]): row for row in rows if row["type"] == "request"}
     response_rows = [row for row in rows if row["type"] == "response"]
     responses = [row["payload"] for row in response_rows]
     active_reasons, terminal_reasons = [], []
-    for row in response_rows:
-        request = requests.get((row.get("recorder_id"), row.get("exchange")), {})
+    budgets = {"active": set(), "terminal": set()}
+
+    def terminal_request(row, request):
         messages = request.get("messages") or []
-        terminal = (not request.get("tools") and request.get("max_tokens") == 1
-                    and bool(messages) and messages[-1].get("role") == "tool")
+        return row.get("terminal") is True or (not request.get("tools") and request.get("max_tokens") == 1
+            and bool(messages) and messages[-1].get("role") == "tool")
+
+    def finish_reasons(body):
+        if "status" in body:
+            return [(body.get("incomplete_details") or {}).get("reason") or body["status"]]
+        return [choice.get("finish_reason") for choice in body.get("choices", [])]
+
+    for row in rows:
+        if row["type"] == "request":
+            request = row["payload"]
+            budget = request.get("max_output_tokens", request.get("max_completion_tokens", request.get("max_tokens", "server_default")))
+            budgets["terminal" if terminal_request(row, request) else "active"].add(budget)
+    for row in response_rows:
+        request_row = request_rows.get((row.get("recorder_id"), row.get("exchange")), {})
+        request = request_row.get("payload", {})
+        terminal = terminal_request(request_row, request)
         reasons = terminal_reasons if terminal else active_reasons
-        reasons.extend(choice.get("finish_reason") for choice in row["payload"].get("choices", []))
+        reasons.extend(finish_reasons(row["payload"]))
     usage: Counter = Counter()
     for body in responses:
         for key, value in (body.get("usage") or {}).items():
@@ -242,10 +356,10 @@ def _provider_metrics(directory: Path) -> dict:
         "capture_incomplete": incomplete,
         "reported_models": sorted({str(body["model"]) for body in responses if body.get("model")}),
         "usage": dict(usage) if any("usage" in body for body in responses) else None,
-        "finish_reasons": [choice.get("finish_reason") for body in responses for choice in body.get("choices", [])],
+        "finish_reasons": [reason for body in responses for reason in finish_reasons(body)],
         "active_finish_reasons": active_reasons,
         "terminal_finish_reasons": terminal_reasons,
-        "output_budget": "active turns: server_default; terminal receipts: max_tokens=1",
+        "output_budget": {key: sorted(value, key=str) for key, value in budgets.items()},
     }
 
 

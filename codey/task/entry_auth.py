@@ -1,6 +1,7 @@
 """User-entry authorization shared by HTTP and CLI/headless."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,7 +57,21 @@ def _clause_for_position(text: str, position: int) -> str:
 
 def _explicit_readonly_task(task: str) -> bool:
     lowered = str(task or "").lower()
-    return any(marker.lower() in lowered for marker in _READONLY_MUST_NOT_CHANGE_MARKERS)
+    for marker in _READONLY_MUST_NOT_CHANGE_MARKERS:
+        for match in re.finditer(re.escape(marker.lower()), lowered):
+            suffix = lowered[match.end():].lstrip()
+            # A request to preserve tests or one named file is a local task
+            # constraint, not a denial of every implementation edit.
+            scoped = re.match(
+                r"(?:(?:the|existing|original)\s+)*(?:tests\b|test suite\b|[\w/-]+\.(?:py|js|ts|tsx|jsx|json|md|txt)\b)",
+                suffix,
+            )
+            if marker in {"do not modify", "don't modify", "do not change"} and scoped:
+                remainder = re.split(r"[.!?;\n]", suffix[scoped.end():], maxsplit=1)[0]
+                if not re.search(r"\b(?:any|all|other)\b.*\bfiles?\b", remainder):
+                    continue
+            return True
+    return False
 
 
 def derive_entry_auth(body: dict[str, Any] | None, *, project: str | None = None) -> EntryAuth:

@@ -23,6 +23,7 @@ from codey.operations import kernel_transport as _transport
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_progress import KernelProgress
+from codey.operations.kernel_protocol import InitialNativeTurn
 from codey.operations.kernel_protocol import build_turn_snapshot as _build_turn_snapshot
 from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
@@ -73,6 +74,7 @@ class KernelTransportDeps:
     start_turn: int | None = None
     initial_results: list[ToolResult] | None = None
     provider_session_changed: bool = False
+    initial_turn: InitialNativeTurn | None = None
 
 
 @dataclass(frozen=True)
@@ -160,7 +162,7 @@ def _receive_turn_plan(
     except Exception as exc:
         return _provider_failure(exc, turn, propagate=propagate_provider_failure)
     cancelled = _cancel_after_send(stop_flag, provider, reply, native, turn,
-                                   propagate=propagate_provider_failure)
+                                  propagate=propagate_provider_failure, declared_tools=native_tools)
     if cancelled is not None:
         return cast(_ReceivedPlan | KernelResult | None, cancelled)
     _events._emit_turn_event(on_event, turn, reply)
@@ -335,6 +337,7 @@ def _kernel_handle_protocol(
                 _transport.close_native_reply(
                     provider, reply,
                     str(getattr(plan, "protocol_error", "") or "protocol error"),
+                    declared_tools=native_tools,
                 )
             except Exception as exc:
                 return KernelResult(
@@ -430,6 +433,7 @@ def _kernel_startup(
     initial_results: list[ToolResult] | None,
     provider_session_changed: bool,
     delivered: Mapping[str, ToolResult] | None,
+    initial_turn: InitialNativeTurn | None = None,
 ) -> _KernelStartup:
     runnable = dict(executors or {})
     delivered_map = dict(delivered or {})
@@ -437,7 +441,9 @@ def _kernel_startup(
     pending_initial = list(initial_results or [])
     native = _transport.provider_uses_native(provider, provider_id=provider_id)
     identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
-    initial_snapshot = _build_turn_snapshot(session, native=native)
+    if initial_turn is not None and (not native or pending_initial or initial_turn.snapshot.policy != session.policy):
+        raise ValueError("initial native turn does not match the authorized task session")
+    initial_snapshot = initial_turn.snapshot if initial_turn is not None else _build_turn_snapshot(session, native=native)
     prompt = _prompt.kernel_prompt_for_session(
         session, user_task=str(user_task or ""), contract_text=initial_snapshot.contract_text,
         context_text=context_text, controller_allowed=initial_snapshot.allowed,
@@ -460,7 +466,9 @@ def _kernel_startup(
     return _KernelStartup(
         executors=runnable, delivered=delivered_map, max_turns=max_turns,
         native=native, identity_ref=identity_ref,
-        state=_ProviderTurnState(prompt=prompt, pending_messages=pending_native_messages),
+        state=_ProviderTurnState(prompt=initial_turn.prompt if initial_turn is not None else prompt,
+                                 pending_reply=initial_turn.reply if initial_turn is not None else None,
+                                 pending_messages=pending_native_messages),
         native_tools=native_tools, snapshot=initial_snapshot, pending_recovery=bool(pending_initial),
     )
 
@@ -528,6 +536,7 @@ def run_task_kernel(
             initial_results=initial_results,
             provider_session_changed=bool(provider_session_changed),
             delivered=delivered,
+            initial_turn=request.transport.initial_turn,
         )
     except RecoveryFailed as exc:
         # Recovery delivery failures must never fall through to the initial
@@ -552,6 +561,7 @@ def run_task_kernel(
         stopped = _stop_at_turn_start(
             stop_flag, provider, state.pending_reply, state.pending_messages,
             turns_used, propagate_provider_failure=propagate_provider_failure,
+            declared_tools=native_tools,
         )
         if stopped is not None:
             return stopped
@@ -560,7 +570,7 @@ def run_task_kernel(
         # First round reuses the startup snapshot (same session facts); later
         # rounds rebuild once per round. Saves one snapshot build per run.
         # 同一 TurnSnapshot 贯穿发送、解析与执行，注册表变化下一轮生效。
-        if turn == resume_start and state.pending_reply is None and state.pending_messages is None and not startup.pending_recovery:
+        if turn == resume_start and not startup.pending_recovery:
             turn_snapshot = startup.snapshot
             controller = turn_snapshot.allowed
         else:
@@ -636,7 +646,8 @@ def run_task_kernel(
             return advance
         state.pending_messages, state.prompt = advance
         stopped = _stop_no_progress(progress, results, session, provider, state.pending_messages,
-                                    turns_used, stop_flag=stop_flag, propagate=propagate_provider_failure)
+                                    turns_used, stop_flag=stop_flag, propagate=propagate_provider_failure,
+                                    declared_tools=native_tools)
         if stopped is not None:
             return cast(KernelResult, stopped)
     return _finish_after_budget(
@@ -646,12 +657,13 @@ def run_task_kernel(
         state.pending_reply,
         turns_used,
         propagate_provider_failure=propagate_provider_failure,
+        declared_tools=native_tools,
     )
 
 
 def _stop_at_turn_start(
     stop_flag: Any, provider: Any, pending_reply: Any, pending_messages: Any,
-    turns_used: int, *, propagate_provider_failure: bool,
+    turns_used: int, *, propagate_provider_failure: bool, declared_tools: Any = (),
 ) -> KernelResult | None:
     """Turn-start stop: deliver pending native results, then report stopped.
 
@@ -662,7 +674,7 @@ def _stop_at_turn_start(
         return None
     if pending_messages:
         try:
-            _transport._drain_native_budget(provider, pending_messages)
+            _transport._drain_native_budget(provider, pending_messages, declared_tools=declared_tools)
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
         return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
@@ -670,32 +682,34 @@ def _stop_at_turn_start(
         try:
             _transport.close_native_reply(
                 provider, pending_reply, "task stopped; call not executed",
+                declared_tools=declared_tools,
             )
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
     return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
 
 
-def _cancel_after_send(stop_flag: Any, provider: Any, reply: Any, native: Any, turns_used: Any, *, propagate: Any) -> Any:
+def _cancel_after_send(stop_flag: Any, provider: Any, reply: Any, native: Any, turns_used: Any, *,
+                       propagate: Any, declared_tools: Any = ()) -> Any:
     if not _stop_requested(stop_flag):
         return None
     # A cancellation arriving during a slow send wins over returned tool calls.
     if native:
         try:
-            _transport.close_native_reply(provider, reply, "task stopped; call not executed")
+            _transport.close_native_reply(provider, reply, "task stopped; call not executed", declared_tools=declared_tools)
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate)
     return KernelResult(False, "stopped", turns_used, "stopped")
 
 
 def _stop_no_progress(progress: Any, results: Any, session: Any, provider: Any, messages: Any, turns_used: Any, *, propagate: Any,
-                      stop_flag: Any = None) -> Any:
+                      stop_flag: Any = None, declared_tools: Any = ()) -> Any:
     cancelled = _stop_requested(stop_flag)
     if not cancelled and not progress.observe(results, session):
         return None
     if messages:
         try:
-            _transport._drain_native_budget(provider, messages)
+            _transport._drain_native_budget(provider, messages, declared_tools=declared_tools)
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate)
     if cancelled:
@@ -799,16 +813,18 @@ def _finish_after_budget(
     turns_used: int,
     *,
     propagate_provider_failure: bool,
+    declared_tools: Any = (),
 ) -> KernelResult:
     if pending_native_messages or pending_reply is not None:
         # Native APIs require a reply for every emitted tool-call id. Deliver
         # the final batch even when the turn budget stops further work.
         try:
             if pending_native_messages:
-                _transport._drain_native_budget(provider, pending_native_messages)
+                _transport._drain_native_budget(provider, pending_native_messages, declared_tools=declared_tools)
             if pending_reply is not None:
                 _transport.close_native_reply(
                     provider, pending_reply, "turn budget exhausted; tool call was not executed",
+                    declared_tools=declared_tools,
                 )
         except _transport.NativeBudgetExhausted:
             return KernelResult(

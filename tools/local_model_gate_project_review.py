@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import time
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from tools import local_model_gate_attempts as attempts
@@ -14,7 +15,7 @@ def _successful_verification(row: dict) -> bool:
 
 
 def check_project_review_flow(*, rows, requests, model, reviewer_ids, review_read_only,
-                              persisted_review, independent_ok, exit_code) -> dict[str, bool]:
+                              persisted_review, independent_ok, exit_code, reviewer_model=None) -> dict[str, bool]:
     """Independent lifecycle checks; no verdict is inferred from model prose."""
     terminals = [row for row in rows if row.get("type") == "task_done"]
     reviews = [(index, row) for index, row in enumerate(rows)
@@ -40,13 +41,14 @@ def check_project_review_flow(*, rows, requests, model, reviewer_ids, review_rea
         "real_review_request": len(reviewer_ids) == 1
             and any(row.get("recorder_id") in reviewer_ids for row in requests),
         "real_writer_request": any(row.get("recorder_id") not in reviewer_ids for row in requests),
-        "same_model": bool(requests) and all(row.get("payload", {}).get("model") == model for row in requests),
+        "expected_models": bool(requests) and all(row.get("payload", {}).get("model") ==
+            (reviewer_model or model if row.get("recorder_id") in reviewer_ids else model) for row in requests),
         "writer_verified_before_review": any(row.get("type") == "tool" and row.get("tool_name") == "edit"
             and row.get("ok") is True for row in before) and any(_successful_verification(row) for row in before),
         "review_result_complete": review.get("status") == "complete" and review.get("origin") == "fresh"
             and review.get("verdict") in {"approved", "changes_requested"},
         "persisted_result": isinstance(persisted_review, dict) and bool(persisted_review.get("artifact_sha256"))
-            and persisted_review.get("self_review") is True and bool(persisted_review.get("model_id"))
+            and persisted_review.get("self_review") is (not bool(reviewer_model)) and bool(persisted_review.get("model_id"))
             and all(persisted_review.get(key) == review.get(key) == terminal.get("review", {}).get(key)
                     for key in metadata_keys),
         "review_read_only": review_read_only is True,
@@ -56,23 +58,50 @@ def check_project_review_flow(*, rows, requests, model, reviewer_ids, review_rea
     }
 
 
-class ReviewRecordingProvider(attempts.RecordingProvider):
+class ReviewRecordingProvider:
     """Observe files across the actual read-only Reviewer lifetime."""
-    def __init__(self, target, directory, project):
-        super().__init__(target, directory)
+    def __init__(self, target, directory, project, *, provider=None):
+        self.provider = provider if provider is not None else attempts.make_provider(target, directory)
         from tools.local_model_release_gate import fixture_file_hashes
 
         self.project = project
         self.before = fixture_file_hashes(project)
         self.after = None
 
+    def __getattr__(self, name):
+        return getattr(self.provider, name)
+
     def close(self):
         from tools.local_model_release_gate import fixture_file_hashes
 
         try:
-            super().close()
+            self.provider.close()
         finally:
             self.after = fixture_file_hashes(self.project)
+
+
+@contextmanager
+def observe_independent_api_reviewers(target, directory, project, reviewers):
+    """Observe production selection; never replace it with a pinned Writer."""
+    import uuid
+    from unittest.mock import patch
+
+    from codey.providers import api_connections
+
+    original = api_connections.open_selection
+
+    def open_selection(selection):
+        provider = original(selection)
+        if selection.connection_id != target.provider_id or selection.model_id == target.model:
+            return provider
+        provider.recorder_id = uuid.uuid4().hex
+        provider.runtime._gate_recorder_id = provider.recorder_id
+        observed = ReviewRecordingProvider(target, directory, project, provider=provider)
+        reviewers.append(observed)
+        return observed
+
+    with patch.object(api_connections, "open_selection", open_selection):
+        yield
 
 
 def run_project_review_case(target, directory: Path) -> dict:
@@ -86,6 +115,7 @@ def run_project_review_case(target, directory: Path) -> dict:
     _make_fixture(project, "edit")
     baseline_tests = fixture_test_hashes(project)
     task, intent, turns = _task_for("edit")
+    turns = target.turn_budget or turns
     rows = []
     reviewers = []
 
@@ -95,24 +125,28 @@ def run_project_review_case(target, directory: Path) -> dict:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     def connect(provider_id, **_kwargs):
-        if provider_id != "local":
-            raise RuntimeError("project review gate pins local")
+        if provider_id != target.provider_id:
+            raise RuntimeError("project review gate pins selected connection")
         return attempts.make_provider(target, directory)
 
     def connect_reviewer(provider_id):
-        if provider_id != "local":
-            raise RuntimeError("project review gate pins local reviewer")
+        if provider_id != target.provider_id:
+            raise RuntimeError("project review gate pins selected reviewer")
         provider = ReviewRecordingProvider(target, directory, project)
         reviewers.append(provider)
         return provider
 
     started = time.perf_counter()
     try:
-        result = run_headless(
-            HeadlessRequest(project=project, task=task, provider_id="local", intent=intent,
-                            max_turns=turns, state_home=state_home, project_changes_required=True),
-            emit_jsonl=emit, connect_provider=connect, connect_reviewer=connect_reviewer,
-        )
+        scope = observe_independent_api_reviewers(target, directory, project, reviewers) if target.provider_id != "local" else nullcontext()
+        with scope:
+            result = run_headless(
+                HeadlessRequest(project=project, task=task, provider_id=target.provider_id, intent=intent,
+                                model_selection=({"model": target.model} if target.provider_id != "local" else {}),
+                                max_turns=turns, state_home=state_home, project_changes_required=True),
+                emit_jsonl=emit, connect_provider=connect,
+                connect_reviewer=connect_reviewer if target.provider_id == "local" else None,
+            )
         independent = _verify_fixture(project, "edit", baseline_tests=baseline_tests)
         recorded = load_recorded_review(state_home, result.session_id, result.run_id)
         persisted = None
@@ -128,6 +162,7 @@ def run_project_review_case(target, directory: Path) -> dict:
             rows=rows, requests=requests, model=target.model, reviewer_ids=reviewer_ids,
             review_read_only=bool(reviewers) and all(p.after is not None and p.before == p.after for p in reviewers),
             persisted_review=persisted, independent_ok=independent["ok"], exit_code=result.exit_code,
+            reviewer_model=reviewers[0].model if reviewers and target.provider_id != "local" else None,
         )
         ok = all(checks.values())
         return {"case": "project_review", "ok": ok, "seconds": round(time.perf_counter() - started, 3),
@@ -136,6 +171,7 @@ def run_project_review_case(target, directory: Path) -> dict:
                 "checks": checks, "verification": independent, "work_correct": independent["ok"],
                 "review_requests": sum(row.get("recorder_id") in reviewer_ids for row in requests),
                 "review_status": persisted.get("status") if persisted else "missing",
+                "writer_model": target.model, "reviewer_model": reviewers[0].model if reviewers else "",
                 "failure_stage": "" if ok else "project_review_flow"}
     except Exception as exc:  # noqa: BLE001 - live gate records failures
         return {"case": "project_review", "ok": False, "failure_stage": "agent_exception",

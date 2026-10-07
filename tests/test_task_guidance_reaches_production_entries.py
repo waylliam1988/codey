@@ -42,7 +42,8 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
                                 intent="project", run_id="r", strict_research=strict)
     frame = SimpleNamespace(request=submission, task_kind="project", run_id="r", provider=provider,
                             provider_id="deepseek", project_text=str(tmp_path), handoff="",
-                            recovered_tool_outcomes=(), settled_tool_outcomes=(), recovered_tool_result_batch_id="")
+                            recovered_tool_outcomes=(), settled_tool_outcomes=(), recovered_tool_result_batch_id="",
+                            entry_initial_turn=None)
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=AppContext(tmp_path / "state"))
     outcome = run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]), hooks, deps)

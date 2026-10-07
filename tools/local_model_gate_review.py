@@ -38,7 +38,8 @@ def run_review_case(target, directory: Path) -> dict:
     request = HeadlessRequest(
         project=root,
         task="Review the current diff for correctness.",
-        provider_id="local",
+        provider_id=target.provider_id,
+        model_selection=({"model": target.model} if target.provider_id != "local" else {}),
         max_turns=6,
         intent="review",
         state_home=state_home,
@@ -49,9 +50,10 @@ def run_review_case(target, directory: Path) -> dict:
             request,
             emit_jsonl=_record,
             connect_provider=lambda provider_id, **kwargs: attempts.make_provider(target, directory)
-            if provider_id == "local" else (_ for _ in ()).throw(RuntimeError("gate pins local")),
-            connect_reviewer=lambda provider_id: attempts.make_provider(target, directory)
-            if provider_id == "local" else (_ for _ in ()).throw(RuntimeError("gate pins local reviewer")),
+            if provider_id == target.provider_id else (_ for _ in ()).throw(RuntimeError("gate pins selected connection")),
+            connect_reviewer=(lambda provider_id: attempts.make_provider(target, directory)
+            if provider_id == target.provider_id else (_ for _ in ()).throw(RuntimeError("gate pins selected reviewer")))
+            if target.provider_id == "local" else None,
         )
         dt = round(time.perf_counter() - t0, 1)
         after = {

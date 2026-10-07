@@ -2,6 +2,7 @@
 import json
 from types import SimpleNamespace
 
+from tools.local_model_gate_attempts import GateTarget
 from tools.local_model_gate_review import run_review_case
 
 
@@ -16,4 +17,5 @@ def test_unavailable_review_is_not_a_passing_smoke(tmp_path, monkeypatch):
         return SimpleNamespace(exit_code=0, stop_reason="done", run_id="r", session_id="s")
 
     monkeypatch.setattr("codey.app.headless_runner.run_headless", unavailable)
-    assert run_review_case(SimpleNamespace(model="test"), tmp_path)["ok"] is False
+    target = GateTarget("http://fixture/v1", "test", 32768, 8192, 12000)
+    assert run_review_case(target, tmp_path)["ok"] is False

@@ -66,6 +66,7 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/operations/kernel_prompt.py`、`research/tool_contract.py` | 组合已提供的指导、上下文及协议说明；逻辑 note ID 用法由共用工具定义负责 |
 | `codey/toolchain/tool_spec.py` | 工具定义、schema 与按权限生成的本轮快照 |
 | `codey/operations/kernel_protocol.py` | JSON/native 归一及当前快照校验 |
+| `codey/operations/auto_loop.py`、`task_entry.py::prepare_auto_provider` | 首调用记录原授权/effect，native 回复与冻结快照经 InitialNativeTurn 交给同一 kernel；保留原预算、延迟写锁 |
 | `codey/operations/kernel_execution.py`、`task_execution.py` | 执行边界及领域适配器 |
 | `codey/operations/completion_gate.py` | 最终完成证明组合；模型的 done 只是候选 |
 | `codey/operations/project_completion_checks.py`、`research_completion_checks.py` | 项目、来源与严格 Research 检查提供者 |

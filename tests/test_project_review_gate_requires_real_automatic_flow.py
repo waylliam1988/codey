@@ -32,6 +32,16 @@ def test_complete_automatic_flow_passes():
     assert all(check_project_review_flow(**facts()).values())
 
 
+def test_independent_api_reviewer_must_match_the_admitted_second_model():
+    data = facts()
+    data["reviewer_model"] = "review-model"
+    data["requests"][1]["payload"]["model"] = "review-model"
+    data["persisted_review"].update(self_review=False, model_id="review-model")
+    assert all(check_project_review_flow(**data).values())
+    data["requests"][1]["payload"]["model"] = "unrelated-model"
+    assert not all(check_project_review_flow(**data).values())
+
+
 @pytest.mark.parametrize("defect", ["no_request", "wrong_model", "no_review", "partial_review",
                                     "mutated", "no_artifact", "no_verification", "duplicate_terminal",
                                     "other_run", "bad_files", "review_before_verify", "failed_exit"])

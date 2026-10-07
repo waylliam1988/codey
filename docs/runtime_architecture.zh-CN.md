@@ -75,6 +75,10 @@ Reviewer 的 `reviewer_selection` 在发送前冻结。两者只保存连接版�
 `final_delivery` 与 completion proof 分开记录。发送结束工具结果仍是有界生成请求，
 并非专用网络 ACK；返回的新工具不能执行，只能在有限预算内关闭调用链。
 交付 failed/unknown 不丢弃完成证明或已执行变更，恢复处理交付事实，不重新写文件。
+取消、无进展、协议阈值及预算终止的关闭请求继续使用本轮实际授权的工具声明，
+不重新生成完整工具集，不执行结束阶段的新调用。TLS EOF 只有在确认尚未发送
+HTTP 生成字节时允许一次连接重试；代理 CONNECT 不算生成提交，共享总 deadline。
+已发送/结果未知的生成不重发，证书失败也不重连。
 
 ## 统一 kernel 的行为边界与 parity
 
@@ -115,6 +119,10 @@ Research 工作流，也不刷新验证或扫描工作区。`project_prompt_cont
 - 已交付工具观察仍投影为 TaskSession 事实；项目和共同入口共用 `kernel_session_recovery.restore_task_session`。
 - Research 观察在同一工具收据 canonical 内；`ledger_receipts` 恢复完整正文、页和证据。整批暂存，成功才发布，不建立第二持久日志。
 - auto 工具 ACTION 和拒绝完成的回答均继续同一窗口/会话/预算；模型标签不改变原授权或要求。
+- native auto 首调用经 `prepare_auto_provider` 记录原策略和发送 effect，使用授权的
+  `TurnSnapshot`。`InitialNativeTurn` 连同回复、快照及 prompt 交给同一 kernel，
+  首轮计入原预算，不二次生成；完整直接回答仍经过共同完成门。网页文本 ACTION
+  路径保留，普通问候不抢写锁，编辑调用收到后取得写锁才执行，失败关闭原 call IDs。
 - command/cwd/URL 是完整身份；展示边界可以裁剪，事实和完成关联不裁剪。
 
 可执行检查与准确的证明边界见 [kernel_invariants.zh-CN.md](kernel_invariants.zh-CN.md)。

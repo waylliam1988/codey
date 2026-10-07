@@ -27,7 +27,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +43,6 @@ from codey.env_names import (
 )
 from codey.knowledge.store import KnowledgeStore
 from codey.providers import controls as provider_controls
-from codey.providers.api_provider import ApiProvider
 from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.providers.web_provider import WebChatProvider
@@ -63,6 +62,15 @@ def parse_cases(raw: str) -> tuple[str, ...]:
 
 def _preflight(provider_id: str = "local") -> tuple[str, str]:
     provider_id = str(provider_id or "local").strip().lower()
+    if provider_id == "zen":
+        from codey.providers.api_connections import capture_selection
+        from codey.providers.zen.identity import ZEN_BASE_URL
+
+        model = os.environ.get("UI_GATE_MODEL", "").strip()
+        if not model:
+            raise RuntimeError("UI_GATE_MODEL is required for the Zen UI gate")
+        selected = capture_selection(provider_id, {"model": model})
+        return ZEN_BASE_URL, selected.model_id
     if provider_id != "local":
         if provider_id not in PROVIDER_LABELS or provider_id == "local":
             raise RuntimeError(f"unsupported UI gate provider: {provider_id}")
@@ -219,6 +227,8 @@ def analyze_provider_history(path: str | Path) -> dict[str, object]:
                     completion_rejections += 1
                 payload = row.get("payload")
                 messages = payload.get("messages") if isinstance(payload, dict) else None
+                if isinstance(payload, dict) and "input" in payload:
+                    messages = payload["input"]
                 # Provider requests replay the full conversation.  Only the
                 # final tool message is newly delivered for this turn; walking
                 # the whole list would count every prior rejection repeatedly.
@@ -227,8 +237,16 @@ def analyze_provider_history(path: str | Path) -> dict[str, object]:
                     content = str(latest.get("content") or "")
                     if "ERROR: Not done yet" in content:
                         completion_rejections += 1
+                elif isinstance(latest, dict) and latest.get("type") == "function_call_output":
+                    if "ERROR: Not done yet" in str(latest.get("output") or ""):
+                        completion_rejections += 1
             continue
         payload = row.get("payload")
+        if isinstance(payload, dict) and isinstance(payload.get("output"), list):
+            for item in payload["output"]:
+                if item.get("type") == "function_call":
+                    tool_calls.append(str(item.get("name")))
+                    done_calls += item.get("name") == "done"
         choices = payload.get("choices") if isinstance(payload, dict) else None
         first = choices[0] if isinstance(choices, list) and choices else None
         message = first.get("message") if isinstance(first, dict) else None
@@ -254,49 +272,16 @@ def analyze_provider_history(path: str | Path) -> dict[str, object]:
 
 
 @contextmanager
-def _record_local_provider_history(path: Path) -> Iterator[None]:
-    """Record provider payloads for this gate without changing provider behavior."""
-    original = ApiProvider._post_chat
-    lock = threading.Lock()
-    # A gate artifact describes one run.  Do not mix old failures into the
-    # current run's diagnosis when the same artifact directory is reused.
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _record_api_provider_history(path: Path) -> Iterator[None]:
+    from tools.local_model_gate_attempts import record_api_generations
+
     path.unlink(missing_ok=True)
-
-    def post_chat(
-        self: ApiProvider,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, object]] | None = None,
-        *,
-        timeout: float | None = None,
-    ) -> dict[str, Any]:
-        payload = self._request_payload(messages, tools)
-        request_row = {
-            "type": "request",
-            "model": self.model,
-            "payload": payload,
-        }
-        with lock:
-            _append_jsonl(path, request_row)
-        try:
-            response = original(self, messages, tools, timeout=timeout)
-        except Exception as exc:
-            with lock:
-                _append_jsonl(path, {
-                    "type": "error",
-                    "model": self.model,
-                    "error": f"{type(exc).__name__}: {exc}",
-                })
-            raise
-        with lock:
-            _append_jsonl(path, {"type": "response", "model": self.model, "payload": response})
-        return response
-
-    ApiProvider._post_chat = post_chat  # type: ignore[method-assign]  # noqa: B010
-    try:
+    with record_api_generations(path):
         yield
-    finally:
-        ApiProvider._post_chat = original  # type: ignore[method-assign]  # noqa: B010
+
+
+def _provider_history_recorder(provider_id: str, path: Path):
+    return _record_api_provider_history(path) if provider_id in {"local", "zen"} else _record_web_provider_history(path)
 
 
 @contextmanager
@@ -399,6 +384,7 @@ def _exercise_page(
     launch_url: str,
     cases: tuple[str, ...],
     provider_id: str,
+    model_id: str = "",
 ) -> dict[str, Any]:
     page.goto(launch_url, wait_until="domcontentloaded")
     expect(page.locator("#provider-button")).to_be_enabled(timeout=15_000)
@@ -407,14 +393,21 @@ def _exercise_page(
     # closing it verifies the local setup path without writing user state.
     page.locator("#provider-button").click()
     local_item = page.locator(f'[data-provider="{provider_id}"]')
+    if model_id:
+        local_item = page.locator(f'[data-provider="{provider_id}"][data-model="{model_id}"]')
     expect(local_item).to_be_visible()
     local_item.click()
-    expect(page.locator("#provider-name")).to_have_text(PROVIDER_LABELS[provider_id])
-    expect(page.locator("#provider-dot")).to_have_class(re.compile(r"\bok\b"), timeout=15_000)
+    if provider_id not in {"local", "zen"}:
+        expect(page.locator("#provider-name")).to_have_text(PROVIDER_LABELS[provider_id])
+        expect(page.locator("#provider-dot")).to_have_class(re.compile(r"\bok\b"), timeout=15_000)
+    else:
+        expect(page.locator("#provider-name")).not_to_be_empty()
+        assert page.evaluate("activeSession().provider") == provider_id
     if provider_id == "local":
-        expect(page.locator("#local-config-pop")).to_have_attribute("aria-hidden", "false")
+        page.locator("#btn-settings").click()
+        expect(page.locator("#local-config-pop")).to_be_visible()
         page.locator("#local-config-close").click()
-        expect(page.locator("#local-config-pop")).to_have_attribute("aria-hidden", "true")
+        expect(page.locator("#local-config-pop")).not_to_be_visible()
 
     checks: list[str] = []
     event: dict[str, Any] = {}
@@ -539,34 +532,35 @@ def run_local_model_ui_gate(
         host = str(address[0])
         port = int(address[1])
         server_url = f"http://{host}:{port}/"
-        recorder = (
-            _record_local_provider_history(history_path)
-            if provider_id == "local"
-            else _record_web_provider_history(history_path)
-        )
-        with recorder, sync_playwright() as playwright:
-                browser = playwright.chromium.launch(channel="msedge", headless=not headed)
-                context = browser.new_context(viewport={"width": 1380, "height": 900})
-                page = context.new_page()
-                page.on("pageerror", lambda exc: page_errors.append(str(exc)))
-                try:
-                    result = _exercise_page(
-                        page,
-                        server_url,
-                        project,
-                        artifact_dir,
-                        launch_url=_browser_launch_url(httpd, server_url),
-                        cases=selected_cases,
-                        provider_id=provider_id,
-                    )
-                except Exception as exc:
-                    failure_artifact = _save_screenshot(page, artifact_dir / "local-model-ui-failure.png")
-                    if hasattr(exc, "add_note"):
-                        exc.add_note(f"UI failure artifact: {failure_artifact}")
-                    raise
-                finally:
-                    context.close()
-                    browser.close()
+        recorder = _provider_history_recorder(provider_id, history_path)
+        from tools.local_model_gate_attempts import GateTarget, isolate_gate_secondary_models
+
+        secondary_scope = isolate_gate_secondary_models(GateTarget(base_url, model, 32768, 8192, 12000, provider_id=provider_id)) \
+            if provider_id in {"local", "zen"} else nullcontext()
+        with recorder, secondary_scope, sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="msedge", headless=not headed)
+            context = browser.new_context(viewport={"width": 1380, "height": 900})
+            page = context.new_page()
+            page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+            try:
+                result = _exercise_page(
+                    page,
+                    server_url,
+                    project,
+                    artifact_dir,
+                    launch_url=_browser_launch_url(httpd, server_url),
+                    cases=selected_cases,
+                    provider_id=provider_id,
+                    model_id=model if provider_id in {"local", "zen"} else "",
+                )
+            except Exception as exc:
+                failure_artifact = _save_screenshot(page, artifact_dir / "local-model-ui-failure.png")
+                if hasattr(exc, "add_note"):
+                    exc.add_note(f"UI failure artifact: {failure_artifact}")
+                raise
+            finally:
+                context.close()
+                browser.close()
         if page_errors:
             raise AssertionError("browser page errors: " + "; ".join(page_errors))
         result.update({
@@ -606,11 +600,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifacts", default=".e2e-artifacts")
     parser.add_argument("--cases", default=",".join(UI_CASES))
     parser.add_argument("--provider", default=None, choices=tuple(PROVIDER_LABELS))
+    parser.add_argument("--model", default="")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.provider:
             os.environ["UI_GATE_PROVIDER"] = args.provider
+        if args.model:
+            os.environ["UI_GATE_MODEL"] = args.model
         data = run_local_model_ui_gate(
             headed=args.headed,
             artifacts=args.artifacts,

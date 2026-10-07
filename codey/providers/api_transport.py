@@ -5,6 +5,7 @@ import contextlib
 import http.client
 import json
 import socket
+import ssl
 import threading
 import time
 import urllib.error
@@ -40,8 +41,53 @@ class NoGenerationRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+class _SubmissionHTTPSHandler(urllib.request.HTTPSHandler):
+    """Track generation bytes independently of TLS and proxy CONNECT bytes."""
+
+    def __init__(self, submission: dict[str, bool]) -> None:
+        self.context = ssl.create_default_context()
+        self.context.set_alpn_protocols(["http/1.1"])
+        super().__init__(context=self.context)
+        self.submission = submission
+
+    def https_open(self, request: Any) -> Any:
+        submission = self.submission
+
+        class Connection(http.client.HTTPSConnection):
+            establishing = False
+
+            def send(self, data: Any) -> None:
+                if self.sock is None and self.auto_open:
+                    self.establishing = True
+                    try:
+                        self.connect()
+                    finally:
+                        self.establishing = False
+                if not self.establishing:
+                    # Set before sendall: a failed write may have sent bytes.
+                    submission["attempted"] = True
+                super().send(data)
+
+        submission["attempted"] = False
+        return self.do_open(Connection, request, context=self.context)
+
+
 def open_request(request: urllib.request.Request, timeout: float) -> Any:
-    return urllib.request.build_opener(NoGenerationRedirect()).open(request, timeout=timeout)
+    deadline = time.monotonic() + timeout
+    for attempt in range(2):
+        submission: dict[str, bool] = {}
+        opener = urllib.request.build_opener(NoGenerationRedirect(), _SubmissionHTTPSHandler(submission))
+        try:
+            return opener.open(request, timeout=max(0.001, deadline - time.monotonic()))
+        except urllib.error.URLError as exc:
+            if submission.get("attempted") is not False or not isinstance(exc.reason, ssl.SSLError):
+                raise
+            # TLS failed before HTTP generation headers/body. Reconnect once
+            # for EOF only; certificate failures and exhausted budget stop.
+            if isinstance(exc.reason, ssl.SSLEOFError) and attempt == 0 and time.monotonic() < deadline:
+                continue
+            raise GenerationNotSentError(f"TLS connection failed before generation submission: {exc.reason}") from exc
+    raise AssertionError("unreachable connection retry state")
 
 
 def abort_response(response: Any) -> None:
@@ -160,6 +206,9 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
         return body
     except GenerationUnknownError:
         phase = "unknown"
+        raise
+    except GenerationNotSentError:
+        phase = "not_sent"
         raise
     except urllib.error.HTTPError as exc:
         with contextlib.closing(exc):

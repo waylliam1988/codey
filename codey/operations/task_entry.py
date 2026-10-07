@@ -206,6 +206,22 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
     return active_provider, intent_sink, stop_flag
 
 
+def prepare_auto_provider(frame: RunFrame, deps: Any) -> Any:
+    """Record authorization and unsafe first-send effects before native auto sends."""
+    from codey.operations.provider_session import ConversationProvider
+    from codey.operations.recovery import record_entry_policy
+
+    if frame.entry_session is None:
+        raise ValueError("native auto task session is not initialized")
+    record_entry_policy(getattr(deps, "runtime_mutations", None),
+                        session_id=frame.request.session_id, run_id=frame.run_id,
+                        policy=frame.entry_session.policy)
+    provider, _, _ = _entry_provider_sink(frame, deps, frame.entry_session.task_kind)
+    # Auto owns accounting for this first exchange; subsequent exchanges use
+    # the normal conversation wrapper installed by run_entry_kernel.
+    return provider.provider if isinstance(provider, ConversationProvider) else provider
+
+
 def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any) -> Any:
     if project_path is None or not policy.allows("project.write"):
         return None
@@ -342,6 +358,7 @@ def _run_entry_kernel(
         ignored = ()
     try:
         tracker = _entry_project_tracker(project_path, deps, policy)
+        initial_turn, frame.entry_initial_turn = frame.entry_initial_turn, None
         result = run_task_kernel(
             session,
             request=KernelRunRequest(
@@ -357,6 +374,7 @@ def _run_entry_kernel(
                     start_turn=max(resume_start, session.turn + 1) if continuation_followup else resume_start,
                     context_text=continuation_followup,
                     initial_results=initial_results or None,
+                    initial_turn=initial_turn,
                     provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
                 ),
                 execution=KernelExecutionDeps(

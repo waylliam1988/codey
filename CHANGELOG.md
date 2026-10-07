@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Zen live gates and native entry fixes (2026-10-08)
+
+- Admit Zen in release/UI gates through frozen production selections; record both
+  API protocols and actual budgets. Observe the real second-model Reviewer rather
+  than force Zen Writer self-review. Add explicit task turn budgets.
+- Send native auto's first turn with authorized frozen tools and hand that received
+  turn to the shared kernel once. Preserve budget, late writer lease and original
+  declarations on cancellation, no-progress, protocol and budget closure.
+- Fix scoped test-preservation authorization, new-chat model/effort inheritance,
+  process-group UI toggles and Python API names in Research provenance using TDD.
+- Retry a TLS EOF connection once only when HTTP generation was certainly not
+  submitted; never replay sent or unknown generations.
+- Final checks: **7638 passed, 7 skipped, 1501 subtests in 587.39s**; machine
+  contracts **471 passed**; Ruff, mypy, Python/JavaScript compilation and diff pass.
+  Muse's real coding UI passes; the full live matrix remains incomplete because
+  of upstream 429 and per-task 403 restrictions. Evidence: `TEST_REPORT.md`.
+  No release or version change.
+
 ## Unreleased - Shared API protocols and free Zen models (2026-10-07)
 
 - Replace the Local-only transport with one API generation runtime and separate

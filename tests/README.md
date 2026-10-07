@@ -66,6 +66,27 @@ Live release checks stay separate from deterministic contract checks.
 
 ## API protocols, frozen selection and Zen
 
+- `test_live_api_gates_use_selected_connection_and_protocol.py`: production Zen
+  admission, Local/Zen Chat and Responses capture, terminal metrics and explicit
+  turn budgets; no request headers in gate artifacts.
+- `test_native_auto_first_turn_preserves_tools_budget_and_authorization.py`:
+  one authorized native first turn, same kernel/budget, direct greeting without
+  writer lease, truncated text rejection and busy-writer call closure.
+- `test_native_cancel_and_budget_close_preserve_authorized_tool_declarations.py`:
+  cancellation, received first turn, exhausted budget, no progress and invalid
+  protocol close real call IDs using original declarations without executing more.
+- `test_api_transport_tls_handshake_retries_only_before_http_submission.py`:
+  TLS EOF before generation bytes permits one connection retry; post-header EOF
+  remains unknown and persistent handshake failure is bounded.
+- `test_entry_authorization_preserving_tests_is_not_global_readonly.py`:
+  scoped preservation permits implementation edits; explicit global prohibitions
+  retain read-only authorization.
+- `test_research_provenance_python_path_api_is_not_an_unopened_source.py`:
+  Python path API identifiers survive report provenance checks; actual unopened
+  domains/URLs remain rejected.
+- `test_ui_new_chat_preserves_selected_api_model_and_effort.py`,
+  `test_ui_process_group_toggle_updates_latest_without_page_errors.py`: real
+  browser model inheritance, independent effort state and process-group toggles.
 - `test_provider_neutral_tool_boundaries.py`,
   `test_web_chat_responses_share_authorization_and_completion.py`: neutral tool
   definitions/results/finish state and equal task authorization/completion across

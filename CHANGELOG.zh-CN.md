@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - Zen 实机门槛与原生入口修复（2026-10-08）
+
+- release/UI gate 通过正式冻结选择接入 Zen，记录两种实际 API 协议和预算；
+  观察真实第二模型 Reviewer，不强制 Zen Writer 自审。新增显式任务轮次预算。
+- native auto 首轮携带原授权工具快照，收到的结构化轮次只交给同一内核一次；
+  保留原预算、延迟写锁，取消/无进展/协议/预算关闭保留原声明且不执行新调用。
+- 按 TDD 修复保留测试被误认全局只读、新聊天模型/effort 丢失、过程组开合错误，
+  以及 Research 将 Python API 名误认为未打开网站。
+- TLS EOF 只有在确定未提交 HTTP 生成时允许一次连接重试；已发送或未知请求不重发。
+- 最终检查：**7638 passed、7 skipped、1501 subtests，587.39 秒**；机器契约
+  **471 passed**；Ruff、mypy、Python/JavaScript 编译、diff 通过。Muse 真实编码 UI
+  通过；完整实机矩阵仍受上游 429 和任务资格 403 阻塞，证据见 `TEST_REPORT.md`。
+  没有发布或修改版本号。
+
 ## 未发布 - 共享 API 协议与 Zen 免费模型（2026-10-07）
 
 - 用共同 API 生成 runtime 与独立 Chat Completions/Responses codec 替代 Local 专用

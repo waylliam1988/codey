@@ -31,7 +31,7 @@ from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes, is_git_repository
-from tools.local_model_gate_attempts import REPO_ROOT, GateTarget, make_provider, write_json
+from tools.local_model_gate_attempts import REPO_ROOT, GateTarget, make_provider, record_api_generations, write_json
 
 SESSION_ID = "gate-recovery-session"
 RUN_ID = "gate-recovery-run"
@@ -87,6 +87,7 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
     local_config.save_local_config(local_config.LocalProviderConfig(
         base_url=target.base_url, model=target.model, connection_revision="isolated-gate-target",
         native_tools_mode="on" if target.protocol == "native" else "off",
+        api_protocol=target.api_protocol,
         context=local_config.LocalContextBudget(target.context_window_tokens, target.context_reserve_tokens, target.context_keep_recent_tokens),
     ))
     os.environ["NATIVE_TOOLS"] = "1" if target.protocol == "native" else "0"
@@ -126,7 +127,8 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
              patch.object(KernelEffectSink, "settle", interrupted_settle):
             run_task_submission(deps, TaskSubmission(
                 session_id=SESSION_ID, run_id=RUN_ID, project=str(project), task=TASK,
-                max_turns=8, provider_id="local", intent="project", continue_task=(stage == "resume"),
+                max_turns=target.turn_budget or 8, provider_id=target.provider_id, intent="project", continue_task=(stage == "resume"),
+                model_selection=(target.api_selection if target.provider_id != "local" else {}),
                 project_changes_required=True,
             ))
         terminal = context.run_registry.last_terminal_event() or {}
@@ -167,7 +169,7 @@ def _verify_recovery(directory: Path, project: Path, prepare_exit: int) -> dict:
     requests = [row.get("payload", row) for row in records if row.get("type", "request") == "request"]
     # A new provider window receives recovered facts as text. Old call ids
     # remain in the receipts; they must not become orphan native tool results.
-    delivered_text = any(original["result_text"] in json.dumps(row.get("messages", []), ensure_ascii=False)
+    delivered_text = any(original["result_text"] in json.dumps(row.get("messages", row.get("input", [])), ensure_ascii=False)
                          for row in requests)
     policy_preserved = resumed["policy"] == original["policy"]
     checks = (prepare_exit == INTERRUPTED_EXIT, original["pid"] != resumed["pid"], edit_executions == 1,
@@ -223,6 +225,10 @@ def main() -> int:
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--scripted", action="store_true")
     args = parser.parse_args()
+    config = json.loads((args.directory / "recovery-input.json").read_text(encoding="utf8"))
+    if not args.scripted and config["target"].get("provider_id", "local") != "local":
+        with record_api_generations(args.directory / "provider.jsonl"):
+            return _stage(args.directory, args.stage, scripted=False)
     return _stage(args.directory, args.stage, scripted=args.scripted)
 
 

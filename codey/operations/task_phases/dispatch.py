@@ -319,6 +319,7 @@ def dispatch_run_mode(
         and work.claimed_work_item is None
     ):
         from codey.operations.review_flow import has_reviewable_diff as _has_diff
+        from codey.operations.task_entry import prepare_auto_provider
         from codey.operations.task_phases.lifecycle import open_run_ledger as _open_ledger
 
         auto_deps = AutoRunDeps(
@@ -335,6 +336,7 @@ def dispatch_run_mode(
             experiences_fn=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
             has_reviewable_diff_fn=lambda: _has_diff(review_deps, frame.request.project),
             research_available=True,
+            prepare_native_provider=lambda active_frame: prepare_auto_provider(active_frame, deps),
             continue_task=lambda active_frame, active_work, active_hooks, followup: run_entry_kernel(
                 active_frame, active_work, active_hooks, deps,
                 task_kind=active_frame.entry_session.task_kind,

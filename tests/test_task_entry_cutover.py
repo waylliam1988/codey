@@ -148,7 +148,7 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
         request=request, task_kind="project", run_id="r", provider=provider,
         provider_id="deepseek", project_text=str(tmp_path), handoff="",
         recovered_tool_outcomes=(),
-        settled_tool_outcomes=(), recovered_tool_result_batch_id="",
+        settled_tool_outcomes=(), recovered_tool_result_batch_id="", entry_initial_turn=None,
     )
     events: list[object] = []
     hooks = SimpleNamespace(on_event=events.append, on_shell_request=events.append)
@@ -188,7 +188,7 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
         provider=SimpleNamespace(send=lambda *_args, **_kwargs: ""),
         provider_id="local", project_text=str(project), handoff="",
         recovered_tool_outcomes=(),
-        settled_tool_outcomes=(), recovered_tool_result_batch_id="",
+        settled_tool_outcomes=(), recovered_tool_result_batch_id="", entry_initial_turn=None,
     )
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=AppContext(tmp_path / "state"))

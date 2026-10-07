@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.protocols.json_scanner import balanced_json_spans
+from codey.providers.base import AssistantTurn
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
 
@@ -39,6 +40,15 @@ class TurnSnapshot:
     policy: Any = None
     frozen_specs: tuple[Any, ...] = ()
     custom_executors: tuple[tuple[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class InitialNativeTurn:
+    """An already received first turn with the exact declarations sent upstream."""
+
+    reply: AssistantTurn
+    snapshot: TurnSnapshot
+    prompt: str
 
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
