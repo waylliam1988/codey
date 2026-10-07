@@ -45,22 +45,37 @@ function addMessageCopyButton(div, text) {
   btn.innerHTML = icon;
   const feedback = document.createElement('span'); feedback.className = 'copy-feedback';
   feedback.setAttribute('role', 'status');
-  let reset = null;
+  let reset = null, copying = false;
   btn.onclick = async (e) => {
     e.stopPropagation();
-    const ok = await copyText(value);
+    if (copying) return;
+    const keyboardFocus = document.activeElement === btn && btn.matches(':focus-visible');
+    copying = true;
+    if (reset) clearTimeout(reset);
+    btn.classList.remove('copied', 'copy-failed');
+    btn.classList.add('copy-pending');
+    btn.setAttribute('aria-disabled', 'true');
+    btn.setAttribute('aria-busy', 'true');
+    feedback.textContent = '';
+    let ok = false;
+    try { ok = await copyText(value); } catch {}
+    if (keyboardFocus && btn.isConnected && document.activeElement === document.body) btn.focus({preventScroll:true});
+    copying = false;
+    btn.classList.remove('copy-pending');
+    btn.removeAttribute('aria-disabled');
+    btn.removeAttribute('aria-busy');
     btn.classList.toggle('copied', ok);
+    btn.classList.toggle('copy-failed', !ok);
     btn.title = ok ? 'Copied' : 'Could not copy';
     btn.setAttribute('aria-label', btn.title);
     btn.innerHTML = ok ? '<svg class="copy-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg>' : icon;
     feedback.textContent = ok ? '' : 'Could not copy';
-    if (reset) clearTimeout(reset);
     reset = setTimeout(() => {
-      btn.classList.remove('copied');
+      btn.classList.remove('copied', 'copy-failed');
       btn.title = 'Copy';
       btn.setAttribute('aria-label', 'Copy message');
       btn.innerHTML = icon; feedback.textContent = '';
-    }, 1200);
+    }, ok ? 1200 : 4000);
   };
   div.append(btn, feedback);
 }

@@ -330,6 +330,13 @@
   .msg-copy:hover,
   .msg-copy:focus-visible { background: var(--hover); color: var(--text-dim); opacity: 1; }
   .msg-copy.copied { color: var(--text); }
+  .msg:is(.user, .asst) > .msg-copy { opacity: 0; pointer-events: none; }
+  .msg:is(.user, .asst):hover > .msg-copy,
+  .msg:is(.user, .asst):has(:focus-visible) > .msg-copy,
+  .msg:is(.user, .asst) > .msg-copy:is(.copy-pending, .copied, .copy-failed) {
+    opacity: 1; pointer-events: auto;
+  }
+  .msg:is(.user, .asst) > .msg-copy:focus-visible { outline: none; }
   .copy-feedback { font-size: 11px; color: var(--text-dim); margin-left: 6px; }
   .copy-feedback:empty { display: none; }
   .msg-copy svg {
@@ -631,7 +638,6 @@
 
   /* ============================== composer ============================== */
   .composer-wrap {
-    border-top: 1px solid var(--border);
     background: var(--bg);
     padding: 10px 24px 16px;
   }
@@ -1269,8 +1275,9 @@
   @media (hover: none) {
     .project-more { display: grid; }
     .session-more { visibility: visible !important; }
+    .msg:is(.user, .asst) > .msg-copy { opacity: 1; pointer-events: auto; }
   }
   @media (prefers-reduced-motion: reduce) {
-    aside, .changes-drawer, .tg-chevron { transition: none; }
+    aside, .changes-drawer, .tg-chevron, .msg-copy { transition: none; }
     .spinner { animation: none; }
   }
