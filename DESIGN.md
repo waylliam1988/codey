@@ -176,6 +176,7 @@ Context menus (`.ctx-menu`):
 ### 5.4 Top bar
 
 - Title breadcrumb: `project-name / chat-title` — project in `--muted`, slash in `--faint`, chat in `--text`.
+- The chat title is a plain text button: click, or focus it with Tab and press Enter/Space, to rename in place. Only the chat name is editable; the project crumb and unused topbar space are not rename targets. Hover/focus uses a subtle gray background, without a permanent pencil icon. The topbar editor is transparent and borderless, with no outline, shadow, or native control frame; text stays aligned with the original title. It fits within the topbar and initially selects the full name; the caret and native text selection communicate editing. Sidebar inline rename retains its existing gray input style. Enter saves, Escape cancels, and leaving the editor saves; blank input keeps the original name, and names are limited to 80 characters. Respect IME composition. Commit updates the same session's title, sidebar, search, and durable state together; preserve drafts, message DOM, reading position, and ongoing work. Background rendering preserves the editor and caret, switching chats settles the original session's edit, and stale input events are ignored. Automatic naming must not replace active edits or confirmed custom titles. Remove `Rename chat` from the topbar menu; retain `Rename` in each sidebar chat menu for other chats.
 - **Status area:**
   - Idle: empty (no dot, no “Connected” label)
   - Running / connecting: CSS **spinner** + short label (`Running`, `Connecting to Edge…`)

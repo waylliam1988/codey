@@ -264,6 +264,8 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
         # and avoids spurious revision bumps from _content_equal.
         entry["researchRuns"] = _clean_research_runs(item.get("researchRuns"))
         entry["research"] = _clean_research(item.get("research"))
+        if item.get("titleRenamed") is True:
+            entry["titleRenamed"] = True
         selection = item.get("localSelection")
         if isinstance(selection, dict):
             allowed = {"off", "minimal", "low", "medium", "high", "max"}

@@ -141,11 +141,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("Cognitive Sleep", UI_SOURCE)
 
     def test_local_context_entry_is_quiet_top_menu_item(self) -> None:
-        rename = HTML.index('<button data-act="rename">Rename chat</button>')
+        self.assertNotIn('<button data-act="rename">Rename chat</button>', HTML)
         local = HTML.index('<button data-act="local-context">Local context</button>')
         clear = HTML.index('<button data-act="clear" class="danger"')
 
-        self.assertLess(rename, local)
         self.assertLess(local, clear)
         self.assertIn('id="local-context-drawer"', HTML)
         self.assertIn('<strong>Local context</strong>', HTML)

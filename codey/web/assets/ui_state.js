@@ -158,6 +158,7 @@ function normalizeSessions(value) {
     const s = {
       id: raw.id || uid(),
       title: raw.title || 'New chat',
+      ...(raw.titleRenamed === true ? {titleRenamed:true} : {}),
       messages: Array.isArray(raw.messages) ? raw.messages : [],
       terminalRuns: Array.isArray(raw.terminalRuns) ? raw.terminalRuns.slice(-32) : [],
       researchRuns: Array.isArray(raw.researchRuns)

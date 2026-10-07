@@ -160,7 +160,6 @@
   <button data-act="delete" class="danger" data-confirm="Confirm delete">Delete chat</button>
 </div>
 <div class="ctx-menu" id="top-menu">
-  <button data-act="rename">Rename chat</button>
   <button data-act="local-context">Local context</button>
   <button data-act="settings">Settings</button>
   <button data-act="clear" class="danger" data-confirm="Confirm clear">Clear messages</button>
@@ -497,7 +496,7 @@ function commitSessionRename(id, value) {
   if (!s) { renderSidebar(); return; }
   const title = (value || '').trim();
   if (title && title !== s.title) {
-    s.title = title.slice(0, 80);
+    s.title = title.slice(0, 80); s.titleRenamed = true;
     persistActiveNow();
   }
   renderSidebar();
@@ -772,7 +771,7 @@ function pushMsgToSession(sid, m) {
   if (!s) return false;
   const wasEmpty = s.messages.length === 0;
   s.messages.push(m);
-  if (s.title === 'New chat' && m.type === 'user' && m.text) {
+  if (s.title === 'New chat' && !s.titleRenamed && sid !== editingSessionId && !window.CodeyConversationUI.isRenamingSession(sid) && m.type === 'user' && m.text) {
     s.title = m.text.slice(0, 28) + (m.text.length > 28 ? '…' : '');
     persistActiveNow();
     renderSidebar();
@@ -848,8 +847,7 @@ $('top-menu').addEventListener('click', (e) => {
   const act = btn.dataset.act;
   if (act === 'clear') { armDanger(btn, () => clearMessages(activeId)); return; }
   closeAllMenus();
-  if (act === 'rename') renameSession(activeId);
-  else if (act === 'local-context') openLocalContextDrawer();
+  if (act === 'local-context') openLocalContextDrawer();
 });
 document.addEventListener('click', (e) => {
   if (e.target.closest('.ctx-menu')) return;
@@ -1646,7 +1644,7 @@ async function boot() {
 window.CodeyConversationUI.init({ activeSession, activeProject, getSessions: () => sessions, getProjects: () => projects,
     getActiveId: () => activeId, getRunningSessionId: () => runningSessionId, sessionProject,
     currentProjectPath, currentProviderId, syncProviderUI, updateComposerContext,
-    syncResearchUseProjectButton, appendMessageNode, switchSession, renderSidebar, closeAllMenus, closeOtherDrawers });
+    syncResearchUseProjectButton, appendMessageNode, switchSession, renderSidebar, closeAllMenus, closeOtherDrawers, renameInputEl, commitSessionRename });
   renderSidebar();
   renderChat();
   resizeTask();

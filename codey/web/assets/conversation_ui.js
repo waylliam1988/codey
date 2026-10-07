@@ -6,6 +6,7 @@ let shownId = '';
 const views = new Map();
 let menuTrigger = null;
 let selectedCopy = null, copyGeneration = 0;
+let titleEdit = null;
 
 function $(id) { return document.getElementById(id); }
 function query() { return $('chat-search').value.trim().toLocaleLowerCase(); }
@@ -46,20 +47,90 @@ function unchanged(view, session) {
   return view && view.nodes && view.messages && view.messages.length === session.messages.length
     && view.messages.every((m, i) => m === session.messages[i] || JSON.stringify(m) === JSON.stringify(session.messages[i]));
 }
+function finishTitleEdit(edit, value, restoreFocus = false) {
+  if (titleEdit !== edit) return;
+  titleEdit = null;
+  if (value !== null) deps.commitSessionRename(edit.id, value);
+  else renderTitle(deps.activeSession(), deps.activeProject());
+  if (restoreFocus && deps.getActiveId() === edit.id) $('sess-title').querySelector('.crumb-chat')?.focus({preventScroll:true});
+}
+function startTitleRename(id) {
+  const s = deps.activeSession();
+  if (!s || s.id !== id || titleEdit) return;
+  deps.closeAllMenus();
+  const edit = {id, input:null, composing:false, blurPending:false, pointerAway:false, refocus:false};
+  const input = deps.renameInputEl(s.title || '', value => finishTitleEdit(edit, value, edit.refocus), () => finishTitleEdit(edit, null, true));
+  input.classList.add('title-rename'); input.setAttribute('aria-label', 'Chat title');
+  edit.input = input; titleEdit = edit;
+  const keydown = input.onkeydown;
+  input.onkeydown = e => {
+    if (titleEdit !== edit || edit.composing || e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter' || e.key === 'Escape') { edit.refocus = true; e.stopPropagation(); }
+    keydown(e);
+  };
+  input.addEventListener('compositionstart', () => { if (titleEdit === edit) edit.composing = true; });
+  input.addEventListener('compositionend', () => {
+    if (titleEdit !== edit) return;
+    edit.composing = false; if (!edit.pointerAway) finishTitleBlur();
+  });
+  input.onblur = () => {
+    if (titleEdit !== edit) return;
+    edit.blurPending = true;
+    if (!edit.pointerAway) finishTitleBlur();
+  };
+  $('sess-title').querySelector('.crumb-chat').replaceWith(input);
+  input.focus({preventScroll:true}); input.select();
+}
+function finishTitleBlur() {
+  const edit = titleEdit;
+  if (edit?.blurPending && !edit.composing) finishTitleEdit(edit, edit.input.value);
+  if (titleEdit) titleEdit.pointerAway = false;
+}
+function initTitleRename() {
+  document.addEventListener('pointerdown', e => {
+    if (titleEdit && e.target !== titleEdit.input) titleEdit.pointerAway = true;
+  }, true);
+  // Commit during the click event, after its target has been determined, so
+  // sidebar rerendering cannot swallow a click on the next chat.
+  document.addEventListener('click', finishTitleBlur, true);
+  document.addEventListener('pointerup', () => {
+    const edit = titleEdit;
+    setTimeout(() => { if (titleEdit === edit) finishTitleBlur(); }, 0);
+  }, true);
+  document.addEventListener('pointercancel', finishTitleBlur, true);
+  window.addEventListener('blur', finishTitleBlur);
+}
+function renderTitle(s, p) {
+  if (titleEdit && (titleEdit.id !== s.id || !titleEdit.input.isConnected)) finishTitleEdit(titleEdit, titleEdit.input.value);
+  const title = $('sess-title');
+  if (titleEdit) {
+    const project = title.querySelector('.crumb-proj');
+    if (project && p) project.textContent = p.name;
+    return;
+  }
+  const existing = title.querySelector('button.crumb-chat');
+  if (existing && title.dataset.sessionId === s.id && title.dataset.projectId === (p?.id || '')) {
+    existing.textContent = s.title || 'New chat';
+    const project = title.querySelector('.crumb-proj'); if (project) project.textContent = p.name;
+    return;
+  }
+  title.replaceChildren(); title.dataset.sessionId = s.id; title.dataset.projectId = p?.id || '';
+  if (p) {
+    const project = document.createElement('span'); project.className = 'crumb-proj'; project.textContent = p.name;
+    const separator = document.createElement('span'); separator.className = 'crumb-sep'; separator.textContent = '/';
+    title.append(project, separator);
+  }
+  const name = document.createElement('button'); name.type = 'button'; name.className = 'crumb-chat';
+  name.textContent = s.title || 'New chat'; name.title = 'Rename chat'; name.setAttribute('aria-label', 'Rename chat');
+  name.onclick = () => startTitleRename(s.id); title.append(name);
+}
 function renderChat(forceBottom = false) {
   if (!deps) return;
   const s = deps.activeSession();
   if (!s) return;
   window.CodeyComposer.syncSession();
   const p = deps.activeProject();
-  const title = $('sess-title');
-  title.replaceChildren();
-  if (p) {
-    const project = document.createElement('span'); project.className = 'crumb-proj'; project.textContent = p.name;
-    const separator = document.createElement('span'); separator.className = 'crumb-sep'; separator.textContent = '/';
-    title.append(project, separator);
-  }
-  const name = document.createElement('span'); name.className = 'crumb-chat'; name.textContent = s.title || 'New chat'; title.append(name);
+  renderTitle(s, p);
   deps.syncProviderUI(deps.currentProviderId());
   deps.updateComposerContext();
   deps.syncResearchUseProjectButton();
@@ -361,9 +432,10 @@ function init(nextDeps) {
     if (path) openFile(path.textContent, path.closest('[data-project]')?.dataset.project);
   });
   document.querySelectorAll('.changes-drawer').forEach(el => { el.inert = !el.classList.contains('open'); });
-  initSidebarResize(); initSelectionMenu();
+  initSidebarResize(); initSelectionMenu(); initTitleRename();
 }
 
 window.CodeyConversationUI = { init, renderChat, scrollChat, captureView, isFollowing, updateNotice,
-  matchesSession, matchesProject, appendGroupLabel, updateSearch, isSearching: () => !!query(), forget, openFile, menuOpened, menusClosed };
+  matchesSession, matchesProject, appendGroupLabel, updateSearch, isSearching: () => !!query(),
+  isRenamingSession: id => titleEdit?.id === id, forget, openFile, menuOpened, menusClosed };
 })();

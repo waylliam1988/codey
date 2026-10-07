@@ -223,13 +223,25 @@
     background: var(--bg);
   }
   .topbar .sess-title {
+    display: flex; align-items: center;
     flex: 1; font-size: 13px; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--text);
   }
-  .topbar .sess-title .crumb-proj { color: var(--muted); }
-  .topbar .sess-title .crumb-sep  { color: var(--faint); margin: 0 6px; }
-  .topbar .sess-title .crumb-chat { color: var(--text); }
+  .topbar .sess-title .crumb-proj { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .sess-title .crumb-sep  { color: var(--faint); margin: 0 6px; flex-shrink: 0; }
+  .topbar .sess-title .crumb-chat {
+    color: var(--text); font: inherit; background: transparent; border: 0;
+    padding: 3px 4px; margin-left: -4px; border-radius: 4px; cursor: pointer;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .topbar .sess-title .crumb-chat:hover,
+  .topbar .sess-title .crumb-chat:focus-visible { background: var(--hover); outline: none; }
+  .topbar .sess-title .title-rename {
+    flex: 0 1 360px; width: 360px; max-width: 100%;
+    padding: 3px 4px; margin-left: -4px; border: 0; border-radius: 0;
+    background: transparent; box-shadow: none; outline: none; appearance: none;
+  }
 
   .topbar-actions {
     display: inline-flex; align-items: center; gap: 6px;
