@@ -433,6 +433,7 @@ function init(nextDeps) {
   });
   document.querySelectorAll('.changes-drawer').forEach(el => { el.inert = !el.classList.contains('open'); });
   initSidebarResize(); initSelectionMenu(); initTitleRename();
+  window.CodeyConversationNav.init({getActiveId:nextDeps.getActiveId});
 }
 
 window.CodeyConversationUI = { init, renderChat, scrollChat, captureView, isFollowing, updateNotice,

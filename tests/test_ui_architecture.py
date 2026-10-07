@@ -85,6 +85,7 @@ class AssetReferenceTests(unittest.TestCase):
                 "/assets/ui_state.js",
                 "/assets/sse.js",
                 "/assets/composer.js",
+                "/assets/conversation_nav.js",
                 "/assets/conversation_ui.js",
             ],
         )

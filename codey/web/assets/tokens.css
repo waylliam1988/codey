@@ -18,6 +18,8 @@
     --scrollbar-thumb: #333333;
     --scrollbar-thumb-hover: #444444;
     --selection-bg: #365149;
+    --nav-current: #365149;
+    --nav-highlight: #6f9183;
     --ok-dot:    #4ec9b0;
     --err-text:  #d28a8a;
     --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;

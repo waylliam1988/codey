@@ -39,7 +39,6 @@ function addMessageCopyButton(div, text) {
   const btn = document.createElement('button');
   btn.className = 'msg-copy';
   btn.type = 'button';
-  btn.title = 'Copy';
   btn.setAttribute('aria-label', 'Copy message');
   const icon = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V7a2 2 0 0 1 2-2h8"/></svg>';
   btn.innerHTML = icon;
@@ -66,13 +65,11 @@ function addMessageCopyButton(div, text) {
     btn.removeAttribute('aria-busy');
     btn.classList.toggle('copied', ok);
     btn.classList.toggle('copy-failed', !ok);
-    btn.title = ok ? 'Copied' : 'Could not copy';
-    btn.setAttribute('aria-label', btn.title);
+    btn.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
     btn.innerHTML = ok ? '<svg class="copy-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg>' : icon;
     feedback.textContent = ok ? '' : 'Could not copy';
     reset = setTimeout(() => {
       btn.classList.remove('copied', 'copy-failed');
-      btn.title = 'Copy';
       btn.setAttribute('aria-label', 'Copy message');
       btn.innerHTML = icon; feedback.textContent = '';
     }, ok ? 1200 : 4000);
@@ -107,7 +104,6 @@ function addCodeCopyButton(pre, text) {
   const btn = document.createElement('button');
   btn.className = 'code-copy';
   btn.type = 'button';
-  btn.title = 'Copy';
   btn.setAttribute('aria-label', 'Copy code');
   btn.textContent = 'Copy';
   btn.onclick = async (e) => {

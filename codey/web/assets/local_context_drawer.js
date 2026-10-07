@@ -200,7 +200,7 @@ function baseRowNode(row, actions) {
     const more = document.createElement('button');
     more.type = 'button';
     more.className = 'local-context-more';
-    more.title = 'More';
+    more.setAttribute('aria-label', 'More');
     more.textContent = '⋯';
     more.onclick = (event) => {
       event.stopPropagation();

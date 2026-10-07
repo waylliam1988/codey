@@ -12,7 +12,7 @@ Codey is a **local developer and research tool**, not a consumer chat app. The U
 - **Monochrome first** — black, gray, white. Hierarchy comes from typography and spacing, not color blocks.
 - **Quiet by default** — idle states show almost nothing. Activity is signaled with motion (spinner) or text, not banners.
 - **No decoration** — no emoji, no gradients for status, no “chat bubble” aesthetics, no brand-blue/purple accents.
-- **One persistent exception color** — the provider availability dot (`#4ec9b0`). Research graph hover may reuse the same token transiently inside the canvas. Native text selection uses a separate subdued dark green only while text is selected; the resting chrome stays monochrome.
+- **Restrained green exceptions** — the provider availability dot (`#4ec9b0`), transient Research graph hover, native text selection, and the conversation navigation's single reading/preview marker. Navigation uses subdued dark/gray green; other resting chrome stays monochrome.
 - **English in the UI** — labels, buttons, placeholders, and system messages use English (`New chat`, `You`, `Codey`, `Allow`, …).
   User messages, model answers, and returned thinking text retain their original language; the English rule applies to fixed application copy.
 
@@ -72,6 +72,18 @@ Apply the same selection treatment to prose, nested code and links, drawer
 details, and editable text in the composer and Settings. This transient
 interaction tint replaces the browser's blue selection; do not reuse it for
 selected rows, focus outlines, buttons, status, or permanent surfaces.
+
+### Conversation navigation
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `--nav-current` | `#365149` | Current reading position in the conversation's tick rail |
+| `--nav-highlight` | `#6f9183` | The one tick selected by pointer hover or keyboard focus |
+
+These markers are mutually exclusive: while a tick is selected, the current
+reading marker becomes an ordinary gray tick. Moving away restores the dark
+green reading marker. Animate width only, so color transitions cannot briefly
+show both greens. Neither token belongs on status, buttons, or other surfaces.
 
 ### Allowed tint exception
 
@@ -182,6 +194,7 @@ Uppercase, muted, no background. Never use colored section headers.
 - **Active project:** 2px left bar in `--text`, not colored background.
 - **Active session:** `--active` background.
 - **Secondary actions:** revealed on hover or keyboard focus; visible on devices without hover. `⋯` opens a context menu. Do not show permanent `+` / `×` icon clusters.
+- **Quiet hover copy:** omit native `title` tooltips that repeat `Choose folder` (without a project), `Research`, code/message Copy, `More`, and enabled `Refresh` / `Use in Project`. Icon-only More buttons retain `aria-label="More"`; the project More button uses an empty `title` to suppress its parent row's inherited path tooltip. Keep the full project path on the project name/context, source and truncated-path details, disabled reasons, and the conversation navigation preview. Copy success/failure retains its icon/text feedback and accessible name without a native tooltip; Research retains `aria-pressed`.
 - `New chat`, `Add project`, and magnifier + `Search` share a 34px row height and 1px gaps. Search opens a same-height input in place and filters chat titles and project names locally. The input has a transparent background, no visible border or focus ring, and its text aligns with the Search label. Escape clears and closes search; an empty search also closes on blur. Search temporarily expands matching groups without changing saved project expansion.
 - Project names match independently of their chats: a matching empty project remains visible with `No chats`. Search shows only groups with matches, or a single `No matches` state when nothing matches. Temporary expansion uses an expanded chevron and returns to the saved state when search closes.
 - Sidebar empty states (`No projects`, `No chats`, `No matches`) use 12px `--text-dim`; group labels retain `--muted`.
@@ -298,12 +311,39 @@ File stats stay gray in the stream; weak tint only inside diff drawer.
 
 **Assistant long replies:** render expanded by default. If the reply is long, show a quiet `Collapse` text action below it; clicking it folds the body and changes the action to `Expand`. Do not default to collapsed answers.
 
-**Reading and copying:** prose, code, paths, commands, diff, and error details support native pointer selection and copying. Message/code Copy actions complement selection. New output follows only while the reader is near the end; otherwise a quiet `Back to latest` action is available. Chat switching restores reading position. Metadata refresh preserves unchanged message DOM and explicit disclosure state. Hidden chat DOM is cached for at most six recent chats; older chats retain their reading offset.
+**Reading and copying:** prose, code, paths, commands, diff, and error details support native pointer selection and copying. Message/code Copy actions complement selection. New output follows only while the reader is near the end; otherwise a quiet `Back to latest` action is available as a centered 30px circular down-arrow button above the composer. Use a single subtle gray border, neutral background and gray stroke icon; retain the accessible name `Back to latest` and the existing gray keyboard focus outline, without a native `title` tooltip or hover text label. Hide the button near the latest output. Chat switching restores reading position. Metadata refresh preserves unchanged message DOM and explicit disclosure state. Hidden chat DOM is cached for at most six recent chats; older chats retain their reading offset.
 
 Native selected text uses the subdued `--selection-bg` with light `--text`,
 including selections inside text inputs and textareas. Preserve ordinary
 pointer/keyboard selection, the exact copied text, draft values, and carets;
 selection styling does not add an input outline or shadow.
+
+**Conversation navigation:** show a quiet vertical tick rail in the left
+reading margin when the conversation has at least eight user questions,
+scrolls vertically, and its available reading area is at least 920px wide and
+360px high. Use available space, not fullscreen state; count overlapping
+inspection drawers and hide while Settings is open. Keep the original 760px
+content width and composer position. Each tick represents one user question
+and its following reply; tool calls and stream updates do not add ticks.
+
+At rest, only the current reading position uses `--nav-current`. Pointer
+hover or keyboard focus selects one tick with `--nav-highlight`, suppresses
+the dark green marker, and stretches nearby gray ticks into a gentle wave.
+After 220ms, show the question and a plain-text reply excerpt in a dark gray
+tooltip, kept inside the available reading area. Hover never scrolls; click,
+Enter, or Space jumps to the user question without sending or changing drafts,
+carets, native text selections, or disclosure state. Scrolling dismisses the
+preview. ArrowUp/ArrowDown and Home/End browse questions through a single Tab
+stop; Escape dismisses and restores prior keyboard focus. Ticks have names
+containing the question, and the reading position uses `aria-current="location"`.
+
+For long histories, keep at most 48 ticks inside the reading area, centering
+the visible window on the reading/selected question; keyboard navigation can
+reach every question. Preserve tick focus across tool/text updates, rebuild
+for the active chat only, and cancel stale previews on chat switches, hiding,
+drawer/Settings opening, or window blur. Respect reduced motion by disabling
+the width transition. Fixed UI labels stay English; question/reply excerpts
+retain their original language and are inserted as text, never HTML.
 
 Whole-message Copy icons under user messages and model answers are hidden at rest on devices with hover. Reveal only the relevant message's icon when its continuous region (body, intervening space, and button) is hovered or contains keyboard-visible focus. Preserve the button's layout space, but disable pointer interaction while hidden. Mouse focus alone must not keep an icon visible after leaving; Tab reveals the button with the existing gray focus background. Keep icons visible on devices without hover. During copying, keep the icon visible and prevent duplicate activation without removing keyboard focus. After completion, retain gray success feedback for 1.2 seconds, or retryable failure feedback for 4 seconds, even after pointer exit. Code-block and thinking Copy controls retain their existing visibility rules. Respect reduced-motion preferences.
 
@@ -447,7 +487,7 @@ README and docs for end users may stay in Chinese; **the web UI stays English** 
 
 Before shipping any UI change, verify:
 
-1. **Colors:** Only provider online dots and Research graph transient hover may use `--ok-dot`; `--err-text` for error strings; `--selection-bg` only for native selected text; all other chrome neutral?
+1. **Colors:** Only provider online dots and Research graph transient hover may use `--ok-dot`; `--err-text` for error strings; `--selection-bg` only for native selected text; navigation's mutually exclusive `--nav-current`/`--nav-highlight` only on its single position/preview tick; all other chrome neutral?
 2. **Hierarchy:** Can this be done with label size, weight, or spacing instead of a new color?
 3. **Chat area:** Still de-bubbled? No new bubble variants?
 4. **Actions:** Secondary/destructive actions behind `⋯` or text links, not permanent colored buttons?
@@ -479,7 +519,7 @@ These existed in earlier iterations and were intentionally removed:
 
 ## 10. Implementation notes
 
-- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `research_runs.js`, `changes_drawer.js`, `local_context_drawer.js`, `run_details.js`, `provider_ui.js`, `settings.js`, `ui_state.js`, `sse.js`, `composer.js`, `conversation_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
+- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `research_runs.js`, `changes_drawer.js`, `local_context_drawer.js`, `run_details.js`, `provider_ui.js`, `settings.js`, `ui_state.js`, `sse.js`, `composer.js`, `conversation_nav.js`, `conversation_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
 - **Do not fork the palette:** all color/spacing tokens stay in `tokens.css`; never redefine them per module or per page. `tests/test_ui_architecture.py` ratchets inline `<style>` to zero and only lets the inline `<script>` budget go down.
 - **Dark mode only:** there is no light theme. New surfaces should assume dark gray backgrounds and light text.
 - **Accessibility:** interactive rows and disclosures use native buttons and gray focus-visible outlines. Hidden sidebar/drawers are inert. Menus return focus on Escape; drawer keyboard focus stays within the open inspection surface and returns to its trigger on close. Respect reduced-motion preferences. When adding color is unavoidable, pair with text labels (never color alone).

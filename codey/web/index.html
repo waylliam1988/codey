@@ -56,7 +56,7 @@
     <div class="sess-title" id="sess-title">New chat</div>
     <div class="topbar-actions">
       <div class="status" id="status"></div>
-      <button class="btn-icon" id="topbar-more" title="More">
+      <button class="btn-icon" id="topbar-more" aria-label="More">
         <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
       </button>
     </div>
@@ -65,7 +65,11 @@
   <div class="chat-area" id="chat-area">
     <div class="chat-inner" id="chat"></div>
   </div>
-  <div class="latest-row"><button class="link-btn" id="back-to-latest" hidden>Back to latest</button></div>
+  <div class="latest-row">
+    <button class="latest-button" id="back-to-latest" type="button" aria-label="Back to latest" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg>
+    </button>
+  </div>
 
   <div class="composer-wrap">
     <div class="composer">
@@ -231,6 +235,7 @@
 <script src="/assets/ui_state.js?v=__APP_VERSION__"></script>
 <script src="/assets/sse.js?v=__APP_VERSION__"></script>
 <script src="/assets/composer.js?v=__APP_VERSION__"></script>
+<script src="/assets/conversation_nav.js?v=__APP_VERSION__"></script>
 <script src="/assets/conversation_ui.js?v=__APP_VERSION__"></script>
 <script>
 // ============================ state & storage ============================
@@ -318,9 +323,9 @@ function updateComposerContext() {
   const folderDisabled = disabled || !!p || projectPickerBusy;
   const researchActive = !!(s && s.research);
   const pieces = [
-    `<button class="ctx-token ctx-folder" id="ctx-folder" ${folderDisabled ? 'disabled' : ''} title="${escapeHtml(p ? p.path : 'Choose folder')}">${escapeHtml(proj)}</button>`,
+    `<button class="ctx-token ctx-folder" id="ctx-folder" ${folderDisabled ? 'disabled' : ''}${p ? ` title="${escapeHtml(p.path)}"` : ''}>${escapeHtml(proj)}</button>`,
     `<span class="ctx-sep">·</span>`,
-    `<button class="ctx-token ctx-research ${researchActive ? 'active' : ''}" id="ctx-research" ${disabled ? 'disabled' : ''} aria-pressed="${researchActive ? 'true' : 'false'}" title="${researchActive ? 'Research is on for this chat' : 'Research'}">Research</button>`,
+    `<button class="ctx-token ctx-research ${researchActive ? 'active' : ''}" id="ctx-research" ${disabled ? 'disabled' : ''} aria-pressed="${researchActive ? 'true' : 'false'}">Research</button>`,
   ];
   el.innerHTML = pieces.join('');
   el.title = '';
@@ -333,7 +338,7 @@ function syncResearchUI() {
   const active = !!(s && s.research);
   btn.classList.toggle('active', active);
   btn.disabled = !!runningSessionId || window.CodeyComposer.isSending();
-  btn.title = active ? 'Research is on for this chat' : 'Research';
+  btn.setAttribute('aria-pressed', String(active));
 }
 function currentIntentForSession(sessionId) {
   const s = sessions.find(x => x.id === sessionId);
@@ -397,7 +402,7 @@ function renderSidebar() {
 
     const more = document.createElement('button');
     more.className = 'project-more';
-    more.title = 'More';
+    more.title = ''; more.setAttribute('aria-label', 'More');
     more.textContent = '⋯';
     more.onclick = (e) => {
       e.stopPropagation();
@@ -454,7 +459,7 @@ function sessionNode(s) {
   title.onclick = () => switchSession(s.id);
   item.appendChild(title);
   const more = document.createElement('button');
-  more.className = 'session-more'; more.textContent = '⋯'; more.title = 'More';
+  more.className = 'session-more'; more.textContent = '⋯'; more.setAttribute('aria-label', 'More');
   more.onclick = (e) => { e.stopPropagation(); openSessionMenu(e.currentTarget, s.id); };
   item.appendChild(more);
   return item;
@@ -1485,13 +1490,13 @@ function syncResearchUseProjectButton() {
   const busy = !!runningSessionId;
   const unusable = busy || !s || !!sessionProject(s);
   btn.disabled = unusable;
-  btn.title = busy ? 'Busy' : (!s ? 'No chat' : (sessionProject(s) ? 'Already in a project' : 'Use in Project'));
+  btn.title = busy ? 'Busy' : (!s ? 'No chat' : (sessionProject(s) ? 'Already in a project' : ''));
 }
 function syncChangesRefreshButton() {
   const btn = $('changes-refresh');
   if (!btn) return;
   btn.disabled = !activeChangesProject;
-  btn.title = activeChangesProject ? 'Refresh' : 'No project loaded';
+  btn.title = activeChangesProject ? '' : 'No project loaded';
 }
 $('research-use-project').onclick = () => attachCurrentChatToPickedProject({ sendDraft: false });
 $('changes-refresh').onclick = () => {
