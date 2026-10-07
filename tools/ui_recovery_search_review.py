@@ -225,8 +225,8 @@ def exercise(page, url, window):
             "submissions": len(submissions)}
 
 
-def main():
-    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+def main(exercise_page=exercise, artifacts=ARTIFACTS):
+    artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="codey-ui-review-") as temporary:
         ctx = server.AppContext(Path(temporary) / "state")
         server.STATE = ctx
@@ -247,13 +247,13 @@ def main():
                 with sync_playwright() as pw:
                     browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{debug_port}", timeout=30000)
                     page = browser.contexts[0].pages[0]
-                    result.update(exercise(page, httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"), window))
+                    result.update(exercise_page(page, httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"), window))
                     result["passed"] = True
             except Exception:
                 result.update(passed=False, traceback=traceback.format_exc())
                 print(result["traceback"], flush=True)
             finally:
-                (ARTIFACTS / "native-review.json").write_text(
+                (artifacts / "native-review.json").write_text(
                     json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
                 window.destroy()
 

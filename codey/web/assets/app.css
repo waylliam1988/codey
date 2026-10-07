@@ -42,14 +42,23 @@
 
   /* ============================== sidebar ============================== */
   aside {
-    width: 260px;
+    position: relative; width: var(--sidebar-width);
     background: var(--bg-2);
     border-right: 1px solid var(--border);
     display: flex; flex-direction: column;
     transition: width .18s ease, min-width .18s ease;
-    min-width: 260px;
+    min-width: var(--sidebar-width);
   }
-  body.sidebar-collapsed aside { width: 0; min-width: 0; overflow: hidden; }
+  body.sidebar-collapsed aside { width: 0; min-width: 0; border-right-width: 0; overflow: hidden; }
+  .sidebar-resize {
+    position: absolute; top: 0; bottom: 0; right: -3px; width: 6px;
+    background: transparent; cursor: col-resize; touch-action: none; z-index: 20;
+  }
+  .sidebar-resize::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; }
+  .sidebar-resize:hover::after, .sidebar-resize:focus-visible::after { background: var(--muted); }
+  body.sidebar-collapsed .sidebar-resize { display: none; }
+  body.sidebar-resizing aside { transition: none; }
+  body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; user-select: none !important; }
   .sidebar-head {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 10px;
@@ -174,6 +183,10 @@
     display: none;
   }
   .ctx-menu.open { display: grid; gap: 1px; }
+  .selection-menu { min-width: 112px; }
+  .selection-menu button { outline: none; }
+  .selection-menu.keyboard-open button:focus { background: var(--hover); color: var(--text); }
+  .selection-copy-status { padding: 4px 10px; font-size: 12px; color: var(--text-dim); }
   .ctx-menu button {
     width: 100%; border: 0; background: transparent;
     color: var(--text-dim); cursor: pointer;
@@ -1246,6 +1259,7 @@
 
   @media (max-width: 720px) {
     aside { position: absolute; z-index: 10; height: 100%; }
+    .sidebar-resize { display: none; }
     body.sidebar-collapsed aside { display: none; }
     .research-graph-stage { min-height: 280px; }
     .composer-wrap { padding: 8px 16px 12px; }

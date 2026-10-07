@@ -1,4 +1,8 @@
   :root {
+    --sidebar-width: 260px;
+    --sidebar-min-width: 220px;
+    --sidebar-max-width: 420px;
+    --sidebar-content-min-width: 400px;
     --bg:        #181818;
     --bg-2:      #1c1c1c;
     --panel:     #202020;

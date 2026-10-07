@@ -10,6 +10,7 @@
 </head>
 <body>
 <aside id="aside">
+  <div class="sidebar-resize" id="sidebar-resize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" aria-controls="aside" tabindex="0"></div>
   <div class="sidebar-head">
     <button class="btn-icon" id="toggle-sidebar" title="Collapse sidebar">
       <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
@@ -165,6 +166,10 @@
   <button data-act="clear" class="danger" data-confirm="Confirm clear">Clear messages</button>
 </div>
 <div class="ctx-menu" id="local-context-menu"></div>
+<div class="ctx-menu selection-menu" id="selection-menu" role="menu" aria-label="Selection">
+  <button type="button" role="menuitem" id="selection-copy">Copy</button>
+  <div class="selection-copy-status" id="selection-copy-status" role="status" hidden></div>
+</div>
 
 <section class="changes-drawer" id="changes-drawer" aria-hidden="true" inert>
   <div class="changes-head">

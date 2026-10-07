@@ -125,7 +125,7 @@ text-rendering: optimizeLegibility;
 ```
 
 - Main + chat + composer content: **max-width 760px**, centered.
-- Sidebar: **260px**, collapsible to 0. No overlay on desktop unless viewport ≤ 720px.
+- Sidebar: **260px by default**, adjustable from **220–420px** and collapsible to 0. Remember the preferred width in the local browser profile. On desktop, clamp the displayed width to leave at least 400px for the main area; shrinking the window does not overwrite the preference. No overlay on desktop unless viewport ≤ 720px; the narrow overlay uses the default width and disables resizing.
 - Borders: 1px `--border`. Prefer spacing over heavy frames.
 - Border radius: **6–10px** for controls; **8px** for cards/menus. Avoid large “pill” radii except where already established (provider menu items).
 
@@ -165,6 +165,7 @@ Uppercase, muted, no background. Never use colored section headers.
 - Project names match independently of their chats: a matching empty project remains visible with `No chats`. Search shows only groups with matches, or a single `No matches` state when nothing matches. Temporary expansion uses an expanded chevron and returns to the saved state when search closes.
 - A nonempty search shows a small SVG clear icon at the input's right edge, using `--text-dim` and `--text` on hover, with no fill, border, or background. Replace the browser's native colored clear control. Its accessible name is `Clear search`; pointer click or keyboard activation clears the query and returns focus to the open input. Empty or closed search hides the icon.
 - A monochrome gear + `Settings` row sits at the sidebar bottom, sharing the sidebar action alignment and 34px height. The topbar more menu and `Ctrl+,` open the same settings dialog when the sidebar is collapsed.
+- The sidebar's existing right divider has a 6px transparent drag target, with a `col-resize` cursor and a single gray line on hover/focus. It is a keyboard-focusable vertical separator named `Resize sidebar`; Left/Right adjust by 10px, Home/End reach the available bounds, and double-click restores 260px. Pointer capture keeps dragging stable outside the divider. Escape, pointer cancellation, or window blur cancels an active drag. Disable width animation and text selection only during the drag; release immediately restores ordinary selection. Hiding the sidebar hides the separator.
 
 Context menus (`.ctx-menu`):
 
@@ -275,6 +276,8 @@ File stats stay gray in the stream; weak tint only inside diff drawer.
 **Assistant long replies:** render expanded by default. If the reply is long, show a quiet `Collapse` text action below it; clicking it folds the body and changes the action to `Expand`. Do not default to collapsed answers.
 
 **Reading and copying:** prose, code, paths, commands, diff, and error details support native pointer selection and copying. Message/code Copy actions complement selection. New output follows only while the reader is near the end; otherwise a quiet `Back to latest` action is available. Chat switching restores reading position. Metadata refresh preserves unchanged message DOM and explicit disclosure state. Hidden chat DOM is cached for at most six recent chats; older chats retain their reading offset.
+
+Right-clicking selected chat/drawer text or an editable text selection opens a small `Copy` menu in the existing `.ctx-menu` language: dark `--panel`, gray text, 8px radius, one subtle border, and no accent. The menu item has no individual border or focus outline. Pointer opening shows plain text; hover or keyboard navigation uses the existing gray row background for focus. Copy uses the exact selected text, preserving the draft and selection; whole-message and code Copy buttons keep their existing behavior. Shift+F10 / the context-menu key opens the same selection menu. Escape returns focus and selection to the source; outside click, scrolling, window resizing, and chat switching dismiss it. Keep the menu within the viewport. A successful copy briefly shows gray `Copied`; failure shows gray `Could not copy` and leaves Copy available to retry. Do not offer a stale text selection for an unselected input or expose password selections. Desktop copying uses this menu without enabling developer/debug menus in the host.
 
 Copy success uses a temporary gray checkmark or `Copied`, with an accessible name; no success accent. Markdown links allow HTTP(S) only, tables scroll horizontally when necessary, and fenced code preserves whitespace with a quiet language label. Model output is escaped, never rendered as arbitrary HTML.
 

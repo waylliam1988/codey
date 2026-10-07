@@ -5,6 +5,7 @@ let deps = null;
 let shownId = '';
 const views = new Map();
 let menuTrigger = null;
+let selectedCopy = null, copyGeneration = 0;
 
 function $(id) { return document.getElementById(id); }
 function query() { return $('chat-search').value.trim().toLocaleLowerCase(); }
@@ -63,7 +64,7 @@ function renderChat(forceBottom = false) {
   deps.updateComposerContext();
   deps.syncResearchUseProjectButton();
   const changing = shownId !== s.id;
-  if (changing) captureView();
+  if (changing) { closeSelectionMenu(); captureView(); }
   const saved = views.get(s.id);
   const scroll = changing && saved ? saved.scroll : $('chat-area').scrollTop;
   const follow = changing ? (!saved || saved.following) : isFollowing();
@@ -143,6 +144,7 @@ function menuOpened(menu, anchor) {
   menu.querySelector('button:not(:disabled)')?.focus();
 }
 function menusClosed(restore = false) {
+  closeSelectionMenu(restore);
   if (menuTrigger) {
     menuTrigger.setAttribute('aria-expanded', 'false');
     if (restore && menuTrigger.isConnected) {
@@ -152,6 +154,152 @@ function menusClosed(restore = false) {
     }
     menuTrigger = null;
   }
+}
+
+function initSidebarResize() {
+  const handle = $('sidebar-resize'), root = document.documentElement;
+  const tokens = getComputedStyle(root), token = name => parseFloat(tokens.getPropertyValue(name));
+  const initial = token('--sidebar-width'), min = token('--sidebar-min-width'), max = token('--sidebar-max-width');
+  const contentMin = token('--sidebar-content-min-width'), narrow = () => innerWidth <= 720;
+  let preferred = initial, drag = null;
+  try {
+    const saved = JSON.parse(localStorage.getItem('codey:sidebar-width'));
+    if (typeof saved === 'number' && Number.isFinite(saved)) preferred = Math.max(min, Math.min(max, saved));
+  } catch {}
+  const limit = () => Math.max(min, Math.min(max, innerWidth - contentMin));
+  const clamp = value => Math.max(min, Math.min(limit(), value));
+  function apply(snap = false) {
+    if (snap) $('aside').style.transition = 'none';
+    const size = narrow() ? Math.min(initial, innerWidth - 32) : clamp(preferred);
+    root.style.setProperty('--sidebar-width', size + 'px');
+    handle.setAttribute('aria-valuemin', String(min)); handle.setAttribute('aria-valuemax', String(limit()));
+    handle.setAttribute('aria-valuenow', String(size));
+    if (snap) { $('aside').getBoundingClientRect(); $('aside').style.removeProperty('transition'); }
+  }
+  function save() { try { localStorage.setItem('codey:sidebar-width', JSON.stringify(preferred)); } catch {} }
+  function finish(cancel = false) {
+    if (!drag) return;
+    const previous = drag; drag = null;
+    if (cancel) preferred = previous.preferred;
+    document.body.classList.remove('sidebar-resizing');
+    if (handle.hasPointerCapture(previous.id)) handle.releasePointerCapture(previous.id);
+    apply(); if (!cancel) save();
+  }
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || narrow()) return;
+    e.preventDefault(); deps.closeAllMenus();
+    drag = {id:e.pointerId, x:e.clientX, width:$('aside').getBoundingClientRect().width, preferred};
+    handle.setPointerCapture(e.pointerId); document.body.classList.add('sidebar-resizing');
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!drag || drag.id !== e.pointerId) return;
+    preferred = clamp(drag.width + e.clientX - drag.x); apply();
+  });
+  handle.addEventListener('pointerup', e => { if (drag?.id === e.pointerId) finish(); });
+  handle.addEventListener('pointercancel', () => finish(true));
+  handle.addEventListener('lostpointercapture', () => finish(true));
+  handle.addEventListener('dblclick', () => { if (!narrow()) { preferred = initial; apply(); save(); } });
+  handle.addEventListener('keydown', e => {
+    if (narrow() || !['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) return;
+    e.preventDefault();
+    preferred = e.key === 'Home' ? min : e.key === 'End' ? limit()
+      : clamp($('aside').getBoundingClientRect().width + (e.key === 'ArrowLeft' ? -10 : 10));
+    apply(); save();
+  });
+  document.addEventListener('keydown', e => {
+    if (drag && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); finish(true); }
+  }, true);
+  window.addEventListener('resize', () => { if (narrow()) finish(true); apply(true); closeSelectionMenu(); });
+  window.addEventListener('blur', () => finish(true));
+  new MutationObserver(() => { if (document.body.classList.contains('sidebar-collapsed')) finish(true); })
+    .observe(document.body, {attributes:true, attributeFilter:['class']});
+  apply(true);
+}
+
+function selectionFor(target) {
+  const input = target.closest('input,textarea');
+  if (input) {
+    if (input.type === 'password' || input.selectionStart === null || input.selectionStart === input.selectionEnd) return null;
+    return {input, start:input.selectionStart, end:input.selectionEnd,
+      text:input.value.slice(input.selectionStart,input.selectionEnd), focus:input};
+  }
+  const area = target.closest('#chat-area,.changes-drawer'), selection = getSelection();
+  if (!area || !selection?.rangeCount || selection.isCollapsed || !selection.toString()
+    || !area.contains(selection.anchorNode) || !area.contains(selection.focusNode)) return null;
+  const range = selection.getRangeAt(0).cloneRange();
+  if (!range.intersectsNode(target)) return null;
+  return {range, text:selection.toString(), focus:document.activeElement};
+}
+function restoreSelection(snapshot, focus = false) {
+  if (!snapshot) return;
+  if (focus && snapshot.focus?.isConnected && !snapshot.focus.closest('[inert]')) snapshot.focus.focus({preventScroll:true});
+  if (snapshot.input?.isConnected) snapshot.input.setSelectionRange(snapshot.start,snapshot.end);
+  else if (snapshot.range?.startContainer.isConnected && snapshot.range?.endContainer.isConnected) {
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(snapshot.range);
+  }
+}
+function closeSelectionMenu(restore = false) {
+  const snapshot = selectedCopy; selectedCopy = null; copyGeneration++;
+  $('selection-menu')?.classList.remove('open');
+  if (restore) restoreSelection(snapshot, true);
+}
+function placeSelectionMenu(x, y) {
+  const menu = $('selection-menu'), rect = menu.getBoundingClientRect();
+  menu.style.left = Math.max(8, Math.min(x, innerWidth - rect.width - 8)) + 'px';
+  menu.style.top = Math.max(8, Math.min(y, innerHeight - rect.height - 8)) + 'px';
+}
+function showSelectionMenu(target, x, y, keyboard = false) {
+  const snapshot = selectionFor(target);
+  deps.closeAllMenus(); window.CodeyProviderUI.closeMenu();
+  if (!snapshot) return false;
+  const menu = $('selection-menu'), copy = $('selection-copy');
+  (target.closest('dialog[open]') || document.body).appendChild(menu);
+  selectedCopy = snapshot; copyGeneration++;
+  copy.textContent = 'Copy'; copy.disabled = false;
+  $('selection-copy-status').hidden = true; $('selection-copy-status').textContent = '';
+  menu.classList.toggle('keyboard-open', keyboard);
+  menu.classList.add('open'); placeSelectionMenu(x,y);
+  copy.focus({preventScroll:true});
+  return true;
+}
+function initSelectionMenu() {
+  const menu = $('selection-menu'), copy = $('selection-copy');
+  document.addEventListener('contextmenu', e => {
+    if (menu.contains(e.target)) { e.preventDefault(); return; }
+    if (showSelectionMenu(e.target,e.clientX,e.clientY)) { e.preventDefault(); e.stopPropagation(); }
+  });
+  menu.addEventListener('pointerdown', e => e.preventDefault());
+  copy.onclick = async () => {
+    const snapshot = selectedCopy, generation = copyGeneration;
+    if (!snapshot || copy.disabled) return;
+    copy.disabled = true;
+    let ok = false;
+    try { ok = await window.CodeyRender.copyText(snapshot.text); } catch {}
+    if (generation !== copyGeneration) return;
+    restoreSelection(snapshot);
+    if (ok) {
+      copy.textContent = 'Copied';
+      setTimeout(() => { if (generation === copyGeneration) closeSelectionMenu(true); }, 800);
+    } else {
+      copy.disabled = false;
+      $('selection-copy-status').textContent = 'Could not copy'; $('selection-copy-status').hidden = false;
+      const rect = menu.getBoundingClientRect(); placeSelectionMenu(rect.left,rect.top); copy.focus({preventScroll:true});
+    }
+  };
+  window.addEventListener('keydown', e => {
+    if (menu.classList.contains('open') && ['ArrowDown','ArrowUp','Home','End'].includes(e.key)) menu.classList.add('keyboard-open');
+    if (menu.classList.contains('open') && ['Escape','Tab'].includes(e.key)) {
+      closeSelectionMenu(true);
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); }
+    } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      const target = document.activeElement, snapshot = selectionFor(target);
+      if (!snapshot) return;
+      const rect = snapshot.range ? snapshot.range.getBoundingClientRect() : target.getBoundingClientRect();
+      e.preventDefault(); e.stopImmediatePropagation(); showSelectionMenu(target,rect.left,rect.bottom,true);
+    }
+  }, true);
+  document.addEventListener('scroll', () => closeSelectionMenu(), true);
+  window.addEventListener('blur', () => closeSelectionMenu());
 }
 
 function init(nextDeps) {
@@ -213,6 +361,7 @@ function init(nextDeps) {
     if (path) openFile(path.textContent, path.closest('[data-project]')?.dataset.project);
   });
   document.querySelectorAll('.changes-drawer').forEach(el => { el.inert = !el.classList.contains('open'); });
+  initSidebarResize(); initSelectionMenu();
 }
 
 window.CodeyConversationUI = { init, renderChat, scrollChat, captureView, isFollowing, updateNotice,
