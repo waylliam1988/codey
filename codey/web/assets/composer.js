@@ -105,6 +105,42 @@ function clearDraftIfUnchanged(sessionId, draft, revision = null) {
   deps.updateComposerContext();
 }
 
+async function reportSendFailure(sessionId, text, response) {
+  const data = await response.json().catch(() => null);
+  let message = '', sendFailure = '', runOwner = '';
+  if (response.status === 400 && data?.reason === 'local_selection_invalid') {
+    message = 'Select the local model again'; sendFailure = 'local_selection';
+  } else if (response.status === 503 && data?.error === 'browser worker busy') {
+    message = 'Codey is temporarily busy'; sendFailure = 'worker_busy';
+  } else if (response.status === 409 && data?.error === 'busy') {
+    await window.CodeySse.reconcileRunState();
+    const owner = deps.findSession(runningSessionId());
+    runOwner = owner?.id || '';
+    message = owner ? (owner.id === sessionId ? 'This chat is already running' : 'Another chat is running') : 'Another task is running';
+    sendFailure = 'busy';
+  }
+  if (!message) { deps.addSendError(sessionId, '', '', text); return; }
+  deps.addToSession(sessionId, {type:'err', text:message, sessionId, retryTask:text, sendFailure, runOwner});
+}
+
+function recoveryActions(message) {
+  const sessionId = message.sessionId;
+  if (message.sendFailure === 'busy' && deps.findSession(message.runOwner)) {
+    return [{label:'Open', onclick:() => {
+      if (deps.findSession(message.runOwner)) deps.switchSession(message.runOwner);
+    }}];
+  }
+  if (message.sendFailure === 'local_selection') {
+    return [{label:'Choose model', disabled:!!runningSessionId(), onclick:e => {
+      if (!deps.findSession(sessionId) || runningSessionId() || sendingSessionId) return;
+      e?.stopPropagation();
+      deps.switchSession(sessionId);
+      $('provider-button').click();
+    }}];
+  }
+  return null;
+}
+
 async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null) {
   const text = String(task || '').trim();
   if (!text || runningSessionId() || sendingSessionId) return false;
@@ -127,7 +163,7 @@ async function sendTaskFromSession(sessionId, task, providerId = '', onSendStart
         ...window.CodeyProviderUI.runSelection(s, provider) }),
     });
     if (!r.ok) {
-      deps.addSendError(sessionId, '', '', text);
+      await reportSendFailure(sessionId, text, r);
       return false;
     }
     if (typeof onSendStarted === 'function') onSendStarted();
@@ -193,7 +229,7 @@ async function continueTask(sessionId) {
       }),
     });
     if (r.status === 409 || !r.ok) {
-      deps.addSendError(sessionId);
+      await reportSendFailure(sessionId, '', r);
       return;
     }
     await deps.acceptRunResponse(r, sessionId);
@@ -245,6 +281,7 @@ window.CodeyComposer = {
   forgetDraft,
   isSending: () => !!sendingSessionId,
   retryTask,
+  recoveryActions,
   resizeTask,
   updateSend,
   toggleResearchForActive,

@@ -195,7 +195,7 @@ function appendContent(chat, m) {
   } else if (m.type === 'err') {
     chat.appendChild(statusRow('Error', m.text || '', {
       err: true,
-      actions: window.CodeyRunDetails.actionsForMessage(m, [
+      actions: window.CodeyRunDetails.actionsForMessage(m, window.CodeyComposer.recoveryActions(m) || [
         { label: 'Retry', disabled: !!runningSessionId, onclick: () => retryTask(m.sessionId || activeId, m.retryTask) },
       ]),
     }));

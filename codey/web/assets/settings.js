@@ -1,7 +1,7 @@
 /* One quiet connection settings dialog. No build step. */
 (function () {
 'use strict';
-let deps, returnFocus, generation = 0, connected = false;
+let deps, returnFocus, generation = 0, connected = false, loading = false;
 const $ = id => deps.$(id);
 const selects = [];
 
@@ -60,6 +60,7 @@ function init(next) {
   $('btn-settings').onclick = () => open();
   $('settings-dismiss').onclick = close;
   $('local-config-close').onclick = close;
+  $('local-config-retry').onclick = loadConnection;
   $('local-config-form').onsubmit = e => { e.preventDefault(); save(); };
   $('local-config-pop').addEventListener('cancel', e => { e.preventDefault(); close(); });
   $('local-config-pop').addEventListener('click', e => {
@@ -98,14 +99,25 @@ async function open(trigger = document.activeElement) {
   $('local-custom-context').hidden = true;
   $('local-config-error').textContent = '';
   $('local-api-key').value = '';
+  $('local-config-retry').hidden = true;
+  dialog.showModal(); $('settings-dismiss').focus();
+  await loadConnection();
+}
+
+async function loadConnection() {
+  const dialog = $('local-config-pop');
+  if (!dialog.open || loading) return;
+  const restoreRetryFocus = document.activeElement === $('local-config-retry');
+  loading = true;
+  const request = ++generation;
+  dialog.setAttribute('aria-busy', 'true');
   $('local-config-summary').textContent = 'Loading connection…';
+  $('local-config-summary').classList.remove('load-error');
   Array.from($('local-config-form').elements).forEach(el => { el.disabled = true; });
   $('local-config-close').disabled = false;
-  dialog.showModal(); $('settings-dismiss').focus();
-  const request = ++generation;
   try {
     const r = await fetch('/api/local_provider', {cache:'no-store'});
-    if (!r.ok) throw new Error('Could not load connection. Close and try again.');
+    if (!r.ok) throw new Error('connection unavailable');
     const data = await r.json();
     if (request !== generation || !dialog.open) return;
     const local = data.local || {};
@@ -133,16 +145,29 @@ async function open(trigger = document.activeElement) {
     if (local.context_error) $('local-config-error').textContent = local.context_error;
     else if (local.error) $('local-config-error').textContent = local.error;
     Array.from($('local-config-form').elements).forEach(el => { el.disabled = false; });
+    $('local-config-retry').hidden = true;
     $('local-config-save').textContent = connected ? 'Save changes' : 'Connect';
-  } catch (error) {
-    if (request === generation && dialog.open) $('local-config-error').textContent = error.message || 'Could not load connection.';
+  } catch {
+    if (request !== generation || !dialog.open) return;
+    $('local-config-summary').textContent = 'Could not load connection';
+    $('local-config-summary').classList.add('load-error');
+    $('local-config-retry').hidden = false;
+  } finally {
+    if (request === generation) {
+      loading = false;
+      dialog.setAttribute('aria-busy', 'false');
+      $('local-config-retry').disabled = false;
+      if (restoreRetryFocus && [document.body, dialog].includes(document.activeElement)) {
+        ($('local-config-retry').hidden ? $('local-base-url') : $('local-config-retry')).focus();
+      }
+    }
   }
 }
 
 function close() {
   const dialog = $('local-config-pop');
   if (!dialog.open) return;
-  generation++; dialog.close();
+  generation++; loading = false; dialog.close();
   closeSelects();
   if (returnFocus?.isConnected && !returnFocus.closest('[inert]')) returnFocus.focus();
 }

@@ -511,8 +511,8 @@ def test_reading_position_and_back_to_latest(page):
 
 
 def test_search_and_inspection_scope_close_on_chat_switch(page):
-    trigger = page.get_by_role("button", name="Search chats", exact=True)
-    search = page.get_by_role("searchbox", name="Search chats")
+    trigger = page.get_by_role("button", name="Search chats and projects", exact=True)
+    search = page.get_by_role("searchbox", name="Search chats and projects")
     expect(search).to_be_hidden()
     before = trigger.bounding_box()
     new_chat = page.locator("#btn-new-chat").bounding_box()

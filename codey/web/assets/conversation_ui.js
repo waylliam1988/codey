@@ -12,7 +12,23 @@ function matchesSession(s) {
   const p = deps.sessionProject(s);
   return [s.title, p && p.name].filter(Boolean).join(' ').toLocaleLowerCase().includes(query());
 }
-function matchesProject(p) { return !query() || deps.getSessions().some(s => s.projectId === p.id && matchesSession(s)); }
+function matchesProject(p) {
+  return !query() || String(p.name || '').toLocaleLowerCase().includes(query())
+    || deps.getSessions().some(s => s.projectId === p.id && matchesSession(s));
+}
+function appendGroupLabel(list, text, hasMatches) {
+  const label = document.createElement('div');
+  label.className = 'group-label'; label.textContent = text;
+  label.hidden = !!query() && !hasMatches;
+  list.appendChild(label);
+}
+function updateSearch() {
+  if (!deps) return;
+  $('chat-search-clear').hidden = $('chat-search').hidden || !$('chat-search').value;
+  const empty = !!query() && !deps.getProjects().some(matchesProject) && !deps.getSessions().some(matchesSession);
+  $('search-empty').hidden = !empty;
+  $('session-list').hidden = empty;
+}
 function isFollowing() { const a = $('chat-area'); return a.scrollHeight - a.scrollTop - a.clientHeight < 120; }
 
 function captureView() {
@@ -145,17 +161,21 @@ function init(nextDeps) {
     if (narrow.matches) { document.body.classList.add('sidebar-collapsed'); $('aside').inert = true; $('show-sidebar').style.display = ''; }
   };
   collapseOnNarrow(); narrow.addEventListener('change', collapseOnNarrow);
-  const search = $('chat-search'), searchToggle = $('chat-search-toggle');
+  const search = $('chat-search'), searchToggle = $('chat-search-toggle'), searchClear = $('chat-search-clear');
   const setSearchOpen = open => {
     search.hidden = !open;
     searchToggle.hidden = open;
     searchToggle.setAttribute('aria-expanded', String(open));
+    searchClear.hidden = !open || !search.value;
   };
   searchToggle.onclick = () => { setSearchOpen(true); search.focus(); };
+  searchClear.onclick = () => {
+    search.value = ''; search.dispatchEvent(new Event('input'));
+    search.focus();
+  };
   search.addEventListener('blur', () => { if (!query()) setSearchOpen(false); });
   $('chat-search').addEventListener('input', () => {
     deps.renderSidebar();
-    $('search-empty').hidden = !query() || deps.getSessions().some(matchesSession);
   });
   $('chat-search').addEventListener('keydown', e => {
     if (e.key === 'Escape') {
@@ -196,5 +216,5 @@ function init(nextDeps) {
 }
 
 window.CodeyConversationUI = { init, renderChat, scrollChat, captureView, isFollowing, updateNotice,
-  matchesSession, matchesProject, isSearching: () => !!query(), forget, openFile, menuOpened, menusClosed };
+  matchesSession, matchesProject, appendGroupLabel, updateSearch, isSearching: () => !!query(), forget, openFile, menuOpened, menusClosed };
 })();

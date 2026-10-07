@@ -508,7 +508,7 @@ def run_submit_response(
         try:
             submit_kwargs["local_config"] = capture_local_run_config(body["local_selection"])
         except ValueError as exc:
-            return 400, {"error": str(exc)}
+            return 400, {"error": str(exc), "reason": "local_selection_invalid"}
     try:
         run_id = submit_task(
             session_id,

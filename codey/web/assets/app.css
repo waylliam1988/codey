@@ -18,14 +18,22 @@
   button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
     outline: 1px solid var(--text-dim); outline-offset: 2px;
   }
-  .sidebar-search { min-width: 0; }
+  .sidebar-search { min-width: 0; position: relative; }
   .search-toggle { width: 100%; height: 34px; }
   .chat-search {
-    display: block; width: 100%; height: 34px; padding: 5px 10px 5px 34px; min-width: 0;
+    display: block; width: 100%; height: 34px; padding: 5px 34px; min-width: 0;
     background: transparent; color: var(--text-dim); border: 0;
     border-radius: 6px; font: inherit; font-size: 12px;
   }
   .chat-search::placeholder { color: var(--muted); }
+  .chat-search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+  .search-clear {
+    position: absolute; right: 6px; top: 5px; width: 24px; height: 24px; padding: 0;
+    display: grid; place-items: center; border: 0; background: transparent;
+    color: var(--text-dim); cursor: pointer;
+  }
+  .search-clear:hover { color: var(--text); }
+  .search-clear svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 1.8; fill: none; }
   .chat-search:focus-visible, .search-toggle:focus-visible { outline: none; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 5px; }
@@ -82,6 +90,7 @@
   .session-list {
     flex: 1; overflow-y: auto; padding: 4px 6px 16px;
   }
+  #search-empty { flex: 1; }
   .group-label {
     font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px;
     color: var(--muted); padding: 14px 10px 6px;
@@ -776,6 +785,9 @@
   .settings-section-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
   .settings-body h3 { font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
   .settings-hint { font-size: 11.5px; line-height: 1.6; color: var(--muted); margin: 4px 0 12px; }
+  .settings-load-status { display: flex; align-items: baseline; gap: 10px; }
+  .settings-load-status .load-error { color: var(--err-text); }
+  .settings-load-status .link-btn { flex-shrink: 0; font-size: 11.5px; }
   .settings-field { display: grid; gap: 5px; margin-top: 14px; font-size: 12px; color: var(--text-dim); }
   .settings-optional { float: right; color: var(--muted); font-size: 11.5px; }
   .settings-dialog input, .settings-dialog select {

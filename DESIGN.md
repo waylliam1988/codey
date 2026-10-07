@@ -162,6 +162,8 @@ Uppercase, muted, no background. Never use colored section headers.
 - **Active session:** `--active` background.
 - **Secondary actions:** revealed on hover or keyboard focus; visible on devices without hover. `⋯` opens a context menu. Do not show permanent `+` / `×` icon clusters.
 - `New chat`, `Add project`, and magnifier + `Search` share a 34px row height and 1px gaps. Search opens a same-height input in place and filters chat titles and project names locally. The input has a transparent background, no visible border or focus ring, and its text aligns with the Search label. Escape clears and closes search; an empty search also closes on blur. Search temporarily expands matching groups without changing saved project expansion.
+- Project names match independently of their chats: a matching empty project remains visible with `No chats`. Search shows only groups with matches, or a single `No matches` state when nothing matches. Temporary expansion uses an expanded chevron and returns to the saved state when search closes.
+- A nonempty search shows a small SVG clear icon at the input's right edge, using `--text-dim` and `--text` on hover, with no fill, border, or background. Replace the browser's native colored clear control. Its accessible name is `Clear search`; pointer click or keyboard activation clears the query and returns focus to the open input. Empty or closed search hides the icon.
 - A monochrome gear + `Settings` row sits at the sidebar bottom, sharing the sidebar action alignment and 34px height. The topbar more menu and `Ctrl+,` open the same settings dialog when the sidebar is collapsed.
 
 Context menus (`.ctx-menu`):
@@ -220,6 +222,8 @@ ERROR · Connection refused                      Retry
 ```
 
 Structure: uppercase prefix + body + optional **text link** action (`link-btn`). No colored boxes.
+
+Submission failures use confirmed causes only: `Another chat is running · Open` navigates to the verified run owner; `Select the local model again · Choose model` opens the existing model menu in the original chat; `Codey is temporarily busy · Retry` retries the original request. Unknown causes retain `Could not send the message · Retry`. Navigation and model selection do not send automatically. Failure actions belong to the original chat and preserve newer drafts in every chat.
 
 **Run Details** (inline receipt expansion):
 
@@ -361,6 +365,7 @@ Research is also **session-level**. It lives in the composer context row, never 
 
 - Use one viewport-bounded dark dialog, about 560px wide, with a `Settings` heading, quiet close icon, and labeled connection fields. Native dialog modality keeps keyboard focus inside; Escape/backdrop dismissal returns focus to the trigger. No second right workbench drawer.
 - `Address`, `Default model`, and `API key` form the basic connection view. A saved key stays masked and is never returned to the browser. `Connect` becomes `Save changes` for an existing connection; rejected saves retain the form and show one error line.
+- Initial connection loading disables the form while leaving dismissal available. Failed loading replaces `Loading connection…` with `Could not load connection` and an adjacent gray `Retry` text action. Retry reloads inside the same dialog, prevents duplicate loads, and ignores replies from closed dialogs. Successful keyboard retry moves focus to `Address` if the user has not moved focus elsewhere. Save failures retain edits and use the existing error line; they do not offer a load Retry that could replace those edits.
 - `Advanced` defaults closed and contains optional `Display name`, `Context limit`, and `Tool calling`. Context presets live in one dark listbox menu with exact token counts and `Custom…`; a custom input appears only when selected. The limit must match the model server's loaded context, not imply that Codey enlarges it.
 - Tool calling offers `Automatic / Native / Compatibility`. Compatibility changes the request protocol; shell approval remains in force. Inputs, select triggers, and listbox options use existing tokens, 34px heights, and 6px radii; no browser-default white buttons. Pointer focus retains the quiet border; keyboard focus uses a restrained gray outline.
 
