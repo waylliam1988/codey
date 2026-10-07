@@ -18,6 +18,37 @@ def test_display_name_roundtrips_and_resets_for_another_target():
     assert not error and other.display_name == ""
 
 
+@pytest.mark.parametrize(('display_name', 'expected'), [('', 'Gemma4 12B'), ('My Gemma', 'My Gemma')])
+def test_local_provider_title_survives_offline_restart_without_metadata_requests(monkeypatch, display_name, expected):
+    from codey.app import api
+    from codey.env_names import LOCAL_OPENAI_API_KEY_ENV, LOCAL_OPENAI_BASE_URL_ENV, LOCAL_OPENAI_MODEL_ENV
+    from codey.providers.local_discovery import LocalEndpoint
+
+    for key in (LOCAL_OPENAI_API_KEY_ENV, LOCAL_OPENAI_BASE_URL_ENV, LOCAL_OPENAI_MODEL_ENV):
+        monkeypatch.delenv(key, raising=False)
+    model = 'koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M'
+    saved = LocalProviderConfig(base_url='http://127.0.0.1:5001/v1', model=model, display_name=display_name)
+    endpoint = LocalEndpoint(saved.base_url, (model,))
+    with (
+        mock.patch('codey.providers.local_config.load_local_config', return_value=saved),
+        mock.patch.object(api, 'load_local_config', return_value=saved),
+        mock.patch('codey.providers.local_discovery.probe_local_endpoint', side_effect=[endpoint, None]),
+        mock.patch('codey.providers.local_selection._metadata_json', return_value={}) as metadata,
+    ):
+        status, online = api.local_provider_response()
+        assert status == 200
+        assert online['local']['connected'] is True
+        assert online['local']['display_name'] == expected
+        metadata.reset_mock()
+        status, offline = api.local_provider_response()
+        assert status == 200
+        assert offline['local']['connected'] is False
+        assert offline['local']['model'] == model
+        assert offline['local']['display_name'] == online['local']['display_name']
+        assert offline['local']['thinking_options'] == []
+        metadata.assert_not_called()
+
+
 def test_chat_selection_is_a_frozen_snapshot_and_never_changes_saved_connection():
     from codey.providers.local_selection import capture_local_run_config
 

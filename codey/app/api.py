@@ -147,11 +147,13 @@ def _attach_local_metadata(local: dict[str, Any]) -> None:
     config = load_local_config()
     selection = select_local_target(config)
     local["saved_display_name"] = config.display_name
+    # An empty base computes the same title without probing offline metadata.
     local.update(model_metadata(
-        str(local.get("base_url") or ""), str(local.get("model") or ""),
+        str(local.get("base_url") or "") if local.get("connected") else "",
+        str(local.get("model") or ""),
         api_key=selection.api_key,
         display_name=config.display_name if selection.model == config.model and selection.base_url == config.base_url else "",
-    ) if local.get("connected") else {"display_name": config.display_name, "thinking_options": []})
+    ))
 
 
 def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:

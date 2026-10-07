@@ -276,7 +276,11 @@ function selectedKey() {
   return id === 'local' ? 'local:' + sessionSelection().model : id;
 }
 function modelTitle(model) {
-  return model === localMetadata.model ? (localMetadata.display_name || model.split('/').pop()) : model.split('/').pop();
+  if (model === localMetadata.model && localMetadata.display_name) return localMetadata.display_name;
+  // A restored chat can retain its model while offline discovery returns none.
+  const leaf = model.split('/').pop();
+  const short = leaf.match(/^([A-Za-z][\w.]*?)[-_](\d+(?:\.\d+)?[Bb])(?=[-_]|$)/);
+  return short ? `${short[1]} ${short[2].toUpperCase()}` : leaf;
 }
 function thinkingOptions() {
   const selection = sessionSelection();

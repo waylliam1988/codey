@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+from unittest import mock
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
@@ -89,6 +90,48 @@ def model_settings_route(page, *, thinking=True):
              "thinking_options": ["off", "minimal", "low", "medium", "high"] if thinking else []}
     page.route("**/api/local_provider", lambda route: route.fulfill(json={"ok": True, "local": local}))
     return local
+
+
+@pytest.mark.parametrize(('remembered', 'display_name', 'expected'), [
+    (True, '', 'Gemma4 12B'), (True, 'My Gemma', 'My Gemma'), (False, '', 'Gemma4 12B'),
+])
+def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
+    page, monkeypatch, remembered, display_name, expected,
+):
+    from codey.app import api
+    from codey.env_names import LOCAL_OPENAI_API_KEY_ENV, LOCAL_OPENAI_BASE_URL_ENV, LOCAL_OPENAI_MODEL_ENV
+    from codey.providers.local_config import LocalProviderConfig
+
+    for key in (LOCAL_OPENAI_API_KEY_ENV, LOCAL_OPENAI_BASE_URL_ENV, LOCAL_OPENAI_MODEL_ENV):
+        monkeypatch.delenv(key, raising=False)
+    model = 'koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M'
+    base_url = 'http://127.0.0.1:5001/v1'
+    selection = {'base_url': base_url, 'model': model, 'effort': 'low', 'efforts': {model: 'low'}}
+    state = {'active_id': 'a', 'sessions': [
+        {'id': 'a', 'title': 'Local chat', 'provider': 'local', 'messages': [], 'localSelection': selection},
+    ], 'projects': []}
+    saved = LocalProviderConfig(base_url=base_url, model=model, display_name=display_name) if remembered else LocalProviderConfig()
+    local = {'connected': True, 'base_url': base_url, 'model': model, 'models': [model]}
+    page.route('**/api/ui_state', lambda route: route.fulfill(json={'ok': True, 'state': state}))
+    page.route('**/api/local_provider', lambda route: route.fulfill(json=api.local_provider_response()[1]))
+    # Prevent unrelated availability refreshes from claiming the offline model is up.
+    page.route('**/api/providers', lambda route: route.fulfill(json={
+        'default': 'deepseek', 'providers': [{'id': 'local', 'label': 'Local', 'available': local['connected']}],
+    }))
+    with (
+        mock.patch.object(api, 'load_local_config', return_value=saved),
+        mock.patch.object(api, 'local_bootstrap_payload', side_effect=lambda: dict(local)),
+        mock.patch('codey.providers.local_selection._metadata_json', return_value={}),
+    ):
+        for connected in (True, False, True):
+            local.update(connected=connected, model=model if connected or remembered else '',
+                         base_url=base_url if connected or remembered else '', models=[model] if connected else [])
+            page.reload()
+            expect(page.locator('#provider-button')).to_be_enabled(timeout=15000)
+            expect(page.locator('#provider-name')).to_have_text(expected)
+            expect(page.locator('#provider-dot')).to_have_class('dot ok' if connected else 'dot ')
+            assert page.evaluate("CodeyUiState.current().sessions[0].localSelection") == selection
+            expect(page.locator('#effort-chooser')).to_be_hidden()
 
 
 def test_settings_is_quiet_modal_with_advanced_dark_controls_and_focus_return(page):
