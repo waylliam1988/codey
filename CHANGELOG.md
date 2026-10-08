@@ -2,6 +2,22 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Local save feedback without layout jumps (2026-10-08)
+
+- Show `Not saved · Retry` on the right of the existing composer context line,
+  aligned with Choose folder and Research. Retry shows `Saving…` in place;
+  routine saves stay silent, with no new row, toast or underline.
+- Keep the status until queued/coalesced edits are confirmed saved. Ignore
+  duplicate retries and preserve focus after the user moves to another control.
+- Fix narrow grid sizing and truncate long folder names so Research and Retry
+  remain visible without resizing the input frame.
+- Add 12 behavior cases in `test_ui_local_save_status.py`, with failing tests
+  before fixes. Related regressions: **181 passed, 2 subtests passed**; required
+  contracts: **679 passed**. Ruff, mypy, JS syntax and diff checks pass.
+- Final full suite: **7924 passed, 7 skipped, 1503 subtests passed in 852.41s**.
+  Documentation updated after completion; see `TEST_REPORT.md`. No version
+  change, tag or release; no real-model requests.
+
 ## Unreleased - Preserve input and reading context (2026-10-08)
 
 - Persist exact chat drafts and caret/selection through the existing local UI

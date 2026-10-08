@@ -73,9 +73,16 @@
 
   <div class="composer-wrap">
     <div class="composer">
-      <div class="composer-context" id="composer-context"></div>
+      <div class="composer-context-row">
+        <div class="composer-context" id="composer-context"></div>
+        <div class="ui-save-notice" id="ui-save-notice" role="status" hidden>
+          <span id="ui-save-message" aria-hidden="true">Not saved</span>
+          <span class="ui-save-detail" id="ui-save-detail">Could not save local changes</span>
+          <span aria-hidden="true">·</span>
+          <button type="button" class="link-btn" id="ui-save-retry">Retry</button>
+        </div>
+      </div>
       <div class="composer-notice" id="composer-notice" role="status" hidden></div>
-      <div class="composer-notice" id="ui-save-notice" role="status" hidden>Could not save local changes · <button type="button" class="link-btn" id="ui-save-retry">Retry</button></div>
       <div class="composer-notice" id="model-notice" role="status" hidden></div>
       <div class="composer-box">
         <textarea disabled id="task" placeholder="Send a message to Codey…" rows="1"></textarea>

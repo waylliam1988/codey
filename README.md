@@ -66,7 +66,9 @@ All sources off preserves drafts and history, with Send disabled.
 
 Draft text and caret/selection are saved locally with each chat and restored
 after restart. Clear messages keeps unsent input; deleting a chat removes it.
-Save failures keep your input with an explicit Retry. Scrolling up stops output
+Save failures keep your input and show `Not saved · Retry` beside the folder and
+Research controls, without moving the input. Retry shows `Saving…` in place;
+normal background saves stay silent. Scrolling up stops output
 following even near the bottom; reach the bottom or use Back to latest to resume.
 Select text in an answer and choose Quote in reply to append an editable Markdown
 quote to your draft without sending it.

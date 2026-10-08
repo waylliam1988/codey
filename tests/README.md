@@ -16,6 +16,10 @@ affected workflow. Fixture, syntax and environment failures are not red evidence
 - `test_ui_draft_persistence.py`: exact durable chat drafts, UTF-16 selection,
   real HTTP restore in a new browser context, admission races, deletion, failed
   saves, conflict Retry and exit-beacon isolation, and boot restoration gating.
+- `test_ui_local_save_status.py`: 12 cases for save feedback on the context
+  baseline, stable composer geometry at 1280/360/320px, long-folder truncation,
+  retry progress and duplicate activation, queued/coalesced edits, accessible
+  failure scope, focus ownership, quiet normal saves and narrow content width.
 - `test_ui_reading_follow.py`: upward intent near the bottom, both append paths,
   actual-bottom recovery, reading keys, horizontal wheel, geometry-only changes,
   chat restoration and scrollbar release.
@@ -28,7 +32,8 @@ affected workflow. Fixture, syntax and environment failures are not red evidence
 - `test_ui_quote_reply.py`: editable exact text/code quotation, preserved drafts,
   no implicit send, Undo/Redo, eligible selections, keyboard and chat identity.
 
-These 44 new cases and the existing UI/storage regressions run in the full suite.
+These 44 continuity cases, 12 local-save status cases and the existing UI/storage
+regressions run in the full suite.
 Native Windows-host IME and opt-in Edge/live-model checks remain separate; see
 `TEST_REPORT.md` for the actual platform and completed verification.
 

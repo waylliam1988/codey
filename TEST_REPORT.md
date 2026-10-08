@@ -1,5 +1,62 @@
 # Codey Test Report
 
+## Local save status: stable composer layout and retry feedback (2026-10-08)
+
+基线：`e593ec12d596d0dd1227bdbde461c371b7b3b200`；Windows、Python **3.12.8**。
+本节、设计手册、中英文 Changelog/README 和测试索引均在本次最终全量 pytest
+完成后更新。版本仍为 0.5.11；无 tag/release，无真实模型请求或 API token 消耗。
+
+### TDD 与确定性缺陷
+
+新增 `tests/test_ui_local_save_status.py`，共 **12 项行为用例**，名称对应本地保存
+状态的布局、重试、焦点及响应时序，不新增测试框架或源码字符串断言。
+
+- 首轮 **7 failed / 1 passed，41.20s**：其中六项有效失败锁定缺少 `Not saved`、
+  重试进度及不可重复触发的行为。一项长文件夹夹具误用 `project_id`，不算有效
+  测红；改为实际 `projectId` 后再单独运行。
+- 长名称与排队保存边界重新得到 **2 failed，9.31s**：旧界面没有名称省略；
+  第一份保存成功会隐藏状态，而较新的输入仍在等待保存响应。分别锁定后修复。
+- 窄窗口独立用例先得到 **1 failed，2.82s**：320px 视口下主区域实际仅
+  236.890625px，随着文字内容改变宽度。修正覆盖侧栏下的 body 单列及 main 的
+  可收缩列；中间回归继续捕获长名称撑开隐式网格的问题，修复后再跑定向回归。
+- 最终覆盖 1280/360/320px 文字基线、输入框几何不变、长文件夹名/Research/Retry
+  可见、完整无障碍错误范围、Saving 期间重复 Enter、失败重试、排队与 400ms
+  合并中的新编辑、当前输入保留、焦点归还与不抢焦点、正常后台保存不显示状态。
+
+保存流程继续复用现有 API、缓存、400ms 合并、revision 与冲突保护；没有新增
+保存 API、存储、定时器、兼容分支或通用提示框架。上下文操作和保存状态分别拥有
+自己的 DOM，更新 Choose folder/Research 不重建保存状态。
+
+### 最终验证
+
+以下定向回归、静态检查及契约均在最终全量之前完成，之后冻结产品代码。
+
+| 检查 | 实际结果 |
+| --- | --- |
+| 本地保存状态、草稿、工作流、旧 UI、阅读、引用、Changes、设置、恢复/搜索回归 | **181 passed、2 subtests passed，140.06s** |
+| Ruff `codey tests tools` | All checks passed |
+| mypy `codey` | **393 source files**，零问题 |
+| JS 语法 | **20 个资产 + 1 个内联脚本**通过 |
+| 新测试 Python 语法 / `git diff --check` | 通过 |
+| 必需机器契约 | **679 passed，163.99s**，零失败/跳过 |
+| 最终全量 pytest | **7924 passed、7 skipped、1503 subtests passed，852.41s**，零失败/错误 |
+| 实际界面截图 | 发布资产 + 离线夹具，宽窗口和 320px 窄窗口核对通过 |
+
+最终命令：
+
+```powershell
+python -m pytest -q -o faulthandler_timeout=120 --junitxml=.e2e-artifacts/local-save-status-full.xml
+```
+
+7 项跳过为四项 POSIX 文件位/权限/进程组/绝对路径、两项 Windows 无 O_NOFOLLOW，
+以及未启用的真实 Edge E2E；普通 Chromium 行为用例实际执行。本次没有在 Python
+3.11/3.13、原生 Linux 或原生 Windows 宿主/真实中文输入法中重跑验证。
+
+忽略目录中保留 `local-save-status-red.xml`、`local-save-status-boundaries-red.xml`、
+`local-save-status-width-red.xml`、`local-save-status-final-focused.xml` 与最终
+`local-save-status-full.xml`。中间 green/regression 文件保留其当时的未完成结果，
+不作为最终通过证据；本节仅以上表最终结果为准。
+
 ## UI continuity: drafts, reading, settings, Changes and quotation (2026-10-08)
 
 基线：`adde6ce111426ddd0c06686fe4c5cb466e945174`；Windows、Python **3.12.8**。

@@ -276,8 +276,19 @@ let saveInFlight = false;
 let saveQueued = false;
 let serverRevision = null;
 let syncConflict = false;
-function saveNotice(failed) {
-  document.getElementById('ui-save-notice').hidden = !failed;
+function saveNotice(status) {
+  const notice = document.getElementById('ui-save-notice');
+  const retry = document.getElementById('ui-save-retry');
+  const saving = status === 'saving';
+  // Retain keyboard focus while Retry is unavailable; return it only if the
+  // disappearing status still owns focus, never after the user has moved on.
+  if (status === 'saved' && notice.contains(document.activeElement)) {
+    document.getElementById('task').focus({ preventScroll: true });
+  }
+  notice.hidden = status === 'saved';
+  document.getElementById('ui-save-message').textContent = saving ? 'Saving…' : 'Not saved';
+  document.getElementById('ui-save-detail').textContent = saving ? 'Saving local changes' : 'Could not save local changes';
+  retry.setAttribute('aria-disabled', String(saving));
 }
 
 function saveUiStateToServer() {
@@ -288,6 +299,8 @@ function saveUiStateToServer() {
   }
   saveInFlight = true;
   saveQueued = false;
+  // Routine saves stay silent. Only an already-visible failure gets progress.
+  if (!document.getElementById('ui-save-notice').hidden) saveNotice('saving');
   const base = serverRevision === null ? getRevision() : serverRevision;
   fetch('/api/ui_state', {
     method: 'POST',
@@ -302,7 +315,7 @@ function saveUiStateToServer() {
         setRevision(next);
       }
       syncConflict = false;
-      saveNotice(false);
+      if (!saveQueued && uiStatePersistTimer === null) saveNotice('saved');
       return;
     }
     if (r.status === 409) {
@@ -310,13 +323,13 @@ function saveUiStateToServer() {
       if (current) serverRevision = current;
       if (!syncConflict) {
         syncConflict = true;
-        saveNotice(true);
+        saveNotice('failed');
       }
       return;
     }
     // Other failures: keep local content, do not pretend success.
-    saveNotice(true);
-  }).catch(() => saveNotice(true)).finally(() => {
+    saveNotice('failed');
+  }).catch(() => saveNotice('failed')).finally(() => {
     saveInFlight = false;
     if (saveQueued && !syncConflict) {
       saveQueued = false;
@@ -383,7 +396,11 @@ function setDrawerOpen(id, open) {
 }
 
 function bindUiStatePagehide() {
-  document.getElementById('ui-save-retry').onclick = () => { syncConflict = false; flushUiState(); };
+  document.getElementById('ui-save-retry').onclick = () => {
+    if (saveInFlight) return;
+    syncConflict = false;
+    flushUiState();
+  };
   window.addEventListener('pagehide', () => {
     window.CodeyComposer.captureDraft();
     if (uiStatePersistTimer !== null) {

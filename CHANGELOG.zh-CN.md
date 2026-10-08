@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 本地保存反馈不挪动输入区（2026-10-08）
+
+- 保存失败在现有上下文行右侧显示 `Not saved · Retry`，与 Choose folder、
+  Research 对齐；重试原位显示 `Saving…`，正常保存保持安静，不新增提示行、
+  toast 或下划线。
+- 排队或合并等待的新编辑确认保存后才隐藏状态。阻止重复 Retry；响应不抢走
+  用户已移开的焦点，状态消失时仅归还仍属于它的键盘焦点。
+- 修复窄窗口主区域的网格宽度，长文件夹名省略，Research 和 Retry 保持可见，
+  不再随文字内容撑大输入框。
+- `test_ui_local_save_status.py` 新增 12 个行为用例，先测红再修复。相关回归
+  **181 passed、2 subtests passed**；必需契约 **679 passed**。Ruff、mypy、
+  JS 语法及 diff 检查通过。
+- 最终全量：**7924 passed、7 skipped、1503 subtests passed，852.41 秒**。
+  文档在全量完成后更新，测红与验证范围见 `TEST_REPORT.md`。不改版本、不创建
+  tag 或 release，无真实模型请求。
+
 ## 未发布 - 保护输入与阅读现场（2026-10-08）
 
 - 草稿原文、光标和选区随聊天使用现有本地 UI 状态持久保存。发送确认只消费匹配

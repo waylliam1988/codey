@@ -214,6 +214,7 @@
   /* ============================== main ============================== */
   main {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 44px minmax(0, 1fr) auto auto;
     min-height: 0; min-width: 0; overflow: hidden;
   }
@@ -696,11 +697,15 @@
   .composer {
     max-width: 760px; margin: 0 auto;
   }
-  .composer-context {
-    color: var(--muted);
+  .composer-context-row {
+    display: flex; align-items: baseline; gap: 12px;
     font-size: 11.5px;
     padding: 0 4px 6px;
-    display: flex; align-items: center; gap: 6px;
+  }
+  .composer-context {
+    color: var(--muted); font: inherit;
+    display: flex; align-items: baseline; gap: 6px;
+    flex: 1; min-width: 0;
   }
   .ctx-token {
     border: 0;
@@ -724,6 +729,18 @@
     outline-offset: 2px;
   }
   .composer-context .ctx-sep { color: var(--faint); }
+  .ctx-folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctx-research, .ctx-sep { flex-shrink: 0; }
+  .ui-save-notice {
+    display: flex; align-items: baseline; gap: 4px; flex-shrink: 0;
+    color: var(--text-dim); padding: 1px 4px; white-space: nowrap;
+  }
+  .ui-save-notice .link-btn { font: inherit; }
+  .ui-save-notice .link-btn[aria-disabled="true"] { color: var(--faint); cursor: default; }
+  .ui-save-detail {
+    position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
   .composer-box {
     background: var(--bg-2);
     border: 1px solid var(--border);
@@ -1352,6 +1369,7 @@
   }
 
   @media (max-width: 720px) {
+    body { grid-template-columns: minmax(0, 1fr); }
     aside { position: absolute; z-index: 10; height: 100%; }
     .sidebar-resize { display: none; }
     body.sidebar-collapsed aside { display: none; }
