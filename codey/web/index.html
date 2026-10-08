@@ -75,9 +75,10 @@
     <div class="composer">
       <div class="composer-context" id="composer-context"></div>
       <div class="composer-notice" id="composer-notice" role="status" hidden></div>
+      <div class="composer-notice" id="ui-save-notice" role="status" hidden>Could not save local changes · <button type="button" class="link-btn" id="ui-save-retry">Retry</button></div>
       <div class="composer-notice" id="model-notice" role="status" hidden></div>
       <div class="composer-box">
-        <textarea id="task" placeholder="Send a message to Codey…" rows="1"></textarea>
+        <textarea disabled id="task" placeholder="Send a message to Codey…" rows="1"></textarea>
       <div class="composer-bar">
         <div class="provider-chooser">
           <button class="provider-button" id="provider-button" aria-label="Choose model" disabled>
@@ -188,6 +189,7 @@
 <div class="ctx-menu" id="local-context-menu"></div>
 <div class="ctx-menu selection-menu" id="selection-menu" role="menu" aria-label="Selection">
   <button type="button" role="menuitem" id="selection-copy">Copy</button>
+  <button type="button" role="menuitem" id="selection-quote" hidden>Quote in reply</button>
   <div class="selection-copy-status" id="selection-copy-status" role="status" hidden></div>
 </div>
 
@@ -569,8 +571,8 @@ function armDanger(btn, run) {
 }
 
 // ============================ chat rendering ============================
-function renderChat(forceBottom = false) {
-  window.CodeyConversationUI.renderChat(forceBottom);
+function renderChat() {
+  window.CodeyConversationUI.renderChat();
 }
 
 function statusRow(prefix, text, opts = {}) {
@@ -615,8 +617,8 @@ const ensureSessionIndexes = window.CodeyUiState.ensureSessionIndexes;
 
 function appendMessageNode(chat, m) { window.CodeyMessages.append(chat, m); }
 
-function scrollChat(force = false) {
-  window.CodeyConversationUI.scrollChat(force);
+function scrollChat() {
+  window.CodeyConversationUI.scrollChat();
 }
 
 // ============================ session ops ============================
@@ -638,7 +640,7 @@ function newSession(projectId = null) {
   if (previous?.connection_id === provider) {
     s.modelSelection = {...previous, efforts:{...(previous.efforts || {})}};
   }
-  sessions.unshift(s); activeId = s.id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat(true);
+  sessions.unshift(s); activeId = s.id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();
   fetch('/api/new_chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -780,22 +782,19 @@ async function pickProject() {
   else newSession(p.id);
 }
 
-async function attachCurrentChatToPickedProject({ sendDraft = false } = {}) {
+async function attachCurrentChatToPickedProject() {
   if (runningSessionId) return;
   const sid = activeId;
   const s = sessions.find(x => x.id === sid);
   if (!s || sessionProject(s)) return;
-  const draft = $('task').value.trim();
-  const provider = s.provider || liveDefaultProvider();
   const data = await pickProjectPath('new', currentProjectPath());
   if (!data) return;
   const p = ensureProject(data.path, data.name);
   if (!attachSessionToProject(p.id, sid)) return;
-  if (!sendDraft || !draft) return;
-  await sendTaskFromSession(sid, draft, provider, () => clearDraftIfUnchanged(sid, draft));
 }
 
 function pushMsgToSession(sid, m) {
+  if (sid === activeId) window.CodeyConversationUI.captureView();
   const s = sessions.find(x => x.id === sid);
   if (!s) return false;
   const wasEmpty = s.messages.length === 0;
@@ -804,15 +803,15 @@ function pushMsgToSession(sid, m) {
     s.title = m.text.slice(0, 28) + (m.text.length > 28 ? '…' : '');
     persistActiveNow();
     renderSidebar();
-    if (sid === activeId) renderChat(true);
+    if (sid === activeId) renderChat();
     return true;
   }
   persistActiveNow();
   if (sid === activeId) {
-    if (wasEmpty) renderChat(true);
+    if (wasEmpty) renderChat();
     else {
       appendMessageNode($('chat'), m);
-      scrollChat(true);
+      scrollChat();
     }
   }
   return true;
@@ -888,8 +887,6 @@ document.addEventListener('click', (e) => {
 let runningSessionId = null;
 let runningRunId = null;
 let turnCounter = 0;
-let activeChangesProject = '';
-let lastChangesData = null;
 
 function setStatus(text, kind) {
   const el = $('status');
@@ -921,8 +918,7 @@ function handleServerEvent(data) {
     runningRunId = null;
     runningSessionId = null;
     setStatus('', 'ok');
-    $('provider-button').disabled = false;
-    updateSend();
+      updateSend();
     updateComposerContext();
     syncResearchUseProjectButton();
   }
@@ -1260,6 +1256,7 @@ function addToSession(sid, m) {
 }
 
 function replaceSessionMessage(sid, predicate, message) {
+  if (sid === activeId) window.CodeyConversationUI.captureView();
   const s = sessions.find(x => x.id === sid);
   if (!s) return false;
   ensureSessionIndexes(s);
@@ -1343,9 +1340,8 @@ async function fetchChanges(project) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ project }),
   });
-  let data = {};
-  try { data = await r.json(); } catch {}
-  if (!r.ok) data.ok = false;
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || 'Could not load changes');
   return data;
 }
 
@@ -1376,10 +1372,6 @@ async function maybeAddChangesSummary(sid, eventKey = '', runId = '') {
 // keep existing call sites and event handlers stable.
 function openChangesDrawer(project) {
   return window.CodeyChangesDrawer.open(project);
-}
-
-function loadChangesDrawer(project) {
-  return window.CodeyChangesDrawer.load(project);
 }
 
 function closeChangesDrawer() {
@@ -1482,15 +1474,7 @@ function setActiveProvider(id) {
 }
 // Provider menu handlers are bound by window.CodeyProviderUI.init().
 
-function clearDraftIfUnchanged(sessionId, draft) {
-  return window.CodeyComposer.clearDraftIfUnchanged(sessionId, draft);
-}
-
-async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null) {
-  return window.CodeyComposer.sendTaskFromSession(sessionId, task, providerId, onSendStarted);
-}
-
-async function continueTask(sessionId) {
+function continueTask(sessionId) {
   return window.CodeyComposer.continueTask(sessionId);
 }
 $('changes-close').onclick = closeChangesDrawer;
@@ -1507,29 +1491,7 @@ function syncResearchUseProjectButton() {
   btn.disabled = unusable;
   btn.title = busy ? 'Busy' : (!s ? 'No chat' : (sessionProject(s) ? 'Already in a project' : ''));
 }
-function syncChangesRefreshButton() {
-  const btn = $('changes-refresh');
-  if (!btn) return;
-  btn.disabled = !activeChangesProject;
-  btn.title = activeChangesProject ? '' : 'No project loaded';
-}
-$('research-use-project').onclick = () => attachCurrentChatToPickedProject({ sendDraft: false });
-$('changes-refresh').onclick = () => {
-  if (activeChangesProject) loadChangesDrawer(activeChangesProject);
-};
-$('changes-restore').onclick = () => window.CodeyChangesDrawer.restore();
-$('changes-copy').onclick = async () => {
-  const diff = lastChangesData && lastChangesData.diff ? lastChangesData.diff : '';
-  if (!diff) return;
-  try {
-    await navigator.clipboard.writeText(diff);
-    $('changes-copy').textContent = 'Copied';
-    setTimeout(() => { $('changes-copy').textContent = 'Copy diff'; }, 1200);
-  } catch {
-    $('changes-copy').textContent = 'Failed';
-    setTimeout(() => { $('changes-copy').textContent = 'Copy diff'; }, 1200);
-  }
-};
+$('research-use-project').onclick = () => attachCurrentChatToPickedProject();
 $('btn-new-chat').onclick = () => {
   const p = activeProject();
   newSession(p ? p.id : null);
@@ -1599,8 +1561,6 @@ async function boot() {
     fetchChanges,
     restoreChanges,
     escapeHtml,
-    setActiveProject: value => { activeChangesProject = value; syncChangesRefreshButton(); },
-    setLastData: value => { lastChangesData = value; },
     closeOtherDrawers,
   });
   window.CodeyLocalContextDrawer.init({
@@ -1649,7 +1609,7 @@ async function boot() {
     sessionProjectPath,
     currentIntentForSession,
     currentProviderId,
-    persistActiveNow,
+    persistActive, persistActiveNow,
     updateComposerContext,
     renderChat,
     pushMsgToSession,
@@ -1673,13 +1633,13 @@ window.CodeyConversationUI.init({ activeSession, activeProject, getSessions: () 
   resizeTask();
   updateSend();
   syncProviderUI(currentProviderId());
-  syncChangesRefreshButton();
   syncResearchUseProjectButton();
   refreshProviderStatus();
-  $('provider-button').disabled = false;
   syncResearchUI();
   setStatus('', 'ok');
   await restoreUiStateFromServer();
+  $('task').disabled = false;
+  updateSend();
   syncResearchUseProjectButton();
   connectEvents();
 }

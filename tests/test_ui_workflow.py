@@ -591,6 +591,7 @@ def test_running_owner_and_approval_are_discoverable_without_enter_approving(pag
 def test_reading_position_and_back_to_latest(page):
     page.evaluate("""() => {
         for (let i=0; i<40; i++) addToSession('a',{type:'asst',text:'Reading paragraph '+i});
+        document.getElementById('chat-area').dispatchEvent(new WheelEvent('wheel',{deltaY:-200}));
         document.getElementById('chat-area').scrollTop = 200;
         document.getElementById('chat-area').dispatchEvent(new Event('scroll'));
         switchSession('b'); switchSession('a');

@@ -171,6 +171,7 @@ function refreshActions() {
   }
 }
 function addToSession(sid, m) {
+  if (sid === deps.getActiveId()) window.CodeyConversationUI.captureView();
   const s = session(sid);
   if (!s) return false;
   window.CodeyUiState.ensureSessionIndexes(s);
@@ -182,14 +183,13 @@ function addToSession(sid, m) {
   window.CodeyUiState.trackSessionMessage(s, m);
   deps.persistActive();
   if (sid === deps.getActiveId()) {
-    const follow = window.CodeyConversationUI.isFollowing();
     if (s.messages.length === 1) deps.renderChat();
     else {
       const chat = deps.$('chat'), before = new Set(chat.children);
       deps.appendMessageNode(chat, m);
       const anchor = match && statusNode(match.request.id);
       if (anchor) for (const node of Array.from(chat.children)) if (!before.has(node) && node !== anchor) chat.insertBefore(node, anchor);
-      deps.scrollChat(follow);
+      deps.scrollChat();
     }
   }
   refreshActions();

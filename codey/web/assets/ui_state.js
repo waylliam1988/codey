@@ -71,7 +71,7 @@ function setRecommended(id) {
 }
 function defaultSession(projectId = null, provider = null) {
   const resolved = provider || RECOMMENDED_PROVIDER || DEFAULT_PROVIDER;
-  return hydrateSessionIndexes({ id: uid(), title: 'New chat', messages: [], terminalRuns: [], researchRuns: [], createdAt: Date.now(), projectId, provider: resolved, research: false });
+  return hydrateSessionIndexes({ id: uid(), title: 'New chat', draft: normalizeDraft(), messages: [], terminalRuns: [], researchRuns: [], createdAt: Date.now(), projectId, provider: resolved, research: false });
 }
 function pathName(path) {
   const trimmed = (path || '').replace(/[\\\/]+$/, '');
@@ -153,10 +153,19 @@ function untrackSessionMessages(s, removed) {
   hydrateSessionIndexes(s);
 }
 
+function normalizeDraft(value) {
+  const draft = value && typeof value === 'object' ? value : {};
+  const text = typeof draft.text === 'string' ? draft.text : '';
+  const integer = value => Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  const start = Math.min(text.length, integer(draft.start));
+  return {text, start, end:Math.max(start, Math.min(text.length, integer(draft.end))),
+    direction:['none','forward','backward'].includes(draft.direction) ? draft.direction : 'none', revision:integer(draft.revision)};
+}
 function normalizeSessions(value) {
   return (Array.isArray(value) ? value : []).map(raw => {
     const s = {
       id: raw.id || uid(),
+      draft: normalizeDraft(raw.draft),
       title: raw.title || 'New chat',
       ...(raw.titleRenamed === true ? {titleRenamed:true} : {}),
       messages: Array.isArray(raw.messages) ? raw.messages : [],
@@ -257,6 +266,7 @@ function hasMeaningfulUiState(state) {
   if (Array.isArray(state.projects) && state.projects.length) return true;
   if (!Array.isArray(state.sessions)) return false;
   return state.sessions.some(s =>
+    (s.draft && typeof s.draft.text === 'string' && s.draft.text.length) ||
     (Array.isArray(s.messages) && s.messages.length) ||
     (Array.isArray(s.terminalRuns) && s.terminalRuns.length) ||
     (s.title && s.title !== 'New chat')
@@ -266,8 +276,12 @@ let saveInFlight = false;
 let saveQueued = false;
 let serverRevision = null;
 let syncConflict = false;
+function saveNotice(failed) {
+  document.getElementById('ui-save-notice').hidden = !failed;
+}
 
 function saveUiStateToServer() {
+  if (syncConflict) return;
   if (saveInFlight) {
     saveQueued = true;
     return;
@@ -280,8 +294,7 @@ function saveUiStateToServer() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ state: currentUiState(), base_revision: base }),
   }).then(async (r) => {
-    let data = {};
-    try { data = await r.json(); } catch {}
+    const data = await r.json();
     if (r.ok) {
       const next = Number((data && data.revision) || 0) || 0;
       if (next) {
@@ -289,6 +302,7 @@ function saveUiStateToServer() {
         setRevision(next);
       }
       syncConflict = false;
+      saveNotice(false);
       return;
     }
     if (r.status === 409) {
@@ -296,14 +310,13 @@ function saveUiStateToServer() {
       if (current) serverRevision = current;
       if (!syncConflict) {
         syncConflict = true;
-        try {
-          if (deps.setStatus) deps.setStatus('Sync conflict — reload to see latest', 'warn');
-        } catch {}
+        saveNotice(true);
       }
       return;
     }
     // Other failures: keep local content, do not pretend success.
-  }).catch(() => {}).finally(() => {
+    saveNotice(true);
+  }).catch(() => saveNotice(true)).finally(() => {
     saveInFlight = false;
     if (saveQueued && !syncConflict) {
       saveQueued = false;
@@ -353,28 +366,32 @@ function setDrawerOpen(id, open) {
   // wrappers keep their names; they delegate here.
   const el = document.getElementById(id);
   if (!el) return;
-  if (open && !el.classList.contains('open')) {
+  const opening = open && !el.classList.contains('open');
+  if (opening) {
     el._returnFocus = document.activeElement;
     el.inert = false;
   }
   el.classList.toggle('open', !!open);
   el.setAttribute('aria-hidden', open ? 'false' : 'true');
   el.inert = !open;
-  if (open) {
+  if (opening) {
     const close = el.querySelector('[id$="-close"]');
     if (close) close.focus({ preventScroll: true });
-  } else if (el.contains(document.activeElement) && el._returnFocus && el._returnFocus.isConnected) {
+  } else if (!open && el.contains(document.activeElement) && el._returnFocus && el._returnFocus.isConnected) {
     el._returnFocus.focus({ preventScroll: true });
   }
 }
 
 function bindUiStatePagehide() {
+  document.getElementById('ui-save-retry').onclick = () => { syncConflict = false; flushUiState(); };
   window.addEventListener('pagehide', () => {
+    window.CodeyComposer.captureDraft();
     if (uiStatePersistTimer !== null) {
       clearTimeout(uiStatePersistTimer);
       uiStatePersistTimer = null;
     }
     cacheUiState();
+    if (syncConflict) return;
     const base = serverRevision === null ? getRevision() : serverRevision;
     const payload = JSON.stringify({ state: currentUiState(), base_revision: base });
     try {

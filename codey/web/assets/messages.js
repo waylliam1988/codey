@@ -65,7 +65,7 @@ function appendContent(chat, m) {
   } else if (m.type === 'research_done') {
     const actions = window.CodeyRunDetails.actionsForMessage(m, [
       { label: 'Open', onclick: () => window.CodeyResearchDrawer.open(m.sessionId || activeId) },
-      { label: 'Use in Project', onclick: () => attachCurrentChatToPickedProject({ sendDraft: false }) },
+      { label: 'Use in Project', onclick: () => attachCurrentChatToPickedProject() },
     ]);
     chat.appendChild(statusRow('Research', m.text || 'Research saved', {
       kind: 'done',

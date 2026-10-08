@@ -8,6 +8,13 @@ source's master toggle is disabled; checking a model or Select all explicitly
 enables it. Clear and removing the last selected model turn it off immediately.
 In-use models cannot be cleared. Changes remain staged until Save changes.
 
+Save changes is disabled until enablement or selected model-ID sets differ from
+the loaded baseline; reverting those values disables it again. Names, ordering,
+search and expanded groups do not count as preference edits. Catalog refresh
+updates only that source's model rows while keeping staged selections, search,
+disclosures and focus. Missing selected IDs remain in the subset, new models
+remain unchecked, and a removed focused option returns focus to its source row.
+
 `model-preferences.json` contains a revisioned preference snapshot and separate
 non-secret catalog facts. A catalog observation never changes consent or its
 revision. Saves use the file lease and an atomic replacement; stale revisions
@@ -35,6 +42,11 @@ The zero-build frontend has two small modules:
 Connection fields stay inside Local's `Connection` disclosure. `Save connection`
 is an explicit connection operation, separate from model preference Save.
 Refresh models after editing the connection to select its current models.
+Save connection separately tracks its own fields: unchanged connected forms
+cannot save, edits enable Save, and reverting disables it. An unconnected form
+with an address can still Connect. A blank key keeps the stored key. Collapsing
+Connection does not reload over staged fields; saving either scope leaves the
+other scope unsaved. Late responses cannot modify a newly opened dialog.
 Model names come from connector metadata, user display names or actual IDs.
 Display names never become request IDs. A selected model's display name persists
 with the chat so a removed integration remains readable and unavailable.
@@ -72,11 +84,12 @@ delivery and package inclusion retain separate integration coverage. Scripted
 Research sources use scoped DNS answers and fresh caches while executing the
 real URL policy, so offline verification does not depend on public DNS.
 
-Final Windows/Python 3.12 verification: **7866 passed, 7 skipped, 1503 subtests**;
+Latest Windows/Python 3.12 verification: **7912 passed, 7 skipped, 1503 subtests**;
 required machine contracts **679 passed**. See [the test report](../TEST_REPORT.md)
-for TDD, the first full-run failures, historical replay and platform limits.
+for TDD, the interrupted first continuity run, historical replay and platform limits.
 
 Primary tests: `tests/test_model_preferences.py`,
 `tests/test_ui_model_management.py`, `tests/test_offline_models_demo.py`,
+`tests/test_ui_settings_save_scopes_and_refresh.py`,
 `tests/test_optional_zen_removal_preserves_local_api.py`. The visual baseline is
 `DESIGN.md`.

@@ -1,5 +1,94 @@
 # Codey Test Report
 
+## UI continuity: drafts, reading, settings, Changes and quotation (2026-10-08)
+
+基线：`adde6ce111426ddd0c06686fe4c5cb466e945174`；Windows、Python **3.12.8**。
+按草稿持久化 → 阅读跟随 → 设置连续性 → Changes 刷新 → 引用追问实施。
+本节及相关设计、Changelog、使用说明均在最终全量 pytest 完成后更新。
+版本保持 0.5.11；没有创建 tag 或 release，没有运行真实模型推理矩阵。
+
+### TDD 证据与测试命名
+
+| 行为文件 | 首轮有效红测 | 最终覆盖 |
+| --- | --- | --- |
+| `test_ui_draft_persistence.py` | 7 failed，23.81s | 14 项：原文/UTF-16 反向选区、聊天隔离、真实 HTTP 存储的新 context 恢复、发送确认竞争、删除/清历史、失败/冲突/Retry、启动禁用、退出保护 |
+| `test_ui_reading_follow.py` | 6 failed / 1 passed，10.47s | 9 项：两条追加路径、40px 主动上滚、大块输出、按键、水平滚动、几何变化、聊天切换、滚动条释放 |
+| `test_ui_settings_save_scopes_and_refresh.py` | 3 failed，24.25s | 4 项：语义修改/改回、目录刷新保留现场、连接与偏好独立、删除聚焦选项后的焦点 |
+| `test_ui_changes_refresh.py` | 7 failed，47.36s | 9 项：挂起刷新、四类失败、复制旧结果/禁用 Restore、项目切换、恢复后刷新失败、同项目焦点、前文件增长后的阅读锚点 |
+| `test_ui_quote_reply.py` | 2 项因缺少 Quote 动作而失败 | 8 项：文字/代码准确追加、不发送、撤销/重做、非回答选区、键盘、聊天身份、无位移滚动通知 |
+
+引用首轮共 **3 failed / 4 passed，99.83s**；其中 Thinking 夹具缺少 runId 的一项
+失败不算有效红测，修正夹具后再验证真实行为。一次补漏回归命令引用不存在的
+`test_ui_state_sync_contract.py`，没有执行任何测试；修正为实际存储测试文件后
+才记录绿测。环境、夹具、路径错误均未冒充红 → 绿证据。
+
+边界缺陷另行先测红再修复：空光标方向造成虚假修改（1 failed）；同项目重新打开
+抢焦点、前文件增长挪动可见 diff 行（2 failed）；无阅读意图的位移关闭跟随
+（1 failed）；延迟的无位移 scroll 通知关闭选区菜单（1 failed）；版本冲突后
+自动覆盖及非法 JSON 被当作保存成功（2 failed）；初始恢复完成前可发送缓存草稿
+（1 failed）；滚动条底部释放和刷新移除聚焦模型（2 failed）。
+
+首次全量运行至约 **58%** 时，最终复核确认 pagehide 的 sendBeacon 绕过了已有
+冲突暂停：主动中止该运行，新增
+`test_pagehide_after_conflict_caches_draft_without_beacon_overwrite` 先得到
+**1 failed，2.63s**，明确捕获不应发生的 `/api/ui_state` beacon。修复为先保留
+本地缓存、再阻止冲突状态下的退出写入。补漏后重新完成定向回归、静态检查和
+机器契约，再冻结代码运行下表的最终全量。主动中止不算测试失败，也不计为全量通过。
+
+### 实现归属与清理
+
+- `session.draft` 是草稿唯一状态；前后端验证原文、UTF-16 选区和 revision，
+  复用 `/api/ui_state`、400ms 合并、原子写入和版本检查。只消费已接纳且仍匹配的
+  提交快照。Clear messages 保留草稿；删除聊天清除草稿且迟到确认不能复活它。
+- 阅读跟随使用显式意图、实际底部和阅读锚点；追加、替换、异步分块、过程展开和
+  聊天切换服从同一状态，不以距离底部 120px 推断意图。
+- 模型偏好只比较来源开关和模型 ID 集合；连接字段独立比较与保存。目录按 ID
+  更新对应来源，保留暂存、搜索、展开和焦点，不自动选择新模型。
+- Changes 的项目、数据和操作状态归抽屉模块。保留旧结果并说明新鲜度，复制与
+  当前显示一致；旧结果不能 Restore。写入仍使用后端原有锁和哈希检查。
+- 引用只追加选中的当前回答文字，使用一次浏览器编辑事务并验证 Undo/Redo，
+  不发送、不附加隐藏上下文。旧聊天身份和失效节点不能插入当前草稿。
+
+删除独立草稿 Map/forgetDraft、未使用的选目录自动发送分支及转发函数、普通更新
+中的强制滚动参数、120px 判断、模型刷新整页重建路径、index 的 Changes 镜像
+状态/setter/按钮接线及没有生产消费者的导出。三项锁定旧实现字符串的测试由
+实际浏览器行为覆盖替代；旧阅读/加载测试改为真实意图与真实就绪条件，保留其
+内容、身份、焦点、选区和安全断言。未新增草稿 API、存储、迁移器或兼容框架。
+
+### 最终验证
+
+| 检查 | 实际结果 |
+| --- | --- |
+| 五批新增行为 + UI 状态存储 | **59 passed，58.82s**（44 项新增行为、15 项存储回归） |
+| 提交前合并 UI 回归 | **279 passed、2 subtests passed，265.36s**；之后的 beacon 补漏由上一行和最终全量覆盖 |
+| Ruff `codey tests tools` | All checks passed |
+| mypy `codey` | **393 source files**，零问题 |
+| Python 编译 / JavaScript 语法 | 通过；20 个资产及 1 个内联脚本，补漏后重查唯一改动的 ui_state.js |
+| `git diff --check` | 通过 |
+| 必跑机器契约（补漏后） | **679 passed，153.54s**，零失败/跳过 |
+| 最终全量 pytest | **7912 passed、7 skipped、1503 subtests passed，857.83s** |
+
+最终命令：
+
+```powershell
+python -m pytest -q -o faulthandler_timeout=120 --junitxml=.e2e-artifacts/ui-continuity-full.xml
+```
+
+最终全量零错误/失败。7 项跳过为四项 POSIX 文件位/权限/进程组/绝对路径、两项
+Windows 无 O_NOFOLLOW、一项未启用的真实 Edge E2E。普通 Chromium UI 工作流
+及本轮新增行为测试实际执行。保存恢复包含新浏览器 context + 真实 HTTP 存储，
+不是仅靠 localStorage 得到假绿。模型与故障使用本地/脚本夹具，无真实模型调用
+或 API token 消耗。
+
+本机未验证 Python 3.11/3.13、原生 Linux、原生 Windows 宿主中的真实中文输入法；
+中文文本、UTF-16 选区、撤销/重做与焦点已由 Chromium 自动化验证，但不能替代
+上述平台/输入法验收。真实模型发布矩阵未运行，本次不发布。
+
+最终 JUnit 产物位于忽略目录 `.e2e-artifacts/ui-continuity-full.xml`；最终定向产物
+为 `ui-continuity-final-focused.xml`，合并 UI 回归为 `ui-continuity-pre-full.xml`。
+早期 `ui-continuity-regression.xml` 的旧源码断言/夹具同步失败保留为诊断历史，
+不作为最终绿测。下方历史报告维持其当时的结果。
+
 ## Text actions without underlines (2026-10-08)
 
 基线：`502d9c12`；Windows、Python **3.12.8**。生产修改只有共用 `.link-btn` 的

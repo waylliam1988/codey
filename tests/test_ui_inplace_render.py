@@ -210,7 +210,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     const snapshot = rows => ({active_id:sid, projects:[], sessions:[{
                         id:sid, title:'History', provider:'local', messages:rows, terminalRuns:[]
                     }]});
-                    window.CodeyUiState.apply(snapshot(messages)); window.renderChat(true);
+                    window.CodeyUiState.apply(snapshot(messages)); window.renderChat();
                     const chat = document.getElementById('chat');
                     const first = chat.querySelector('.process-group');
                     const historical = !first.open && first.querySelector('summary').textContent.startsWith('Worked');
@@ -376,7 +376,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     });
 
                     // Initial chat rendering
-                    window.renderChat(true);
+                    window.renderChat();
 
                     const chatEl = document.getElementById('chat');
                     const chatArea = document.getElementById('chat-area');
@@ -405,7 +405,9 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     const maxScroll = chatArea.scrollHeight - chatArea.clientHeight;
 
                     // 2. Simulate user reading history away from the bottom (e.g. top)
+                    chatArea.dispatchEvent(new WheelEvent('wheel', {deltaY:-80}));
                     chatArea.scrollTop = 0;
+                    window.CodeyConversationUI.captureView();
                     const distanceToBottomBefore = maxScroll - chatArea.scrollTop;
 
                     // 3. Trigger final tool message via replaceSessionMessage
@@ -440,15 +442,9 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     // When away from bottom (scrollTop = 0, distance > 120px), replace does NOT force jump to bottom
                     const scrollAwayPreserved = (chatArea.scrollTop === 0);
 
-                    // Near bottom follow: when within 120px of bottom, scrollChat() follows to bottom
-                    chatArea.scrollTop = maxScroll - 50; // 50px < 120px
-                    window.scrollChat(false);
-                    const nearBottomFollowed = (chatArea.scrollTop >= maxScroll - 1);
-
-                    // Forced follow: scrollChat(true) always forces to bottom
-                    chatArea.scrollTop = 0;
-                    window.scrollChat(true);
-                    const forcedFollowSucceeded = (chatArea.scrollTop >= maxScroll - 1);
+                    // Following resumes only through the explicit latest action.
+                    document.getElementById('back-to-latest').click();
+                    const explicitFollowSucceeded = (chatArea.scrollTop >= maxScroll - 1);
 
                     return {
                         replaced,
@@ -461,8 +457,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         toolHasFinalResult,
                         toolPendingRemoved,
                         scrollAwayPreserved,
-                        nearBottomFollowed,
-                        forcedFollowSucceeded
+                        explicitFollowSucceeded
                     };
                 }""")
             finally:
@@ -478,8 +473,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             self.assertTrue(result["toolHasFinalResult"], "Final tool node must display final result text")
             self.assertTrue(result["toolPendingRemoved"], "Pending styling must be removed on final tool node")
             self.assertTrue(result["scrollAwayPreserved"], "Scroll position must not be forced to bottom when reading history")
-            self.assertTrue(result["nearBottomFollowed"], "Scroll must follow to bottom when user is near bottom (<120px)")
-            self.assertTrue(result["forcedFollowSucceeded"], "Forced scroll must always reach the bottom")
+            self.assertTrue(result["explicitFollowSucceeded"], "Explicit latest action must reach the bottom")
         except AssertionError as exc:
             raise AssertionError(f"{exc} :: diag={_format_diagnostics(diag)}") from exc
 

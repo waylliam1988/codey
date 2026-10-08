@@ -13,7 +13,7 @@ from tests.test_ui_workflow import ui_browser as ui_browser
 def test_settings_text_fields_focus_without_an_extra_frame(page, focus_method):
     model_settings_route(page)
     open_connection_settings(page)
-    expect(page.locator("#local-config-save")).to_be_enabled()
+    expect(page.locator("#local-base-url")).to_be_enabled()
     page.locator("#local-advanced summary").click()
     page.locator("#local-context-preset-button").click()
     page.get_by_role("option", name="Custom…", exact=True).click()

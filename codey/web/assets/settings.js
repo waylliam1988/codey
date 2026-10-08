@@ -2,6 +2,7 @@
 (function () {
 'use strict';
 let deps, returnFocus, generation = 0, connected = false, loading = false;
+let baseline = null;
 const $ = id => deps.$(id);
 const selects = [];
 
@@ -58,7 +59,7 @@ function makeSelect(id) {
 function init(next) {
   deps = next;
   window.CodeyModelSettings.init({close});
-  $('local-connection-editor').ontoggle = () => { if ($('local-connection-editor').open) loadConnection(); };
+  $('local-connection-editor').ontoggle = () => { if ($('local-connection-editor').open && baseline === null) loadConnection(); };
   $('btn-settings').onclick = () => open();
   $('settings-dismiss').onclick = close;
   $('local-config-close').onclick = close;
@@ -74,7 +75,10 @@ function init(next) {
     $('local-custom-context').hidden = !custom;
     if (custom) $('local-context-window').focus();
     else $('local-context-window').value = $('local-context-preset').value;
+    updateConnectionSaveState();
   };
+  $('local-config-form').addEventListener('input', updateConnectionSaveState);
+  $('local-config-form').addEventListener('change', updateConnectionSaveState);
   makeSelect('local-context-preset'); makeSelect('local-native-tools-mode'); makeSelect('local-api-protocol');
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === ',') {
@@ -97,6 +101,7 @@ async function open(trigger = document.activeElement) {
   const dialog = $('local-config-pop');
   if (dialog.open) return;
   returnFocus = trigger;
+  baseline = null;
   $('local-advanced').open = false;
   $('local-custom-context').hidden = true;
   $('local-config-error').textContent = '';
@@ -137,7 +142,7 @@ async function loadConnection() {
     }));
     $('local-config-candidates').replaceChildren(...(local.candidates || []).map(url => {
       const button = document.createElement('button'); button.type = 'button'; button.textContent = url;
-      button.onclick = () => { $('local-base-url').value = url; }; return button;
+      button.onclick = () => { $('local-base-url').value = url; updateConnectionSaveState(); }; return button;
     }));
     const tokens = String(local.context?.context_window_tokens || 32768);
     $('local-context-window').value = tokens;
@@ -146,6 +151,7 @@ async function loadConnection() {
     $('local-native-tools-mode').value = local.native_tools_mode || 'auto';
     $('local-api-protocol').value = local.api_protocol || 'openai-completions';
     selects.forEach(select => select.sync());
+    baseline = connectionSnapshot();
     if (local.context_error) $('local-config-error').textContent = local.context_error;
     else if (local.error) $('local-config-error').textContent = local.error;
     Array.from($('local-config-form').elements).forEach(el => { el.disabled = false; });
@@ -159,6 +165,7 @@ async function loadConnection() {
   } finally {
     if (request === generation) {
       loading = false;
+      updateConnectionSaveState();
       dialog.setAttribute('aria-busy', 'false');
       $('local-config-retry').disabled = false;
       if (restoreRetryFocus && [document.body, dialog].includes(document.activeElement)) {
@@ -176,6 +183,15 @@ function close() {
   if (returnFocus?.isConnected && !returnFocus.closest('[inert]')) returnFocus.focus();
 }
 
+function connectionSnapshot() {
+  return JSON.stringify(['local-base-url','local-model-name','local-display-name','local-api-protocol',
+    'local-native-tools-mode','local-context-window','local-api-key'].map(id => $(id).value.trim()));
+}
+function updateConnectionSaveState() {
+  $('local-config-save').disabled = loading || baseline === null || !$('local-base-url').value.trim()
+    || (connected && connectionSnapshot() === baseline);
+}
+
 async function save() {
   if ($('local-config-save').disabled) return;
   const base_url = $('local-base-url').value.trim(), model = $('local-model-name').value.trim();
@@ -184,6 +200,7 @@ async function save() {
     api_protocol:$('local-api-protocol').value,
     native_tools_mode:$('local-native-tools-mode').value, context_window_tokens:$('local-context-window').value.trim()};
   const key = $('local-api-key').value.trim(); if (key) payload.api_key = key;
+  loading = true;
   $('local-config-error').textContent = '';
   Array.from($('local-config-form').elements).forEach(el => { el.disabled = true; });
   $('local-config-save').textContent = 'Connecting…';
@@ -195,13 +212,16 @@ async function save() {
     if (!r.ok || !data.ok) { $('local-config-error').textContent = data.error || 'Could not connect.'; return; }
     deps.applyLocalMetadata(data.local || {});
     $('local-api-key').value = ''; connected = !!data.local?.connected;
+    baseline = connectionSnapshot();
     $('local-config-summary').textContent = 'Connection saved. Refresh models to update the list.';
   } catch {
     if (request === generation) $('local-config-error').textContent = 'Could not reach the server.';
   } finally {
     if (request === generation) {
+      loading = false;
       Array.from($('local-config-form').elements).forEach(el => { el.disabled = false; });
       $('local-config-save').textContent = connected ? 'Save connection' : 'Connect';
+      updateConnectionSaveState();
     }
   }
 }

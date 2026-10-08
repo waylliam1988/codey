@@ -65,8 +65,10 @@ function jump(index) {
   const entry = entries[index];
   if (!entry?.anchor.isConnected || deps.getActiveId() !== sessionId) return;
   closePreview(); previewSuppressed = true;
+  window.CodeyConversationUI.stopFollowing();
   const rect = area.getBoundingClientRect();
   area.scrollTop += entry.anchor.getBoundingClientRect().top - rect.top - 24;
+  window.CodeyConversationUI.captureView();
   schedule();
 }
 function makeEntry(anchor) {

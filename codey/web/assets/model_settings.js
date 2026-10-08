@@ -1,7 +1,7 @@
 /* One source editor for every connector, including removable integrations. */
 (function () {
 'use strict';
-let deps, draft, generation = 0, saving = false;
+let deps, draft, baseline, generation = 0, saving = false;
 const $ = id => document.getElementById(id);
 function init(next) {
   deps = next;
@@ -10,6 +10,12 @@ function init(next) {
   $('model-settings-retry').onclick = open;
 }
 function error(text) { $('model-settings-error').textContent = text; }
+function preferenceKey(sources) {
+  return JSON.stringify(Object.keys(sources).sort().map(id => [id, !!sources[id].enabled, [...new Set(sources[id].models)].sort()]));
+}
+function updateSaveState() {
+  $('model-settings-save').disabled = saving || !draft || preferenceKey(draft.preferences.sources) === baseline;
+}
 function used(source, model) {
   return draft.in_use.some(item => (source.id === 'websites' ?
     source.models.some(entry => entry.id === item.provider) && (!model || item.provider === model) :
@@ -39,23 +45,41 @@ function renderSource(source) {
   actions.append(button('Select all', () => { choice.models = [...new Set([...choice.models, ...(source.models || []).map(model => model.id)])]; choice.enabled = !!choice.models.length; sync(); }),
     button('Clear', () => { choice.models = choice.models.filter(model => used(source, model)); sync(); }));
   let query = '';
-  if ((source.models || []).length > 8) {
-    const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Find models';
-    search.setAttribute('aria-label', 'Find ' + source.label + ' models'); body.appendChild(search);
-    search.oninput = () => { query = search.value.trim().toLowerCase(); sync(); };
-  }
+  const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Find models';
+  search.setAttribute('aria-label', 'Find ' + source.label + ' models'); body.appendChild(search);
+  search.oninput = () => { query = search.value.trim().toLowerCase(); sync(); };
   const list = document.createElement('div'); list.className = 'model-source-models'; body.appendChild(list);
-  const rows = (source.models || []).map(model => {
+  let rows = [];
+  function modelRow(model) {
     const label = document.createElement('label'); label.className = 'model-choice';
     const input = checkbox('Use ' + (model.name || model.id), choice.models.includes(model.id), checked => {
       choice.models = checked ? [...new Set([...choice.models, model.id])] : choice.models.filter(id => id !== model.id);
       if (checked) choice.enabled = true;
       sync();
     }); input.disabled = used(source, model.id);
-    const text = document.createElement('span'); text.textContent = model.name || model.id; label.append(input, text); list.appendChild(label);
-    return {label, input, model};
-  });
-  if (!rows.length) { const empty = document.createElement('p'); empty.className = 'settings-hint'; empty.textContent = 'No models loaded'; list.appendChild(empty); }
+    const text = document.createElement('span'); text.textContent = model.name || model.id; label.append(input, text);
+    return {label, input, model, text};
+  }
+  function syncModelRows() {
+    const existing = new Map(rows.map(row => [row.model.id, row]));
+    rows = (source.models || []).map(model => {
+      const row = existing.get(model.id) || modelRow(model); row.model = model;
+      row.text.textContent = model.name || model.id;
+      row.input.setAttribute('aria-label', 'Use ' + (model.name || model.id));
+      return row;
+    });
+    const kept = new Set(rows.map(row => row.label));
+    Array.from(list.children).forEach(node => {
+      if (!kept.has(node)) {
+        if (node.contains(document.activeElement)) summary.focus({preventScroll:true});
+        node.remove();
+      }
+    });
+    rows.forEach((row, index) => { if (list.children[index] !== row.label) list.insertBefore(row.label, list.children[index] || null); });
+    if (!rows.length) { const empty = document.createElement('p'); empty.className = 'settings-hint'; empty.textContent = 'No models loaded'; list.appendChild(empty); }
+    search.hidden = rows.length <= 8 && !query;
+  }
+  syncModelRows();
   if (source.discoverable) {
     const refresh = button('Refresh models', async () => {
       const request = generation; refresh.disabled = true; refresh.textContent = 'Refreshing…'; error('');
@@ -65,10 +89,10 @@ function renderSource(source) {
         if (request !== generation) return;
         if (!response.ok) throw new Error(data.error || 'Could not refresh models');
         window.CodeyModels.observeCatalog(data.source);
-        draft.sources = draft.sources.map(item => item.id === source.id ? {...item, ...data.source} : item);
-        render(source.id);
+        Object.assign(source, data.source);
+        syncModelRows(); sync();
       } catch (exception) { if (request === generation) error(exception.message); }
-      finally { refresh.disabled = false; refresh.textContent = 'Refresh models'; }
+      finally { if (request === generation) { refresh.disabled = false; refresh.textContent = 'Refresh models'; } }
     }); actions.appendChild(refresh);
   }
   if (source.connection_editor) body.appendChild($('local-connection-editor'));
@@ -80,35 +104,39 @@ function renderSource(source) {
     section.classList.toggle('source-disabled', !choice.enabled);
     rows.forEach(({label, input, model}) => {
       input.checked = choice.models.includes(model.id);
+      input.disabled = used(source, model.id);
       label.hidden = !!query && !(model.name || model.id).toLowerCase().includes(query) && !model.id.toLowerCase().includes(query);
     });
+    updateSaveState();
   }
   sync(); return section;
 }
-function render(expanded) {
+function render() {
   const list = $('model-source-list');
-  const opened = expanded ? [expanded] : Array.from(list.querySelectorAll('details[open]')).map(node => node.closest('.model-source').dataset.sourceId);
-  // Preserve the connection form and its values when a catalog refresh redraws sources.
+  const opened = Array.from(list.querySelectorAll('.model-source > details[open]')).map(node => node.parentElement.dataset.sourceId);
+  // Initial construction keeps the existing connection form and values.
   $('model-settings-body').appendChild($('local-connection-editor'));
   $('local-connection-editor').hidden = !draft.sources.some(source => source.connection_editor);
   list.replaceChildren(...draft.sources.map(renderSource));
-  opened.forEach(id => { const section = Array.from(list.children).find(node => node.dataset.sourceId === id); if (section) section.querySelector('details').open = true; });
+  opened.forEach(id => { Array.from(list.children).find(node => node.dataset.sourceId === id)?.querySelector('details').setAttribute('open', ''); });
 }
 async function open() {
-  const request = ++generation; saving = false;
+  const request = ++generation; saving = false; draft = null;
+  $('model-source-list').inert = false;
   error(''); $('model-settings-save').disabled = true; $('model-settings-retry').hidden = true;
   $('model-settings-loading').hidden = false; $('model-source-list').hidden = true;
   try {
-    draft = await window.CodeyModels.load();
+    const loaded = await window.CodeyModels.load();
     if (request !== generation) return;
-    render(); $('model-source-list').hidden = false; $('model-settings-save').disabled = false;
+    draft = loaded; baseline = preferenceKey(draft.preferences.sources);
+    render(); $('model-source-list').hidden = false; updateSaveState();
   } catch (exception) {
     if (request === generation) { error(exception.message); $('model-settings-retry').hidden = false; }
   } finally { if (request === generation) $('model-settings-loading').hidden = true; }
 }
-function close() { generation++; }
+function close() { generation++; draft = null; }
 async function save() {
-  if (saving || !draft) return;
+  if (saving || !draft || preferenceKey(draft.preferences.sources) === baseline) return;
   saving = true; const request = generation; error('');
   $('model-settings-save').disabled = true;
   $('model-source-list').inert = true;
@@ -120,7 +148,7 @@ async function save() {
     if (!response.ok) throw new Error(data.error || 'Could not save models');
     window.CodeyModels.applySettings(data); deps.close();
   } catch (exception) { if (request === generation) error(exception.message); }
-  finally { saving = false; $('model-settings-save').disabled = false; $('model-source-list').inert = false; }
+  finally { if (request === generation) { saving = false; updateSaveState(); $('model-source-list').inert = false; } }
 }
 window.CodeyModelSettings = {init, open, close};
 })();

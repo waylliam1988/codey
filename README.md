@@ -64,6 +64,18 @@ subset; zero selected turns it off. Select a model or use Select all to enable i
 then Save changes. Refresh models never automatically selects new arrivals.
 All sources off preserves drafts and history, with Send disabled.
 
+Draft text and caret/selection are saved locally with each chat and restored
+after restart. Clear messages keeps unsent input; deleting a chat removes it.
+Save failures keep your input with an explicit Retry. Scrolling up stops output
+following even near the bottom; reach the bottom or use Back to latest to resume.
+Select text in an answer and choose Quote in reply to append an editable Markdown
+quote to your draft without sending it.
+
+Save changes covers model choices; Save connection covers connection fields.
+Each becomes available when its own values change. Refresh models preserves
+unsaved choices, search and focus. Changes refresh keeps the current diff readable;
+failure labels previous results and blocks Restore until an update succeeds.
+
 To use a local model, open Settings → Local → Connection and provide an
 OpenAI-compatible base URL, model ID and optional API key. Save connection, then
 Refresh models, choose models and Save changes. Names come from actual model

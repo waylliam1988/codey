@@ -2,6 +2,28 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Preserve input and reading context (2026-10-08)
+
+- Persist exact chat drafts and caret/selection through the existing local UI
+  state. Accepted sends consume only their text/revision snapshot; save failures
+  retain input with Retry, and conflicts also block exit-beacon overwrites.
+- Follow output by reading intent. Preserve the reader's position across output,
+  disclosures and chat switches; resume only at the actual bottom or Back to latest.
+- Track model and connection edits independently. Disable unchanged Save actions;
+  refresh model rows without losing staged choices, search, disclosures or focus.
+- Keep Changes readable during refresh and explicitly label previous results on
+  failure. Allow copying them, require fresh results for Restore, and preserve the
+  visible diff line and project identity.
+- Add Quote in reply to the existing answer-selection menu. Append editable
+  Markdown with native Undo/Redo, without replacing drafts or sending a task.
+- Remove the separate draft Map, unused folder auto-send path, forced ordinary
+  scrolling and duplicate Changes state. Add 44 behavior cases in five accurately
+  named test files, with red-before-green evidence and updated behavior contracts.
+- Final: **7912 passed, 7 skipped, 1503 subtests passed in 857.83s**; required
+  contracts **679 passed**. Ruff, mypy, Python/JS syntax and diff checks pass.
+  Documentation follows the completed full run; see `TEST_REPORT.md` for the
+  interrupted first run and validation limits. No version change, tag or release.
+
 ## Unreleased - Quiet text actions (2026-10-08)
 
 - Remove hover underlines from shared text buttons, including model selection,

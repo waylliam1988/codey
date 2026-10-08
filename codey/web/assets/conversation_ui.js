@@ -7,6 +7,8 @@ const views = new Map();
 let menuTrigger = null;
 let selectedCopy = null, copyGeneration = 0;
 let titleEdit = null;
+let following = true, scrollOffset = 0;
+let scrollIntent = null, scrollbarHeld = false;
 
 function $(id) { return document.getElementById(id); }
 function query() { return $('chat-search').value.trim().toLocaleLowerCase(); }
@@ -31,7 +33,21 @@ function updateSearch() {
   $('search-empty').hidden = !empty;
   $('session-list').hidden = empty;
 }
-function isFollowing() { const a = $('chat-area'); return a.scrollHeight - a.scrollTop - a.clientHeight < 120; }
+function isFollowing() { return following; }
+function isAtLatest() { const a = $('chat-area'); return a.scrollHeight - a.scrollTop - a.clientHeight <= 2; }
+function setScroll(top) { const area = $('chat-area'); area.scrollTop = top; scrollOffset = area.scrollTop; }
+function readingAnchor() {
+  const top = $('chat-area').getBoundingClientRect().top;
+  const index = Array.from($('chat').children).findIndex(node => node.getBoundingClientRect().bottom > top);
+  return index < 0 ? null : {index, offset:$('chat').children[index].getBoundingClientRect().top - top};
+}
+function restoreReading(view) {
+  const node = view?.anchor && $('chat').children[view.anchor.index];
+  if (node) setScroll($('chat-area').scrollTop + node.getBoundingClientRect().top - $('chat-area').getBoundingClientRect().top - view.anchor.offset);
+  else if (view) setScroll(view.scroll);
+}
+function stopFollowing() { following = false; scrollIntent = 'history'; captureView(); updateLatest(); }
+function backToLatest() { following = true; scrollIntent = null; scrollChat(); }
 
 function captureView() {
   if (!shownId) return;
@@ -39,7 +55,8 @@ function captureView() {
   if (!session) { views.delete(shownId); return; }
   views.delete(shownId);
   views.set(shownId, { messages: session.messages.slice(), nodes: Array.from($('chat').childNodes),
-    disclosures: window.CodeyProcess.capture($('chat')), scroll: $('chat-area').scrollTop, following: isFollowing() });
+    disclosures: window.CodeyProcess.capture($('chat')), scroll: $('chat-area').scrollTop, following, anchor:readingAnchor(),
+    height:$('chat-area').scrollHeight });
   const cached = Array.from(views.values()).filter(view => view.nodes);
   for (const old of cached.slice(0, Math.max(0, cached.length - 6))) { old.nodes = null; old.messages = null; }
 }
@@ -124,7 +141,7 @@ function renderTitle(s, p) {
   name.textContent = s.title || 'New chat'; name.title = 'Rename chat'; name.setAttribute('aria-label', 'Rename chat');
   name.onclick = () => startTitleRename(s.id); title.append(name);
 }
-function renderChat(forceBottom = false) {
+function renderChat() {
   if (!deps) return;
   const s = deps.activeSession();
   if (!s) return;
@@ -138,7 +155,8 @@ function renderChat(forceBottom = false) {
   if (changing) { closeSelectionMenu(); captureView(); }
   const saved = views.get(s.id);
   const scroll = changing && saved ? saved.scroll : $('chat-area').scrollTop;
-  const follow = changing ? (!saved || saved.following) : isFollowing();
+  const follow = changing ? (!saved || saved.following) : following;
+  const reader = changing ? saved : {scroll, anchor:readingAnchor()};
   const chat = $('chat');
   if (unchanged(saved, s)) {
     if (changing) chat.replaceChildren(...saved.nodes);
@@ -152,20 +170,23 @@ function renderChat(forceBottom = false) {
     window.CodeyProcess.restore(chat, disclosures);
   }
   shownId = s.id;
-  $('chat-area').scrollTop = scroll;
-  if (forceBottom || follow) $('chat-area').scrollTop = $('chat-area').scrollHeight;
+  following = follow;
+  if (changing) scrollIntent = null;
+  if (following) setScroll($('chat-area').scrollHeight);
+  else { setScroll(scroll); restoreReading(reader); }
   captureView();
   updateLatest();
   updateNotice();
 }
 
-function scrollChat(force = false) {
-  if (force || isFollowing()) $('chat-area').scrollTop = $('chat-area').scrollHeight;
+function scrollChat() {
+  if (following) setScroll($('chat-area').scrollHeight);
+  else restoreReading(views.get(shownId));
   captureView();
   updateLatest();
   updateNotice();
 }
-function updateLatest() { $('back-to-latest').hidden = isFollowing(); }
+function updateLatest() { $('back-to-latest').hidden = following || isAtLatest(); }
 
 function updateNotice() {
   if (!deps) return;
@@ -205,7 +226,7 @@ function openFile(path, project = '') {
   const target = project || deps.currentProjectPath();
   if (target && path) return window.CodeyChangesDrawer.open(target, path);
 }
-function forget(id) { views.delete(id); window.CodeyComposer.forgetDraft(id); }
+function forget(id) { views.delete(id); }
 
 function menuOpened(menu, anchor) {
   menuTrigger = anchor;
@@ -299,7 +320,10 @@ function selectionFor(target) {
     || !area.contains(selection.anchorNode) || !area.contains(selection.focusNode)) return null;
   const range = selection.getRangeAt(0).cloneRange();
   if (!range.intersectsNode(target)) return null;
-  return {range, text:selection.toString(), focus:document.activeElement};
+  const parent = node => node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  const answer = parent(range.startContainer)?.closest('#chat .msg.asst .body');
+  const quoteBody = answer?.contains(range.endContainer) ? answer : null;
+  return {range, text:selection.toString(), focus:document.activeElement, quoteBody, sessionId:deps.getActiveId()};
 }
 function restoreSelection(snapshot, focus = false) {
   if (!snapshot) return;
@@ -323,9 +347,13 @@ function showSelectionMenu(target, x, y, keyboard = false) {
   const snapshot = selectionFor(target);
   deps.closeAllMenus(); window.CodeyProviderUI.closeMenu();
   if (!snapshot) return false;
+  if (snapshot.range && $('chat').contains(snapshot.range.startContainer)) stopFollowing();
+  snapshot.scrollPositions = [];
+  for (let node = target; node; node = node.parentElement) snapshot.scrollPositions.push({node, top:node.scrollTop, left:node.scrollLeft});
   const menu = $('selection-menu'), copy = $('selection-copy');
   (target.closest('dialog[open]') || document.body).appendChild(menu);
   selectedCopy = snapshot; copyGeneration++;
+  $('selection-quote').hidden = !snapshot.quoteBody;
   copy.textContent = 'Copy'; copy.disabled = false;
   $('selection-copy-status').hidden = true; $('selection-copy-status').textContent = '';
   menu.classList.toggle('keyboard-open', keyboard);
@@ -340,6 +368,13 @@ function initSelectionMenu() {
     if (showSelectionMenu(e.target,e.clientX,e.clientY)) { e.preventDefault(); e.stopPropagation(); }
   });
   menu.addEventListener('pointerdown', e => e.preventDefault());
+  $('selection-quote').onclick = () => {
+    const snapshot = selectedCopy;
+    if (!snapshot?.quoteBody?.isConnected || snapshot.sessionId !== deps.getActiveId()
+      || !$('chat').contains(snapshot.quoteBody)) { closeSelectionMenu(); return; }
+    if (window.CodeyComposer.quoteInReply(snapshot.sessionId, snapshot.text)) closeSelectionMenu();
+    else { $('selection-copy-status').textContent = 'Could not insert quote'; $('selection-copy-status').hidden = false; }
+  };
   copy.onclick = async () => {
     const snapshot = selectedCopy, generation = copyGeneration;
     if (!snapshot || copy.disabled) return;
@@ -369,7 +404,9 @@ function initSelectionMenu() {
       e.preventDefault(); e.stopImmediatePropagation(); showSelectionMenu(target,rect.left,rect.bottom,true);
     }
   }, true);
-  document.addEventListener('scroll', () => closeSelectionMenu(), true);
+  document.addEventListener('scroll', () => {
+    if (selectedCopy?.scrollPositions.some(({node, top, left}) => node.scrollTop !== top || node.scrollLeft !== left)) closeSelectionMenu();
+  }, true);
   window.addEventListener('blur', () => closeSelectionMenu());
 }
 
@@ -403,15 +440,53 @@ function init(nextDeps) {
       setSearchOpen(false); searchToggle.focus();
     }
   });
-  $('chat-area').addEventListener('scroll', () => { captureView(); updateLatest(); });
-  $('back-to-latest').onclick = () => scrollChat(true);
+  const area = $('chat-area');
+  area.addEventListener('wheel', e => {
+    if (e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    if (e.deltaY < 0) stopFollowing(); else scrollIntent = 'latest';
+  }, {passive:true});
+  area.addEventListener('keydown', e => {
+    if (e.isComposing || e.target.closest('input,textarea,[contenteditable="true"]')) return;
+    if (['ArrowUp','PageUp','Home'].includes(e.key) || (e.key === ' ' && e.shiftKey)) stopFollowing();
+    else if (['ArrowDown','PageDown','End',' '].includes(e.key)) scrollIntent = 'latest';
+  });
+  area.addEventListener('pointerdown', e => {
+    const rect = area.getBoundingClientRect();
+    if (e.target === area && e.clientX >= rect.right - (area.offsetWidth - area.clientWidth || 12)) { scrollbarHeld = true; stopFollowing(); }
+  });
+  document.addEventListener('pointerup', () => {
+    if (scrollbarHeld && isAtLatest()) { following = true; scrollIntent = null; captureView(); updateLatest(); }
+    scrollbarHeld = false;
+  });
+  document.addEventListener('pointercancel', () => { scrollbarHeld = false; });
+  window.addEventListener('blur', () => { scrollbarHeld = false; });
+  area.addEventListener('pointerup', () => { const selection = getSelection(); if (!selection.isCollapsed && area.contains(selection.anchorNode)) stopFollowing(); });
+  let touchY = null;
+  area.addEventListener('touchstart', e => { touchY = e.touches[0]?.clientY; }, {passive:true});
+  area.addEventListener('touchmove', e => {
+    const y = e.touches[0]?.clientY;
+    if (touchY !== null && y > touchY) stopFollowing();
+    else if (touchY !== null && y < touchY) scrollIntent = 'latest';
+    touchY = y;
+  }, {passive:true});
+  area.addEventListener('scroll', () => {
+    const view = views.get(shownId);
+    if (view && view.height !== area.scrollHeight) {
+      if (following) setScroll(area.scrollHeight); else restoreReading(view);
+    } else if (area.scrollTop > scrollOffset && isAtLatest() && (scrollIntent === 'latest' || scrollbarHeld)) {
+      following = true; scrollIntent = null;
+    }
+    scrollOffset = area.scrollTop; captureView(); updateLatest();
+  });
+  new ResizeObserver(() => { if (shownId) scrollChat(); }).observe($('chat'));
+  $('back-to-latest').onclick = backToLatest;
   document.addEventListener('keydown', e => {
     if (e.isComposing || e.keyCode === 229) return;
     const menu = e.target.closest('.ctx-menu.open');
     if (menu && ['ArrowDown','ArrowUp','Home','End','Escape'].includes(e.key)) {
       e.preventDefault(); e.stopPropagation();
       if (e.key === 'Escape') { menusClosed(true); deps.closeAllMenus(); return; }
-      const rows = Array.from(menu.querySelectorAll('button:not(:disabled)'));
+      const rows = Array.from(menu.querySelectorAll('button:not(:disabled)')).filter(node => !node.hidden);
       const index = rows.indexOf(document.activeElement);
       const next = e.key === 'Home' ? 0 : e.key === 'End' ? rows.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length;
       rows[next]?.focus();
@@ -437,6 +512,7 @@ function init(nextDeps) {
 }
 
 window.CodeyConversationUI = { init, renderChat, scrollChat, captureView, isFollowing, updateLatest, updateNotice,
+  stopFollowing,
   matchesSession, matchesProject, appendGroupLabel, updateSearch, isSearching: () => !!query(),
   isRenamingSession: id => titleEdit?.id === id, forget, openFile, menuOpened, menusClosed };
 })();

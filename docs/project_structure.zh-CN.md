@@ -81,6 +81,10 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/providers/model_preferences.py` | 带 revision 的原子来源/模型偏好；目录观察不改变选择 |
 | `codey/app/model_settings.py`、`provider_services.py` | 通用来源描述、显式发现、使用中模型保护与已选范围服务 |
 | `codey/web/assets/models.js`、`model_settings.js` | 前端权威快照与共用暂存编辑器；可选连接提供数据，不增加专属 UI 分支 |
+| `codey/web/assets/ui_state.js`、`composer.js`、`codey/storage/ui_state_store.py` | 草稿随聊天通过现有 UI 状态存储持久保存，校验 UTF-16 选区；发送只消费 revision 仍匹配的快照 |
+| `codey/web/assets/conversation_ui.js`、`conversation_nav.js` | 明确阅读意图、有界缓存与阅读锚点、当前回答选区动作；引用编辑现有草稿 |
+| `codey/web/assets/changes_drawer.js` | 唯一拥有 Changes 项目、显示数据、新鲜度和操作；局部刷新保留阅读现场，旧数据禁止恢复 |
+| `codey/web/assets/settings.js` | 独立连接字段 baseline 与保存生命周期；模型偏好修改判断和来源行更新留在 model_settings.js |
 | `codey/providers/zen/` | 动态免费目录、限定合作身份与访问观察；`declarations.py` 拥有临时不可用 read/shell 网络声明，`connection.py` 拥有有界文本调用拒绝；不授予任务权限，删除生产包和注册时还需清理专用测试、gate 和文档 |
 | `codey/runtime/core/api_selection.py`、`operation_payload.py` | 无秘密的冻结 API 选择，以及严格接纳/交付 payload 校验 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |

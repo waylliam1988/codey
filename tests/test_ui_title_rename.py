@@ -267,7 +267,7 @@ def test_saved_title_immediately_updates_search_filter(page):
 
 def test_rename_preserves_message_dom_selection_and_reading_offset(page):
     page.evaluate("addToSession('a',{type:'asst',text:'Selectable text.\\n'.repeat(80)})")
-    page.locator("#chat-area").evaluate("e => e.scrollTop=120")
+    page.locator("#chat-area").evaluate("e => {e.dispatchEvent(new WheelEvent('wheel',{deltaY:-120}));e.scrollTop=120;CodeyConversationUI.captureView();}")
     page.locator(".msg.asst .body p").first.evaluate("""e => {
         window.keptMessageBody=e;
         const range=document.createRange(); range.setStart(e.firstChild,0); range.setEnd(e.firstChild,10);

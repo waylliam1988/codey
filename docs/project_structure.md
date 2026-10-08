@@ -82,6 +82,10 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/providers/model_preferences.py` | Atomic revisioned source/model consent; catalog observations never change selection |
 | `codey/app/model_settings.py`, `provider_services.py` | Generic source descriptors, explicit discovery, model-use protection and selected-scope services |
 | `codey/web/assets/models.js`, `model_settings.js` | Authoritative frontend snapshot and shared staged source editor; optional connectors supply data, not UI branches |
+| `codey/web/assets/ui_state.js`, `composer.js`, `codey/storage/ui_state_store.py` | Chat-owned durable drafts and UTF-16 selection validation through the existing UI-state store; accepted snapshots consume only unchanged revisions |
+| `codey/web/assets/conversation_ui.js`, `conversation_nav.js` | Explicit reading intent, bounded cached views/reading anchors and current-answer selection actions; quoting edits the existing draft |
+| `codey/web/assets/changes_drawer.js` | Sole owner of Changes project, displayed data, freshness and operations; keyed refresh preserves reading context and stale data cannot restore |
+| `codey/web/assets/settings.js` | Independent connection-field baseline/save lifecycle; model preference dirty state and source-row reconciliation stay in model_settings.js |
 | `codey/providers/zen/` | Public/free catalog, scoped partner identity and access observations; `declarations.py` owns the temporary unavailable read/shell wire profile, and `connection.py` owns bounded text-call rejection. No task grants; removing production registration/package also requires cleaning its dedicated tests, gates and docs |
 | `codey/runtime/core/api_selection.py`, `operation_payload.py` | Non-secret frozen API selection and strict admission/delivery payload validation |
 | `codey/research/source_gateway.py`, `tools.py` | Explicit acquisition/tool outcomes; cancellation/deadlines propagate without fallback acquisition |

@@ -40,7 +40,7 @@ def test_settings_load_failure_can_retry_in_same_dialog(page, failure):
     expect(retry).to_be_enabled()
     retry.click()
     expect(page.locator("#local-base-url")).to_have_value(local["base_url"])
-    expect(page.locator("#local-config-save")).to_be_enabled()
+    expect(page.locator("#local-config-save")).to_be_disabled()
     expect(retry).to_be_hidden()
     expect(page.locator("#local-base-url")).to_be_focused()
     assert requests == ["GET", "GET"]
@@ -78,7 +78,7 @@ def test_settings_retry_is_single_flight_and_closed_dialog_ignores_late_reply(pa
 def test_settings_save_failure_keeps_edit_and_never_shows_load_retry(page):
     model_settings_route(page)
     open_connection_settings(page)
-    expect(page.locator("#local-config-save")).to_be_enabled()
+    expect(page.locator("#local-base-url")).to_be_enabled()
     page.locator("#local-model-name").fill("my-edited-model")
     page.route("**/api/local_provider", lambda route: route.fulfill(
         status=400, json={"ok": False, "error": "Model is unavailable"},

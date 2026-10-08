@@ -287,11 +287,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("CodeyRequests.canRetry(sessionId, requestId)", retry_block)
         self.assertNotIn("$('task').value =", retry_block)
 
-    def test_provider_selector_is_enabled_when_idle(self) -> None:
-        self.assertIn("$('provider-button').disabled = $('effort-button').disabled = busy", HTML)
-        self.assertIn("$('provider-button').disabled = false", HTML)
-        self.assertNotIn("btn.disabled = !providerStatus", HTML)
-
     def test_sse_reconnect_reconciles_one_run_snapshot_quietly(self) -> None:
         self.assertIn("function reconcileRunState()", HTML)
         self.assertIn("return window.CodeySse.reconcileRunState();", HTML)
@@ -530,10 +525,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_drawer_buttons_never_silent_noop(self) -> None:
         self.assertIn("syncResearchUseProjectButton", HTML)
-        self.assertIn("syncChangesRefreshButton", HTML)
         self.assertIn(".disabled", HTML)
         self.assertIn("syncResearchUseProjectButton();", HTML)
-        self.assertIn("syncChangesRefreshButton();", HTML)
         self.assertIn("fetch('/api/research/graph?' + params.toString())", GRAPH_JS)
         self.assertNotIn("options.endpoint", GRAPH_JS)
         self.assertIn("if (options.showDepth !== false) {", GRAPH_JS)
@@ -783,7 +776,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('id="changes-restore"', HTML)
         self.assertIn("Reading changes", CHANGES_DRAWER_JS)
         self.assertIn("data.mode === 'git' ? 'Working tree' : 'Snapshot'", CHANGES_DRAWER_JS)
-        self.assertIn("$('changes-restore').hidden = data.mode === 'git';", CHANGES_DRAWER_JS)
         self.assertIn("/api/changes/restore", HTML)
         self.assertNotIn("Reading git diff", UI_SOURCE)
         self.assertIn('<script src="/assets/changes_drawer.js?v=__APP_VERSION__"></script>', HTML)
@@ -1073,91 +1065,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (shouldAttach) attachSessionToProject(p.id, s.id);", pick_block)
         self.assertIn("else newSession(p.id);", pick_block)
 
-    def test_composer_context_is_the_only_draft_to_project_send_trigger(self) -> None:
-        self.assertNotIn("'Choose folder to send'", HTML)
-        self.assertIn("const proj = p ? p.name : 'Choose folder';", HTML)
-        self.assertIn("'Choose folder'", HTML)
-        self.assertIn('id="ctx-folder"', HTML)
-        self.assertIn('id="ctx-research"', HTML)
-        self.assertNotIn('id="ctx-provider"', HTML)
-        self.assertNotIn("function providerLabel(id)", HTML)
-        self.assertNotIn("ctx-provider", PROVIDER_UI_JS)
-        self.assertIn('id="provider-button"', HTML)
-        self.assertIn("$('task').addEventListener('input', () => { captureDraft(); resizeTask(); updateSend(); deps.updateComposerContext(); });", COMPOSER_JS)
-
-        context_start = COMPOSER_JS.index("$('composer-context').onclick")
-        context_end = COMPOSER_JS.index("$('composer-context').addEventListener", context_start)
-        context_block = COMPOSER_JS[context_start:context_end]
-        self.assertIn("const target = e.target.closest('.ctx-token');", context_block)
-        self.assertIn("if (target.id === 'ctx-folder')", context_block)
-        self.assertIn("deps.attachCurrentChatToPickedProject({ sendDraft: false });", context_block)
-        self.assertIn("toggleResearchForActive();", context_block)
-        self.assertNotIn("ctx-provider", context_block)
-        self.assertNotIn("openLocalProviderConfig();", context_block)
-        key_context_start = COMPOSER_JS.index("$('composer-context').addEventListener", context_start)
-        key_context_end = COMPOSER_JS.index("$('send').onclick", key_context_start)
-        key_context_block = COMPOSER_JS[key_context_start:key_context_end]
-        self.assertIn("e.key !== 'Enter' && e.key !== ' '", key_context_block)
-        self.assertIn("target.click();", key_context_block)
-
-        key_start = COMPOSER_JS.index("$('task').addEventListener('keydown'")
-        key_end = COMPOSER_JS.index("$('composer-context').onclick", key_start)
-        key_block = COMPOSER_JS[key_start:key_end]
-        self.assertIn("$('send').click()", key_block)
-        self.assertNotIn("pickProjectPath", key_block)
-        self.assertNotIn("attachCurrentChatToPickedProject", key_block)
-
-        send_start = COMPOSER_JS.index("async function sendActiveDraft()")
-        send_end = COMPOSER_JS.index("async function continueTask", send_start)
-        send_block = COMPOSER_JS[send_start:send_end]
-        self.assertIn("const sessionId = activeId();", send_block)
-        self.assertIn("const provider = currentProviderId();", send_block)
-        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));", send_block)
-        self.assertNotIn("pickProjectPath", send_block)
-        self.assertNotIn("attachCurrentChatToPickedProject", send_block)
-
-    def test_draft_to_project_send_uses_stable_session_id(self) -> None:
-        self.assertIn("async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null, requestId = '')", COMPOSER_JS)
-        self.assertIn("function clearDraftIfUnchanged(sessionId, draft, revision = null)", COMPOSER_JS)
-        send_start = COMPOSER_JS.index("async function sendTaskFromSession")
-        send_end = COMPOSER_JS.index("async function sendActiveDraft", send_start)
-        send_block = COMPOSER_JS[send_start:send_end]
-        self.assertIn("if (!text || runningSessionId() || sendingSessionId) return false;", send_block)
-        self.assertIn("if (!s) return false;", send_block)
-        self.assertIn("if (typeof onSendStarted === 'function') onSendStarted();", send_block)
-        self.assertIn("window.CodeyRequests.begin(sessionId, text, requestId)", send_block)
-        self.assertIn("const project = deps.sessionProjectPath(sessionId);", send_block)
-        self.assertIn("JSON.stringify({ session_id: sessionId, run_id: runId, project, task: text, provider, intent,", send_block)
-        self.assertIn("await deps.acceptRunResponse(r, sessionId);", send_block)
-        self.assertIn("return true;", send_block)
-
-        attach_start = HTML.index("async function attachCurrentChatToPickedProject")
-        attach_end = HTML.index("function pushMsgToSession", attach_start)
-        attach_block = HTML[attach_start:attach_end]
-        self.assertIn("const sid = activeId;", attach_block)
-        self.assertIn("if (!s || sessionProject(s)) return;", attach_block)
-        self.assertIn("const draft = $('task').value.trim();", attach_block)
-        self.assertIn("if (!data) return;", attach_block)
-        self.assertIn("if (!attachSessionToProject(p.id, sid)) return;", attach_block)
-        self.assertIn("await sendTaskFromSession(sid, draft, provider, () => clearDraftIfUnchanged(sid, draft));", attach_block)
-        self.assertNotIn("/api/new_chat", attach_block)
-
-        attach_session_start = HTML.index("function attachSessionToProject")
-        attach_session_end = HTML.index("async function pickProject", attach_session_start)
-        attach_session_block = HTML[attach_session_start:attach_session_end]
-        self.assertIn("s.research = false;", attach_session_block)
-
-        clear_start = COMPOSER_JS.index("function clearDraftIfUnchanged")
-        clear_end = COMPOSER_JS.index("async function sendTaskFromSession", clear_start)
-        clear_block = COMPOSER_JS[clear_start:clear_end]
-        self.assertIn("stored.text.trim() !== draft", clear_block)
-        self.assertIn("stored.revision !== revision", clear_block)
-        self.assertIn("$('task').value = '';", clear_block)
-
-        send_click = COMPOSER_JS[COMPOSER_JS.index("async function sendActiveDraft()"):COMPOSER_JS.index("async function continueTask")]
-        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));", send_click)
-        self.assertNotIn("$('task').value = '';", send_click)
-
     def test_no_content_based_implementation_trigger_in_send_flow(self) -> None:
         self.assertNotIn("IMPLEMENTATION_REQUEST_RE", HTML)
         self.assertNotIn("implementationIntent", HTML)
@@ -1379,10 +1286,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
             with self.subTest(asset=name):
                 self.assertIn("function liveDefaultProvider()", src)
                 self.assertIn("window.CodeyUiState.DEFAULT_PROVIDER", src)
-        self.assertIn(
-            "s.provider || liveDefaultProvider()",
-            HTML,
-        )
         self.assertIn("defaultSession(null, liveDefaultProvider())", HTML)
         self.assertIn("sendTaskFromSession(sessionId, original.text, s.provider, null, requestId)", COMPOSER_JS)
         self.assertIn("PROVIDERS.includes(id) ? id : liveDefaultProvider()", COMPOSER_JS)
@@ -1548,7 +1451,7 @@ async function main() {
   if (menuButtonCount() !== 2) throw new Error('menu buttons must be 2 after flip, got ' + menuButtonCount());
   // Composer live fallback: no snapshot dep; stale removed-id must resolve to live mimo.
   const composerProviders = window.CodeyUiState.PROVIDERS;
-  const liveSession = { id: 's1', provider: 'removed-id' };
+  const liveSession = { id: 's1', provider: 'removed-id', draft: {text:'',start:0,end:0,direction:'none',revision:0} };
   let syncedTo = null;
   const runBodies = [];
   global.fetch = async (url, opts) => {
@@ -1566,6 +1469,7 @@ async function main() {
     sessionProjectPath: () => '/tmp/proj',
     currentIntentForSession: () => 'project',
     currentProviderId: () => liveSession.provider,
+    persistActive: () => {},
     persistActiveNow: () => {},
     updateComposerContext: () => {},
     renderChat: () => {},

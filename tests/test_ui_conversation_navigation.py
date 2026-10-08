@@ -26,7 +26,9 @@ def read_turn(page, index):
     page.evaluate("""index => {
         const area=document.getElementById('chat-area');
         const anchor=document.querySelectorAll('#chat > .msg.user')[index];
+        area.dispatchEvent(new WheelEvent('wheel',{deltaY:-80}));
         area.scrollTop+=anchor.getBoundingClientRect().top-area.getBoundingClientRect().top-24;
+        CodeyConversationUI.captureView();
     }""", index)
     expect(page.locator('.conversation-tick').nth(index)).to_have_attribute('aria-current', 'location')
 

@@ -249,6 +249,21 @@ def _clean_research(value: object) -> bool:
     return bool(value)
 
 
+def _clean_draft(value: object) -> dict[str, Any]:
+    draft = value if isinstance(value, dict) else {}
+    text = draft.get("text", "")
+    if not isinstance(text, str):
+        text = ""
+    # textarea offsets count UTF-16 code units, including astral characters.
+    length = len(text.encode("utf-16-le", errors="surrogatepass")) // 2
+    start = min(length, _int(draft.get("start")))
+    end = max(start, min(length, _int(draft.get("end"))))
+    direction = draft.get("direction")
+    return {"text": text, "start": start, "end": end,
+            "direction": direction if direction in ("none", "forward", "backward") else "none",
+            "revision": min(2**53 - 1, _int(draft.get("revision")))}
+
+
 def _clean_sessions(value: object) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
@@ -260,6 +275,7 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
         if not isinstance(terminal_runs, list):
             terminal_runs = []
         entry: dict[str, Any] = {
+            "draft": _clean_draft(item.get("draft")),
             "id": _str(item.get("id")),
             "title": _str(item.get("title") or "New chat", MAX_TITLE),
             "messages": _clean_messages(item.get("messages")),

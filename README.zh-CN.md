@@ -56,6 +56,16 @@ API 来源默认关闭且未选择模型。每个来源共用总开关和模型�
 零选择自动关闭；勾选模型或 Select all 后启用，再 Save changes。刷新不自动选择
 新增模型。全部关闭仍保留草稿和历史，Send 禁用。
 
+草稿原文、光标和选区随每个聊天保存在本地，重启后恢复。Clear messages 保留
+未发送输入；删除聊天同时删除草稿。保存失败时保留输入并提供 Retry。主动上滚
+即停止跟随输出，靠近底部也不拉回；实际到底部或 Back to latest 才恢复。
+选中回答中的文字后，可用 Quote in reply 将可编辑 Markdown 引用追加到草稿，
+不会自动发送。
+
+Save changes 只保存模型选择，Save connection 只保存连接字段，各自有修改时
+才可保存。刷新模型保留未提交选择、搜索和焦点。Changes 刷新时仍可阅读当前
+diff；失败明确标记旧结果，成功更新前禁止 Restore。
+
 使用本地模型时，打开 Settings → Local → Connection，填写 OpenAI-compatible
 base URL、model ID 和可选 API key。Save connection 后 Refresh models、勾选模型，
 再 Save changes。名称来自实际元数据或可选显示名，不固定为某个模型。

@@ -6,6 +6,32 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+## UI continuity
+
+The following behavior tests use shipped frontend assets, local HTTP/storage
+and scripted API responses; they do not call a real model. Add a failing behavior
+case before changing production code, run that same case green, then regress the
+affected workflow. Fixture, syntax and environment failures are not red evidence.
+
+- `test_ui_draft_persistence.py`: exact durable chat drafts, UTF-16 selection,
+  real HTTP restore in a new browser context, admission races, deletion, failed
+  saves, conflict Retry and exit-beacon isolation, and boot restoration gating.
+- `test_ui_reading_follow.py`: upward intent near the bottom, both append paths,
+  actual-bottom recovery, reading keys, horizontal wheel, geometry-only changes,
+  chat restoration and scrollbar release.
+- `test_ui_settings_save_scopes_and_refresh.py`: semantic dirty/revert state,
+  independent connection/model saves, staged search/disclosure/focus continuity
+  and catalog removal of the focused option.
+- `test_ui_changes_refresh.py`: pending/failed refresh with readable previous
+  data, network/HTTP/business/JSON errors, copy/freshness gating, project identity,
+  restore followed by refresh failure, focus and visible diff-line anchors.
+- `test_ui_quote_reply.py`: editable exact text/code quotation, preserved drafts,
+  no implicit send, Undo/Redo, eligible selections, keyboard and chat identity.
+
+These 44 new cases and the existing UI/storage regressions run in the full suite.
+Native Windows-host IME and opt-in Edge/live-model checks remain separate; see
+`TEST_REPORT.md` for the actual platform and completed verification.
+
 ## Required event and recovery contracts
 
 `python -m tools.machine_contract_gate` runs the fixed CI/local selection;

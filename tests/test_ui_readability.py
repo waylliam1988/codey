@@ -90,7 +90,7 @@ def test_context_and_effort_keep_hover_active_keyboard_and_disabled_hierarchy(pa
 def test_settings_explanations_are_readable_and_load_errors_keep_error_tone(page):
     model_settings_route(page)
     open_connection_settings(page)
-    expect(page.locator("#local-config-save")).to_be_enabled()
+    expect(page.locator("#local-base-url")).to_be_enabled()
     page.locator("#local-advanced summary").click()
     hints = page.locator(".settings-hint:visible").all()
     assert len(hints) >= 4

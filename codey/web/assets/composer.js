@@ -6,9 +6,8 @@
 let deps = null;
 let PROVIDERS = [];
 let handlersBound = false;
-let draftSessionId = '';
+let draftSession = null;
 let sendingSessionId = '';
-const drafts = new Map();
 
 function liveDefaultProvider() {
   return window.CodeyUiState.DEFAULT_PROVIDER;
@@ -27,27 +26,26 @@ function init(nextDeps) {
 }
 
 function captureDraft() {
-  if (!draftSessionId) return;
+  if (!draftSession || deps.findSession(draftSession.id) !== draftSession) return;
   const t = $('task');
-  const previous = drafts.get(draftSessionId);
-  drafts.set(draftSessionId, { text: t.value, start: t.selectionStart, end: t.selectionEnd,
-    revision: (previous ? previous.revision : 0) + (previous && previous.text === t.value ? 0 : 1) });
+  const previous = draftSession.draft;
+  const next = {text:t.value, start:t.selectionStart, end:t.selectionEnd, direction:t.selectionStart === t.selectionEnd ? 'none' : t.selectionDirection,
+    revision:previous.revision + (previous.text === t.value ? 0 : 1)};
+  if (Object.keys(next).every(key => next[key] === previous[key])) return;
+  draftSession.draft = next;
+  deps.persistActive();
 }
 
 function syncSession() {
-  if (!deps || draftSessionId === activeId()) return;
+  if (!deps || draftSession === deps.activeSession()) return;
   captureDraft();
-  draftSessionId = activeId();
-  const draft = drafts.get(draftSessionId) || { text: '', start: 0, end: 0 };
-  $('task').value = draft.text;
-  $('task').setSelectionRange(draft.start, draft.end);
+  draftSession = deps.activeSession();
+  if (!draftSession) return;
+  const draft = draftSession.draft;
+  if ($('task').value !== draft.text) $('task').value = draft.text;
+  $('task').setSelectionRange(draft.start, draft.end, draft.direction);
   resizeTask();
   updateSend();
-}
-
-function forgetDraft(id) {
-  drafts.delete(id);
-  if (draftSessionId === id) { draftSessionId = ''; $('task').value = ''; }
 }
 
 function resizeTask() {
@@ -68,7 +66,7 @@ function updateSend() {
     action.onclick = () => window.CodeySettings.open(); notice.appendChild(action);
   }
   const running = !!runningSessionId();
-  $('send').disabled = !has || !!reason || running || !!sendingSessionId;
+  $('send').disabled = $('task').disabled || !has || !!reason || running || !!sendingSessionId;
   $('send').style.display = running ? 'none' : '';
   $('stop').style.display = running ? '' : 'none';
   $('send-hint').textContent = sendingSessionId ? 'Sending…' : running ? 'Stop' : 'Enter';
@@ -76,7 +74,7 @@ function updateSend() {
   const owner = deps.findSession(runningSessionId());
   $('stop').setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
   $('stop').title = owner ? 'Stop ' + owner.title : 'Stop';
-  $('provider-button').disabled = running || !!sendingSessionId;
+  $('provider-button').disabled = $('task').disabled || running || !!sendingSessionId;
   if ($('effort-button')) $('effort-button').disabled = $('provider-button').disabled;
   if (window.CodeyConversationUI) window.CodeyConversationUI.updateNotice();
   window.CodeyRequests.refreshActions();
@@ -103,11 +101,12 @@ function setActiveProvider(id) {
   updateSend();
 }
 
-function clearDraftIfUnchanged(sessionId, draft, revision = null) {
+function clearDraftIfUnchanged(sessionId, draft, revision) {
   captureDraft();
-  const stored = drafts.get(sessionId);
-  if (!stored || stored.text.trim() !== draft || (revision !== null && stored.revision !== revision)) return;
-  drafts.delete(sessionId);
+  const session = deps.findSession(sessionId), stored = session?.draft;
+  if (!stored || stored.text.trim() !== draft || stored.revision !== revision) return;
+  session.draft = {text:'', start:0, end:0, direction:'none', revision:stored.revision + 1};
+  deps.persistActiveNow();
   if (activeId() !== sessionId) return;
   $('task').value = '';
   resizeTask();
@@ -202,7 +201,7 @@ async function sendActiveDraft() {
   const provider = currentProviderId();
   if (!task) return;
   captureDraft();
-  const revision = drafts.get(sessionId).revision;
+  const revision = deps.findSession(sessionId).draft.revision;
   await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));
 }
 
@@ -211,6 +210,20 @@ function retryTask(sessionId, requestId) {
   if (!s || !window.CodeyRequests.canRetry(sessionId, requestId)) return;
   const original = s.messages.find(m => m.type === 'user' && m.id === requestId);
   return sendTaskFromSession(sessionId, original.text, s.provider, null, requestId);
+}
+
+function quoteInReply(sessionId, text) {
+  const session = deps.findSession(sessionId);
+  if (!session || sessionId !== activeId() || !text || $('task').disabled) return false;
+  syncSession(); captureDraft();
+  const task = $('task'), original = task.value;
+  const separator = !original || original.endsWith('\n\n') ? '' : original.endsWith('\n') ? '\n' : '\n\n';
+  const quoted = text.replace(/\r\n?/g, '\n').split('\n').map(line => '> ' + line).join('\n');
+  task.focus({preventScroll:true}); task.setSelectionRange(original.length, original.length);
+  // One native editing transaction keeps textarea Undo/Redo intact.
+  if (!document.execCommand('insertText', false, separator + quoted + '\n\n')) return false;
+  captureDraft(); resizeTask(); updateSend(); deps.persistActiveNow();
+  return true;
 }
 
 async function continueTask(sessionId) {
@@ -263,6 +276,7 @@ function bindHandlers() {
   if (handlersBound) return;
   handlersBound = true;
   $('task').addEventListener('input', () => { captureDraft(); resizeTask(); updateSend(); deps.updateComposerContext(); });
+  ['select','selectionchange','blur','keyup','pointerup'].forEach(type => $('task').addEventListener(type, captureDraft));
   $('task').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
@@ -275,7 +289,7 @@ function bindHandlers() {
     if (target.id === 'ctx-folder') {
       const s = deps.activeSession();
       if (!s || deps.sessionProject(s) || deps.projectPickerBusy()) return;
-      deps.attachCurrentChatToPickedProject({ sendDraft: false });
+      deps.attachCurrentChatToPickedProject();
     } else if (target.id === 'ctx-research') {
       toggleResearchForActive();
     }
@@ -295,16 +309,14 @@ window.CodeyComposer = {
   init,
   syncSession,
   captureDraft,
-  forgetDraft,
   isSending: () => !!sendingSessionId,
   retryTask,
+  quoteInReply,
   recoveryActions,
   resizeTask,
   updateSend,
   toggleResearchForActive,
   setActiveProvider,
-  clearDraftIfUnchanged,
-  sendTaskFromSession,
   continueTask,
 };
 })();
