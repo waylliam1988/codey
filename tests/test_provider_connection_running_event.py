@@ -47,25 +47,36 @@ def test_connection_event_stream_agrees_with_authoritative_state(tmp_path, monke
 
 @pytest.mark.parametrize("status,text,kind", [("connecting", "Connecting to browser…", "warn"),
                                                ("running", "Running", "run")])
-def test_replayed_connection_status_keeps_running_display(status, text, kind):
+@pytest.mark.parametrize("scope", ["unlinked", "current", "previous", "settled"])
+def test_replayed_connection_status_keeps_running_display(status, text, kind, scope):
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js unavailable")
     html = (Path(__file__).parents[1] / "codey/web/index.html").read_text(encoding="utf-8")
     start = html.index("function handleServerEvent(data)")
-    # Execute the real event dispatcher through its status branch; unrelated
-    # message rendering is outside this status-only scenario.
+    # Load the dispatcher's real SSE and request-filter dependencies. Only the
+    # DOM rendering branches are outside this status-replay scenario.
     source = html[start:html.index("  if (data.type === 'providers')", start)] + "}\n"
     sse = (Path(__file__).parents[1] / "codey/web/assets/sse.js").read_text(encoding="utf-8")
+    requests = (Path(__file__).parents[1] / "codey/web/assets/requests.js").read_text(encoding="utf-8")
+    sessions = [] if scope == "unlinked" else [{"id": "chat", "messages": [
+        {"type": "user", "id": "request", "attempts": [
+            {"runId": "previous-run", "state": "failed"},
+            {"runId": "run", "state": "done" if scope == "settled" else "running"},
+        ]},
+    ]}]
     script = """
 const assert = require('node:assert/strict');
 let runningRunId = 'run';
 const calls = [];
 const setStatus = (...args) => calls.push(args);
 const window = {};
-""" + sse + "\nwindow.CodeySse.init({setStatus});\n" + source + f"""
-handleServerEvent({{type: 'status', run_id: 'run', status: {json.dumps(status)}}});
-assert.deepEqual(calls, [[{json.dumps(text)}, {json.dumps(kind)}]]);
+""" + sse + requests + "\nwindow.CodeySse.init({setStatus});\n" + source + f"""
+const sessions = {json.dumps(sessions)};
+window.CodeyRequests.init({{getSessions: () => sessions}});
+handleServerEvent({{type: 'status', session_id: 'chat',
+  run_id: {json.dumps('previous-run' if scope == 'previous' else 'run')}, status: {json.dumps(status)}}});
+assert.deepEqual(calls, {json.dumps([[text, kind]] if scope in {'unlinked', 'current'} else [])});
 """
     result = subprocess.run([node, "-e", script], capture_output=True, text=True, encoding="utf-8", timeout=10)
     assert result.returncode == 0, result.stderr
