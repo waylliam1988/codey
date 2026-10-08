@@ -52,6 +52,8 @@ CONTRACT_TESTS = (
     "tests/test_native_auto_initial_turn_prepared_once.py",
     "tests/test_optional_zen_removal_preserves_local_api.py",
     "tests/test_ui_workflow_readiness_without_animation_frames.py",
+    "tests/test_ui_inplace_render_waits_for_boot_restore.py",
+    "tests/test_pytest_home_isolation_preserves_playwright_cache.py",
     "tests/test_provider_neutral_tool_boundaries.py",
     "tests/test_api_selection_cold_start_persistence.py",
     "tests/test_api_transport_response_uncertainty.py",

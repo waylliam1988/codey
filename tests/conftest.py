@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -32,6 +33,27 @@ def no_external_advisor_models(monkeypatch):
         reset_provider_availability_cache()
 
 
+def _preserve_playwright_browser_cache() -> None:
+    """Keep installed browsers outside the isolated application-state home."""
+    # Match Playwright's environment precedence, including package-local "0".
+    setting = next((os.environ[name] for name in (
+        "PLAYWRIGHT_BROWSERS_PATH", "npm_config_playwright_browsers_path",
+        "npm_package_config_playwright_browsers_path",
+    ) if name in os.environ), None)
+    if setting:
+        return
+    home = Path.home()
+    if sys.platform == "linux":
+        cache = Path(os.environ.get("XDG_CACHE_HOME") or home / ".cache")
+    elif sys.platform == "darwin":
+        cache = home / "Library" / "Caches"
+    elif sys.platform == "win32":
+        cache = Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
+    else:
+        return
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(cache / "ms-playwright")
+
+
 def _install_isolated_state_home() -> Path:
     """Give every pytest process a writable home before application imports.
 
@@ -40,6 +62,7 @@ def _install_isolated_state_home() -> Path:
     application modules; a later fixture would leave cached defaults pointing
     at the real user profile.
     """
+    _preserve_playwright_browser_cache()
     existing = os.environ.get("PYTEST_STATE_HOME")
     if existing:
         root = Path(existing).resolve()

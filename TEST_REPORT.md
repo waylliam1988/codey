@@ -1,5 +1,70 @@
 # Codey Test Report
 
+## Linux browser-cache lookup and DOM boot restoration (2026-10-08)
+
+基线：`244f7eff`，开始时工作区干净。本机 Windows、Python **3.12.8**。
+本轮只修改测试初始化、浏览器测试同步及机器契约清单；未修改生产内核、模型协议、
+版本号，未创建 tag 或 release。文档在最终全量结束后更新。
+
+### Linux CI 根因与确定性回归
+
+用户提供的 Linux Python **3.12.14** machine gate 日志为 **606 passed、2 errors，
+46.74s**：两个就绪测试在 Chromium 启动阶段找不到可执行文件。CI 已执行
+`playwright install chromium --with-deps`；但 `tests/conftest.py` 在收集前覆盖 HOME，
+Playwright 因而从原用户缓存切换到 `/tmp/codey-pytest-home-*/.cache/ms-playwright`。
+Windows 通常使用 LOCALAPPDATA，因此先前 Windows 全绿未覆盖此差异。
+
+`test_pytest_home_isolation_preserves_playwright_cache.py` 共 **12 条**，最终红测为
+**5 failed / 7 passed，16.10s**。失败覆盖 Linux/macOS 默认路径、Windows 缺少
+LOCALAPPDATA、空显式配置及空配置覆盖 npm；其余为正常行为对照。
+每个独立进程调用已安装 Playwright registry 的真实解析器，比较隔离前后及重复
+初始化后的缓存路径，同时确认 Path.home 与子进程 HOME 仍在隔离目录。
+保留显式绝对/相对路径、`0` 包内缓存、XDG 和 npm 配置的原生优先级。
+
+修复在修改 HOME 前固定默认 PLAYWRIGHT_BROWSERS_PATH；已有有效配置保持原语义。
+没有重装到临时目录、增加重试或跳过浏览器测试。首组回归 **49 passed，33.84s**，
+机器契约 **620 passed，103.12s**，随后运行首轮全量。
+
+### 首轮全量失败与新增红测
+
+首轮：**1 failed、7786 passed、7 skipped、1501 subtests passed，619.40s**。
+`test_markdown_tables_links_and_copy_feedback_are_safe_and_readable` 得到 tables=0。
+原测试只等待 appendMessageNode 函数出现；boot 的异步服务器状态恢复仍可能在
+测试插入消息后调用 renderChat，清掉直接构造的 DOM。
+
+新增 `test_ui_inplace_render_waits_for_boot_restore.py`：控制正式 UI 状态响应，
+旧的函数存在判断确定性返回过早，首先以“DOM tests started before state restoration”
+变红。六个 DOM 场景共用测试侧导航函数，观察并等待实际 restoreFromServer Promise
+完成，使用时间轮询；所有原内容、安全、复制、选择区和滚动断言均保留。
+
+故障注入首个绿测尝试曾因 `assert pending` 失败（**1 failed / 58 passed，48.77s**）：
+Playwright request 事件可能先于 route 回调。改为按是否已进入恢复等待来释放当前或
+随后到达的响应，仍断言恢复完成、真实 active_id 和表格内容；不依赖两事件先后。
+修正后 DOM 相关 **10 passed，10.88s**；最终相关回归 **59 passed，43.82s**。
+两个新增文件均纳入无 skip 的 machine contract gate。
+
+### 最终验证与范围
+
+| 检查 | 实际结果 |
+| --- | --- |
+| `python -m ruff check .` | All checks passed |
+| `python -m mypy codey` | 391 source files，零问题 |
+| `python -m compileall -q codey tools tests` | 通过 |
+| JavaScript `node --check` | 通过；未修改生产 JS |
+| `git diff --check` | 通过，只有行尾标准化提示 |
+| `python -m tools.machine_contract_gate` | **621 passed，105.53s**，零失败/跳过 |
+| `python -X utf8 -u -m pytest -q -ra -o faulthandler_timeout=120` | **7788 passed、7 skipped、1501 subtests passed，620.60s** |
+
+7 个 skip：四项 POSIX 文件位/权限/进程组/绝对路径，两项 Windows 无 O_NOFOLLOW，
+以及独立浏览器 E2E opt-in；普通 Chromium 工作流和新增故障注入均实际执行。
+本机没有可用 Linux 环境：三种平台的路径规则是通过真实 registry 的平台分支模拟
+验证，不能代替原生 Linux 浏览器启动、系统库或完整 CI。没有等待远端 CI、重跑
+真实模型矩阵或声称产品延迟/质量提升；这些修改证明测试所覆盖的目录与同步契约。
+
+首轮与终轮原始日志保留在忽略目录：
+`.e2e-artifacts/playwright-cache-home/pytest-full.txt`、`pytest-full-final.txt`。
+历史测试结果不改写。
+
 ## Atomic API exchanges, native preparation and UI readiness (2026-10-08)
 
 基线：`7c751f26`；Windows、Python **3.12.8**。工作区开始时干净。本轮完成共享

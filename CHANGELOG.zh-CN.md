@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 测试隔离保留浏览器缓存（2026-10-08）
+
+- pytest 修改 HOME 前保留 Playwright 浏览器缓存位置，尊重显式路径、包内缓存及
+  npm 配置；应用状态仍隔离。修复 Linux CI 到临时测试 HOME 寻找已安装 Chromium。
+- 十二个子进程场景调用已安装 Playwright 的真实路径解析器，覆盖 Linux/macOS
+  默认路径、Windows 缺少 LOCALAPPDATA、显式配置、重复初始化及子进程继承。
+- 首轮全量暴露 DOM 测试的启动竞争；补确定性红测，等待真实 boot restore Promise
+  完成后再操作测试消息。保留 Markdown、安全、复制、选择区和滚动全部原断言。
+  两个新增测试文件纳入必跑机器契约。
+- 最终：**7788 passed、7 skipped、1501 subtests passed，620.60 秒**；机器契约
+  **621 passed**；Ruff、mypy（391 文件）、编译、JS 语法和 diff 检查通过。
+  首轮失败保留在 `TEST_REPORT.md`；Linux 原生浏览器启动仍需 CI 确认。
+  未修改版本、未打 tag、未发布。
+
 ## 未发布 - API 原子交换与 native 首轮一次准备（2026-10-08）
 
 - 构造时选择协议 codec，文本、原生调用、工具结果及结束交付共用一个交换生命周期；

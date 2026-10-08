@@ -2,6 +2,21 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Preserve browser cache during test isolation (2026-10-08)
+
+- Preserve Playwright's browser cache before pytest isolates HOME. Honor explicit,
+  package-local and npm cache settings; keep application state isolated. This fixes
+  Linux CI looking for an installed Chromium under the temporary test home.
+- Add twelve subprocess cases using the installed Playwright registry's actual
+  path resolver, including Linux/macOS defaults and Windows without LOCALAPPDATA.
+- Reproduce a DOM-test readiness race exposed by the first full run. Wait for the
+  actual boot restore promise before rendering test messages; retain all Markdown,
+  safety, clipboard, selection and scroll assertions. Require both new contracts.
+- Final: **7788 passed, 7 skipped, 1501 subtests passed in 620.60s**; machine
+  contracts **621 passed**. Ruff, mypy (391 files), compilation, JavaScript syntax
+  and diff checks pass. The first full-run failure is recorded in `TEST_REPORT.md`.
+  Native Linux browser startup still needs CI verification; no version/tag/release.
+
 ## Unreleased - Atomic API exchanges and single native turn preparation (2026-10-08)
 
 - Select the protocol codec once and use one API exchange lifecycle for text,

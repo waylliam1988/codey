@@ -41,6 +41,7 @@ python -m tools.machine_contract_gate
 ```
 
 - 必跑清单由 `tools/machine_contract_gate.py` 维护；文件缺失、失败或任何 skip 均关闭此门，CI 与本地使用同一命令。需要 Node.js 执行实际 SSE JavaScript 回归，以及已安装的 Playwright Chromium（`python -m playwright install chromium`）执行就绪/清理契约。
+- 浏览器按正常用户环境安装；测试 bootstrap 在隔离 HOME 前保留 Playwright 缓存位置，尊重显式浏览器路径与包内缓存。必跑回归验证目录不随 HOME 隔离改变，且 DOM 测试等待真实状态恢复完成；缺浏览器仍明确失败，不自动重装或跳过。
 - 用脚本 provider 与真实存储检查认证、授权、取消/连接/交付失败、原生 ID 配对、来源状态、SSE 游标与输出身份、实际请求诊断及恢复。实际模型行为属于 Gate 3。
 - 桌面/CLI 正式入口的自动审查和单次修复、只读/联网授权、无项目、冷启动复用、顾问服务消费及配置错误也在必跑清单中。脚本 provider 场景隔离外部模型发现，不以用户当时打开的模型决定结果。
 - 两种 API 的原子交换、native Auto 首轮一次准备/所属会话，以及 Zen 包无法导入时 Local、目录和历史的正式消费者也必须通过；不能只检查连接注册是否存在。

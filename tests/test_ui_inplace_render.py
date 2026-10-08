@@ -66,6 +66,27 @@ def _format_diagnostics(diag: dict[str, object]) -> str:
     except Exception:
         return str(diag)[:2000]
 
+
+def _goto_restored_ui(page, url):
+    # Observe the actual boot restore promise before index.html binds its alias.
+    # DOM tests must not race a late renderChat() from server-state restoration.
+    page.add_init_script("""
+        Object.defineProperty(window, 'CodeyUiState', {configurable:true, set(state) {
+            Object.defineProperty(window, 'CodeyUiState', {
+                value:state, writable:true, configurable:true, enumerable:true});
+            const restore = state.restoreFromServer;
+            state.restoreFromServer = async function(...args) {
+                const result = await restore.apply(this, args);
+                window.__inPlaceRestoreDone = true;
+                return result;
+            };
+        }});
+    """)
+    response = page.goto(url)
+    page.wait_for_function("window.__inPlaceRestoreDone === true", polling=100)
+    return response
+
+
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:  # pragma: no cover
@@ -172,8 +193,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             browser = pw.chromium.launch(headless=True)
             try:
                 page = browser.new_page()
-                page.goto(self.httpd.launch_url(self.base_url))
-                page.wait_for_function("typeof window.appendMessageNode === 'function'")
+                _goto_restored_ui(page, self.httpd.launch_url(self.base_url))
                 result = page.evaluate("""() => {
                     const sid = 'history-process';
                     const messages = [
@@ -237,8 +257,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             browser = pw.chromium.launch(headless=True)
             try:
                 page = browser.new_page()
-                page.goto(self.httpd.launch_url(self.base_url))
-                page.wait_for_function("typeof window.appendMessageNode === 'function'")
+                _goto_restored_ui(page, self.httpd.launch_url(self.base_url))
                 result = page.evaluate("""() => {
                     const chat = document.getElementById('chat'); chat.replaceChildren();
                     const rows = [
@@ -285,8 +304,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             browser = pw.chromium.launch(headless=True)
             try:
                 page = browser.new_page()
-                page.goto(self.httpd.launch_url(self.base_url))
-                page.wait_for_function("typeof window.appendMessageNode === 'function'")
+                _goto_restored_ui(page, self.httpd.launch_url(self.base_url))
                 result = page.evaluate("""async () => {
                     const chat = document.getElementById('chat'); chat.replaceChildren();
                     const text = '[Docs](https://example.com/docs) [bad](javascript:alert)\\n\\n'
@@ -329,9 +347,8 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
                 diag = _attach_page_diagnostics(page)
                 try:
-                    response = page.goto(self.httpd.launch_url(self.base_url))
+                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url))
                     diag["goto_status"] = response.status if response else None
-                    page.wait_for_function("typeof window.renderChat === 'function'")
                 except Exception as exc:
                     raise AssertionError(
                         f"homepage/scripts failed :: diag={_format_diagnostics(diag)}"
@@ -474,9 +491,8 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
                 diag = _attach_page_diagnostics(page)
                 try:
-                    response = page.goto(self.httpd.launch_url(self.base_url))
+                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url))
                     diag["goto_status"] = response.status if response else None
-                    page.wait_for_function("typeof window.appendMessageNode === 'function'")
                 except Exception as exc:
                     raise AssertionError(
                         f"homepage/scripts failed :: diag={_format_diagnostics(diag)}"
@@ -545,9 +561,8 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
                 diag = _attach_page_diagnostics(page)
                 try:
-                    response = page.goto(self.httpd.launch_url(self.base_url))
+                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url))
                     diag["goto_status"] = response.status if response else None
-                    page.wait_for_function("typeof window.CodeyProviderUI !== 'undefined'")
                 except Exception as exc:
                     raise AssertionError(
                         f"homepage/scripts failed :: diag={_format_diagnostics(diag)}"

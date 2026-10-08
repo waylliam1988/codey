@@ -9,9 +9,15 @@ pytest -q
 ## Required event and recovery contracts
 
 `python -m tools.machine_contract_gate` runs the fixed CI/local selection;
-missing checks, failures and skips fail this gate. Node.js is required.
+missing checks, failures and skips fail this gate. Node.js and installed
+Playwright Chromium (`python -m playwright install chromium`) are required.
 Live release checks stay separate from deterministic contract checks.
 
+- `test_pytest_home_isolation_preserves_playwright_cache.py`: compare the installed
+  Playwright registry's cache path before/after HOME isolation across platform and
+  explicit configuration branches, including child-process inheritance.
+- `test_ui_inplace_render_waits_for_boot_restore.py`: delay the UI state response;
+  DOM-test navigation waits for actual boot restoration before rendering messages.
 - `test_event_outputs_share_run_identity.py`,
   `test_cli_tool_progress_uses_canonical_name.py`: run identity and strict tool
   fields agree in published events, SSE wire bytes, JSONL and CLI text.
