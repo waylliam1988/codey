@@ -1,5 +1,24 @@
 # Codey Test Report
 
+## Text actions without underlines (2026-10-08)
+
+基线：`502d9c12`；Windows、Python **3.12.8**。生产修改只有共用 `.link-btn` 的
+悬停规则：取消下划线，保留文字变亮和现有键盘焦点。全文搜索确认剩余下划线
+规则只有回答正文的 `.md-link`，作为真实网页链接的阅读提示保留。
+
+浏览器测试覆盖 Select all、Clear、Refresh models，以及通过正式 statusRow
+生成的 Retry、Details、View diff、Open、Review command、Settings。检查默认、
+悬停及键盘聚焦均无下划线，并保留悬停颜色和 1px 焦点轮廓；正文链接为对照。
+红测 **4 failed、1 passed，28.71s**，失败均为悬停实际得到 underline。
+修复后五个相关测试文件 **71 passed，108.61s**：可读性、模型管理、Settings
+焦点、恢复/搜索和人工重试。一次绿测命令曾因误写不存在的文件名未执行测试，
+修正路径后才得到上述实际结果。
+
+Ruff、diff 检查通过；本轮为定向浏览器回归，未重复全量 pytest。
+设计规范及双语 Changelog 在回归结束后更新。离线页面已刷新并验证三个操作的
+实际样式，截图 `.e2e-artifacts/model-management/text-actions-no-underline.jpg`。
+日志为同目录 `text-actions-red.txt`、`text-actions-green.txt`。无真实模型调用。
+
 ## Model source management, empty selection and deterministic UI fixtures (2026-10-08)
 
 基线：`28b7de02`；本机 Windows、Python **3.12.8**。本轮包含已获批准的模型管理

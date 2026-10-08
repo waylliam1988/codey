@@ -258,7 +258,12 @@ PAUSED · No progress for several turns          Continue
 ERROR · Connection refused                      Retry
 ```
 
-Structure: uppercase prefix + body + optional **text link** action (`link-btn`). No colored boxes.
+Structure: uppercase prefix + body + optional **text action** (`link-btn`). No colored boxes.
+
+Text actions have no underline in resting, hover or keyboard-focus states. Hover
+brightens text to `--text`; keep the restrained global keyboard focus outline.
+This shared rule also covers Settings actions such as `Select all`, `Clear` and
+`Refresh models`. Actual hyperlinks inside answer prose retain their underline.
 
 Submission failures use confirmed causes only: `Another chat is running · Open` navigates to the verified run owner; `Select the local model again · Choose model` opens the existing model menu in the original chat; `Codey is temporarily busy · Retry` retries the original request. Unknown causes retain `Could not send the message · Retry`. Navigation and model selection do not send automatically. Failure actions belong to the original chat and preserve newer drafts in every chat.
 

@@ -2,6 +2,14 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Quiet text actions (2026-10-08)
+
+- Remove hover underlines from shared text buttons, including model selection,
+  refresh, Retry, Details and View diff. Keep hover brightness and keyboard focus;
+  answer hyperlinks retain their underline.
+- Browser tests first reproduce four failures, then related Settings, readability,
+  recovery and manual-retry regressions pass: **71 passed in 108.61s**.
+
 ## Unreleased - Model source management and deterministic UI regressions (2026-10-08)
 
 - Manage Websites, optional API connections and Local with one Settings source

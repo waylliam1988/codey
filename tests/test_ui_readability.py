@@ -131,3 +131,46 @@ def test_failed_provider_probe_explanation_is_readable_in_model_menu(page):
     warning = page.locator("#provider-probe-warning")
     assert_readable(warning)
     expect(warning).to_have_css("font-size", "11.5px")
+
+
+def assert_quiet_text_action(page, action):
+    page.mouse.move(1200, 0)
+    expect(action).to_have_css("text-decoration-line", "none")
+    action.hover()
+    expect(action).to_have_css("text-decoration-line", "none")
+    expect(action).to_have_css("color", "rgb(230, 230, 230)")
+    page.mouse.move(1200, 0)
+    action.focus()
+    page.keyboard.press("Tab")
+    page.keyboard.press("Shift+Tab")
+    expect(action).to_be_focused()
+    assert action.evaluate("element => element.matches(':focus-visible')")
+    expect(action).to_have_css("text-decoration-line", "none")
+    expect(action).to_have_css("outline-style", "solid")
+    expect(action).to_have_css("outline-width", "1px")
+
+
+@pytest.mark.parametrize("label", ["Select all", "Clear", "Refresh models"])
+def test_model_text_actions_have_no_underline_and_keep_hover_and_keyboard_feedback(page, label):
+    model_settings_route(page)
+    open_connection_settings(page)
+    source = page.locator('.model-source[data-source-id="local"]')
+    assert_quiet_text_action(page, source.get_by_role("button", name=label, exact=True))
+
+
+def test_status_text_actions_follow_the_same_quiet_style(page):
+    labels = ["Retry", "Details", "View diff", "Open", "Review command", "Settings"]
+    page.evaluate("""labels => document.getElementById('chat').appendChild(
+        statusRow('Error', 'Style inspection', {err:true, actions:labels.map(label => ({label}))})
+    )""", labels)
+    for label in labels:
+        assert_quiet_text_action(page, page.locator('.status-row').get_by_role("button", name=label, exact=True))
+
+
+def test_answer_hyperlinks_keep_their_reading_affordance(page):
+    page.evaluate("addToSession('a', {type:'asst', text:'[Source](https://example.com/reference)'})")
+    link = page.get_by_role("link", name="Source", exact=True)
+    expect(link).to_have_attribute("href", "https://example.com/reference")
+    expect(link).to_have_css("text-decoration-line", "underline")
+    link.hover()
+    expect(link).to_have_css("text-decoration-line", "underline")

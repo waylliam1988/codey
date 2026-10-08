@@ -564,7 +564,7 @@
     font-size: 12px; font-family: inherit;
     flex-shrink: 0;
   }
-  .link-btn:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
+  .link-btn:hover:not(:disabled) { color: var(--text); }
   .link-btn:disabled { color: var(--faint); cursor: not-allowed; }
   .run-details {
     margin: 7px 0 2px 54px;
