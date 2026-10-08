@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from tests.test_ui_workflow import model_settings_route
+from tests.test_ui_workflow import model_settings_route, open_connection_settings
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
@@ -89,17 +89,19 @@ def test_context_and_effort_keep_hover_active_keyboard_and_disabled_hierarchy(pa
 
 def test_settings_explanations_are_readable_and_load_errors_keep_error_tone(page):
     model_settings_route(page)
-    page.locator("#btn-settings").click()
+    open_connection_settings(page)
     expect(page.locator("#local-config-save")).to_be_enabled()
     page.locator("#local-advanced summary").click()
-    for hint in page.locator(".settings-hint").all():
+    hints = page.locator(".settings-hint:visible").all()
+    assert len(hints) >= 4
+    for hint in hints:
         assert_readable(hint)
         expect(hint).to_have_css("font-size", "11.5px")
     expect(page.locator(".settings-section-label")).to_have_css("color", "rgb(107, 107, 107)")
     expect(page.locator("#local-key-status")).to_have_css("color", "rgb(107, 107, 107)")
     page.keyboard.press("Escape")
     page.route("**/api/local_provider", lambda route: route.fulfill(status=503, json={}))
-    page.locator("#btn-settings").click()
+    open_connection_settings(page)
     expect(page.locator("#local-config-summary")).to_have_text("Could not load connection")
     expect(page.locator("#local-config-summary")).to_have_css("color", "rgb(210, 138, 138)")
 

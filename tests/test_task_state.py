@@ -10,7 +10,9 @@ from unittest import mock
 from codey.app import provider_services, shell_service
 from codey.app.context import AppContext
 from codey.app.event_bus import RUN_EVENT_TYPES, stamp_run_scope
+from codey.app.provider_registry import ProviderRegistry
 from codey.operations.task_state import TaskState
+from codey.providers.model_preferences import ModelPreferences
 from codey.repairs.self_repair import SelfRepairSupervisor
 
 
@@ -76,6 +78,7 @@ class MovedGlueTests(unittest.TestCase):
             set_run_status=mock.Mock(),
             emit=events.append,
             current_run=lambda: None,
+            providers=ProviderRegistry(),
         )
         with mock.patch.object(
             provider_services, "connect_provider", return_value=provider
@@ -128,6 +131,7 @@ class MovedGlueTests(unittest.TestCase):
 
     def test_provider_failover_order_prefers_open_tabs(self) -> None:
         providers = SimpleNamespace(
+            model_preferences=ModelPreferences(),
             failover_order=lambda probe: ("qwen", "deepseek") if probe() else ("deepseek",),
         )
         with mock.patch.object(

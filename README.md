@@ -46,8 +46,9 @@ Start Codey:
 python -m codey
 ```
 
-Codey opens a local UI at `http://127.0.0.1:<port>/`. When a provider browser
-opens, log in once with the web AI account you already use. Then choose a
+Codey opens a local UI at `http://127.0.0.1:<port>/`. Model websites open only
+when you send to them; startup and model selection do not launch them. When a
+provider browser opens, log in once with the web AI account you already use. Choose a
 project folder and ask for a change, or stay in `New Chat` for ordinary
 conversation with no project access.
 
@@ -56,18 +57,30 @@ window cannot open, use the complete launch link printed by Codey. That link is
 single-use and expires after five minutes; restart Codey to obtain a new link
 when it has expired or been consumed. This does not require another AI account.
 
-To use a local model, choose `Local` and provide an OpenAI-compatible base URL,
-model id, and optional API key. Settings → Advanced → `API protocol` explicitly
-selects Chat Completions (`/chat/completions`) or Responses (`/responses`).
-`Tool calling` separately selects native or text-based tool requests.
+Settings → Models controls which models appear in the composer. Websites start
+with the five registered models selected; API sources start disabled and empty.
+Each source has the same master toggle and model checkboxes. Off preserves its
+subset; zero selected turns it off. Select a model or use Select all to enable it,
+then Save changes. Refresh models never automatically selects new arrivals.
+All sources off preserves drafts and history, with Send disabled.
 
-Free Zen models appear in the same model menu, from the public directory and
-live endpoint listing. Supported zero-cost models are refreshed automatically;
-network failure retains the bounded cache. No registration or personal key is
+To use a local model, open Settings → Local → Connection and provide an
+OpenAI-compatible base URL, model ID and optional API key. Save connection, then
+Refresh models, choose models and Save changes. Names come from actual model
+metadata or your optional display name. Connection → Advanced → `API protocol`
+explicitly selects Chat Completions (`/chat/completions`) or Responses
+(`/responses`). `Tool calling` separately selects native or text-based requests.
+
+To use free Zen models, expand its source in Settings, Refresh models and choose
+the models you want. Only enabled, selected models appear in the composer. The
+catalog combines the public directory and live endpoint listing; a network
+failure retains the bounded cache. No registration or personal key is
 required by this partner connection, but eligibility and tool restrictions are
 checked by the service for each request. A free listing does not guarantee access
 to every task mode. Muse coding and Space Bunny review were verified; see
 [test results and access limits](TEST_REPORT.md).
+
+See [model management and optional connection removal](docs/model-management.md).
 
 ## CLI
 

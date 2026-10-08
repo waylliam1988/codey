@@ -276,6 +276,7 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
         assert required in prompt
 
 
+@pytest.mark.usefixtures("public_source_dns")
 def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
     from codey.knowledge.changes import KnowledgeChanges
     from codey.knowledge.store import KnowledgeStore
@@ -702,6 +703,7 @@ def test_research_done_builds_proof_record_from_current_ledger() -> None:
     build.assert_called_once()
 
 
+@pytest.mark.usefixtures("public_source_dns")
 def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> None:
     from codey.knowledge.store import KnowledgeStore
     from codey.operations.research_iteration import run_research_iteration
@@ -1411,6 +1413,7 @@ def test_unified_writer_keeps_managed_output_receipt_in_event(tmp_path) -> None:
     assert finished.outcome.managed_output()["handle"] == "out_test"
 
 
+@pytest.mark.usefixtures("public_source_dns")
 def test_unified_research_externalizes_large_opened_source(tmp_path) -> None:
     from codey.knowledge.changes import KnowledgeChanges
     from codey.knowledge.store import KnowledgeStore

@@ -1,11 +1,14 @@
 """Standalone API review uses its selected model even when a web model is open."""
+import threading
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.app.provider_registry import ProviderRegistry
 from codey.runtime.core.api_selection import ApiRunSelection
+from tests.support.model_preferences import enable_models
 
 
 @pytest.mark.parametrize("connection_id", ["local", "zen"])
@@ -35,6 +38,7 @@ def test_formal_review_keeps_selected_api_and_never_borrows_open_browser(tmp_pat
     changes = {"ok": True, "files": [{"path": "app.py"}], "changed_count": 1,
                "diff": "diff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n"}
     rows = []
+    enable_models(tmp_path / "state", **{connection_id:[selection.model_id]})
     result = run_headless(
         HeadlessRequest(project=project, task="Review changes", intent="review", provider_id=connection_id,
                         model_selection={"model": selection.model_id}, state_home=tmp_path / "state"),
@@ -64,11 +68,11 @@ def test_standalone_missing_selection_cannot_fall_back_to_open_web_model(monkeyp
     web.assert_not_called()
 
 
-def test_automatic_project_review_preserves_open_web_preference(monkeypatch):
+def test_automatic_project_review_preserves_open_web_preference(monkeypatch, tmp_path):
     from codey.app import provider_services, review_service
     from codey.providers import api_connections
 
-    context = SimpleNamespace(set_provider_session=Mock())
+    context = SimpleNamespace(providers=ProviderRegistry(tmp_path), lock=threading.Lock(), set_provider_session=Mock())
     monkeypatch.setattr(provider_services, "reviewer_candidates", lambda *_: ["deepseek"])
     monkeypatch.setattr(provider_services, "connect_existing_provider", lambda _: "web reviewer")
     opened = Mock(side_effect=AssertionError("project review should prefer an available independent web model"))

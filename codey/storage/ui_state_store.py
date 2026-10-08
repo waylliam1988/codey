@@ -290,6 +290,7 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
                 "connection_id": _str(selection.get("connection_id"), 40),
                 "base_url": _str(selection.get("base_url")),
                 "model": _str(selection.get("model")),
+                **({"name": _str(selection["name"], 160)} if isinstance(selection.get("name"), str) else {}),
                 "effort": effort,
                 "efforts": efforts,
             }

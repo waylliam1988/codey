@@ -172,6 +172,7 @@ function normalizeSessions(value) {
       ...(raw.modelSelection && typeof raw.modelSelection === 'object' ? {modelSelection: {
         connection_id: String(raw.modelSelection.connection_id || ''),
         base_url: String(raw.modelSelection.base_url || ''), model: String(raw.modelSelection.model || ''),
+        ...(typeof raw.modelSelection.name === 'string' ? {name:raw.modelSelection.name.slice(0,160)} : {}),
         effort: ['off','minimal','low','medium','high','xhigh','max'].includes(raw.modelSelection.effort) ? raw.modelSelection.effort
           : null,
         efforts: Object.fromEntries(Object.entries(raw.modelSelection.efforts || {}).slice(0,50).filter(([key,value]) => key.length <= 1000 && ['off','minimal','low','medium','high','xhigh','max'].includes(value))),

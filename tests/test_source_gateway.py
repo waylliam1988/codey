@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import unittest
 
+import pytest
+
 from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import ResearchSourceGateway
+
+pytestmark = pytest.mark.usefixtures("public_source_dns")
 
 
 class _FakeSearch:

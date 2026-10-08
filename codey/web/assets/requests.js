@@ -16,7 +16,7 @@ function forRun(sessionId, runId) {
 function busy() { return !!deps.getRunningSessionId() || window.CodeyComposer.isSending(); }
 function canRetry(sessionId, requestId) {
   const s = session(sessionId), request = requestIn(s, requestId);
-  return !!request && !busy() && latest(request).state === 'failed'
+  return !!request && window.CodeyModels.allows(s.provider, window.CodeyProviderUI.runSelection(s, s.provider).model_selection?.model) && !busy() && latest(request).state === 'failed'
     && s.messages.filter(m => m.type === 'user').at(-1) === request;
 }
 function statusNode(requestId) {
@@ -98,7 +98,6 @@ function reconcile(data) {
 }
 function readable(error) {
   if (/overloaded/i.test(error)) return 'Model temporarily overloaded';
-  if (/free tier.*(?:within|in) OpenCode/i.test(error)) return 'Free tier only available in OpenCode';
   return error;
 }
 function details(panel, request) {

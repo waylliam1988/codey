@@ -2,6 +2,27 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Model source management and deterministic UI regressions (2026-10-08)
+
+- Manage Websites, optional API connections and Local with one Settings source
+  component. Preserve chosen subsets when disabled; refresh names/capabilities
+  without selecting new models. Use actual Local metadata instead of fixed labels.
+- Empty selections turn the master toggle off in both UI and storage. Explicit
+  selection or Select all enables it. Save atomically with revision checks and
+  protect models used by active tasks, approvals, reviewers and advisors.
+- Apply the selected scope to desktop admission, discovery and secondary model
+  operations. All sources off preserves drafts/history and disables Send. Open
+  model websites only when sending. Keep optional vendor logic out of shared UI.
+- Isolate shipped assets in UI behavior fixtures; inject asset connection failure
+  deterministically. Correct dynamic-directory consent assertions and fixture
+  catalog races. Keep real HTTP asset checks and original workflow assertions.
+- Make scripted Research DNS/cache and model preferences explicit; repair historical
+  replay fixtures without altering production policy or the frozen baseline.
+- Final: **7866 passed, 7 skipped, 1503 subtests passed in 779.85s**; required
+  contracts **679 passed**; historical replay **682 cases, 0 failures**. Static
+  checks pass. See `TEST_REPORT.md` for the first full-run failures and limits.
+  No version change, tag, release or live model calls.
+
 ## Unreleased - Preserve browser cache during test isolation (2026-10-08)
 
 - Preserve Playwright's browser cache before pytest isolates HOME. Honor explicit,

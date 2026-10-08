@@ -57,6 +57,8 @@ function makeSelect(id) {
 
 function init(next) {
   deps = next;
+  window.CodeyModelSettings.init({close});
+  $('local-connection-editor').ontoggle = () => { if ($('local-connection-editor').open) loadConnection(); };
   $('btn-settings').onclick = () => open();
   $('settings-dismiss').onclick = close;
   $('local-config-close').onclick = close;
@@ -101,7 +103,8 @@ async function open(trigger = document.activeElement) {
   $('local-api-key').value = '';
   $('local-config-retry').hidden = true;
   dialog.showModal(); $('settings-dismiss').focus();
-  await loadConnection();
+  $('local-connection-editor').open = false;
+  await window.CodeyModelSettings.open();
 }
 
 async function loadConnection() {
@@ -147,7 +150,7 @@ async function loadConnection() {
     else if (local.error) $('local-config-error').textContent = local.error;
     Array.from($('local-config-form').elements).forEach(el => { el.disabled = false; });
     $('local-config-retry').hidden = true;
-    $('local-config-save').textContent = connected ? 'Save changes' : 'Connect';
+    $('local-config-save').textContent = connected ? 'Save connection' : 'Connect';
   } catch {
     if (request !== generation || !dialog.open) return;
     $('local-config-summary').textContent = 'Could not load connection';
@@ -168,7 +171,7 @@ async function loadConnection() {
 function close() {
   const dialog = $('local-config-pop');
   if (!dialog.open) return;
-  generation++; loading = false; dialog.close();
+  generation++; loading = false; window.CodeyModelSettings.close(); dialog.close();
   closeSelects();
   if (returnFocus?.isConnected && !returnFocus.closest('[inert]')) returnFocus.focus();
 }
@@ -190,13 +193,15 @@ async function save() {
     const data = await r.json().catch(() => ({}));
     if (request !== generation) return;
     if (!r.ok || !data.ok) { $('local-config-error').textContent = data.error || 'Could not connect.'; return; }
-    deps.applyLocalMetadata(data.local || {}); close();
+    deps.applyLocalMetadata(data.local || {});
+    $('local-api-key').value = ''; connected = !!data.local?.connected;
+    $('local-config-summary').textContent = 'Connection saved. Refresh models to update the list.';
   } catch {
     if (request === generation) $('local-config-error').textContent = 'Could not reach the server.';
   } finally {
     if (request === generation) {
       Array.from($('local-config-form').elements).forEach(el => { el.disabled = false; });
-      $('local-config-save').textContent = connected ? 'Save changes' : 'Connect';
+      $('local-config-save').textContent = connected ? 'Save connection' : 'Connect';
     }
   }
 }

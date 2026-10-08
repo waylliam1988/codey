@@ -10,6 +10,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect, sync_playwright
 
 from codey.app import server
+from codey.app.http_plumbing import resolve_web_asset
 
 
 @pytest.fixture(scope="module")
@@ -41,6 +42,17 @@ def page(ui_browser):
     page.on("pageerror", lambda error: boot_errors.append(str(error)))
     page.on("requestfailed", lambda request: boot_errors.append(f"{urlsplit(request.url).path}: {request.failure}"))
     page.add_init_script("window.EventSource = class { static OPEN = 1; readyState = 1; close() {} };")
+
+    def asset(route):
+        # Behavior tests use the exact shipped files. HTTP asset delivery has
+        # separate integration coverage; a loopback failure must not randomly
+        # remove one module and turn every subsequent UI assertion into a timeout.
+        resolved = resolve_web_asset(urlsplit(route.request.url).path)
+        assert resolved is not None, f"Missing shipped asset: {route.request.url}"
+        path, content_type = resolved
+        route.fulfill(body=path.read_bytes(), content_type=content_type)
+
+    page.route("**/assets/**", asset)
     catalog = [{"id": key, "label": label, "available": True} for key, label in
                [("deepseek", "DeepSeek"), ("mimo", "MiMo"), ("stepfun", "StepFun"),
                 ("qwen", "Qwen"), ("glm", "GLM"), ("local", "Local")]]
@@ -53,6 +65,8 @@ def page(ui_browser):
         data = {"ok": True}
         if path in {"provider_catalog", "providers"}:
             data = {"providers": catalog, "default": "deepseek"}
+        elif path == "model_settings":
+            data = model_management_payload()
         elif path == "ui_state" and route.request.method == "GET":
             data = {"state": state}
         elif path == "pick_folder":
@@ -72,6 +86,7 @@ def page(ui_browser):
                                   "session_ids: window.CodeyUiState?.current().sessions.map(s => s.id), "
                                   "visibility: document.visibilityState})")
             raise AssertionError(f"UI boot failed: {boot_errors}; status: {status}; state: {state}") from exc
+        page.wait_for_load_state("networkidle")
         yield page
     finally:
         page.close()
@@ -104,9 +119,54 @@ def api_connection_payload(local):
                        for name in dict.fromkeys([*local.get("models", []), *([model] if model else [])])]}
 
 
+def model_management_payload(connection=None):
+    websites = [{"id": key, "name": name} for key, name in [("deepseek", "DeepSeek"), ("mimo", "MiMo"), ("stepfun", "StepFun"), ("qwen", "Qwen"), ("glm", "GLM")]]
+    local = {"id": "local", "label": "Local", "connection_editor": True, "discoverable": True, "models": [], **(connection or {})}
+    return {"ok": True, "preferences": {"revision": 0, "sources": {
+        "websites": {"enabled": True, "models": [m["id"] for m in websites]},
+        "local": {"enabled": bool(connection), "models": [m["id"] for m in local["models"]]},
+    }}, "sources": [{"id": "websites", "label": "Websites", "models": websites}, local], "in_use": []}
+
+
+def open_connection_settings(page):
+    page.locator("#btn-settings").click()
+    source = page.locator('.model-source[data-source-id="local"] > details')
+    expect(source).to_be_visible()
+    if source.get_attribute("open") is None:
+        source.locator("summary").first.click()
+    with page.expect_request("**/api/local_provider"):
+        page.locator('#local-connection-editor > summary').click()
+    expect(page.locator("#local-config-pop")).to_have_attribute("aria-busy", "false")
+
+
 def apply_model_metadata(page, local):
-    page.evaluate("CodeyProviderUI.applyApiModels", [api_connection_payload(local)])
+    payload = api_connection_payload(local)
+    page.evaluate("CodeyModels.applySettings", model_management_payload(payload))
+    page.evaluate("CodeyProviderUI.applyApiModels", [payload])
     page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+
+
+def select_connection_models(page, connection, selected=None):
+    """Explicit Settings consent, separate from discovery in composer tests."""
+    settings = page.evaluate("CodeyModels.snapshot()")
+    settings["sources"] = [source for source in settings["sources"] if source["id"] != connection["id"]]
+    settings["sources"].append(connection)
+    settings["preferences"]["revision"] += 1
+    settings["preferences"]["sources"][connection["id"]] = {
+        "enabled": True, "models": selected if selected is not None else [model["id"] for model in connection["models"]],
+    }
+    providers = []
+    for source in settings["sources"]:
+        if source["id"] == "websites":
+            providers.extend({"id": model["id"], "label": model["name"], "available": True} for model in source["models"])
+        else:
+            providers.append({"id": source["id"], "label": source["label"], "available": True})
+    catalog = {"providers": providers, "default": "deepseek"}
+    for endpoint in ("provider_catalog", "providers"):
+        page.route("**/api/" + endpoint, lambda route: route.fulfill(json=catalog))
+    page.evaluate("CodeyProviderUI.applyConfig", catalog)
+    page.evaluate("CodeyModels.applySettings", settings)
+    page.evaluate("CodeyProviderUI.applyApiModels", [connection])
 
 
 def model_settings_route(page, *, thinking=True):
@@ -116,6 +176,9 @@ def model_settings_route(page, *, thinking=True):
              "thinking_options": ["off", "minimal", "low", "medium", "high"] if thinking else []}
     page.route("**/api/local_provider", lambda route: route.fulfill(json={"ok": True, "local": local}))
     page.route("**/api/api_models", lambda route: route.fulfill(json={"ok": True, "connections": [api_connection_payload(local)]}))
+    settings = model_management_payload(api_connection_payload(local))
+    page.route("**/api/model_settings", lambda route: route.fulfill(json=settings))
+    page.evaluate("CodeyModels.applySettings", settings)
     return local
 
 
@@ -139,6 +202,7 @@ def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
     ], 'projects': []}
     saved = LocalProviderConfig(base_url=base_url, model=model, display_name=display_name) if remembered else LocalProviderConfig()
     local = {'connected': True, 'base_url': base_url, 'model': model, 'models': [model]}
+    page.route('**/api/model_settings', lambda route: route.fulfill(json=model_management_payload(api_connection_payload({'model': model, 'base_url': base_url}))))
     page.route('**/api/ui_state', lambda route: route.fulfill(json={'ok': True, 'state': state}))
     page.route('**/api/local_provider', lambda route: route.fulfill(json=api.local_provider_response()[1]))
     page.route('**/api/api_models', lambda route: route.fulfill(json={'connections': [api_connection_payload(api.local_provider_response()[1]['local'])]}))
@@ -148,7 +212,7 @@ def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
     }))
     with (
         mock.patch.object(api, 'load_local_config', return_value=saved),
-        mock.patch.object(api, 'local_bootstrap_payload', side_effect=lambda: dict(local)),
+        mock.patch.object(api, 'local_bootstrap_payload', side_effect=lambda **_: dict(local)),
         mock.patch('codey.providers.local_selection._metadata_json', return_value={}),
     ):
         for connected in (True, False, True):
@@ -164,11 +228,11 @@ def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
 
 def test_settings_is_quiet_modal_with_advanced_dark_controls_and_focus_return(page):
     model_settings_route(page)
-    page.locator("#btn-settings").click()
+    open_connection_settings(page)
     expect(page.get_by_role("dialog", name="Settings", exact=True)).to_be_visible()
     expect(page.locator("#local-base-url")).to_have_value("http://127.0.0.1:5001/v1")
     expect(page.locator("#local-native-tools-mode")).to_be_hidden()
-    expect(page.locator("#local-config-save")).to_have_text("Save changes")
+    expect(page.locator("#local-config-save")).to_have_text("Save connection")
     page.get_by_text("Advanced", exact=True).click()
     for selector in ("#local-context-preset-button", "#local-native-tools-mode-button"):
         control = page.locator(selector)
@@ -398,7 +462,7 @@ def test_retry_preserves_new_draft_and_uses_original_failed_submission(page):
 def test_model_menu_has_no_search_and_small_catalog_keyboard(page):
     page.locator("#provider-button").click()
     expect(page.locator("#provider-menu input")).to_have_count(0)
-    expect(page.locator(".provider-item:visible")).to_have_count(6)
+    expect(page.locator(".provider-item:visible")).to_have_count(5)
     page.keyboard.press("Enter")
     expect(page.locator("#provider-name")).to_have_text("DeepSeek")
     page.evaluate("CodeyProviderUI.applyConfig({providers:[{id:'deepseek',label:'DeepSeek'},{id:'mimo',label:'MiMo'}],default:'mimo'})")

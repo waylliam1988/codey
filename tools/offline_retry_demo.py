@@ -134,6 +134,11 @@ class Handler(BaseHTTPRequestHandler):
                         {"id": "mimo", "label": "Offline model B", "available": True}]}
                 elif path == "/api/api_models":
                     data = {"ok": True, "connections": []}
+                elif path == "/api/model_settings":
+                    data = {"ok": True, "preferences": {"revision": 0, "sources": {
+                        "websites": {"enabled": True, "models": ["deepseek", "mimo"]}}},
+                        "sources": [{"id": "websites", "label": "Websites", "models": [
+                            {"id": "deepseek", "name": "Offline model A"}, {"id": "mimo", "name": "Offline model B"}]}], "in_use": []}
                 elif path == "/api/local_provider":
                     data = {"ok": True, "local": {"connected": False}}
                 else:

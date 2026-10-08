@@ -6,7 +6,7 @@ import colorsys
 import pytest
 from playwright.sync_api import expect
 
-from tests.test_ui_workflow import model_settings_route
+from tests.test_ui_workflow import model_settings_route, open_connection_settings
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
@@ -60,7 +60,7 @@ def test_nested_message_and_code_selection_is_readable_and_preserves_exact_text(
 def test_keyboard_editor_selection_stays_readable_without_changing_value_or_focus(page, selector):
     if selector != '#task':
         model_settings_route(page)
-        page.locator('#btn-settings').click()
+        open_connection_settings(page)
     field = page.locator(selector)
     field.fill('Hello 中文 Codey')
     before = field.evaluate("e => ({border:getComputedStyle(e).border, shadow:getComputedStyle(e).boxShadow})")

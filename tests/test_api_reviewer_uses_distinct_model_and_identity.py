@@ -1,12 +1,15 @@
 """Writer and reviewer API models stay distinct with reusable scope identities."""
+import threading
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from codey.app.provider_registry import ProviderRegistry
 from codey.providers.api_provider import ApiProvider
 from codey.providers.zen.connection import ZenProvider
 from codey.reviews.identity import review_model_identity
 from codey.runtime.core.api_selection import ApiRunSelection
+from tests.support.model_preferences import enable_models
 
 
 def test_zen_wrapper_preserves_protocol_and_effort_in_review_identity():
@@ -37,12 +40,13 @@ def test_api_reviewer_selects_another_model_without_changing_writer(monkeypatch)
     assert writer.model_id == "writer"
 
 
-def test_production_review_uses_distinct_api_reviewer_with_frozen_writer():
+def test_production_review_uses_distinct_api_reviewer_with_frozen_writer(tmp_path):
     from codey.app import review_service
 
     writer = ApiRunSelection("zen", "fixture", "writer", "openai-responses", True)
     reviewer = replace(writer, model_id="reviewer", protocol="openai-completions")
-    context = SimpleNamespace(run_registry=SimpleNamespace(api_selection_for=lambda _: writer), emit=lambda _: None)
+    enable_models(tmp_path, zen=["writer", "reviewer", "selected-reviewer"])
+    context = SimpleNamespace(providers=ProviderRegistry(tmp_path), lock=threading.Lock(), run_registry=SimpleNamespace(api_selection_for=lambda _: writer), emit=lambda _: None)
     with patch("codey.app.provider_services.reviewer_candidates", return_value=()), \
             patch("codey.providers.api_connections.capture_reviewer_selection", return_value=reviewer), \
             patch("codey.providers.api_connections.open_selection", return_value="review-provider"), \
@@ -83,7 +87,8 @@ def test_standalone_api_review_uses_selected_model_instead_of_selecting_another(
     mutations = RuntimeMutationLine(log)
     mutations.accept_operation(session_id="s", run_id="r", provider_id="zen", turn_budget=4, max_repair_rounds=1,
                                task_kind="review", model_selection=selected.to_payload())
-    context = SimpleNamespace(run_registry=SimpleNamespace(api_selection_for=lambda _: selected), emit=lambda _: None,
+    enable_models(tmp_path, zen=["writer", "reviewer", "selected-reviewer"])
+    context = SimpleNamespace(providers=ProviderRegistry(tmp_path), lock=threading.Lock(), run_registry=SimpleNamespace(api_selection_for=lambda _: selected), emit=lambda _: None,
                               runtime_log=log, runtime_mutations=mutations)
     with patch("codey.app.provider_services.reviewer_candidates", return_value=()), \
             patch("codey.providers.api_connections.capture_reviewer_selection", side_effect=AssertionError("no writer exists in a review-only run")), \

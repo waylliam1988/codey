@@ -6,6 +6,8 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.research.tools import ResearchToolOutput, ResearchTools
@@ -25,6 +27,7 @@ class _LongSearch:
         }
 
 
+@pytest.mark.usefixtures("public_source_dns")
 def test_open_url_returns_structured_window_and_full_receipt() -> None:
     url = "https://example.com/long"
     prefix = "P" * 6000

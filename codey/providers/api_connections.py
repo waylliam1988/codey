@@ -24,11 +24,13 @@ def open_selection(selection: ApiRunSelection) -> ChatProvider:
     return connection_for(selection.connection_id).open_selection(selection)  # type: ignore[no-any-return]
 
 
-def capture_reviewer_selection(writer: ApiRunSelection) -> ApiRunSelection:
+def capture_reviewer_selection(writer: ApiRunSelection, *, allowed_models: set[str] | None = None) -> ApiRunSelection:
     """Admit a different model from the same connector's current directory."""
     connection = connection_for(writer.connection_id)
     models = connection.model_payload().get("models", [])
     for model in sorted(models, key=lambda item: item.get("review_eligible") is not True):
+        if allowed_models is not None and model["id"] not in allowed_models:
+            continue
         if model["id"] != writer.model_id and model.get("review_eligible") is not False:
             return capture_selection(writer.connection_id, {"model": model["id"]})
     raise ValueError("no independent API reviewer model is currently available")

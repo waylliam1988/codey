@@ -6,6 +6,7 @@ import pytest
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.reviews.persistence import load_recorded_review
 from tests.support.local_review_fixture import ScriptedLocal, fixture_project, writer_turns
+from tests.support.model_preferences import enable_models
 
 pytestmark = pytest.mark.usefixtures("no_external_advisor_models", "scripted_local_api_connection")
 
@@ -13,6 +14,7 @@ pytestmark = pytest.mark.usefixtures("no_external_advisor_models", "scripted_loc
 @pytest.mark.parametrize("finding", [False, True])
 @pytest.mark.parametrize("desktop_routing", [False, True])
 def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tmp_path, monkeypatch, finding, desktop_routing):
+    enable_models(tmp_path / "state", local=["scripted-fixture"])
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project = fixture_project(tmp_path)
     timeline = []

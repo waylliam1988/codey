@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest import mock
 
 from codey.app import task_submit
+from codey.app.provider_registry import ProviderRegistry
 from codey.automation.browser_worker import BrowserWorkerBusy
 
 
@@ -14,6 +16,8 @@ def _fake_reserved(run_id="run-1"):
 
 class _FakeState:
     def __init__(self, reserved=True):
+        self.lock = threading.Lock()
+        self.providers = ProviderRegistry()
         self.reserved = reserved
         self.released: list[str] = []
         self.expired: list[str] = []

@@ -882,6 +882,29 @@
   .settings-dialog input:focus-visible { outline: none; box-shadow: none; }
   .settings-dialog select:focus-visible { outline: 1px solid var(--muted); outline-offset: 2px; }
   .settings-dialog option { background: var(--panel); color: var(--text); }
+  .model-source { position: relative; border-bottom: 1px solid var(--border-2); }
+  .model-source summary { display: flex; align-items: center; gap: 10px; padding: 14px 46px 14px 0; cursor: pointer; color: var(--text-dim); font-size: 12px; list-style: none; }
+  .model-source summary::-webkit-details-marker { display: none; }
+  .model-source > details > summary::before { content: '›'; width: 10px; color: var(--muted); }
+  .model-source > details[open] > summary::before { transform: rotate(90deg); }
+  .model-source-count { margin-left: auto; font-size: 11.5px; }
+  .settings-dialog .model-source-toggle { appearance: none; position: absolute; right: 0; top: 16px; width: 28px; height: 16px; padding: 2px; border: 1px solid var(--muted); border-radius: 10px; cursor: pointer; background: transparent; }
+  .model-source-toggle::after { content: ''; display: block; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .model-source-toggle:checked::after { transform: translateX(12px); background: var(--text); }
+  .model-source-toggle:disabled { opacity: .5; cursor: default; }
+  .model-source-body { padding: 0 0 16px 20px; }
+  .model-source-actions { display: flex; gap: 14px; margin-bottom: 8px; }
+  .model-source-actions .link-btn { font-size: 11.5px; }
+  .model-source-actions .link-btn:last-child { margin-left: auto; }
+  .model-source-models { max-height: 240px; overflow-y: auto; margin-top: 8px; }
+  .model-choice { display: flex; gap: 9px; align-items: center; padding: 7px 0; font-size: 12px; cursor: pointer; }
+  .model-choice span { overflow-wrap: anywhere; }
+  .settings-dialog .model-choice input { appearance: none; width: 13px; height: 13px; padding: 0; border-radius: 3px; flex-shrink: 0; cursor: pointer; border-color: var(--muted); }
+  .model-choice input:checked::after { content: '✓'; display: block; color: var(--text); font-size: 11px; line-height: 11px; text-align: center; }
+  .source-disabled .model-choice { color: var(--text-dim); }
+  .settings-dialog input[type=checkbox]:focus-visible { outline: 1px solid var(--text-dim); outline-offset: 3px; }
+  .model-settings-actions { padding-top: 8px; }
+  #local-connection-editor { margin-top: 12px; }
   .settings-select-wrap { position: relative; min-width: 0; }
   .settings-select {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;

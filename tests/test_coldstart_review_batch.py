@@ -171,7 +171,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             try:
                 calls: list[int] = []
 
-                def fake_scan() -> dict[str, bool]:
+                def fake_scan(**_kwargs) -> dict[str, bool]:
                     calls.append(1)
                     return {"deepseek": True}
 

@@ -158,8 +158,12 @@ class ScriptedProvider:
 
     def send_tool_results(self, messages, tools, **_kwargs):
         from codey.providers.base import AssistantTurn
-        self.receipts.extend(row.call_id for row in messages)
-        if any(row.content.startswith("OK:") or "budget exhausted" in row.content for row in messages):
+        # The pinned Research guard emits wire dictionaries; ordinary results
+        # and the current kernel emit typed receipts. Preserve both exactly.
+        receipts = [(row["tool_call_id"], row["content"]) if isinstance(row, dict)
+                    else (row.call_id, row.content) for row in messages]
+        self.receipts.extend(call_id for call_id, _content in receipts)
+        if any(content.startswith("OK:") or "budget exhausted" in content for _call_id, content in receipts):
             return AssistantTurn(text="closed", tool_calls=())
         return self.send_turn("native results", tools)
 
@@ -213,6 +217,8 @@ def coding_loop(case, legacy):
         events = []
         candidates = (VerificationCandidate(command="python -m pytest -q", cwd=".", source="parity"),)
         kwargs = {}
+        if legacy:
+            kwargs["strict_fresh_chat"] = case.get("strict_fresh", False)
         if case.get("candidates"):
             kwargs["verification_candidates"] = candidates
         if case.get("candidate_loader"):
@@ -248,10 +254,17 @@ def coding_loop(case, legacy):
 
 
 def research_loop(case, legacy):
+    import socket
     import threading
     from types import SimpleNamespace
+    from unittest.mock import patch
 
     from codey.knowledge.store import KnowledgeStore
+    from codey.policies import network
+
+    def resolve(host, port, **_kwargs):
+        assert host == "example.com", f"No scripted DNS answer for {host}"
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", port))]
 
     operations = []
 
@@ -272,7 +285,11 @@ def research_loop(case, legacy):
     with tempfile.TemporaryDirectory(prefix="codey-parity-research-") as td:
         store = KnowledgeStore(Path(td) / "knowledge")
         try:
-            with native_tools_mode(case.get("native")):
+            with (
+                native_tools_mode(case.get("native")),
+                patch.object(network, "socket", SimpleNamespace(getaddrinfo=resolve, IPPROTO_TCP=socket.IPPROTO_TCP)),
+                patch.object(network, "DEFAULT_NETWORK_POLICY", network.NetworkPolicy()),
+            ):
                 if legacy:
                     from codey.research.runner import ResearchRunner
 

@@ -1,10 +1,14 @@
 """New chats retain the selected API model instead of catalog's first row."""
 from playwright.sync_api import expect
 
-from tests.test_ui_workflow import page, ui_browser  # noqa: F401 -- real browser fixtures
+from tests.test_ui_workflow import page, select_connection_models, ui_browser  # noqa: F401 -- real browser fixtures
 
 
 def test_new_chat_copies_api_choice_without_sharing_mutable_effort_map(page):  # noqa: F811
+    select_connection_models(page, {"id": "zen", "label": "OpenCode Zen", "models": [
+        {"id": "first-model", "name": "First", "efforts": []},
+        {"id": "selected-model", "name": "Selected", "efforts": ["low", "high"]},
+    ]})
     page.evaluate("""() => {
       CodeyProviderUI.applyConfig({default:'deepseek', providers:[{id:'zen',label:'OpenCode Zen'}]});
       CodeyProviderUI.applyApiModels([{id:'zen',models:[

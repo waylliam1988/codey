@@ -24,6 +24,7 @@ from codey.automation.browser_worker import submit as submit_browser_task
 from codey.operations.project_adapter import run as agent_run
 from codey.operations.task_state import TaskSubmissionState
 from codey.providers.diagnostics import capture_provider_failure
+from codey.providers.model_preferences import ModelDisabledError
 from codey.reviews.review_policy import load_review_policy
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes
@@ -140,18 +141,22 @@ def submit_task(
     # init-phase cleanup never depends on the accessor working a second time.
     review_policy = load_review_policy()
     state = get_state()
-    reserved = state.reserve_run(
-        session_id=session_id,
-        project=project,
-        task=task,
-        provider_id=provider_id,
-        abort_if_stopped=abort_if_stopped,
-        run_id=run_id,
-    )
-    if reserved is None:
-        return None
-    if model_selection is not None:
-        state.run_registry.bind_api_selection(reserved.run_id, model_selection)
+    # Settings saves use this same lock: disabling and admission cannot cross.
+    with state.lock:
+        if not state.providers.model_preferences.allows(provider_id, model_selection.model_id if model_selection else ""):
+            raise ModelDisabledError("Selected model is disabled. Choose an enabled model in Settings.")
+        reserved = state.reserve_run(
+            session_id=session_id,
+            project=project,
+            task=task,
+            provider_id=provider_id,
+            abort_if_stopped=abort_if_stopped,
+            run_id=run_id,
+        )
+        if reserved is None:
+            return None
+        if model_selection is not None:
+            state.run_registry.bind_api_selection(reserved.run_id, model_selection)
     try:
         accepted = submit_browser_task(
             run_task,

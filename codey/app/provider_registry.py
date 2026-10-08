@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
 from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
+from codey.providers.model_preferences import ModelPreferences
 from codey.providers.supervisor import ProviderSupervisor
 
 logger = logging.getLogger(__name__)
@@ -14,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 class ProviderRegistry:
     def __init__(self, state_home: str | Path | None = None) -> None:
+        self.model_preferences = ModelPreferences(state_home)
+        self.model_uses: Counter[tuple[str, str]] = Counter()
         self._sessions: dict[str, str] = {}
         self.supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
@@ -26,6 +30,9 @@ class ProviderRegistry:
         self,
         tab_availability: Callable[[], dict[str, bool]],
     ) -> tuple[str, ...]:
+        allowed = tuple(pid for pid in PROVIDER_LABELS if pid not in API_CONNECTIONS and self.model_preferences.allows(pid))
+        if not allowed:
+            return ()
         try:
             statuses = tab_availability()
         except Exception:
@@ -33,12 +40,12 @@ class ProviderRegistry:
             statuses = {}
         opened = tuple(
             provider_id
-            for provider_id in PROVIDER_LABELS
+            for provider_id in allowed
             if provider_id not in API_CONNECTIONS and statuses.get(provider_id)
         )
         return opened + tuple(
             provider_id
-            for provider_id in PROVIDER_LABELS
+            for provider_id in allowed
             if provider_id not in API_CONNECTIONS and provider_id not in opened
         )
 
@@ -52,7 +59,7 @@ class ProviderRegistry:
         return tuple(
             provider_id
             for provider_id in ordered
-            if provider_id != broken and self.supervisor.is_available(provider_id)
+            if provider_id != broken and self.model_preferences.allows(provider_id) and self.supervisor.is_available(provider_id)
         )
 
     def session_changed(self, provider_id: str, session_id: str) -> bool:

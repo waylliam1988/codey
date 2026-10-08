@@ -8,6 +8,7 @@ from codey.app.context import AppContext
 from codey.app.headless_runner import HeadlessAppContext
 from codey.env_names import REVIEW_POLICY_ENV
 from tests.support.local_review_fixture import ScriptedLocal, fixture_project, writer_turns
+from tests.support.model_preferences import enable_models
 
 
 @pytest.mark.usefixtures("no_external_advisor_models", "scripted_local_api_connection")
@@ -20,6 +21,7 @@ def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, 
     for entry in ("desktop", "cli"):
         root = tmp_path / entry
         root.mkdir()
+        enable_models(root / "state", local=["scripted-fixture"])
         project = fixture_project(root)
         before = "def add(a, b):\n    return a - b\n"
         written = "def add(a, b):\n    return a + b\n"

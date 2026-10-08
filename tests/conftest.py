@@ -10,6 +10,22 @@ import pytest
 
 
 @pytest.fixture
+def public_source_dns(monkeypatch):
+    """Resolve scripted sources locally while retaining the real URL policy."""
+    import socket
+    from types import SimpleNamespace
+
+    from codey.policies import network
+
+    def resolve(host, port, **_kwargs):
+        assert host == "example.com", f"No scripted DNS answer for {host}"
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", port))]
+
+    monkeypatch.setattr(network, "socket", SimpleNamespace(getaddrinfo=resolve, IPPROTO_TCP=socket.IPPROTO_TCP))
+    monkeypatch.setattr(network, "DEFAULT_NETWORK_POLICY", network.NetworkPolicy())
+
+
+@pytest.fixture
 def scripted_local_api_connection(monkeypatch):
     """A non-network admission scope for tests that inject a scripted provider."""
     from codey.providers import local_selection
@@ -26,7 +42,7 @@ def no_external_advisor_models(monkeypatch):
     from codey.app.provider_services import reset_provider_availability_cache
 
     reset_provider_availability_cache()
-    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", lambda: {})
+    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", lambda **_: {})
     try:
         yield
     finally:

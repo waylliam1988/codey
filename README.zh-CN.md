@@ -42,7 +42,8 @@ pip install -e .
 python -m codey
 ```
 
-Codey 会打开本地 UI：`http://127.0.0.1:<port>/`。第一次打开某个网页 provider 时，
+Codey 会打开本地 UI：`http://127.0.0.1:<port>/`。模型网站只在发送时按需打开，
+启动或选择模型不会自动打开网站。第一次打开某个网页 provider 时，
 在专用浏览器窗口里手动登录一次。之后选择项目文件夹并直接描述任务；如果只想普通聊天，
 留在 `New Chat`，不要选择项目。
 
@@ -50,16 +51,26 @@ Codey 打开的本地 UI 会自动完成操作者认证。原生窗口无法打�
 完整启动链接。链接只能使用一次、五分钟后过期；已使用或过期时，重启 Codey 获取
 新链接。这不需要额外的 AI 账号。
 
-如果要用本地模型，选择 `Local`，填写 OpenAI-compatible base URL、model id 和可选
-API key。在 Settings → Advanced → `API protocol` 明确选择 Chat Completions
+Settings → Models 决定对话框显示和可用的模型。Websites 默认选择五个已注册网站，
+API 来源默认关闭且未选择模型。每个来源共用总开关和模型复选框：关闭保留子集，
+零选择自动关闭；勾选模型或 Select all 后启用，再 Save changes。刷新不自动选择
+新增模型。全部关闭仍保留草稿和历史，Send 禁用。
+
+使用本地模型时，打开 Settings → Local → Connection，填写 OpenAI-compatible
+base URL、model ID 和可选 API key。Save connection 后 Refresh models、勾选模型，
+再 Save changes。名称来自实际元数据或可选显示名，不固定为某个模型。
+Connection → Advanced → `API protocol` 明确选择 Chat Completions
 （`/chat/completions`）或 Responses（`/responses`）；`Tool calling` 另外控制
 原生工具调用或文本工具请求。
 
-Zen 免费模型直接进入原有模型菜单，取公开目录与实际 endpoint 列表的交集，
-只收录明确零费用且协议受支持的模型。目录自动刷新，断网保留有界缓存。
+使用 Zen 免费模型时，在 Settings 展开该来源、Refresh models 并明确勾选；
+只有来源开启且已选择的模型进入对话框菜单。目录取公开目录与实际 endpoint 列表
+的交集，只收录明确零费用且协议受支持的模型；断网保留有界缓存。
 本合作连接不要求注册或个人密钥，但每次请求的资格与工具限制仍由上游检查；
 免费列表不代表所有任务模式都能访问。已验证 Muse 编码与 Space Bunny 审查，
 具体范围见[测试报告](TEST_REPORT.md)。
+
+详见[模型管理与可选连接拆除](docs/model-management.md)。
 
 ## 命令行
 

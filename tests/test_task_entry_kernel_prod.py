@@ -50,7 +50,7 @@ class EntryAuthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             status, _ = run_submit_response(
                 {"session_id": "s", "project": td, "task": "research caching",
-                 "max_turns": 8, "provider": "local", "intent": "research"},
+                 "max_turns": 8, "provider": "deepseek", "intent": "research"},
                 fake_submit,
             )
             self.assertEqual(status, 200)
@@ -86,7 +86,7 @@ class EntryAuthTests(unittest.TestCase):
             status, _ = run_submit_response(
                 {"session_id": "s", "project": td,
                  "task": "查官方文档 https://example.com 修复 bug",
-                 "max_turns": 8, "provider": "local", "intent": "project"},
+                 "max_turns": 8, "provider": "deepseek", "intent": "project"},
                 fake_submit,
             )
             self.assertEqual(status, 200)

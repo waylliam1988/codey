@@ -80,6 +80,8 @@ class AssetReferenceTests(unittest.TestCase):
                 "/assets/changes_drawer.js",
                 "/assets/local_context_drawer.js",
                 "/assets/run_details.js",
+                "/assets/models.js",
+                "/assets/model_settings.js",
                 "/assets/settings.js",
                 "/assets/provider_ui.js",
                 "/assets/ui_state.js",

@@ -19,6 +19,7 @@ from unittest import mock
 
 from codey.app import api as app_api
 from codey.app import shell_service
+from codey.app.provider_registry import ProviderRegistry
 from codey.runtime.core import cancellation
 
 
@@ -545,6 +546,7 @@ class WorkerBusyMappingTests(unittest.TestCase):
 
         reserved = SimpleNamespace(run_id="run-1")
         state = SimpleNamespace(
+            lock=threading.Lock(), providers=ProviderRegistry(),
             reserve_run=mock.Mock(return_value=reserved),
             release_run=mock.Mock(),
             expire_stale_shell_approvals=mock.Mock(),

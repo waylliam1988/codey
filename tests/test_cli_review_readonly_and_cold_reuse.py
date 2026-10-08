@@ -5,9 +5,11 @@ import subprocess
 from codey.app import cli
 from codey.env_names import REVIEW_POLICY_ENV
 from tests.support.local_review_fixture import ScriptedLocal
+from tests.support.model_preferences import enable_models
 
 
 def test_cli_review_cold_start_reuses_without_new_chat_or_send(tmp_path, monkeypatch, capsys, scripted_local_api_connection):
+    enable_models(tmp_path / "state", local=["scripted-fixture"])
     project = tmp_path / "project"
     project.mkdir()
     source = project / "app.py"

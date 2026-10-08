@@ -337,11 +337,13 @@ class ProviderSelectorUiTests(unittest.TestCase):
         block = SETTINGS_JS[start:start + 2400]
         self.assertIn("if (!r.ok || !data.ok) {", block)
         failure_at = block.index("if (!r.ok || !data.ok) {")
-        close_at = block.index("close();")
+        success_at = block.index("deps.applyLocalMetadata")
         return_at = block.index("return;", failure_at)
-        # Failure sets the error and returns before closing the popover.
+        # Failure returns before applying metadata; saving a connection keeps
+        # Settings open so the user can refresh and select models explicitly.
         self.assertLess(failure_at, return_at)
-        self.assertLess(return_at, close_at)
+        self.assertLess(return_at, success_at)
+        self.assertNotIn("close();", block)
         self.assertIn("local.context_error", SETTINGS_JS)
 
     def test_shell_approval_applies_http_result_without_waiting_for_sse(self) -> None:
@@ -1491,6 +1493,7 @@ global.document = {
     if (id === 'composer-context') return { onclick: null, addEventListener: () => {} };
     if (id === 'send' || id === 'stop') return { onclick: null, disabled: false, style: {}, setAttribute: () => {}, click: () => {} };
     if (id === 'send-hint') return { textContent: '' };
+    if (id === 'model-menu-empty' || id === 'model-notice') return fakeButtons[id] || (fakeButtons[id] = makeElement('div'));
     return null;
   },
   addEventListener: () => {},
@@ -1501,6 +1504,9 @@ global.navigator = {};
 const uiStateSrc = loadAsset('assets/ui_state.js');
 const providerUiSrc = loadAsset('assets/provider_ui.js');
 const composerSrc = loadAsset('assets/composer.js');
+vm.runInThisContext(loadAsset('assets/models.js'));
+window.CodeyModels.applySettings({preferences:{revision:0,sources:{websites:{enabled:true,models:['deepseek','mimo']}}},
+  sources:[{id:'websites',label:'Websites',models:[{id:'deepseek',name:'DeepSeek'},{id:'mimo',name:'MiMo'}]}],in_use:[]});
 vm.runInThisContext(uiStateSrc);
 vm.runInThisContext(providerUiSrc);
 vm.runInThisContext(composerSrc);
@@ -1575,13 +1581,19 @@ async function main() {
   window.CodeyComposer.setActiveProvider('removed-id');
   if (liveSession.provider !== 'mimo') throw new Error('composer fallback must use live default mimo, got ' + liveSession.provider);
   if (syncedTo !== 'mimo') throw new Error('composer sync must target live default mimo, got ' + syncedTo);
-  // A stored connection stays attached; the backend rejects unavailable ids.
-  liveSession.provider = 'removed-id';
+  // A permitted continuation retains its exact provider.
+  liveSession.provider = 'mimo';
   runBodies.length = 0;
   await window.CodeyComposer.continueTask('s1');
   const continued = runBodies.find((r) => r.url === '/api/run' && r.body && r.body.continue_task);
   if (!continued) throw new Error('continueTask did not POST /api/run with continue_task');
-  if (continued.body.provider !== 'removed-id') throw new Error('continueTask must preserve the stored provider, got ' + continued.body.provider);
+  if (continued.body.provider !== 'mimo') throw new Error('continueTask must preserve the stored provider, got ' + continued.body.provider);
+  // Removed connections keep their identity and cannot submit or substitute.
+  liveSession.provider = 'removed-id';
+  runBodies.length = 0;
+  await window.CodeyComposer.continueTask('s1');
+  if (runBodies.length) throw new Error('removed connection submitted a continuation');
+  if (liveSession.provider !== 'removed-id') throw new Error('removed connection identity changed');
   console.log('EXECUTABLE_SHRINK_LIVE_OK');
 }
 main().catch((e) => { console.error(e && e.stack || e); process.exit(1); });

@@ -1,5 +1,84 @@
 # Codey Test Report
 
+## Model source management, empty selection and deterministic UI fixtures (2026-10-08)
+
+基线：`28b7de02`；本机 Windows、Python **3.12.8**。本轮包含已获批准的模型管理
+实现，以及用户补充的 GitHub 3.11/3.12 失败和零选择开关问题。先运行红测、修复并
+完成定向回归和静态检查，再冻结代码运行全量；本文在最终全量结束后更新。
+版本仍为 0.5.11，未创建 tag 或 Release。
+
+### 行为与 TDD
+
+- Websites、可选 API 连接和 Local 共用来源组件；总开关保留已有子集，目录刷新
+  只更新事实，不自动选择新模型。Local 名称来自实际模型元数据或用户显示名。
+- 最后一项取消或 Clear 后，三个来源都立即变为 `0 selected`、总开关关闭且不可
+  单独开启；显式勾选或 Select all 后恢复开启。保存重开仍保持一致。后端同样将
+  空子集规范为关闭，避免绕过 UI 后触发自动发现。三种来源的后端红测先失败，
+  浏览器覆盖逐项取消、Clear、保存重开、重新选择和不改变其他来源。
+- 偏好使用原子保存和 revision 冲突检查。发送接纳及 worker 预留、自动切换、
+  修复、Reviewer 和 Advisor 使用同一范围；运行中、暂停审批及辅助操作保护精确
+  模型身份。全部关闭保留草稿和历史，并禁用 Send。桌面启动不打开模型网站。
+- 共用前端不含 OpenCode/Zen 分支。缺包探针实际阻止 Zen 导入并移除注册，执行
+  Local、目录和历史消费者；浏览器另用任意可选来源验证移除后名称、草稿和身份。
+
+### GitHub 失败与夹具边界
+
+3.11 日志里的首个故障是 `/assets/conversation_ui.js` 连接失败，状态恢复超时是
+后果。UI 行为夹具改由生产 `resolve_web_asset` 读取并提供原样发布资产；根 HTML
+仍走真实 HTTP，资产 HTTP/打包检查独立保留。故障注入测试切断该文件的服务端
+连接，先红后绿，验证恢复到真实会话 `a`，且资产请求不再抵达该 HTTP 服务。
+没有扩大超时、重试加载或跳过测试。本机验证不等于原生 Python 3.11 CI 已通过。
+
+3.12 的旧断言要求新发现模型立即出现在菜单，与已批准的显式选择原则冲突。
+更新测试为“刷新后未选择不可见，明确选择后可见”，保留原模型/思考强度断言。
+另补确定性测试锁定夹具竞争：动态连接必须同时进入偏好、目录和可用性响应，
+否则晚到的旧 `/api/providers` 会把测试刚注入的连接删掉。
+
+联调首轮 **13 failed / 37 passed，180.28s**，其中包含新测试对动态 checked 集合
+和保留 disclosure 的错误假设；修正测试操作后相关 **53 passed，53.23s**。
+机器契约首轮 **6 failed / 672 passed** 暴露旧入口未明确启用脚本 Local 模型，
+补真实偏好夹具后最终 **679 passed，155.10s**。扩展回归还修正旧 Settings 路径、
+Node 假 DOM，以及 Connection 异步加载完成前填表导致输入被覆盖的测试同步问题。
+原内容、安全、焦点、选择区、持久化和发送身份断言均保留。
+
+### 首轮全量与补充回归
+
+首轮全量：**11 failed、7853 passed、7 skipped、1503 subtests passed，780.55s**。
+一项 sibling 闭包夹具漏传 ModelPreferences；十项 Research 夹具虽然模拟 fetch，
+却仍依赖真实 example.com DNS。离线验证阻止外部 DNS 后得到可重复失败。修复为
+测试范围内固定公共 DNS 答案和独立缓存，仍运行生产 URL 安全检查；没有放宽网络
+策略。相关 **771 passed，19.12s**；网络/URL 边界 **262 passed、15 subtests，7.44s**。
+
+额外历史重放发现模拟 Provider 不接受旧 Research guard 的字典回执：新增两条
+测试先 **1 failed / 1 passed**，再修正测试模拟器；还恢复历史请求遗漏的
+strict_fresh_chat 参数。未修改冻结基线或生产兼容逻辑。最终该测试文件
+**694 passed，8.29s**；完整历史版本重放 **682 cases：554 parity、128 已登记的
+intentional changes、0 failures**。
+
+### 最终验证与实际范围
+
+| 检查 | 实际结果 |
+| --- | --- |
+| Ruff 全树 | All checks passed |
+| mypy `codey` | 393 source files，零问题 |
+| Python 编译 / JavaScript 语法 | 通过；20 个资产及 1 个内联脚本 |
+| `git diff --check` | 通过，行尾标准化提示不影响结果 |
+| 必跑机器契约 | **679 passed，155.10s**，零失败/跳过 |
+| 最终全量 pytest | **7866 passed、7 skipped、1503 subtests passed，779.85s** |
+
+最终全量期间代码冻结，使用本地验证驱动拒绝非 loopback socket 连接及外部 DNS。
+7 项跳过：四项 POSIX 文件位/权限/进程组/绝对路径，两项 Windows 无 O_NOFOLLOW，
+一项独立 Edge E2E opt-in；普通 Chromium UI 工作流和本轮故障注入实际执行。
+本机没有 Python 3.11/3.13 或原生 Linux，本报告不替代推送后的对应 CI。
+本轮没有真实模型调用或 API token 消耗，也没有运行发布用真实模型矩阵。
+
+离线检测页使用实际发布前端及内存 API，地址 `http://127.0.0.1:8767/`。
+已实际点击 Clear，确认 Websites 为 `0 selected`、开关关闭，其他来源不变。
+模拟器不导入 provider runtime、不读密钥，CSP 限定同源连接。
+原始日志和截图在忽略目录 `.e2e-artifacts/model-management/`：
+`full-pytest-first.txt/xml`、`full-pytest.txt/xml`、`machine-contracts-green.txt`、
+`kernel-parity-final.json`、`zero-selected-off.jpg`。历史报告保持原样。
+
 ## Linux browser-cache lookup and DOM boot restoration (2026-10-08)
 
 基线：`244f7eff`，开始时工作区干净。本机 Windows、Python **3.12.8**。

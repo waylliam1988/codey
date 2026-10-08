@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from tests.test_ui_workflow import model_settings_route
+from tests.test_ui_workflow import model_settings_route, open_connection_settings
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
@@ -12,12 +12,12 @@ from tests.test_ui_workflow import ui_browser as ui_browser
 @pytest.mark.parametrize("focus_method", ["pointer", "keyboard"])
 def test_settings_text_fields_focus_without_an_extra_frame(page, focus_method):
     model_settings_route(page)
-    page.locator("#btn-settings").click()
+    open_connection_settings(page)
     expect(page.locator("#local-config-save")).to_be_enabled()
     page.locator("#local-advanced summary").click()
     page.locator("#local-context-preset-button").click()
     page.get_by_role("option", name="Custom…", exact=True).click()
-    page.locator("#settings-dismiss").focus()
+    page.locator("#local-connection-editor > summary" if focus_method == "keyboard" else "#settings-dismiss").focus()
 
     for selector in ("#local-base-url", "#local-model-name", "#local-api-key",
                      "#local-display-name", "#local-context-window"):

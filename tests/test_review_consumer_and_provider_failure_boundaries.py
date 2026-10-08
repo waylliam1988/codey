@@ -1,9 +1,11 @@
 """Consumers retain findings; post-send failures never route a second request."""
+import threading
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
+from codey.app.provider_registry import ProviderRegistry
 from codey.app.review_service import run_review, run_review_attempt
 from codey.operations.review_flow import render_review_only_summary
 from codey.reviews.coordinator import _snapshot_still_current
@@ -32,11 +34,11 @@ def test_run_details_hides_reuse_run_id():
 
 def test_post_send_failure_does_not_try_another_reviewer(monkeypatch):
     connected = Mock(return_value=object())
-    monkeypatch.setattr("codey.app.review_service.providers.reviewer_candidates", lambda *_: ("first", "second"))
+    monkeypatch.setattr("codey.app.review_service.providers.reviewer_candidates", lambda *_: ("qwen", "mimo"))
     monkeypatch.setattr("codey.app.review_service.providers.connect_existing_provider", connected)
     monkeypatch.setattr("codey.app.review_service.run_review_attempt", Mock(side_effect=RuntimeError("post-send failure")))
     with pytest.raises(RuntimeError, match="post-send failure"):
-        run_review(SimpleNamespace(set_provider_session=lambda *_: None), session_id="s", project="p", task="review",
+        run_review(SimpleNamespace(providers=ProviderRegistry(), lock=threading.Lock(), set_provider_session=lambda *_: None), session_id="s", project="p", task="review",
                    writer_summary="", changes={}, recent_log="", writer_id="writer", review_impact_map="")
     assert connected.call_count == 1
 

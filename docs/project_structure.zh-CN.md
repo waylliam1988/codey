@@ -78,6 +78,9 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/providers/api_codec.py` | 无状态 codec 契约及生成参数；连接工厂解析预算，Provider 构造时选定协议 |
 | `codey/providers/api_chat.py`、`api_responses.py` | 各自拥有工具、结果、wire 历史、完整交换组裁剪和回复解码；Responses 保留 reasoning items 并使用 call_id |
 | `codey/providers/api_connections.py`、`local_connection.py` | lazy 连接工厂与冻结 Local 配置；共享 runtime 不导入 Zen |
+| `codey/providers/model_preferences.py` | 带 revision 的原子来源/模型偏好；目录观察不改变选择 |
+| `codey/app/model_settings.py`、`provider_services.py` | 通用来源描述、显式发现、使用中模型保护与已选范围服务 |
+| `codey/web/assets/models.js`、`model_settings.js` | 前端权威快照与共用暂存编辑器；可选连接提供数据，不增加专属 UI 分支 |
 | `codey/providers/zen/` | 动态免费目录、限定合作身份与访问观察；`declarations.py` 拥有临时不可用 read/shell 网络声明，`connection.py` 拥有有界文本调用拒绝；不授予任务权限，删除生产包和注册时还需清理专用测试、gate 和文档 |
 | `codey/runtime/core/api_selection.py`、`operation_payload.py` | 无秘密的冻结 API 选择，以及严格接纳/交付 payload 校验 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |

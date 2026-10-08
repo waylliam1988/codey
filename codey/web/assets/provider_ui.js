@@ -24,6 +24,12 @@ function init(nextDeps) {
   DEFAULT_PROVIDER = deps.DEFAULT_PROVIDER;
   providerStatus = Object.fromEntries(PROVIDERS.map(id => [id, false]));
   providerUpdatedAt = Object.fromEntries(PROVIDERS.map(id => [id, 0]));
+  apiModels = Object.fromEntries(window.CodeyModels.connections().map(source => [source.id, source]));
+  window.CodeyModels.subscribe(() => {
+    apiModels = Object.fromEntries(window.CodeyModels.connections().map(source => [source.id, {...apiModels[source.id], ...source}]));
+    buildProviderMenu();
+    window.CodeyComposer.updateSend();
+  });
   buildProviderMenu();
   bindHandlers();
   if (typeof ResizeObserver !== 'undefined') {
@@ -50,6 +56,7 @@ function buildProviderMenu() {
     const localModels = connection ? (connection.models || []).map(item => item.id) : [''];
     if (connection && !localModels.length) localModels.push('');
     for (const model of localModels) {
+    if (!window.CodeyModels.allows(id, model)) continue;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'provider-item';
@@ -74,7 +81,7 @@ function buildProviderMenu() {
           const previous = sessionSelection(s, id);
           const efforts = previous.connection_id === id && previous.base_url === (connection.base_url || '') ? {...previous.efforts} : {};
           if (previous.model && previous.effort) efforts[previous.model] = previous.effort;
-          s.modelSelection = {connection_id:id, base_url:connection.base_url || '', model, effort:efforts[model] || null, efforts};
+          s.modelSelection = {connection_id:id, base_url:connection.base_url || '', model, name:modelTitle(model, id), effort:efforts[model] || null, efforts};
         }
       }
       setActiveProvider(id);
@@ -84,6 +91,7 @@ function buildProviderMenu() {
     else menu.appendChild(btn);
   }
   }
+  $('model-menu-empty').hidden = !!modelRows().length;
   syncProviderUI(currentProviderId());
   highlightedProvider = selectedKey();
   highlightModel();
@@ -131,7 +139,6 @@ function openMenu() {
   highlightModel();
   (modelRows().find(row => row.dataset.key === highlightedProvider) || modelRows()[0])?.focus();
   refreshProviderStatus();
-  refreshLocalMetadata(); refreshApiModels();
 }
 
 function applyRecommended(data) {
@@ -181,6 +188,7 @@ function applyProviderConfig(data) {
 }
 
 async function adoptBackendCatalog() {
+  try { await window.CodeyModels.load(); } catch {}
   // Boot-time only: adopt the backend catalog into ui_state before init.
   // Hits the cheap static catalog (no CDP/network probe); availability
   // stays on the async /api/providers refresh path. Do not touch DOM
@@ -204,7 +212,8 @@ function providerAvailability(id) { return providerStatus[id] ? 'ok' : ''; }
 function syncProviderUI(providerId) {
   const id = providerId || DEFAULT_PROVIDER;
   const selection = sessionSelection();
-  $('provider-name').textContent = selection.model ? modelTitle(selection.model, id) : providerLabel(id);
+  const reason = window.CodeyModels.reason(id, selection.model);
+  $('provider-name').textContent = (selection.model ? modelTitle(selection.model, id) : providerLabel(id)) + (reason ? ' · ' + reason : '');
   const staleConnection = id === 'local' && selection.base_url && localMetadata.base_url && selection.base_url !== localMetadata.base_url;
   $('provider-button').setAttribute('aria-label', 'Choose model: ' + $('provider-name').textContent +
     (staleConnection ? '. Connection changed; select the model again.' : ''));
@@ -283,6 +292,8 @@ function selectedKey() {
 function modelTitle(model, id = currentProviderId()) {
   const record = apiModels[id]?.models?.find(item => item.id === model);
   if (record?.name) return record.name;
+  const stored = deps.activeSession?.()?.modelSelection;
+  if (stored?.connection_id === id && stored.model === model && stored.name) return stored.name;
   const leaf = model.split('/').pop();
   const short = leaf.match(/^([A-Za-z][\w.]*?)[-_](\d+(?:\.\d+)?[Bb])(?=[-_]|$)/);
   return short ? `${short[1]} ${short[2].toUpperCase()}` : leaf;
@@ -323,7 +334,7 @@ function syncThinking() {
     row.onclick = () => {
       const s = deps.activeSession(); if (!s || $('provider-button').disabled) return;
       const selection = sessionSelection(s);
-      s.modelSelection = {connection_id:currentProviderId(), base_url:selection.base_url, model:selection.model, effort:option,
+      s.modelSelection = {...selection, effort:option,
         efforts:{...selection.efforts, [selection.model]:option}};
       deps.persistActiveNow(); syncProviderUI(currentProviderId()); closeEffortMenu(true);
     };
@@ -343,6 +354,7 @@ function applyLocalMetadata(local) {
   buildProviderMenu();
 }
 async function refreshLocalMetadata() {
+  if (!window.CodeyModels.snapshot().preferences.sources.local?.enabled) return;
   const request = ++localRequest;
   try {
     const r = await fetch('/api/local_provider', {cache:'no-store'});
@@ -353,7 +365,9 @@ async function refreshLocalMetadata() {
 }
 let apiModels = {}, apiModelsRequest = 0;
 function applyApiModels(connections) {
-  apiModels = Object.fromEntries(connections.map(connection => [connection.id, connection]));
+  connections.forEach(connection => {
+    if (window.CodeyModels.connections().some(source => source.id === connection.id)) apiModels[connection.id] = connection;
+  });
   buildProviderMenu();
 }
 async function refreshApiModels() {
@@ -415,7 +429,6 @@ $('effort-button').onclick = e => {
   const menu = $('effort-menu'); menu.classList.add('open'); menu.setAttribute('aria-hidden','false');
   $('effort-button').classList.add('open'); $('effort-button').setAttribute('aria-expanded','true');
   (menu.querySelector('[aria-pressed="true"]') || menu.firstElementChild)?.focus();
-  refreshLocalMetadata(); refreshApiModels();
 };
 $('effort-menu').addEventListener('keydown', e => {
   if (e.isComposing) return;

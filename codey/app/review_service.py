@@ -322,27 +322,29 @@ def run_review(
     if review_impact_map is None:
         review_impact_map = safe_review_impact_map(project, changes)
     source = validate_source_run_id(review_source_run_id) if review_source_run_id else ""
-    selected = _connect_review_model(ctx, session_id=session_id, run_id=run_id, writer_id=writer_id,
+    with contextlib.ExitStack() as leases:
+        selected = _connect_review_model(ctx, session_id=session_id, run_id=run_id, writer_id=writer_id,
                                     self_review_allowed=self_review_allowed, standalone=standalone,
-                                    connect_reviewer=connect_reviewer)
-    if selected is None:
-        return None
-    reviewer_id, reviewer, self_review = selected
-    return run_review_attempt(
-        ctx, session_id=session_id, project=project, task=task,
-        writer_summary=writer_summary, changes=changes, recent_log=recent_log,
-        change_brief=change_brief, project_map=project_map, verification_map=verification_map,
-        review_impact_map=review_impact_map, execution_evidence=execution_evidence,
-        reviewer_id=reviewer_id, reviewer=reviewer, self_review=self_review,
-        trace_recorder=trace_recorder, run_id=run_id, review_policy=review_policy,
-        review_source_run_id=source,
-    )
+                                    connect_reviewer=connect_reviewer, leases=leases)
+        if selected is None:
+            return None
+        reviewer_id, reviewer, self_review = selected
+        return run_review_attempt(
+            ctx, session_id=session_id, project=project, task=task,
+            writer_summary=writer_summary, changes=changes, recent_log=recent_log,
+            change_brief=change_brief, project_map=project_map, verification_map=verification_map,
+            review_impact_map=review_impact_map, execution_evidence=execution_evidence,
+            reviewer_id=reviewer_id, reviewer=reviewer, self_review=self_review,
+            trace_recorder=trace_recorder, run_id=run_id, review_policy=review_policy,
+            review_source_run_id=source,
+        )
 
 
 def _connect_review_model(
     ctx: TaskState, *, session_id: str, run_id: str, writer_id: str,
     self_review_allowed: bool, standalone: bool,
     connect_reviewer: Callable[..., Any] | None,
+    leases: contextlib.ExitStack,
 ) -> tuple[str, Any, bool] | None:
     from codey.providers.catalog import API_CONNECTIONS
     from codey.providers.ids import normalize_provider_id
@@ -355,14 +357,17 @@ def _connect_review_model(
         if not self_review_allowed:
             emit_review(ctx, session_id, "Review unavailable: selected-provider review is disabled.")
             return None
-        selected = _selected_api_reviewer(ctx, session_id, run_id, writer_id, standalone=True)
+        selected = _selected_api_reviewer(ctx, session_id, run_id, writer_id, standalone=True, leases=leases)
         if selected is None:
             raise RuntimeError("Selected API reviewer is unavailable")
         return selected[0], selected[1], False
     for reviewer_id in providers.reviewer_candidates(ctx, writer_id):
         cancellation.check()
         try:
-            reviewer = providers.connect_existing_provider(reviewer_id)
+            with contextlib.ExitStack() as candidate:
+                candidate.enter_context(providers.use_model(ctx, reviewer_id))
+                reviewer = providers.connect_existing_provider(reviewer_id)
+                leases.enter_context(candidate.pop_all())
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
@@ -370,18 +375,20 @@ def _connect_review_model(
         ctx.set_provider_session(reviewer_id, None)
         return reviewer_id, reviewer, False
     cancellation.check()
-    selected = _selected_api_reviewer(ctx, session_id, run_id, writer_id) if self_review_allowed else None
+    selected = _selected_api_reviewer(ctx, session_id, run_id, writer_id, leases=leases) if self_review_allowed else None
     if selected is not None:
         return selected[0], selected[1], False
     if not self_review_allowed:
         emit_review(ctx, session_id, "Review unavailable: no web reviewer is open.")
         return None
     reviewer_id = normalize_provider_id(writer_id) or DEFAULT_PROVIDER_ID
+    leases.enter_context(providers.use_model(ctx, reviewer_id))
     return reviewer_id, providers.connect_fresh_provider_tab(reviewer_id), True
 
 
 def _selected_api_reviewer(
     ctx: TaskState, session_id: str, run_id: str, writer_id: str, *, standalone: bool = False,
+    leases: contextlib.ExitStack | None = None,
 ) -> tuple[str, Any] | None:
     from codey.providers.api_connections import capture_reviewer_selection, open_selection
     from codey.runtime.core.api_selection import ApiRunSelection
@@ -395,11 +402,17 @@ def _selected_api_reviewer(
         selection = ApiRunSelection.from_payload(operation.reviewer_selection)
     else:
         try:
-            selection = writer if standalone else capture_reviewer_selection(writer)
+            preferences = ctx.providers.model_preferences.snapshot()["sources"].get(writer_id, {})
+            selected_models = set(preferences.get("models", [])) if preferences.get("enabled") else set()
+            selection = writer if standalone else capture_reviewer_selection(writer, allowed_models=selected_models)
         except ValueError:
             return None
         if operation is not None:
             ctx.runtime_mutations.admit_reviewer_selection(session_id, run_id, selection.to_payload())
+    if not ctx.providers.model_preferences.allows(selection.connection_id, selection.model_id):
+        return None
+    if leases is not None:
+        leases.enter_context(providers.use_model(ctx, selection.connection_id, selection.model_id))
     return selection.connection_id, open_selection(selection)
 
 

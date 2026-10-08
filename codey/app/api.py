@@ -26,6 +26,7 @@ from codey.providers.local_config import (
     select_local_target,
 )
 from codey.providers.local_discovery import LocalEndpoint, probe_local_endpoint_detail
+from codey.providers.model_preferences import ModelDisabledError
 from codey.runs.details import load_run_details
 from codey.storage.local_store import StoreCorruption
 from codey.task.entry_auth import derive_entry_auth
@@ -136,19 +137,27 @@ def provider_catalog_response() -> tuple[int, dict[str, Any]]:
     }
 
 
-def local_provider_response() -> tuple[int, dict[str, Any]]:
-    local = local_bootstrap_payload()
+def local_provider_response(ctx: Any = None) -> tuple[int, dict[str, Any]]:
+    from codey.app.model_settings import preferences_for
+
+    local = local_bootstrap_payload(probe=preferences_for(ctx).enabled("local"))
     _attach_local_metadata(local)
     return 200, {"ok": True, "local": local}
 
 
-def api_models_response() -> tuple[int, dict[str, Any]]:
+def api_models_response(ctx: Any = None) -> tuple[int, dict[str, Any]]:
+    from codey.app.model_settings import preferences_for
     from codey.providers.api_connections import connection_for
 
+    preferences = preferences_for(ctx)
     payload: list[dict[str, Any]] = []
     for connection_id in API_CONNECTIONS:
+        if not preferences.enabled(connection_id):
+            continue
         try:
-            payload.append(connection_for(connection_id).model_payload())
+            item = connection_for(connection_id).model_payload()
+            preferences.observe_catalog(item)
+            payload.append(item)
         except (OSError, ValueError, RuntimeError) as exc:
             payload.append({"id": connection_id, "label": API_CONNECTIONS[connection_id][0], "models": [], "error": str(exc)[:240]})
     return 200, {"connections": payload}
@@ -456,9 +465,36 @@ def restore_changes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[
                 ctx.release_project_writer(key)
 
 
+def _model_disabled(ctx: Any, body: dict[str, Any], provider_id: str) -> bool:
+    from codey.app.model_settings import preferences_for
+
+    selection = body.get("model_selection")
+    model_id = str(selection.get("model") or "") if isinstance(selection, dict) else ""
+    return not preferences_for(ctx).allows(provider_id, model_id)
+
+
+def _api_selection_for_submit(ctx: Any, provider_id: str, selection: object) -> tuple[dict[str, Any], tuple[int, dict[str, Any]] | None]:
+    if provider_id not in API_CONNECTIONS:
+        return {}, (400, {"error": "model_selection requires an API model"})
+    from codey.app.model_settings import preferences_for
+    from codey.providers.api_connections import capture_selection
+
+    try:
+        if not isinstance(selection, dict) or not isinstance(selection.get("model"), str) or not selection["model"].strip():
+            raise ValueError("Choose an explicit model")
+        captured = capture_selection(provider_id, selection)
+        if not preferences_for(ctx).allows(provider_id, captured.model_id):
+            return {}, (409, {"code": "model_disabled", "error": "Selected model is disabled. Choose an enabled model in Settings."})
+        return {"model_selection": captured}, None
+    except ValueError as exc:
+        return {}, (400, {"error": str(exc), "reason": "model_selection_invalid"})
+
+
 def run_submit_response(
     body: object,
     submit_task: Callable[..., str | None],
+    *,
+    ctx: Any = None,
 ) -> tuple[int, dict[str, Any]]:
     if not isinstance(body, dict):
         return 400, {"error": "invalid json"}
@@ -496,6 +532,8 @@ def run_submit_response(
         return 400, {"error": "task required"}
     if provider_id not in PROVIDER_LABELS:
         return 400, {"error": f"unsupported provider: {provider_id}"}
+    if _model_disabled(ctx, body, provider_id):
+        return 409, {"error": "Selected model is disabled. Choose an enabled model in Settings.", "code": "model_disabled"}
     if intent == "review" and not project:
         return 400, {"error": "project required for review"}
     from codey.reviews.reuse import validate_source_run_id
@@ -520,28 +558,22 @@ def run_submit_response(
         submit_kwargs["review_source_run_id"] = review_source_run_id
     if client_run_id:
         submit_kwargs["run_id"] = client_run_id
-    if "model_selection" in body:
-        if provider_id not in API_CONNECTIONS:
-            return 400, {"error": "model_selection requires an API model"}
-        from codey.providers.api_connections import capture_selection
+    if provider_id in API_CONNECTIONS or "model_selection" in body:
+        captured, error = _api_selection_for_submit(ctx, provider_id, body.get("model_selection"))
+        if error:
+            return error
+        submit_kwargs.update(captured)
+    return _submit_task_response(submit_task,
+        (session_id, project, task, max_turns, continue_task, provider_id, intent), submit_kwargs)
 
-        try:
-            submit_kwargs["model_selection"] = capture_selection(provider_id, body["model_selection"])
-        except ValueError as exc:
-            return 400, {"error": str(exc), "reason": "model_selection_invalid"}
+
+def _submit_task_response(submit_task: Callable[..., str | None], args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     try:
-        run_id = submit_task(
-            session_id,
-            project,
-            task,
-            max_turns,
-            continue_task,
-            provider_id,
-            intent,
-            **submit_kwargs,
-        )
+        run_id = submit_task(*args, **kwargs)
     except BrowserWorkerBusy:
         return 503, {"error": "browser worker busy", "hint": "retry"}
+    except ModelDisabledError as exc:
+        return 409, {"error": str(exc), "code": "model_disabled"}
     except Exception as exc:
         return 500, {"error": str(exc)}
     if run_id is None:

@@ -79,6 +79,9 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/providers/api_codec.py` | Stateless codec contract and generation settings; connection factories resolve budgets, the provider selects its codec once |
 | `codey/providers/api_chat.py`, `api_responses.py` | Protocol-owned tools, results, wire history, complete-exchange compaction and reply decoding; Responses replays reasoning items and uses call_id |
 | `codey/providers/api_connections.py`, `local_connection.py` | Lazy connection factories and admitted Local configuration; shared runtime does not import Zen |
+| `codey/providers/model_preferences.py` | Atomic revisioned source/model consent; catalog observations never change selection |
+| `codey/app/model_settings.py`, `provider_services.py` | Generic source descriptors, explicit discovery, model-use protection and selected-scope services |
+| `codey/web/assets/models.js`, `model_settings.js` | Authoritative frontend snapshot and shared staged source editor; optional connectors supply data, not UI branches |
 | `codey/providers/zen/` | Public/free catalog, scoped partner identity and access observations; `declarations.py` owns the temporary unavailable read/shell wire profile, and `connection.py` owns bounded text-call rejection. No task grants; removing production registration/package also requires cleaning its dedicated tests, gates and docs |
 | `codey/runtime/core/api_selection.py`, `operation_payload.py` | Non-secret frozen API selection and strict admission/delivery payload validation |
 | `codey/research/source_gateway.py`, `tools.py` | Explicit acquisition/tool outcomes; cancellation/deadlines propagate without fallback acquisition |

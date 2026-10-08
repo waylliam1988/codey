@@ -112,6 +112,20 @@ def test_parity_provider_rejects_exhausted_script_instead_of_synthesizing_done()
         provider.send("prompt")
 
 
+@pytest.mark.parametrize("receipt", [
+    SimpleNamespace(call_id="call-guard", content="ERROR: budget exhausted"),
+    {"role": "tool", "tool_call_id": "call-guard", "content": "ERROR: budget exhausted"},
+])
+def test_parity_provider_records_current_and_legacy_guard_receipts(receipt):
+    from tests.support.kernel_parity_probe import ScriptedProvider
+
+    provider = ScriptedProvider({"id": "test/guard-receipt", "replies": []})
+    turn = provider.send_tool_results([receipt], [])
+    assert provider.receipts == ["call-guard"]
+    assert turn.text == "closed" and not turn.tool_calls
+    assert provider.prompts == []
+
+
 def test_parity_probe_restores_native_tools_environment_after_native_case(monkeypatch):
     import os
 

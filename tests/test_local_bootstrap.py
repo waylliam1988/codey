@@ -8,6 +8,7 @@ from unittest import mock
 
 from codey.providers import api_transport
 from codey.providers.local_connection import connect_local
+from codey.providers.model_preferences import ModelPreferences
 
 
 def test_context_budget_presets() -> None:
@@ -556,7 +557,7 @@ def test_run_review_require_web_refuses_self_review() -> None:
     from codey.app import review_service
 
     ctx = SimpleNamespace(
-        providers=SimpleNamespace(supervisor=SimpleNamespace(is_available=lambda _pid: False)),
+        providers=SimpleNamespace(model_preferences=ModelPreferences(), supervisor=SimpleNamespace(is_available=lambda _pid: False)),
         emitted=[],
     )
     ctx.emit = lambda event: ctx.emitted.append(event)  # type: ignore[method-assign]
@@ -586,7 +587,7 @@ def test_run_review_invalid_policy_raises_with_web_reviewer_available() -> None:
     from codey.app import review_service
 
     ctx = SimpleNamespace(
-        providers=SimpleNamespace(supervisor=SimpleNamespace(is_available=lambda _pid: False)),
+        providers=SimpleNamespace(model_preferences=ModelPreferences(), supervisor=SimpleNamespace(is_available=lambda _pid: False)),
         emitted=[],
     )
     ctx.emit = lambda event: ctx.emitted.append(event)  # type: ignore[method-assign]
@@ -622,7 +623,7 @@ def test_run_review_invalid_policy_raises_without_web_reviewer() -> None:
     from codey.app import review_service
 
     ctx = SimpleNamespace(
-        providers=SimpleNamespace(supervisor=SimpleNamespace(is_available=lambda _pid: False)),
+        providers=SimpleNamespace(model_preferences=ModelPreferences(), supervisor=SimpleNamespace(is_available=lambda _pid: False)),
         emitted=[],
     )
     ctx.emit = lambda event: ctx.emitted.append(event)  # type: ignore[method-assign]

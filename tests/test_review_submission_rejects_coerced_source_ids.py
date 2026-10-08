@@ -12,7 +12,7 @@ from codey.task.model import TaskSubmission
 @pytest.mark.parametrize("value", [True, 42, [], None])
 def test_http_rejects_nonstring_source(tmp_path, value):
     submit = Mock(return_value="r")
-    status, _payload = run_submit_response({"task": "review", "project": str(tmp_path), "provider": "local",
+    status, _payload = run_submit_response({"task": "review", "project": str(tmp_path), "provider": "deepseek",
         "intent": "review", "review_source_run_id": value}, submit)
     assert status == 400
     submit.assert_not_called()

@@ -7,7 +7,7 @@ import pytest
 from playwright.sync_api import expect
 
 from codey.app import api
-from tests.test_ui_workflow import model_settings_route
+from tests.test_ui_workflow import model_settings_route, open_connection_settings
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
@@ -29,7 +29,7 @@ def test_settings_load_failure_can_retry_in_same_dialog(page, failure):
             route.fulfill(status=503, json={"error": "internal detail"})
 
     page.route("**/api/local_provider", connection)
-    page.locator("#btn-settings").click()
+    open_connection_settings(page)
     dialog = page.get_by_role("dialog", name="Settings", exact=True)
     expect(dialog).to_be_visible()
     expect(page.locator("#local-config-summary")).to_have_text("Could not load connection")
@@ -52,7 +52,7 @@ def test_settings_load_failure_can_retry_in_same_dialog(page, failure):
 def test_settings_retry_is_single_flight_and_closed_dialog_ignores_late_reply(page):
     local = model_settings_route(page)
     page.route("**/api/local_provider", lambda route: route.fulfill(status=503, json={}))
-    page.locator("#btn-settings").click()
+    open_connection_settings(page)
     dialog = page.get_by_role("dialog", name="Settings", exact=True)
     retry = dialog.get_by_role("button", name="Retry", exact=True)
     expect(retry).to_be_enabled()
@@ -77,7 +77,7 @@ def test_settings_retry_is_single_flight_and_closed_dialog_ignores_late_reply(pa
 
 def test_settings_save_failure_keeps_edit_and_never_shows_load_retry(page):
     model_settings_route(page)
-    page.locator("#btn-settings").click()
+    open_connection_settings(page)
     expect(page.locator("#local-config-save")).to_be_enabled()
     page.locator("#local-model-name").fill("my-edited-model")
     page.route("**/api/local_provider", lambda route: route.fulfill(
@@ -332,12 +332,18 @@ def test_local_rejection_choose_model_returns_to_original_chat_without_sending(p
     expect(page.locator("#task")).to_have_value("beta draft")
 
 
-def test_invalid_model_selection_has_stable_recovery_reason_and_is_not_submitted():
+def test_invalid_model_selection_has_stable_recovery_reason_and_is_not_submitted(tmp_path):
+    from codey.app.context import AppContext
+    from tests.support.model_preferences import enable_models
+
+    enable_models(tmp_path, local=["old"])
+    ctx = AppContext(tmp_path)
     submit = mock.Mock()
     with mock.patch("codey.providers.local_selection.capture_local_run_config", side_effect=ValueError("changed")):
         status, payload = api.run_submit_response({
             "task": "hello", "provider": "local", "model_selection": {"model": "old"},
-        }, submit)
+        }, submit, ctx=ctx)
+    ctx.close()
     assert status == 400
     assert payload["reason"] == "model_selection_invalid"
     submit.assert_not_called()

@@ -643,7 +643,7 @@ class ProviderStatusTests(unittest.TestCase):
             statuses,
             {"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
         )
-        detected.assert_called_once_with()
+        detected.assert_called_once_with(allowed={"deepseek", "mimo", "stepfun", "qwen", "glm"})
         connected.assert_not_called()
 
     def test_health_filter_excludes_open_provider_from_helpers(self) -> None:
@@ -7350,7 +7350,7 @@ class UiLaunchTests(unittest.TestCase):
 
         fake_webview.create_window.assert_called_once()
         fake_webview.start.assert_called_once()
-        warmup.assert_called_once_with(server.STATE, delay_s=2.0)
+        warmup.assert_not_called()
         _, kwargs = fake_webview.start.call_args
         self.assertFalse(kwargs["private_mode"])
         self.assertEqual(kwargs["storage_path"], str(server.DEFAULT_STATE_HOME / "webview"))
@@ -7376,7 +7376,7 @@ class UiLaunchTests(unittest.TestCase):
 
         fake_webview.create_window.assert_called_once()
         fake_webview.start.assert_called_once()
-        warmup.assert_called_once_with(server.STATE, delay_s=2.0)
+        warmup.assert_not_called()
         fallback.assert_called_once()
         self.assertEqual(fallback.call_args.args[0], "http://127.0.0.1:43210/#codey_bootstrap=test-only")
         self.assertIn("missing webview runtime", str(fallback.call_args.args[1]))

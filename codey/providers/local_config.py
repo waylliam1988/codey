@@ -609,10 +609,12 @@ def local_endpoint_available() -> bool:
     return bool(effective.model)
 
 
-def local_bootstrap_payload() -> dict[str, Any]:
+def local_bootstrap_payload(*, probe: bool = True) -> dict[str, Any]:
     """UI status: connection, models, native mode, context, presets."""
     config = load_local_config()
     selection = select_local_target(config)
+    if not probe:
+        return assemble_bootstrap_payload(config, selection, None, [])
     remembered = selection.base_url
     try:
         from codey.providers import local_discovery as discovery

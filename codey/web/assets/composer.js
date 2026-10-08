@@ -57,9 +57,18 @@ function resizeTask() {
 }
 
 function updateSend() {
+  if (!deps) return;
   const has = $('task').value.trim();
+  const selection = window.CodeyProviderUI.runSelection(deps.activeSession(), currentProviderId()).model_selection;
+  const reason = window.CodeyModels.reason(currentProviderId(), selection?.model);
+  const notice = $('model-notice'); notice.hidden = !reason; notice.replaceChildren();
+  if (reason) {
+    notice.append(window.CodeyModels.hasAny() ? 'This model is ' + reason.toLowerCase() + '. Choose another model or enable it in ' : 'No models enabled. Choose models in ');
+    const action = document.createElement('button'); action.className = 'link-btn'; action.textContent = 'Settings';
+    action.onclick = () => window.CodeySettings.open(); notice.appendChild(action);
+  }
   const running = !!runningSessionId();
-  $('send').disabled = !has || running || !!sendingSessionId;
+  $('send').disabled = !has || !!reason || running || !!sendingSessionId;
   $('send').style.display = running ? 'none' : '';
   $('stop').style.display = running ? '' : 'none';
   $('send-hint').textContent = sendingSessionId ? 'Sending…' : running ? 'Stop' : 'Enter';
@@ -91,7 +100,7 @@ function setActiveProvider(id) {
   deps.persistActiveNow();
   deps.syncProviderUI(provider);
   deps.updateComposerContext();
-  if (provider === 'local' && !window.CodeyProviderUI.localReady()) deps.openLocalProviderConfig();
+  updateSend();
 }
 
 function clearDraftIfUnchanged(sessionId, draft, revision = null) {
@@ -152,6 +161,7 @@ async function sendTaskFromSession(sessionId, task, providerId = '', onSendStart
   const s = deps.findSession(sessionId);
   if (!s) return false;
   const provider = providerId || s.provider || liveDefaultProvider();
+  if (!window.CodeyModels.allows(provider, window.CodeyProviderUI.runSelection(s, provider).model_selection?.model)) return false;
   sendingSessionId = sessionId;
   updateSend();
   deps.updateComposerContext();
@@ -207,6 +217,7 @@ async function continueTask(sessionId) {
   if (runningSessionId() || sendingSessionId) return;
   const s = deps.findSession(sessionId);
   if (!s) return;
+  if (!window.CodeyModels.allows(s.provider, window.CodeyProviderUI.runSelection(s, s.provider).model_selection?.model)) return;
   const p = deps.sessionProject(s);
   if (!p) {
     deps.addToSession(sessionId, { type: 'err', text: 'Only project tasks can be continued; plain chats have no tool loop.', sessionId });

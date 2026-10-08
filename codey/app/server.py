@@ -41,6 +41,7 @@ from urllib.parse import parse_qs, urlparse
 
 from codey import __version__
 from codey.app import api as app_api
+from codey.app import model_settings
 from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.app.context import AppContext
@@ -226,7 +227,7 @@ def _pick_folder_response(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, 
 
 
 def _run_submit_route(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    response: tuple[int, dict[str, Any]] = app_api.run_submit_response(body, _submit_task)
+    response: tuple[int, dict[str, Any]] = app_api.run_submit_response(body, _submit_task, ctx=_ctx)
     return response
 
 
@@ -241,12 +242,13 @@ def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, d
 
 
 _GET_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
+    "/api/model_settings": lambda ctx, _query: model_settings.settings_response(ctx),
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
     "/api/ui_state": lambda ctx, _query: app_api.ui_state_response(ctx),
     "/api/providers": lambda ctx, _query: app_api.providers_response(ctx),
     "/api/provider_catalog": lambda _ctx, _query: app_api.provider_catalog_response(),
-    "/api/local_provider": lambda _ctx, _query: app_api.local_provider_response(),
-    "/api/api_models": lambda _ctx, _query: app_api.api_models_response(),
+    "/api/local_provider": lambda ctx, _query: app_api.local_provider_response(ctx),
+    "/api/api_models": lambda ctx, _query: app_api.api_models_response(ctx),
     "/api/research/graph": app_api.research_graph_response,
     "/api/run_details": app_api.run_details_response,
     "/api/run_review": app_api.run_review_response,
@@ -256,6 +258,8 @@ _GET_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
 
 
 _POST_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
+    "/api/model_settings": model_settings.save_response,
+    "/api/model_catalog": model_settings.discover_response,
     "/api/ui_state": app_api.save_ui_state_response,
     "/api/local_provider": lambda _ctx, body: app_api.save_local_provider_response(body),
     "/api/run": _run_submit_route,
@@ -529,7 +533,6 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
 
         threading.Thread(target=_run_httpd, daemon=True).start()
         http_thread_started = True
-        provider_services.start_provider_warmup(get_state(), delay_s=2.0)
     except BaseException:
         if httpd is not None:
             if http_thread_started:

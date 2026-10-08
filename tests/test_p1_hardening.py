@@ -181,6 +181,7 @@ class ClosureCaptureTests(unittest.TestCase):
         from codey.app import context as app_context
         from codey.app import sibling_probe
         from codey.providers import profile_doctor
+        from codey.providers.model_preferences import ModelPreferences
 
         helpers: dict[str, object] = {}
 
@@ -211,11 +212,13 @@ class ClosureCaptureTests(unittest.TestCase):
             return None
 
         with (
+            tempfile.TemporaryDirectory() as state_home,
             mock.patch.object(
                 sibling_probe, "borrow_open_provider", side_effect=_borrow
             ),
             mock.patch.object(profile_doctor, "choose_candidate", side_effect=_choose),
         ):
+            ctx.providers.model_preferences = ModelPreferences(Path(state_home))
             self.assertIsNone(sibling_probe.handle_profile_doctor(ctx, request))
         # With late binding every send would hit the last loop helper; bound
         # lambdas hit exactly their own helper, once each.

@@ -6,14 +6,11 @@ import subprocess
 import sys
 from unittest import mock
 
-import pytest
-
 from codey.app import server
 from codey.storage.file_lock import acquire_lease
 
 
-@pytest.mark.parametrize("warmup_fails", [False, True])
-def test_desktop_exit_closes_listener_and_releases_lease(tmp_path, monkeypatch, warmup_fails):
+def test_desktop_exit_closes_listener_and_releases_lease(tmp_path, monkeypatch):
     instances = []
     server_type = server.CodeyHTTPServer
 
@@ -27,16 +24,13 @@ def test_desktop_exit_closes_listener_and_releases_lease(tmp_path, monkeypatch, 
     monkeypatch.setattr(server, "get_state", lambda: object())
     fake_webview = mock.Mock()
     monkeypatch.setitem(sys.modules, "webview", fake_webview)
-    warmup = mock.Mock(side_effect=RuntimeError("warmup failed") if warmup_fails else None)
+    warmup = mock.Mock(side_effect=AssertionError("Startup must never open model websites"))
     monkeypatch.setattr(server.provider_services, "start_provider_warmup", warmup)
     try:
-        if warmup_fails:
-            with pytest.raises(RuntimeError, match="warmup failed"):
-                server.serve(port=0)
-        else:
-            server.serve(port=0)
-            fake_webview.start.assert_called_once()
-            assert fake_webview.create_window.call_args.kwargs.get("text_select") is True
+        server.serve(port=0)
+        warmup.assert_not_called()
+        fake_webview.start.assert_called_once()
+        assert fake_webview.create_window.call_args.kwargs.get("text_select") is True
         assert len(instances) == 1
         assert instances[0].socket.fileno() == -1
         with acquire_lease(tmp_path / ".server.lock"):
