@@ -42,7 +42,7 @@ def test_unknown_response_has_one_observed_attempt_and_never_consumes_second_rep
         return Response(raw if len(sent) == 1 else b'{"choices":[]}')
 
     with patch("codey.providers.api_transport.open_request", side_effect=transport), pytest.raises(GenerationUnknownError):
-        provider._post_chat([{"role": "user", "content": "汉字"}])
+        provider._generate([{"role": "user", "content": "汉字"}])
     digest = hashlib.sha256(sent[0]).hexdigest()
     assert len(sent) == 1
     assert [(n, phase, h) for n, phase, h, _ in provider.observations] == [(1, "request", digest), (1, "unknown", digest)]
@@ -52,5 +52,5 @@ def test_unknown_response_has_one_observed_attempt_and_never_consumes_second_rep
 def test_observer_failure_does_not_retry_successful_http_request():
     provider = ObservedProvider()
     with patch.object(provider, "_observe_http_attempt", side_effect=OSError("diagnostic disk full")), patch("codey.providers.api_transport.open_request", return_value=Response(b'{"ok":true}')) as transport:
-        assert provider._post_chat([]) == {"ok": True}
+        assert provider._generate([]) == {"ok": True}
     transport.assert_called_once()

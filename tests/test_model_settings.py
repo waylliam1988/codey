@@ -135,16 +135,20 @@ def test_approval_keeps_admitted_model_and_never_exposes_key_in_status(tmp_path)
     ('off', False, 'none'), ('minimal', True, 'minimal'), ('low', True, 'low'),
     ('medium', True, 'medium'), ('high', True, 'high'),
 ])
-def test_effort_selection_is_captured_and_sent_on_the_wire(effort, enabled, wire):
+def test_effort_selection_is_captured_and_sent_on_the_wire(effort, enabled, wire, monkeypatch):
     from codey.providers.local_discovery import LocalEndpoint
     from codey.providers.local_selection import capture_local_run_config
+    from tests.test_api_chat_native_turns_and_history import _install_fake
 
     saved = LocalProviderConfig(base_url='http://localhost:5001/v1', model='gemma')
     with mock.patch('codey.providers.local_selection.load_local_config', return_value=saved):
         snapshot = capture_local_run_config({'base_url':saved.base_url, 'model':'gemma', 'effort':effort})
     with mock.patch('codey.providers.local_discovery.resolve_local_endpoint', return_value=LocalEndpoint(saved.base_url, ('gemma',))), mock.patch('codey.providers.local_selection.model_metadata', return_value={'thinking_options':['off','minimal','low','medium','high']}):
         provider = connect_local(config=snapshot, verify_thinking=True)
-    payload = provider._request_payload([{'role':'user','content':'hello'}], None)
+    sent = _install_fake(monkeypatch, {"choices": [{"finish_reason": "stop", "message": {"content": "hello"}}]})
+    assert provider.send("hello") == "hello"
+    assert len(sent) == 1
+    payload = sent[0]
     assert payload['chat_template_kwargs'] == {'enable_thinking':enabled}
     assert payload['reasoning_effort'] == wire
     assert saved.thinking_enabled is None

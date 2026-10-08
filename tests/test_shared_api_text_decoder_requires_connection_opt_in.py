@@ -9,7 +9,7 @@ FRAME = '<|tool_call>call:tool:done{summary:"finished"}<tool_call|>'
 def test_shared_api_preserves_local_looking_text_without_connection_decoder(monkeypatch):
     provider = ApiProvider("http://fixture.test/v1", "online-model")
     assert provider.normalize_reply(FRAME) == FRAME
-    monkeypatch.setattr(provider, "_post_chat", lambda *a, **kw: {
+    monkeypatch.setattr(provider, "_generate", lambda *a, **kw: {
         "choices": [{"finish_reason": "stop", "message": {"content": FRAME}}],
     })
     turn = provider.send_turn("Explain this model template", [])
@@ -30,7 +30,7 @@ def test_local_connection_installs_its_text_decoder_for_admitted_selection(monke
     ))
     turn = provider.normalize_reply(FRAME)
     assert turn.tool_calls[0].name == "done"
-    monkeypatch.setattr(provider, "_post_chat", lambda *a, **kw: {
+    monkeypatch.setattr(provider, "_generate", lambda *a, **kw: {
         "choices": [{"finish_reason": "stop", "message": {"content": FRAME}}],
     })
     assert provider.send_turn("finish", []).tool_calls[0].name == "done"

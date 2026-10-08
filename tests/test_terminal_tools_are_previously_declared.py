@@ -9,7 +9,7 @@ def test_terminal_rejects_new_tool_declaration_without_sending(monkeypatch):
     provider = ApiProvider("http://fixture.test/v1", "fixture", tool_choice="auto")
     read = ProviderToolDefinition("read", "read", {"type": "object"})
     write = ProviderToolDefinition("write", "write", {"type": "object"})
-    monkeypatch.setattr(provider, "_post_chat", lambda *a, **k: {"choices": [{"finish_reason": "tool_calls", "message": {
+    monkeypatch.setattr(provider, "_generate", lambda *a, **k: {"choices": [{"finish_reason": "tool_calls", "message": {
         "tool_calls": [{"id": "read1", "function": {"name": "read", "arguments": "{}"}}]}}]})
     provider.send_turn("fixture", [read])
     sends = []

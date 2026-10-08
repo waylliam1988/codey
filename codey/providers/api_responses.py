@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
+from codey.providers.api_codec import GenerationSettings
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.providers.error_classification import ContextOverflowError, OutputLengthError, RequestPrepError
 from codey.toolchain.tool_spec import thaw_schema_value
+
+endpoint = "responses"
 
 
 def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
@@ -64,20 +68,22 @@ def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, sys
     return candidate
 
 
-def payload(items: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None, *, model: str,
-            stream: bool, effort: str | None, choice: str, output_tokens: int | None) -> dict[str, Any]:
-    body: dict[str, Any] = {"model": model, "input": items, "stream": stream, "store": False,
+def build_payload(items: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
+                  settings: GenerationSettings) -> dict[str, Any]:
+    body: dict[str, Any] = {"model": settings.model, "input": items, "stream": settings.stream, "store": False,
                             "include": ["reasoning.encrypted_content"]}
-    if effort is not None:
-        body["reasoning"] = {"effort": "none" if effort == "off" else effort}
-    if output_tokens is not None:
-        body["max_output_tokens"] = output_tokens
+    if settings.effort is not None:
+        body["reasoning"] = {"effort": "none" if settings.effort == "off" else settings.effort}
+    if settings.output_tokens is not None:
+        body["max_output_tokens"] = settings.output_tokens
     if tools:
-        body.update(tools=encode_tools(tools), tool_choice=choice, parallel_tool_calls=False)
+        body.update(tools=encode_tools(tools), tool_choice=settings.choice, parallel_tool_calls=False)
     return body
 
 
-def decode(body: dict[str, Any]) -> tuple[AssistantTurn, list[dict[str, Any]]]:
+def decode_exchange(body: dict[str, Any], *, text_only: bool,
+                    text_decoder: Callable[[str], str | AssistantTurn] | None,
+                    ) -> tuple[AssistantTurn, list[dict[str, Any]]]:
     status = body.get("status")
     limited = status == "incomplete" and (body.get("incomplete_details") or {}).get("reason") == "max_output_tokens"
     if status != "completed" and not limited:

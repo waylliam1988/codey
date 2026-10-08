@@ -19,12 +19,13 @@ from typing import TYPE_CHECKING, Any, cast
 
 from codey.operations import kernel_events as _events
 from codey.operations import kernel_prompt as _prompt
+from codey.operations import kernel_protocol
 from codey.operations import kernel_transport as _transport
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_execution import execute_turn as _execute_turn
+from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import InitialNativeTurn
-from codey.operations.kernel_protocol import build_turn_snapshot as _build_turn_snapshot
 from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
 from codey.operations.kernel_trace import record_turn
@@ -441,16 +442,17 @@ def _kernel_startup(
     pending_initial = list(initial_results or [])
     native = _transport.provider_uses_native(provider, provider_id=provider_id)
     identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
-    if initial_turn is not None and (not native or pending_initial or initial_turn.snapshot.policy != session.policy):
+    if initial_turn is not None and (not native or pending_initial or initial_turn.owner_session is not session
+                                     or initial_turn.snapshot.policy != session.policy):
         raise ValueError("initial native turn does not match the authorized task session")
-    initial_snapshot = initial_turn.snapshot if initial_turn is not None else _build_turn_snapshot(session, native=native)
-    prompt = _prompt.kernel_prompt_for_session(
-        session, user_task=str(user_task or ""), contract_text=initial_snapshot.contract_text,
-        context_text=context_text, controller_allowed=initial_snapshot.allowed,
-        native=native, tool_names=initial_snapshot.tool_names,
-        task_guidance=task_guidance,
-        coding_context=prepare_coding_context(session, completion_context=completion_context),
-    )
+    if initial_turn is not None:
+        initial_snapshot, prompt = initial_turn.snapshot, initial_turn.prompt
+    else:
+        prepared = prepare_kernel_turn(
+            session, user_task=str(user_task or ""), context_text=context_text,
+            native=native, task_guidance=task_guidance, completion_context=completion_context,
+        )
+        initial_snapshot, prompt = prepared.snapshot, prepared.prompt
     native_tools = tools_from_specs(initial_snapshot.frozen_specs)
     pending_native_messages: list[ProviderToolResult] | None = None
     prompt, pending_native_messages = _apply_recovery_first(
@@ -466,7 +468,7 @@ def _kernel_startup(
     return _KernelStartup(
         executors=runnable, delivered=delivered_map, max_turns=max_turns,
         native=native, identity_ref=identity_ref,
-        state=_ProviderTurnState(prompt=initial_turn.prompt if initial_turn is not None else prompt,
+        state=_ProviderTurnState(prompt=prompt,
                                  pending_reply=initial_turn.reply if initial_turn is not None else None,
                                  pending_messages=pending_native_messages),
         native_tools=native_tools, snapshot=initial_snapshot, pending_recovery=bool(pending_initial),
@@ -723,7 +725,7 @@ def _rebuild_turn_snapshot(
 ) -> Any:
     """Rebuild one per-round snapshot; KernelResult on controller failure."""
     try:
-        snapshot = _build_turn_snapshot(session, native=native)
+        snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
         turn_native_tools = tools_from_specs(snapshot.frozen_specs)
     except Exception as exc:
         return KernelResult(

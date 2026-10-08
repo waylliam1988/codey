@@ -34,7 +34,7 @@ class LocalModelUiGateTests(unittest.TestCase):
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write('{"type":"stale"}\n')
             with gate._provider_history_recorder("local", gate.Path(path)):
-                provider._post_chat([], None)
+                provider._generate([], None)
             with open(path, encoding="utf-8") as handle:
                 rows = [json.loads(line) for line in handle]
         self.assertEqual([row["type"] for row in rows], ["request", "wire_attempt", "wire_attempt", "response"])

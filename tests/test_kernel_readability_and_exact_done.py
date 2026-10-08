@@ -41,13 +41,15 @@ def test_kernel_does_not_render_discarded_initial_prompt_after_each_result(monke
     from codey.runtime.core.models import ToolResult
 
     rendered = []
-    real_render = task_loop._prompt.kernel_prompt_for_session
+    from codey.operations import kernel_prompt
+
+    real_render = kernel_prompt.kernel_prompt_for_session
 
     def render(*args, **kwargs):
         rendered.append(True)
         return real_render(*args, **kwargs)
 
-    monkeypatch.setattr(task_loop._prompt, "kernel_prompt_for_session", render)
+    monkeypatch.setattr(kernel_prompt, "kernel_prompt_for_session", render)
     replies = iter(['{"tool":"read_file","args":{"path":"a.py"}}',
                     '{"tool":"done","args":{"summary":"finished"}}'])
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})), max_turns=2)

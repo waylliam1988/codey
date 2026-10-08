@@ -5,8 +5,27 @@ import json
 from collections.abc import Callable
 from typing import Any, cast
 
+from codey.providers.api_codec import GenerationSettings
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.toolchain.tool_spec import thaw_schema_value
+
+endpoint = "chat/completions"
+
+
+def decode_exchange(body: dict[str, Any], *, text_only: bool,
+                    text_decoder: Callable[[str], str | AssistantTurn] | None,
+                    ) -> tuple[AssistantTurn, list[dict[str, Any]] | None]:
+    if text_only:
+        text = _extract_reply(body)
+        choice = body["choices"][0]
+        message = choice.get("message") or {"content": text}
+        _parse_tool_calls(message)
+        if message.get("tool_calls"):
+            raise RuntimeError("unexpected native tool calls in a text-only exchange")
+        turn = AssistantTurn(text=text, reasoning=_reasoning_text(message))
+        return turn, [_store_assistant_message(message)]
+    turn, stored = decode_turn(decode_message(body), text_decoder=text_decoder)
+    return turn, [stored] if stored is not None else None
 
 
 def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
@@ -43,18 +62,17 @@ def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, sys
     return candidate
 
 
-def payload(messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None, *, model: str,
-            stream: bool, temperature: float, thinking: bool | None, effort: str | None,
-            choice: str, output_tokens: int | None) -> dict[str, Any]:
-    body: dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature, "stream": stream}
-    if thinking is not None:
-        body["chat_template_kwargs"] = {"enable_thinking": thinking}
-    if effort is not None:
-        body["reasoning_effort"] = "none" if effort == "off" else effort
-    if output_tokens is not None:
-        body["max_tokens"] = output_tokens
+def build_payload(messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
+                  settings: GenerationSettings) -> dict[str, Any]:
+    body: dict[str, Any] = {"model": settings.model, "messages": messages, "temperature": settings.temperature, "stream": settings.stream}
+    if settings.thinking is not None:
+        body["chat_template_kwargs"] = {"enable_thinking": settings.thinking}
+    if settings.effort is not None:
+        body["reasoning_effort"] = "none" if settings.effort == "off" else settings.effort
+    if settings.output_tokens is not None:
+        body["max_tokens"] = settings.output_tokens
     if tools:
-        body.update(tools=encode_tools(tools), tool_choice=choice, parallel_tool_calls=False)
+        body.update(tools=encode_tools(tools), tool_choice=settings.choice, parallel_tool_calls=False)
     elif tools is not None and messages and messages[-1].get("role") == "tool":
         body["max_tokens"] = 1
     return body

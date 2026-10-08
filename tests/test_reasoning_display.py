@@ -67,11 +67,16 @@ def test_reasoning_reaches_existing_turn_event_without_changing_tool_text() -> N
     assert "reasoning" not in run_event_ui_payload("run1", "chat1", RunEvent.turn_started(3, "answer"))
 
 
-def test_thinking_options_are_explicit_and_not_sent_to_every_endpoint() -> None:
+def test_thinking_options_are_explicit_and_not_sent_to_every_endpoint(monkeypatch) -> None:
+    from tests.test_api_chat_native_turns_and_history import _install_fake
+
     ordinary = ApiProvider("http://localhost:9/v1", "test")
     thinking = ApiProvider("http://localhost:9/v1", "test", thinking_enabled=True)
-    assert "chat_template_kwargs" not in ordinary._request_payload([], None)
-    assert thinking._request_payload([], None)["chat_template_kwargs"] == {"enable_thinking": True}
+    sent = _install_fake(monkeypatch, {"choices": [{"finish_reason": "stop", "message": {"content": "hello"}}]})
+    assert ordinary.send("hello") == thinking.send("hello") == "hello"
+    assert len(sent) == 2
+    assert "chat_template_kwargs" not in sent[0]
+    assert sent[1]["chat_template_kwargs"] == {"enable_thinking": True}
 
 
 def test_reasoning_counts_toward_the_next_request_context_budget() -> None:

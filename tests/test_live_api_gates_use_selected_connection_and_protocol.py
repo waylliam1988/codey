@@ -150,18 +150,18 @@ def test_local_responses_recording_observes_real_responses_payload(monkeypatch, 
     import json
 
     from codey.providers.api_provider import ApiProvider
-    from codey.providers.base import AssistantTurn, ProviderToolDefinition
+    from codey.providers.base import ProviderToolDefinition
 
-    def post(self, pending, tools, timeout=None, **kwargs):
+    def post(self, pending, tools=None, timeout=None, **kwargs):
         self._observe_http_attempt(attempt=1, data=b'{"model":"fixture","input":[]}',
                                    phase="request", response_bytes=0, seconds=0)
-        return AssistantTurn(raw={"status": "completed", "output": []})
+        return {"status": "completed", "output": []}
 
-    monkeypatch.setattr(ApiProvider, "_responses_exchange", post)
+    monkeypatch.setattr(ApiProvider, "_generate", post)
     target = attempts.GateTarget("http://fixture/v1", "fixture", 32768, 8192, 12000,
                                  api_protocol="openai-responses")
     provider = attempts.RecordingProvider(target, tmp_path)
-    provider._responses_exchange([], [ProviderToolDefinition("done", "Finish", {})], None)
+    provider._generate([], [ProviderToolDefinition("done", "Finish", {})])
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf8").splitlines()]
     assert provider.api_protocol == "openai-responses"
     assert [(r["type"], r.get("exchange")) for r in rows] == [("request", 1), ("wire_attempt", 1), ("response", 1)]

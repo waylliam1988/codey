@@ -93,6 +93,15 @@ Live release checks stay separate from deterministic contract checks.
   browser JSON, Chat Completions and Responses.
 - `test_api_chat_native_turns_and_history.py`: Chat native turns, history commit,
   call IDs and terminal result delivery.
+- `test_api_exchange_lifecycle_consistency.py`: both protocols, all send entries,
+  failed/cancelled history, concurrency, latest reasoning and malformed text-channel calls.
+- `test_native_auto_initial_turn_prepared_once.py`: actual first-turn preparation,
+  frozen bindings across a registry swap and rejection of a foreign TaskSession.
+- `test_optional_zen_removal_preserves_local_api.py`: subprocess import barrier,
+  real Local HTTP tool tasks, desktop catalogs, CLI, old history and gate metadata;
+  its worker lives in `support/optional_zen_removal_probe.py`.
+- `test_ui_workflow_readiness_without_animation_frames.py`: real Chromium with
+  no animation-frame callbacks, state polling, failure diagnostics and page cleanup.
 - `test_responses_protocol_tool_history_and_stream_completion.py`,
   `test_responses_compaction_preserves_complete_exchanges.py`: actual fake HTTP/SSE,
   call_id, encrypted reasoning replay, flat schema, complete history groups,

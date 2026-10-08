@@ -40,9 +40,10 @@ python -m pytest -q -o faulthandler_timeout=120
 python -m tools.machine_contract_gate
 ```
 
-- 必跑清单由 `tools/machine_contract_gate.py` 维护；文件缺失、失败或任何 skip 均关闭此门，CI 与本地使用同一命令。需要 Node.js 执行实际 SSE JavaScript 回归。
+- 必跑清单由 `tools/machine_contract_gate.py` 维护；文件缺失、失败或任何 skip 均关闭此门，CI 与本地使用同一命令。需要 Node.js 执行实际 SSE JavaScript 回归，以及已安装的 Playwright Chromium（`python -m playwright install chromium`）执行就绪/清理契约。
 - 用脚本 provider 与真实存储检查认证、授权、取消/连接/交付失败、原生 ID 配对、来源状态、SSE 游标与输出身份、实际请求诊断及恢复。实际模型行为属于 Gate 3。
 - 桌面/CLI 正式入口的自动审查和单次修复、只读/联网授权、无项目、冷启动复用、顾问服务消费及配置错误也在必跑清单中。脚本 provider 场景隔离外部模型发现，不以用户当时打开的模型决定结果。
+- 两种 API 的原子交换、native Auto 首轮一次准备/所属会话，以及 Zen 包无法导入时 Local、目录和历史的正式消费者也必须通过；不能只检查连接注册是否存在。
 - JSONL 每行必须合法；任务事件有一致的 `schema_version/type/run_id/session_id`，全局连接状态按自己的事件契约检查；终态事件必须与实际结果一致。
 
 ## 4. Gate 3：本地模型实机（发布前必须全过）

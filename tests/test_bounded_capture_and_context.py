@@ -529,7 +529,7 @@ class LocalPrepareRequestTests(unittest.TestCase):
         ]
         before = [dict(message) for message in provider._messages]
         with mock.patch.object(
-            provider, "_post_chat",
+            provider, "_generate",
             side_effect=AssertionError("must not send"),
         ), self.assertRaises(errors.ContextOverflowError):
             provider.send("x" * 5000)
@@ -550,7 +550,7 @@ class LocalPrepareRequestTests(unittest.TestCase):
             ProviderToolResult("call_2", "z" * 3000),
         ]
         with mock.patch.object(
-            provider, "_post_chat",
+            provider, "_generate",
             side_effect=AssertionError("must not send"),
         ), self.assertRaises(errors.ContextOverflowError):
             provider.send_tool_results(results, tools)
@@ -562,7 +562,7 @@ class LocalPrepareRequestTests(unittest.TestCase):
         provider = self._provider()
         before: list[dict] = []
         with mock.patch.object(
-            provider, "_post_chat",
+            provider, "_generate",
             side_effect=AssertionError("must not send"),
         ), self.assertRaises(errors.ContextOverflowError):
             provider.send("z" * 20000)
@@ -579,7 +579,7 @@ class LocalPrepareRequestTests(unittest.TestCase):
                 side_effect=RuntimeError("boom"),
             ),
             mock.patch.object(
-                provider, "_post_chat",
+                provider, "_generate",
                 side_effect=AssertionError("must not send"),
             ),self.assertRaisesRegex(errors.RequestPrepError, "compaction failed")
         ):

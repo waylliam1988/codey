@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codey.protocols.json_scanner import balanced_json_spans
 from codey.providers.base import AssistantTurn
@@ -18,6 +18,9 @@ from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
 
 MAX_NATIVE_CALLS_PER_TURN = 8
+
+if TYPE_CHECKING:
+    from codey.operations.task_session import TaskSession
 
 
 @dataclass(frozen=True)
@@ -49,6 +52,7 @@ class InitialNativeTurn:
     reply: AssistantTurn
     snapshot: TurnSnapshot
     prompt: str
+    owner_session: TaskSession
 
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:

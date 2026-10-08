@@ -15,7 +15,7 @@ def test_unpaired_result_batch_is_rejected_before_request(result_ids):
     provider._messages = [{"role": "assistant", "tool_calls": [{"id": "a"}, {"id": "b"}]}]
     before = deepcopy(provider._messages)
     with (
-        patch.object(provider, "_complete_message", return_value={"content": "ok"}) as send,
+        patch.object(provider, "_generate", return_value={"content": "ok"}) as send,
         pytest.raises(RequestPrepError, match="tool.*pair"),
     ):
         provider.send_tool_results([ProviderToolResult(x, "ok") for x in result_ids])
@@ -29,7 +29,7 @@ def test_non_list_tool_calls_are_rejected_before_request(calls):
     provider._messages = [{"role": "assistant", "tool_calls": calls}]
     before = deepcopy(provider._messages)
     with (
-        patch.object(provider, "_complete_message", return_value={"content": "ok"}) as send,
+        patch.object(provider, "_generate", return_value={"content": "ok"}) as send,
         pytest.raises(RequestPrepError, match="tool.*pair"),
     ):
         provider.send_turn("continue")
@@ -47,7 +47,7 @@ def test_result_ids_are_not_coerced_or_silently_dropped(result_id):
     if result_id in (1, 1.0, True):
         rows = rows[1:]
     with (
-        patch.object(provider, "_complete_message", return_value={"content": "ok"}) as send,
+        patch.object(provider, "_generate", return_value={"content": "ok"}) as send,
         pytest.raises(RequestPrepError, match="tool.*pair"),
     ):
         provider.send_tool_results(rows)

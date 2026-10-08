@@ -7,9 +7,9 @@ import json
 import threading
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
-from codey.providers.api_chat import _extract_reply, _reasoning_text, decode_turn
+from codey.providers.api_codec import ApiCodec, GenerationSettings
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish
 
 DEFAULT_TIMEOUT = 600.0
@@ -40,9 +40,9 @@ class ApiProvider:
         timeout: float = DEFAULT_TIMEOUT,
         temperature: float = DEFAULT_TEMPERATURE,
         system_prompt: str = "",
-        context_window_tokens: int | None = None,
-        context_reserve_tokens: int | None = None,
-        context_keep_recent_tokens: int | None = None,
+        context_window_tokens: int = 32768,
+        context_reserve_tokens: int = 8192,
+        context_keep_recent_tokens: int = 12000,
         thinking_enabled: bool | None = None,
         reasoning_effort: str | None = None,
         api_protocol: str = "openai-completions",
@@ -71,6 +71,9 @@ class ApiProvider:
         self.reasoning_effort = reasoning_effort
         if api_protocol not in {"openai-completions", "openai-responses"}:
             raise ValueError("unsupported API protocol")
+        from codey.providers import api_chat, api_responses
+
+        self._codec = cast(ApiCodec, {"openai-completions": api_chat, "openai-responses": api_responses}[api_protocol])
         self.api_protocol = api_protocol
         self.stream = stream
         self.tool_choice = tool_choice
@@ -78,7 +81,6 @@ class ApiProvider:
         self.request_headers = request_headers
         self.native_tools = native_tools
         self._text_decoder = text_decoder
-        self._response_reasoning = ""
         self._last_reasoned_reply: tuple[str, str] | None = None
         self._messages: list[dict[str, Any]] = []
         self._state_lock = threading.RLock()
@@ -154,151 +156,70 @@ class ApiProvider:
         if stale:
             abort_response(response)
 
-    def _acquire_send(self) -> None:
+    def send(self, text: str, timeout: float | None = None) -> str:
+        return self._exchange([{"role": "user", "content": text}], None, timeout=timeout, text_only=True).text
+
+    def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
+                  timeout: float | None = None) -> AssistantTurn:
+        return self._exchange([{"role": "user", "content": prompt}], tools, timeout=timeout)
+
+    def send_tool_results(self, results: list[ProviderToolResult], tools: list[ProviderToolDefinition] | None = None,
+                          timeout: float | None = None) -> AssistantTurn:
+        return self._exchange(self._codec.encode_results(results), tools, timeout=timeout)
+
+    def _exchange(self, pending: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
+                  *, timeout: float | None = None, text_only: bool = False,
+                  terminal_tools: list[ProviderToolDefinition] | None = None) -> AssistantTurn:
+        """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
+        from codey.providers import api_transport
+        from codey.providers.error_classification import OutputLengthError
+
         if not self._send_lock.acquire(blocking=False):
             raise RuntimeError("API provider busy: concurrent sends are not supported")
-        self._inflight_generation = self._generation
-
-    def send(self, text: str, timeout: float | None = None) -> str:
-        if self.api_protocol == "openai-responses":
-            return self._responses_exchange(
-                [{"role": "user", "content": text}], None, timeout, allow_limited_text=False,
-            ).text
-        self._acquire_send()
         try:
             with self._state_lock:
-                generation = self._generation
-                candidate = self._prepare_request(
-                    [{"role": "user", "content": text}], tools=None,
-                )
-                self._response_reasoning = ""
-            reply = self._complete(candidate, timeout=timeout)
-            with self._state_lock:
-                # Commit only on a usable reply: an HTTP failure leaves the
-                # history untouched so the next send does not resend a stale
-                # user message. A stale generation skips history entirely.
-                if generation == self._generation:
-                    self._messages = candidate
-                    self._messages.append({"role": "assistant", "content": reply})
-                    self._last_reasoned_reply = (reply, self._response_reasoning)
-                    if self._response_reasoning:
-                        self._messages[-1]["reasoning_content"] = self._response_reasoning
-                else:
-                    from codey.providers.api_transport import GenerationUnknownError
-
-                    raise GenerationUnknownError("generation cancelled; late response discarded")
-            return reply
-        finally:
-            self._send_lock.release()
-
-    def _assistant_turn_or_fail_closed(
-        self,
-        candidate: list[dict[str, Any]],
-        message: dict[str, Any],
-        *,
-        generation: int | None = None,
-    ) -> object:
-        """Commit one candidate history plus its assistant turn, or fail closed.
-
-        The candidate was built before the HTTP call but never committed:
-        only a usable reply installs it, atomically with the assistant
-        message, under the state lock (callers hold it). Unanswerable
-        tool_calls still reset to a fresh chat; a stale generation (after
-        close/new_chat/abandon) never mutates history.
-        """
-        if generation is not None and generation != self._generation:
-            from codey.providers.api_transport import GenerationUnknownError
-
-            raise GenerationUnknownError("generation cancelled; late response discarded")
-        turn, stored = decode_turn(message, text_decoder=self._text_decoder)
-        if stored is None:
-            self._messages = (
-                [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
-            )
-        else:
-            self._messages = [*candidate, stored]
-        return turn
-
-    def send_turn(
-        self,
-        prompt: str,
-        tools: list[ProviderToolDefinition] | None = None,
-        timeout: float | None = None,
-    ) -> object:
-        if self.api_protocol == "openai-responses":
-            return self._responses_exchange([{"role": "user", "content": prompt}], tools, timeout)
-        self._acquire_send()
-        try:
-            with self._state_lock:
-                generation = self._generation
-                candidate = self._prepare_request(
-                    [{"role": "user", "content": prompt}], tools=tools,
-                )
-            message = self._complete_message(candidate, tools=tools, timeout=timeout)
-            with self._state_lock:
-                turn = self._assistant_turn_or_fail_closed(candidate, message, generation=generation)
-                self._declared_tools = list(tools) if tools else self._declared_tools
-                return turn
-        finally:
-            self._send_lock.release()
-
-    def send_tool_results(
-        self,
-        results: list[ProviderToolResult],
-        tools: list[ProviderToolDefinition] | None = None,
-        timeout: float | None = None,
-    ) -> object:
-        if self.api_protocol == "openai-responses":
-            from codey.providers.api_responses import encode_results
-
-            return self._responses_exchange(encode_results(results), tools, timeout)
-        from codey.providers.api_chat import encode_results
-
-        pending = encode_results(results)
-        self._acquire_send()
-        try:
-            with self._state_lock:
-                generation = self._generation
-                candidate = self._prepare_request(pending, tools=tools)
-            message = self._complete_message(candidate, tools=tools, timeout=timeout)
-            with self._state_lock:
-                turn = self._assistant_turn_or_fail_closed(candidate, message, generation=generation)
-                self._declared_tools = list(tools) if tools else self._declared_tools
-                return turn
-        finally:
-            self._send_lock.release()
-
-    def _responses_exchange(self, pending: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
-                            timeout: float | None, *, allow_limited_text: bool = True) -> AssistantTurn:
-        from codey.providers import api_responses, api_transport
-
-        self._acquire_send()
-        try:
-            with self._state_lock:
-                generation = self._generation
-                candidate = api_responses.prepare(self._messages, pending, system=self.system_prompt,
-                                                  tools=tools, budget=self._context_budget())
-            body = api_transport.generate(
-                f"{self.base_url}/responses",
-                api_responses.payload(candidate, tools, model=self.model, stream=self.stream,
-                                      effort=self.reasoning_effort, choice=self.tool_choice, output_tokens=self.output_tokens),
-                self._headers(), timeout=timeout or self.timeout, observe=self._notify_transport_attempt,
-                cancelled=lambda: generation != self._generation, opened=self._opened_response,
-            )
-            turn, output = api_responses.decode(body)
+                generation = self._inflight_generation = self._generation
+                if terminal_tools is not None and any(tool not in self._declared_tools for tool in terminal_tools):
+                    raise ValueError("terminal tools must belong to the previously declared set")
+                candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
+                                                 tools=tools, budget=self._context_budget())
+            body = self._generate(candidate, tools, timeout=timeout)
+            turn, output = self._codec.decode_exchange(body, text_only=text_only,
+                                                       text_decoder=self._text_decoder)
             with self._state_lock:
                 if generation != self._generation:
                     raise api_transport.GenerationUnknownError("generation cancelled; late response discarded")
-                if not allow_limited_text and turn.finish is TurnFinish.OUTPUT_LIMIT:
-                    from codey.providers.error_classification import OutputLengthError
-
-                    raise OutputLengthError("Responses text output truncated; refusing incomplete text execution")
-                self._messages = [*candidate, *output]
-                self._declared_tools = list(tools) if tools else self._declared_tools
-                self._last_reasoned_reply = (turn.text, turn.reasoning)
+                if text_only and turn.finish is TurnFinish.OUTPUT_LIMIT:
+                    raise OutputLengthError("text-only output truncated; refusing incomplete text execution")
+                if text_only and turn.tool_calls:
+                    raise RuntimeError("unexpected native tool calls in a text-only exchange")
+                if output is None:
+                    # Malformed native batches cannot be retained as legal history.
+                    self._messages = [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
+                    self._declared_tools = []
+                    self._last_reasoned_reply = None
+                else:
+                    self._messages = [*candidate, *output]
+                    if tools:
+                        self._declared_tools = list(tools)
+                    self._last_reasoned_reply = (turn.text, turn.reasoning)
             return turn
         finally:
+            with self._state_lock:
+                self._active_response = None
             self._send_lock.release()
+
+    def _generate(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None = None,
+                  *, timeout: float | None = None) -> dict[str, Any]:
+        from codey.providers import api_transport
+
+        settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
+                                      self.reasoning_effort, self.tool_choice, self.output_tokens)
+        return api_transport.generate(
+            f"{self.base_url}/{self._codec.endpoint}", self._codec.build_payload(messages, tools, settings), self._headers(),
+            timeout=timeout or self.timeout, observe=self._notify_http_attempt,
+            cancelled=lambda: self._inflight_generation != self._generation, opened=self._opened_response,
+        )
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -315,72 +236,13 @@ class ApiProvider:
         Auto-only services retain the admitted declaration set. Other services
         withdraw declarations. This is a bounded generation, not a network ACK.
         """
-        with self._state_lock:
-            if any(tool not in self._declared_tools for tool in declared_tools):
-                raise ValueError("terminal tools must belong to the previously declared set")
-        return self.send_tool_results(results, declared_tools if self.tool_choice == "auto" else [],
-                                      timeout=min(timeout or self.timeout, 30.0))
+        return self._exchange(self._codec.encode_results(results),
+                              declared_tools if self.tool_choice == "auto" else [],
+                              timeout=min(timeout or self.timeout, 30.0), terminal_tools=declared_tools)
 
     def _context_budget(self) -> tuple[int, int, int]:
-        """Instance budgets; capability is the single source of defaults."""
-        from codey.providers.capabilities import capability_for
-
-        capability = capability_for("local")
-        defaults = (
-            int(capability.context_window_tokens),
-            int(capability.context_reserve_tokens),
-            int(capability.context_keep_recent_tokens),
-        )
-        return (
-            self.context_window_tokens or defaults[0],
-            self.context_reserve_tokens or defaults[1],
-            self.context_keep_recent_tokens or defaults[2],
-        )
-
-    def _prepare_request(
-        self,
-        pending_messages: list[dict[str, Any]],
-        tools: list[ProviderToolDefinition] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Build, compact, and budget-check the next request without mutation.
-
-        Copies history, appends the full pending batch at once (never
-        splitting assistant tool_calls from their tool results), compacts
-        the candidate in place, then verifies
-        ``messages + tools + reserve <= window``. The candidate is returned
-        uncommitted: callers install it under the state lock only after a
-        usable reply, so HTTP failures and stale generations leave
-        ``self._messages`` untouched. Overflow and compaction failures
-        raise explicitly; nothing is sent. Callers hold the state lock.
-        """
-        from codey.providers.api_chat import prepare
-
-        return prepare(self._messages, pending_messages, system=self.system_prompt, tools=tools, budget=self._context_budget())
-
-    def _request_payload(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None) -> dict[str, Any]:
-        from codey.providers.api_chat import payload
-
-        return payload(messages, tools, model=self.model, stream=self.stream, temperature=self.temperature,
-                       thinking=self.thinking_enabled, effort=self.reasoning_effort, choice=self.tool_choice,
-                       output_tokens=self.output_tokens)
-
-    def _post_chat(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[ProviderToolDefinition] | None = None,
-        *,
-        timeout: float | None = None,
-    ) -> dict[str, Any]:
-        from codey.providers import api_transport
-
-        return api_transport.generate(
-            f"{self.base_url}/chat/completions", self._request_payload(messages, tools), self._headers(),
-            timeout=timeout or self.timeout, observe=self._notify_transport_attempt,
-            cancelled=lambda: self._inflight_generation != self._generation, opened=self._opened_response,
-        )
-
-    def _notify_transport_attempt(self, **kwargs: Any) -> None:
-        self._notify_http_attempt(**kwargs)
+        """Resolved generic limits; connection factories supply their own budgets."""
+        return self.context_window_tokens, self.context_reserve_tokens, self.context_keep_recent_tokens
 
     def _notify_http_attempt(self, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float) -> None:
         # Diagnostic storage must not turn a successful request into a retry.
@@ -391,23 +253,3 @@ class ApiProvider:
     def _observe_http_attempt(self, *, attempt: int, data: bytes, phase: str,
                               response_bytes: int, seconds: float) -> None:
         """Optional transport observation; authorization headers are never supplied."""
-
-    def _complete_message(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[ProviderToolDefinition] | None = None,
-        *,
-        timeout: float | None = None,
-    ) -> dict[str, Any]:
-        from codey.providers.api_chat import decode_message
-
-        return decode_message(self._post_chat(messages, tools, timeout=timeout))
-
-    def _complete(self, messages: list[dict[str, Any]], *, timeout: float | None = None) -> str:
-        body = self._post_chat(messages, None, timeout=timeout)
-        reply = _extract_reply(body)
-        choices = body.get("choices")
-        choice = choices[0] if isinstance(choices, list) and choices else None
-        message = choice.get("message") if isinstance(choice, dict) else None
-        self._response_reasoning = _reasoning_text(message)
-        return reply

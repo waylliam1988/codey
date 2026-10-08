@@ -16,7 +16,7 @@ def _reply(monkeypatch, *, content, calls=None, finish="stop"):
     if calls is not None:
         message["tool_calls"] = calls
     monkeypatch.setattr(
-        ApiProvider, "_post_chat",
+        ApiProvider, "_generate",
         lambda *args, **kwargs: {"choices": [{"finish_reason": finish, "message": message}]},
     )
     return ApiProvider("http://127.0.0.1:9/v1", "gemma", text_decoder=normalize_local_reply)

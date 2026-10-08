@@ -6,6 +6,7 @@ from unittest import mock
 from urllib.parse import urlsplit
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect, sync_playwright
 
 from codey.app import server
@@ -59,18 +60,21 @@ def page(ui_browser):
         route.fulfill(json=data)
 
     page.route("**/api/**", api)
-    page.goto(url)
-    # Desktop provider probes / other suites can compete for browser startup.
-    # Readiness is a functional condition, not a five-second performance budget.
     try:
-        expect(page.locator("#provider-button")).to_be_enabled(timeout=15000)
-    except AssertionError as exc:
-        diagnostic = page.locator(".status-row").all_text_contents()
+        # State restoration is asynchronous; frame delivery is not its clock.
+        try:
+            page.goto(url)
+            expect(page.locator("#provider-button")).to_be_enabled(timeout=15000)
+            page.wait_for_function("window.CodeyUiState.current().active_id === 'a'", polling=100)
+        except (AssertionError, PlaywrightTimeoutError) as exc:
+            status = page.locator(".status-row").all_text_contents()
+            state = page.evaluate("() => ({active_id: window.CodeyUiState?.current().active_id, "
+                                  "session_ids: window.CodeyUiState?.current().sessions.map(s => s.id), "
+                                  "visibility: document.visibilityState})")
+            raise AssertionError(f"UI boot failed: {boot_errors}; status: {status}; state: {state}") from exc
+        yield page
+    finally:
         page.close()
-        raise AssertionError(f"UI boot failed: {boot_errors}; status: {diagnostic}") from exc
-    page.wait_for_function("window.CodeyUiState.current().active_id === 'a'")
-    yield page
-    page.close()
 
 
 def test_long_answer_is_visible_and_pointer_selection_survives_tool_update(page):

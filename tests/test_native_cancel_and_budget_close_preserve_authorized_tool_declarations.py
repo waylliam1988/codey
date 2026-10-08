@@ -41,7 +41,7 @@ def test_terminal_results_keep_original_declarations_without_executing_new_calls
 
     initial = None
     if stop == "received_first_turn":
-        initial = InitialNativeTurn(reply, snapshot, "Inspect a file")
+        initial = InitialNativeTurn(reply, snapshot, "Inspect a file", owner_session=session)
         flag.set()
     result = run_task_kernel(session, request=KernelRunRequest(
         transport=KernelTransportDeps(provider=Provider(), stop_flag=flag, initial_turn=initial,

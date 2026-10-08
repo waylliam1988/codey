@@ -268,9 +268,8 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
 def _run_native_auto(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps,
                      ghost_context: str, experiences: str) -> ModeOutcome:
     """Receive once with authorized tools; execute that same turn in the kernel."""
-    from codey.operations.kernel_prompt import kernel_prompt_for_session
-    from codey.operations.kernel_protocol import InitialNativeTurn, build_turn_snapshot
-    from codey.operations.project_prompt_context import prepare_coding_context
+    from codey.operations.kernel_preparation import prepare_kernel_turn
+    from codey.operations.kernel_protocol import InitialNativeTurn
     from codey.operations.provider_session import reply_text_for_accounting
     from codey.operations.task_entry import build_task_policy_for_entry, start_task_session
     from codey.operations.task_guidance import task_guidance_for_policy
@@ -280,13 +279,12 @@ def _run_native_auto(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps,
     policy = frame.entry_policy or build_task_policy_for_entry(frame.request, frame.task_kind)
     frame.entry_policy = policy
     session = start_task_session(frame, work, policy, frame.task_kind)
-    snapshot = build_turn_snapshot(session, native=True)
-    prompt = kernel_prompt_for_session(
-        session, user_task=execution_task(frame.request), contract_text=snapshot.contract_text,
+    prepared = prepare_kernel_turn(
+        session, user_task=execution_task(frame.request),
         context_text="\n\n".join(p for p in (ghost_context, experiences) if p.strip()),
-        controller_allowed=snapshot.allowed, native=True, tool_names=snapshot.tool_names,
-        task_guidance=task_guidance_for_policy(policy), coding_context=prepare_coding_context(session),
+        native=True, task_guidance=task_guidance_for_policy(policy),
     )
+    snapshot, prompt = prepared.snapshot, prepared.prompt
     prompt += "\nIf the request can be answered directly without tools, answer it directly."
     provider = deps.prepare_native_provider(frame) if deps.prepare_native_provider else frame.provider
     if frame.fresh_chat:
@@ -301,7 +299,7 @@ def _run_native_auto(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps,
             hooks.on_event(RunEvent("reasoning", turn=1, reasoning=reply.reasoning))
         return _finish_auto_answer(frame, work, hooks, deps, deps.state, prompt, reply.text)
     _record_direct_exchange(frame, deps.state, prompt, reply_text_for_accounting(reply))
-    frame.entry_initial_turn = InitialNativeTurn(reply, snapshot, prompt)
+    frame.entry_initial_turn = InitialNativeTurn(reply, snapshot, prompt, owner_session=session)
     # session.turn stays zero: the kernel consumes the received turn as turn 1,
     # including its truncation/cancellation checks and original frozen specs.
     return _continue_direct_candidate(frame, work, hooks, deps, "")

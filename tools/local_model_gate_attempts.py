@@ -116,12 +116,12 @@ class RecordingProvider(ApiProvider):
         self.exchange_number = 0
         self.recorder_id = uuid.uuid4().hex
 
-    def _post_chat(self, messages, tools=None, *, timeout=None):
+    def _generate(self, messages, tools=None, *, timeout=None):
         self.exchange_number += 1
         number = self.exchange_number
         started = time.perf_counter()
         try:
-            body = super()._post_chat(messages, tools, timeout=timeout)
+            body = super()._generate(messages, tools, timeout=timeout)
         except Exception as exc:
             self._record({"type": "error", "exchange": number, "error": f"{type(exc).__name__}: {exc}",
                           "seconds": time.perf_counter() - started})
@@ -144,19 +144,6 @@ class RecordingProvider(ApiProvider):
         row = {**row, "recorder_id": self.recorder_id}
         with (self.directory / "provider.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    def _responses_exchange(self, pending, tools, timeout, **kwargs):
-        self.exchange_number += 1
-        number = self.exchange_number
-        started = time.perf_counter()
-        try:
-            turn = super()._responses_exchange(pending, tools, timeout, **kwargs)
-        except Exception as exc:
-            self._record({"type": "error", "exchange": number, "error": f"{type(exc).__name__}: {exc}"})
-            raise
-        self._record({"type": "response", "exchange": number, "payload": dict(turn.raw),
-                      "seconds": time.perf_counter() - started})
-        return turn
 
 
 def make_provider(target: GateTarget, directory: Path):

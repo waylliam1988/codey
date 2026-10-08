@@ -85,3 +85,11 @@ Local gates fingerprint Zen files only when Zen is explicitly selected.
 The shared API runtime, Chat Completions/Responses codecs, Local decoder and
 task kernel remain; old Zen runs retain their stored history. There is no
 automatic alternate-connection or alternate-model fallback.
+
+`tests/test_optional_zen_removal_preserves_local_api.py` installs an import barrier
+in a fresh process and removes the registration/label. Both Local protocols then
+complete a real HTTP read/done/receipt task; desktop catalogs, CLI help, old stored
+history and Local gate metadata still work. An old Zen connection is rejected,
+and no Zen import is attempted. Keep this absence probe when removing the package;
+it accepts an already absent registration. This deterministic test does not prove
+compatibility with every future model or replace the live release matrix.

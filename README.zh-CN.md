@@ -91,6 +91,9 @@ API 任务可用 `--model`；`--effort` 要求同时指定模型，并符合公�
 桌面、CLI 与 headless 在接纳任务时正式保存模型、协议和生成参数。
 之后修改 Settings 不改变旧任务；原连接不可用时，恢复会明确阻塞。
 
+Chat Completions 和 Responses 共用取消与结果交付规则。Zen 是可移除的连接；
+移除后 Local API 和已保存的聊天、运行历史仍可使用。
+
 CLI、网页事件和 headless JSONL 共用运行身份与工具状态。恢复保留原任务要求；
 已结算结果可继续交付，未结算的危险写操作不会被盲目重试。
 

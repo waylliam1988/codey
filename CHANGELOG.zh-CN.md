@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - API 原子交换与 native 首轮一次准备（2026-10-08）
+
+- 构造时选择协议 codec，文本、原生调用、工具结果及结束交付共用一个交换生命周期；
+  会话状态仍由一个对象拥有，删除重复 Chat/Responses 路径及共享层的 Local 预算查询。
+- 文本请求收到意外或非法原生调用时不提交历史；原生回复也更新当前 reasoning，
+  不再沿用上一轮同名正文的思考内容。
+- Auto 与 kernel 共用输入准备函数；已收到首轮复用原 prompt 和冻结快照，绑定原
+  TaskSession，保留轮次预算、写锁接纳和精确调用 ID。
+- 新进程禁止导入 Zen 后验证两种 Local 协议、桌面目录、CLI、历史读取及 gate 元数据；
+  Zen 连接规则继续隔离，gate 录制收口并加入新 runtime 模块指纹。
+- 复现无动画帧时 UI 等待停滞及初始化失败泄漏页面；改为时间轮询、失败诊断和
+  始终清理 fixture。原 CI 日志不足以确认 Python 3.12 独有缺陷。
+- 最终：**7775 passed、7 skipped、1501 subtests passed，610.33 秒**；机器契约
+  **608 passed**，Ruff、mypy（391 文件）、编译、diff 通过。首轮七项测试迁移遗漏
+  如实保留在 `TEST_REPORT.md`。未改版本、未打 tag、未发布，未新增实机结论。
+
 ## 未发布 - Zen 有界文本适配与独立审查模型固定（2026-10-08）
 
 - 将临时不可用 read/shell 网络声明隔离在可移除的 Zen 包；保留原执行快照，文本

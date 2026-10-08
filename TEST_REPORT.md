@@ -1,5 +1,71 @@
 # Codey Test Report
 
+## Atomic API exchanges, native preparation and UI readiness (2026-10-08)
+
+基线：`7c751f26`；Windows、Python **3.12.8**。工作区开始时干净。本轮完成共享
+交换生命周期、首轮准备和 Zen 缺包验收，并纳入用户提供的 GitHub UI 超时日志。
+没有修改版本号、创建 tag 或 release；以下结果不覆盖真实模型质量或整个程序无 bug。
+
+### TDD 与实际消费者
+
+新增四个行为测试文件，共 **27 条**。首组为 **5 failed / 9 passed**，确认失败原因后
+实现；随后非法空 tool_calls 四例、跨会话首轮一例、UI 等待/清理两例分别先红再绿。
+其余是正常行为对照、入口扩展和既有隔离能力的更强验收，不声称它们全部曾经失败。
+
+| 缺陷或收口约束 | 行为锁与正式消费 |
+| --- | --- |
+| 重复交换路径、原生 reasoning 旧值、文本路径吞掉意外调用 | `test_api_exchange_lifecycle_consistency.py`：两种协议的 HTTP 失败、取消迟到、并发拒绝、截断、精确 ID 及三个发送入口；一个 `_exchange` 持有发送锁、取消代次和候选提交 |
+| `{}`、`False`、`0`、空字符串 tool_calls 被当成空调用 | 同文件四个反例先红；文本路径复用现有参数解析校验，非法响应不进入历史 |
+| 共享预算无条件查询 Local | 显式预算测试先红；连接工厂提供已解析预算，共享运行时使用通用默认值，构造时只选择一次 codec |
+| Auto 首轮重复刷新编码上下文 | `test_native_auto_initial_turn_prepared_once.py`：真实 Auto→entry→kernel→edit→done；首轮一次准备/发送，发送后替换注册表仍执行原快照绑定 |
+| 同授权的另一会话可以消费旧首轮 | 同文件独立反例先红；`InitialNativeTurn.owner_session` 必须是当前 TaskSession，拒绝时零执行/发送 |
+| 只删注册的测试不能证明 Zen 包不存在仍可用 | `test_optional_zen_removal_preserves_local_api.py`：新进程禁止导入 Zen，真实 Local 工厂和回环 HTTP 完成两种协议的 read→done→回执；静态桌面目录、模型目录、CLI help、旧 UI/运行历史、未知连接拒绝与 Local gate 元数据均通过；该隔离能力本来就通过，没有虚构生产缺陷 |
+| 状态恢复已完成却依赖动画帧继续轮询；初始化失败泄漏页面 | `test_ui_workflow_readiness_without_animation_frames.py`：禁止 RAF 回调，强制首次谓词为 false，旧 fixture 超时；另一例注入就绪失败并检查关闭页面。两个反例先红；原状态断言保留，改为 polling=100，失败记录状态/会话 ID/visibility/JS 与请求错误，finally 关闭页面 |
+
+只有一个 API 会话状态所有者。codec 是无状态模块，自己的 wire 历史、声明编码和
+回复解码留在协议内；没有新增通用消息框架或旧方法转发 shim。实机录制和 scripted
+recovery 消费共同 `_generate`；gate 指纹增加 `api_codec` 与 `kernel_preparation`。
+`api_provider.py` **413→255 行**；新增契约/准备模块分别服务真实生产调用。
+
+### Python 3.12 CI 超时的证据边界
+
+用户日志在 UI fixture 的 `wait_for_function(active_id === 'a')` 超时，按钮已启用，
+正文复制测试尚未执行。本机同版本系列/同 Chromium 下，确定性注入复现了
+“状态为 a，但默认 RAF 轮询停滞”的机制；改为时间轮询后通过，失败清理也通过。
+单份 CI 日志没有当时 active_id、visibility 或请求错误，不能断言这是唯一根因，
+更不能断言 Python 3.12 解释器有独有 bug。新诊断会把这些事实写入下一次失败。
+没有增加超时、重试、skip 或放宽成功断言。受影响真实浏览器回归 **49 passed**。
+
+### 全量与迁移记录
+
+首轮全量：**7 failed、7768 passed、7 skipped、1501 subtests，602.55s**。
+这是本轮迁移遗漏：五个 effort 用例和一个 thinking 用例仍调用已删除的
+`_request_payload`；一个 prompt 计数测试只 patch 旧消费者，未观察共同准备路径。
+修复后设置测试读取实际序列化 HTTP 请求，prompt 从规范模块调用和计数；保留
+所有原断言，不恢复旧接口，不跳过失败。相关回归 **66 passed**，重新通过前置门
+后再跑完整全量。
+
+| 检查 | 最终实际结果 |
+| --- | --- |
+| `python -m ruff check .` | All checks passed |
+| `python -m mypy codey` | 391 source files，零问题 |
+| `python -m compileall -q codey tools tests` | 通过 |
+| JavaScript `node --check` | 通过；本轮没有修改生产 JS |
+| `git diff --check` | 通过，只有行尾标准化提示 |
+| 架构与相关协议回归 | 155 passed、383 subtests，29.42s |
+| 最终 `python -m tools.machine_contract_gate` | **608 passed，89.54s**；无 failure / skip |
+| 最终 `python -X utf8 -u -m pytest -q -ra -o faulthandler_timeout=120` | **7775 passed、7 skipped、1501 subtests passed，610.33s** |
+
+7 个 skip：四项 POSIX 文件位/进程组/绝对路径、两项 Windows 无 O_NOFOLLOW，以及
+独立浏览器 E2E opt-in。普通 Playwright 工作流已实际运行；没有重新跑实机模型 gate、
+独立 UI E2E 或本机 Python 3.11/3.13 全量，没有把历史实机数据算成本轮证据。
+首轮与终轮日志在忽略目录 `.e2e-artifacts/api-exchange-lifecycle/pytest-full.txt` 和
+`pytest-full-final.txt`；最终全量结束后才更新文档。
+
+本轮证明的是测试所覆盖的提交/取消/权限/身份不变量；不是所有线程调度、未来协议、
+模型行为或全库的数学无 bug 证明。Zen 临时规则仍在连接包，移除时需要同时清理其
+专用测试、gate 分支和合作文档，Local 与内核无需迁移。
+
 ## Zen text profile, selected-review routing and CI isolation (2026-10-08)
 
 基线：`9adc39f5`；Windows、Python 3.12。本轮同时审查并回归已有未提交改动，

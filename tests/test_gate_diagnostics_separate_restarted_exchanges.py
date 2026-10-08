@@ -12,9 +12,9 @@ def test_active_and_terminal_responses_remain_distinct_after_restart(tmp_path):
     active = {"choices": [{"finish_reason": "stop"}]}
     terminal = {"choices": [{"finish_reason": "length"}]}
     with patch("codey.providers.api_transport.open_request", return_value=Response(json.dumps(active).encode())):
-        RecordingProvider(target, tmp_path)._post_chat([{"role": "user", "content": "task"}])
+        RecordingProvider(target, tmp_path)._generate([{"role": "user", "content": "task"}])
     with patch("codey.providers.api_transport.open_request", return_value=Response(json.dumps(terminal).encode())):
-        RecordingProvider(target, tmp_path)._post_chat([{"role": "tool", "tool_call_id": "c1", "content": "OK"}], [])
+        RecordingProvider(target, tmp_path)._generate([{"role": "tool", "tool_call_id": "c1", "content": "OK"}], [])
     metrics = _provider_metrics(tmp_path)
     assert metrics["logical_sends"] == 2
     assert metrics["http_attempts"] == 2

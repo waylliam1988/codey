@@ -101,7 +101,7 @@ def test_unsupported_tools_hint_points_at_canonical_shape(monkeypatch) -> None:
 
     monkeypatch.setattr(api_transport, "open_request", fake_urlopen)
     with pytest.raises(RuntimeError, match="HTTP 400") as excinfo:
-        provider._post_chat([{"role": "user", "content": "hi"}], [ProviderToolDefinition('done', '', {})])
+        provider._generate([{"role": "user", "content": "hi"}], [ProviderToolDefinition('done', '', {})])
     message = str(excinfo.value)
     assert "unsupported parameter: tool_choice" in message
     assert '{"native_tools": false}' not in message
@@ -146,14 +146,14 @@ def test_concurrent_sends_do_not_interleave_history(monkeypatch) -> None:
     entered_network = threading.Event()
     release_network = threading.Event()
 
-    def fake_complete(messages, *, timeout=None) -> str:
+    def fake_complete(messages, tools=None, *, timeout=None) -> dict:
         del messages, timeout
         entered_network.set()
         assert release_network.wait(timeout=10.0)
-        return "reply-A"
+        return {"choices": [{"finish_reason": "stop", "message": {"content": "reply-A"}}]}
 
     provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
-    monkeypatch.setattr(provider, "_complete", fake_complete)
+    monkeypatch.setattr(provider, "_generate", fake_complete)
     errors: list[BaseException] = []
 
     def send_b() -> None:
@@ -182,14 +182,14 @@ def test_close_discards_late_reply(monkeypatch) -> None:
     entered_network = threading.Event()
     release_network = threading.Event()
 
-    def fake_complete(messages, *, timeout=None) -> str:
+    def fake_complete(messages, tools=None, *, timeout=None) -> dict:
         del messages, timeout
         entered_network.set()
         assert release_network.wait(timeout=10.0)
-        return "late-reply"
+        return {"choices": [{"finish_reason": "stop", "message": {"content": "late-reply"}}]}
 
     provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
-    monkeypatch.setattr(provider, "_complete", fake_complete)
+    monkeypatch.setattr(provider, "_generate", fake_complete)
     result: list[str] = []
 
     def do_send() -> None:
@@ -268,14 +268,14 @@ def test_stale_turn_skips_history_after_abandon(monkeypatch) -> None:
     entered_network = threading.Event()
     release_network = threading.Event()
 
-    def fake_complete_message(messages, tools=None, *, timeout=None) -> dict:
+    def fake_generate(messages, tools=None, *, timeout=None) -> dict:
         del messages, tools, timeout
         entered_network.set()
         assert release_network.wait(timeout=10.0)
-        return {"content": "late", "_finish_reason": "stop"}
+        return {"choices": [{"finish_reason": "stop", "message": {"content": "late"}}]}
 
     provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
-    monkeypatch.setattr(provider, "_complete_message", fake_complete_message)
+    monkeypatch.setattr(provider, "_generate", fake_generate)
     result: list = []
 
     def do_send() -> None:
@@ -329,7 +329,7 @@ def test_http_error_body_is_bounded(monkeypatch) -> None:
 
     monkeypatch.setattr(api_transport, "open_request", fake_urlopen)
     with pytest.raises(RuntimeError):
-        provider._post_chat([{"role": "user", "content": "hi"}])
+        provider._generate([{"role": "user", "content": "hi"}])
     assert seen_sizes and seen_sizes[0] == 2000
     assert closed == [True]
 

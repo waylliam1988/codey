@@ -72,6 +72,11 @@ Reviewer 的 `reviewer_selection` 在发送前冻结。两者只保存连接版�
 能力和参数；凭据由连接配置提供，不写入日志或前端。重启恢复不从当前 Settings
 替换原选择；原连接失效就明确阻塞。协议历史归 Provider，不成为第二套任务事实。
 
+API 的文本、原生首轮、工具结果及结束交付都走同一个 `_exchange`；锁、取消代次、
+候选提交只由 ApiProvider 拥有。构造时选定无状态 codec，由它准备协议历史、编码和
+解码；共享层不查询 Local 能力。HTTP 失败、取消后的迟到结果、不完整文本和意外
+文本通道原生调用都不提交候选历史。连接工厂提供完整预算。
+
 `final_delivery` 与 completion proof 分开记录。发送结束工具结果仍是有界生成请求，
 并非专用网络 ACK；返回的新工具不能执行，只能在有限预算内关闭调用链。
 交付 failed/unknown 不丢弃完成证明或已执行变更，恢复处理交付事实，不重新写文件。
@@ -121,7 +126,9 @@ Research 工作流，也不刷新验证或扫描工作区。`project_prompt_cont
 - auto 工具 ACTION 和拒绝完成的回答均继续同一窗口/会话/预算；模型标签不改变原授权或要求。
 - native auto 首调用经 `prepare_auto_provider` 记录原策略和发送 effect，使用授权的
   `TurnSnapshot`。`InitialNativeTurn` 连同回复、快照及 prompt 交给同一 kernel，
-  首轮计入原预算，不二次生成；完整直接回答仍经过共同完成门。网页文本 ACTION
+  首轮计入原预算，不二次生成；Auto/普通启动共用 `kernel_preparation`，收到首轮后
+  不再次刷新上下文或渲染 prompt，并校验其 owner_session 是同一 TaskSession。
+  完整直接回答仍经过共同完成门。网页文本 ACTION
   路径保留，普通问候不抢写锁，编辑调用收到后取得写锁才执行，失败关闭原 call IDs。
 - command/cwd/URL 是完整身份；展示边界可以裁剪，事实和完成关联不裁剪。
 

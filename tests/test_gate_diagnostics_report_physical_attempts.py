@@ -12,7 +12,7 @@ from tools.local_model_gate_attempts import GateTarget, RecordingProvider, _prov
 def test_real_recorder_counts_unknown_wire_attempt_without_retry(tmp_path):
     provider = RecordingProvider(GateTarget("http://localhost:5001/v1", "fake", 32768, 8192, 12000), tmp_path)
     with patch("codey.providers.api_transport.open_request", side_effect=[Response(b""), Response(b'{"choices":[]}')]) as send, pytest.raises(GenerationUnknownError):
-        provider._post_chat([])
+        provider._generate([])
     assert send.call_count == 1
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
     assert len([row for row in rows if row["type"] == "request"]) == 1

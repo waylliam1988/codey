@@ -64,6 +64,7 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/operations/task_guidance.py`、`research/completion_guidance.py` | 任务组装入口选择领域拥有的完成指导；内核接收文本，不定义 Research 工作流 |
 | `codey/operations/project_prompt_context.py`、`workspace/coding_context.py` | 经现有验证判定准备不可变编码事实，再无 I/O 地渲染 JSON/native 上下文 |
 | `codey/operations/kernel_prompt.py`、`research/tool_contract.py` | 组合已提供的指导、上下文及协议说明；逻辑 note ID 用法由共用工具定义负责 |
+| `codey/operations/kernel_preparation.py` | Auto/kernel 共用冻结快照与实际 prompt 的一次准备；已收到的 native 首轮复用原输入并绑定原 TaskSession |
 | `codey/toolchain/tool_spec.py` | 工具定义、schema 与按权限生成的本轮快照 |
 | `codey/operations/kernel_protocol.py` | JSON/native 归一及当前快照校验 |
 | `codey/operations/auto_loop.py`、`task_entry.py::prepare_auto_provider` | 首调用记录原授权/effect，native 回复与冻结快照经 InitialNativeTurn 交给同一 kernel；保留原预算、延迟写锁 |
@@ -73,10 +74,11 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/operations/kernel_session_recovery.py`、`kernel_receipts.py` | 恢复原策略/事实/结算结果，并验证收据身份 |
 | `codey/providers/local_response_codec.py` | 本地响应信封与模型方言，在进入内核前归一 |
 | `codey/providers/base.py` | 协议中立工具声明/结果与明确的回复结束状态 |
-| `codey/providers/api_provider.py`、`api_transport.py` | 共用生成锁、候选提交、取消、总截止与单次有界 POST；未知结果不重发 |
+| `codey/providers/api_provider.py`、`api_transport.py` | 一个交换生命周期拥有锁、取消与候选提交；共享有界传输不重发未知结果 |
+| `codey/providers/api_codec.py` | 无状态 codec 契约及生成参数；连接工厂解析预算，Provider 构造时选定协议 |
 | `codey/providers/api_chat.py`、`api_responses.py` | 各自拥有工具、结果、wire 历史、完整交换组裁剪和回复解码；Responses 保留 reasoning items 并使用 call_id |
 | `codey/providers/api_connections.py`、`local_connection.py` | lazy 连接工厂与冻结 Local 配置；共享 runtime 不导入 Zen |
-| `codey/providers/zen/` | 动态免费目录、限定合作身份与访问观察；`declarations.py` 拥有临时不可用 read/shell 网络声明，`connection.py` 拥有有界文本调用拒绝；不授予任务权限，删除包及 API_CONNECTIONS 注册即可移除 |
+| `codey/providers/zen/` | 动态免费目录、限定合作身份与访问观察；`declarations.py` 拥有临时不可用 read/shell 网络声明，`connection.py` 拥有有界文本调用拒绝；不授予任务权限，删除生产包和注册时还需清理专用测试、gate 和文档 |
 | `codey/runtime/core/api_selection.py`、`operation_payload.py` | 无秘密的冻结 API 选择，以及严格接纳/交付 payload 校验 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |
 | `codey/app/context.py`、`event_bus.py`、`event_payloads.py` | 公共出口补全运行身份和模式、严格状态；总线负责重放，纯投影模块生成有界机器事件与收据 |

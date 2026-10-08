@@ -2,6 +2,27 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Atomic API exchanges and single native turn preparation (2026-10-08)
+
+- Select the protocol codec once and use one API exchange lifecycle for text,
+  native calls, tool results and terminal delivery. Keep session state in one
+  owner; remove duplicated Chat/Responses paths and the shared Local budget lookup.
+- Reject unexpected or malformed native calls in text-only exchanges before
+  history commit; refresh reasoning after native replies as well as plain replies.
+- Prepare Auto/kernel input through one function. Reuse the received prompt and
+  frozen snapshot, bind the first turn to its original TaskSession and preserve
+  budget, writer admission and exact call IDs.
+- Test Local Chat/Responses, desktop catalogs, CLI, stored history and gate
+  metadata in a fresh process that cannot import Zen. Keep Zen connection logic
+  isolated; share gate recording and fingerprint the new runtime modules.
+- Reproduce UI readiness stalls without animation frames and setup-page leaks;
+  use timed state polling, failure diagnostics and unconditional fixture cleanup.
+  The CI log alone does not prove a Python 3.12-specific defect.
+- Final: **7775 passed, 7 skipped, 1501 subtests passed in 610.33s**;
+  machine contracts **608 passed**, Ruff, mypy (391 files), compilation and diff pass.
+  Seven missed test migrations in the first full run are documented in
+  `TEST_REPORT.md`. No version change, tag, release or new live-model claim.
+
 ## Unreleased - Bounded Zen text profile and pinned standalone review (2026-10-08)
 
 - Isolate the temporary unavailable read/shell wire profile in the removable Zen

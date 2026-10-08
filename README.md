@@ -102,6 +102,9 @@ capabilities. Desktop, CLI and headless admission persist the chosen model,
 protocol and generation settings. Later Settings changes do not alter that run;
 an unavailable original connection blocks recovery explicitly.
 
+Chat Completions and Responses share cancellation and result-delivery rules.
+Removing the optional Zen connection preserves Local API support and stored history.
+
 CLI, browser events and headless JSONL share run identity and tool status.
 Recovery retains the original requirements and can deliver settled results;
 unsettled dangerous writes are not blindly retried.
