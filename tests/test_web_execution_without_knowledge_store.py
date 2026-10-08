@@ -50,7 +50,7 @@ def test_web_only_staging_projects_ledger_without_a_dummy_store(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.usefixtures("no_external_advisor_models")
+@pytest.mark.usefixtures("no_external_advisor_models", "scripted_local_api_connection")
 def test_real_headless_hybrid_executes_search_and_open_in_isolated_state(tmp_path, monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project = tmp_path / "project"

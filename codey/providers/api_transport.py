@@ -13,6 +13,13 @@ import urllib.request
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from codey.providers.diagnostics import (
+    FAILURE_AUTHENTICATION_REQUIRED,
+    FAILURE_RATE_LIMITED,
+    FAILURE_REQUEST_REJECTED,
+    FAILURE_TRANSIENT,
+)
+
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
@@ -28,11 +35,28 @@ class GenerationRejectedError(RuntimeError):
     """A complete HTTP failure response, distinct from an unknown generation."""
 
     def __init__(self, status: int, detail: str) -> None:
-        super().__init__(f"model HTTP {status}: {detail[:400]}")
         self.status = status
         self.error_type = ""
-        with contextlib.suppress(ValueError, TypeError, AttributeError):
-            self.error_type = str(json.loads(detail).get("error", {}).get("type", ""))
+        reason = detail
+        with contextlib.suppress(ValueError, TypeError):
+            body = json.loads(detail)
+            error = body.get("error") if isinstance(body, dict) else None
+            if isinstance(error, dict):
+                if isinstance(error.get("type"), str):
+                    self.error_type = error["type"][:80]
+                if isinstance(error.get("message"), str) and error["message"].strip():
+                    reason = error["message"]
+        label = f" [{self.error_type}]" if self.error_type else ""
+        self.provider_failure_kind = (
+            FAILURE_AUTHENTICATION_REQUIRED if status == 401 else
+            FAILURE_RATE_LIMITED if status == 429 else
+            FAILURE_TRANSIENT if 500 <= status <= 599 else
+            FAILURE_REQUEST_REJECTED
+        )
+        self.provider_failure_facts: dict[str, object] = {"http_status": status}
+        if self.error_type:
+            self.provider_failure_facts["service_error_type"] = self.error_type
+        super().__init__(f"model HTTP {status}{label}: {reason[:400]}")
 
 
 class NoGenerationRedirect(urllib.request.HTTPRedirectHandler):

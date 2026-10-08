@@ -9,6 +9,8 @@
   明确选择 Chat Completions 或 Responses。
 - OpenCode Zen：合作公共连接动态获取协议受支持的零费用模型；每次请求资格由上游
   检查，免费列表不保证所有任务模式都可用。实机范围见[测试报告](../TEST_REPORT.md)。
+  临时连接适配不授予项目权限；本轮 Muse 的聊天、只读、独立审查三项实机通过，
+  不代表完整模型/任务矩阵通过。独立 API 审查使用本次所选模型。
 - 网页 provider 不需要 API key；你在专用 Edge 或 Chrome profile 里登录已有账号。
 - 不同网站的浏览器自动化代码隔离在各自 adapter 里，网页改版时尽量只修对应 adapter。
 

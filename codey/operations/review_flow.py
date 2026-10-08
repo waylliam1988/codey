@@ -201,6 +201,7 @@ def run_review_mode(
             trace_recorder=frame.trace,
             run_id=frame.run_id,
             review_source_run_id=str(getattr(request, "review_source_run_id", "") or ""),
+            standalone=True,
         )
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise

@@ -48,6 +48,7 @@ def test_required_edit_produces_check_without_excusing_verification(tmp_path, wi
         assert len(checks) == 1 and checks[0].status == "pass"
 
 
+@pytest.mark.usefixtures("scripted_local_api_connection")
 def test_real_headless_required_edit_and_fresh_verification_finish(tmp_path, monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project = tmp_path / "project"

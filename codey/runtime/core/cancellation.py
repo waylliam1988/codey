@@ -282,7 +282,9 @@ def start_process(
     check()
     group_args: dict[str, Any]
     if os.name == "nt":
-        group_args = {"creationflags": _windows_subprocess.CREATE_NEW_PROCESS_GROUP}
+        # CREATE_SUSPENDED prevents fast commands from exiting (or spawning
+        # descendants) before their Job Object owns the process tree.
+        group_args = {"creationflags": _windows_subprocess.CREATE_NEW_PROCESS_GROUP | 0x4}
     else:
         group_args = {"start_new_session": True}
     proc = subprocess.Popen(
@@ -296,7 +298,29 @@ def start_process(
         **group_args,
     )
     job = attach_process_tree(proc)
+    if os.name == "nt":
+        try:
+            check()
+            _resume_windows_process(proc)
+        except BaseException:
+            terminate_process_tree(proc, job)
+            if job is not None:
+                job.close()
+            _close_pipes(proc)
+            raise
     return proc, job
+
+
+def _resume_windows_process(proc: subprocess.Popen[bytes]) -> None:
+    """Resume a suspended Windows child only after Job attachment succeeds."""
+    ntdll = _windows_ctypes.WinDLL("ntdll", use_last_error=True)
+    ntdll.NtResumeProcess.argtypes = [_windows_ctypes.c_void_p]
+    ntdll.NtResumeProcess.restype = _windows_ctypes.c_long
+    status = ntdll.NtResumeProcess(cast(_PopenWithHandle, proc)._handle)
+    if status < 0:
+        ntdll.RtlNtStatusToDosError.argtypes = [_windows_ctypes.c_long]
+        ntdll.RtlNtStatusToDosError.restype = _windows_ctypes.c_ulong
+        raise _windows_ctypes.WinError(ntdll.RtlNtStatusToDosError(status))
 
 
 def _pump_stream(stream: BinaryIO, state: _StreamPump) -> None:

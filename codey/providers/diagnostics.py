@@ -24,6 +24,7 @@ FAILURE_RESPONSE_MISSING = "response_missing"
 FAILURE_READINESS_STALE = "readiness_stale"
 FAILURE_AUTHENTICATION_REQUIRED = "authentication_required"
 FAILURE_CHALLENGE_REQUIRED = "challenge_required"
+FAILURE_REQUEST_REJECTED = "request_rejected"
 MAX_FAILURE_FACTS = 12
 MAX_FAILURE_FACT_VALUE = 160
 ALLOWED_FAILURE_FACTS = frozenset({
@@ -33,6 +34,8 @@ ALLOWED_FAILURE_FACTS = frozenset({
     "response_count",
     "send_visible",
     "waited_for",
+    "http_status",
+    "service_error_type",
 })
 
 FAILURE_KINDS = frozenset({
@@ -44,6 +47,7 @@ FAILURE_KINDS = frozenset({
     FAILURE_READINESS_STALE,
     FAILURE_AUTHENTICATION_REQUIRED,
     FAILURE_CHALLENGE_REQUIRED,
+    FAILURE_REQUEST_REJECTED,
 })
 
 

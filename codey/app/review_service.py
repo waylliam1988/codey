@@ -158,6 +158,8 @@ def _stale_before_send(ctx: Any, session_id: Any, reviewer_id: Any, prepared: An
 
 
 def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any) -> Any:
+    from codey.providers.api_transport import GenerationRejectedError
+
     trace = FailOpenPromptTrace(trace_recorder)
     trace.call("record_permission_profile", "reviewer", phase="review")
     record_provider_send_prompt(
@@ -171,13 +173,15 @@ def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any) -> Any:
     try:
         with provider_controls.suppress_assistance():
             return reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded, GenerationRejectedError):
         raise
     except Exception as exc:
         raise ReviewSendUnknown(str(exc)) from exc
 
 
 def _parse_with_single_repair(reviewer: Any, trace_recorder: Any, reply: Any, prepared: Any) -> Any:
+    from codey.providers.api_transport import GenerationRejectedError
+
     def send_repair_prompt(repair: str) -> str:
         record_provider_send_prompt(
             trace_recorder,
@@ -189,7 +193,7 @@ def _parse_with_single_repair(reviewer: Any, trace_recorder: Any, reply: Any, pr
         )
         try:
             return cast(str, reviewer.send(repair, timeout=REVIEW_TIMEOUT))
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded, GenerationRejectedError):
             raise
         except Exception as exc:
             raise ReviewSendUnknown(str(exc)) from exc
@@ -309,107 +313,76 @@ def run_review(
     run_id: str = "",
     review_source_run_id: str = "",
     connect_reviewer: Callable[..., Any] | None = None,
+    standalone: bool = False,
 ) -> tuple[str, ReviewResult] | None:
     from codey.reviews.reuse import validate_source_run_id
 
     cancellation.check()
-    # Validate up front so a misspelled policy fails even when a web reviewer
-    # is available; the result is reused for the self-review gate below.
     self_review_allowed = allow_self_review(review_policy)
-    last_error: Exception | None = None
     if review_impact_map is None:
         review_impact_map = safe_review_impact_map(project, changes)
     source = validate_source_run_id(review_source_run_id) if review_source_run_id else ""
+    selected = _connect_review_model(ctx, session_id=session_id, run_id=run_id, writer_id=writer_id,
+                                    self_review_allowed=self_review_allowed, standalone=standalone,
+                                    connect_reviewer=connect_reviewer)
+    if selected is None:
+        return None
+    reviewer_id, reviewer, self_review = selected
+    return run_review_attempt(
+        ctx, session_id=session_id, project=project, task=task,
+        writer_summary=writer_summary, changes=changes, recent_log=recent_log,
+        change_brief=change_brief, project_map=project_map, verification_map=verification_map,
+        review_impact_map=review_impact_map, execution_evidence=execution_evidence,
+        reviewer_id=reviewer_id, reviewer=reviewer, self_review=self_review,
+        trace_recorder=trace_recorder, run_id=run_id, review_policy=review_policy,
+        review_source_run_id=source,
+    )
+
+
+def _connect_review_model(
+    ctx: TaskState, *, session_id: str, run_id: str, writer_id: str,
+    self_review_allowed: bool, standalone: bool,
+    connect_reviewer: Callable[..., Any] | None,
+) -> tuple[str, Any, bool] | None:
+    from codey.providers.catalog import API_CONNECTIONS
+    from codey.providers.ids import normalize_provider_id
+
     if connect_reviewer is not None:
         if not self_review_allowed:
             raise ValueError("headless selected-provider review requires self-review permission")
-        reviewer = connect_reviewer(writer_id)
-        return run_review_attempt(ctx, session_id=session_id, project=project, task=task,
-            writer_summary=writer_summary, changes=changes, recent_log=recent_log,
-            change_brief=change_brief, project_map=project_map, verification_map=verification_map,
-            review_impact_map=review_impact_map, execution_evidence=execution_evidence,
-            reviewer_id=writer_id, reviewer=reviewer, self_review=True, trace_recorder=trace_recorder,
-            run_id=run_id, review_policy=review_policy, review_source_run_id=source)
+        return writer_id, connect_reviewer(writer_id), True
+    if standalone and writer_id in API_CONNECTIONS:
+        if not self_review_allowed:
+            emit_review(ctx, session_id, "Review unavailable: selected-provider review is disabled.")
+            return None
+        selected = _selected_api_reviewer(ctx, session_id, run_id, writer_id, standalone=True)
+        if selected is None:
+            raise RuntimeError("Selected API reviewer is unavailable")
+        return selected[0], selected[1], False
     for reviewer_id in providers.reviewer_candidates(ctx, writer_id):
         cancellation.check()
         try:
             reviewer = providers.connect_existing_provider(reviewer_id)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
-        except Exception as exc:
-            last_error = exc
+        except Exception:
             continue
         ctx.set_provider_session(reviewer_id, None)
-        return run_review_attempt(
-            ctx,
-            session_id=session_id,
-            project=project,
-            task=task,
-            writer_summary=writer_summary,
-            changes=changes,
-            recent_log=recent_log,
-            change_brief=change_brief,
-            project_map=project_map,
-            verification_map=verification_map,
-            review_impact_map=review_impact_map,
-            execution_evidence=execution_evidence,
-            reviewer_id=reviewer_id,
-            reviewer=reviewer,
-            self_review=False,
-            trace_recorder=trace_recorder,
-            run_id=run_id,
-            review_policy=review_policy,
-            review_source_run_id=source,
-        )
+        return reviewer_id, reviewer, False
     cancellation.check()
-    api_reviewer = _selected_api_reviewer(ctx, session_id, run_id, writer_id) if self_review_allowed else None
-    if api_reviewer is not None:
-        reviewer_id, reviewer = api_reviewer
-        return run_review_attempt(ctx, session_id=session_id, project=project, task=task,
-            writer_summary=writer_summary, changes=changes, recent_log=recent_log,
-            change_brief=change_brief, project_map=project_map, verification_map=verification_map,
-            review_impact_map=review_impact_map, execution_evidence=execution_evidence,
-            reviewer_id=reviewer_id, reviewer=reviewer, self_review=False, trace_recorder=trace_recorder,
-            run_id=run_id, review_policy=review_policy, review_source_run_id=source)
+    selected = _selected_api_reviewer(ctx, session_id, run_id, writer_id) if self_review_allowed else None
+    if selected is not None:
+        return selected[0], selected[1], False
     if not self_review_allowed:
         emit_review(ctx, session_id, "Review unavailable: no web reviewer is open.")
         return None
-    try:
-        from codey.providers.ids import normalize_provider_id
-
-        reviewer_id = normalize_provider_id(writer_id) or DEFAULT_PROVIDER_ID
-        reviewer = providers.connect_fresh_provider_tab(reviewer_id)
-        return run_review_attempt(
-            ctx,
-            session_id=session_id,
-            project=project,
-            task=task,
-            writer_summary=writer_summary,
-            changes=changes,
-            recent_log=recent_log,
-            change_brief=change_brief,
-            project_map=project_map,
-            verification_map=verification_map,
-            review_impact_map=review_impact_map,
-            execution_evidence=execution_evidence,
-            reviewer_id=reviewer_id,
-            reviewer=reviewer,
-            self_review=True,
-            trace_recorder=trace_recorder,
-            run_id=run_id,
-            review_policy=review_policy,
-            review_source_run_id=source,
-        )
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception as exc:
-        last_error = exc
-    if last_error is not None:
-        raise last_error
-    raise RuntimeError("no review model available")
+    reviewer_id = normalize_provider_id(writer_id) or DEFAULT_PROVIDER_ID
+    return reviewer_id, providers.connect_fresh_provider_tab(reviewer_id), True
 
 
-def _selected_api_reviewer(ctx: TaskState, session_id: str, run_id: str, writer_id: str) -> tuple[str, Any] | None:
+def _selected_api_reviewer(
+    ctx: TaskState, session_id: str, run_id: str, writer_id: str, *, standalone: bool = False,
+) -> tuple[str, Any] | None:
     from codey.providers.api_connections import capture_reviewer_selection, open_selection
     from codey.runtime.core.api_selection import ApiRunSelection
     from codey.runtime.core.operation_state import RuntimeOperationStore
@@ -422,7 +395,7 @@ def _selected_api_reviewer(ctx: TaskState, session_id: str, run_id: str, writer_
         selection = ApiRunSelection.from_payload(operation.reviewer_selection)
     else:
         try:
-            selection = writer if operation is not None and operation.task_kind == "review" else capture_reviewer_selection(writer)
+            selection = writer if standalone else capture_reviewer_selection(writer)
         except ValueError:
             return None
         if operation is not None:

@@ -7,6 +7,10 @@ from urllib.parse import urlparse
 
 _URL_RE = re.compile(r"https?://[^\s<>\]）】`\"']+", re.IGNORECASE)
 _DOMAIN_RE = re.compile(r"(?<!@)\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b", re.IGNORECASE)
+_PATH_CONSTRUCTOR_RE = re.compile(
+    r"\b(?:Path|PosixPath|WindowsPath|PurePath|PurePosixPath|PureWindowsPath)"
+    r"\(\s*(?P<quote>['\"])(?P<path>[^'\"\r\n]+)(?P=quote)\s*\)"
+)
 _GENERIC_HOST_LABELS = {
     "www",
     "com",
@@ -24,7 +28,19 @@ _GENERIC_HOST_LABELS = {
 }
 _NON_SOURCE_DOTTED_IDENTIFIERS = {
     "os.path",
+    "os.pathlike",
     "os.path.isreserved",
+    "os.path.join",
+    "os.path.abspath",
+    "os.path.relpath",
+    "os.scandir",
+    "path.walk",
+    "path.resolve",
+    "purepath.anchor",
+    "path.absolute",
+    "path.move",
+    "path.info",
+    "pathlib.unsupportedoperation",
 }
 
 
@@ -104,8 +120,9 @@ def _domains_in_text(text: str) -> list[str]:
     domains: list[str] = []
     seen: set[str] = set()
     url_spans = [match.span() for match in _URL_RE.finditer(text)]
+    path_spans = [match.span("path") for match in _PATH_CONSTRUCTOR_RE.finditer(text)]
     for match in _DOMAIN_RE.finditer(text.lower()):
-        if _overlaps(match.span(), url_spans):
+        if _overlaps(match.span(), url_spans) or _overlaps(match.span(), path_spans):
             continue
         domain = match.group(0).strip(".").removeprefix("www.")
         if domain in _NON_SOURCE_DOTTED_IDENTIFIERS:

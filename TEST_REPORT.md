@@ -1,5 +1,86 @@
 # Codey Test Report
 
+## Zen text profile, selected-review routing and CI isolation (2026-10-08)
+
+基线：`9adc39f5`；Windows、Python 3.12。本轮同时审查并回归已有未提交改动，
+没有修改版本号、创建 tag 或发布。历史报告保留；以下是本轮新增证据。
+
+### 两个实机根因
+
+1. 相同合作标识、会话、请求 ID 和 prompt，精简只读声明返回 403，补 shell 返回
+   200，再改回只读返回 403；最小 read + shell 也通过。参考源码和已安装桌面客户端
+   标识格式一致。私有 Console guard 不在给定源码内，不能宣称知道其全部判断条件。
+   适配只放在 Zen 包：补充显式不可用的网络声明，不改变内核原授权快照。
+2. 初次正式 `review_smoke` 实际选择打开的 DeepSeek 网页，审查虽然 complete，
+   所选 Muse 的请求数却为 0，发布门正确失败。现在独立 API Review 先固定本次所选
+   模型，不借网站；project 的自动独立 Reviewer 规则保留。审查选择与一次尝试分开，
+   `run_review_attempt` 的三处重复接线收口为一处。
+
+详见 [临时请求适配与移除方法](docs/zen_request_profile_2026-10-08.md)。
+
+### 确定性红测与修复
+
+| 缺陷 / 边界 | 锁定测试与结果 |
+| --- | --- |
+| 离线 CI 的四个 fake-provider 入口仍依赖真实 Local 设置；异常时 PDF fixture 留下 SQLite 连接 | `test_scripted_entry_admission_and_store_cleanup.py`，两个反例先红；使用现有 scripted admission fixture，ExitStack 清理真实 KnowledgeStore。生产 admission 没有 bypass |
+| 通用 API 自动使用 Local 文本方言解码 | `test_shared_api_text_decoder_requires_connection_opt_in.py`，generic 反例先红；只有 Local 工厂显式注入自己的 decoder |
+| Responses 顶层 completed 掩盖明确未完成的 item | `test_responses_incomplete_items_do_not_commit_or_execute.py`，8 个反例先红；在 history commit / execution 前拒绝 |
+| 失败聊天空 coding_review 被展示成 Review incomplete | `test_run_details_do_not_invent_review_on_api_failure.py`，反例先红；空投影视为没有审查 |
+| 已知 403/429 被投影为 transient 或丢 HTTP facts | `test_api_http_refusal_is_not_transient_provider_failure.py`、`test_api_rejection_messages_preserve_status_and_service_reason.py`；先红，状态、服务错误类型和短原因保留，正式 JSONL 与事件一致 |
+| 精简声明的文本/只读请求被上游拒绝 | `test_zen_transport_declarations_never_grant_execution.py`，初始 7 个目标反例先红；随后共 13 个契约覆盖两种 API、真实内核拒绝、精确 ID、取消、并发、截断、关闭上限和真实声明身份 |
+| gate 没有绑定临时 Zen adapter 与协议源文件 | `test_live_zen_gate_fingerprints_connection_adapter.py`，先红；Zen case 记录实际连接/声明/目录/身份/访问观察哈希，Local 不读取可移除 Zen 文件 |
+| 打开的网站抢先消费独立 API Review | `test_standalone_api_review_keeps_explicit_model.py`，正式 Local/Zen 入口两例先红；同文件负对照保证 selection 缺失不换模型、project 原网页偏好不变 |
+| 第三任务演示留下 summarize 注册，污染后续只读声明测试 | 首轮全量发现；`test_custom_tool_fixture_restores_registry.py` 独立反例先红；原演示断言注册成功并 addCleanup 注销，同一进程重复两次验证。测试类在函数内导入，避免被 pytest 意外再次收集 |
+
+已有未提交的 Windows suspended spawn/job attachment、Research SVG title / Python
+Path provenance、review 已知 HTTP 拒绝、UI gate 直跑导入修复一并回归。这里不把这些
+既有修改的历史红测声称为本轮重新验证的红测。没有新增 skip/xfail 或放宽权限、来源、
+验证与完成判定；没有为 403/429/unknown 增加生成重试。
+
+### 最终检查
+
+全量前完成 lint、类型检查、编译、diff、机器契约和受影响行为回归。
+首轮全量 **1 failed、7746 passed、7 skipped、1501 subtests，599.14s**：
+`summarize` 来自旧 ThirdTaskTests 的未清理注册。保留精确声明断言，修复泄漏后顺序
+回归 **29 passed**，再次跑前置门，再重新全量。
+
+| 检查 | 实际结果 |
+| --- | --- |
+| `python -m ruff check codey tests tools` | All checks passed |
+| `python -m mypy codey` | 389 source files，零问题 |
+| `python -m compileall -q codey tools tests` | 通过 |
+| `git diff --check` | 通过，只有行尾标准化提示 |
+| 架构与受影响协议回归 | 126 passed、383 subtests，40.77s |
+| 最终 `python -m tools.machine_contract_gate` | 581 passed，83.21s；无 failure / skip |
+| 最终 `python -X utf8 -u -m pytest -q -ra -o faulthandler_timeout=120` | **7748 passed, 7 skipped, 1501 subtests passed in 605.53s** |
+
+7 个 skip 为既有 Windows POSIX 文件位/进程组/绝对路径、两项 O_NOFOLLOW，以及
+浏览器 E2E opt-in。未重新运行真实 UI E2E；未在本机执行 Python 3.11/3.13 全量。
+首轮/终轮原始日志分别为忽略目录中的 `pytest-full-first.txt` / `pytest-full-final.txt`。
+最终全量后只更新文档。
+
+### 最终 Muse 实机
+
+```powershell
+python tools/local_model_release_gate.py --provider zen --model muse-spark-1.3-contributor-free --cases chat,read,review --repeat 1 --protocol native --timeout 180 --turn-budget 12 --run-dir .e2e-artifacts/zen-diagnosis-current/final-muse-gate --json
+```
+
+| 场景 | 结果 | 实际 HTTP / retry | 秒数 |
+| --- | --- | --- | ---: |
+| chat | 精确 KOBOLD_OK | 1 / 0 | 5.919 |
+| read | read_file → done，原文件哈希不变 | 3 / 0 | 7.878 |
+| review | 正式所选 Muse 请求、complete、真实 artifact/ledger 恢复、项目未写入 | 1 / 0 | 6.692 |
+
+**3/3、matrix_complete=true**；reported usage 合计 input 7770 / output 1560，
+没有人工重写结果、模型降级或 HTTP 重试。单独修复后的 review smoke 也通过
+（1 request、0 retries、7.086s），保留于 `fixed-review-gate/`。
+初次误选网页的失败保留于 `formal-muse-gate/`，没有改成 intentional pass。
+
+这证明当前三个请求形态的兼容性与确定性执行边界，不是整个 Zen release 矩阵、模型
+质量 A/B 或全库无 bug 的数学证明。上游限流、资格与模型变更仍可能失败；不自动扩权
+或换模型重发。合作退出时删除 Zen 包与注册，并清理关联测试/文档，共享 API/Local
+和任务内核不需要移植这套临时适配。
+
 ## Zen live gates, native auto and verified defect fixes (2026-10-07–08)
 
 基线：`8e3f8fbad3904dbae72889a3cd2c349c968d7f0e`，Windows、Python 3.12。

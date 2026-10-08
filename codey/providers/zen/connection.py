@@ -2,24 +2,28 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable
+import threading
+import time
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from typing import Any
 
 from codey.providers.api_provider import ApiProvider
-from codey.providers.api_transport import GenerationRejectedError
-from codey.providers.base import AssistantTurn, ProviderToolDefinition
+from codey.providers.api_transport import GenerationRejectedError, GenerationUnknownError
+from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish
+from codey.providers.error_classification import OutputLengthError
 from codey.providers.zen.catalog import ZenCatalog
+from codey.providers.zen.declarations import TEXT_PROMPT_PREFIX, prepare_declarations, transport_identity
 from codey.providers.zen.identity import CONNECTION_REVISION, ZEN_BASE_URL, ZenIdentity
+from codey.runtime.core import cancellation
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 _CATALOG: ZenCatalog | None = None
-_WIRE_NAMES = {"list_dir": "ls", "read_file": "read", "grep": "search", "find_references": "references"}
 
 
 class ZenProvider:
-    """Partner tool namespace only; execution and history remain in Codey."""
+    """Removable partner envelope; it never executes a project or shell tool."""
 
     name = "OpenCode Zen"
     native_tools = True
@@ -30,13 +34,51 @@ class ZenProvider:
         self.runtime = runtime
         self.on_plain_refused = on_plain_refused
         self.on_plain_succeeded = on_plain_succeeded
+        self._send_lock = threading.Lock()
+        self._state_lock = threading.RLock()
+        self._generation = 0
+        self._last_text_reply: tuple[str, str] | None = None
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.runtime, name)
 
+    @property
+    def model_identity(self) -> str:
+        return transport_identity(str(self.runtime.model_identity))
+
+    def abandon_inflight(self) -> None:
+        with self._state_lock:
+            self._generation += 1
+            self._last_text_reply = None
+        self.runtime.abandon_inflight()
+
+    def new_chat(self, timeout: float | None = None) -> None:
+        self.abandon_inflight()
+
+    def close(self) -> None:
+        self.abandon_inflight()
+
+    @contextlib.contextmanager
+    def _sending(self) -> Iterator[int]:
+        if not self._send_lock.acquire(blocking=False):
+            raise RuntimeError("Zen provider busy: concurrent sends are not supported")
+        try:
+            with self._state_lock:
+                generation = self._generation
+            yield generation
+        finally:
+            self._send_lock.release()
+
+    def _check_generation(self, generation: int) -> None:
+        cancellation.check()
+        with self._state_lock:
+            if generation != self._generation:
+                raise GenerationUnknownError("Zen generation cancelled; late reply discarded")
+
     def send(self, text: str, timeout: float | None = None) -> str:
         try:
-            reply = str(self.runtime.send(text, timeout=timeout))
+            with self._sending() as generation:
+                reply = self._send_text(text, timeout, generation)
         except GenerationRejectedError as exc:
             if exc.status == 403 and exc.error_type == "FreeTierError" and self.on_plain_refused is not None:
                 with contextlib.suppress(OSError, ValueError):
@@ -47,11 +89,53 @@ class ZenProvider:
                 self.on_plain_succeeded()
         return reply
 
+    def _send_text(self, text: str, timeout: float | None, generation: int) -> str:
+        declared, _ = prepare_declarations(None)
+        deadline = time.monotonic() + (timeout if timeout is not None else self.runtime.timeout)
+
+        def remaining() -> float:
+            self._check_generation(generation)
+            budget = deadline - time.monotonic()
+            if budget <= 0:
+                raise cancellation.DeadlineExceeded("Zen text-only exchange deadline exceeded")
+            return budget
+
+        prompt = TEXT_PROMPT_PREFIX + text
+        turn = self.runtime.send_turn(prompt, declared, timeout=remaining())
+        # Only protocol rejection receipts, never tool execution or HTTP retry.
+        # Two closure rounds share the original total timeout.
+        for closure in range(3):
+            self._check_generation(generation)
+            if not isinstance(turn, AssistantTurn):
+                raise RuntimeError("Zen text-only exchange returned an invalid turn")
+            if turn.finish is TurnFinish.OUTPUT_LIMIT:
+                self.abandon_inflight()
+                raise OutputLengthError("Zen text-only reply was truncated")
+            if not turn.tool_calls:
+                with self._state_lock:
+                    self._check_generation(generation)
+                    self._last_text_reply = (turn.text, turn.reasoning)
+                return turn.text
+            if closure == 2:
+                self.abandon_inflight()
+                raise RuntimeError("Zen text-only tool refusals exceeded their closure budget")
+            results = [ProviderToolResult(call.id,
+                "Not executed: tools are unavailable for this text-only request. Reply with text only.") for call in turn.tool_calls]
+            turn = self.runtime.acknowledge_tool_results(results, declared, timeout=remaining())
+        raise AssertionError("unreachable text-only closure state")
+
+    def normalize_reply(self, reply: str) -> object:
+        with self._state_lock:
+            previous = self._last_text_reply
+        return AssistantTurn(text=reply, reasoning=previous[1]) if previous is not None and previous[0] == reply and previous[1] else reply
+
     def _exchange(self, method: str, data: Any, tools: list[ProviderToolDefinition] | None, timeout: float | None) -> Any:
-        declared = [replace(tool, name=_WIRE_NAMES.get(tool.name, tool.name)) for tool in tools] if tools is not None else None
-        turn = getattr(self.runtime, method)(data, declared, timeout=timeout)
+        declared, inverse = prepare_declarations(tools)
+        with self._sending() as generation:
+            self._check_generation(generation)
+            turn = getattr(self.runtime, method)(data, declared, timeout=timeout)
+            self._check_generation(generation)
         if isinstance(turn, AssistantTurn):
-            inverse = {wire: canonical for canonical, wire in _WIRE_NAMES.items()}
             return replace(turn, tool_calls=tuple(replace(call, name=inverse.get(call.name, call.name)) for call in turn.tool_calls))
         return turn
 

@@ -155,6 +155,11 @@ package. They are absent from Local requests and assistant prompts. Generation
 requests are sent once; interrupted/unknown replies are not automatically replayed.
 Completion proof and final result delivery are recorded separately.
 
+Zen's temporary request profile adds unavailable transport declarations without
+granting file or command access. Standalone API review keeps the explicitly
+selected model even when a web model is open. See the [request profile and live
+validation](docs/zen_request_profile_2026-10-08.md).
+
 ## Development
 
 ```powershell

@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Bounded Zen text profile and pinned standalone review (2026-10-08)
+
+- Isolate the temporary unavailable read/shell wire profile in the removable Zen
+  package. Preserve the original execution snapshot; reject text-channel calls
+  with their exact IDs and bound closure, deadline, cancellation and concurrency.
+- Pin standalone API review to its frozen selected model before open websites.
+  Preserve project automatic-review policy and use one review-attempt entry.
+- Opt Local into its text decoder; reject unfinished Responses items before
+  history commit. Preserve HTTP refusal category/facts, avoid invented Review
+  rows on failed chat, and bind live gate reports to the connection adapter.
+- Fix offline scripted test admission, SQLite cleanup and a third-task fixture's
+  leaked tool registration. Include the user's pending Windows/Research/UI fixes.
+- Final: **7748 passed, 7 skipped, 1501 subtests passed in 605.53s**; machine contracts **581 passed**; Ruff,
+  mypy (389 files), compile and diff pass. Muse chat/read/review smoke **3/3**,
+  five HTTP requests, zero retries. The first full-run fixture failure and the
+  initial wrong-model review smoke remain documented in `TEST_REPORT.md`.
+  No release or version change; this is not a complete live matrix/no-bug proof.
+
 ## Unreleased - Zen live gates and native entry fixes (2026-10-08)
 
 - Admit Zen in release/UI gates through frozen production selections; record both

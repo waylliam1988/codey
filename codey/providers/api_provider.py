@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import threading
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
@@ -50,6 +51,7 @@ class ApiProvider:
         output_tokens: int | None = None,
         request_headers: Any = None,
         native_tools: bool | None = None,
+        text_decoder: Callable[[str], str | AssistantTurn] | None = None,
     ) -> None:
         """Runtime only: the target is already resolved (no env/discovery)."""
         if not base_url.strip():
@@ -75,6 +77,7 @@ class ApiProvider:
         self.output_tokens = output_tokens
         self.request_headers = request_headers
         self.native_tools = native_tools
+        self._text_decoder = text_decoder
         self._response_reasoning = ""
         self._last_reasoned_reply: tuple[str, str] | None = None
         self._messages: list[dict[str, Any]] = []
@@ -113,9 +116,7 @@ class ApiProvider:
 
     def normalize_reply(self, reply: str) -> object:
         """Normalize provider-specific text frames before kernel parsing."""
-        from codey.providers.local_response_codec import normalize_local_reply
-
-        normalized = normalize_local_reply(reply)
+        normalized = self._text_decoder(reply) if self._text_decoder is not None else reply
         reasoning = self.reasoning_for_reply(reply)
         if not reasoning:
             return normalized
@@ -209,7 +210,7 @@ class ApiProvider:
             from codey.providers.api_transport import GenerationUnknownError
 
             raise GenerationUnknownError("generation cancelled; late response discarded")
-        turn, stored = decode_turn(message)
+        turn, stored = decode_turn(message, text_decoder=self._text_decoder)
         if stored is None:
             self._messages = (
                 [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []

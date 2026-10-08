@@ -90,6 +90,8 @@ def decode(body: dict[str, Any]) -> tuple[AssistantTurn, list[dict[str, Any]]]:
     reasoning: list[str] = []
     for item in output:
         kind = item.get("type")
+        if not limited and "status" in item and item["status"] != "completed":
+            raise RuntimeError(f"Responses output item is not complete: {item['status']}")
         if kind == "function_call":
             if limited:
                 raise OutputLengthError("Responses tool output truncated; refusing partial tool execution")

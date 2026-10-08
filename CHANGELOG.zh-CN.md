@@ -2,6 +2,21 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - Zen 有界文本适配与独立审查模型固定（2026-10-08）
+
+- 将临时不可用 read/shell 网络声明隔离在可移除的 Zen 包；保留原执行快照，文本
+  调用按原 ID 回传未执行，关闭轮数、截止、取消与并发都有界。
+- 独立 API 审查优先固定正式所选模型，不再借用打开的网站；保留 project 自动审查
+  策略，审查尝试收口为一个入口。
+- Local 显式启用自身文本 decoder；Responses 未完成 item 在提交历史前拒绝。
+  HTTP 拒绝分类/事实完整，失败聊天不捏造 Review 行，实机报告绑定连接适配代码。
+- 修复离线 scripted 入口夹具、SQLite 异常清理及第三任务测试的工具注册泄漏；
+  一并回归已有 Windows/Research/UI 未提交修复。
+- 最终：**7748 passed, 7 skipped, 1501 subtests passed in 605.53s**；机器契约 **581 passed**；Ruff、mypy
+  （389 文件）、编译、diff 通过。Muse chat/read/review 实机 **3/3**，5 次 HTTP、
+  零重试。首轮全量夹具失败及首次审查选错模型的失败均保留在 TEST_REPORT。
+  未发布、未改版本；不声称完整实机矩阵通过或全库无 bug。
+
 ## 未发布 - Zen 实机门槛与原生入口修复（2026-10-08）
 
 - release/UI gate 通过正式冻结选择接入 Zen，记录两种实际 API 协议和预算；

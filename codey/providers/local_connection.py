@@ -4,6 +4,7 @@ from __future__ import annotations
 from codey.providers import local_config as _local_config
 from codey.providers import local_discovery as _local_discovery
 from codey.providers.api_provider import ApiProvider
+from codey.providers.local_response_codec import normalize_local_reply
 from codey.runtime.core.api_selection import ApiRunSelection
 
 
@@ -61,6 +62,7 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         reasoning_effort=config.reasoning_effort if selection.base_url == config.base_url else None,
         api_protocol=config.api_protocol,
         native_tools=effective.native_tools,
+        text_decoder=normalize_local_reply,
     )
 
 
@@ -123,7 +125,8 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
                            native_tools=selection.native_tools, stream=selection.stream, tool_choice=selection.tool_choice,
                            output_tokens=selection.output_tokens, context_window_tokens=selection.context_window_tokens,
                            context_reserve_tokens=selection.context_reserve_tokens, context_keep_recent_tokens=selection.context_keep_recent_tokens,
-                           thinking_enabled=selection.thinking_enabled, reasoning_effort=selection.reasoning_effort)
+                           thinking_enabled=selection.thinking_enabled, reasoning_effort=selection.reasoning_effort,
+                           text_decoder=normalize_local_reply)
     return provider
 
 

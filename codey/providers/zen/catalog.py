@@ -13,6 +13,7 @@ from typing import Any
 
 from codey.providers.api_transport import NoGenerationRedirect
 from codey.providers.zen.access import ZenAccessObservations
+from codey.providers.zen.declarations import TRANSPORT_CONTRACT
 from codey.providers.zen.identity import CONNECTION_REVISION, ZEN_BASE_URL, ZenIdentity
 from codey.storage.local_store import StoreCorruption, read_json_strict, write_json_atomic
 
@@ -98,7 +99,7 @@ def fetch_catalog(url: str, etag: str) -> tuple[dict[str, Any] | None, str]:
 class ZenCatalog:
     def __init__(self, state_home: Path, *, fetch: Callable[[str, str], tuple[dict[str, Any] | None, str]] = fetch_catalog) -> None:
         self.path = state_home / "connections" / "zen-catalog.json"
-        self.access = ZenAccessObservations(state_home, CONNECTION_REVISION)
+        self.access = ZenAccessObservations(state_home, CONNECTION_REVISION + ":" + TRANSPORT_CONTRACT)
         self.fetch = fetch
         self._lock = threading.RLock()
         self._directory: dict[str, Any] = {}

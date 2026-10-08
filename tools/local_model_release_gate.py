@@ -778,7 +778,7 @@ def _metadata(target: attempts.GateTarget) -> dict:
 
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=attempts.REPO_ROOT,
                             capture_output=True, text=True, check=False, timeout=10)
-    return {
+    metadata = {
         "target": asdict(target), "python": sys.version, "git_commit": commit.stdout.strip(),
         "harness_hashes": {
             name: hashlib.sha256((attempts.REPO_ROOT / "tools" / name).read_bytes()).hexdigest()
@@ -788,7 +788,9 @@ def _metadata(target: attempts.GateTarget) -> dict:
         "production_hashes": {
             path: hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
             for path in ("codey/toolchain/constants.py", "codey/toolchain/definition.py", "codey/toolchain/runtime.py",
-                         "codey/providers/api_provider.py", "codey/operations/kernel_transport.py",
+                         "codey/providers/api_provider.py", "codey/providers/api_chat.py",
+                         "codey/providers/api_responses.py", "codey/providers/api_transport.py",
+                         "codey/operations/kernel_transport.py",
                          "codey/app/event_payloads.py", "codey/app/event_bus.py", "codey/app/context.py",
                          "codey/app/headless_runner.py", "codey/app/task_services.py", "codey/task/entry_auth.py",
                          "codey/operations/kernel_recovery.py",
@@ -813,6 +815,11 @@ def _metadata(target: attempts.GateTarget) -> dict:
         "output_budget": {"configured": target.api_selection.get("output_tokens", "server_default"),
                           "actual_requests": "see per-case provider_metrics.output_budget"},
     }
+    if target.provider_id == "zen":
+        for path in ("codey/providers/zen/connection.py", "codey/providers/zen/declarations.py",
+                     "codey/providers/zen/identity.py", "codey/providers/zen/catalog.py", "codey/providers/zen/access.py"):
+            metadata["production_hashes"][path] = hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
+    return metadata
 
 
 def _positive_int(value: str) -> int:

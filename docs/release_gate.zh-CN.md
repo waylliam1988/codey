@@ -77,7 +77,7 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 
 | case | 意图 | 独立判定 |
 |---|---|---|
-| `chat` | 直连所选连接的生产 `ApiProvider.send`（Zen 带独立连接包装） | 去首尾空白后精确等于 `KOBOLD_OK`；没有工具的请求也需真实通过上游资格 |
+| `chat` | 直连所选连接的生产 `ApiProvider.send`（Zen 带独立连接包装） | 去首尾空白后精确等于 `KOBOLD_OK`；无执行权限的聊天也需通过上游资格，Zen 临时网络声明不授予权限 |
 | `read` | `planning_readonly`：读现有源码 | 成功的 `read_file` 收据、文件哈希不变、`done` |
 | `create` | `project`：新建 `math_utils.py` + 单测 | 独立输入矩阵、可发现的 unittest；生成的测试必须能拒绝错误加法 |
 | `edit` | `project`：修 `pricing.py`（fixture 带可发现的 `tests/` 目录） | 独立公式矩阵、原测试哈希与 unittest 通过；内核正常 `done` |
@@ -157,7 +157,7 @@ machine gate 必跑任务指导归属、提示渲染无副作用、native 编码
 - 每次运行创建唯一目录，每次尝试分别保存 JSONL、provider 请求/解析后的响应、最终项目和隔离状态、独立验证结果。已有 `--run-dir` 拒绝覆盖。原始产物留在忽略目录，只提交脱敏的文字报告。
 - 首次探测后固定 endpoint/model，聊天与 agent 均用同一生产连接选择；Local gate 的 temperature 固定 0，Zen 按冻结连接参数发送，实际请求另存。未发送 seed，不能宣称模型生成完全确定性。Local 的 `--protocol native/json` 分别测原生/文本 JSON 路径。
 - `--timeout` 是单个案例的总进程截止时间，包含工具和独立验证；到期终止 owned process tree。请求 timeout 不超过该预算。生成长度、结束状态与终止预算从实际 wire 请求/响应记录；Local 默认和 Zen 的显式输出预算分开。终止交付不是完成证明；Chat 可用 max_tokens=1/无工具关闭，auto-only 服务可保留此前原授权声明，以有限预算关闭调用链。
-- 活动 tool_choice/parallel 策略由冻结能力决定，支持 required 或 auto；仍校验实际返回的全部调用，不假定上游遵守单调用字段。native auto 首轮使用原授权快照，收到的 typed turn 计入同一内核预算。完成/取消/无进展/协议/预算终止不执行新调用，不补未授权声明。[早期 Local 实机根因与 12/12 复测](local_native_protocol_2026-10-02.zh-CN.md)。
+- 活动 tool_choice/parallel 策略由冻结能力决定，支持 required 或 auto；仍校验实际返回的全部调用，不假定上游遵守单调用字段。native auto 首轮使用原授权快照，收到的 typed turn 计入同一内核预算。完成/取消/无进展/协议/预算终止不执行新调用。Zen 连接可补充显式不可用的 read/shell 网络声明；原快照仍是执行权限依据，文本消费者拒绝全部工具调用。[临时适配边界](zen_request_profile_2026-10-08.md)。[早期 Local 实机根因与 12/12 复测](local_native_protocol_2026-10-02.zh-CN.md)。
 - recovery 确定性预检走同一正式入口与存储，仅脚本化 HTTP 响应；实机使用真实模型。新 provider 窗口接收原任务与恢复事实文本，原 call ID 保留在收据中，不向新窗口发送孤立的旧 tool result。同窗口 ID 关闭、失败保持失败、未结算危险动作不重放由机器契约验证。
 - 重启后 exchange 可能从 1 开始，请求/响应按 recorder 实例 ID 与 exchange 共同关联；诊断 hash 不能替代完成证明。
 - 元数据保存客户端上下文预算、服务端可查询信息、Python、Git commit 和脚本哈希；未报告的聊天模板/量化明确标为未知。usage 和 finish_reason 从实际响应记录，不凭模型总结估算。
@@ -190,6 +190,6 @@ machine gate 必跑任务指导归属、提示渲染无副作用、native 编码
 - 模型必须选自 `/models` 的实际 ID，固定到每个案例，不依赖服务端忽略错误模型名，也不修改用户保存的配置。
 - 12B 的参数量不能独自解释失败。先区别程序接线/判定错误、模型生成的错误代码、协议或输出预算问题、联网环境问题；证据不足时保持未归因。测试授权与完成门不放宽。
 - 每个结果同时记录任务轴、失败轴和根因类别。`production_defect`、`provider_boundary`、`model_boundary`、`gate_defect`、`environment` 等人工裁决类别必须带 `root_cause_evidence`；没有证据时保持 `undetermined`。
-- Zen 免费目录、合作标识和一次成功不承诺所有任务资格。无工具/只读精简声明的 403、
-  FreeUsageLimitError 的 429 应保留上游响应和失败分母，不能通过扩权、偷换模型或
-  把 UI 面板检查当真实审查造绿。2026-10-08 的完整矩阵仍未通过，见 TEST_REPORT 最新节。
+- Zen 免费目录、合作标识和一次成功不承诺所有任务资格。403/429 保留上游响应和失败分母，
+  不扩大执行权限、不偷换模型，不把 UI 面板检查当真实审查。临时请求适配后的 Muse
+  chat/read/review 三项实机通过；完整模型/任务矩阵仍未重新验收，见 TEST_REPORT 最新节。

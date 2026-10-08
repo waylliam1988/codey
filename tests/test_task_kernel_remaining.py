@@ -457,13 +457,14 @@ class ThirdTaskTests(unittest.TestCase):
         from codey.operations import task_loop as kernel
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolResult
-        from codey.toolchain.tool_spec import register_custom_tool
+        from codey.toolchain.tool_spec import register_custom_tool, unregister_custom_tool
 
         # Third-task adapters only: a ToolSpec row plus a profile-scoped check.
         # Neither edits the kernel loop nor leaks into other task kinds.
-        register_custom_tool("summarize", grant="control",
+        self.assertTrue(register_custom_tool("summarize", grant="control",
                              parameters=(("text", {"type": "string"}),),
-                             required=("text",), description="summarize text")
+                             required=("text",), description="summarize text"))
+        self.addCleanup(unregister_custom_tool, "summarize")
         gate.register_completion_check_provider(
             "summarize_present",
             lambda session: [

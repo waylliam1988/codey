@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any, cast
 
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
@@ -137,13 +138,13 @@ def _reasoning_text(message: object) -> str:
     return ""
 
 
-def decode_turn(message: dict[str, Any]) -> tuple[AssistantTurn, dict[str, Any] | None]:
+def decode_turn(message: dict[str, Any], *,
+                text_decoder: Callable[[str], str | AssistantTurn] | None = None,
+                ) -> tuple[AssistantTurn, dict[str, Any] | None]:
     """Normalize text frames and native calls before runtime state commits."""
-    from codey.providers.local_response_codec import normalize_local_reply
-
     parsed, dropped = _parse_tool_calls(message)
     text = str(message.get("content") or "")
-    metadata_turn = normalize_local_reply(text)
+    metadata_turn = text_decoder(text) if text_decoder is not None else text
     provider_metadata = {}
     if isinstance(metadata_turn, AssistantTurn):
         provider_metadata = dict(metadata_turn.raw)

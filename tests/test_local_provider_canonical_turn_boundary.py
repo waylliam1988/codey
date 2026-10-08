@@ -8,6 +8,7 @@ from codey.operations.kernel_protocol import normalize_turn
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import TurnFinish
+from codey.providers.local_response_codec import normalize_local_reply
 
 
 def _reply(monkeypatch, *, content, calls=None, finish="stop"):
@@ -18,7 +19,7 @@ def _reply(monkeypatch, *, content, calls=None, finish="stop"):
         ApiProvider, "_post_chat",
         lambda *args, **kwargs: {"choices": [{"finish_reason": finish, "message": message}]},
     )
-    return ApiProvider("http://127.0.0.1:9/v1", "gemma")
+    return ApiProvider("http://127.0.0.1:9/v1", "gemma", text_decoder=normalize_local_reply)
 
 
 def test_native_text_frame_becomes_receiptable_call_and_canonical_history(monkeypatch):

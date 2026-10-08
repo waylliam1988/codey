@@ -24,18 +24,26 @@ class _Extractor(HTMLParser):
         self.title = ""
         self._skip_depth = 0
         self._in_title = False
+        self._in_head = False
+        self._title_seen = False
 
     def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag == "head":
+            self._in_head = True
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
         elif tag == "title":
-            self._in_title = True
+            if not self._title_seen and self._skip_depth == int(self._in_head):
+                self._in_title = True
+                self._title_seen = True
         elif tag in _HEADING_TAGS:
             self.parts.append("\n\n## ")
         elif tag in _BLOCK_TAGS:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == "head":
+            self._in_head = False
         if tag in _SKIP_TAGS and self._skip_depth > 0:
             self._skip_depth -= 1
         elif tag == "title":

@@ -76,7 +76,7 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/providers/api_provider.py`、`api_transport.py` | 共用生成锁、候选提交、取消、总截止与单次有界 POST；未知结果不重发 |
 | `codey/providers/api_chat.py`、`api_responses.py` | 各自拥有工具、结果、wire 历史、完整交换组裁剪和回复解码；Responses 保留 reasoning items 并使用 call_id |
 | `codey/providers/api_connections.py`、`local_connection.py` | lazy 连接工厂与冻结 Local 配置；共享 runtime 不导入 Zen |
-| `codey/providers/zen/` | 动态免费目录、缓存、限定合作身份、wire 工具名与有界普通文本访问观察；删除包及 API_CONNECTIONS 注册即可移除 |
+| `codey/providers/zen/` | 动态免费目录、限定合作身份与访问观察；`declarations.py` 拥有临时不可用 read/shell 网络声明，`connection.py` 拥有有界文本调用拒绝；不授予任务权限，删除包及 API_CONNECTIONS 注册即可移除 |
 | `codey/runtime/core/api_selection.py`、`operation_payload.py` | 无秘密的冻结 API 选择，以及严格接纳/交付 payload 校验 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |
 | `codey/app/context.py`、`event_bus.py`、`event_payloads.py` | 公共出口补全运行身份和模式、严格状态；总线负责重放，纯投影模块生成有界机器事件与收据 |
@@ -111,8 +111,12 @@ HTTP / CLI → 共用任务服务 + 入口授权
 
 API project Writer 在同一连接有可用独立模型时接纳另一个模型；独立只读 Review
 使用用户选定模型本身。Reviewer 在发送前保存到正式操作日志。
-既有网页优先、require-web、自审策略与最多一次修复仍生效。
+独立 API Review 在考虑打开的网站前固定所选模型；project 的网页优先、require-web、
+自审策略与最多一次修复仍生效。
 普通文本访问观察是短期服务事实，不是永久能力；未知请求不会换模型重发。
+
+共享 API runtime 不含 Zen 分支。Local 显式启用自己的文本工具帧解码器；Responses
+在提交历史前拒绝明确未完成的 output item。详见[Zen 请求适配](zen_request_profile_2026-10-08.md)。
 
 `runtime/core` 管状态/契约，`runtime/log` 管规范日志投影，`runtime/effects`
 管 effect/结果交付，`runtime/write` 管获准变更，`runtime/observe` 管只读观察。

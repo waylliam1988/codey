@@ -47,7 +47,7 @@ def test_local_gemma_invalid_literal_stays_plain_text() -> None:
 
 
 def test_local_provider_normalize_reply_returns_standard_turn() -> None:
-    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="gemma-test")
+    provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="gemma-test", text_decoder=normalize_local_reply)
 
     turn = provider.normalize_reply(
         '<|tool_call>call:tool:read_file{args:{path:"app.py"}}<tool_call|>'

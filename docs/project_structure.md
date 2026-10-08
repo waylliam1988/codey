@@ -77,7 +77,7 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/providers/api_provider.py`, `api_transport.py` | Shared generation lock, candidate commit, cancellation, deadline and one bounded POST; unknown outcomes are never replayed |
 | `codey/providers/api_chat.py`, `api_responses.py` | Protocol-owned tools, results, wire history, complete-exchange compaction and reply decoding; Responses replays reasoning items and uses call_id |
 | `codey/providers/api_connections.py`, `local_connection.py` | Lazy connection factories and admitted Local configuration; shared runtime does not import Zen |
-| `codey/providers/zen/` | Public/free dynamic catalog, cache, scoped partner identity, wire tool names and bounded plain-access observations; removable with its API_CONNECTIONS registration |
+| `codey/providers/zen/` | Public/free catalog, scoped partner identity and access observations; `declarations.py` owns the temporary unavailable read/shell wire profile, and `connection.py` owns bounded text-call rejection. No task grants; removable with its API_CONNECTIONS registration |
 | `codey/runtime/core/api_selection.py`, `operation_payload.py` | Non-secret frozen API selection and strict admission/delivery payload validation |
 | `codey/research/source_gateway.py`, `tools.py` | Explicit acquisition/tool outcomes; cancellation/deadlines propagate without fallback acquisition |
 | `codey/app/context.py`, `event_bus.py`, `event_payloads.py` | Common run identity/mode and strict status publication; replay bus and pure bounded machine-event/receipt projection |
@@ -114,10 +114,15 @@ no-bug proof or a guarantee against arbitrary concurrent writes.
 
 API project Writers admit an independent model from the same connection when
 available; standalone read-only review uses its selected model. Reviewer choice
-is frozen in the formal operation log before sending. Existing web preference,
+is frozen in the formal operation log before sending. Standalone API review pins
+the selected model before considering open websites. Project review's web preference,
 require-web policy, self-review policy and one-repair limit remain authoritative.
 Plain access observations are short-lived service facts, not permanent capability
 promises; an unknown request never causes another-model replay.
+
+The shared API runtime has no Zen branches. Local alone opts into its text-frame
+decoder; Responses rejects explicitly unfinished output items before committing
+history. See [Zen request profile](zen_request_profile_2026-10-08.md).
 
 `runtime/core` owns state/contracts, `runtime/log` canonical log projections,
 `runtime/effects` effect/result delivery, `runtime/write` admitted mutations,

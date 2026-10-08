@@ -13,6 +13,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from codey import __version__
 from codey.agents.consensus import ConsensusAdvice, ConsensusResult
 from codey.agents.handoff import ConversationSnapshot
@@ -4972,6 +4974,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("Ghost", research_intro)
         agent_run.assert_not_called()
 
+    @pytest.mark.usefixtures("scripted_local_api_connection")
     def test_research_ui_path_reads_pdf_and_recovers_bad_excerpt(self) -> None:
         html_url = "https://www.aljazeera.com/news/2026/4/21/iran-us-war-four-scenarios-for-whats-next-as-talks-stumble"
         pdf_url = "https://cmenaf.org/wp-content/uploads/report.pdf"
@@ -5034,11 +5037,12 @@ class SessionThreadingTests(unittest.TestCase):
             f"[1] [PDF report]({pdf_url})"
         )
 
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
             state = self._state(td)
             from codey.knowledge.store import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            cleanup.callback(state.knowledge_store.close)
             events = state.subscribe()
             provider = mock.Mock()
             provider.name = "Local"
@@ -5101,8 +5105,6 @@ class SessionThreadingTests(unittest.TestCase):
             emitted = []
             while not events.empty():
                 emitted.append(events.get_nowait())
-            state.knowledge_store.close()
-
         done = next(event for event in emitted if event["type"] == "task_done")
         tool_events = [event for event in emitted if event["type"] == "tool"]
         pdf_event = next(event for event in tool_events if event["path"] == pdf_url)

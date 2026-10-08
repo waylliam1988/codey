@@ -11,6 +11,9 @@ overview, not a release gate.
 - OpenCode Zen: dynamically discovered supported zero-cost models using the
   agreed public partner connection. The service checks access for every request;
   a free listing does not guarantee all task modes. See [live validation](../TEST_REPORT.md).
+  Its removable compatibility profile does not grant project access. Muse chat,
+  read-only and standalone review passed the current three-case smoke; this is
+  not a complete model/task matrix. Standalone API review uses the selected model.
 - No API key is required for web providers; you log in through a dedicated Edge
   or Chrome browser profile.
 - Provider-specific browser code is isolated in adapters, so website breakage

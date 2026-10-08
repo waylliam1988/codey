@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.agents.shell_approval import shell_command_event_fields
+from codey.providers.diagnostics import sanitize_failure_facts
 from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
 from codey.utils.refs import strict_exit_code
 
@@ -348,11 +349,15 @@ def _bounded_changes(changes: dict[str, Any]) -> dict[str, object]:
 
 
 def _bounded_provider_failure(failure: dict[str, Any]) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "kind": clip_event_text(failure.get("kind") or "", 80),
         "action": clip_event_text(failure.get("action") or "", 80),
         "message": clip_event_text(failure.get("message") or ""),
     }
+    facts = sanitize_failure_facts(failure.get("facts"))
+    if facts:
+        payload["facts"] = facts
+    return payload
 
 
 def _bounded_review(review: dict[str, Any]) -> dict[str, object]:

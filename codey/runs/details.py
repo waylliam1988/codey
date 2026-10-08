@@ -285,7 +285,7 @@ def _review_summary(
     review = getattr(projection, "review", None) if projection is not None else None
     coding_value = trace.get("coding_review")
     coding: Mapping[str, object] | None = (
-        coding_value if isinstance(coding_value, Mapping) else None
+        coding_value if isinstance(coding_value, Mapping) and coding_value else None
     )
     verdict = str(getattr(review, "verdict", "") or (coding.get("verdict") if coding else "") or "")
     status = str(getattr(review, "status", "") or (coding.get("status") if coding else "") or "")

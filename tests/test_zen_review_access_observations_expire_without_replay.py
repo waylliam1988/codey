@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from codey.providers import api_connections, api_transport
+from codey.providers.base import AssistantTurn
 from codey.providers.zen.connection import ZenProvider
 from codey.runtime.core.api_selection import ApiRunSelection
 
@@ -47,12 +48,14 @@ def test_review_selection_prefers_recent_confirmed_access_over_unknown_model(mon
     assert api_connections.capture_reviewer_selection(writer).model_id == "confirmed"
 
 
-def test_successful_plain_reply_records_access_once_without_adding_tools():
+def test_successful_text_channel_records_access_once_with_unavailable_transport_declarations():
     calls, observations = [], []
-    runtime = SimpleNamespace(send=lambda text, timeout=None: calls.append((text, timeout)) or 'review')
+    runtime = SimpleNamespace(send_turn=lambda text, tools, timeout=None: calls.append((text, tools, timeout)) or AssistantTurn(text='review'))
     provider = ZenProvider(runtime, on_plain_succeeded=lambda: observations.append(True))
     assert provider.send("Review", timeout=1) == 'review'
-    assert calls == [("Review", 1)] and observations == [True]
+    assert len(calls) == 1 and calls[0][0].endswith("\n\nReview")
+    assert {t.name for t in calls[0][1]} == {"read", "shell"}
+    assert 0 < calls[0][2] <= 1 and observations == [True]
 
 
 @pytest.mark.parametrize("failure,observed", [("refused", True), ("unknown", False), ("other-refusal", False)])
@@ -65,7 +68,7 @@ def test_zen_plain_request_records_only_explicit_free_tier_refusal_without_repla
         calls.append(args)
         raise error
 
-    provider = ZenProvider(SimpleNamespace(send=send), on_plain_refused=lambda: refusals.append(True))
+    provider = ZenProvider(SimpleNamespace(send_turn=send), on_plain_refused=lambda: refusals.append(True))
     with pytest.raises(type(error)):
         provider.send("Review the provided diff", timeout=1)
     assert len(calls) == 1

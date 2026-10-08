@@ -14,7 +14,7 @@ def test_zen_wrapper_preserves_protocol_and_effort_in_review_identity():
     second = ZenProvider(ApiProvider("http://fixture.test/v1", "model", api_protocol="openai-responses", reasoning_effort="high"))
     assert review_model_identity(first)
     assert review_model_identity(first) != review_model_identity(second)
-    assert review_model_identity(first) == review_model_identity(first.runtime)
+    assert review_model_identity(first) != review_model_identity(first.runtime)
 
 
 def test_api_reviewer_selects_another_model_without_changing_writer(monkeypatch):
@@ -90,5 +90,5 @@ def test_standalone_api_review_uses_selected_model_instead_of_selecting_another(
             patch("codey.providers.api_connections.open_selection", return_value="selected-provider") as opened, \
             patch.object(review_service, "run_review_attempt", return_value=("zen", "approved")):
         assert review_service.run_review(context, session_id="s", project="fixture", task="review", writer_summary="",
-            changes={}, recent_log="", writer_id="zen", run_id="r", review_impact_map="") == ("zen", "approved")
+            changes={}, recent_log="", writer_id="zen", run_id="r", review_impact_map="", standalone=True) == ("zen", "approved")
     assert opened.call_args.args == (selected,)

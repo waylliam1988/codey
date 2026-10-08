@@ -72,6 +72,7 @@ class GateTaskIdentityExcludesGlobalStatusTests(unittest.TestCase):
         ]
         self.assertFalse(gate.check_single_session_identity(missing)["ok"])
 
+    @pytest.mark.usefixtures("scripted_local_api_connection")
     def test_real_headless_done_with_status_row_passes_identity(self) -> None:
         import tools.local_model_release_gate as gate
         from codey.app.headless_runner import HeadlessRequest, run_headless
