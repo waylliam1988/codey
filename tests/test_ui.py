@@ -280,10 +280,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("closeLocalContextDrawer();", block)
 
     def test_retry_uses_current_session_model_picker(self) -> None:
-        retry_start = COMPOSER_JS.index("function retryTask(sessionId, submittedText")
+        retry_start = COMPOSER_JS.index("function retryTask(sessionId, requestId)")
         retry_end = COMPOSER_JS.index("async function continueTask", retry_start)
         retry_block = COMPOSER_JS[retry_start:retry_end]
-        self.assertIn("sendTaskFromSession(sessionId, text, s.provider)", retry_block)
+        self.assertIn("sendTaskFromSession(sessionId, original.text, s.provider, null, requestId)", retry_block)
+        self.assertIn("CodeyRequests.canRetry(sessionId, requestId)", retry_block)
         self.assertNotIn("$('task').value =", retry_block)
 
     def test_provider_selector_is_enabled_when_idle(self) -> None:
@@ -461,7 +462,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('<strong>Research</strong>', HTML)
         self.assertIn("function currentIntentForSession(sessionId)", HTML)
         self.assertIn("return sessionProjectPath(sessionId) ? 'hybrid' : 'research';", HTML)
-        self.assertIn("body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent,", COMPOSER_JS)
+        self.assertIn("body: JSON.stringify({ session_id: sessionId, run_id: runId, project, task: text, provider, intent,", COMPOSER_JS)
         self.assertIn("type: 'research_done'", HTML)
         self.assertIn("Research restored:", HTML)
         self.assertIn("if (restore) restore.disabled = !current || !current.restoreable;", HTML)
@@ -683,12 +684,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("existingNode.replaceWith(", replace_block)
 
     def test_send_failures_render_inline_error(self) -> None:
-        self.assertIn("function addSendError(sessionId, eventKey = '', runId = '', retryText = '')", HTML)
+        self.assertIn("function addSendError(sessionId, eventKey = '', runId = '')", HTML)
         self.assertIn("Could not send the message", HTML)
-        self.assertIn("deps.addSendError(sessionId, '', '', text);", COMPOSER_JS)
+        self.assertIn("window.CodeyRequests.fail(sessionId, runId, message || 'Could not send the message'", COMPOSER_JS)
         self.assertIn("if (r.status === 409 || !r.ok) {", COMPOSER_JS)
         self.assertIn("await deps.acceptRunResponse(r, sessionId)", COMPOSER_JS)
-        self.assertIn("} catch {\n    deps.addSendError(sessionId, '', '', text);", COMPOSER_JS)
+        self.assertIn("} catch {\n    await window.CodeySse.reconcileRunState();", COMPOSER_JS)
         self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [", UI_SOURCE)
         self.assertNotIn("Switch provider", HTML)
         self.assertNotIn("Switch model", HTML)
@@ -698,7 +699,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         err_start = UI_SOURCE.index("} else if (m.type === 'err') {")
         err_end = UI_SOURCE.index("} else if (m.type === 'info') {", err_start)
         err_block = UI_SOURCE[err_start:err_end]
-        self.assertIn("Retry", err_block)
+        self.assertNotIn("retryTask(", err_block)
         self.assertNotIn("Continue", err_block)
         self.assertNotIn("alert('Failed to start:", HTML)
         self.assertNotIn("alert('Failed to continue:", HTML)
@@ -1114,7 +1115,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("attachCurrentChatToPickedProject", send_block)
 
     def test_draft_to_project_send_uses_stable_session_id(self) -> None:
-        self.assertIn("async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null)", COMPOSER_JS)
+        self.assertIn("async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null, requestId = '')", COMPOSER_JS)
         self.assertIn("function clearDraftIfUnchanged(sessionId, draft, revision = null)", COMPOSER_JS)
         send_start = COMPOSER_JS.index("async function sendTaskFromSession")
         send_end = COMPOSER_JS.index("async function sendActiveDraft", send_start)
@@ -1122,9 +1123,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (!text || runningSessionId() || sendingSessionId) return false;", send_block)
         self.assertIn("if (!s) return false;", send_block)
         self.assertIn("if (typeof onSendStarted === 'function') onSendStarted();", send_block)
-        self.assertIn("deps.pushMsgToSession(sessionId, { type: 'user', text });", send_block)
+        self.assertIn("window.CodeyRequests.begin(sessionId, text, requestId)", send_block)
         self.assertIn("const project = deps.sessionProjectPath(sessionId);", send_block)
-        self.assertIn("JSON.stringify({ session_id: sessionId, project, task: text, provider, intent,", send_block)
+        self.assertIn("JSON.stringify({ session_id: sessionId, run_id: runId, project, task: text, provider, intent,", send_block)
         self.assertIn("await deps.acceptRunResponse(r, sessionId);", send_block)
         self.assertIn("return true;", send_block)
 
@@ -1381,7 +1382,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
             HTML,
         )
         self.assertIn("defaultSession(null, liveDefaultProvider())", HTML)
-        self.assertIn("sendTaskFromSession(sessionId, text, s.provider)", COMPOSER_JS)
+        self.assertIn("sendTaskFromSession(sessionId, original.text, s.provider, null, requestId)", COMPOSER_JS)
         self.assertIn("PROVIDERS.includes(id) ? id : liveDefaultProvider()", COMPOSER_JS)
         self.assertIn("providerId || s.provider || liveDefaultProvider()", COMPOSER_JS)
         continue_start = COMPOSER_JS.index("async function continueTask(sessionId)")
@@ -1495,7 +1496,7 @@ global.document = {
   addEventListener: () => {},
 };
 global.localStorage = { getItem: () => null, setItem: () => {} };
-global.window = {CodeySettings:{init:()=>{}, open:()=>{}, close:()=>{}}};
+global.window = {CodeySettings:{init:()=>{}, open:()=>{}, close:()=>{}}, CodeyRequests:{refreshActions:()=>{}}};
 global.navigator = {};
 const uiStateSrc = loadAsset('assets/ui_state.js');
 const providerUiSrc = loadAsset('assets/provider_ui.js');

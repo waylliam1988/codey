@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -462,6 +463,9 @@ def run_submit_response(
     if not isinstance(body, dict):
         return 400, {"error": "invalid json"}
     session_id = str(body.get("session_id") or "").strip() or "default"
+    client_run_id = body.get("run_id", "")
+    if not isinstance(client_run_id, str) or (client_run_id and not re.fullmatch(r"run_[a-f0-9]{32}", client_run_id)):
+        return 400, {"error": "invalid run_id"}
     project = str(body.get("project") or "").strip() or None
     task = str(body.get("task") or "").strip()
     continue_task = body.get("continue_task") is True
@@ -514,6 +518,8 @@ def run_submit_response(
     }
     if review_source_run_id:
         submit_kwargs["review_source_run_id"] = review_source_run_id
+    if client_run_id:
+        submit_kwargs["run_id"] = client_run_id
     if "model_selection" in body:
         if provider_id not in API_CONNECTIONS:
             return 400, {"error": "model_selection requires an API model"}

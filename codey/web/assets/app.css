@@ -595,6 +595,10 @@
     overflow-wrap: anywhere;
   }
   .run-details-row.warning .run-details-value { color: var(--text-dim); }
+  @media (max-width: 600px) {
+    .retry-details { margin-left: 0; }
+    .retry-details .run-details-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  }
 
   /* ---------- changes card ---------- */
   .changes-head-row {

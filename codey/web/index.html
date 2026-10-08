@@ -237,6 +237,7 @@
 <script src="/assets/provider_ui.js?v=__APP_VERSION__"></script>
 <script src="/assets/ui_state.js?v=__APP_VERSION__"></script>
 <script src="/assets/sse.js?v=__APP_VERSION__"></script>
+<script src="/assets/requests.js?v=__APP_VERSION__"></script>
 <script src="/assets/composer.js?v=__APP_VERSION__"></script>
 <script src="/assets/conversation_nav.js?v=__APP_VERSION__"></script>
 <script src="/assets/conversation_ui.js?v=__APP_VERSION__"></script>
@@ -900,6 +901,16 @@ const sseEventKey = (data, fallback = '') => window.CodeySse.eventKey(data, fall
 function handleServerEvent(data) {
   const runId = (data.run_id || '').toString();
   const sid = data.session_id;
+  if (data.type === 'task_done' && (!runId || runId === runningRunId)) {
+    runningRunId = null;
+    runningSessionId = null;
+    setStatus('', 'ok');
+    $('provider-button').disabled = false;
+    updateSend();
+    updateComposerContext();
+    syncResearchUseProjectButton();
+  }
+  if (!window.CodeyRequests.acceptsEvent(data)) return;
   const mayOutliveRun = ['task_start', 'task_done', 'shell_request', 'shell_result', 'teach_request', 'resync_required'];
   if (runId && runningRunId && !mayOutliveRun.includes(data.type) && runId !== runningRunId) return;
   // Server dropped queued events for this client: re-pull authoritative state.
@@ -984,6 +995,7 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'ghost_post_turn_warning') {
+    if (window.CodeyRequests.warning(sid, runId)) return;
     addToSession(sid, {
       type: 'info',
       text: 'Local update paused',
@@ -1002,6 +1014,7 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'task_start') {
+    window.CodeyRequests.running(sid, runId);
     runningRunId = runId;
     runningSessionId = sid;
     turnCounter = 0;
@@ -1015,19 +1028,10 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'task_done') {
-    const current = !runId || runId === runningRunId;
-    if (current) {
-      runningRunId = null;
-      runningSessionId = null;
-      setStatus('', 'ok');
-      $('provider-button').disabled = false;
-      updateSend();
-      updateComposerContext();
-      syncResearchUseProjectButton();
-    }
     if (!markTerminalRun(sid, runId)) return;
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
+    const requestFailed = window.CodeyRequests.finish(data);
     addToSession(sid, {type:'run_state', state:reason, runId, eventKey:`run-end:${runId}`});
     const terminalKey = runId ? `terminal:${runId}` : '';
     const answerKey = terminalKey ? `${terminalKey}:answer` : '';
@@ -1039,11 +1043,13 @@ function handleServerEvent(data) {
       if (data.provider && PROVIDERS.includes(data.provider)) {
         applyProviderStatus([{ id: data.provider, available: false }]);
       }
-      addSendError(sid, terminalKey, runId);
+      if (!requestFailed) addSendError(sid, terminalKey, runId);
       flushUiState();
       return;
     }
-    if (summary.startsWith('ERROR:')) {
+    if (requestFailed) {
+      // The request's status position already contains this attempt's failure.
+    } else if (summary.startsWith('ERROR:')) {
       addToSession(sid, { type: 'err', text: summary.replace(/^ERROR:\s*/i, ''), sessionId: sid, runId, eventKey: terminalKey });
     } else if (reason === 'max_turns') {
       const turns = data.turns || data.max_turns || 0;
@@ -1215,6 +1221,7 @@ function applyRunState(data) {
   }
   $('provider-button').disabled = $('effort-button').disabled = busy;
   markResearchRestoreAvailability(data.research_restore_runs || []);
+  window.CodeyRequests.reconcile(data);
   updateSend();
   updateComposerContext();
   syncResearchUseProjectButton();
@@ -1233,18 +1240,7 @@ function connectEvents() {
 }
 
 function addToSession(sid, m) {
-  const s = sessions.find(x => x.id === sid);
-  if (!s) return false;
-  ensureSessionIndexes(s);
-  if (m.eventKey && s._eventKeys.has(m.eventKey)) return false;
-  if ((m.type === 'limit' || m.type === 'pause' || m.type === 'teach' || m.type === 'err') && !m.sessionId) m.sessionId = sid;
-  const follow = sid === activeId && window.CodeyConversationUI.isFollowing();
-  s.messages.push(m);
-  window.CodeyUiState.trackSessionMessage(s, m);
-  persistActive();
-  if (sid === activeId) { if (s.messages.length === 1) renderChat(); else { appendMessageNode($('chat'), m); scrollChat(follow); } }
-  window.CodeyConversationUI.updateNotice();
-  return true;
+  return window.CodeyRequests.addToSession(sid, m);
 }
 
 function replaceSessionMessage(sid, predicate, message) {
@@ -1303,8 +1299,8 @@ function removeShellRequest(sessionId, approvalId) {
   dropSessionMessages(sessionId, (m) => m.type === 'shell_request' && m.id === approvalId);
 }
 
-function addSendError(sessionId, eventKey = '', runId = '', retryText = '') {
-  addToSession(sessionId, { type: 'err', text: 'Could not send the message', sessionId, eventKey, runId, retryTask: retryText });
+function addSendError(sessionId, eventKey = '', runId = '') {
+  addToSession(sessionId, { type: 'err', text: 'Could not send the message', sessionId, eventKey, runId });
 }
 
 async function resumeTeaching(teachId, sessionId) {
@@ -1317,10 +1313,6 @@ async function resumeTeaching(teachId, sessionId) {
     });
     if (r.ok) removeTeachMessage(sessionId, teachId);
   } catch {}
-}
-
-function retryTask(sessionId, retryText = '') {
-  return window.CodeyComposer.retryTask(sessionId, retryText);
 }
 
 function sessionProjectPath(sid) {
@@ -1627,6 +1619,9 @@ async function boot() {
     updateSend,
     updateComposerContext,
   });
+  window.CodeyRequests.init({$, getSessions: () => sessions, getActiveId: () => activeId,
+    getRunningSessionId: () => runningSessionId, persistActiveNow, persistActive, pushMsgToSession,
+    addToSession, appendMessageNode, renderChat, scrollChat, statusRow});
   window.CodeyComposer.init({
     $,
     PROVIDERS,
@@ -1651,7 +1646,7 @@ async function boot() {
     attachCurrentChatToPickedProject,
   });
   window.CodeyMessages.init({statusRow, currentProjectPath, openChangesDrawer,
-  attachCurrentChatToPickedProject, approveCommand, continueTask, resumeTeaching, retryTask,
+  attachCurrentChatToPickedProject, approveCommand, continueTask, resumeTeaching,
   getActiveId: () => activeId, getRunningSessionId: () => runningSessionId});
 window.CodeyConversationUI.init({ activeSession, activeProject, getSessions: () => sessions, getProjects: () => projects,
     getActiveId: () => activeId, getRunningSessionId: () => runningSessionId, sessionProject,

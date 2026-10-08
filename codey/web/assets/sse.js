@@ -82,6 +82,9 @@ function eventKey(data, fallback = '') {
 async function acceptRunResponse(response, sessionId) {
   const data = await response.json();
   const runId = data.run_id || null;
+  const request = window.CodeyRequests.forRun(sessionId, runId);
+  if (request && !['sending', 'running'].includes(request.attempt.state)) return;
+  window.CodeyRequests.running(sessionId, runId);
   deps.acceptRun(runId, runId ? sessionId : null);
   if (runId) {
     displayRunStatus('running');

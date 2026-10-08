@@ -61,6 +61,10 @@ MESSAGE_KEYS = {
     "toolName",
     "turn",
     "state",
+    "requestId",
+    "attempts",
+    "sendFailure",
+    "runOwner",
 }
 
 
@@ -119,7 +123,15 @@ def _clean_message(message: object) -> dict[str, Any] | None:
         if key not in message:
             continue
         value = message[key]
-        if key == "files":
+        if key == "attempts":
+            if isinstance(value, list):
+                clean[key] = [
+                    {name: _str(item[name], 12_000 if name == "error" else MAX_SHORT_STRING)
+                     for name in ("runId", "state", "error", "sendFailure", "runOwner", "warning")
+                     if name in item}
+                    for item in value[-64:] if isinstance(item, dict)
+                ]
+        elif key == "files":
             clean[key] = _clean_files(value)
         elif isinstance(value, bool):
             clean[key] = value

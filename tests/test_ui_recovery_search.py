@@ -263,7 +263,9 @@ def test_retry_uses_original_submission_without_leaking_unknown_errors(page, sta
     expect(error).not_to_contain_text("secret")
     page.locator("#task").fill("later draft")
     error.get_by_role("button", name="Retry", exact=True).click()
-    expect(page.locator(".status-row.err")).to_have_count(2)
+    page.wait_for_function("!CodeyComposer.isSending()")
+    expect(page.locator(".status-row.err")).to_have_count(1)
+    expect(page.locator(".msg.user")).to_have_count(1)
     assert submissions[1]["task"] == "original task"
     expect(page.locator("#task")).to_have_value("later draft")
 
@@ -308,18 +310,18 @@ def test_local_rejection_choose_model_returns_to_original_chat_without_sending(p
     page.evaluate("switchSession('b')")
     page.locator("#task").fill("beta draft")
     page.evaluate("finishRejectedSend()")
-    page.wait_for_function("CodeyUiState.current().sessions.find(s=>s.id==='a').messages.some(m=>m.type==='err')")
+    page.wait_for_function("CodeyUiState.current().sessions.find(s=>s.id==='a').messages.some(m=>m.attempts?.at(-1).state==='failed')")
     expect(page.locator("#task")).to_have_value("beta draft")
     page.evaluate("switchSession('a')")
     error = page.locator(".status-row.err")
     expect(error).to_contain_text("Select the model again")
-    expect(error.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+    expect(error.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
     page.evaluate("switchSession('b')")
     # The receipt action retains its own chat even if invoked after navigation.
     page.evaluate("""() => {
-        const m=CodeyUiState.current().sessions.find(s=>s.id==='a').messages.find(m=>m.type==='err');
+        const m=CodeyUiState.current().sessions.find(s=>s.id==='a').messages.find(m=>m.type==='request_status');
         const node=document.createElement('div'); appendMessageNode(node,m);
-        node.querySelector('button').click();
+        Array.from(node.querySelectorAll('button')).find(b=>b.textContent==='Choose model').click();
     }""")
     expect(page.locator("#sess-title")).to_have_text("Alpha")
     expect(page.locator("#provider-menu")).to_be_visible()

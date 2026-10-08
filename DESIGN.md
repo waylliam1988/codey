@@ -262,6 +262,10 @@ Structure: uppercase prefix + body + optional **text link** action (`link-btn`).
 
 Submission failures use confirmed causes only: `Another chat is running · Open` navigates to the verified run owner; `Select the local model again · Choose model` opens the existing model menu in the original chat; `Codey is temporarily busy · Retry` retries the original request. Unknown causes retain `Could not send the message · Retry`. Navigation and model selection do not send automatically. Failure actions belong to the original chat and preserve newer drafts in every chat.
 
+Manual Retry belongs to the fixed identity of a user message. Each explicit retry has a new execution identity, recorded under that request, and updates one status position after its existing output. Keep the user message, tool records, reading position, and newer drafts intact. While retrying, replace error text and actions with a gray spinner and `Retrying · Waiting for reply`; another failure replaces that same row. Success hides the transient row and displays the answer normally, without a success banner. Only the latest user request can be retried, and admission or an active execution disables duplicate submission. Independent errors without a request identity must not guess which question to resend.
+
+`Details` expands a quiet inline attempt history using the existing Run Details typography. Raw errors and `Local update paused` belong to the attempt history, not repeated chat messages. Model/owner recovery actions may sit beside Retry and never send automatically. Persist attempt facts and their recovery actions, but not the disclosure's open state or rendered details. Restore active attempts from authoritative local execution state; if an accepted attempt cannot be confirmed, replace its spinner with `Response was not confirmed` and an explicit Retry. Never resend automatically on reload or a transport failure. Late events from an earlier attempt cannot change the current status.
+
 **Run Details** (inline receipt expansion):
 
 ```

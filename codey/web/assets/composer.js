@@ -70,6 +70,7 @@ function updateSend() {
   $('provider-button').disabled = running || !!sendingSessionId;
   if ($('effort-button')) $('effort-button').disabled = $('provider-button').disabled;
   if (window.CodeyConversationUI) window.CodeyConversationUI.updateNotice();
+  window.CodeyRequests.refreshActions();
 }
 
 function toggleResearchForActive() {
@@ -105,7 +106,7 @@ function clearDraftIfUnchanged(sessionId, draft, revision = null) {
   deps.updateComposerContext();
 }
 
-async function reportSendFailure(sessionId, text, response) {
+async function reportSendFailure(sessionId, response, runId = '') {
   const data = await response.json().catch(() => null);
   let message = '', sendFailure = '', runOwner = '';
   if (response.status === 400 && data?.reason === 'model_selection_invalid') {
@@ -119,8 +120,12 @@ async function reportSendFailure(sessionId, text, response) {
     message = owner ? (owner.id === sessionId ? 'This chat is already running' : 'Another chat is running') : 'Another task is running';
     sendFailure = 'busy';
   }
-  if (!message) { deps.addSendError(sessionId, '', '', text); return; }
-  deps.addToSession(sessionId, {type:'err', text:message, sessionId, retryTask:text, sendFailure, runOwner});
+  if (runId) {
+    window.CodeyRequests.fail(sessionId, runId, message || 'Could not send the message', {sendFailure, runOwner});
+    return;
+  }
+  if (!message) { deps.addSendError(sessionId); return; }
+  deps.addToSession(sessionId, {type:'err', text:message, sessionId, sendFailure, runOwner});
 }
 
 function recoveryActions(message) {
@@ -141,7 +146,7 @@ function recoveryActions(message) {
   return null;
 }
 
-async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null) {
+async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null, requestId = '') {
   const text = String(task || '').trim();
   if (!text || runningSessionId() || sendingSessionId) return false;
   const s = deps.findSession(sessionId);
@@ -150,24 +155,28 @@ async function sendTaskFromSession(sessionId, task, providerId = '', onSendStart
   sendingSessionId = sessionId;
   updateSend();
   deps.updateComposerContext();
-  deps.pushMsgToSession(sessionId, { type: 'user', text });
+  const started = window.CodeyRequests.begin(sessionId, text, requestId);
+  if (!started) { sendingSessionId = ''; updateSend(); return false; }
+  const runId = started.attempt.runId;
   const project = deps.sessionProjectPath(sessionId);
   const intent = deps.currentIntentForSession(sessionId);
   try {
     const r = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent,
+      body: JSON.stringify({ session_id: sessionId, run_id: runId, project, task: text, provider, intent,
         ...window.CodeyProviderUI.runSelection(s, provider) }),
     });
     if (!r.ok) {
-      await reportSendFailure(sessionId, text, r);
+      await reportSendFailure(sessionId, r, runId);
       return false;
     }
     if (typeof onSendStarted === 'function') onSendStarted();
     await deps.acceptRunResponse(r, sessionId);
   } catch {
-    deps.addSendError(sessionId, '', '', text);
+    await window.CodeySse.reconcileRunState();
+    const attempt = window.CodeyRequests.forRun(sessionId, runId)?.attempt;
+    if (attempt?.state === 'sending') window.CodeyRequests.fail(sessionId, runId, 'Response was not confirmed');
     return false;
   } finally {
     sendingSessionId = '';
@@ -187,12 +196,11 @@ async function sendActiveDraft() {
   await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));
 }
 
-function retryTask(sessionId, submittedText = '') {
+function retryTask(sessionId, requestId) {
   const s = deps.findSession(sessionId);
-  if (!s) return;
-  const original = [...s.messages].reverse().find(m => m.type === 'user' && m.text);
-  const text = submittedText || (original && original.text);
-  if (text) return sendTaskFromSession(sessionId, text, s.provider);
+  if (!s || !window.CodeyRequests.canRetry(sessionId, requestId)) return;
+  const original = s.messages.find(m => m.type === 'user' && m.id === requestId);
+  return sendTaskFromSession(sessionId, original.text, s.provider, null, requestId);
 }
 
 async function continueTask(sessionId) {
@@ -227,7 +235,7 @@ async function continueTask(sessionId) {
       }),
     });
     if (r.status === 409 || !r.ok) {
-      await reportSendFailure(sessionId, '', r);
+      await reportSendFailure(sessionId, r);
       return;
     }
     await deps.acceptRunResponse(r, sessionId);

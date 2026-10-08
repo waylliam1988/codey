@@ -132,6 +132,7 @@ def submit_task(
     abort_if_stopped: bool = False,
     review_source_run_id: str = "",
     model_selection: ApiRunSelection | None = None,
+    run_id: str = "",
 ) -> str | None:
     # Fail fast on config error before taking the slot; the validated value is
     # passed through so the worker never re-reads the environment (no race).
@@ -145,6 +146,7 @@ def submit_task(
         task=task,
         provider_id=provider_id,
         abort_if_stopped=abort_if_stopped,
+        run_id=run_id,
     )
     if reserved is None:
         return None

@@ -8,7 +8,7 @@ function append(chat, m) {
 }
 function appendContent(chat, m) {
   const {statusRow, currentProjectPath, openChangesDrawer, attachCurrentChatToPickedProject,
-    approveCommand, continueTask, resumeTeaching, retryTask} = deps;
+    approveCommand, continueTask, resumeTeaching} = deps;
   const activeId = deps.getActiveId(), runningSessionId = deps.getRunningSessionId();
   const {messageCopyText, addMessageCopyButton, FOLDABLE_TOOL_KINDS, standaloneToolEl,
     appendOrFoldTool, escapeHtml} = window.CodeyRender;
@@ -16,10 +16,13 @@ function appendContent(chat, m) {
   if (m.type === 'user') {
     const div = document.createElement('div');
     div.className = 'msg user';
+    if (m.id) div.dataset.messageId = m.id;
     div.innerHTML = `<div class="msg-label">You</div><div class="body"></div>`;
     div.querySelector('.body').textContent = m.text;
     addMessageCopyButton(div, messageCopyText(m));
     chat.appendChild(div);
+  } else if (m.type === 'request_status') {
+    window.CodeyRequests.appendStatus(chat, m);
   } else if (m.type === 'turn') {
     const div = document.createElement('div');
     div.className = 'turn-divider';
@@ -195,9 +198,7 @@ function appendContent(chat, m) {
   } else if (m.type === 'err') {
     chat.appendChild(statusRow('Error', m.text || '', {
       err: true,
-      actions: window.CodeyRunDetails.actionsForMessage(m, window.CodeyComposer.recoveryActions(m) || [
-        { label: 'Retry', disabled: !!runningSessionId, onclick: () => retryTask(m.sessionId || activeId, m.retryTask) },
-      ]),
+      actions: window.CodeyRunDetails.actionsForMessage(m, window.CodeyComposer.recoveryActions(m)),
     }));
   } else if (m.type === 'info') {
     const div = document.createElement('div');
