@@ -8,6 +8,15 @@ source's master toggle is disabled; checking a model or Select all explicitly
 enables it. Clear and removing the last selected model turn it off immediately.
 In-use models cannot be cleared. Changes remain staged until Save changes.
 
+All sources use one action toolbar: Select all and Clear stay together on the
+left with a 14px gap; only Refresh models is pushed to the right. The shared
+renderer marks the refresh action explicitly instead of positioning whichever
+button happens to be last. This also works for an API source without discovery.
+Refresh appears only when the source declares `discoverable`. Websites lists
+registered website connectors, not models discovered inside those websites,
+so it currently needs no Refresh models action. Opening or expanding Settings
+does not request a model catalog or save model preferences.
+
 Save changes is disabled until enablement or selected model-ID sets differ from
 the loaded baseline; reverting those values disables it again. Names, ordering,
 search and expanded groups do not count as preference edits. Catalog refresh

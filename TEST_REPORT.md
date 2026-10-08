@@ -1,5 +1,56 @@
 # Codey Test Report
 
+## Model-source action layout and capability-driven refresh (2026-10-08)
+
+基线：`ba04feef2f9df464fddd3236626e0bd64970a1c2`；Windows、Python **3.12.8**。
+本节、设计手册、模型管理说明、中英文 Changelog 和测试索引均在最终全量完成后
+更新。版本仍为 0.5.11，无 tag/release、真实模型请求或 API token 消耗。
+
+### TDD 证据
+
+新增 `tests/test_ui_model_source_action_layout.py`，共 **六个实际浏览器行为用例**。
+首轮 **5 failed / 1 passed，52.66s**：四项有效失败显示没有 Refresh models 时，
+Clear 与 Select all 间距达到约 **427.52px**，包括 Websites 和关闭目录发现能力
+的任意 API/Local 来源。一项窄窗口失败因侧栏折叠后 Settings 按钮不可见，属于
+测试操作错误，不作为有效红测。
+
+修正为先打开对话框再缩窄视口，并等待三个来源加载后检查展开操作。修改产品
+代码之前再次得到 **1 failed / 1 passed，6.54s**：360px 视口中间距仍为约
+**195.52px**；无意外目录请求/偏好保存的保护用例实际通过。
+
+修复只给共享组件的刷新按钮增加职责标记，并把右对齐样式从 `:last-child`
+改为该标记。三组来源继续共用组件、样式和 14px 选择操作间距；刷新是否出现
+仍取决于 `discoverable`。Websites 当前没有目录发现能力，不增加空操作或
+供应商专属分支。测试验证宽/窄窗口、同一基线、Select all/Clear 邻接、刷新
+靠右、任意来源缺少刷新时的分组及展开不请求目录/不保存偏好。
+
+第一次回归命令引用了不存在的测试文件，没有执行测试；定位实际
+`test_ui_readability.py` 后完成下表回归。命令/夹具错误均未算作产品红测或绿测。
+
+### 最终验证
+
+| 检查 | 实际结果 |
+| --- | --- |
+| 新布局、模型管理、设置保存/刷新、可读性、可选集成移除及旧 UI 回归 | **110 passed、2 subtests passed，79.25s** |
+| Ruff `codey tests tools` | All checks passed |
+| mypy `codey` | **393 source files**，零问题 |
+| 改动的 `model_settings.js` 语法 / `git diff --check` | 通过 |
+| 最终全量 pytest | **7930 passed、7 skipped、1503 subtests passed，873.21s**，零失败/错误 |
+| 实际 Settings 截图 | 发布资产 + 离线夹具，三组展开后核对通过 |
+
+静态检查和定向回归在全量之前完成，之后冻结产品代码。最终命令：
+
+```powershell
+python -m pytest -q -o faulthandler_timeout=120 --junitxml=.e2e-artifacts/model-source-action-layout-full.xml
+```
+
+7 项跳过仍为四项 POSIX 平台契约、两项 O_NOFOLLOW 不可用和未启用的真实 Edge
+E2E；普通 Chromium 测试实际执行。本轮没有另跑 Python 3.11/3.13、原生 Linux
+或真实模型验收。没有单独重复必需契约命令，现有契约用例由本轮最终全量覆盖。
+忽略目录中保留 `model-source-action-layout-red.xml`、
+`model-source-action-layout-narrow-red.xml`、`model-source-action-layout-focused.xml`
+以及最终 `model-source-action-layout-full.xml`。
+
 ## Local save status: stable composer layout and retry feedback (2026-10-08)
 
 基线：`e593ec12d596d0dd1227bdbde461c371b7b3b200`；Windows、Python **3.12.8**。

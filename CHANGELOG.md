@@ -2,6 +2,19 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Consistent model-source actions (2026-10-08)
+
+- Keep Select all and Clear adjacent in every source toolbar. Align only the
+  explicitly marked Refresh models action to the right, instead of the last
+  button. Reuse the shared source component and styles without vendor branches.
+- Websites keeps no refresh action: it lists registered website connectors;
+  sources with actual directory discovery retain capability-driven refresh.
+- Add six behavior cases in `test_ui_model_source_action_layout.py`, including
+  wide/narrow layout and API sources without discovery. Related regressions:
+  **110 passed, 2 subtests passed**; Ruff, mypy, JS syntax and diff checks pass.
+- Final full suite: **7930 passed, 7 skipped, 1503 subtests passed in 873.21s**.
+  Documentation updated afterward. No version change, tag, release or inference.
+
 ## Unreleased - Local save feedback without layout jumps (2026-10-08)
 
 - Show `Not saved · Retry` on the right of the existing composer context line,

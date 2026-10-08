@@ -26,14 +26,17 @@ affected workflow. Fixture, syntax and environment failures are not red evidence
 - `test_ui_settings_save_scopes_and_refresh.py`: semantic dirty/revert state,
   independent connection/model saves, staged search/disclosure/focus continuity
   and catalog removal of the focused option.
+- `test_ui_model_source_action_layout.py`: six cases for adjacent Select all/Clear
+  across Websites and generic API/Local sources, refresh aligned right only when
+  supported, wide/narrow layout, and no catalog request or save on group opening.
 - `test_ui_changes_refresh.py`: pending/failed refresh with readable previous
   data, network/HTTP/business/JSON errors, copy/freshness gating, project identity,
   restore followed by refresh failure, focus and visible diff-line anchors.
 - `test_ui_quote_reply.py`: editable exact text/code quotation, preserved drafts,
   no implicit send, Undo/Redo, eligible selections, keyboard and chat identity.
 
-These 44 continuity cases, 12 local-save status cases and the existing UI/storage
-regressions run in the full suite.
+These 44 continuity cases, 12 local-save status cases, six model-action layout
+cases and the existing UI/storage regressions run in the full suite.
 Native Windows-host IME and opt-in Edge/live-model checks remain separate; see
 `TEST_REPORT.md` for the actual platform and completed verification.
 

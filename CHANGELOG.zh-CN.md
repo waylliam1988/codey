@@ -2,6 +2,18 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 统一模型来源操作行（2026-10-08）
+
+- 三组来源的 Select all / Clear 均靠左相邻。仅明确标记的 Refresh models 靠右，
+  不再把“最后一个按钮”推到右侧；继续复用同一来源组件和样式，无供应商分支。
+- Websites 显示已注册的网站入口，当前没有可发现的模型目录，不增加刷新按钮；
+  API/Local 来源按实际目录发现能力显示刷新。
+- `test_ui_model_source_action_layout.py` 新增六个行为用例，覆盖宽/窄窗口、
+  任意来源不提供刷新时的布局及展开不刷新/不保存。相关回归 **110 passed、
+  2 subtests passed**；Ruff、mypy、JS 语法和 diff 检查通过。
+- 最终全量：**7930 passed、7 skipped、1503 subtests passed，873.21 秒**。
+  文档在全量完成后更新；不改版本、不创建 tag/release，不运行真实模型推理。
+
 ## 未发布 - 本地保存反馈不挪动输入区（2026-10-08）
 
 - 保存失败在现有上下文行右侧显示 `Not saved · Retry`，与 Choose folder、

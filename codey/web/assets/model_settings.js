@@ -93,7 +93,7 @@ function renderSource(source) {
         syncModelRows(); sync();
       } catch (exception) { if (request === generation) error(exception.message); }
       finally { if (request === generation) { refresh.disabled = false; refresh.textContent = 'Refresh models'; } }
-    }); actions.appendChild(refresh);
+    }); refresh.classList.add('model-source-refresh'); actions.appendChild(refresh);
   }
   if (source.connection_editor) body.appendChild($('local-connection-editor'));
   function sync() {
