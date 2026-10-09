@@ -22,9 +22,10 @@
 - Final pytest: **8295 passed, 7 skipped, 1503 subtests**; machine contracts:
   **912 passed, 14 subtests**. Ruff, mypy Windows/Linux, Pyrefly, compileall and
   diff checks pass. Documentation is updated after the complete final run.
-- Frozen original scenarios: **Codey 20/20, Pi 9/20**. Supplemental paired tasks:
-  **Codey 2/2, Pi 0/2**; a subsequent Codey request timed out and backend isolation
-  failed, so the supplemental round is incomplete. Preserve all earlier failures
+- Frozen original scenarios: **Codey 20/20, Pi 9/20**. After a confirmed backend
+  restart, a complete supplemental replay is **Codey 4/4, Pi 0/4**. Retain the
+  earlier incomplete round, its Codey timeout and backend isolation failure;
+  repeated seeds are not independent generalization evidence. Preserve all earlier failures
   and measured limits in [the report](docs/codey-behavioral-verification-and-pi-comparison-2026-10-10.zh-CN.md).
   Version remains 0.5.11; no release.
 

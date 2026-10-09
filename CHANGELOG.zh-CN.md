@@ -17,8 +17,9 @@
 - 最终全量 **8295 passed、7 skipped、1503 subtests**；必跑契约
   **912 passed、14 subtests**。Ruff、双平台 mypy、Pyrefly、compileall、diff 通过。
   文档在最终全量结束后更新。
-- 原场景冻结实机结果 **Codey 20/20、Pi 9/20**；补充已完成配对
-  **Codey 2/2、Pi 0/2**。随后一条 Codey 请求超时，后端无法恢复隔离，补充轮次未完成。
+- 原场景冻结实机结果 **Codey 20/20、Pi 9/20**；用户确认重启后完整补充回放
+  **Codey 4/4、Pi 0/4**。此前部分轮次的 Codey 超时和隔离失败继续保留；
+  重复种子不视为独立未知任务证据。此轮只更新文档与实机记录，未修改生产代码。
   中间失败与能力限制完整保留于[报告](docs/codey-behavioral-verification-and-pi-comparison-2026-10-10.zh-CN.md)。
   版本保持 0.5.11，不发布。
 

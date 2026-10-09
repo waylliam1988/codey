@@ -45,7 +45,20 @@ Supplemental new callable/file tasks with seed 61 completed two pairs:
 **Codey 2/2, Pi 0/2**. The next Codey seed-62 generation had no first byte in
 180 seconds; backend isolation remained unavailable for 300 seconds. Its timeout
 is retained as the fifth observation, not counted as a paired win; three planned
-observations were not run. Supplemental results are therefore incomplete.
+observations were not run. That partial round remains incomplete and is retained.
+
+After the user confirmed a KoboldCpp restart, a fresh complete round in
+`artifacts/behavioral-verification-20261010-holdout-restarted` completed all eight
+arms / four pairs: **Codey 4/4, Pi 0/4**, with no transport timeout or backend
+isolation failure. Production source, model, task contracts and budgets are unchanged.
+All four Codey plans were admitted and actual first-candidate observations passed;
+readonly controls changed no files. Pi repair patches passed external checks but
+repeated verification exhausted 24 generation requests. Pi readonly controls changed
+`labels.py` after an initial passing test, violating scope and leaving an
+`IndentationError`; they also exhausted the request cap. Nonzero harness exit reflects
+failed Pi scenarios, not incomplete pairing. Previously used seeds 61/62 are recovery
+replays, not independent unseen samples. Documentation/evidence alone changed after
+this round, so the final full pytest above remains applicable without rerunning it.
 Pi's executed dist build has an unknown matching source commit and incomplete
 streaming usage. No universal reliability or total-token superiority is claimed.
 

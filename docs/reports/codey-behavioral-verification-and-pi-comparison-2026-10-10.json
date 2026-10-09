@@ -29887,13 +29887,2266 @@
           "ledger": "seed-62/heldout-fix-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_99045a69156b47cf89f659d9b6d02404.jsonl"
         }
       ]
+    },
+    {
+      "artifact": "behavioral-verification-20261010-holdout-restarted",
+      "result_sha256": "f3c7b034b4eca07c61b11f690aee692e1bc2fd6c3033d44d98ad8dd4dba42457",
+      "sampling": {
+        "temperature": 0.0,
+        "seeds": [
+          61,
+          62
+        ]
+      },
+      "budgets": {
+        "window": 32768,
+        "output": 2048,
+        "keep": 12000,
+        "seconds_per_arm": 180.0,
+        "generation_requests_per_arm": 24
+      },
+      "sources": {
+        "codey": {
+          "commit": "5cedea3ea071a823c1520182ee5301eacf7be0cf",
+          "source_sha256": "f180758c226fb70fb393848c22b7c88fbf4f257f0513cca56eb1e24938e979a7"
+        },
+        "pi": {
+          "commit": "a276dabe57911253350bffb93cb7d7aff6a73261",
+          "source_sha256": "dd950775afb2e823eafca78d66e67e2530e885de303f96af7193b9d8d226fe19",
+          "executed_build": {
+            "dist_sha256": "189b8f8868f437c28ebbbd6be6fa9e357b7047fd2aab484ff1e31abb34020eb3",
+            "matching_source_commit": null
+          }
+        }
+      },
+      "benchmark_sha256": "95b089c6a6e06d2c9f0d09ae31a22b84a963861f961fc4ae294c1fea55f8babb",
+      "case_contract_sha256": "9bc37d4b3150d47c79c8d0f20d2574bb0a7e883457a2cc699e632bf1499e3bd2",
+      "paired_summary": {
+        "comparable_pairs": 4,
+        "outcomes": {
+          "codey_only": 4
+        },
+        "pairs": [
+          {
+            "seed": 61,
+            "case": "heldout-fix-labels",
+            "outcome": "codey_only",
+            "codey_time_delta_percent": null,
+            "codey_token_delta_percent": null
+          },
+          {
+            "seed": 61,
+            "case": "heldout-verify-labels",
+            "outcome": "codey_only",
+            "codey_time_delta_percent": null,
+            "codey_token_delta_percent": null
+          },
+          {
+            "seed": 62,
+            "case": "heldout-fix-labels",
+            "outcome": "codey_only",
+            "codey_time_delta_percent": null,
+            "codey_token_delta_percent": null
+          },
+          {
+            "seed": 62,
+            "case": "heldout-verify-labels",
+            "outcome": "codey_only",
+            "codey_time_delta_percent": null,
+            "codey_token_delta_percent": null
+          }
+        ],
+        "excluded_pairs": []
+      },
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "backend": {
+        "result": "KoboldCpp",
+        "version": "1.117.1",
+        "protected": false,
+        "llm": true,
+        "txt2img": false,
+        "vision": false,
+        "audio": false,
+        "transcribe": false,
+        "multiplayer": false,
+        "websearch": false,
+        "tts": false,
+        "embeddings": false,
+        "music": false,
+        "savedata": false,
+        "admin": 0,
+        "router": false,
+        "guidance": false,
+        "jinja": true,
+        "mcp": false
+      },
+      "execution_environment": {
+        "pi_cli_version": "1.0.0",
+        "node_version": "v24.19.0",
+        "platform": "win32",
+        "python_version": "3.12.8",
+        "python_executable": "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
+      },
+      "observations": [
+        {
+          "arm": "pi",
+          "case": "heldout-fix-labels",
+          "seed": 61,
+          "status": "completed",
+          "wall_time_seconds": 50.34409729996696,
+          "verification": {
+            "returncode": 0,
+            "visible_tests": true,
+            "hidden_checks": true,
+            "scope_ok": true,
+            "changed_paths": [
+              "labels.py"
+            ],
+            "passed": true,
+            "patch_correctness": true,
+            "checks": {
+              "0": true,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": true
+            },
+            "stdout": "",
+            "stderr": "test_label (test_labels.Labels.test_label) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+            "agent_verification_fresh": true,
+            "agent_verifications": [
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "32316f48521f99a243cfcfa1d9b4b2e688531b9541e8bb7a738abf693c9d90ff",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573770.5041566,
+                "pid": 11496,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573777.9844346,
+                "pid": 71712,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573779.270469,
+                "pid": 30448,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573780.557856,
+                "pid": 93284,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573781.8175879,
+                "pid": 57520,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573783.0829744,
+                "pid": 43112,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573784.3295922,
+                "pid": 90036,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573785.6060047,
+                "pid": 30964,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573786.8792446,
+                "pid": 41240,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573788.1529517,
+                "pid": 88204,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573789.3025706,
+                "pid": 61896,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573790.4505935,
+                "pid": 38756,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573791.605002,
+                "pid": 41500,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573792.743676,
+                "pid": 57032,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573793.8973088,
+                "pid": 78500,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573795.0487883,
+                "pid": 29516,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573796.1948056,
+                "pid": 17636,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573797.3511667,
+                "pid": 46744,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "14f01bd7a6f35cd2f26f7fed420826c532aae43578f6310533e8aa8ae9dabae5",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573798.5184116,
+                "pid": 74144,
+                "passed": true,
+                "tests_run": 1
+              }
+            ],
+            "agent_verification_started": 19,
+            "wall_time_seconds": 0.177
+          },
+          "metrics": {
+            "process_returncode": 0,
+            "task_success": false,
+            "patch_correctness": true,
+            "tests_actually_passing": true,
+            "agent_verification_fresh": true,
+            "false_completion": false,
+            "normal_completion": false,
+            "blocked": false,
+            "stopped": false,
+            "tool_calls": 24,
+            "repeated_tool_calls": 19,
+            "unknown_argument_calls": 0,
+            "unproductive_repeated_calls": 18,
+            "mutation_calls": 1,
+            "duplicate_mutation": false,
+            "unknown_mutation_calls": 0,
+            "recovery_success": null,
+            "terminal_event": {
+              "type": "agent_settled"
+            },
+            "terminal_reason": "error",
+            "llm_rounds": 28,
+            "failed_tool_calls": 0,
+            "successful_tool_calls": 24,
+            "unknown_tool_calls": 0,
+            "read_calls": 3,
+            "edit_calls": 1,
+            "write_calls": 0,
+            "run_calls": 20,
+            "protocol_errors": 0,
+            "policy_denials": 0,
+            "input_tokens": null,
+            "known_input_tokens": null,
+            "output_tokens": null,
+            "known_output_tokens": null,
+            "token_usage": null,
+            "known_token_usage": null,
+            "usage_complete": false,
+            "usage_observed_exchanges": 0,
+            "physical_generation_exchanges": 24,
+            "scenario_success": false,
+            "scope_ok": true,
+            "repeated_verification_same_files": 17
+          },
+          "phases": [
+            {
+              "status": "completed",
+              "returncode": 0,
+              "wall_time_seconds": 50.34409729996696,
+              "triggered": false,
+              "forced_cleanup": false,
+              "readers_finished": true,
+              "live_fixture_processes": [],
+              "stop_seconds": null
+            }
+          ]
+        },
+        {
+          "arm": "codey",
+          "case": "heldout-fix-labels",
+          "seed": 61,
+          "status": "completed",
+          "wall_time_seconds": 43.62818369991146,
+          "verification": {
+            "returncode": 0,
+            "visible_tests": true,
+            "hidden_checks": true,
+            "scope_ok": true,
+            "changed_paths": [
+              "labels.py"
+            ],
+            "passed": true,
+            "patch_correctness": true,
+            "checks": {
+              "0": true,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": true
+            },
+            "stdout": "",
+            "stderr": "test_label (test_labels.Labels.test_label) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+            "agent_verification_fresh": true,
+            "agent_verifications": [
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "32316f48521f99a243cfcfa1d9b4b2e688531b9541e8bb7a738abf693c9d90ff",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573822.4270205,
+                "pid": 6360,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "167db960eedc71da177e37d1759aef2b04ee0721e11025982d073cedf6c05280",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573844.1759057,
+                "pid": 83524,
+                "passed": true,
+                "tests_run": 1
+              }
+            ],
+            "agent_verification_started": 2,
+            "wall_time_seconds": 0.167
+          },
+          "metrics": {
+            "process_returncode": 0,
+            "task_success": true,
+            "patch_correctness": true,
+            "tests_actually_passing": true,
+            "agent_verification_fresh": true,
+            "false_completion": false,
+            "normal_completion": true,
+            "blocked": false,
+            "stopped": false,
+            "tool_calls": 7,
+            "repeated_tool_calls": 1,
+            "unknown_argument_calls": 5,
+            "unproductive_repeated_calls": 0,
+            "mutation_calls": 1,
+            "duplicate_mutation": false,
+            "unknown_mutation_calls": 0,
+            "recovery_success": null,
+            "terminal_event": {
+              "schema_version": 1,
+              "type": "task_done",
+              "run_id": "run_ab33a067fe3d4f4298e08054328ac4cd",
+              "session_id": "ab_session",
+              "summary": "Fixed `labels.py` so that `squash_label` removes ASCII punctuation, lowercases ASCII letters, trims outer whitespace, and collapses whitespace into hyphens while preserving digits.\n\nThe implementation:\n1. Removes punctuation using `value.translate(str.maketrans('', '', string.punctuation))`.\n2. Lowercases the string using `.lower()`.\n3. Trims outer whitespace using `.strip()`.\n4. Collapses whitespace into hyphens using `'-'.join(value.split())`.\n\nVerified with `python -m unittest discover -v`.",
+              "stop_reason": "done",
+              "turns": 9,
+              "max_turns": 1000,
+              "provider": "local",
+              "mode": "agent",
+              "changed": true,
+              "final_delivery": "success",
+              "ledger_path": "E:\\codey\\artifacts\\behavioral-verification-20261010-holdout-restarted\\seed-61\\heldout-fix-labels\\codey\\state\\run_ledgers\\32f9fe411902d8c6c656e2a0\\run_ab33a067fe3d4f4298e08054328ac4cd.jsonl",
+              "receipt": {
+                "schema_version": 1,
+                "display": {
+                  "summary": "1 file changed · checks passed"
+                },
+                "work": {
+                  "changed_count": 1,
+                  "mode": "snapshot",
+                  "restore_available": true
+                },
+                "verification": {
+                  "trust": "trusted",
+                  "checks_passed": true,
+                  "state": "complete",
+                  "proof_refs": [
+                    "completion_proof:2c0b0fc7ac0fd42b",
+                    "completion_contract:ffa5649f943342c6"
+                  ]
+                },
+                "integrity": {
+                  "status": "clean",
+                  "severity": "none",
+                  "refs": [
+                    "edit_integrity:fe1f266bfd81c3a2"
+                  ]
+                }
+              },
+              "changes": {
+                "changed_count": 1,
+                "mode": "snapshot",
+                "files": [
+                  {
+                    "path": "labels.py",
+                    "status": "M"
+                  }
+                ]
+              },
+              "review": {
+                "verdict": "approved",
+                "status": "complete",
+                "origin": "fresh",
+                "finding_count": 0,
+                "attempt_id": "7592082d8d8f",
+                "artifact_sha256": "7af9967dc0177e7970f17b7dfa091055db3589bbabaddf6ca486e6af2e43df0c"
+              }
+            },
+            "terminal_reason": "done",
+            "llm_rounds": 10,
+            "failed_tool_calls": 1,
+            "successful_tool_calls": 6,
+            "unknown_tool_calls": 0,
+            "read_calls": 3,
+            "edit_calls": 2,
+            "write_calls": 0,
+            "run_calls": 2,
+            "protocol_errors": 0,
+            "policy_denials": 0,
+            "input_tokens": 26797,
+            "known_input_tokens": 26797,
+            "output_tokens": 810,
+            "known_output_tokens": 810,
+            "token_usage": 27607,
+            "known_token_usage": 27607,
+            "usage_complete": true,
+            "usage_observed_exchanges": 10,
+            "physical_generation_exchanges": 10,
+            "scenario_success": true,
+            "scope_ok": true,
+            "repeated_verification_same_files": 0
+          },
+          "phases": [
+            {
+              "status": "completed",
+              "returncode": 0,
+              "wall_time_seconds": 43.62818369991146,
+              "triggered": false,
+              "forced_cleanup": false,
+              "readers_finished": true,
+              "live_fixture_processes": [],
+              "stop_seconds": null
+            }
+          ]
+        },
+        {
+          "arm": "codey",
+          "case": "heldout-verify-labels",
+          "seed": 61,
+          "status": "completed",
+          "wall_time_seconds": 26.870126700028777,
+          "verification": {
+            "returncode": 0,
+            "visible_tests": true,
+            "hidden_checks": true,
+            "scope_ok": true,
+            "changed_paths": [],
+            "passed": true,
+            "patch_correctness": true,
+            "checks": {
+              "0": true,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": true
+            },
+            "stdout": "",
+            "stderr": "test_label (test_labels.Labels.test_label) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+            "agent_verification_fresh": true,
+            "agent_verifications": [
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "d16fcef126074d575c8311ec6dcc2b589a6c081659d250b6b321e880f805f7bb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573865.6852705,
+                "pid": 82264,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "d16fcef126074d575c8311ec6dcc2b589a6c081659d250b6b321e880f805f7bb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573873.9419677,
+                "pid": 50400,
+                "passed": true,
+                "tests_run": 1
+              }
+            ],
+            "agent_verification_started": 2,
+            "wall_time_seconds": 0.168
+          },
+          "metrics": {
+            "process_returncode": 0,
+            "task_success": true,
+            "patch_correctness": true,
+            "tests_actually_passing": true,
+            "agent_verification_fresh": true,
+            "false_completion": false,
+            "normal_completion": true,
+            "blocked": false,
+            "stopped": false,
+            "tool_calls": 6,
+            "repeated_tool_calls": 1,
+            "unknown_argument_calls": 3,
+            "unproductive_repeated_calls": 1,
+            "mutation_calls": 0,
+            "duplicate_mutation": false,
+            "unknown_mutation_calls": 0,
+            "recovery_success": null,
+            "terminal_event": {
+              "schema_version": 1,
+              "type": "task_done",
+              "run_id": "run_1a285601c2954d2496c0e3a7161ec4ed",
+              "session_id": "ab_session",
+              "summary": "The `squash_label` function in `labels.py` was verified against the requirements:\n1. **Removes ASCII punctuation**: `translate(str.maketrans('', '', string.punctuation))` handles this.\n2. **Lowercases ASCII letters**: `casefold()` handles this.\n3. **Trims outer whitespace**: `split()` (called on the result of the translation) effectively removes leading and trailing whitespace.\n4. **Collapses whitespace into hyphens**: `'-'.join(...split())` ensures that any sequence of whitespace (or punctuation that became whitespace) is collapsed into a single hyphen.\n5. **Preserve digits**: `casefold()` and `translate` (with `string.punctuation`) do not affect digits.\n\nThe test case `squash_label(' City, Council! ')` correctly returned `'city-council'`, confirming the logic.\n\nDiagnostic findings:\n- `labels.py`: `squash_label` implementation is correct.\n- `test_labels.py`: `test_label` passed.\n- Verification command `python -m unittest discover -v` passed.",
+              "stop_reason": "done",
+              "turns": 7,
+              "max_turns": 1000,
+              "provider": "local",
+              "mode": "agent",
+              "changed": false,
+              "final_delivery": "success",
+              "ledger_path": "E:\\codey\\artifacts\\behavioral-verification-20261010-holdout-restarted\\seed-61\\heldout-verify-labels\\codey\\state\\run_ledgers\\32f9fe411902d8c6c656e2a0\\run_1a285601c2954d2496c0e3a7161ec4ed.jsonl",
+              "receipt": {
+                "schema_version": 1,
+                "display": {
+                  "summary": "No files changed"
+                },
+                "work": {
+                  "changed_count": 0,
+                  "mode": "snapshot",
+                  "restore_available": false
+                },
+                "verification": {
+                  "trust": "limited",
+                  "checks_passed": false,
+                  "state": "complete",
+                  "proof_refs": [
+                    "completion_proof:6b8de581bdfdad20",
+                    "completion_contract:e320aa80254c2398"
+                  ]
+                },
+                "integrity": {
+                  "status": "unobserved",
+                  "severity": "none",
+                  "refs": [
+                    "edit_integrity:ce494040dc41c2fa"
+                  ]
+                }
+              }
+            },
+            "terminal_reason": "done",
+            "llm_rounds": 7,
+            "failed_tool_calls": 1,
+            "successful_tool_calls": 5,
+            "unknown_tool_calls": 0,
+            "read_calls": 3,
+            "edit_calls": 0,
+            "write_calls": 0,
+            "run_calls": 3,
+            "protocol_errors": 0,
+            "policy_denials": 0,
+            "input_tokens": 15826,
+            "known_input_tokens": 15826,
+            "output_tokens": 425,
+            "known_output_tokens": 425,
+            "token_usage": 16251,
+            "known_token_usage": 16251,
+            "usage_complete": true,
+            "usage_observed_exchanges": 7,
+            "physical_generation_exchanges": 7,
+            "scenario_success": true,
+            "scope_ok": true,
+            "repeated_verification_same_files": 1
+          },
+          "phases": [
+            {
+              "status": "completed",
+              "returncode": 0,
+              "wall_time_seconds": 26.870126700028777,
+              "triggered": false,
+              "forced_cleanup": false,
+              "readers_finished": true,
+              "live_fixture_processes": [],
+              "stop_seconds": null
+            }
+          ]
+        },
+        {
+          "arm": "pi",
+          "case": "heldout-verify-labels",
+          "seed": 61,
+          "status": "completed",
+          "wall_time_seconds": 80.04827030003071,
+          "verification": {
+            "returncode": 1,
+            "visible_tests": false,
+            "hidden_checks": false,
+            "scope_ok": false,
+            "changed_paths": [
+              "labels.py"
+            ],
+            "passed": false,
+            "patch_correctness": false,
+            "checks": {
+              "oracle_error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Temp\\codey-pi-stability-cc1sthf1\\seed-61\\heldout-verify-labels\\pi\\app.py\", line 1, in <module>\n    from labels import squash_label as normalize_name\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Temp\\codey-pi-stability-cc1sthf1\\seed-61\\heldout-verify-labels\\pi\\labels.py\", line 3\n    # Remove ASCII punctuation, lowercase ASCII letters, trim outer whitespace, collapse whitespace into hyphens, preserve digits.\n                                                                                                                                  ^\nIndentationError: expected an indented block after function definition on line 2\n"
+            },
+            "stdout": "",
+            "stderr": "test_labels (unittest.loader._FailedTest.test_labels) ... ERROR\n\n======================================================================\nERROR: test_labels (unittest.loader._FailedTest.test_labels)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_labels\nTraceback (most recent call last):\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\unittest\\loader.py\", line 396, in _find_test_path\n    module = self._get_module_from_name(name)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\unittest\\loader.py\", line 339, in _get_module_from_name\n    __import__(name)\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Temp\\codey-pi-stability-cc1sthf1\\seed-61\\heldout-verify-labels\\pi\\test_labels.py\", line 2, in <module>\n    from labels import squash_label\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Temp\\codey-pi-stability-cc1sthf1\\seed-61\\heldout-verify-labels\\pi\\labels.py\", line 3\n    # Remove ASCII punctuation, lowercase ASCII letters, trim outer whitespace, collapse whitespace into hyphens, preserve digits.\n                                                                                                                                  ^\nIndentationError: expected an indented block after function definition on line 2\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n",
+            "agent_verification_fresh": false,
+            "agent_verifications": [
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "d16fcef126074d575c8311ec6dcc2b589a6c081659d250b6b321e880f805f7bb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573893.453707,
+                "pid": 35588,
+                "passed": true,
+                "tests_run": 1
+              }
+            ],
+            "agent_verification_started": 1,
+            "wall_time_seconds": 0.163
+          },
+          "metrics": {
+            "process_returncode": 0,
+            "task_success": false,
+            "patch_correctness": false,
+            "tests_actually_passing": false,
+            "agent_verification_fresh": false,
+            "false_completion": false,
+            "normal_completion": false,
+            "blocked": false,
+            "stopped": false,
+            "tool_calls": 24,
+            "repeated_tool_calls": 17,
+            "unknown_argument_calls": 0,
+            "unproductive_repeated_calls": 16,
+            "mutation_calls": 1,
+            "duplicate_mutation": false,
+            "unknown_mutation_calls": 0,
+            "recovery_success": null,
+            "terminal_event": {
+              "type": "agent_settled"
+            },
+            "terminal_reason": "error",
+            "llm_rounds": 28,
+            "failed_tool_calls": 17,
+            "successful_tool_calls": 7,
+            "unknown_tool_calls": 0,
+            "read_calls": 4,
+            "edit_calls": 18,
+            "write_calls": 0,
+            "run_calls": 2,
+            "protocol_errors": 0,
+            "policy_denials": 0,
+            "input_tokens": null,
+            "known_input_tokens": null,
+            "output_tokens": null,
+            "known_output_tokens": null,
+            "token_usage": null,
+            "known_token_usage": null,
+            "usage_complete": false,
+            "usage_observed_exchanges": 0,
+            "physical_generation_exchanges": 24,
+            "scenario_success": false,
+            "scope_ok": false,
+            "repeated_verification_same_files": 0
+          },
+          "phases": [
+            {
+              "status": "completed",
+              "returncode": 0,
+              "wall_time_seconds": 80.04827030003071,
+              "triggered": false,
+              "forced_cleanup": false,
+              "readers_finished": true,
+              "live_fixture_processes": [],
+              "stop_seconds": null
+            }
+          ]
+        },
+        {
+          "arm": "codey",
+          "case": "heldout-fix-labels",
+          "seed": 62,
+          "status": "completed",
+          "wall_time_seconds": 50.82773929997347,
+          "verification": {
+            "returncode": 0,
+            "visible_tests": true,
+            "hidden_checks": true,
+            "scope_ok": true,
+            "changed_paths": [
+              "labels.py"
+            ],
+            "passed": true,
+            "patch_correctness": true,
+            "checks": {
+              "0": true,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": true
+            },
+            "stdout": "",
+            "stderr": "test_label (test_labels.Labels.test_label) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+            "agent_verification_fresh": true,
+            "agent_verifications": [
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "32316f48521f99a243cfcfa1d9b4b2e688531b9541e8bb7a738abf693c9d90ff",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573974.878454,
+                "pid": 80956,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "f4a56be2f5077968ae5722d46b49f26598cf85be31535813cfc0d0b4e6214ed3",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791573998.5380201,
+                "pid": 86996,
+                "passed": true,
+                "tests_run": 1
+              }
+            ],
+            "agent_verification_started": 2,
+            "wall_time_seconds": 0.169
+          },
+          "metrics": {
+            "process_returncode": 0,
+            "task_success": true,
+            "patch_correctness": true,
+            "tests_actually_passing": true,
+            "agent_verification_fresh": true,
+            "false_completion": false,
+            "normal_completion": true,
+            "blocked": false,
+            "stopped": false,
+            "tool_calls": 8,
+            "repeated_tool_calls": 1,
+            "unknown_argument_calls": 6,
+            "unproductive_repeated_calls": 0,
+            "mutation_calls": 1,
+            "duplicate_mutation": false,
+            "unknown_mutation_calls": 0,
+            "recovery_success": null,
+            "terminal_event": {
+              "schema_version": 1,
+              "type": "task_done",
+              "run_id": "run_9733d76765674f31bb99810c9628cfd5",
+              "session_id": "ab_session",
+              "summary": "Fixed `labels.py` so that `squash_label` removes ASCII punctuation, lowercases ASCII letters, trims outer whitespace, and collapses whitespace into hyphens while preserving digits.\n\nThe implementation:\n1. Removes punctuation using `str.maketrans` and `translate`.\n2. Converts to lowercase.\n3. Trims outer whitespace using `strip()`.\n4. Collapses whitespace into hyphens by using `split()` (which handles multiple spaces) and `'-'.join()`.\n\nVerified with `python -m unittest discover -v`.",
+              "stop_reason": "done",
+              "turns": 10,
+              "max_turns": 1000,
+              "provider": "local",
+              "mode": "agent",
+              "changed": true,
+              "final_delivery": "success",
+              "ledger_path": "E:\\codey\\artifacts\\behavioral-verification-20261010-holdout-restarted\\seed-62\\heldout-fix-labels\\codey\\state\\run_ledgers\\32f9fe411902d8c6c656e2a0\\run_9733d76765674f31bb99810c9628cfd5.jsonl",
+              "receipt": {
+                "schema_version": 1,
+                "display": {
+                  "summary": "1 file changed · checks passed"
+                },
+                "work": {
+                  "changed_count": 1,
+                  "mode": "snapshot",
+                  "restore_available": true
+                },
+                "verification": {
+                  "trust": "trusted",
+                  "checks_passed": true,
+                  "state": "complete",
+                  "proof_refs": [
+                    "completion_proof:7ce1690741d0956a",
+                    "completion_contract:2391051173cef2a5"
+                  ]
+                },
+                "integrity": {
+                  "status": "clean",
+                  "severity": "none",
+                  "refs": [
+                    "edit_integrity:3756371d03253267"
+                  ]
+                }
+              },
+              "changes": {
+                "changed_count": 1,
+                "mode": "snapshot",
+                "files": [
+                  {
+                    "path": "labels.py",
+                    "status": "M"
+                  }
+                ]
+              },
+              "review": {
+                "verdict": "approved",
+                "status": "complete",
+                "origin": "fresh",
+                "finding_count": 0,
+                "attempt_id": "da85e7e56a7a",
+                "artifact_sha256": "c7fa8bd3b2c8e4ec0e0629443749a9197f636f2cd129677ab76a5190f62c3660"
+              }
+            },
+            "terminal_reason": "done",
+            "llm_rounds": 11,
+            "failed_tool_calls": 2,
+            "successful_tool_calls": 6,
+            "unknown_tool_calls": 0,
+            "read_calls": 3,
+            "edit_calls": 3,
+            "write_calls": 0,
+            "run_calls": 2,
+            "protocol_errors": 0,
+            "policy_denials": 0,
+            "input_tokens": 31617,
+            "known_input_tokens": 31617,
+            "output_tokens": 1031,
+            "known_output_tokens": 1031,
+            "token_usage": 32648,
+            "known_token_usage": 32648,
+            "usage_complete": true,
+            "usage_observed_exchanges": 11,
+            "physical_generation_exchanges": 11,
+            "scenario_success": true,
+            "scope_ok": true,
+            "repeated_verification_same_files": 0
+          },
+          "phases": [
+            {
+              "status": "completed",
+              "returncode": 0,
+              "wall_time_seconds": 50.82773929997347,
+              "triggered": false,
+              "forced_cleanup": false,
+              "readers_finished": true,
+              "live_fixture_processes": [],
+              "stop_seconds": null
+            }
+          ]
+        },
+        {
+          "arm": "pi",
+          "case": "heldout-fix-labels",
+          "seed": 62,
+          "status": "completed",
+          "wall_time_seconds": 49.46047789999284,
+          "verification": {
+            "returncode": 0,
+            "visible_tests": true,
+            "hidden_checks": true,
+            "scope_ok": true,
+            "changed_paths": [
+              "labels.py"
+            ],
+            "passed": true,
+            "patch_correctness": true,
+            "checks": {
+              "0": true,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": true
+            },
+            "stdout": "",
+            "stderr": "test_label (test_labels.Labels.test_label) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+            "agent_verification_fresh": true,
+            "agent_verifications": [
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "32316f48521f99a243cfcfa1d9b4b2e688531b9541e8bb7a738abf693c9d90ff",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574025.5940788,
+                "pid": 42508,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574031.4467149,
+                "pid": 91676,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574032.7213953,
+                "pid": 9868,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574033.9879916,
+                "pid": 65116,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574035.2568235,
+                "pid": 43144,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574036.5089188,
+                "pid": 52412,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574037.7934349,
+                "pid": 62296,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574039.0503943,
+                "pid": 59220,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574040.3169227,
+                "pid": 5104,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574041.465501,
+                "pid": 96020,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574042.6047337,
+                "pid": 38972,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574043.7561028,
+                "pid": 35152,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574044.890316,
+                "pid": 33664,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574046.041103,
+                "pid": 39244,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574047.1881943,
+                "pid": 62948,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574048.3339393,
+                "pid": 15684,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574049.4863305,
+                "pid": 34672,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574050.6380942,
+                "pid": 17756,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574051.7836552,
+                "pid": 41864,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "fc6026eb376410b4531dcae5dda178ae5b44fc28933bd99dc162f5234c807ebb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574052.9516907,
+                "pid": 73160,
+                "passed": true,
+                "tests_run": 1
+              }
+            ],
+            "agent_verification_started": 20,
+            "wall_time_seconds": 0.171
+          },
+          "metrics": {
+            "process_returncode": 0,
+            "task_success": false,
+            "patch_correctness": true,
+            "tests_actually_passing": true,
+            "agent_verification_fresh": true,
+            "false_completion": false,
+            "normal_completion": false,
+            "blocked": false,
+            "stopped": false,
+            "tool_calls": 24,
+            "repeated_tool_calls": 19,
+            "unknown_argument_calls": 0,
+            "unproductive_repeated_calls": 18,
+            "mutation_calls": 1,
+            "duplicate_mutation": false,
+            "unknown_mutation_calls": 0,
+            "recovery_success": null,
+            "terminal_event": {
+              "type": "agent_settled"
+            },
+            "terminal_reason": "error",
+            "llm_rounds": 28,
+            "failed_tool_calls": 0,
+            "successful_tool_calls": 24,
+            "unknown_tool_calls": 0,
+            "read_calls": 2,
+            "edit_calls": 1,
+            "write_calls": 0,
+            "run_calls": 21,
+            "protocol_errors": 0,
+            "policy_denials": 0,
+            "input_tokens": null,
+            "known_input_tokens": null,
+            "output_tokens": null,
+            "known_output_tokens": null,
+            "token_usage": null,
+            "known_token_usage": null,
+            "usage_complete": false,
+            "usage_observed_exchanges": 0,
+            "physical_generation_exchanges": 24,
+            "scenario_success": false,
+            "scope_ok": true,
+            "repeated_verification_same_files": 18
+          },
+          "phases": [
+            {
+              "status": "completed",
+              "returncode": 0,
+              "wall_time_seconds": 49.46047789999284,
+              "triggered": false,
+              "forced_cleanup": false,
+              "readers_finished": true,
+              "live_fixture_processes": [],
+              "stop_seconds": null
+            }
+          ]
+        },
+        {
+          "arm": "pi",
+          "case": "heldout-verify-labels",
+          "seed": 62,
+          "status": "completed",
+          "wall_time_seconds": 80.26014219992794,
+          "verification": {
+            "returncode": 1,
+            "visible_tests": false,
+            "hidden_checks": false,
+            "scope_ok": false,
+            "changed_paths": [
+              "labels.py"
+            ],
+            "passed": false,
+            "patch_correctness": false,
+            "checks": {
+              "oracle_error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Temp\\codey-pi-stability-cc1sthf1\\seed-62\\heldout-verify-labels\\pi\\app.py\", line 1, in <module>\n    from labels import squash_label as normalize_name\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Temp\\codey-pi-stability-cc1sthf1\\seed-62\\heldout-verify-labels\\pi\\labels.py\", line 3\n    # Remove ASCII punctuation, lowercase ASCII letters, trim outer whitespace, collapse whitespace into hyphens, preserve digits.\n                                                                                                                                  ^\nIndentationError: expected an indented block after function definition on line 2\n"
+            },
+            "stdout": "",
+            "stderr": "test_labels (unittest.loader._FailedTest.test_labels) ... ERROR\n\n======================================================================\nERROR: test_labels (unittest.loader._FailedTest.test_labels)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_labels\nTraceback (most recent call last):\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\unittest\\loader.py\", line 396, in _find_test_path\n    module = self._get_module_from_name(name)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\unittest\\loader.py\", line 339, in _get_module_from_name\n    __import__(name)\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Temp\\codey-pi-stability-cc1sthf1\\seed-62\\heldout-verify-labels\\pi\\test_labels.py\", line 2, in <module>\n    from labels import squash_label\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Temp\\codey-pi-stability-cc1sthf1\\seed-62\\heldout-verify-labels\\pi\\labels.py\", line 3\n    # Remove ASCII punctuation, lowercase ASCII letters, trim outer whitespace, collapse whitespace into hyphens, preserve digits.\n                                                                                                                                  ^\nIndentationError: expected an indented block after function definition on line 2\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n",
+            "agent_verification_fresh": false,
+            "agent_verifications": [
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "d16fcef126074d575c8311ec6dcc2b589a6c081659d250b6b321e880f805f7bb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574076.256683,
+                "pid": 82880,
+                "passed": true,
+                "tests_run": 1
+              }
+            ],
+            "agent_verification_started": 1,
+            "wall_time_seconds": 0.159
+          },
+          "metrics": {
+            "process_returncode": 0,
+            "task_success": false,
+            "patch_correctness": false,
+            "tests_actually_passing": false,
+            "agent_verification_fresh": false,
+            "false_completion": false,
+            "normal_completion": false,
+            "blocked": false,
+            "stopped": false,
+            "tool_calls": 24,
+            "repeated_tool_calls": 17,
+            "unknown_argument_calls": 0,
+            "unproductive_repeated_calls": 16,
+            "mutation_calls": 1,
+            "duplicate_mutation": false,
+            "unknown_mutation_calls": 0,
+            "recovery_success": null,
+            "terminal_event": {
+              "type": "agent_settled"
+            },
+            "terminal_reason": "error",
+            "llm_rounds": 28,
+            "failed_tool_calls": 17,
+            "successful_tool_calls": 7,
+            "unknown_tool_calls": 0,
+            "read_calls": 4,
+            "edit_calls": 18,
+            "write_calls": 0,
+            "run_calls": 2,
+            "protocol_errors": 0,
+            "policy_denials": 0,
+            "input_tokens": null,
+            "known_input_tokens": null,
+            "output_tokens": null,
+            "known_output_tokens": null,
+            "token_usage": null,
+            "known_token_usage": null,
+            "usage_complete": false,
+            "usage_observed_exchanges": 0,
+            "physical_generation_exchanges": 24,
+            "scenario_success": false,
+            "scope_ok": false,
+            "repeated_verification_same_files": 0
+          },
+          "phases": [
+            {
+              "status": "completed",
+              "returncode": 0,
+              "wall_time_seconds": 80.26014219992794,
+              "triggered": false,
+              "forced_cleanup": false,
+              "readers_finished": true,
+              "live_fixture_processes": [],
+              "stop_seconds": null
+            }
+          ]
+        },
+        {
+          "arm": "codey",
+          "case": "heldout-verify-labels",
+          "seed": 62,
+          "status": "completed",
+          "wall_time_seconds": 28.244337199954316,
+          "verification": {
+            "returncode": 0,
+            "visible_tests": true,
+            "hidden_checks": true,
+            "scope_ok": true,
+            "changed_paths": [],
+            "passed": true,
+            "patch_correctness": true,
+            "checks": {
+              "0": true,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": true
+            },
+            "stdout": "",
+            "stderr": "test_label (test_labels.Labels.test_label) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+            "agent_verification_fresh": true,
+            "agent_verifications": [
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "d16fcef126074d575c8311ec6dcc2b589a6c081659d250b6b321e880f805f7bb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574157.2795918,
+                "pid": 32792,
+                "passed": true,
+                "tests_run": 1
+              },
+              {
+                "kind": "verification_finished",
+                "files": {
+                  "app.py": "22eeba7301b30bf1d0cce129cc20def103bbebc0328e965cf27bae1e44adb12d",
+                  "labels.py": "d16fcef126074d575c8311ec6dcc2b589a6c081659d250b6b321e880f805f7bb",
+                  "test_labels.py": "6caa9cf95f83396cd72cb90b2711c1be6b39d69aeac9efd57e7f873b0a200508"
+                },
+                "time": 1791574165.5558295,
+                "pid": 75512,
+                "passed": true,
+                "tests_run": 1
+              }
+            ],
+            "agent_verification_started": 2,
+            "wall_time_seconds": 0.168
+          },
+          "metrics": {
+            "process_returncode": 0,
+            "task_success": true,
+            "patch_correctness": true,
+            "tests_actually_passing": true,
+            "agent_verification_fresh": true,
+            "false_completion": false,
+            "normal_completion": true,
+            "blocked": false,
+            "stopped": false,
+            "tool_calls": 6,
+            "repeated_tool_calls": 1,
+            "unknown_argument_calls": 3,
+            "unproductive_repeated_calls": 1,
+            "mutation_calls": 0,
+            "duplicate_mutation": false,
+            "unknown_mutation_calls": 0,
+            "recovery_success": null,
+            "terminal_event": {
+              "schema_version": 1,
+              "type": "task_done",
+              "run_id": "run_05d75b6980964ba8b003b48d90c04cc5",
+              "session_id": "ab_session",
+              "summary": "The `squash_label` function in `labels.py` was verified to meet the following requirements:\n1. **Removes ASCII punctuation**: Handled by `.translate(str.maketrans('', '', string.punctuation))`.\n2. **Lowercases ASCII letters**: Handled by `.casefold()`.\n3. **Trims outer whitespace**: Handled by `.split()` (which removes leading/trailing whitespace) and `'-'.join()`.\n4. **Collapses whitespace into hyphens**: Handled by `.split()` (which splits by any whitespace) and `'-'.join()`.\n5. **Preserve digits**: Digits are not affected by `.casefold()`, `.translate()` (with `string.punctuation`), or `.split()`.\n\nThe test case `squash_label(' City, Council! ')` correctly returned `'city-council'`, confirming the logic.\n\n**Diagnostic Findings:**\n- `labels.py`:\n  ```python\n  import string\n  def squash_label(value):\n      return '-'.join(value.casefold().translate(str.maketrans('', '', string.punctuation)).split())\n  ```\n- `test_labels.py` passed with `test_label (test_labels.Labels.test_label) ... ok`.\n- The command `python -m unittest discover -v` returned `OK`.",
+              "stop_reason": "done",
+              "turns": 7,
+              "max_turns": 1000,
+              "provider": "local",
+              "mode": "agent",
+              "changed": false,
+              "final_delivery": "success",
+              "ledger_path": "E:\\codey\\artifacts\\behavioral-verification-20261010-holdout-restarted\\seed-62\\heldout-verify-labels\\codey\\state\\run_ledgers\\32f9fe411902d8c6c656e2a0\\run_05d75b6980964ba8b003b48d90c04cc5.jsonl",
+              "receipt": {
+                "schema_version": 1,
+                "display": {
+                  "summary": "No files changed"
+                },
+                "work": {
+                  "changed_count": 0,
+                  "mode": "snapshot",
+                  "restore_available": false
+                },
+                "verification": {
+                  "trust": "limited",
+                  "checks_passed": false,
+                  "state": "complete",
+                  "proof_refs": [
+                    "completion_proof:7be6ac24dabf1af3",
+                    "completion_contract:fe5265a6a99e0437"
+                  ]
+                },
+                "integrity": {
+                  "status": "unobserved",
+                  "severity": "none",
+                  "refs": [
+                    "edit_integrity:492c641ced86d03b"
+                  ]
+                }
+              }
+            },
+            "terminal_reason": "done",
+            "llm_rounds": 7,
+            "failed_tool_calls": 1,
+            "successful_tool_calls": 5,
+            "unknown_tool_calls": 0,
+            "read_calls": 3,
+            "edit_calls": 0,
+            "write_calls": 0,
+            "run_calls": 3,
+            "protocol_errors": 0,
+            "policy_denials": 0,
+            "input_tokens": 15813,
+            "known_input_tokens": 15813,
+            "output_tokens": 481,
+            "known_output_tokens": 481,
+            "token_usage": 16294,
+            "known_token_usage": 16294,
+            "usage_complete": true,
+            "usage_observed_exchanges": 7,
+            "physical_generation_exchanges": 7,
+            "scenario_success": true,
+            "scope_ok": true,
+            "repeated_verification_same_files": 1
+          },
+          "phases": [
+            {
+              "status": "completed",
+              "returncode": 0,
+              "wall_time_seconds": 28.244337199954316,
+              "triggered": false,
+              "forced_cleanup": false,
+              "readers_finished": true,
+              "live_fixture_processes": [],
+              "stop_seconds": null
+            }
+          ]
+        }
+      ],
+      "totals": {
+        "codey": {
+          "recorded": 4,
+          "scenario_success": 4
+        },
+        "pi": {
+          "recorded": 4,
+          "scenario_success": 0
+        }
+      },
+      "behavioral_events": [
+        {
+          "function": "squash_label",
+          "pairs": [
+            [
+              "Qr7t",
+              "Q!r7t"
+            ],
+            [
+              "Qr7t",
+              "Q\"r7t"
+            ],
+            [
+              "Qr7t",
+              "Q#r7t"
+            ],
+            [
+              "Qr7t",
+              "Q$r7t"
+            ],
+            [
+              "Qr7t",
+              "Q%r7t"
+            ],
+            [
+              "Qr7t",
+              "Q&r7t"
+            ],
+            [
+              "Qr7t",
+              "Q'r7t"
+            ],
+            [
+              "Qr7t",
+              "Q(r7t"
+            ],
+            [
+              "Qr7t",
+              "Q)r7t"
+            ],
+            [
+              "Qr7t",
+              "Q*r7t"
+            ],
+            [
+              "Qr7t",
+              "Q+r7t"
+            ],
+            [
+              "Qr7t",
+              "Q,r7t"
+            ],
+            [
+              "Qr7t",
+              "Q-r7t"
+            ],
+            [
+              "Qr7t",
+              "Q.r7t"
+            ],
+            [
+              "Qr7t",
+              "Q/r7t"
+            ],
+            [
+              "Qr7t",
+              "Q:r7t"
+            ],
+            [
+              "Qr7t",
+              "Q;r7t"
+            ],
+            [
+              "Qr7t",
+              "Q<r7t"
+            ],
+            [
+              "Qr7t",
+              "Q=r7t"
+            ],
+            [
+              "Qr7t",
+              "Q>r7t"
+            ],
+            [
+              "Qr7t",
+              "Q?r7t"
+            ],
+            [
+              "Qr7t",
+              "Q@r7t"
+            ],
+            [
+              "Qr7t",
+              "Q[r7t"
+            ],
+            [
+              "Qr7t",
+              "Q\\r7t"
+            ],
+            [
+              "Qr7t",
+              "Q]r7t"
+            ],
+            [
+              "Qr7t",
+              "Q^r7t"
+            ],
+            [
+              "Qr7t",
+              "Q_r7t"
+            ],
+            [
+              "Qr7t",
+              "Q`r7t"
+            ],
+            [
+              "Qr7t",
+              "Q{r7t"
+            ],
+            [
+              "Qr7t",
+              "Q|r7t"
+            ],
+            [
+              "Qr7t",
+              "Q}r7t"
+            ],
+            [
+              "Qr7t",
+              "Q~r7t"
+            ]
+          ],
+          "path": "labels.py",
+          "plan_digest": "bf928e7a8e5006e6594b1e101c71914a972cf509452fea9a9deca93fd7c17b60",
+          "requirement_quote": "removes ASCII punctuation",
+          "run_id": "run_ab33a067fe3d4f4298e08054328ac4cd",
+          "schema_version": 1,
+          "seq": 3,
+          "session_id": "ab_session",
+          "task_digest": "b13b1b693b199ec65fbfc2908ce65b0e851444f55ae89b1c9df9d000aa77bc8e",
+          "ts": "2026-10-09T19:23:34Z",
+          "type": "behavioral_plan_admitted",
+          "ledger": "seed-61/heldout-fix-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_ab33a067fe3d4f4298e08054328ac4cd.jsonl"
+        },
+        {
+          "output_ref": "out_0001_88901f5ec3f0",
+          "plan_digest": "bf928e7a8e5006e6594b1e101c71914a972cf509452fea9a9deca93fd7c17b60",
+          "reason": "matched",
+          "run_id": "run_ab33a067fe3d4f4298e08054328ac4cd",
+          "schema_version": 1,
+          "seq": 30,
+          "session_id": "ab_session",
+          "status": "pass",
+          "ts": "2026-10-09T19:24:12Z",
+          "type": "behavioral_observed",
+          "workspace_fingerprint": "sha256:28fa92fe0cdc3db2e1aa8e709eacb14bc956dbce5acc1748e5712009569355be",
+          "ledger": "seed-61/heldout-fix-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_ab33a067fe3d4f4298e08054328ac4cd.jsonl"
+        },
+        {
+          "function": "squash_label",
+          "pairs": [
+            [
+              "Qr7t",
+              "Q!r7t"
+            ],
+            [
+              "Qr7t",
+              "Q\"r7t"
+            ],
+            [
+              "Qr7t",
+              "Q#r7t"
+            ],
+            [
+              "Qr7t",
+              "Q$r7t"
+            ],
+            [
+              "Qr7t",
+              "Q%r7t"
+            ],
+            [
+              "Qr7t",
+              "Q&r7t"
+            ],
+            [
+              "Qr7t",
+              "Q'r7t"
+            ],
+            [
+              "Qr7t",
+              "Q(r7t"
+            ],
+            [
+              "Qr7t",
+              "Q)r7t"
+            ],
+            [
+              "Qr7t",
+              "Q*r7t"
+            ],
+            [
+              "Qr7t",
+              "Q+r7t"
+            ],
+            [
+              "Qr7t",
+              "Q,r7t"
+            ],
+            [
+              "Qr7t",
+              "Q-r7t"
+            ],
+            [
+              "Qr7t",
+              "Q.r7t"
+            ],
+            [
+              "Qr7t",
+              "Q/r7t"
+            ],
+            [
+              "Qr7t",
+              "Q:r7t"
+            ],
+            [
+              "Qr7t",
+              "Q;r7t"
+            ],
+            [
+              "Qr7t",
+              "Q<r7t"
+            ],
+            [
+              "Qr7t",
+              "Q=r7t"
+            ],
+            [
+              "Qr7t",
+              "Q>r7t"
+            ],
+            [
+              "Qr7t",
+              "Q?r7t"
+            ],
+            [
+              "Qr7t",
+              "Q@r7t"
+            ],
+            [
+              "Qr7t",
+              "Q[r7t"
+            ],
+            [
+              "Qr7t",
+              "Q\\r7t"
+            ],
+            [
+              "Qr7t",
+              "Q]r7t"
+            ],
+            [
+              "Qr7t",
+              "Q^r7t"
+            ],
+            [
+              "Qr7t",
+              "Q_r7t"
+            ],
+            [
+              "Qr7t",
+              "Q`r7t"
+            ],
+            [
+              "Qr7t",
+              "Q{r7t"
+            ],
+            [
+              "Qr7t",
+              "Q|r7t"
+            ],
+            [
+              "Qr7t",
+              "Q}r7t"
+            ],
+            [
+              "Qr7t",
+              "Q~r7t"
+            ]
+          ],
+          "path": "labels.py",
+          "plan_digest": "974326cdc0f8c72b0e117efaa901fe6b6e07e4286bf999d1efa1505f7e5a9c75",
+          "requirement_quote": "removes ASCII punctuation",
+          "run_id": "run_1a285601c2954d2496c0e3a7161ec4ed",
+          "schema_version": 1,
+          "seq": 3,
+          "session_id": "ab_session",
+          "task_digest": "ee2442a9751dd1e083e744a4f840f3b7ccd156a6aa3df3fb6fa53f61b67d7ef5",
+          "ts": "2026-10-09T19:24:18Z",
+          "type": "behavioral_plan_admitted",
+          "ledger": "seed-61/heldout-verify-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_1a285601c2954d2496c0e3a7161ec4ed.jsonl"
+        },
+        {
+          "output_ref": "out_0001_88901f5ec3f0",
+          "plan_digest": "974326cdc0f8c72b0e117efaa901fe6b6e07e4286bf999d1efa1505f7e5a9c75",
+          "reason": "matched",
+          "run_id": "run_1a285601c2954d2496c0e3a7161ec4ed",
+          "schema_version": 1,
+          "seq": 25,
+          "session_id": "ab_session",
+          "status": "pass",
+          "ts": "2026-10-09T19:24:43Z",
+          "type": "behavioral_observed",
+          "workspace_fingerprint": "sha256:2b0f67d07c93fdb33ee26be9d78ed90323a6ab79b8f614a512ba2de5da4e2603",
+          "ledger": "seed-61/heldout-verify-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_1a285601c2954d2496c0e3a7161ec4ed.jsonl"
+        },
+        {
+          "function": "squash_label",
+          "pairs": [
+            [
+              "Qr7t",
+              "Q!r7t"
+            ],
+            [
+              "Qr7t",
+              "Q\"r7t"
+            ],
+            [
+              "Qr7t",
+              "Q#r7t"
+            ],
+            [
+              "Qr7t",
+              "Q$r7t"
+            ],
+            [
+              "Qr7t",
+              "Q%r7t"
+            ],
+            [
+              "Qr7t",
+              "Q&r7t"
+            ],
+            [
+              "Qr7t",
+              "Q'r7t"
+            ],
+            [
+              "Qr7t",
+              "Q(r7t"
+            ],
+            [
+              "Qr7t",
+              "Q)r7t"
+            ],
+            [
+              "Qr7t",
+              "Q*r7t"
+            ],
+            [
+              "Qr7t",
+              "Q+r7t"
+            ],
+            [
+              "Qr7t",
+              "Q,r7t"
+            ],
+            [
+              "Qr7t",
+              "Q-r7t"
+            ],
+            [
+              "Qr7t",
+              "Q.r7t"
+            ],
+            [
+              "Qr7t",
+              "Q/r7t"
+            ],
+            [
+              "Qr7t",
+              "Q:r7t"
+            ],
+            [
+              "Qr7t",
+              "Q;r7t"
+            ],
+            [
+              "Qr7t",
+              "Q<r7t"
+            ],
+            [
+              "Qr7t",
+              "Q=r7t"
+            ],
+            [
+              "Qr7t",
+              "Q>r7t"
+            ],
+            [
+              "Qr7t",
+              "Q?r7t"
+            ],
+            [
+              "Qr7t",
+              "Q@r7t"
+            ],
+            [
+              "Qr7t",
+              "Q[r7t"
+            ],
+            [
+              "Qr7t",
+              "Q\\r7t"
+            ],
+            [
+              "Qr7t",
+              "Q]r7t"
+            ],
+            [
+              "Qr7t",
+              "Q^r7t"
+            ],
+            [
+              "Qr7t",
+              "Q_r7t"
+            ],
+            [
+              "Qr7t",
+              "Q`r7t"
+            ],
+            [
+              "Qr7t",
+              "Q{r7t"
+            ],
+            [
+              "Qr7t",
+              "Q|r7t"
+            ],
+            [
+              "Qr7t",
+              "Q}r7t"
+            ],
+            [
+              "Qr7t",
+              "Q~r7t"
+            ]
+          ],
+          "path": "labels.py",
+          "plan_digest": "bf928e7a8e5006e6594b1e101c71914a972cf509452fea9a9deca93fd7c17b60",
+          "requirement_quote": "removes ASCII punctuation",
+          "run_id": "run_9733d76765674f31bb99810c9628cfd5",
+          "schema_version": 1,
+          "seq": 3,
+          "session_id": "ab_session",
+          "task_digest": "b13b1b693b199ec65fbfc2908ce65b0e851444f55ae89b1c9df9d000aa77bc8e",
+          "ts": "2026-10-09T19:26:07Z",
+          "type": "behavioral_plan_admitted",
+          "ledger": "seed-62/heldout-fix-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_9733d76765674f31bb99810c9628cfd5.jsonl"
+        },
+        {
+          "output_ref": "out_0001_88901f5ec3f0",
+          "plan_digest": "bf928e7a8e5006e6594b1e101c71914a972cf509452fea9a9deca93fd7c17b60",
+          "reason": "matched",
+          "run_id": "run_9733d76765674f31bb99810c9628cfd5",
+          "schema_version": 1,
+          "seq": 33,
+          "session_id": "ab_session",
+          "status": "pass",
+          "ts": "2026-10-09T19:26:52Z",
+          "type": "behavioral_observed",
+          "workspace_fingerprint": "sha256:a9618ff16739aea750f1cc9100e813f05790426f76b59e996d6c4010271952f3",
+          "ledger": "seed-62/heldout-fix-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_9733d76765674f31bb99810c9628cfd5.jsonl"
+        },
+        {
+          "function": "squash_label",
+          "pairs": [
+            [
+              "Qr7t",
+              "Q!r7t"
+            ],
+            [
+              "Qr7t",
+              "Q\"r7t"
+            ],
+            [
+              "Qr7t",
+              "Q#r7t"
+            ],
+            [
+              "Qr7t",
+              "Q$r7t"
+            ],
+            [
+              "Qr7t",
+              "Q%r7t"
+            ],
+            [
+              "Qr7t",
+              "Q&r7t"
+            ],
+            [
+              "Qr7t",
+              "Q'r7t"
+            ],
+            [
+              "Qr7t",
+              "Q(r7t"
+            ],
+            [
+              "Qr7t",
+              "Q)r7t"
+            ],
+            [
+              "Qr7t",
+              "Q*r7t"
+            ],
+            [
+              "Qr7t",
+              "Q+r7t"
+            ],
+            [
+              "Qr7t",
+              "Q,r7t"
+            ],
+            [
+              "Qr7t",
+              "Q-r7t"
+            ],
+            [
+              "Qr7t",
+              "Q.r7t"
+            ],
+            [
+              "Qr7t",
+              "Q/r7t"
+            ],
+            [
+              "Qr7t",
+              "Q:r7t"
+            ],
+            [
+              "Qr7t",
+              "Q;r7t"
+            ],
+            [
+              "Qr7t",
+              "Q<r7t"
+            ],
+            [
+              "Qr7t",
+              "Q=r7t"
+            ],
+            [
+              "Qr7t",
+              "Q>r7t"
+            ],
+            [
+              "Qr7t",
+              "Q?r7t"
+            ],
+            [
+              "Qr7t",
+              "Q@r7t"
+            ],
+            [
+              "Qr7t",
+              "Q[r7t"
+            ],
+            [
+              "Qr7t",
+              "Q\\r7t"
+            ],
+            [
+              "Qr7t",
+              "Q]r7t"
+            ],
+            [
+              "Qr7t",
+              "Q^r7t"
+            ],
+            [
+              "Qr7t",
+              "Q_r7t"
+            ],
+            [
+              "Qr7t",
+              "Q`r7t"
+            ],
+            [
+              "Qr7t",
+              "Q{r7t"
+            ],
+            [
+              "Qr7t",
+              "Q|r7t"
+            ],
+            [
+              "Qr7t",
+              "Q}r7t"
+            ],
+            [
+              "Qr7t",
+              "Q~r7t"
+            ]
+          ],
+          "path": "labels.py",
+          "plan_digest": "974326cdc0f8c72b0e117efaa901fe6b6e07e4286bf999d1efa1505f7e5a9c75",
+          "requirement_quote": "removes ASCII punctuation",
+          "run_id": "run_05d75b6980964ba8b003b48d90c04cc5",
+          "schema_version": 1,
+          "seq": 3,
+          "session_id": "ab_session",
+          "task_digest": "ee2442a9751dd1e083e744a4f840f3b7ccd156a6aa3df3fb6fa53f61b67d7ef5",
+          "ts": "2026-10-09T19:29:10Z",
+          "type": "behavioral_plan_admitted",
+          "ledger": "seed-62/heldout-verify-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_05d75b6980964ba8b003b48d90c04cc5.jsonl"
+        },
+        {
+          "output_ref": "out_0001_88901f5ec3f0",
+          "plan_digest": "974326cdc0f8c72b0e117efaa901fe6b6e07e4286bf999d1efa1505f7e5a9c75",
+          "reason": "matched",
+          "run_id": "run_05d75b6980964ba8b003b48d90c04cc5",
+          "schema_version": 1,
+          "seq": 25,
+          "session_id": "ab_session",
+          "status": "pass",
+          "ts": "2026-10-09T19:29:36Z",
+          "type": "behavioral_observed",
+          "workspace_fingerprint": "sha256:2b0f67d07c93fdb33ee26be9d78ed90323a6ab79b8f614a512ba2de5da4e2603",
+          "ledger": "seed-62/heldout-verify-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_05d75b6980964ba8b003b48d90c04cc5.jsonl"
+        }
+      ],
+      "ledger_sha256": {
+        "seed-61/heldout-fix-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_ab33a067fe3d4f4298e08054328ac4cd.jsonl": "17a40eb39f295d7f59fe03fe50d24c959d9d6639ba0bece0fc29225f1c1d6827",
+        "seed-61/heldout-verify-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_1a285601c2954d2496c0e3a7161ec4ed.jsonl": "af2d79d3013b79ba7143f0e22ab81d9c1b80cc8a4cb57d149ca915d99433d96c",
+        "seed-62/heldout-fix-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_9733d76765674f31bb99810c9628cfd5.jsonl": "20e5da42c3b1c1bd2e3855291f8306c1611c9f4e6ca9703ccde390a12f452c9c",
+        "seed-62/heldout-verify-labels/codey/state/run_ledgers/32f9fe411902d8c6c656e2a0/run_05d75b6980964ba8b003b48d90c04cc5.jsonl": "0b151815f327af25ef3ca7843ba2958eca106f0fa44d25e1ba1564a701e5aae2"
+      },
+      "notes": [
+        "Fresh complete round after user-confirmed KoboldCpp restart; preceding partial round and timeout are retained.",
+        "Same production source, model, task contracts and budgets; seeds 61/62 are repeated recovery samples, not new unseen seeds.",
+        "Pi repair arms produced correct patches but repeated verification exhausted the request cap.",
+        "Pi readonly controls ran a passing test, then changed labels.py despite the instruction; final source has an IndentationError.",
+        "All four Codey behavioral observations passed on the first candidate; no native counterexample-triggered repair is claimed.",
+        "Harness returns nonzero when any arm fails its scenario; all eight arms and four pairs completed without timeout.",
+        "Case fixture hash differs from the previous partial round solely because the already-committed private observer variables were renamed CODEY_AB_ to AGENT_AB_; substituting that name back reproduces the preceding contract SHA-256 exactly. Business requirements and scoring are unchanged."
+      ]
     }
   ],
   "limitations": [
     "Primary seeds 51/52 were reused for tuning.",
     "Pi dist matching source commit is unknown.",
     "Pi streaming usage is incomplete; no total-token ranking.",
-    "Supplemental seed 62 is incomplete after transport timeout and persistent backend busy; retained, not counted as a paired win.",
+    "Earlier supplemental seed 62 timeout and backend busy remain recorded; a fresh complete post-restart round recovered 4/4 Codey and 0/4 Pi. Reused tasks/seeds are not independent generalization samples.",
     "Finite English ASCII deletion admission is not general natural-language understanding."
   ],
   "final_validation": {
@@ -29954,6 +32207,7 @@
   "notes": [
     "Original native scenario score includes expected blocked and stopped outcomes.",
     "Native final observations were all passing first candidates; actual counterexample-triggered repair is covered by real-execution E2E with scripted model responses.",
-    "Experiment-private environment variable names changed after inference; production source and scoring logic stayed unchanged."
+    "Experiment-private environment variable names changed after inference; production source and scoring logic stayed unchanged.",
+    "2026-10-10 post-restart supplement changes only documentation/evidence; previous full pytest remains applicable to unchanged production and tests."
   ]
 }
