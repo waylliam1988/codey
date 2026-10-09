@@ -1194,8 +1194,36 @@ The four historical tool-argument repair benchmarks were retired on 2026-10-02.
 Their parser cases described the 0.5.2/0.5.3 contract, and the live baseline and
 candidate both invoked the same current kernel. Use the canonical edit and
 provider contract pytest scenarios for deterministic coverage, and
-`real_local_ab.py` for the current Codey/Pi comparison. Historical measured
+`codey_vs_pi_agent_stability_ab.py` for the current Codey/Pi comparison. Historical measured
 reports remain historical; they do not establish current repair effectiveness.
+
+The renamed comparison preserves native prompts, tools, completion and recovery.
+It supports eleven isolated scenarios: ordinary repair, test-first, no-op,
+read-only blocked work, multi-file repair, saved long-output recovery, 503,
+truncated calls, cancelling a running test, resume after edit and user correction
+after stopping. External tests never substitute for the agent's own fresh
+verification. Missing usage stays unknown; failure is not a speed win. Backend
+idle checks isolate sequential arms, and typed native cancellation must succeed
+without watchdog cleanup. Existing run directories cannot be overwritten.
+
+```powershell
+python -B tests/manual/codey_vs_pi_agent_stability_ab.py `
+  --run-dir artifacts/pi-agent-stability-new-run `
+  --pi-entry dist --seeds 41,42 --timeout 180 `
+  --cases normalize-name,test-first,no-op,scope-blocked,multi-file,long-output,http-503,cancel-running-test,resume-after-edit,correction-after-stop
+```
+
+Only loopback HTTP is accepted. `--pi-entry source` is the default and fails
+preflight if generated data/dependencies are absent; `dist` explicitly chooses
+an existing offline build and records its digest separately from the checkout.
+The 2026-10-09 trial omitted truncated calls after a backend-busy diagnostic;
+it completed 40 native runs and scored Codey 11/20, Pi 10/20. Pi streaming usage
+was incomplete, so total token cost is unranked. See the
+[report](../../docs/codey-vs-pi-agent-stability-2026-10-09.zh-CN.md).
+
+The historical `kernel_unification_ab.py` consumer now records provider-default
+sampling honestly; it has no temperature override in its observer. Output reserve
+is configured before admission and incomplete usage is reported separately.
 
 `safe_tool_replay_smoke.py` covers 0.5.4 Safe Tool Replay. The offline
 self-test uses deterministic crash/resume state: two replayable safe intents

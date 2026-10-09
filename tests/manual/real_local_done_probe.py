@@ -20,7 +20,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tests.manual.real_local_ab import MODEL_ID, _Proxy
+from tests.manual.codey_vs_pi_agent_stability_ab import MODEL_ID, _Proxy
 
 PROMPT = (
     "This is a termination protocol probe. Do not read, edit, write, or run "
@@ -49,8 +49,6 @@ def main() -> int:
         ("127.0.0.1", args.proxy_port),
         args.upstream,
         timeout=300.0,
-        temperature=0.0,
-        max_tokens=args.max_tokens,
     )
     proxy.active_arm = "done-probe"
     thread = threading.Thread(target=proxy.serve_forever, daemon=True)
@@ -63,7 +61,7 @@ def main() -> int:
         "LOCAL_OPENAI_MODEL": args.model,
         "LOCAL_OPENAI_API_KEY": "local",
         "LOCAL_OPENAI_CONTEXT_WINDOW": "32768",
-        "LOCAL_OPENAI_CONTEXT_RESERVE": "4096",
+        "LOCAL_OPENAI_CONTEXT_RESERVE": str(args.max_tokens),
         "LOCAL_OPENAI_CONTEXT_KEEP": "12000",
     })
     command = [

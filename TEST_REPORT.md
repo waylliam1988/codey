@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## Real Codey/Pi agent stability harness (2026-10-09)
+
+Starting product commit `699b83ace686bd4520f0775a01bc267e7d0cf12a`;
+Windows / Python 3.12.8 / Node 24.19.0. This change affects manual comparison
+tools, deterministic tests and documentation; production `codey/` is unchanged.
+
+TDD covered false completion, forbidden edits, stale or absent real agent
+verification, held-out inputs, missing/zero usage, SSE delivery, HTTP errors,
+request identity, stdin EOF, watchdog cleanup, new submissions versus continuation,
+backend isolation and preservation of failed observations. Local preferences and
+the real reviewer factory were isolated after tests reproduced invalid fixture
+configuration. Pi's typed successful abort acknowledgement plus settled event is
+accepted for cancellation; an old acknowledgement cannot affect a resumed task.
+Correct patches requiring watchdog child cleanup cannot pass the full scenario.
+Existing manual consumers configure output before admission and use complete
+usage accounting instead of passing a partial subtotal off as total cost.
+
+- Final targeted regression: **68 passed in 7.45s**.
+- Ruff whole tree and compileall: passed.
+- Mypy Windows and Linux: **402 source files**, no issues.
+- Direct Pyrefly: **0 errors, 47 suppressed / 838 warnings not shown**.
+- Working and staged diff checks: passed.
+- Earlier required machine-contract run: **798 passed in 171.38s**; production
+  did not change afterwards.
+- **Full pytest: stopped at the user's explicit request; no complete result.**
+  The interrupted log is retained in the local experiment's checks directory.
+
+Formal local trial: 10 selected scenarios, two paired seeds, 40 native agent
+runs; Codey **11/20**, existing Pi **dist** build **10/20**. The native source
+entry lacks generated data, so the build was explicitly selected; its matching
+source commit is unknown. Pilot and invalid-profile/backend-busy diagnostic runs
+are excluded. `truncated-call` remains supported but is unmeasured in the formal
+trial. A unified replay of saved evidence changes only two Pi stop scores from
+failure to success, without additional model calls. Pi streaming usage is
+incomplete; no total-token ranking or general superiority is claimed.
+
+See [the comparison and limitations](docs/codey-vs-pi-agent-stability-2026-10-09.zh-CN.md)
+and [portable numeric evidence](docs/reports/codey-vs-pi-agent-stability-2026-10-09.json).
+Version remains 0.5.11; no release.
+
 ## Full-tree Pyrefly errors resolved (2026-10-09)
 
 Windows / Python 3.12.8, Node 24.19.0; starting commit

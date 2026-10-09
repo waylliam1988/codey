@@ -1,5 +1,9 @@
 # 内核、协议与恢复边界审查（2026-10-02）
 
+2026-10-09 注：本文中的 `real_local_ab.py` 与旧 helper 文件名保留历史身份；
+当前脚本已重命名为 `codey_vs_pi_agent_stability_ab.py`，新实测见
+[稳定性报告](codey-vs-pi-agent-stability-2026-10-09.zh-CN.md)。以下历史结果未改写。
+
 基线：`aff30e0`。范围包含工作区原有的 canonical edit 修改，以及本轮审查和修复。
 本报告在最终两版本全量测试结束后写入。随后暂存检查只修正一份新 provider 测试末尾的多余空行，已验证前后 AST 完全相同；无行为改动。
 

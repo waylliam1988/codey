@@ -1,8 +1,8 @@
 """Canonical edit blocks reach manual consumers; unobserved results are unknown."""
 
 from codey.toolchain.runtime import EditBlock
+from tests.manual.codey_vs_pi_agent_stability_ab import _metrics
 from tests.manual.impact_guard_ab import _changed_definitions_from_blocks
-from tests.manual.real_local_ab import _metrics
 from tests.manual.refactor_hint_ab import _candidate_pairs
 
 
@@ -60,16 +60,14 @@ def test_ab_malformed_status_is_unknown():
 
 
 def test_codey_ab_arm_sends_its_case_task(monkeypatch, tmp_path):
-    from types import SimpleNamespace
-
-    from tests.manual import real_local_ab as ab
+    from tests.manual import codey_vs_pi_agent_stability_ab as ab
 
     case = ab.ExperimentCase("specific", "the actual case task", {}, ())
     commands = []
-    monkeypatch.setattr(ab.subprocess, "run", lambda command, **kwargs: (
-        commands.append(command) or SimpleNamespace(stdout="", stderr="", returncode=0)
+    monkeypatch.setattr(ab, "_run_process", lambda command, *args, **kwargs: (
+        commands.append(command) or {"rows": [], "returncode": 0, "status": "completed", "triggered": False, "forced_cleanup": False, "wall_time_seconds": 0}
     ))
-    monkeypatch.setattr(ab, "_run_verification", lambda *args, **kwargs: {"passed": True})
+    monkeypatch.setattr(ab, "_run_verification", lambda *args, **kwargs: {"passed": True, "scope_ok": True, "agent_verifications": []})
     ab._run_arm("codey", tmp_path, tmp_path / "run", "http://127.0.0.1:9/v1", [],
                 case=case, baseline_hashes={}, max_turns=2, model_id="model", max_tokens=10)
     assert commands[0][-1] == case.task

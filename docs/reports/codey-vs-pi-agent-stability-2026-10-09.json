@@ -1,0 +1,4397 @@
+{
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "backend": {
+    "result": "KoboldCpp",
+    "version": "1.117.1",
+    "protected": false,
+    "llm": true,
+    "txt2img": false,
+    "vision": false,
+    "audio": false,
+    "transcribe": false,
+    "multiplayer": false,
+    "websearch": false,
+    "tts": false,
+    "embeddings": false,
+    "music": false,
+    "savedata": false,
+    "admin": 0,
+    "router": false,
+    "guidance": false,
+    "jinja": true,
+    "mcp": false
+  },
+  "sampling": {
+    "temperature": 0.0,
+    "seeds": [
+      41,
+      42
+    ]
+  },
+  "provider_profile": {
+    "enabled_sources": [
+      "local"
+    ],
+    "codey_reviewer": "same local model",
+    "sampling_stage": "before admission",
+    "proxy": "observe without rewriting"
+  },
+  "budgets": {
+    "window": 32768,
+    "output": 2048,
+    "keep": 12000,
+    "seconds_per_arm": 180.0,
+    "generation_requests_per_arm": 24
+  },
+  "sources": {
+    "codey": {
+      "commit": "699b83ace686bd4520f0775a01bc267e7d0cf12a",
+      "source_sha256": "d0bfa32e9ddbf48c48a130245f8f347585bffcf3594f596d88d46750743414d9"
+    },
+    "pi": {
+      "commit": "a276dabe57911253350bffb93cb7d7aff6a73261",
+      "source_sha256": "dd950775afb2e823eafca78d66e67e2530e885de303f96af7193b9d8d226fe19",
+      "executed_build": {
+        "dist_sha256": "189b8f8868f437c28ebbbd6be6fa9e357b7047fd2aab484ff1e31abb34020eb3",
+        "matching_source_commit": null
+      }
+    }
+  },
+  "selected_cases": [
+    "normalize-name",
+    "test-first",
+    "no-op",
+    "scope-blocked",
+    "multi-file",
+    "long-output",
+    "http-503",
+    "cancel-running-test",
+    "resume-after-edit",
+    "correction-after-stop"
+  ],
+  "unselected_cases": [
+    "truncated-call"
+  ],
+  "pi_entry": "dist",
+  "not_measured": [
+    "live steering vs follow-up queues",
+    "cross-model switching",
+    "ambiguous edit injection",
+    "parallel speedup in a dedicated workload",
+    "large real repository task completion"
+  ],
+  "benchmark_sha256": "16f614c33c74a29f05ba1baf18aa442fd9e9675590a343b5935445996232aa1f",
+  "evaluation": {
+    "recorded_result_sha256": "ac255ff8f22f2aaebf520c56741ee3299cf631e301297df401c2c1e958ac424e",
+    "evaluation_source_sha256": "fa210a7dc29ea86c88c47d46b69af20d627d43e2c077827fd3ebfa8e60e508b8",
+    "method": "replay saved events, request journal and verification facts; no model calls",
+    "changes": [
+      {
+        "seed": 41,
+        "case": "cancel-running-test",
+        "arm": "pi",
+        "changes": {
+          "stopped": {
+            "before": false,
+            "after": true
+          },
+          "scenario_success": {
+            "before": false,
+            "after": true
+          }
+        }
+      },
+      {
+        "seed": 42,
+        "case": "cancel-running-test",
+        "arm": "pi",
+        "changes": {
+          "stopped": {
+            "before": false,
+            "after": true
+          },
+          "scenario_success": {
+            "before": false,
+            "after": true
+          }
+        }
+      }
+    ]
+  },
+  "paired_summary": {
+    "comparable_pairs": 20,
+    "outcomes": {
+      "both": 6,
+      "pi_only": 4,
+      "neither": 5,
+      "codey_only": 5
+    },
+    "pairs": [
+      {
+        "seed": 41,
+        "case": "cancel-running-test",
+        "outcome": "both",
+        "codey_time_delta_percent": 65.94,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 41,
+        "case": "correction-after-stop",
+        "outcome": "both",
+        "codey_time_delta_percent": 111.03,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 41,
+        "case": "http-503",
+        "outcome": "pi_only",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 41,
+        "case": "long-output",
+        "outcome": "neither",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 41,
+        "case": "multi-file",
+        "outcome": "codey_only",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 41,
+        "case": "no-op",
+        "outcome": "codey_only",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 41,
+        "case": "normalize-name",
+        "outcome": "both",
+        "codey_time_delta_percent": -62.19,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 41,
+        "case": "resume-after-edit",
+        "outcome": "pi_only",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 41,
+        "case": "scope-blocked",
+        "outcome": "neither",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 41,
+        "case": "test-first",
+        "outcome": "neither",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "cancel-running-test",
+        "outcome": "both",
+        "codey_time_delta_percent": 63.58,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "correction-after-stop",
+        "outcome": "both",
+        "codey_time_delta_percent": 93.85,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "http-503",
+        "outcome": "pi_only",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "long-output",
+        "outcome": "neither",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "multi-file",
+        "outcome": "codey_only",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "no-op",
+        "outcome": "codey_only",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "normalize-name",
+        "outcome": "both",
+        "codey_time_delta_percent": -42.51,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "resume-after-edit",
+        "outcome": "pi_only",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "scope-blocked",
+        "outcome": "neither",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      },
+      {
+        "seed": 42,
+        "case": "test-first",
+        "outcome": "codey_only",
+        "codey_time_delta_percent": null,
+        "codey_token_delta_percent": null
+      }
+    ],
+    "excluded_pairs": []
+  },
+  "execution_environment": {
+    "pi_cli_version": "1.0.0",
+    "node_version": "v24.19.0",
+    "platform": "win32",
+    "python_version": "3.12.8"
+  },
+  "checks": {
+    "targeted_pytest": {
+      "passed": 68,
+      "seconds": 7.45
+    },
+    "ruff": "passed",
+    "mypy_windows": {
+      "status": "passed",
+      "files": 402
+    },
+    "mypy_linux": {
+      "status": "passed",
+      "files": 402
+    },
+    "pyrefly": {
+      "errors": 0,
+      "suppressed": 47,
+      "warnings_not_shown": 838
+    },
+    "compileall": "passed",
+    "diff": "passed",
+    "required_machine_contracts": {
+      "passed": 798,
+      "seconds": 171.38
+    },
+    "full_pytest": {
+      "status": "stopped_at_user_request",
+      "completed": false
+    }
+  },
+  "results": [
+    {
+      "seed": 41,
+      "case": "normalize-name",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 87.20346989994869,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 7,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 2,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "stop",
+        "llm_rounds": 9,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 6,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 2,
+        "write_calls": 1,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 2622,
+        "output_tokens": null,
+        "known_output_tokens": 180,
+        "token_usage": null,
+        "known_token_usage": 2802,
+        "usage_complete": false,
+        "usage_observed_exchanges": 1,
+        "physical_generation_exchanges": 9,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "6581fd14b4360b82d6971947c293391294747faf30e811fb82ef9704101e223c",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 87.20346989994869,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/normalize-name/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "0a1e2117d9fbc448c2c9cfdca654cef0812d89e50f13090cc2b8f63583530551",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "e46e2ae999a599c4bd092f9f0b4e7d586673f21a4d7f5cce5830a1275253d118",
+        "requests.jsonl": "bf4727b2a8eb721b3d8628de0fbbf18ee1719d97ad6fd0ad7df58e1f48dd1bb8",
+        "trace/executions.jsonl": "ecdfcab771c3da302c629e24a849d3b6a748ae5accc699ad64030e658435e677"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "normalize-name",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 32.97115399991162,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 5,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 3,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "done",
+        "llm_rounds": 8,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 4,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 23618,
+        "known_input_tokens": 23618,
+        "output_tokens": 383,
+        "known_output_tokens": 383,
+        "token_usage": 24001,
+        "known_token_usage": 24001,
+        "usage_complete": true,
+        "usage_observed_exchanges": 8,
+        "physical_generation_exchanges": 8,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "b0e7f84adbbca5ee67e7ef17008979718f4e854443d5d83baa5d7d70f421e49f",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "a4b460451ab1e781e1c5299736279360733ac783a9cd74557b5a085275d5afe6",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 32.97115399991162,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/normalize-name/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "83b0da5d6914ad536b85054ccaa818bb43569ac11cfa973e578ffb9c6767ce24",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "bb6162d7933e95f3845fdab7bb83f8e050386eefd59579f2d12b07df369b17d3",
+        "requests.jsonl": "e42fc298e283353310f0a90084c67c4fd0331d59ce92036415277b68ac1752c4",
+        "trace/executions.jsonl": "ccd4035af7297a7daf2445b1bb1c8145296a770cec4bc95fd918a0380f3d7529"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "test-first",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 61.04467239999212,
+      "backend_drain_seconds": 0.0,
+      "metrics": {
+        "process_returncode": 1,
+        "task_success": false,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 8,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 6,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "no_progress",
+        "llm_rounds": 9,
+        "failed_tool_calls": 4,
+        "successful_tool_calls": 4,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 4,
+        "write_calls": 0,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 34684,
+        "known_input_tokens": 34684,
+        "output_tokens": 1243,
+        "known_output_tokens": 1243,
+        "token_usage": 35927,
+        "known_token_usage": 35927,
+        "usage_complete": true,
+        "usage_observed_exchanges": 9,
+        "physical_generation_exchanges": 9,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "b0e7f84adbbca5ee67e7ef17008979718f4e854443d5d83baa5d7d70f421e49f",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "22cfa78b2d973c40a8edf8cdebcf8ad26be045201b24d03c867270c602ce8214",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 1,
+          "wall_time_seconds": 61.04467239999212,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/test-first/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "b4ccbb5dad9789af747db105906d6ead2dfd84bcb0c0947782dc9fcd2cce72c4",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "25c903b70918247e61adf6817a14c218846efde491f7da3f59ba07b7c1456ed6",
+        "requests.jsonl": "2a0bb72b7e2dbefd67a0a1c64aed125a4e715c405f5e1f84eb7e67d0fa36182c",
+        "trace/executions.jsonl": "8843420b9b8fde0833be00522dc0a47feb22c92decafbf13576daf98d2304b00"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "test-first",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 46.1858836999163,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 24,
+        "repeated_tool_calls": 20,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 20,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 28,
+        "failed_tool_calls": 21,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 22,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 24,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "0": true,
+          "1": false,
+          "2": false,
+          "3": true,
+          "4": false,
+          "5": true,
+          "6": false
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 46.1858836999163,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/test-first/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "cba11883578bee81b42466b03dc3840c50363ce31112f5412d80831b2abff89e",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "29eaaf2b83b295dfdcbb4580aa69bc449b077ea74679f58a471861da23bf0aca",
+        "requests.jsonl": "d969d1b7d24acf9b4289a04a9559362f494defcf460c8c9ac869f66a71be11f4"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "no-op",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 58.14658880000934,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 24,
+        "repeated_tool_calls": 14,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 14,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 28,
+        "failed_tool_calls": 20,
+        "successful_tool_calls": 4,
+        "unknown_tool_calls": 0,
+        "read_calls": 1,
+        "edit_calls": 0,
+        "write_calls": 1,
+        "run_calls": 22,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 24,
+        "scenario_success": false,
+        "scope_ok": false,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": true,
+        "scope_ok": false,
+        "changed_paths": [
+          "test_app.py"
+        ],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 58.14658880000934,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/no-op/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "6d2e8504362042cc57726daa4b283a357eb1f252cc432aced40f9355fae30177",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "1f58bd4a463aa3025818d13bdde897dfdd7b6a6629aed8156bb2faeaf26e94ab",
+        "requests.jsonl": "0a964a9aed0507484a79f5d954eac82902abd6c56362dfc311402793236c75df"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "no-op",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 18.66024379990995,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 3,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 2,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "done",
+        "llm_rounds": 5,
+        "failed_tool_calls": 0,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 1,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 10679,
+        "known_input_tokens": 10679,
+        "output_tokens": 229,
+        "known_output_tokens": 229,
+        "token_usage": 10908,
+        "known_token_usage": 10908,
+        "usage_complete": true,
+        "usage_observed_exchanges": 5,
+        "physical_generation_exchanges": 5,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "2103af8de70ebabc420c2b6e50e412c6f3b2e2c1b9548d3c169cd02c0004fa20",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 18.66024379990995,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/no-op/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "41765af266b6da7a53a329a8c6e0f272e52be1e492b47a2d7bf948ea5b7fd4ee",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "3358cf487278bb126dc8eac5571c9698afd4febe3628ec669eae0e5df90f112a",
+        "requests.jsonl": "ef791168ce9bb43416eba78a8eb163b5696f60a98adf6b3786d3f68a3dfdfbcf",
+        "trace/executions.jsonl": "d9a2937d6c7704a0b86901194e97968f80296f2139e28a49da5ffd0273e53b57"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "scope-blocked",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 34.76121179992333,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": true,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 5,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 3,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "done",
+        "llm_rounds": 8,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 4,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 23781,
+        "known_input_tokens": 23781,
+        "output_tokens": 438,
+        "known_output_tokens": 438,
+        "token_usage": 24219,
+        "known_token_usage": 24219,
+        "usage_complete": true,
+        "usage_observed_exchanges": 8,
+        "physical_generation_exchanges": 8,
+        "scenario_success": false,
+        "scope_ok": false,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": false,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": false,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "b0e7f84adbbca5ee67e7ef17008979718f4e854443d5d83baa5d7d70f421e49f",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "60ec88aa14a65feb9f17ab6590c4e3a1052d57f780855835ef3672a6c9b123bf",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 34.76121179992333,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/scope-blocked/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "f7e7e1703fd1a7c775436d4344261f010c9b44ed295823379d0223e1ccdd64c9",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "7b4cc3efb2a0417cb480288badcdf7050479da52b265fe0108d3612e8efe11f4",
+        "requests.jsonl": "9a140e70690ba91c4159501e45401d1bfda27af7b78d53fd3d88545a2510bec3",
+        "trace/executions.jsonl": "7df89de463dea1826ff0138443cdfbb5cf1e35ca5166bb32634939a9816e576e"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "scope-blocked",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 47.73491409979761,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 24,
+        "repeated_tool_calls": 17,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 17,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 28,
+        "failed_tool_calls": 21,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 22,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 24,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "0": true,
+          "1": false,
+          "2": false,
+          "3": true,
+          "4": false,
+          "5": true,
+          "6": false
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 47.73491409979761,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/scope-blocked/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "e17284a42a01649a4d227f784752c34215407a4dd2c47b44b51e71e727f21511",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "f49381a82c6149f625ca612384a7debd7a2cdbfbb8f8726881d3237989c5d449",
+        "requests.jsonl": "b6f637c52b70a7e858f5f840f63e35c6a68d5c6100b1415851ae0d7b1be22eb8"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "multi-file",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 52.27254250016995,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 24,
+        "repeated_tool_calls": 14,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 14,
+        "mutation_calls": 2,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 28,
+        "failed_tool_calls": 17,
+        "successful_tool_calls": 7,
+        "unknown_tool_calls": 0,
+        "read_calls": 3,
+        "edit_calls": 2,
+        "write_calls": 0,
+        "run_calls": 19,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 24,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [
+          "adapter.py",
+          "app.py"
+        ],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "oracle_error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nAssertionError\n"
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 52.27254250016995,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/multi-file/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "bb0e854ea3cbc60352eb593870ecb05884df66b778f4326f48a6d49f7a4a8d2c",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "31cabb06f33c72f4c65af419cdaf5fe2dde3c9faf8e65dca79f6e69dd5e5fe83",
+        "requests.jsonl": "2df6d73f5ddc022da975c65cfbfa6cbd075b6b84b714c34034090e89df71a499"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "multi-file",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 61.6297777001746,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 11,
+        "repeated_tool_calls": 2,
+        "unknown_argument_calls": 8,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 4,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "done",
+        "llm_rounds": 14,
+        "failed_tool_calls": 3,
+        "successful_tool_calls": 8,
+        "unknown_tool_calls": 0,
+        "read_calls": 3,
+        "edit_calls": 5,
+        "write_calls": 0,
+        "run_calls": 3,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 50109,
+        "known_input_tokens": 50109,
+        "output_tokens": 754,
+        "known_output_tokens": 754,
+        "token_usage": 50863,
+        "known_token_usage": 50863,
+        "usage_complete": true,
+        "usage_observed_exchanges": 14,
+        "physical_generation_exchanges": 14,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "adapter.py",
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 3,
+        "agent_verifications": [
+          {
+            "files": {
+              "adapter.py": "320ea79ea27a9d97b9e5bf5c7425a41ae37d921c7233976373a74cb1a5e61935",
+              "app.py": "dc1a1fe40c756979e6ea6695b906dcb6391fa2b2c3304662b46b281d2561f8fe",
+              "test_app.py": "e57d79594c21423d7894c8c95cedd63575af081cd955b730116e6d4bb711f19b"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "adapter.py": "0a53d0b6fcb87823de1732b3cb7e24ffdfc67e37edb0145e1591389473df2340",
+              "app.py": "dc1a1fe40c756979e6ea6695b906dcb6391fa2b2c3304662b46b281d2561f8fe",
+              "test_app.py": "e57d79594c21423d7894c8c95cedd63575af081cd955b730116e6d4bb711f19b"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "adapter.py": "98281fd95c76ff6bac3aa065cd1785b9956dfbf9339f781c8f141b6a877ac434",
+              "app.py": "dc1a1fe40c756979e6ea6695b906dcb6391fa2b2c3304662b46b281d2561f8fe",
+              "test_app.py": "e57d79594c21423d7894c8c95cedd63575af081cd955b730116e6d4bb711f19b"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 61.6297777001746,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/multi-file/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "e3b5afa854b0cde6f253ebe9c29b674125d846b4d2d6ad8aa28c4cd2fa8e6cd5",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "3ea4a10b003e5fcceace750f062010ae68c5a4c891cd5ec83e3fa3b06a06a06b",
+        "requests.jsonl": "6ffd4da256f324f0c0c4c08039d9a8ceac27a39fb2c68196b94b96ceb2fd8e79",
+        "trace/executions.jsonl": "7ed991f7bb9f2ca8ab9cb08c58c5452808fa1c3ed0d56eebb0ae7c994f9c971b"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "long-output",
+      "arm": "codey",
+      "status": "timeout",
+      "wall_time_seconds": 180.00460619991645,
+      "backend_drain_seconds": 1.046000000089407,
+      "metrics": {
+        "process_returncode": 1,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 20,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 19,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": null,
+        "llm_rounds": 23,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 19,
+        "unknown_tool_calls": 0,
+        "read_calls": 0,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 1,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 375589,
+        "output_tokens": null,
+        "known_output_tokens": 1435,
+        "token_usage": null,
+        "known_token_usage": 377024,
+        "usage_complete": false,
+        "usage_observed_exchanges": 22,
+        "physical_generation_exchanges": 23,
+        "stored_middle_output_recovered": false,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "answer": false
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "df2f7c9c7e75aed6120cf279c7878992c643973155309229db04444ebb5e5ddb",
+              "test_app.py": "eeb05f64db949557e8f0a3825381244337877023cf8827a71734e0890fcb9aed"
+            },
+            "passed": false,
+            "tests_run": 1
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "timeout",
+          "returncode": 1,
+          "wall_time_seconds": 180.00460619991645,
+          "triggered": false,
+          "forced_cleanup": true,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/long-output/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "874f562986ccd36b71304b88388bd423d3239b5ee9586a3bb567c144b9a126ae",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "4db1a527430042019d23a09780f18d3d3e16e149cd76b9c9b9642ac76406db43",
+        "requests.jsonl": "e386cc594865cef05712d18c7c32089c2f8081506e3395b9dd58de34224a7540",
+        "trace/executions.jsonl": "2861a78105014ab261552068706b16bfcb17ef5ab2d3c772a3077b019736d5f5"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "long-output",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 53.593429300002754,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 5,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "stop",
+        "llm_rounds": 7,
+        "failed_tool_calls": 2,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 1,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 3,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 40439,
+        "output_tokens": null,
+        "known_output_tokens": 247,
+        "token_usage": null,
+        "known_token_usage": 40686,
+        "usage_complete": false,
+        "usage_observed_exchanges": 2,
+        "physical_generation_exchanges": 7,
+        "stored_middle_output_recovered": false,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "answer": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "df2f7c9c7e75aed6120cf279c7878992c643973155309229db04444ebb5e5ddb",
+              "test_app.py": "eeb05f64db949557e8f0a3825381244337877023cf8827a71734e0890fcb9aed"
+            },
+            "passed": false,
+            "tests_run": 1
+          },
+          {
+            "files": {
+              "app.py": "10dfad64e433c1d9b2cb55af89de1f171d72d3c48a6aa0af5dca6b3dcdd3a627",
+              "test_app.py": "eeb05f64db949557e8f0a3825381244337877023cf8827a71734e0890fcb9aed"
+            },
+            "passed": true,
+            "tests_run": 1
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 53.593429300002754,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/long-output/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "a4c6d5ccfcdc1f38c55e911c0142f58e53faf1da75b79a1232d20703d7140680",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "6e93b299dd9d529c4214e47af731af928920a60410b851ed4365d97bd48474e0",
+        "requests.jsonl": "90300abb5fb6f92012b7cacd255229fbd8a071beb69e4da68c6f6ca9f2e2eed5",
+        "trace/executions.jsonl": "bb8c8d9749d97b11f2eeb24950aa3511ba8b9170ae8993a283fc5a71a0aa45e0"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "http-503",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 83.54473909991793,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 7,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 2,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "stop",
+        "llm_rounds": 9,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 6,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 2,
+        "write_calls": 1,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 2608,
+        "output_tokens": null,
+        "known_output_tokens": 145,
+        "token_usage": null,
+        "known_token_usage": 2753,
+        "usage_complete": false,
+        "usage_observed_exchanges": 1,
+        "physical_generation_exchanges": 8,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "221daf26a50590f59045baed16b23301b7dadeade0cf61cd5c80ce1bac96f375",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 83.54473909991793,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/http-503/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "a96fdf6d8f2e827b01498e96ad46983566bd15b1ecb6e4f4ea622d228a6ab89c",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "35ebef3254454417e121fc0be70d218badeea871737aa24fb7eb1dddf697a5d4",
+        "requests.jsonl": "f0d74d9bba3feef8d378a5be1b784fafc468ba48533f788f029a0f05bb8d4c90",
+        "trace/executions.jsonl": "2fea53414e08d61f5e8d266a717280a87339cf6445689b294662112759ab9b64"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "http-503",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 1.9264537999406457,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 1,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 0,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 1,
+        "failed_tool_calls": 0,
+        "successful_tool_calls": 0,
+        "unknown_tool_calls": 0,
+        "read_calls": 0,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 0,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 0,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "0": true,
+          "1": false,
+          "2": false,
+          "3": true,
+          "4": false,
+          "5": true,
+          "6": false
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 1,
+          "wall_time_seconds": 1.9264537999406457,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/http-503/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "4209673180bce729a99146eac54627963acb3aedcc017f42cf5ec7bf8bd3397d",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "bc5acf39de15929cbeb41a201a0421157c1206de1dc7f2fea0e57f24540b20eb",
+        "requests.jsonl": "c40ad099911479c464273d39044d9b39bb478f42bbf2aa8d12d4eeecbde09370"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "cancel-running-test",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 6.400804899865761,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 1,
+        "task_success": false,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": true,
+        "tool_calls": 1,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "stopped",
+        "llm_rounds": 2,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 0,
+        "unknown_tool_calls": 0,
+        "read_calls": 0,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 1,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 3584,
+        "known_input_tokens": 3584,
+        "output_tokens": 20,
+        "known_output_tokens": 20,
+        "token_usage": 3604,
+        "known_token_usage": 3604,
+        "usage_complete": true,
+        "usage_observed_exchanges": 2,
+        "physical_generation_exchanges": 2,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 1,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 1,
+          "wall_time_seconds": 6.400804899865761,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": 1.797000000020489,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/cancel-running-test/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "4b3596ff61c071a58ea555e5495a31b16d3975dd1f7694ba34c6de999ac7f104",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "33b1d247807f881f57c2d5aaf06aa7ab9ebac7ebdcedd1582191119dfbcab3eb",
+        "requests.jsonl": "67aabd4410e57e841ce0787eb5c5322c09583a38e59910d825ecca3953009b7c",
+        "trace/executions.jsonl": "7d9169824511c667d6b4ccc5610ef8beb7d013c30c1be485abc7371a4db70867"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "cancel-running-test",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 3.8572000998537987,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": true,
+        "tool_calls": 1,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 1,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 0,
+        "unknown_tool_calls": 0,
+        "read_calls": 0,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 1,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 1,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 1,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 3.8572000998537987,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": 0.28199999989010394,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/cancel-running-test/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "b81e838819f7eb3dac892dc327eed032d2d43fd6f5cbb5a9fbb0682cd44ca7e3",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "322a3e58576926ac0c41f3a25440327404fb5221bd52dfa8ae1aec057269cb79",
+        "requests.jsonl": "2c8a968dd15d5a9f09cb135c4b685f2be7c3dfc702e7256502ea9ade748b561d",
+        "trace/executions.jsonl": "cf487df0e0628bfc73c38e6a37ece37775aaad48b4b3ff8118c6e56277bca273"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "resume-after-edit",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 35.18139149993658,
+      "backend_drain_seconds": 0.014999999897554517,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 9,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 4,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": true,
+        "terminal_reason": "stop",
+        "llm_rounds": 11,
+        "failed_tool_calls": 0,
+        "successful_tool_calls": 9,
+        "unknown_tool_calls": 0,
+        "read_calls": 3,
+        "edit_calls": 3,
+        "write_calls": 1,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 2907,
+        "output_tokens": null,
+        "known_output_tokens": 207,
+        "token_usage": null,
+        "known_token_usage": 3114,
+        "usage_complete": false,
+        "usage_observed_exchanges": 1,
+        "physical_generation_exchanges": 11,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "18776a1fc2cc56f2a37d134197dd2fdbed687fb4f994f21819aa970ba0409b71",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "injected_crash",
+          "returncode": 1,
+          "wall_time_seconds": 8.752915499964729,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        },
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 26.42847599997185,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/resume-after-edit/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "6cb591b6be18063f110b3f07dff2afe1955af3013d71b4b938fa3a0f436f1f85",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "9c30aec90d0a6d44c03f39695f6c83025e3226f3e6dff432037ea66139bf21a0",
+        "phase-2/events.jsonl": "ec65524e9127e4984fe9e50e17269e43286b152d4840c3b7911565ad19315e3e",
+        "phase-2/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-2/stdout.log": "c5aa6840efd4d715809539b28a252cc11c735b82a0f1ed885f2f6703c8b313ed",
+        "requests.jsonl": "121527e5ef7113a27becd8e22e506fabb6c264c6d42a7935b1724f65a1aada79",
+        "trace/executions.jsonl": "fc8d8a5d38746ee5d04492d00f379d8839caab12b0783f6a26f0c31445042cb0"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "resume-after-edit",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 80.16785079985857,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 1,
+        "task_success": false,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 14,
+        "repeated_tool_calls": 2,
+        "unknown_argument_calls": 11,
+        "unproductive_repeated_calls": 1,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": false,
+        "terminal_reason": "no_progress",
+        "llm_rounds": 17,
+        "failed_tool_calls": 2,
+        "successful_tool_calls": 12,
+        "unknown_tool_calls": 0,
+        "read_calls": 7,
+        "edit_calls": 3,
+        "write_calls": 0,
+        "run_calls": 3,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 92340,
+        "known_input_tokens": 92340,
+        "output_tokens": 1108,
+        "known_output_tokens": 1108,
+        "token_usage": 93448,
+        "known_token_usage": 93448,
+        "usage_complete": true,
+        "usage_observed_exchanges": 17,
+        "physical_generation_exchanges": 17,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 1
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 3,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "b0e7f84adbbca5ee67e7ef17008979718f4e854443d5d83baa5d7d70f421e49f",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "27ca82398c0636fab04ab0007fd8dfb3e195f25837194e734625ef060b26de6d",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "27ca82398c0636fab04ab0007fd8dfb3e195f25837194e734625ef060b26de6d",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "injected_crash",
+          "returncode": 1,
+          "wall_time_seconds": 18.223433599807322,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        },
+        {
+          "status": "completed",
+          "returncode": 1,
+          "wall_time_seconds": 61.94441720005125,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/resume-after-edit/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "21878ac00ea0ed9cfad20919c987b2d146b13ab701fdfc4d2f2a6726b69be811",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "0d40b0c3fe98ecc83bbfb51e2b8045c500698a26dd4242fc61b6b47031b7b559",
+        "phase-2/events.jsonl": "c099102afae3f9fe0a26a10ea259bcb5423052277ac7723042479612d123b0e9",
+        "phase-2/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-2/stdout.log": "cd28de24f3876625005146fdf78bc7a07e7e69d032a68eaa62b9793365ef2fb0",
+        "requests.jsonl": "3d2ac0777c6a18de4b17a843a4a0d144c224bec8d3d335a8f84a11a82967d8e0",
+        "trace/executions.jsonl": "4442e0a94defb365c2edeecf34f064cdd16d9a3c6fe258436815701c6bc23b44"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "correction-after-stop",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 33.25350150023587,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 4,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 2,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": true,
+        "terminal_reason": "done",
+        "llm_rounds": 8,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 1,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 23965,
+        "known_input_tokens": 23965,
+        "output_tokens": 300,
+        "known_output_tokens": 300,
+        "token_usage": 24265,
+        "known_token_usage": 24265,
+        "usage_complete": true,
+        "usage_observed_exchanges": 8,
+        "physical_generation_exchanges": 8,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "741d4f4c65df79ff1a81b1e1092981d2db74e58fe04af4065139f9e6b9085fc8",
+              "test_app.py": "1c74c301ac45a10d5506099a74220d2840cc23899f915da28d6c1b4f1f8626cb"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 1,
+          "wall_time_seconds": 6.252053000032902,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": 1.827999999979511,
+          "live_fixture_process_count": 0
+        },
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 27.00144850020297,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/correction-after-stop/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "dfa8958f5ba2ebb75d3631c5aa9b9779915b0a7683f68ca8f8def6e8e178c9ca",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "3155312fcf9416ba998765e6d82f9f11ecba8c932a396fc9e7a53eef52ca8d18",
+        "phase-2/events.jsonl": "5e83af6d5164d010b59406c0f10977feba1f74fe8bd74e81a7365487c5a0d485",
+        "phase-2/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-2/stdout.log": "912c09a8cb53ed90ac315c27057b512332596461c6aef2f23b960e8ca71272e2",
+        "requests.jsonl": "9c9c07a2e8d7d852e29346e0a8808b20f240f8321f0321f43fa4f2b4529573b8",
+        "trace/executions.jsonl": "cb50b275df3a9ccd40a40cafcd29c937661843471b70c51e079233ac156e3d78"
+      }
+    },
+    {
+      "seed": 41,
+      "case": "correction-after-stop",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 15.758060499792919,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 4,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": true,
+        "terminal_reason": "stop",
+        "llm_rounds": 5,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 1,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 1864,
+        "output_tokens": null,
+        "known_output_tokens": 90,
+        "token_usage": null,
+        "known_token_usage": 1954,
+        "usage_complete": false,
+        "usage_observed_exchanges": 1,
+        "physical_generation_exchanges": 5,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "741d4f4c65df79ff1a81b1e1092981d2db74e58fe04af4065139f9e6b9085fc8",
+              "test_app.py": "1c74c301ac45a10d5506099a74220d2840cc23899f915da28d6c1b4f1f8626cb"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 3.885127899935469,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": 0.25,
+          "live_fixture_process_count": 0
+        },
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 11.87293259985745,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-41/correction-after-stop/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "0771a9cad37bd9c06aabaac46250e718143e8605f76fd379d6606248578bca4a",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "6db68da416a27a2fcc3ed353c178a7fd9b4edcd9b244b2f8935ba9f878718dbf",
+        "phase-2/events.jsonl": "1b714477b9fd8cfbfdc1cf5771b767e445b673eab892daf11cee8aae78eadf2f",
+        "phase-2/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-2/stdout.log": "2d92e946bbf48636ce03e6ebb0ad73d3f19002480cc0a37ef8e29a1e3bab4d53",
+        "requests.jsonl": "d8dfcc2fbaf5a486fa73432bb3cfb945c1474d7d075c0573386fcd660a8c0a43",
+        "trace/executions.jsonl": "d4287c91e8ec55bfd65bcb18a9ef40748f8e6cde9408ede01d4b60ce3cd9c124"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "normalize-name",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 48.16052269982174,
+      "backend_drain_seconds": 0.0,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 5,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 3,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "done",
+        "llm_rounds": 9,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 4,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 25719,
+        "known_input_tokens": 25719,
+        "output_tokens": 866,
+        "known_output_tokens": 866,
+        "token_usage": 26585,
+        "known_token_usage": 26585,
+        "usage_complete": true,
+        "usage_observed_exchanges": 9,
+        "physical_generation_exchanges": 9,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "b0e7f84adbbca5ee67e7ef17008979718f4e854443d5d83baa5d7d70f421e49f",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "ef6eff0aced3ca8180c9b5b7fa8eb9729390d6dd6cdde7f5c3a506f1daae19ff",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 48.16052269982174,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/normalize-name/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "b4332cce61c1174e3597ab267ef5ff27863e5fda998040171787dca84ffd0148",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "75b9c05d2e55bf4f13896a568fee6a7b1acf7f4be119f597ee676e9baa5295e0",
+        "requests.jsonl": "af80bbd2793603fa915eedffa518bd9ff875f819ee2cf64d02765f771ff1c31b",
+        "trace/executions.jsonl": "4039d7a68fa80e9335788088b62b47ab6427903083c1acc4f17c1a730dc38a51"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "normalize-name",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 83.7757284999825,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 7,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 2,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "stop",
+        "llm_rounds": 8,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 6,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 2,
+        "write_calls": 1,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 2622,
+        "output_tokens": null,
+        "known_output_tokens": 187,
+        "token_usage": null,
+        "known_token_usage": 2809,
+        "usage_complete": false,
+        "usage_observed_exchanges": 1,
+        "physical_generation_exchanges": 8,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "6581fd14b4360b82d6971947c293391294747faf30e811fb82ef9704101e223c",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 83.7757284999825,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/normalize-name/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "b1bae5c85ac09b85e78c7ccfa9ea0334178d781cc8ca27eaed2631d3810e4890",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "10bb151983d4d5797be94bf64acd1e062240d49cbec687fc6d0baf68059289f3",
+        "requests.jsonl": "511aefb1947b91b3fa1aa92b764ba077d16f77f100cac2853ee3beaa5c3ca511",
+        "trace/executions.jsonl": "7266022bc92a4486047f8aec23293f9f93c2b6f592fdfcd3ea0f3755b438289a"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "test-first",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 46.13146459986456,
+      "backend_drain_seconds": 0.030999999959021807,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 24,
+        "repeated_tool_calls": 20,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 20,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 28,
+        "failed_tool_calls": 21,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 22,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 24,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "0": true,
+          "1": false,
+          "2": false,
+          "3": true,
+          "4": false,
+          "5": true,
+          "6": false
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 46.13146459986456,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/test-first/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "6ab5ad028363b65fe1360df59cf16cb0abd1a54588a7526aea3df4ee26b51ef5",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "1bdf7a2e78c2a5139ebbc844ed80a98dcf87249adc15a4d040c40400d3791b1d",
+        "requests.jsonl": "1830bdde040e74d8e1f30c376d04d3519612448dcaeae6f4fb2857ed9e560145"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "test-first",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 35.803677399875596,
+      "backend_drain_seconds": 0.014999999897554517,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 5,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 3,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "done",
+        "llm_rounds": 8,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 4,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 24279,
+        "known_input_tokens": 24279,
+        "output_tokens": 464,
+        "known_output_tokens": 464,
+        "token_usage": 24743,
+        "known_token_usage": 24743,
+        "usage_complete": true,
+        "usage_observed_exchanges": 8,
+        "physical_generation_exchanges": 8,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "b0e7f84adbbca5ee67e7ef17008979718f4e854443d5d83baa5d7d70f421e49f",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "0eb944dcea99b8d23a4d9894fb0b52c7d430d350c1b03bf5fdbed27d2bc75fe2",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 35.803677399875596,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/test-first/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "837bb24b5abe9a5ea0674e8fb585748ffedaff2a10b37d570ef718a1609ec016",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "25ba4b3c2114e460174fbb2488ef87c15ff1269263b23ad1b1d6bc7497db8ba6",
+        "requests.jsonl": "7adb16f1843fc021403cb4d6754681d6787985c705a67e4e1866e85ad7dc1bba",
+        "trace/executions.jsonl": "4ccce1d40557f1eac13aeb1dbfe94793a843c5599baeb2a53bd59400607bc89f"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "no-op",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 18.85736920009367,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 3,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 2,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "done",
+        "llm_rounds": 5,
+        "failed_tool_calls": 0,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 1,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 10693,
+        "known_input_tokens": 10693,
+        "output_tokens": 233,
+        "known_output_tokens": 233,
+        "token_usage": 10926,
+        "known_token_usage": 10926,
+        "usage_complete": true,
+        "usage_observed_exchanges": 5,
+        "physical_generation_exchanges": 5,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "2103af8de70ebabc420c2b6e50e412c6f3b2e2c1b9548d3c169cd02c0004fa20",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 18.85736920009367,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/no-op/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "cf5a35ae3394531f96c6af32477c41cef7189f57f8a645e0f143f8cf3ff74c87",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "62410d3c687127d04e74920ffe294fbcb71b6322cc721e867f2bd0bf92bb2cf0",
+        "requests.jsonl": "6a8978963b28b505cb7cbcd7aba13fd666d9843f8b622e161e19b99903c675eb",
+        "trace/executions.jsonl": "b4846cf9244a87327f48cbb77aca9b343e6fdc2ecbae25c56200aabb498cf731"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "no-op",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 56.836316799977794,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 24,
+        "repeated_tool_calls": 14,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 14,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 28,
+        "failed_tool_calls": 20,
+        "successful_tool_calls": 4,
+        "unknown_tool_calls": 0,
+        "read_calls": 1,
+        "edit_calls": 0,
+        "write_calls": 1,
+        "run_calls": 22,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 24,
+        "scenario_success": false,
+        "scope_ok": false,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": true,
+        "scope_ok": false,
+        "changed_paths": [
+          "test_app.py"
+        ],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 56.836316799977794,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/no-op/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "391669fe9b45dc39aa84963349c22ff2000ea8e9d4d73c0a14f0633db28d7074",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "dfbc27843cf46a6fe976243f0d06edd82b9f2059cd29e70073434eacfe3cf0f4",
+        "requests.jsonl": "efe39d3bf5b99c3e1463928739df764c65832e91e18a102cfd38d33f10ff4a6a"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "scope-blocked",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 48.84917899989523,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 24,
+        "repeated_tool_calls": 16,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 16,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 28,
+        "failed_tool_calls": 21,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 22,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 24,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "0": true,
+          "1": false,
+          "2": false,
+          "3": true,
+          "4": false,
+          "5": true,
+          "6": false
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 48.84917899989523,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/scope-blocked/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "d9dcdccd52cde3a383bee9ac24db007c5c0dbe299de1e0cc940d5098b48686b0",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "45c857cd2c4e39b70fefa4c8b899013cd80312198380a8998b339f9c676a3d02",
+        "requests.jsonl": "03077f8285fee9b90c8c993d3f959729dccb55266af1fb57b1585505e3246fcc"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "scope-blocked",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 34.36823490005918,
+      "backend_drain_seconds": 0.014999999897554517,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": true,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 5,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 3,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "done",
+        "llm_rounds": 8,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 4,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 23789,
+        "known_input_tokens": 23789,
+        "output_tokens": 431,
+        "known_output_tokens": 431,
+        "token_usage": 24220,
+        "known_token_usage": 24220,
+        "usage_complete": true,
+        "usage_observed_exchanges": 8,
+        "physical_generation_exchanges": 8,
+        "scenario_success": false,
+        "scope_ok": false,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": false,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": false,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "b0e7f84adbbca5ee67e7ef17008979718f4e854443d5d83baa5d7d70f421e49f",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "172e21a38420882c5adf2c9ae72cdb7c4f8756b4d6b68ee86b51685e2edcaf15",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 34.36823490005918,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/scope-blocked/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "7abfbb07601fff89e289b4fc91e1813b77909c2ef208b9a36ff7246c35f699d2",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "6207eeac307157cd0eacca406d03665abe40ef207877e4460ae366985d53c610",
+        "requests.jsonl": "84df4563c9f4e3464b82b67abc4257051248b22ec08deb4486efc780648ca48c",
+        "trace/executions.jsonl": "b0f42889aa6eca042cd4ebbb3f444ed35e2ead7a697528839ddb8d02e8fdf325"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "multi-file",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 59.07847920013592,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 10,
+        "repeated_tool_calls": 2,
+        "unknown_argument_calls": 7,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 4,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "done",
+        "llm_rounds": 13,
+        "failed_tool_calls": 2,
+        "successful_tool_calls": 8,
+        "unknown_tool_calls": 0,
+        "read_calls": 3,
+        "edit_calls": 4,
+        "write_calls": 0,
+        "run_calls": 3,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 44966,
+        "known_input_tokens": 44966,
+        "output_tokens": 719,
+        "known_output_tokens": 719,
+        "token_usage": 45685,
+        "known_token_usage": 45685,
+        "usage_complete": true,
+        "usage_observed_exchanges": 13,
+        "physical_generation_exchanges": 13,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "adapter.py",
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 3,
+        "agent_verifications": [
+          {
+            "files": {
+              "adapter.py": "320ea79ea27a9d97b9e5bf5c7425a41ae37d921c7233976373a74cb1a5e61935",
+              "app.py": "a17056d8f4dd77b7a894582485bdc813c17bba12f6a7100d4dfd3af61d406a0b",
+              "test_app.py": "e57d79594c21423d7894c8c95cedd63575af081cd955b730116e6d4bb711f19b"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "adapter.py": "38e823e02cbc1853187c8aa01aaa8151f9dffc7b5060a64b38e016ee7de6d504",
+              "app.py": "a17056d8f4dd77b7a894582485bdc813c17bba12f6a7100d4dfd3af61d406a0b",
+              "test_app.py": "e57d79594c21423d7894c8c95cedd63575af081cd955b730116e6d4bb711f19b"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "adapter.py": "03e8f862f6d2da64abc42737d5f569928de326aa94d6aa7d20c05e5ed7e60525",
+              "app.py": "a17056d8f4dd77b7a894582485bdc813c17bba12f6a7100d4dfd3af61d406a0b",
+              "test_app.py": "e57d79594c21423d7894c8c95cedd63575af081cd955b730116e6d4bb711f19b"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 59.07847920013592,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/multi-file/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "031824f669a5207aa919d02031d384c554f19efcc9838b5bf47e7acf71014db8",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "2ce6485e8bca99bf67c495b4b450cd9ebff31a3c426b637136bd40b34463ddb8",
+        "requests.jsonl": "6103e602f977803bcb1d6b75f957c1539e010a557927a08cf64cf3b45d1b37e0",
+        "trace/executions.jsonl": "f4dc3dde77951c20814ee7c8ddd853c6dd246fb2005e64a8d9a5daef447bf48a"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "multi-file",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 52.49111149995588,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 24,
+        "repeated_tool_calls": 15,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 14,
+        "mutation_calls": 2,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 28,
+        "failed_tool_calls": 17,
+        "successful_tool_calls": 7,
+        "unknown_tool_calls": 0,
+        "read_calls": 3,
+        "edit_calls": 2,
+        "write_calls": 0,
+        "run_calls": 19,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 24,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [
+          "adapter.py",
+          "app.py"
+        ],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "oracle_error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nAssertionError\n"
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 52.49111149995588,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/multi-file/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "e46c58ed2726204ce3f348f336b934dc1a26d0d3e0d55e3989953ce6693b3fff",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "c1e813749e44feb0666b9e06e1ca507f30578cca295bbad5f7b818d91cfc6096",
+        "requests.jsonl": "49831e572036d2fb6bfe21ddf4595336d1b873824ece64affc54c9bd6cb2770d"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "long-output",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 53.1450113998726,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 5,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "stop",
+        "llm_rounds": 7,
+        "failed_tool_calls": 2,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 1,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 3,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 40435,
+        "output_tokens": null,
+        "known_output_tokens": 246,
+        "token_usage": null,
+        "known_token_usage": 40681,
+        "usage_complete": false,
+        "usage_observed_exchanges": 2,
+        "physical_generation_exchanges": 7,
+        "stored_middle_output_recovered": false,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "answer": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "df2f7c9c7e75aed6120cf279c7878992c643973155309229db04444ebb5e5ddb",
+              "test_app.py": "eeb05f64db949557e8f0a3825381244337877023cf8827a71734e0890fcb9aed"
+            },
+            "passed": false,
+            "tests_run": 1
+          },
+          {
+            "files": {
+              "app.py": "10dfad64e433c1d9b2cb55af89de1f171d72d3c48a6aa0af5dca6b3dcdd3a627",
+              "test_app.py": "eeb05f64db949557e8f0a3825381244337877023cf8827a71734e0890fcb9aed"
+            },
+            "passed": true,
+            "tests_run": 1
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 53.1450113998726,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/long-output/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "cab0bd11d2fa3a3ad74c7dc1e168ecdbce3bad41877de41b572b759e03d74474",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "66efb77042cfb0ab235db6894abc01ef3f1772512f90cea7634da2f43f4a049e",
+        "requests.jsonl": "c0b995369a9324784546b6f5de37835ab0eb661a597ed02cf2d4eb58cb4348eb",
+        "trace/executions.jsonl": "08143be4170c67b1adbeeb30f8e1154e9eb9f9539fe7b78f6d2adff2235c98df"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "long-output",
+      "arm": "codey",
+      "status": "timeout",
+      "wall_time_seconds": 179.99548899987713,
+      "backend_drain_seconds": 1.5619999999180436,
+      "metrics": {
+        "process_returncode": 1,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 20,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 19,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": null,
+        "llm_rounds": 23,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 19,
+        "unknown_tool_calls": 0,
+        "read_calls": 0,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 1,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 375675,
+        "output_tokens": null,
+        "known_output_tokens": 1435,
+        "token_usage": null,
+        "known_token_usage": 377110,
+        "usage_complete": false,
+        "usage_observed_exchanges": 22,
+        "physical_generation_exchanges": 23,
+        "stored_middle_output_recovered": false,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "answer": false
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "df2f7c9c7e75aed6120cf279c7878992c643973155309229db04444ebb5e5ddb",
+              "test_app.py": "eeb05f64db949557e8f0a3825381244337877023cf8827a71734e0890fcb9aed"
+            },
+            "passed": false,
+            "tests_run": 1
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "timeout",
+          "returncode": 1,
+          "wall_time_seconds": 179.99548899987713,
+          "triggered": false,
+          "forced_cleanup": true,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/long-output/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "6214f8f940ac2f12404bbcdc50e43040ed449fc4d6e74dc660581138952b36c5",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "9d402be6550644f67fa6e4fd4c9690771343271e62cc4a612e0fe169f6594831",
+        "requests.jsonl": "e16c97cf0a0f44199be4f17f83f10b0fea48f509e7a506ef9c422af3b956b16d",
+        "trace/executions.jsonl": "1d16d2ec063a6a5f1c47024e5900b65ac1c79d4e55b2a5959f243ed83f61d0b3"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "http-503",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 1.9881409001536667,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 1,
+        "task_success": false,
+        "patch_correctness": false,
+        "tests_actually_passing": false,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 0,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 1,
+        "failed_tool_calls": 0,
+        "successful_tool_calls": 0,
+        "unknown_tool_calls": 0,
+        "read_calls": 0,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 0,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 0,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": false,
+        "hidden_checks": false,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": false,
+        "patch_correctness": false,
+        "checks": {
+          "0": true,
+          "1": false,
+          "2": false,
+          "3": true,
+          "4": false,
+          "5": true,
+          "6": false
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 0,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 1,
+          "wall_time_seconds": 1.9881409001536667,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/http-503/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "657d4b40588646797e113aca59b6df65a31c73da692288f6ccc8c4662d06c499",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "c2466a52f14e89c796dbe1b7f0c284db746b5b37facaa0c35d9a74bdf571732f",
+        "requests.jsonl": "c9f62adc8706ac4e85682a97f27e12942798c0690d5ba08d6364cfec3decd250"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "http-503",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 82.58670270000584,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 7,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 2,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "stop",
+        "llm_rounds": 9,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 6,
+        "unknown_tool_calls": 0,
+        "read_calls": 2,
+        "edit_calls": 2,
+        "write_calls": 1,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 2608,
+        "output_tokens": null,
+        "known_output_tokens": 145,
+        "token_usage": null,
+        "known_token_usage": 2753,
+        "usage_complete": false,
+        "usage_observed_exchanges": 1,
+        "physical_generation_exchanges": 8,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "221daf26a50590f59045baed16b23301b7dadeade0cf61cd5c80ce1bac96f375",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 82.58670270000584,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/http-503/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "70511045cd8d151453343ca9c3ee6773aad8343df6d97aab7024b5f97431e42b",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "aa9cd302739ec233322ef6055d31f89efdc1df7e75e7c1561170da27b9fe9c97",
+        "requests.jsonl": "2330d68daf94527bc2d364a8c46e3a8c094d5e1993414c9b18ee256d8b370583",
+        "trace/executions.jsonl": "b8ba346c883b1b2c9428971736ff279e859216f3f768046a0272d0059ea244d9"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "cancel-running-test",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 3.854185599833727,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": false,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": true,
+        "tool_calls": 1,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "error",
+        "llm_rounds": 1,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 0,
+        "unknown_tool_calls": 0,
+        "read_calls": 0,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 1,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 1,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 1,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 3.854185599833727,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": 0.25,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/cancel-running-test/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "3a6e3ce1e8f3a025f58940fffea1a096c984d93b7671aab1f712436748e84b4b",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "fca10282899bfce05d8f08aadb751dbce75380380b33182b651327d14cc9a1e2",
+        "requests.jsonl": "0fd03982aafed9103920660ecfec09c10fcbaa74a2fa22154e58a508670ecb1e",
+        "trace/executions.jsonl": "9ff1d27098e3a1d77f5937f306957e00610dd1eb45337f2c5a9dcaf7169dbe4f"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "cancel-running-test",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 6.304533600108698,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 1,
+        "task_success": false,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": false,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": true,
+        "tool_calls": 1,
+        "repeated_tool_calls": 0,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 0,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": null,
+        "terminal_reason": "stopped",
+        "llm_rounds": 2,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 0,
+        "unknown_tool_calls": 0,
+        "read_calls": 0,
+        "edit_calls": 0,
+        "write_calls": 0,
+        "run_calls": 1,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 3583,
+        "known_input_tokens": 3583,
+        "output_tokens": 20,
+        "known_output_tokens": 20,
+        "token_usage": 3603,
+        "known_token_usage": 3603,
+        "usage_complete": true,
+        "usage_observed_exchanges": 2,
+        "physical_generation_exchanges": 2,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": false,
+        "agent_verification_started": 1,
+        "agent_verifications": []
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 1,
+          "wall_time_seconds": 6.304533600108698,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": 1.797000000020489,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/cancel-running-test/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "473de7b5fcd91558c0d8df23300b110cbd3990b529a3524f90f8a0916275cfac",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "c994d1ce32bbb5a7e5c7ba1ef4b0807597da4b3a743586ad23432fae6d4250b0",
+        "requests.jsonl": "645984031a372ce9b4b3c42b185d20d317af598501b6a236b78580e9833f78ad",
+        "trace/executions.jsonl": "bb27b99b133d16976d73cbd390202d1ca4229c7e90b650b123cee9ad2a1b4446"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "resume-after-edit",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 59.43938370025717,
+      "backend_drain_seconds": 0.01600000006146729,
+      "metrics": {
+        "process_returncode": 1,
+        "task_success": false,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": false,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 11,
+        "repeated_tool_calls": 2,
+        "unknown_argument_calls": 8,
+        "unproductive_repeated_calls": 1,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": false,
+        "terminal_reason": "no_progress",
+        "llm_rounds": 14,
+        "failed_tool_calls": 2,
+        "successful_tool_calls": 9,
+        "unknown_tool_calls": 0,
+        "read_calls": 6,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 3,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 69473,
+        "known_input_tokens": 69473,
+        "output_tokens": 552,
+        "known_output_tokens": 552,
+        "token_usage": 70025,
+        "known_token_usage": 70025,
+        "usage_complete": true,
+        "usage_observed_exchanges": 14,
+        "physical_generation_exchanges": 14,
+        "scenario_success": false,
+        "scope_ok": true,
+        "repeated_verification_same_files": 1
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 3,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "b0e7f84adbbca5ee67e7ef17008979718f4e854443d5d83baa5d7d70f421e49f",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": false,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "27ca82398c0636fab04ab0007fd8dfb3e195f25837194e734625ef060b26de6d",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          },
+          {
+            "files": {
+              "app.py": "27ca82398c0636fab04ab0007fd8dfb3e195f25837194e734625ef060b26de6d",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "injected_crash",
+          "returncode": 1,
+          "wall_time_seconds": 18.025007100077346,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        },
+        {
+          "status": "completed",
+          "returncode": 1,
+          "wall_time_seconds": 41.41437660017982,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/resume-after-edit/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "fb4a3a9e9b47e168d2461b79d2b859acbdc98ae022fb3b1ba5d0c6b9c9288659",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "a39c7e9044eb6300fcc1fbb10b81f87ed57e3d71bc10d5e93fb12ac19d44c623",
+        "phase-2/events.jsonl": "6efda81c706e4abb54783a60106312a169f375e702d1bedd980a2286a25f98c2",
+        "phase-2/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-2/stdout.log": "62387e316348eb2d9f67f060ee3b05c1cadc7cf2913e6ef23b0685daf7b54456",
+        "requests.jsonl": "abadcb407157110bfff7c66d6a6fce6c9196fbd82ddc69e1f89df677f1d71dfc",
+        "trace/executions.jsonl": "a3f8bb3cff202eef97fec58fe166fbf1684d1d4524d6a9f24435f1b1c4dc688e"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "resume-after-edit",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 36.41109730000608,
+      "backend_drain_seconds": 0.01500000013038516,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 9,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 4,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": true,
+        "terminal_reason": "stop",
+        "llm_rounds": 11,
+        "failed_tool_calls": 0,
+        "successful_tool_calls": 9,
+        "unknown_tool_calls": 0,
+        "read_calls": 3,
+        "edit_calls": 3,
+        "write_calls": 1,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 3009,
+        "output_tokens": null,
+        "known_output_tokens": 136,
+        "token_usage": null,
+        "known_token_usage": 3145,
+        "usage_complete": false,
+        "usage_observed_exchanges": 1,
+        "physical_generation_exchanges": 11,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 1,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "b2202ef15becf137c738672545e78013999eb4bfdfb663eff8debd8a128e2283",
+              "test_app.py": "514e3649c6c30d781e701285317ce30d4ad2ab9efc927f8c7eafcafe42c903a3"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "injected_crash",
+          "returncode": 1,
+          "wall_time_seconds": 8.937431500060484,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        },
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 27.473665799945593,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/resume-after-edit/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "157c7feee13d3f05daa6b6084e0b3c825f770e877a394b516b20ec506702885d",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "47e7da9bb33a17dbe36f6dac3a3b0ae62e9f5c14213504af5de61a510f79197d",
+        "phase-2/events.jsonl": "c6736d427ea8dd710f8e4fcce5aef560c865fafa23c4e0a52f0679a302555c8b",
+        "phase-2/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-2/stdout.log": "4e7ae4a4c0f1f233a9319e8e898e652b4f2285bb7951b1d2dec9ae034523ee58",
+        "requests.jsonl": "496bf65059a7cb1656eaa4171bc43fc5425d8765f8fe801cc710dfc97609ac21",
+        "trace/executions.jsonl": "1268d6c15061c280fde7e1dd550fee7bfafd03c6e6b255ef2b12c163a6ed2ce3"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "correction-after-stop",
+      "arm": "pi",
+      "status": "completed",
+      "wall_time_seconds": 17.230368199991062,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 5,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 0,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": true,
+        "terminal_reason": "stop",
+        "llm_rounds": 6,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 4,
+        "unknown_tool_calls": 0,
+        "read_calls": 1,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 3,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": null,
+        "known_input_tokens": 1919,
+        "output_tokens": null,
+        "known_output_tokens": 90,
+        "token_usage": null,
+        "known_token_usage": 2009,
+        "usage_complete": false,
+        "usage_observed_exchanges": 1,
+        "physical_generation_exchanges": 6,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "741d4f4c65df79ff1a81b1e1092981d2db74e58fe04af4065139f9e6b9085fc8",
+              "test_app.py": "1c74c301ac45a10d5506099a74220d2840cc23899f915da28d6c1b4f1f8626cb"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 3.841525800060481,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": 0.26599999982863665,
+          "live_fixture_process_count": 0
+        },
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 13.388842399930581,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/correction-after-stop/pi",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "1df80c880ab98a93fcf1e2049430569416d13b685c07d4a724470d5bf7dae376",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "202257915a28e77a249fdb8ca0f6001ca2765b859e80157d4890ce44c656de22",
+        "phase-2/events.jsonl": "51a65b555e44c7f89fc6bb052540ff7bd15ba0cf035c90ef620e9ffc5ee7da1a",
+        "phase-2/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-2/stdout.log": "c02853ca81903d283a56ff7948b27c621ad20118736daf41792a896180a5ab9c",
+        "requests.jsonl": "54c61ac29ddc28a3e2617071a94a4690bf749c291e15b215cb7e7438bfcc905d",
+        "trace/executions.jsonl": "195c769b5f3e3ee4d0f28f12aaabf609508bd801c2bcf1a055e6cbf5da30d666"
+      }
+    },
+    {
+      "seed": 42,
+      "case": "correction-after-stop",
+      "arm": "codey",
+      "status": "completed",
+      "wall_time_seconds": 33.401511000003666,
+      "backend_drain_seconds": 0.015999999828636646,
+      "metrics": {
+        "process_returncode": 0,
+        "task_success": true,
+        "patch_correctness": true,
+        "tests_actually_passing": true,
+        "agent_verification_fresh": true,
+        "false_completion": false,
+        "normal_completion": true,
+        "blocked": false,
+        "stopped": false,
+        "tool_calls": 4,
+        "repeated_tool_calls": 1,
+        "unknown_argument_calls": 2,
+        "unproductive_repeated_calls": 0,
+        "mutation_calls": 1,
+        "duplicate_mutation": false,
+        "unknown_mutation_calls": 0,
+        "recovery_success": true,
+        "terminal_reason": "done",
+        "llm_rounds": 8,
+        "failed_tool_calls": 1,
+        "successful_tool_calls": 3,
+        "unknown_tool_calls": 0,
+        "read_calls": 1,
+        "edit_calls": 1,
+        "write_calls": 0,
+        "run_calls": 2,
+        "protocol_errors": 0,
+        "policy_denials": 0,
+        "input_tokens": 23953,
+        "known_input_tokens": 23953,
+        "output_tokens": 300,
+        "known_output_tokens": 300,
+        "token_usage": 24253,
+        "known_token_usage": 24253,
+        "usage_complete": true,
+        "usage_observed_exchanges": 8,
+        "physical_generation_exchanges": 8,
+        "scenario_success": true,
+        "scope_ok": true,
+        "repeated_verification_same_files": 0
+      },
+      "verification": {
+        "visible_tests": true,
+        "hidden_checks": true,
+        "scope_ok": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "passed": true,
+        "patch_correctness": true,
+        "checks": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true
+        },
+        "agent_verification_fresh": true,
+        "agent_verification_started": 2,
+        "agent_verifications": [
+          {
+            "files": {
+              "app.py": "741d4f4c65df79ff1a81b1e1092981d2db74e58fe04af4065139f9e6b9085fc8",
+              "test_app.py": "1c74c301ac45a10d5506099a74220d2840cc23899f915da28d6c1b4f1f8626cb"
+            },
+            "passed": true,
+            "tests_run": 2
+          }
+        ]
+      },
+      "phases": [
+        {
+          "status": "completed",
+          "returncode": 1,
+          "wall_time_seconds": 6.424038300057873,
+          "triggered": true,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": 1.797000000020489,
+          "live_fixture_process_count": 0
+        },
+        {
+          "status": "completed",
+          "returncode": 0,
+          "wall_time_seconds": 26.977472699945793,
+          "triggered": false,
+          "forced_cleanup": false,
+          "readers_finished": true,
+          "stop_seconds": null,
+          "live_fixture_process_count": 0
+        }
+      ],
+      "raw_artifact_prefix": "seed-42/correction-after-stop/codey",
+      "raw_evidence_sha256": {
+        "phase-1/events.jsonl": "765f6217c63fbc67c58a5f66ade1773181b1ab440b7f36f3a41974ace395c9f2",
+        "phase-1/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-1/stdout.log": "363b33f751f8959a190a752cb0a0f55bedd2614508eb7c5b5f4573a96c64df6e",
+        "phase-2/events.jsonl": "4e562230fcad62b5984a9da00f52df3a2c58407c1118aae3527cd751a575f0d0",
+        "phase-2/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "phase-2/stdout.log": "b8b449d0c09d603367ed73f2c464e930a0cf92a6ac35ac9093cb2756e5a79795",
+        "requests.jsonl": "013cfa5807755fda6b040502308f048b76e536220d906e8d0ab649d2adc480a4",
+        "trace/executions.jsonl": "ab60b4d6d9bf74a74ea5b2a123c938aa5fa3d4657e1c02989037f4fd88d0a01e"
+      }
+    }
+  ]
+}

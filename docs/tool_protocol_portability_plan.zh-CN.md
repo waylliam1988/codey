@@ -573,7 +573,7 @@ write/write_file/create_file -> 保持 unknown tool 并在 repair prompt 中引�
   吸收能力，不能当作自然生产省 turn 结论。0.5.3 使用
   当时的两份 live 脚本已经于 2026-10-02 退役：统一内核后两臂没有实际
   实验变量，不能用于比较修复收益。当前使用共同内核行为测试锁定规范参数，
-  `tests/manual/real_local_ab.py` 比较 Codey/Pi；历史记录不作为当前协议的证明。
+  `tests/manual/codey_vs_pi_agent_stability_ab.py` 比较 Codey/Pi；历史记录不作为当前协议的证明。
 
 ### P2: Tool Prompt Decoupling
 

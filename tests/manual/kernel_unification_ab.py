@@ -3,7 +3,8 @@
 """Compare Codey before and after the coding/research kernel unification.
 
 This is a manual local-model experiment. Both arms use the same fixture,
-provider endpoint, task, temperature and token budget. Native tools are off by
+provider endpoint, task and output budget. Sampling uses each version's provider
+defaults, recorded in the observed requests. Native tools are off by
 default so the comparison exercises the shared text protocol instead of
 mixing the kernel change with the newer native-provider path.
 
@@ -31,9 +32,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tests.manual.real_local_ab import (
+from tests.manual.agent_stability_cases import TASK
+from tests.manual.agent_stability_measurements import usage_totals
+from tests.manual.codey_vs_pi_agent_stability_ab import (
     MODEL_ID,
-    TASK,
     _event_rows,
     _fixture,
     _json_line,
@@ -125,6 +127,8 @@ def _run_arm(
     stdout_path = run_dir / f"{arm}.stdout.log"
     stderr_path = run_dir / f"{arm}.stderr.log"
     events_path = run_dir / f"{arm}.events.jsonl"
+    trace = run_dir / "trace"
+    trace.mkdir()
     env = os.environ.copy()
     env.update(
         {
@@ -135,8 +139,9 @@ def _run_arm(
             "LOCAL_OPENAI_MODEL": model_id,
             "LOCAL_OPENAI_API_KEY": "local",
             "LOCAL_OPENAI_CONTEXT_WINDOW": "32768",
-            "LOCAL_OPENAI_CONTEXT_RESERVE": "8192",
+            "LOCAL_OPENAI_CONTEXT_RESERVE": str(max_tokens),
             "LOCAL_OPENAI_CONTEXT_KEEP": "12000",
+            "CODEY_AB_TRACE": str(trace),
         }
     )
     command = _codey_command(project_root, run_dir / "state", max_turns)
@@ -158,7 +163,7 @@ def _run_arm(
         "\n".join(_json_line(row) for row in rows) + ("\n" if rows else ""),
         encoding="utf-8",
     )
-    verification = _run_verification(project_root)
+    verification = _run_verification(project_root, trace=trace)
     return {
         "arm": arm,
         "status": "completed",
@@ -181,7 +186,6 @@ def main() -> int:
     parser.add_argument("--proxy-port", type=int, default=5021)
     parser.add_argument("--max-turns", type=int, default=8)
     parser.add_argument("--model", default=MODEL_ID)
-    parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max-tokens", type=int, default=2048)
     parser.add_argument("--native-tools", action="store_true")
     args = parser.parse_args()
@@ -201,8 +205,6 @@ def main() -> int:
         ("127.0.0.1", args.proxy_port),
         args.upstream,
         timeout=900.0,
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
     )
     thread = threading.Thread(target=proxy.serve_forever, daemon=True)
     thread.start()
@@ -211,7 +213,7 @@ def main() -> int:
         "baseline_commit": args.commit,
         "model": args.model,
         "task": TASK,
-        "temperature": args.temperature,
+        "sampling": "production provider defaults; see observed requests",
         "max_tokens": args.max_tokens,
         "native_tools": args.native_tools,
         "proxy": f"http://127.0.0.1:{args.proxy_port}",
@@ -238,13 +240,7 @@ def main() -> int:
         for arm in result["arms"]:
             arm_records = [record for record in records if record.get("arm") == arm]
             result["arms"][arm]["request_records"] = len(arm_records)
-            result["arms"][arm]["token_usage"] = sum(
-                int(record["response"]["usage"]["total_tokens"])
-                for record in arm_records
-                if isinstance(record.get("response"), dict)
-                and isinstance(record["response"].get("usage"), dict)
-                and type(record["response"]["usage"].get("total_tokens")) is int
-            ) or None
+            result["arms"][arm].update(usage_totals(arm_records))
         (run_dir / "result.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
         )

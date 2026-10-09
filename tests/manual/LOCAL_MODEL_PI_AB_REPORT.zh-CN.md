@@ -1,5 +1,9 @@
 # Codey vs Pi 本地实机稳定性 A/B 报告
 
+2026-10-09 注：本文为历史结果，旧脚本现已重命名为
+`codey_vs_pi_agent_stability_ab.py`。当前多场景比较见
+[新报告](../../docs/codey-vs-pi-agent-stability-2026-10-09.zh-CN.md)，以下测量保持原记录。
+
 日期：2026-09-30  
 模型：`koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`  
 任务：在 `app.py` 中实现 `normalize_name`：小写化、去标点、去除首尾空白、合并连续空白并用连字符连接；不得修改测试；运行 `python -m unittest discover -v`，测试通过后才能完成。

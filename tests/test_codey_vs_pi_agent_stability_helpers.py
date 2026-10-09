@@ -4,24 +4,20 @@ import json
 import sys
 from pathlib import Path
 
-from tests.manual.real_local_ab import (
+from tests.manual.agent_stability_measurements import tool_signature as _tool_signature
+from tests.manual.agent_stability_proxy import safe_json as _safe_json
+from tests.manual.codey_vs_pi_agent_stability_ab import (
     TASK_CASES,
-    _content_length,
     _event_rows,
-    _experiment_succeeded,
     _metrics,
     _new_project_root,
     _run_verification,
-    _safe_json,
-    _tool_signature,
-    _with_sampling,
-    _working_directory,
     _write_pi_config,
 )
 
 
-def test_real_local_ab_cases_have_closed_fixture_and_path_contracts() -> None:
-    assert {case.case_id for case in TASK_CASES} == {"normalize-name"}
+def test_codey_vs_pi_agent_stability_ab_cases_have_closed_fixture_and_path_contracts() -> None:
+    assert "normalize-name" in {case.case_id for case in TASK_CASES}
     for case in TASK_CASES:
         assert case.fixture_files
         assert case.task.strip()
@@ -29,9 +25,9 @@ def test_real_local_ab_cases_have_closed_fixture_and_path_contracts() -> None:
                    for path in case.allowed_paths)
 
 
-def test_real_local_ab_verifier_rejects_forbidden_file_changes(tmp_path: Path) -> None:
+def test_codey_vs_pi_agent_stability_ab_verifier_rejects_forbidden_file_changes(tmp_path: Path) -> None:
     case = next(case for case in TASK_CASES if case.case_id == "normalize-name")
-    from tests.manual.real_local_ab import _fixture, _run_verification, _snapshot_files
+    from tests.manual.codey_vs_pi_agent_stability_ab import _fixture, _run_verification, _snapshot_files
 
     _fixture(tmp_path, case)
     baseline = _snapshot_files(tmp_path)
@@ -42,9 +38,9 @@ def test_real_local_ab_verifier_rejects_forbidden_file_changes(tmp_path: Path) -
     assert verification["passed"] is False
 
 
-def test_real_local_ab_verifier_ignores_runtime_bytecode_artifacts(tmp_path: Path) -> None:
+def test_codey_vs_pi_agent_stability_ab_verifier_ignores_runtime_bytecode_artifacts(tmp_path: Path) -> None:
     case = TASK_CASES[0]
-    from tests.manual.real_local_ab import _fixture, _run_verification, _snapshot_files
+    from tests.manual.codey_vs_pi_agent_stability_ab import _fixture, _run_verification, _snapshot_files
 
     _fixture(tmp_path, case)
     baseline = _snapshot_files(tmp_path)
@@ -54,7 +50,7 @@ def test_real_local_ab_verifier_ignores_runtime_bytecode_artifacts(tmp_path: Pat
     assert verification["scope_ok"] is True
 
 
-def test_real_local_ab_trace_analyzer_reports_tool_and_usage_metrics() -> None:
+def test_codey_vs_pi_agent_stability_ab_trace_analyzer_reports_tool_and_usage_metrics() -> None:
     rows = [
         {"type": "tool_started", "tool": "read_file", "tool_id": "r1"},
         {"type": "tool", "tool": "read_file", "tool_id": "r1", "ok": False},
@@ -73,7 +69,7 @@ def test_real_local_ab_trace_analyzer_reports_tool_and_usage_metrics() -> None:
     assert metrics["output_tokens"] == 4
 
 
-def test_real_local_ab_trace_analyzer_counts_each_tool_id_once() -> None:
+def test_codey_vs_pi_agent_stability_ab_trace_analyzer_counts_each_tool_id_once() -> None:
     rows = [
         {"type": "tool_started", "tool": "edit", "tool_id": "e1"},
         {"type": "tool", "tool": "edit", "tool_id": "e1", "ok": True, "changed": True},
@@ -85,7 +81,7 @@ def test_real_local_ab_trace_analyzer_counts_each_tool_id_once() -> None:
     assert metrics["failed_tool_calls"] == 0
 
 
-def test_real_local_ab_projects_are_created_outside_runner_checkout() -> None:
+def test_codey_vs_pi_agent_stability_ab_projects_are_created_outside_runner_checkout() -> None:
     root = _new_project_root()
     try:
         checkout = Path(__file__).resolve().parents[1]
@@ -98,46 +94,25 @@ def test_real_local_ab_projects_are_created_outside_runner_checkout() -> None:
         shutil.rmtree(root)
 
 
-def test_real_local_ab_both_arms_execute_in_fixture_directory(tmp_path: Path) -> None:
-    assert _working_directory("pi", tmp_path) == tmp_path
-    assert _working_directory("codey", tmp_path) == tmp_path
-
-
-def test_real_local_ab_proxy_parses_http_content_length_header() -> None:
-    assert _content_length("17") == 17
-    assert _content_length("not-a-length") == 0
-
-
-def test_real_local_ab_proxy_applies_shared_sampling_budget_to_chat_request() -> None:
-    raw = b'{"model":"m","stream":true}'
-    rewritten = _with_sampling(raw, 0.0, 2048)
-    assert json.loads(rewritten) == {
-        "model": "m",
-        "stream": True,
-        "temperature": 0.0,
-        "max_tokens": 2048,
-    }
-
-
-def test_real_local_ab_pi_config_uses_selected_model(tmp_path: Path) -> None:
+def test_codey_vs_pi_agent_stability_ab_pi_config_uses_selected_model(tmp_path: Path) -> None:
     config_dir = tmp_path / "pi-config"
     _write_pi_config(config_dir, "http://127.0.0.1:5017", "model-12b")
     payload = json.loads((config_dir / "models.json").read_text(encoding="utf-8"))
     assert payload["providers"]["kobold"]["models"][0]["id"] == "model-12b"
 
 
-def test_real_local_ab_tool_signature_is_stable_for_duplicate_calls() -> None:
+def test_codey_vs_pi_agent_stability_ab_tool_signature_is_stable_for_duplicate_calls() -> None:
     first = _tool_signature("edit", {"args": {"path": "app.py", "content": "x"}})
     second = _tool_signature("edit", {"args": {"path": "app.py", "content": "x"}})
     assert first == second
 
 
-def test_real_local_ab_event_parser_ignores_non_json_output() -> None:
+def test_codey_vs_pi_agent_stability_ab_event_parser_ignores_non_json_output() -> None:
     rows = _event_rows("diagnostic\n{" + '"type":"tool_started","tool":"edit"}' + "\n")
     assert rows == [{"type": "tool_started", "tool": "edit"}]
 
 
-def test_real_local_ab_proxy_extracts_usage_from_sse_response() -> None:
+def test_codey_vs_pi_agent_stability_ab_proxy_extracts_usage_from_sse_response() -> None:
     raw = (
         b'data: {"choices":[{"delta":{"content":"ok"}}]}\n'
         b'data: {"choices":[],"usage":{"total_tokens":123}}\n'
@@ -147,7 +122,7 @@ def test_real_local_ab_proxy_extracts_usage_from_sse_response() -> None:
     assert parsed == {"choices": [], "usage": {"total_tokens": 123}}
 
 
-def test_real_local_ab_failed_edit_is_not_duplicate_mutation() -> None:
+def test_codey_vs_pi_agent_stability_ab_failed_edit_is_not_duplicate_mutation() -> None:
     rows = [
         {
             "type": "tool_started",
@@ -181,7 +156,7 @@ def test_real_local_ab_failed_edit_is_not_duplicate_mutation() -> None:
     assert metrics["duplicate_mutation"] is False
 
 
-def test_real_local_ab_metrics_reject_false_completion_when_verification_fails(tmp_path: Path) -> None:
+def test_codey_vs_pi_agent_stability_ab_metrics_reject_false_completion_when_verification_fails(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("def normalize_name(value): return value\n", encoding="utf-8")
     (tmp_path / "test_app.py").write_text("def test_fail(): assert False\n", encoding="utf-8")
     verification = _run_verification(tmp_path)
@@ -191,19 +166,13 @@ def test_real_local_ab_metrics_reject_false_completion_when_verification_fails(t
     assert metrics["task_success"] is False
 
 
-def test_real_local_ab_exit_contract_rejects_completed_but_unsuccessful_case() -> None:
-    assert _experiment_succeeded({"status": "completed", "metrics": {"task_success": True}}) is True
-    assert _experiment_succeeded({"status": "completed", "metrics": {"task_success": False}}) is False
-    assert _experiment_succeeded({"status": "environment_error"}) is False
-
-
-def test_real_local_ab_verifier_does_not_reuse_cached_app_module(tmp_path: Path) -> None:
+def test_codey_vs_pi_agent_stability_ab_verifier_does_not_reuse_cached_app_module(tmp_path: Path) -> None:
     first = tmp_path / "first"
     second = tmp_path / "second"
     for root, body in (
         (
             first,
-            "import re\n    return re.sub(r\"[^a-z0-9]+\", \"-\", value.lower()).strip(\"-\")",
+            "import re\n    return \"-\".join(re.sub(r\"[^a-z0-9\\s]\", \"\", value.lower()).split())",
         ),
         (second, "return \"wrong\""),
     ):

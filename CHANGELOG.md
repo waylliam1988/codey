@@ -2,6 +2,22 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Real Codey/Pi agent stability comparison (2026-10-09)
+
+- Rename `real_local_ab.py` to `codey_vs_pi_agent_stability_ab.py`; add isolated
+  task, verification, cancellation, interruption, correction and fault scenarios.
+  Preserve native agent loops and record provenance, raw evidence and paired results.
+- Lock down completion truth, fresh verification, missing usage, HTTP/SSE observation,
+  process cleanup and backend isolation with TDD. Correct Pi tool-cancellation scoring
+  from typed abort acknowledgements, then re-score the saved observations without
+  more model calls. Remove unused helpers and proxy sampling arguments.
+- Local trial: Codey **11/20**, existing Pi build **10/20**. Report advantages and
+  weaknesses separately; incomplete Pi streaming usage prevents a token-cost ranking.
+  Production code is unchanged. See [the report](docs/codey-vs-pi-agent-stability-2026-10-09.zh-CN.md).
+- Targeted tests **68 passed**; Ruff, mypy Windows/Linux, direct Pyrefly, compileall
+  and diff checks passed. Full pytest was stopped at the user's request; no complete
+  full-suite result is claimed. Version remains 0.5.11; no release.
+
 ## Unreleased - Full-tree Pyrefly gate (2026-10-09)
 
 - Resolve all 236 active Pyrefly errors with explicit container, payload,

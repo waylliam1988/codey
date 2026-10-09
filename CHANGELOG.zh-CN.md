@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - Codey/Pi 原生 Agent 稳定性比较（2026-10-09）
+
+- `real_local_ab.py` 重命名为 `codey_vs_pi_agent_stability_ab.py`；加入任务、验证、
+  停止、中断恢复、用户改口和故障场景，保留原生 Agent 循环、版本身份与原始证据。
+- TDD 锁定完成真实性、验证新鲜度、缺失用量、HTTP/SSE 保真、进程清理与后端
+  隔离。按 typed abort 确认修正 Pi 工具取消评分，统一重算已有记录，不追加模型
+  请求。删除无生产调用的 helper 和代理的无用采样参数。
+- 本地实测 Codey **11/20**、已有 Pi 构建 **10/20**，分别报告优势与弱项；Pi
+  流式用量不完整，无法公平排名总 token。生产代码未修改，详见
+  [比较报告](docs/codey-vs-pi-agent-stability-2026-10-09.zh-CN.md)。
+- 定向回归 **68 passed**；Ruff、Windows/Linux mypy、直接 Pyrefly、compileall
+  与 diff 检查通过。全量 pytest 按用户要求停止，不宣称完整回归通过。
+  版本保持 0.5.11，不发布。
+
 ## 未发布 - 全树 Pyrefly 检查（2026-10-09）
 
 - 补齐容器、载荷、回调及边界类型，消除全部 236 个活跃 Pyrefly 错误。
