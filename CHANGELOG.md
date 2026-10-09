@@ -2,6 +2,20 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Full-tree Pyrefly gate (2026-10-09)
+
+- Resolve all 236 active Pyrefly errors with explicit container, payload,
+  callback and boundary types. Return structured errors when project tools or
+  task sessions are unavailable; preserve browser imports behind `TYPE_CHECKING`.
+- Run Pyrefly directly over `codey` in CI without baseline exemptions. Retain
+  the historical baseline with an empty `errors` array; keep checker settings and the
+  pinned Pyrefly version unchanged.
+- Extend execution-boundary regressions and lock down the CI command. Final
+  pytest: **8098 passed, 7 skipped, 1503 subtests passed in 902.04s**; required
+  machine contracts **798 passed**. Pyrefly reports **0 errors**; Ruff, mypy
+  (Windows and Linux targets), compileall, JS syntax and diff checks passed.
+  Documentation updated after full pytest; version remains 0.5.11.
+
 ## Unreleased - Counted context optimization and evidence recovery (2026-10-09)
 
 - Factor variable lines and repeated text into reversible model-facing sources,

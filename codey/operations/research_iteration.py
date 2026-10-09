@@ -15,6 +15,7 @@ from codey.operations.task_loop import (
 )
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult
+from codey.runtime.observe.events import RunEvent
 
 
 def _stable_synthesis_id(run_id: str) -> str:
@@ -28,7 +29,7 @@ def _stable_synthesis_id(run_id: str) -> str:
 
 def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                        project: str, run_id: str,
-                       on_event: Callable[[object], None], open_questions: Any = (),
+                       on_event: Callable[[RunEvent], None], open_questions: Any = (),
                        policy: Any) -> str:
     """Persist one synthesis note under the parent task policy (required).
 
@@ -104,7 +105,7 @@ def run_research_iteration(
     project: str,
     task: str,
     max_turns: int,
-    on_event: Callable[[object], None],
+    on_event: Callable[[RunEvent], None],
     stop_flag: Any,
     provider_id: str,
     run_id: str,

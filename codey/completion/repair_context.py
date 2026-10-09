@@ -329,7 +329,7 @@ def _proof_fields(proof: Any) -> dict[str, Any]:
         to_payload = getattr(raw, "to_payload", None)
         raw = to_payload() if callable(to_payload) else None
     if not isinstance(raw, Mapping):
-        raw = {}
+        raw = dict[str, object]()
         return {
             "status": str(getattr(proof, "status", "") or ""),
             "proof_id": getattr(proof, "proof_id", ""),

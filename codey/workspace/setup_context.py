@@ -164,7 +164,7 @@ def _manifest_detail(path: Path) -> str:
 def _package_detail(path: Path) -> str:
     try:
         payload = _read_limited(path)
-        package = json.loads(payload) if payload else {}
+        package = json.loads(payload) if payload else dict[str, object]()
     except (OSError, UnicodeDecodeError, ValueError):
         return "invalid JSON"
     scripts = package.get("scripts") if isinstance(package, dict) else None
@@ -180,7 +180,7 @@ def _package_detail(path: Path) -> str:
 def _pyproject_detail(path: Path) -> str:
     try:
         payload = _read_limited(path)
-        data = tomllib.loads(payload) if payload else {}
+        data = tomllib.loads(payload) if payload else dict[str, object]()
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return "invalid TOML"
     details: list[str] = []

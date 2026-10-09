@@ -50,7 +50,7 @@ _PROCESS_LOCKS: dict[str, _ProcessLockEntry] = {}
 def _held_locks() -> dict[str, _HeldLock]:
     held = getattr(_LOCAL, "held_locks", None)
     if held is None:
-        held = {}
+        held = dict[str, _HeldLock]()
         _LOCAL.held_locks = held
     return held
 

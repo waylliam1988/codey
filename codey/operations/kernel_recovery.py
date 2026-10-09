@@ -368,7 +368,7 @@ def delivered_slot_typed(
         try:
             from codey.runtime.effects.effect_records import compute_args_digest as _d
 
-            stored_args = getattr(stored_call, "args", {}) if stored_call is not None else {}
+            stored_args = getattr(stored_call, "args", {}) if stored_call is not None else dict[str, object]()
             stored_digest = str(_d(stored_args if isinstance(stored_args, dict) else {}) or "")
         except Exception:
             stored_digest = ""

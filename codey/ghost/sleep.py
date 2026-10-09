@@ -701,7 +701,7 @@ def _step_from_payload(payload: object) -> GhostSleepStepResult | None:
     if not name:
         return None
     raw_counts = payload.get("counts")
-    counts_source = raw_counts if isinstance(raw_counts, dict) else {}
+    counts_source = raw_counts if isinstance(raw_counts, dict) else dict[str, object]()
     counts = {
         clip_signal_text(key, 80): _int(value)
         for key, value in counts_source.items()

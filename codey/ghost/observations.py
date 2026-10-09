@@ -82,7 +82,7 @@ class GhostObservationStore:
         if cleaned_mode not in OBSERVABLE_MODES:
             cleaned_mode = "chat"
         cleaned_stop = str(stop_reason or "").strip().lower()
-        row = {
+        row: dict[str, object] = {
             "schema_version": OBSERVATIONS_SCHEMA_VERSION,
             "ts": _common.now_iso_z(),
             "type": "ghost_observation",

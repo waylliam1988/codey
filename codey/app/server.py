@@ -241,7 +241,7 @@ def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, d
     return response
 
 
-_GET_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
+_GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, dict[str, Any]]]] = {
     "/api/model_settings": lambda ctx, _query: model_settings.settings_response(ctx),
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
     "/api/ui_state": lambda ctx, _query: app_api.ui_state_response(ctx),
@@ -257,7 +257,7 @@ _GET_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
 }
 
 
-_POST_ROUTES: dict[str, Callable[..., tuple[int, dict[str, Any]]]] = {
+_POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[str, Any]]]] = {
     "/api/model_settings": model_settings.save_response,
     "/api/model_catalog": model_settings.discover_response,
     "/api/ui_state": app_api.save_ui_state_response,
@@ -436,7 +436,7 @@ class Handler(BaseHTTPRequestHandler):
         if raw is None:
             return
         try:
-            body = json.loads(raw.decode("utf-8")) if raw else {}
+            body = json.loads(raw.decode("utf-8")) if raw else dict[str, object]()
         except Exception:
             self._send_json(400, {"error": "invalid json"})
             return

@@ -303,7 +303,7 @@ class GhostHebbianStore:
                             now=now,
                         )
                         if current is not None
-                        else []
+                        else list[GhostEdge]()
                     )
                     if not changed_nodes and not changed_edges:
                         return GhostReinforceResult(False, "duplicate_evidence")

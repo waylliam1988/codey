@@ -208,9 +208,9 @@ def node_package_manager_for_directory(
     if package_data is None:
         package_text = read_manifest_text(directory_path / "package.json", max_bytes=MAX_MANIFEST_BYTES)
         try:
-            package_data = json.loads(package_text) if package_text else {}
+            package_data = json.loads(package_text) if package_text else dict[str, object]()
         except ValueError:
-            package_data = {}
+            package_data = dict[str, object]()
     return _package_manager(root_path, directory_path, package_data)
 
 
@@ -242,7 +242,7 @@ def _node_script_from_argv(argv: list[str]) -> str:
 def _package_script_exists(root: Path, cwd: str, script: str) -> bool:
     package_text = read_manifest_text(root / cwd / "package.json", max_bytes=MAX_MANIFEST_BYTES)
     try:
-        package = json.loads(package_text) if package_text else {}
+        package = json.loads(package_text) if package_text else dict[str, object]()
     except ValueError:
         return False
     scripts = package.get("scripts") if isinstance(package, dict) else None
@@ -365,7 +365,7 @@ def _node_candidates(root: Path, directory: Path, cwd: str) -> list[Verification
         try:
             package = json.loads(package_text)
         except ValueError:
-            package = {}
+            package = dict[str, object]()
         scripts = package.get("scripts") if isinstance(package, dict) else None
         if isinstance(scripts, dict):
             manager = _package_manager(root, directory, package)
@@ -391,7 +391,7 @@ def _python_candidates(root: Path, directory: Path, cwd: str) -> list[Verificati
         try:
             pyproject = tomllib.loads(pyproject_text)
         except tomllib.TOMLDecodeError:
-            pyproject = {}
+            pyproject = dict[str, object]()
         if _pyproject_tool(pyproject, "pytest") or _pyproject_tool(
             pyproject,
             "pytest",

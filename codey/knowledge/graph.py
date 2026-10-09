@@ -232,12 +232,12 @@ class KnowledgeGraphBuilder:
                 types=("synthesis", "decision"),
             )
         except Exception:
-            rows = []
+            rows = list[dict[str, Any]]()
         if not rows:
             try:
                 rows = self._required_store.index.recent(1, session_id=session_id)
             except Exception:
-                rows = []
+                rows = list[dict[str, Any]]()
         return tuple(str(row.get("id") or "") for row in rows if row.get("id"))
 
     def _expand_note_ids(self, focus: tuple[str, ...], depth: int) -> tuple[str, ...]:

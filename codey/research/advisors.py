@@ -76,7 +76,7 @@ class EvidencePack:
                 title = item.get("title") or ""
                 url = item.get("url") or ""
                 quality_value = item.get("quality")
-                quality = quality_value if isinstance(quality_value, Mapping) else {}
+                quality = quality_value if isinstance(quality_value, Mapping) else dict[str, object]()
                 pages = compact_pages(item.get("pages") or ())
                 quality_text = " · ".join(
                     part for part in (
@@ -116,7 +116,7 @@ class EvidencePack:
             queries = (
                 queries_value
                 if isinstance(queries_value, (list, tuple))
-                else []
+                else list[str]()
             )
             if queries:
                 lines.extend(f"- query: {item}" for item in list(queries)[:MAX_ADVISOR_SOURCE_URLS])
@@ -124,12 +124,12 @@ class EvidencePack:
             skipped = (
                 skipped_value
                 if isinstance(skipped_value, (list, tuple))
-                else []
+                else list[dict[str, object]]()
             )
             if skipped:
                 lines.append("Skipped results:")
                 for item in skipped[:MAX_ADVISOR_SOURCE_URLS]:
-                    row = item if isinstance(item, Mapping) else {}
+                    row = item if isinstance(item, Mapping) else dict[str, object]()
                     lines.append(
                         f"- {row.get('title') or row.get('url') or ''} "
                         f"({row.get('reason') or 'skipped'})"
@@ -168,7 +168,7 @@ def run_research_advisors(
     try:
         statuses = dict(availability())
     except Exception:
-        statuses = {}
+        statuses = dict[str, bool]()
     candidates = advisor_ids(
         selected_provider_id,
         statuses,

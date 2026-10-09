@@ -117,7 +117,7 @@ def providers_response(ctx: Any) -> tuple[int, dict[str, Any]]:
         statuses = provider_services.provider_availability(ctx)
     except Exception:
         logger.exception("provider availability probe failed")
-        statuses = {}
+        statuses = dict[str, bool]()
         probe_error = True
     else:
         probe_error = False
@@ -423,7 +423,7 @@ def changes_response(ctx: Any, project: object) -> tuple[int, dict[str, Any]]:
         payload = {
             "ok": False,
             "error": "snapshot needs repair",
-            "files": [],
+            "files": list[dict[str, object]](),
             "diff": "",
         }
     return 200 if payload.get("ok") else 400, payload
@@ -547,7 +547,7 @@ def run_submit_response(
     project_error = _project_directory_error(project)
     if project_error:
         return 400, {"error": project_error}
-    submit_kwargs = {
+    submit_kwargs: dict[str, object] = {
         "requested_capabilities": entry_auth.requested_capabilities,
         "strict_research": entry_auth.strict_research,
         "sources_open_required": entry_auth.sources_open_required,

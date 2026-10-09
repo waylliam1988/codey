@@ -93,7 +93,8 @@ class ModelPreferences:
         return allows(self._read()["sources"], provider_id, model_id)
 
     def enabled(self, source_id: str) -> bool:
-        return self._read()["sources"].get(source_id, {}).get("enabled") is True
+        enabled: object = self._read()["sources"].get(source_id, {}).get("enabled")
+        return enabled is True
 
     def catalog(self, source_id: str) -> dict[str, Any]:
         return copy.deepcopy(self._read()["catalogs"].get(source_id, {"id": source_id, "models": []}))

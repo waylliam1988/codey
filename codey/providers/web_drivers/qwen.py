@@ -358,7 +358,7 @@ def _last_text(page: Page) -> str:
     if response is None:
         return ""
     try:
-        return cast(str, response.inner_text().strip())
+        return response.inner_text().strip()
     except Exception:
         return ""
 

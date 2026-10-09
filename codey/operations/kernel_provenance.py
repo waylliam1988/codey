@@ -21,9 +21,12 @@ only; hooks adopt only ``event_proof``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeGuard
 
 from codey.runtime.core.models import ToolResult
+
+if TYPE_CHECKING:
+    from codey.workspace.revision import WorkspaceIdentity
 
 # Kernel-owned workspace provenance travels outside the executor-controlled
 # audit dict. Executor-provided ``workspace_revision``/``workspace_fingerprint``
@@ -113,7 +116,7 @@ def _validated_trusted_proof(proof: Any) -> tuple[Any, str]:
     return identity, source
 
 
-def _is_trusted_identity(identity: Any) -> bool:
+def _is_trusted_identity(identity: object) -> TypeGuard[WorkspaceIdentity]:
     """True only for a real trusted ``WorkspaceIdentity`` (no duck-typing)."""
     try:
         from codey.workspace.revision import WorkspaceIdentity
@@ -127,7 +130,7 @@ def _is_trusted_identity(identity: Any) -> bool:
         return False
 
 
-def _kernel_workspace_identity_of(result: ToolResult) -> Any | None:
+def _kernel_workspace_identity_of(result: ToolResult) -> WorkspaceIdentity | None:
     """Return the kernel-attached trusted identity, else None.
 
     Only the private side-channel set by ``_with_trusted_workspace_state``
@@ -201,7 +204,7 @@ def attach_trusted_workspace(result: ToolResult, proof: TrustedWorkspaceProof) -
 
     identity, _source = _validated_trusted_proof(proof)
     try:
-        audit = dict(result.audit) if isinstance(result.audit, dict) else {}
+        audit = dict(result.audit) if isinstance(result.audit, dict) else dict[str, object]()
     except Exception as exc:
         raise RecoveryFailed(f"trusted workspace audit unreadable: {exc}") from exc
     try:

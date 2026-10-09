@@ -66,7 +66,7 @@ def _appendix_opened(ledger: Any, lines: list[str]) -> None:
     try:
         opened = ledger.opened_sources_payload()
     except Exception:
-        opened = []
+        opened = list[dict[str, Any]]()
     if not opened:
         return
     lines.append("### Opened Sources")
@@ -74,7 +74,7 @@ def _appendix_opened(ledger: Any, lines: list[str]) -> None:
         try:
             quality = item.get("quality") or {}
         except Exception:
-            quality = {}
+            quality = dict[str, object]()
         try:
             quality_text = " · ".join(
                 part for part in (
@@ -102,7 +102,7 @@ def _appendix_evidence(ledger: Any, lines: list[str]) -> None:
     try:
         evidence = ledger.evidence_payload()
     except Exception:
-        evidence = []
+        evidence = list[dict[str, Any]]()
     if not evidence:
         return
     lines.append("### Evidence Items")
@@ -121,7 +121,7 @@ def _appendix_coverage(ledger: Any, lines: list[str]) -> None:
     try:
         coverage = ledger.coverage_payload()
     except Exception:
-        coverage = {}
+        coverage = dict[str, Any]()
     try:
         queries = coverage.get("queries") if isinstance(coverage, dict) else None
     except Exception:
@@ -134,7 +134,7 @@ def _appendix_coverage(ledger: Any, lines: list[str]) -> None:
     try:
         skipped = coverage.get("skipped_results") or []
     except Exception:
-        skipped = []
+        skipped = list[dict[str, Any]]()
     if not skipped:
         return
     lines.append("  skipped:")

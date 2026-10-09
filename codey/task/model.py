@@ -69,7 +69,7 @@ def derive_project_changes_required(
     edits. Never keyword-guesses from task text.
     """
     try:
-        data = body if isinstance(body, dict) else {}
+        data = body if isinstance(body, dict) else dict[str, object]()
         if isinstance(data, dict) and "project_changes_required" in data:
             raw = data.get("project_changes_required")
             if raw is True:

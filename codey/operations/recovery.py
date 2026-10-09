@@ -709,7 +709,7 @@ def record_entry_policy(
     if mutations is None or policy is None:
         return
     try:
-        payload = policy.to_payload() if hasattr(policy, "to_payload") else {}
+        payload = policy.to_payload() if hasattr(policy, "to_payload") else dict[str, object]()
     except Exception as exc:
         raise RuntimeError(f"task policy serialization failed: {exc}") from exc
     setter = getattr(mutations, "set_task_policy", None)

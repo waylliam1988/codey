@@ -181,7 +181,7 @@ def decode_turn(message: dict[str, Any], *,
     parsed, dropped = _parse_tool_calls(message)
     text = str(message.get("content") or "")
     metadata_turn = text_decoder(text) if text_decoder is not None else text
-    provider_metadata = {}
+    provider_metadata = dict[str, object]()
     if isinstance(metadata_turn, AssistantTurn):
         provider_metadata = dict(metadata_turn.raw)
         text = metadata_turn.text

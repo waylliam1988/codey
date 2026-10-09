@@ -123,7 +123,7 @@ def _emit_review_unavailable(ctx: ProjectRun) -> None:
 
 def _run_review_with_trace(ctx: ProjectRun, **kwargs: Any) -> Any:
     changes_value = kwargs.get("changes")
-    changes = changes_value if isinstance(changes_value, dict) else {}
+    changes = changes_value if isinstance(changes_value, dict) else dict[str, object]()
     try:
         review_impact_map = safe_review_impact_map(
             kwargs.get("project") or ctx.project,

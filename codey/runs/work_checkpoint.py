@@ -149,7 +149,7 @@ class WorkCheckpoint:
     workspace_changed: bool = False
 
     def to_payload(self) -> dict[str, Any]:
-        payload = {
+        payload: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "run_id": self.run_id,
             "session_id": self.session_id,

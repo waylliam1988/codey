@@ -17,8 +17,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Any, ParamSpec, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Locator
 
 from codey.providers import discovery as discovery
 from codey.providers import flow as provider_flow
@@ -56,7 +59,7 @@ CONTROL_LABELS = {
     CONTROL_RESPONSE: "answer",
 }
 CONTROL_STORE = DEFAULT_STATE_HOME / "provider-controls.json"
-_handler: Callable[[ControlTeachRequest], Any] | None = None
+_handler: Callable[[ControlTeachRequest], Locator] | None = None
 _doctor_handler: Callable[[profile_doctor.ProfileDoctorRequest], str | None] | None = None
 _context = threading.local()
 _TASK_CONTEXT_FIELDS = (
@@ -92,7 +95,7 @@ class _RevivalSend:
 class _PendingControl:
     page: Any
     fingerprint: dict[str, Any]
-    locator: Any | None = None
+    locator: Locator | None = None
 
 
 class ControlTeachCancelled(cancellation.TaskCancelled):
@@ -119,7 +122,7 @@ class ControlTeachRequest:
         return f"Click the {label} in the model page"
 
 
-def set_teach_handler(handler: Callable[[ControlTeachRequest], Any] | None) -> None:
+def set_teach_handler(handler: Callable[[ControlTeachRequest], Locator] | None) -> None:
     global _handler
     _handler = handler
 
@@ -172,8 +175,8 @@ def revival_send(provider_id: str) -> Callable[[Callable[_P, _R]], Callable[_P, 
     return decorate
 
 
-def visible_locator(page: Any, selector: str) -> Any | None:
-    locator = page.locator(selector)
+def visible_locator(page: Any, selector: str) -> Locator | None:
+    locator: Locator = page.locator(selector)
     try:
         count = locator.count()
     except cancellation.TaskCancelled:
@@ -204,7 +207,7 @@ def locate_control(
     require_enabled: bool = False,
     teach: bool = False,
     anchor: Any | None = None,
-) -> Any | None:
+) -> Locator | None:
     cancellation.check()
     deadline = time.time() + max(0.0, timeout)
     first = True
@@ -259,7 +262,7 @@ def pending_control(
     action: str,
     *,
     require_enabled: bool = False,
-) -> Any | None:
+) -> Locator | None:
     """Reuse one uncommitted control only within its originating page."""
     pending = _pending_map().get((provider_id, action))
     if pending is None or pending.page is not page:
@@ -289,7 +292,7 @@ def saved_control(
     action: str,
     *,
     require_enabled: bool = False,
-) -> Any | None:
+) -> Locator | None:
     record = load_control(provider_id, action)
     if not record:
         return None
@@ -308,10 +311,10 @@ def saved_control(
     return None
 
 
-def unique_visible_locator(page: Any, selector: str) -> Any | None:
+def unique_visible_locator(page: Any, selector: str) -> Locator | None:
     """Return a visible match only when the learned selector is unambiguous."""
-    locator = page.locator(selector)
-    matches: list[Any] = []
+    locator: Locator = page.locator(selector)
+    matches: list[Locator] = []
     try:
         count = int(locator.count())
     except Exception:
@@ -333,7 +336,7 @@ def discover_control(
     *,
     require_enabled: bool = False,
     anchor: Any | None = None,
-) -> Any | None:
+) -> Locator | None:
     """Find a plausible composer control without allowing a broad selector to click it."""
     cancellation.check()
     if not _provider_host_allowed(page, provider_id):
@@ -378,7 +381,7 @@ def start_response_watch(page: Any, provider_id: str) -> None:
         return
     watches = getattr(_context, "response_watches", None)
     if watches is None:
-        watches = {}
+        watches = dict[str, str]()
         _context.response_watches = watches
     watches[provider_id] = token
     _response_locator_map().pop(provider_id, None)
@@ -395,7 +398,7 @@ def locate_response(
     page: Any,
     provider_id: str,
     selectors: list[str] | tuple[str, ...],
-) -> Any | None:
+) -> Locator | None:
     """Locate the newest answer, with DOM-delta discovery as a bounded fallback."""
     for selector in selectors:
         response = visible_locator(page, selector)
@@ -441,7 +444,7 @@ def response_count(
     return 1 if response is not None else 0
 
 
-def discover_response(page: Any, provider_id: str) -> Any | None:
+def discover_response(page: Any, provider_id: str) -> Locator | None:
     if not _provider_host_allowed(page, provider_id):
         return None
     watches = getattr(_context, "response_watches", {})
@@ -453,7 +456,7 @@ def discover_response(page: Any, provider_id: str) -> Any | None:
     return _remember_discovered_response(page, provider_id, found)
 
 
-def request_doctor_response(page: Any, provider_id: str) -> Any | None:
+def request_doctor_response(page: Any, provider_id: str) -> Locator | None:
     """Ask once only after normal response discovery has exhausted its wait."""
     if not _provider_host_allowed(page, provider_id):
         return None
@@ -470,7 +473,7 @@ def request_doctor_response(page: Any, provider_id: str) -> Any | None:
     return _remember_discovered_response(page, provider_id, found)
 
 
-def teach_response(page: Any, provider_id: str) -> Any | None:
+def teach_response(page: Any, provider_id: str) -> Locator | None:
     if not can_teach():
         return None
     response = request_teaching(page, provider_id, CONTROL_RESPONSE)
@@ -500,7 +503,7 @@ def _remember_discovered_response(
     page: Any,
     provider_id: str,
     found: discovery.Discovery,
-) -> Any:
+) -> Locator:
     fingerprint = fingerprint_from_click(found.fingerprint)
     response = found.locator
     _response_locator_map()[provider_id] = response
@@ -531,7 +534,7 @@ def request_teaching(
     action: str,
     *,
     require_enabled: bool = False,
-) -> Any:
+) -> Locator:
     cancellation.check()
     if not _provider_host_allowed(page, provider_id):
         raise TimeoutError("Provider page host does not match the recovery target")
@@ -696,7 +699,7 @@ def save_control(
     data = load_controls(path)
     provider = data.setdefault(provider_id, {})
     if not isinstance(provider, dict):
-        provider = {}
+        provider = dict[str, object]()
         data[provider_id] = provider
     provider[action] = {
         "host": _page_host(page),
@@ -834,7 +837,7 @@ def _update_learned_control(
 def _source_map() -> dict[tuple[str, str], str]:
     sources = getattr(_context, "sources", None)
     if sources is None:
-        sources = {}
+        sources = dict[tuple[str, str], str]()
         _context.sources = sources
     return sources
 
@@ -842,13 +845,13 @@ def _source_map() -> dict[tuple[str, str], str]:
 def _pending_map() -> dict[tuple[str, str], _PendingControl]:
     pending = getattr(_context, "pending", None)
     if pending is None:
-        pending = {}
+        pending = dict[tuple[str, str], _PendingControl]()
         _context.pending = pending
     return pending
 
 
-def _response_locator_map() -> dict[str, Any]:
-    locators = getattr(_context, "response_locators", None)
+def _response_locator_map() -> dict[str, Locator | None]:
+    locators: dict[str, Locator | None] | None = getattr(_context, "response_locators", None)
     if locators is None:
         locators = {}
         _context.response_locators = locators
@@ -858,7 +861,7 @@ def _response_locator_map() -> dict[str, Any]:
 def _revival_attempts() -> dict[str, _RevivalSend]:
     attempts = getattr(_context, "revival_attempts", None)
     if attempts is None:
-        attempts = {}
+        attempts = dict[str, _RevivalSend]()
         _context.revival_attempts = attempts
     return attempts
 
@@ -866,7 +869,7 @@ def _revival_attempts() -> dict[str, _RevivalSend]:
 def _flow_cache() -> dict[tuple[str, str, str], dict[str, tuple[str, ...]] | None]:
     cache = getattr(_context, "flow_cache", None)
     if cache is None:
-        cache = {}
+        cache = dict[tuple[str, str, str], dict[str, tuple[str, ...]] | None]()
         _context.flow_cache = cache
     return cache
 
@@ -1089,7 +1092,7 @@ def _remember_pending(
     action: str,
     page: Any,
     fingerprint: dict[str, Any],
-    locator: Any | None = None,
+    locator: Locator | None = None,
 ) -> None:
     _pending_map()[(provider_id, action)] = _PendingControl(
         page,
@@ -1125,7 +1128,7 @@ def fingerprint_from_click(data: Any) -> dict[str, Any]:
 def selector_candidates(fingerprint: dict[str, Any], action: str = "") -> list[str]:
     tag = _selector_tag(fingerprint.get("tag"))
     raw_data = fingerprint.get("data")
-    data = raw_data if isinstance(raw_data, dict) else {}
+    data = raw_data if isinstance(raw_data, dict) else dict[str, object]()
     candidates: list[str] = []
     for attr in ("data-testid", "data-test-id", "data-track-id", "data-track-name", "data-qa", "data-role"):
         value = _clean(data.get(attr), 120)
@@ -1146,7 +1149,7 @@ def selector_candidates(fingerprint: dict[str, Any], action: str = "") -> list[s
         candidates.append(f'{tag}[type={_css_str(input_type)}]')
 
     raw_classes = fingerprint.get("classes")
-    classes = [cls for cls in raw_classes if _stable_token(cls)] if isinstance(raw_classes, list) else []
+    classes = [cls for cls in raw_classes if _stable_token(cls)] if isinstance(raw_classes, list) else list[str]()
     if classes:
         parts = "".join(f'[class~={_css_str(cls)}]' for cls in classes[:3])
         candidates.append(f"{tag}{parts}")
@@ -1280,10 +1283,10 @@ def _dedupe(items: list[str]) -> list[str]:
 
 def _combined_text(fingerprint: dict[str, Any]) -> str:
     raw_data = fingerprint.get("data")
-    data = raw_data if isinstance(raw_data, dict) else {}
+    data = raw_data if isinstance(raw_data, dict) else dict[str, object]()
     classes = fingerprint.get("classes")
     if not isinstance(classes, list):
-        classes = []
+        classes = list[str]()
     parts = [
         fingerprint.get("tag"),
         fingerprint.get("role"),

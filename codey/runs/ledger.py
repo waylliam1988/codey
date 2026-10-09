@@ -58,7 +58,7 @@ def _tool_id(event: RunEvent) -> str:
 
     metadata = getattr(event, "metadata", {})
     if not isinstance(metadata, dict):
-        metadata = {}
+        metadata = dict[str, object]()
     index = _safe_tool_index(metadata.get("tool_index"))
     return f"{event.turn}:{index}"
 
@@ -236,7 +236,7 @@ class RunLedgerWriter:
             self._append_payload(payload)
         if event.kind != "tool" or event.call is None or event.outcome is None:
             return
-        args = event.call.args if isinstance(event.call.args, dict) else {}
+        args = event.call.args if isinstance(event.call.args, dict) else dict[str, object]()
         path = str(args.get("path") or "")
         if event.call.name == "edit" and event.outcome.ok and event.outcome.changed:
             self.append(
@@ -343,7 +343,7 @@ class RunLedgerWriter:
             payload["text"] = _clip(event.message, MAX_TEXT_CHARS)
             return payload
         if event.kind == "tool_start" and event.call is not None:
-            start_args = event.call.args if isinstance(event.call.args, dict) else {}
+            start_args = event.call.args if isinstance(event.call.args, dict) else dict[str, object]()
             path = str(start_args.get("path") or "")
             payload = _event_common(self.run_id, self.session_id, self.seq + 1, "tool_started")
             payload.update({
@@ -359,7 +359,7 @@ class RunLedgerWriter:
             return payload
         if event.kind != "tool" or event.call is None or event.outcome is None:
             return None
-        tool_args = event.call.args if isinstance(event.call.args, dict) else {}
+        tool_args = event.call.args if isinstance(event.call.args, dict) else dict[str, object]()
         path = str(tool_args.get("path") or "")
         payload = _event_common(self.run_id, self.session_id, self.seq + 1, "tool_finished")
         payload.update({

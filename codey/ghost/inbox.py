@@ -1022,7 +1022,7 @@ def _derived_value_key(summary: object, evidence_quote: object) -> str:
 
 
 def _token_slug(value: object) -> str:
-    tokens = [token.casefold() for token in _TOKEN_RE.findall(str(value or ""))]
+    tokens: list[str] = [token.casefold() for token in _TOKEN_RE.findall(str(value or ""))]
     if not tokens:
         return "empty"
     return "_".join(tokens[:8])[:120]

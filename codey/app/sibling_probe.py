@@ -153,7 +153,7 @@ def handle_control_teach(ctx: TaskState, request: provider_controls.ControlTeach
     while True:
         teach_id = "teach_" + uuid.uuid4().hex[:12]
         token = provider_controls.start_click_capture(request.page)
-        pending = {
+        pending: dict[str, Any] = {
             "id": teach_id,
             "request": request,
             "token": token,

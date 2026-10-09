@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from codey.research.tools import ResearchTools
 
 from codey.agents.request import AgentRequest
 from codey.operations.context import RunFrame, RunWork
@@ -47,7 +50,7 @@ def _planning_entry_policy(frame: RunFrame, request: Any) -> Any:
     return policy
 
 
-def _planning_research_tools(deps: PlanningFlowDeps, policy: Any, *, session_id: str, project: str) -> Any | None:
+def _planning_research_tools(deps: PlanningFlowDeps, policy: Any, *, session_id: str, project: str) -> ResearchTools | None:
     """Construct source resources only when the resolved policy permits them."""
     from codey.operations.task_execution import build_research_tools
 

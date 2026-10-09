@@ -227,7 +227,7 @@ def _clean_research_run(value: object) -> dict[str, Any] | None:
     run["coverage"] = (
         _clean_research_json(value.get("coverage"), depth=MAX_RESEARCH_DEPTH)
         if isinstance(value.get("coverage"), dict)
-        else {}
+        else dict[str, object]()
     )
     run["restoreable"] = False
     run["createdAt"] = _int(value.get("createdAt"))
@@ -273,7 +273,7 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
             continue
         terminal_runs = item.get("terminalRuns")
         if not isinstance(terminal_runs, list):
-            terminal_runs = []
+            terminal_runs = list[dict[str, Any]]()
         entry: dict[str, Any] = {
             "draft": _clean_draft(item.get("draft")),
             "id": _str(item.get("id")),
@@ -301,7 +301,7 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
             if not isinstance(effort, str) or effort not in allowed:
                 effort = "off" if selection.get("thinking") is False else "high" if selection.get("thinking") is True else None
             history = selection.get("efforts")
-            efforts = {str(key)[:1000]: value for key, value in list(history.items())[:50] if isinstance(value, str) and value in allowed} if isinstance(history, dict) else {}
+            efforts = {str(key)[:1000]: value for key, value in list(history.items())[:50] if isinstance(value, str) and value in allowed} if isinstance(history, dict) else dict[str, str]()
             entry["modelSelection"] = {
                 "connection_id": _str(selection.get("connection_id"), 40),
                 "base_url": _str(selection.get("base_url")),
@@ -365,7 +365,7 @@ def _message_excerpt(message: dict[str, Any]) -> str:
     elif kind == "changes":
         count = _int(message.get("count"))
         files = message.get("files")
-        paths = []
+        paths = list[str]()
         if isinstance(files, list):
             paths = [
                 str(item.get("path") or "")

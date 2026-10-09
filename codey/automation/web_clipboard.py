@@ -34,7 +34,7 @@ def copy_action_text(
     except Exception:
         return ""
 
-    copied = ""
+    copied: str = ""
     try:
         cancellation.check()
         action.click()

@@ -256,10 +256,10 @@ def research_plan_trace_payload(plan: ResearchPlan | Mapping[str, object]) -> di
     payload = plan.to_payload() if isinstance(plan, ResearchPlan) else dict(plan)
     source_preferences = payload.get("source_preferences")
     if not isinstance(source_preferences, list):
-        source_preferences = []
+        source_preferences = list[object]()
     query_candidates = payload.get("query_candidates")
     if not isinstance(query_candidates, list):
-        query_candidates = []
+        query_candidates = list[object]()
     return {
         "plan_ref": _generated_ref(payload.get("plan_ref"), "research_plan"),
         "question_digest": valid_digest_ref(payload.get("question_digest")),

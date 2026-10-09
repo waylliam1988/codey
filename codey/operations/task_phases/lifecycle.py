@@ -180,7 +180,7 @@ def start_run_operation(
             max_repair_rounds=max_repair_rounds,
             task_kind=task_kind,
         )
-        return work.operation is not None
+        return bool(work.operation is not None)
     except (OSError, ValueError, RuntimeOperationTransitionError):
         work.operation = None
         return False
@@ -196,7 +196,7 @@ def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> 
             raise RuntimeOperationTransitionError("runtime mutation line is missing")
         receipt = event.get("receipt")
         proof = receipt.get("completion_proof") if isinstance(receipt, dict) else None
-        proof = proof if isinstance(proof, dict) else {}
+        proof = proof if isinstance(proof, dict) else dict[str, object]()
         delivery = event.get("final_delivery")
         work.operation = mutations.mark_terminal(
             work.operation.session_id,

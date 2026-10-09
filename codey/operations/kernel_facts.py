@@ -71,7 +71,7 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
         pages = raw_pages
         if not url:
             raise ValueError("hit target is malformed")
-        clean = {"url": url, "offset": raw_offset, "pages": pages}
+        clean: dict[str, object] = {"url": url, "offset": raw_offset, "pages": pages}
         if hid in pending and pending[hid] != clean:
             raise ValueError(f"conflicting hit target for {hid}")
         pending[hid] = clean

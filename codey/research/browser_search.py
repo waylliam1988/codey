@@ -121,7 +121,7 @@ class BrowserSearchProvider:
         profiles = load_profiles()
         engine_profiles = profiles.get("engines", {})
         if not isinstance(engine_profiles, dict):
-            engine_profiles = {}
+            engine_profiles = dict[str, object]()
         self.engine = engine or profiles.get("default_engine", "bing")
         self._profiles = {
             str(name): value

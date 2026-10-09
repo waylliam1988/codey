@@ -342,8 +342,8 @@ def _valid_work_event(event: Mapping[str, object]) -> bool:
         if not _valid_work_delete_payload(payload):
             return False
         reason = str(payload.get("reason") or "") if isinstance(payload, Mapping) else ""
-        item_ids = payload.get("item_ids") if isinstance(payload, Mapping) else []
-        expected_items_value = payload.get("expected_items") if isinstance(payload, Mapping) else []
+        item_ids = payload.get("item_ids") if isinstance(payload, Mapping) else list[str]()
+        expected_items_value = payload.get("expected_items") if isinstance(payload, Mapping) else list[dict[str, object]]()
         expected_items = _list(expected_items_value)
         scope = str(payload.get("scope") or "") if isinstance(payload, Mapping) else ""
         project_ref = str(payload.get("project_ref") or "") if isinstance(payload, Mapping) else ""
@@ -520,7 +520,7 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
     updated_at = clip_signal_text(patch.get("updated_at"), 80)
     if not updated_at:
         return False
-    precondition_map = precondition if isinstance(precondition, Mapping) else {}
+    precondition_map = precondition if isinstance(precondition, Mapping) else dict[str, object]()
     expected_status = _clean_status(precondition_map.get("expected_status"))
     expected_started_run_id = clip_signal_text(precondition_map.get("expected_started_run_id"), 120)
     expected_retry_count = precondition_map.get("expected_retry_count")

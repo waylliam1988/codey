@@ -264,7 +264,7 @@ class EvidenceLedgerStore:
                             reason_code="ledger_unavailable",
                             record_id=str(record_payload.get("record_id") or ""),
                         )
-                    loaded = {}
+                    loaded = dict[str, object]()
                     rotated_unavailable = True
                 payload = loaded or self._new_payload(session_id=session_id, project=project)
                 previous_counts = _counts(loaded) if loaded else {}

@@ -151,7 +151,7 @@ def _reply(
     error: str = "",
     failure: dict[str, Any] | None = None,
 ) -> None:
-    payload = {"id": request_id, "ok": ok}
+    payload: dict[str, Any] = {"id": request_id, "ok": ok}
     if ok:
         payload["result"] = result
     else:

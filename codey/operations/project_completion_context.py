@@ -413,7 +413,7 @@ def handle_project_tool_event(
         return
     name = str(getattr(call, "name", "") or "")
     if name == "run":
-        args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else {}
+        args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else dict[str, object]()
         command = str(args.get("command") or "")
         cwd = str(args.get("path") or ".")
         from codey.utils.refs import strict_run_success
@@ -458,7 +458,7 @@ def handle_project_tool_event(
             return
         if type(outcome_changed) is not bool or outcome_changed is not True:
             return
-        args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else {}
+        args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else dict[str, object]()
         rel = str(args.get("path") or "")
         update_checkpoint(lambda store, item: store.record_edit(item, rel))
 
@@ -490,10 +490,10 @@ def record_analysis_run(
     if trace is None or not command:
         return
     try:
-        audit = outcome.audit if isinstance(getattr(outcome, "audit", None), Mapping) else {}
+        audit = outcome.audit if isinstance(getattr(outcome, "audit", None), Mapping) else dict[str, object]()
         if not audit.get("command_started_at"):
             return
-        managed = outcome.managed_output() if callable(getattr(outcome, "managed_output", None)) else {}
+        managed = outcome.managed_output() if callable(getattr(outcome, "managed_output", None)) else dict[str, object]()
         record = analysis_run_record(
             {
                 "run_id": run_id,

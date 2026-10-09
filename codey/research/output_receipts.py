@@ -21,7 +21,7 @@ class _Outcome:
         self.model_text = model_text
         self.ok = ok
         self.status = "ok" if ok else "error"
-        self.exit_code = None
+        self.exit_code: int | None = None
         self.changed = False
         self.truncated = False
         self.presentation = {"status": self.status, "result": (presentation_result or self.first_model_line(200))[:200]}

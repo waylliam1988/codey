@@ -12,11 +12,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from codey.ghost.schema import clip_signal_text
 
 VALID_SCOPES = ("user", "project", "session")
+_WorkItemT = TypeVar("_WorkItemT")
 
 
 def field_value(value: Any, name: str) -> object:
@@ -64,7 +65,7 @@ def filter_values(value: object, allowed: frozenset[str]) -> set[str]:
     return {item for item in values if item in allowed}
 
 
-def find_work_item_by_id(items: Iterable[Any], item_id: str) -> Any | None:
+def find_work_item_by_id(items: Iterable[_WorkItemT], item_id: str) -> _WorkItemT | None:
     """Shared work-item lookup (single source for identical helpers).
 
     Clips the requested id to the UI bound before comparing, so callers

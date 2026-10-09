@@ -44,9 +44,9 @@ class ReviewIdentity:
 
 
 def scope_digest_for(scope: ReviewScope) -> str:
-    fields = asdict(scope)
+    fields: dict[str, object] = dict(asdict(scope))
     for key in ("provided_files", "excluded_files", "exclusion_reasons"):
-        fields[key] = sorted(fields[key])
+        fields[key] = sorted(getattr(scope, key))
     payload = json.dumps(fields, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 

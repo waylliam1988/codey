@@ -124,9 +124,12 @@ def detect_local_endpoint_probes(
     max_workers: int = DETECT_WORKERS,
 ) -> list[LocalEndpointProbe]:
     """Probe every candidate in parallel, preserving candidate order."""
+    def probe(candidate: LocalEndpointCandidate) -> LocalEndpointProbe:
+        return _probe_candidate(candidate, api_key, timeout)
+
     with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
         return list(pool.map(
-            lambda candidate: _probe_candidate(candidate, api_key, timeout),
+            probe,
             LOCAL_ENDPOINT_CANDIDATES,
         ))
 

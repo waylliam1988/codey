@@ -6,6 +6,22 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+## Full-tree typing and execution boundaries
+
+- `test_ci_full_tree_typing_gate.py`: full-tree mypy and direct Pyrefly commands,
+  without baseline exemptions, using the pinned CI version.
+- `test_pyrefly_type_boundary_regressions.py`: mixed event payloads and structured
+  failures for missing project tools, missing sessions and direct edit boundaries.
+  Runtime payload assertions are paired with the full-tree type-checking gate.
+- `test_server_lazy_state.py`: service imports preserve browser-stack lazy loading.
+- `test_cancellation.py` and `test_windows_spawn_assigns_job_before_resuming_process.py`:
+  process ownership, cleanup and suspension with normal and substituted `Popen`.
+
+The final full suite after the typing fixes passed **8098 tests, 7 skipped,
+1503 subtests**. Required machine contracts passed **798 tests** with no skips.
+See [the test record](../TEST_REPORT.md) and
+[the Pyrefly gate](../docs/pyrefly-baseline-2026-10-09.md).
+
 ## Traceable context views and local comparisons
 
 Twenty-one focused files exercise deterministic behavior without real inference:
@@ -40,7 +56,7 @@ through Node 24; full competing agent runtimes are not claimed. See
 and [final verification](../TEST_REPORT.md).
 
 The five new files contribute 29 cases; scoring and joint comparison add three
-cases to existing files. The final suite is **8091 passed, 7 skipped, 1503 subtests
+cases to existing files. That context-change suite was **8091 passed, 7 skipped, 1503 subtests
 passed**. Required machine contracts are **798 passed**, including the existing
 `test_api_exchange_usage_accounting.py` check using the real codec interface.
 Fixture failures are not counted as valid TDD red evidence.

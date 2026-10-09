@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Any
 
 from codey.ghost.work_queue_model import GhostWorkItem
@@ -103,7 +104,7 @@ def run_research_mode(
         frame.provider, frame.conversation,
         fresh_window=(frame.provider_id, "research", frame.project_text),
     )
-    pipeline = run_pipeline or (lambda *args, **kwargs: run_research_pipeline(deps, *args, **kwargs))
+    pipeline = run_pipeline or partial(run_research_pipeline, deps)
     pipeline_result = pipeline(
         frame,
         hooks,
@@ -175,7 +176,7 @@ def build_research_topic_continuity(
         ]
         continuity = deps.ghost_continuity(project=project, session_id=session_id)
         claim_ref_loader = prior_claim_refs or (
-            lambda **kwargs: deps_prior_claim_refs(deps=deps, **kwargs)
+            partial(deps_prior_claim_refs, deps=deps)
         )
         projection = project_topic_continuity(
             interest_hints=interest_hints,
@@ -366,7 +367,7 @@ def run_research_pipeline(
     recorder = getattr(deps.state, "record_research_changes", None)
     changes_sink = recorder if callable(recorder) else None
     context_builder = build_context or (
-        lambda active_frame, **kwargs: build_research_context(deps, active_frame, **kwargs)
+        partial(build_research_context, deps)
     )
     ledger_sink = record_ledger_write or record_evidence_ledger_write
     pipeline = ResearchPipeline(
@@ -432,7 +433,7 @@ def research_payload(result: Any, *, pipeline_result: Any | None = None) -> dict
         pass
     if pipeline_result is not None:
         to_payload = getattr(pipeline_result, "to_payload", None)
-        metadata = to_payload() if callable(to_payload) else {}
+        metadata = to_payload() if callable(to_payload) else dict[str, Any]()
         if isinstance(metadata, dict):
             payload.update({
                 "followup_applied": bool(metadata.get("followup_applied")),

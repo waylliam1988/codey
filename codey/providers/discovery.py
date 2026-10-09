@@ -7,7 +7,10 @@ import math
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Locator
 
 MESSAGE_BOX = "message_box"
 SEND_BUTTON = "send_button"
@@ -15,7 +18,7 @@ SEND_BUTTON = "send_button"
 
 @dataclass(frozen=True)
 class Discovery:
-    locator: Any
+    locator: Locator
     fingerprint: dict[str, Any]
     score: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -47,7 +50,7 @@ def control_candidates(
         raw = page.evaluate(_DISCOVER_CONTROLS_JS, {"token": token, "anchorBox": anchor_box})
     except Exception:
         return ()
-    candidates = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+    candidates = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else list[dict[str, Any]]()
     ranked = sorted(
         ((score_control_candidate(item, action, anchor_box), item) for item in candidates),
         key=lambda pair: pair[0],
@@ -196,7 +199,7 @@ def response_candidates(
         raw = page.evaluate(_READ_RESPONSE_WATCH_JS, {"token": token})
     except Exception:
         return ()
-    candidates = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+    candidates = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else list[dict[str, Any]]()
     ranked = sorted(
         ((score_response_candidate(item), item) for item in candidates),
         key=lambda pair: pair[0],

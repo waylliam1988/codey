@@ -319,11 +319,11 @@ def _last_text(page: Page) -> str:
     try:
         if not response.evaluate(_FINAL_ANSWER_NODE_JS, THINKING_CONTENT):
             return ""
-        markdown_parts = response.locator(_MARKDOWN_BODY).all_inner_texts()
+        markdown_parts: list[str] = response.locator(_MARKDOWN_BODY).all_inner_texts()
         text = "\n".join(part.strip() for part in markdown_parts if part.strip()).strip()
         if text:
             return text
-        return cast(str, response.inner_text().strip())
+        return response.inner_text().strip()
     except Exception:
         return ""
 

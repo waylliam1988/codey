@@ -71,7 +71,7 @@ class _BorrowedSession:
 
 def provider_tab_availability(*, allowed: set[str] | None = None) -> dict[str, bool]:
     enabled = set(PROVIDER_LABELS) if allowed is None else allowed
-    statuses = detect_open_provider_tabs() if enabled.intersection(WEB_PROVIDER_LABELS) else {}
+    statuses = detect_open_provider_tabs() if enabled.intersection(WEB_PROVIDER_LABELS) else dict[str, bool]()
     payload = {provider_id: provider_id in enabled and bool(statuses.get(provider_id)) for provider_id in WEB_PROVIDER_LABELS}
     payload["local"] = "local" in enabled and local_endpoint_available()
     return payload

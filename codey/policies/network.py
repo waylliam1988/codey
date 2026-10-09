@@ -176,9 +176,12 @@ class NetworkPolicy:
         return reason
 
     def _record_cache(self, key: tuple[str, str, int], reason: str | None, now: float) -> None:
+        def cached_at(cache_key: tuple[str, str, int]) -> float:
+            return self._cache[cache_key][0]
+
         with self._lock:
             if len(self._cache) >= self.max_cache_entries:
-                oldest_key = min(self._cache, key=lambda k: self._cache[k][0], default=None)
+                oldest_key = min(self._cache, key=cached_at, default=None)
                 if oldest_key is not None:
                     self._cache.pop(oldest_key, None)
             self._cache[key] = (now, reason)

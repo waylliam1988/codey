@@ -6,6 +6,7 @@ import contextlib
 import json
 import math
 import time
+from functools import partial
 from typing import Any
 
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget
@@ -39,7 +40,7 @@ def _explicit_reply_normalizer(provider: Any) -> Any:
     try:
         instance_attributes = vars(provider)
     except TypeError:
-        instance_attributes = {}
+        instance_attributes = dict[str, object]()
     if "normalize_reply" in instance_attributes:
         return instance_attributes["normalize_reply"]
     for provider_type in type(provider).__mro__:
@@ -70,7 +71,7 @@ class ProviderAdapter:
     def __getattr__(self, name: str) -> Any:
         value = getattr(self.provider, name)
         if name in {"send_turn", "send_tool_results", "acknowledge_tool_results"} and callable(value):
-            return lambda *args, **kwargs: self._send(name, *args, **kwargs)
+            return partial(self._send, name)
         return value
 
     def send(self, *args: Any, **kwargs: Any) -> Any:

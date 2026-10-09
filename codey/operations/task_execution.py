@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation
 from codey.runtime.core.models import ToolCall, ToolResult
+
+if TYPE_CHECKING:
+    from codey.agents.tools import AgentToolFns
+    from codey.research.tools import ResearchTools
 
 
 def close_research_tools(tools: Any) -> None:
@@ -26,7 +30,7 @@ def close_research_tools(tools: Any) -> None:
             close()
 
 
-def build_research_tools(deps: Any, *, session_id: str, project: str) -> Any:
+def build_research_tools(deps: Any, *, session_id: str, project: str) -> ResearchTools:
     """Build the execution resources; configuration errors propagate to entry."""
     from codey.knowledge.changes import KnowledgeChanges
     from codey.research.tools import ResearchTools
@@ -86,7 +90,7 @@ class ExecutionDelegate:
         *,
         session: Any = None,
         project_path: Any = None,
-        tool_fns: Any = None,
+        tool_fns: AgentToolFns | None = None,
         research_tools: Any = None,
         permission_profile: str = "coding_writer",
         approval_available: bool = False,
@@ -98,10 +102,10 @@ class ExecutionDelegate:
         custom_executors: dict[str, Any] | None = None,
     ) -> None:
         self.session = session
-        self.project_path = Path(str(project_path)).expanduser() if project_path else None
+        self.project_path: Path | None = Path(str(project_path)).expanduser() if project_path else None
         if self.project_path is not None and not self.project_path.is_dir():
             self.project_path = None
-        self.tool_fns = tool_fns
+        self.tool_fns: AgentToolFns | None = tool_fns
         self.research_tools = research_tools
         self.permission_profile = str(permission_profile or "coding_writer")
         self.approval_available = bool(approval_available)
@@ -115,9 +119,9 @@ class ExecutionDelegate:
         if self.tool_fns is None and self.project_path is not None:
             try:
                 from codey.agents.tools import DEFAULT_TOOL_FNS
+                self.tool_fns = DEFAULT_TOOL_FNS
             except Exception:
-                DEFAULT_TOOL_FNS = None  # type: ignore[assignment]
-            self.tool_fns = DEFAULT_TOOL_FNS
+                pass
 
     def _resolve_spec(self, name: str) -> Any:
         lowered = str(name or "").strip().lower()
@@ -150,11 +154,11 @@ class ExecutionDelegate:
         if spec is None:
             return False
         if spec.executor == "receipt":
-            return self.session is not None
+            return bool(self.session is not None)
         if spec.executor == "project":
             return self.project_path is not None and self.tool_fns is not None
         if spec.executor in {"source", "knowledge"}:
-            return self.research_tools is not None
+            return bool(self.research_tools is not None)
         try:
             if self._resolve_custom_executor(str(name or "")) is not None:
                 return True
@@ -204,6 +208,8 @@ class ExecutionDelegate:
         spec = self._resolve_spec(call.name)
         if spec is None:
             return True, "tool definition unavailable", False
+        if self.session is None:
+            return True, "task session unavailable", False
         if not self.session.policy.allows(spec.grant):
             return True, f"task policy denied {call.name}", False
         if spec.executor != "project":
@@ -246,6 +252,8 @@ class ExecutionDelegate:
     def _execute_project(self, call: ToolCall) -> tuple[ToolResult, bool, int | None]:
         if self.project_path is None:
             return ToolResult(ok=False, call=call, model_text="ERROR: project path unavailable"), False, None
+        if self.tool_fns is None:
+            return ToolResult(ok=False, call=call, model_text="ERROR: project tools unavailable"), False, None
         project_path = self.project_path
         denied, message, _approval = self._policy_check(call)
         if denied:
@@ -293,6 +301,8 @@ class ExecutionDelegate:
 
         if self.project_path is None:
             return ToolOutcome.error("project path unavailable")
+        if self.tool_fns is None:
+            return ToolOutcome.error("project tools unavailable")
         project_path = self.project_path
         args = dict(call.args or {})
         path = str(args.get("path", "") or "")
@@ -404,7 +414,7 @@ class ExecutionDelegate:
                     return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown {name} id"), False, None
                 target = (getattr(self.session, "hit_targets", {}) or {}).get(
                     str(args.get("hit_id") or "").lower(), {}
-                ) if name == "open_hit" else {}
+                ) if name == "open_hit" else dict[str, Any]()
                 opened = (tools.open_url(url, offset=target.get("offset", 0),
                                          pages=target.get("pages", ""))
                           if target else tools.open_url(url))

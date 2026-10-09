@@ -1,5 +1,40 @@
 # Codey Test Report
 
+## Full-tree Pyrefly errors resolved (2026-10-09)
+
+Windows / Python 3.12.8, Node 24.19.0; starting commit
+`8d430fb566285ea5aba5c03cded67f177786841b`. Documentation was updated after
+the final full pytest run. Version remains 0.5.11; no tag or release.
+
+The recorded Pyrefly baseline contained 235 errors; a direct full-tree check
+found 236. Explicit container, payload, callback and return types resolve the
+diagnostics; missing project tools and task sessions now return structured
+execution errors. CI runs `pyrefly check codey` without baseline exemptions;
+the historical baseline now has an empty `errors` array. Checker settings were
+not relaxed and no new suppression comments were added.
+
+The supplied event-payload runtime test was already green and cannot detect
+dictionary type invariance; the full-tree type checker covers that boundary.
+The missing-tools test initially stopped at a missing session instead of its
+intended branch. Its fixture now supplies an allowed policy and disables the
+default tools; six tests cover the payload, run/read/edit tool absence, a missing
+session and direct edit after tools disappear.
+
+The first full run reported **6 failed, 8093 passed, 7 skipped, 1501 subtests
+passed in 928.66s**: four process tests exposed a runtime generic `Popen` call
+that broke function substitutes, and two subtests exposed eager Playwright
+imports. Production now uses ordinary `Popen` with typed spawn arguments and
+imports `Locator` only under `TYPE_CHECKING`. The affected-file rerun passed
+**116 tests, 1 skipped, 12 subtests**. Production was then frozen for the final
+full suite.
+
+- Direct Pyrefly: **0 errors, 47 suppressed / 838 warnings not shown**.
+- Mypy: **402 source files**, no issues on Windows and with `--platform linux`.
+- Ruff, compileall, **20 JavaScript asset** syntax checks and diff checks passed.
+- Required machine contracts: **798 passed in 177.77s**, no skips.
+- Final full pytest: **8098 passed, 7 skipped, 1503 subtests passed in 902.04s (0:15:02)**.
+- Seven skips remain the Windows/POSIX boundaries and opt-in real Edge E2E.
+
 ## Counted context optimization and evidence recovery (2026-10-09)
 
 Windows / Python 3.12.8, Node 24.19.0; baseline
@@ -28,7 +63,7 @@ Final checks, before the last full run:
 
 - Ruff: `python -m ruff check .` passed.
 - mypy: **402 source files**, no issues.
-- Pyrefly: **0 errors**, unchanged baseline **68 suppressed / 832 warnings not shown**.
+- Pyrefly: **0 new errors against the existing baseline**, **68 suppressed / 832 warnings not shown**.
 - Compileall, **20 JavaScript asset** syntax checks, and `git diff --check` passed.
 - Required machine contracts: **798 passed in 169.29s (0:02:49)**; no skips.
 - Final full pytest: **8091 passed, 7 skipped, 1503 subtests passed in 898.23s (0:14:58)**.

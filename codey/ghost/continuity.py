@@ -136,7 +136,7 @@ class GhostContinuityItem:
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def to_payload(self) -> dict[str, object]:
-        payload = {
+        payload: dict[str, object] = {
             "id": self.id,
             "kind": self.kind,
             "scope": self.scope,

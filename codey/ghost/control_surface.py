@@ -241,13 +241,13 @@ class GhostControlSurface:
                 errors.append(f"{name}_export_failed: {type(exc).__name__}")
                 return {"error": f"{name}_export_failed"}
 
-        payload["inbox"] = _export("inbox", lambda: self.inbox.export_state()) if self.inbox is not None else {}
-        payload["hebbian"] = _export("hebbian", lambda: self.hebbian.export_state()) if self.hebbian is not None else {}
-        payload["continuity"] = _export("continuity", lambda: self.continuity.export_state()) if self.continuity is not None else {}
-        payload["sleep"] = _export("sleep", lambda: self.sleep.export_state()) if self.sleep is not None else {}
-        payload["work_queue"] = _export("work_queue", lambda: self.work_queue.export_state()) if self.work_queue is not None else {}
-        payload["affinity"] = _export("affinity", lambda: self.affinity.export_state()) if self.affinity is not None else {}
-        payload["observations"] = _export("observations", lambda: self.observations.export_state()) if self.observations is not None else {}
+        payload["inbox"] = _export("inbox", lambda: self.inbox.export_state()) if self.inbox is not None else dict[str, object]()
+        payload["hebbian"] = _export("hebbian", lambda: self.hebbian.export_state()) if self.hebbian is not None else dict[str, object]()
+        payload["continuity"] = _export("continuity", lambda: self.continuity.export_state()) if self.continuity is not None else dict[str, object]()
+        payload["sleep"] = _export("sleep", lambda: self.sleep.export_state()) if self.sleep is not None else dict[str, object]()
+        payload["work_queue"] = _export("work_queue", lambda: self.work_queue.export_state()) if self.work_queue is not None else dict[str, object]()
+        payload["affinity"] = _export("affinity", lambda: self.affinity.export_state()) if self.affinity is not None else dict[str, object]()
+        payload["observations"] = _export("observations", lambda: self.observations.export_state()) if self.observations is not None else dict[str, object]()
         if errors:
             payload["ok"] = False
             payload["errors"] = errors

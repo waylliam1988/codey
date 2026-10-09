@@ -171,7 +171,7 @@ def _call_args_digest(call: ToolCall) -> str:
     except Exception:
         return ""
     try:
-        args = call.args if isinstance(call.args, dict) else {}
+        args = call.args if isinstance(call.args, dict) else dict[str, object]()
         return str(compute_args_digest(args) or "")
     except Exception:
         return ""

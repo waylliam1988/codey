@@ -10,6 +10,7 @@ kernel. All production tool calls converge in
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
@@ -237,7 +238,7 @@ def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any) ->
         raise RecoveryFailed(f"project change tracking unavailable: {exc}") from exc
 
 
-def _entry_project_receipt(frame: Any, work: Any, hooks: Any, deps: Any,
+def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: Any,
                            session: Any, result: Any, tracker: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
     from codey.operations.task_session import session_checks_passed
     from codey.runs.receipt import build_task_receipt
@@ -557,12 +558,12 @@ def _enrich_hybrid_outcome(
         # display never re-judges quality after the kernel verdict.
         # 2) Changed files projection: already-decided session facts only.
         try:
-            edited = dict(getattr(session, "edited_files", {}) or {}) if session is not None else {}
-            verifs = list(getattr(session, "verifications", ()) or []) if session is not None else []
+            edited = dict(getattr(session, "edited_files", {}) or {}) if session is not None else dict[str, object]()
+            verifs = list(getattr(session, "verifications", ()) or []) if session is not None else list[dict[str, Any]]()
             if edited:
                 display["changed_files"] = sorted(str(k)[:240] for k in edited)[:20]
                 try:
-                    last = verifs[-1] if verifs else {}
+                    last = verifs[-1] if verifs else dict[str, object]()
                     display["verification"] = str(last.get("command", "") or "")[:240] if isinstance(last, dict) else ""
                 except Exception:
                     pass
@@ -620,7 +621,7 @@ def run_task_submission(deps: Any, request: TaskSubmission) -> None:
         deps.state.runtime_log,
         execute,
         prepare=prepare,
-        on_unstarted_failure=lambda submission: release_unstarted_submission(deps.state, submission),
+        on_unstarted_failure=partial(release_unstarted_submission, deps.state),
     )
     runtime.run(request)
 

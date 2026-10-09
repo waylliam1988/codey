@@ -78,7 +78,7 @@ def prepare_review_input(
         scope = ReviewScope(collection_incomplete=True)
         safe_changes = {
             "ok": False,
-            "files": [],
+            "files": list[dict[str, object]](),
             "diff": "",
             "truncated": False,
             "changed_count": 0,

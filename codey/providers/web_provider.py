@@ -71,7 +71,7 @@ class WebChatProvider:
         return self.session.page.url
 
     def new_chat(self, timeout: float | None = None) -> None:
-        kwargs = {} if timeout is None else {"timeout": timeout}
+        kwargs = dict[str, float]() if timeout is None else {"timeout": timeout}
         run_web_new_chat(
             self,
             page=self.session.page,

@@ -9,7 +9,8 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import TypedDict
 
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
@@ -348,10 +349,41 @@ def _dedupe_diagnostics(diagnostics: object) -> tuple[ProofDiagnostic, ...]:
     return tuple(rows)
 
 
-def _review(**kwargs: object) -> ResearchProofReview:
-    base = ResearchProofReview(**kwargs)  # type: ignore[arg-type]
+def _review(
+    *,
+    ok: bool,
+    answers_question: bool,
+    answer_status: str,
+    answer_coverage_score: float,
+    citation_present: bool,
+    citation_locator_verified: bool,
+    support_relation_verified: bool,
+    counterevidence_checked: bool,
+    ledger_record_verified: bool,
+    question_digest: str = "",
+    coverage_gaps: tuple[CoverageGap, ...] = (),
+    followup_questions: tuple[PlannerSignal, ...] = (),
+    query_rewrite_candidates: tuple[PlannerSignal, ...] = (),
+    source_trust_warnings: tuple[str, ...] = (),
+    overclaim_warnings: tuple[str, ...] = (),
+    stale_warnings: tuple[str, ...] = (),
+    missing_evidence: tuple[str, ...] = (),
+    record_id: str = "",
+    record_digest: str = "",
+    diagnostics: tuple[ProofDiagnostic, ...] = (),
+) -> ResearchProofReview:
+    base = ResearchProofReview(
+        ok=ok, answers_question=answers_question, answer_status=answer_status,
+        answer_coverage_score=answer_coverage_score, citation_present=citation_present,
+        citation_locator_verified=citation_locator_verified, support_relation_verified=support_relation_verified,
+        counterevidence_checked=counterevidence_checked, ledger_record_verified=ledger_record_verified,
+        question_digest=question_digest, coverage_gaps=coverage_gaps, followup_questions=followup_questions,
+        query_rewrite_candidates=query_rewrite_candidates, source_trust_warnings=source_trust_warnings,
+        overclaim_warnings=overclaim_warnings, stale_warnings=stale_warnings, missing_evidence=missing_evidence,
+        record_id=record_id, record_digest=record_digest, diagnostics=diagnostics,
+    )
     proof_ref = _proof_ref_from_payload(base.__dict__)
-    return ResearchProofReview(**{**base.__dict__, "proof_ref": proof_ref})
+    return replace(base, proof_ref=proof_ref)
 
 
 def _proof_ref_from_payload(payload: Mapping[str, object]) -> str:
@@ -737,6 +769,17 @@ def _finalize_relation_verdict(
     return (support_relation_verified, locator_verified)
 
 
+class _RelationReview(TypedDict):
+    citation_present: bool
+    citation_locator_verified: bool
+    support_relation_verified: bool
+    counterevidence_checked: bool
+    supported_claim_ids: frozenset[str]
+    hard_failures: tuple[str, ...]
+    missing_evidence: tuple[str, ...]
+    diagnostics: tuple[ProofDiagnostic, ...]
+
+
 def _review_relations(
     *,
     claims: Mapping[str, Mapping[str, object]],
@@ -744,7 +787,7 @@ def _review_relations(
     assumptions: Mapping[str, Mapping[str, object]],
     relations: tuple[Mapping[str, object], ...],
     sources: Mapping[str, Mapping[str, object]],
-) -> dict[str, object]:
+) -> _RelationReview:
     source_ids = set(sources)
     evidence_ids = set(evidence)
     assumption_ids = set(assumptions)

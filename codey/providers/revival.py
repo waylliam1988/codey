@@ -77,7 +77,7 @@ def _complete_send_locked(
     data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
-        provider = {}
+        provider = dict[str, Any]()
         data[provider_id] = provider
 
     changed = False
@@ -309,7 +309,7 @@ def _restore_previous(provider: dict[str, Any], meta: dict[str, Any]) -> None:
     previous = meta.get("previous_bundle")
     previous = previous if isinstance(previous, dict) else {}
     controls = previous.get("controls")
-    controls = controls if isinstance(controls, dict) else {}
+    controls = controls if isinstance(controls, dict) else dict[str, object]()
     actions = _changed_actions(meta)
     for action in actions:
         record = controls.get(action)

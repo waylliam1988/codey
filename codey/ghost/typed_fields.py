@@ -247,7 +247,7 @@ def metadata_slug(value: object) -> str:
     text = str(value or "").strip().casefold()
     if not text:
         return ""
-    tokens = re.findall(r"[a-z0-9]+", text.replace("-", "_"))
+    tokens: list[str] = re.findall(r"[a-z0-9]+", text.replace("-", "_"))
     return "_".join(tokens[:8])[:120]
 
 

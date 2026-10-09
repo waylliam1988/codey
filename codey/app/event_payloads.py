@@ -158,7 +158,7 @@ def machine_event_payload(event: object) -> dict[str, object] | None:
     if not isinstance(event, dict):
         return None
     event_type = str(event.get("type") or "")
-    common = {
+    common: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "type": event_type,
     }
@@ -323,7 +323,7 @@ def bounded_receipt(receipt: dict[str, Any]) -> dict[str, object]:
 
 
 def _bounded_deferred_tool_call(row: dict[str, Any]) -> dict[str, object]:
-    payload = {
+    payload: dict[str, object] = {
         "tool_index": _int_or_zero(row.get("tool_index")),
         "tool_name": clip_event_text(row.get("tool_name") or "", 80),
     }
@@ -361,7 +361,7 @@ def _bounded_provider_failure(failure: dict[str, Any]) -> dict[str, object]:
 
 
 def _bounded_review(review: dict[str, Any]) -> dict[str, object]:
-    payload = {
+    payload: dict[str, object] = {
         "verdict": clip_event_text(review.get("verdict") or "", 40),
         "status": clip_event_text(review.get("status") or "", 40),
         "origin": clip_event_text(review.get("origin") or "", 40),

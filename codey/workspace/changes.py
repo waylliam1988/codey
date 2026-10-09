@@ -8,6 +8,7 @@ import hashlib
 import shutil
 import subprocess
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -311,7 +312,7 @@ class SnapshotStore:
         # delete a referenced body, or guess when publication cannot be read.
         try:
             payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
-            files = _manifest_files_or_raise(payload, manifest_path) if payload is not None else {}
+            files = _manifest_files_or_raise(payload, manifest_path) if payload is not None else dict[str, object]()
         except (OSError, ValueError):
             return
         if rel not in files:
@@ -494,7 +495,7 @@ class SnapshotStore:
         self,
         resolved_root: Path,
         rel: str,
-        mutate: Any,
+        mutate: Callable[[dict[str, Any]], dict[str, Any]],
     ) -> None:
         manifest_path = self.path_for(resolved_root)
         payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)

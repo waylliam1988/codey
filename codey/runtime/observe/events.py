@@ -101,7 +101,7 @@ class RunEvent:
 
 
 def _call_args(call: ToolCall | None) -> dict[str, Any]:
-    args = call.args if call is not None else {}
+    args = call.args if call is not None else dict[str, object]()
     return args if isinstance(args, dict) else {}
 
 

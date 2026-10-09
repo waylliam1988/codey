@@ -357,7 +357,7 @@ def record_project_memory(
         return
     try:
         brief = KnowledgeBriefBuilder(deps.persistence.knowledge_store).build_for_session(session_id)
-        sources = [brief.synthesis_id] if brief.synthesis_id else []
+        sources = [brief.synthesis_id] if brief.synthesis_id else list[str]()
         impl = KnowledgeNote.create(
             type="implementation",
             title=task[:120] or "Project implementation",

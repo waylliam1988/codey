@@ -206,13 +206,13 @@ class ConceptGraphBuilder:
             if session_id and str(row.get("session_id") or "") == session_id:
                 session_concepts.add(concept)
             if str(row.get("type") or "") == "synthesis":
-                entry = synthesis_by_id.get(note_id)
+                entry: dict[str, Any] | None = synthesis_by_id.get(note_id)
                 if entry is None:
                     entry = {
                         "id": note_id,
                         "title": str(row.get("title") or note_id),
                         "session_id": str(row.get("session_id") or ""),
-                        "concepts": [],
+                        "concepts": list[str](),
                     }
                     synthesis_by_id[note_id] = entry
                     syntheses.append(entry)

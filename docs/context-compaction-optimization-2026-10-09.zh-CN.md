@@ -144,7 +144,7 @@ python -m tests.manual.context_compaction_benchmark_ab --control --cases receipt
 
 ## 最终检查与可证明边界
 
-Ruff、mypy（402 文件）、Pyrefly（0 errors，既有 68 suppressed / 832 warnings）、compileall、20 个 JS 资产语法和 diff 检查通过。必跑契约 **798 passed，169.29s**。最终全量 **8091 passed、7 skipped、1503 subtests passed，898.23s（14 分 58 秒）**。
+Ruff、mypy（402 文件）、Pyrefly（按既有基线 0 新增 errors，68 suppressed / 832 warnings）、compileall、20 个 JS 资产语法和 diff 检查通过。必跑契约 **798 passed，169.29s**。最终全量 **8091 passed、7 skipped、1503 subtests passed，898.23s（14 分 58 秒）**。
 
 首次全量为 2 failed / 8089 passed：usage 测试的部分 codec 替身遗漏 `closed_spans`。夹具改为只包装真实解码方法，18 项定向回归通过，并把该文件加入必跑契约；随后重新检查和全量通过。生产代码在两次全量及最终 A/B 期间保持冻结。这个夹具修正不冒充 TDD 红测。
 

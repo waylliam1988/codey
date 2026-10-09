@@ -2,6 +2,17 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 全树 Pyrefly 检查（2026-10-09）
+
+- 补齐容器、载荷、回调及边界类型，消除全部 236 个活跃 Pyrefly 错误。
+  项目工具或任务会话不可用时返回结构化错误；浏览器类型只在 `TYPE_CHECKING` 下导入。
+- CI 直接检查 `codey` 全树，不再使用基线豁免。历史基线的 `errors` 数组清空，
+  检查器配置和固定的 Pyrefly 版本保持原样。
+- 完善执行边界回归，并锁定 CI 的直接检查命令。最终全量：**8098 passed、
+  7 skipped、1503 subtests passed，902.04s（15 分 02 秒）**；必跑契约 **798 passed**。
+  Pyrefly **0 errors**，Ruff、Windows/Linux 目标的 mypy、compileall、JS 语法与 diff
+  检查通过。文档在全量 pytest 完成后更新；版本保持 0.5.11。
+
 ## 未发布 - 上下文计数优化与证据恢复（2026-10-09）
 
 - 用可逆行模板和重复编码缩减模型输入，保留不同编号、独特事实和原始换行。

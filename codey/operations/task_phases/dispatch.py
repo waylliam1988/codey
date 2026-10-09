@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -161,7 +162,7 @@ def _research_deps(deps: TaskRunDeps) -> ResearchFlowDeps:
         evidence_ledgers=deps.evidence_ledgers,
         search_factory=deps.search_factory or default_research_search_provider,
         run_research_advisors=deps.run_research_advisors,
-        ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
+        ghost_continuity=partial(ghost_continuity, deps.state),
         managed_outputs=deps.managed_outputs,
         runtime_mutations=deps.runtime_mutations,
     )
@@ -175,9 +176,9 @@ def _planning_deps(deps: TaskRunDeps) -> PlanningFlowDeps:
         knowledge_store=deps.knowledge_store,
         search_factory=deps.search_factory,
         review_log_lines=deps.review_log_lines,
-        ghost_directive=lambda **kwargs: ghost_directive(deps.state, **kwargs),
-        ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
-        ghost_experiences=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
+        ghost_directive=partial(ghost_directive, deps.state),
+        ghost_continuity=partial(ghost_continuity, deps.state),
+        ghost_experiences=partial(ghost_experiences, deps.state),
     )
 
 
@@ -278,12 +279,9 @@ def dispatch_run_mode(
             active_frame,
             active_hooks,
             proof_question=research_queue_item_title(work.claimed_work_item),
-            run_pipeline=lambda pipeline_frame, pipeline_hooks, **kwargs: run_research_pipeline(
-                research_deps,
-                pipeline_frame,
-                pipeline_hooks,
+            run_pipeline=partial(
+                run_research_pipeline, research_deps,
                 record_ledger_write=record_evidence_ledger_write,
-                **kwargs,
             ),
         )
 
@@ -300,9 +298,9 @@ def dispatch_run_mode(
             active_frame,
             state=deps.state,
             run_consensus=deps.run_consensus,
-            ghost_directive=lambda **kwargs: ghost_directive(deps.state, **kwargs),
-            ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
-            ghost_experiences=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
+            ghost_directive=partial(ghost_directive, deps.state),
+            ghost_continuity=partial(ghost_continuity, deps.state),
+            ghost_experiences=partial(ghost_experiences, deps.state),
         ),        project=run_project_operation,
         research=_run_research_op,
         review=lambda active_frame: run_review_mode(
@@ -327,6 +325,17 @@ def dispatch_run_mode(
         from codey.operations.task_entry import prepare_auto_provider
         from codey.operations.task_phases.lifecycle import open_run_ledger as _open_ledger
 
+        def continue_task(
+            active_frame: RunFrame, active_work: RunWork, active_hooks: RunHooks, followup: str,
+        ) -> ModeOutcome:
+            if active_frame.entry_session is None:
+                raise ValueError("native auto task session is not initialized")
+            return run_entry_kernel(
+                active_frame, active_work, active_hooks, deps,
+                task_kind=active_frame.entry_session.task_kind,
+                config_result=config_result, continuation_followup=followup,
+            )
+
         auto_deps = AutoRunDeps(
             state=deps.state,
             review_task=mode_deps.review,
@@ -336,17 +345,13 @@ def dispatch_run_mode(
                 deps, work, frame.request,
                 run_id=frame.run_id, task_kind=kind, provider_id=frame.provider_id,
             ),
-            ghost_directive_fn=lambda **kwargs: ghost_directive(deps.state, **kwargs),
-            ghost_continuity_fn=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
-            experiences_fn=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
+            ghost_directive_fn=partial(ghost_directive, deps.state),
+            ghost_continuity_fn=partial(ghost_continuity, deps.state),
+            experiences_fn=partial(ghost_experiences, deps.state),
             has_reviewable_diff_fn=lambda: _has_diff(review_deps, frame.request.project),
             research_available=True,
-            prepare_native_provider=lambda active_frame: prepare_auto_provider(active_frame, deps),
-            continue_task=lambda active_frame, active_work, active_hooks, followup: run_entry_kernel(
-                active_frame, active_work, active_hooks, deps,
-                task_kind=active_frame.entry_session.task_kind,
-                config_result=config_result, continuation_followup=followup,
-            ),
+            prepare_native_provider=partial(prepare_auto_provider, deps=deps),
+            continue_task=continue_task,
         )
         return run_auto_mode(frame, work, hooks, auto_deps)
     # Single entry for task kinds (no old two-phase hybrid). This stays

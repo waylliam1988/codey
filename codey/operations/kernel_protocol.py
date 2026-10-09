@@ -319,7 +319,7 @@ def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     elif raw_args is None:
         args = {k: v for k, v in obj.items() if k not in {"tool", "name"}}
     else:
-        args = {}
+        args = dict[str, object]()
     return tool, args
 
 
@@ -408,7 +408,7 @@ def _lookup_spec(name: str, frozen_specs: dict[str, Any] | None) -> tuple[Any, s
 
 
 def _spec_error_for(name: str, args: dict[str, Any], spec: Any, frozen_specs: dict[str, Any] | None) -> str:
-    payload = args if isinstance(args, dict) else {}
+    payload = args if isinstance(args, dict) else dict[str, object]()
     try:
         if frozen_specs is not None:
             from codey.toolchain.tool_spec import validate_args_with_spec as _frozen_validate

@@ -953,7 +953,7 @@ class RunTraceRecorder:
             if isinstance(item, Mapping)
         }
         for key, count in counts.items():
-            payload = {
+            payload: dict[str, object] = {
                 "connector_id": key[0],
                 "action": key[1],
                 "error": key[2],
@@ -1050,7 +1050,7 @@ class RunTraceRecorder:
     def record_coding_review(self, payload: object) -> None:
         if not isinstance(payload, Mapping):
             return
-        bounded = {
+        bounded: dict[str, object] = {
             "verdict": str(payload.get("verdict") or "")[:40],
             "status": str(payload.get("status") or "")[:40],
             "origin": str(payload.get("origin") or "fresh")[:40],
@@ -1274,7 +1274,7 @@ class RunTraceRecorder:
         if raw_tool:
             tools = row.setdefault("unknown_tools", [])
             if not isinstance(tools, list):
-                tools = row["unknown_tools"] = []
+                tools = row["unknown_tools"] = list[dict[str, object]]()
             digest = digest_text(raw_tool)
             existing = next(
                 (
@@ -1337,7 +1337,7 @@ class RunTraceRecorder:
             row["first_valid_turn"] = value
         turns = row.setdefault("valid_turns", [])
         if not isinstance(turns, list):
-            turns = row["valid_turns"] = []
+            turns = row["valid_turns"] = list[int]()
         alias_rewrites = min(999, _nonnegative_int(alias_rewrite_count))
         if alias_rewrites:
             row["alias_rewrite_count"] = min(

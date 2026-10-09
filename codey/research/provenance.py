@@ -87,7 +87,7 @@ def provenance_problem(
             + ". Open those pages first, or remove those source claims before calling done."
         )
     unopened_named_sources = (
-        []
+        list[str]()
         if allow_search_result_mentions
         else _unopened_search_source_mentions(text, search_result_urls, opened_hosts)
     )

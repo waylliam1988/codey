@@ -123,7 +123,7 @@ class ConnectorAwareSearchProvider:
         except Exception:
             if not connector_results:
                 raise
-            base_results = []  # Real connector hits survive a browser failure.
+            base_results = list[dict[str, Any]]()  # Real connector hits survive a browser failure.
         return _merge_results(connector_results, base_results, limit=result_limit)
 
     def fetch(self, url: str) -> dict[str, Any]:

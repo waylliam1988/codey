@@ -167,7 +167,7 @@ def _summarize(index: int, action: str, item: Discovery) -> CandidateSummary:
     )[:6]
     raw_data = fingerprint.get("data")
     if not isinstance(raw_data, dict):
-        raw_data = {}
+        raw_data = dict[str, object]()
     data = {
         key: value
         for key, value in (

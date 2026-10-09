@@ -173,9 +173,9 @@ def findings_from_proof_review(
         if not target:
             return
         key = (kind, target, claim_ref, evidence_ref, source_ref, analysis_run_ref)
-        group = groups.get(key)
+        group: dict[str, object] | None = groups.get(key)
         if group is None:
-            group = {"severity": severity, "reasons": []}
+            group = {"severity": severity, "reasons": list[str]()}
             groups[key] = group
         reasons: list[str] = group["reasons"]  # type: ignore[assignment]
         if reason_code and reason_code not in reasons:

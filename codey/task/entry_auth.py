@@ -83,7 +83,7 @@ def derive_entry_auth(body: dict[str, Any] | None, *, project: str | None = None
     - allow_web/requested 仅给“可以”，不自动等于“必须打开来源”；
     - 明确只读目标不生成必须修改要求。
     """
-    data = body if isinstance(body, dict) else {}
+    data = body if isinstance(body, dict) else dict[str, Any]()
     intent = str(data.get("intent") or "auto").strip().lower()
     task = str(data.get("task") or "")
     raw_requested = data.get("requested_capabilities", ())

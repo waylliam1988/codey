@@ -523,7 +523,7 @@ def assemble_bootstrap_payload(
     try:
         effective = resolve_effective_local_config(config, selection, endpoint)
         context_error = ""
-        context_payload: dict[str, object] | None = asdict(effective.context)
+        context_payload: dict[str, object] | None = dict(asdict(effective.context))
         context_window = effective.context.context_window_tokens
         context_reserve = effective.context.context_reserve_tokens
         context_keep = effective.context.context_keep_recent_tokens

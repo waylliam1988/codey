@@ -261,7 +261,7 @@ def run_consensus(
     try:
         statuses = dict(availability())
     except Exception:
-        statuses = {}
+        statuses = dict[str, bool]()
     candidates = advisor_ids(
         selected_provider_id,
         statuses,

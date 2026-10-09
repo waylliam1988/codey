@@ -37,7 +37,7 @@ class ProviderRegistry:
             statuses = tab_availability()
         except Exception:
             logger.exception("provider tab availability probe failed")
-            statuses = {}
+            statuses = dict[str, bool]()
         opened = tuple(
             provider_id
             for provider_id in allowed

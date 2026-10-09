@@ -1,33 +1,31 @@
-# Pyrefly baseline (2026-10-09)
+# Pyrefly full-tree gate (2026-10-09)
 
-Pyrefly 1.3.2 is run alongside mypy in CI. Mypy remains the full-tree strict
-gate on the existing Windows/Python matrix and Linux job. Pyrefly runs once on
-Windows/Python 3.12, using the same pinned CI dependencies as the baseline
-generation environment.
+Pyrefly 1.3.2 runs alongside mypy in CI. Mypy remains the strict full-tree
+gate on Windows/Python 3.11–3.13 and Linux/Python 3.12. Pyrefly runs once on
+Windows/Python 3.12 with the pinned CI dependencies.
 
-## Baseline policy
+The original rollout baseline contained 235 diagnostics. Before cleanup,
+the current tree had 236: the additional diagnostic was an implicit `Any`
+return in `ExecutionDelegate.handles`. All 236 active errors have now been
+resolved. The old baseline file has been reduced to an empty `errors` array;
+CI runs `pyrefly check codey` directly, without baseline exemptions.
 
-The baseline in [`tools/pyrefly-baseline-2026-10-09.json`](../tools/pyrefly-baseline-2026-10-09.json)
-records the 235 active Pyrefly diagnostics present when it was created. CI
-fails on diagnostics that are not covered by the baseline. A clean Pyrefly CI
-run therefore means there are no new diagnostics; it does not mean that the
-existing diagnostics have all been resolved.
+Pyrefly still imports the existing `[tool.mypy]` configuration using its
+`legacy` preset. No checker settings were relaxed and no new suppression
+comments were added. The final check reports 0 errors, 47 suppressed diagnostics
+and 838 warnings not shown. Suppressed diagnostics and warnings remain separate
+from the active-error gate.
 
-Pyrefly currently reads the existing `[tool.mypy]` configuration in memory and
-uses its `legacy` preset. No separate Pyrefly configuration is committed yet.
-This keeps the initial rollout aligned with the existing mypy project scope
-while allowing the two checkers to run together.
-
-## Updating the baseline
-
-Review new diagnostics before deciding whether they are valid issues, checker
-or configuration differences, or items to suppress. After intentionally
-accepting a set of existing diagnostics, regenerate the baseline with the
-pinned Pyrefly version and the CI dependency set:
+Run the same gates locally:
 
 ```powershell
-pyrefly check codey --baseline=tools/pyrefly-baseline-2026-10-09.json --update-baseline
+pyrefly check codey
+python -m mypy codey
+python -m ruff check .
 ```
 
-Review the JSON diff before committing it. Do not update the baseline merely to
-make a failing CI run pass.
+The final Windows/Python 3.12 suite passed 8098 tests, with 7 skips and 1503
+passing subtests. See [the existing test record](../TEST_REPORT.md) for validation.
+
+Fix new diagnostics in source. Do not add baseline exemptions merely to make
+CI pass. The empty baseline is retained as rollout history, not used by CI.

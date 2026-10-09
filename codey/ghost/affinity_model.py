@@ -316,7 +316,7 @@ def _edge_id(source: str, target: str, relation: str, scope: str, scope_ref: str
 
 
 def _node_spec_payload(spec: AffinityNodeSpec) -> dict[str, object]:
-    payload = {
+    payload: dict[str, object] = {
         "kind": _clean_node_kind(spec.kind),
         "key": _clean_key(spec.key, 180),
         "label": _clean_label(spec.label, 180),
@@ -362,7 +362,7 @@ def _node_spec_from_payload(payload: object) -> AffinityNodeSpec | None:
 
 
 def _edge_spec_payload(spec: AffinityEdgeSpec) -> dict[str, object]:
-    payload = {
+    payload: dict[str, object] = {
         "source": clip_signal_text(spec.source, 120),
         "target": clip_signal_text(spec.target, 120),
         "relation": _clean_relation(spec.relation),

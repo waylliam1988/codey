@@ -12,7 +12,7 @@ import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, BinaryIO, Protocol, SupportsIndex, SupportsInt, TypeAlias, cast
+from typing import Any, BinaryIO, Protocol, SupportsIndex, SupportsInt, TypeAlias, TypedDict, cast
 
 from codey.runtime.core.output_capture import (
     DRAIN_TIMEOUT_SECONDS,
@@ -36,6 +36,11 @@ class ProcessTreeOwner(Protocol):
 
 class _PopenWithHandle(Protocol):
     _handle: int
+
+
+class _ProcessGroupArgs(TypedDict, total=False):
+    creationflags: int
+    start_new_session: bool
 
 
 def _safe_capture_limit(value: object) -> int:
@@ -114,7 +119,7 @@ if os.name == "nt":
 class _WindowsJob:
     """Own a Windows process tree and terminate it when the handle closes."""
 
-    def __init__(self, proc: subprocess.Popen[bytes]) -> None:
+    def __init__(self, proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -> None:
         if os.name != "nt":
             raise OSError("Windows Job Objects are unavailable")
         kernel32 = _windows_ctypes.WinDLL("kernel32", use_last_error=True)
@@ -280,7 +285,7 @@ def start_process(
     keep the gate across their final Stop check and this call so Stop cannot
     land between check and Popen."""
     check()
-    group_args: dict[str, Any]
+    group_args: _ProcessGroupArgs
     if os.name == "nt":
         # CREATE_SUSPENDED prevents fast commands from exiting (or spawning
         # descendants) before their Job Object owns the process tree.
@@ -345,7 +350,7 @@ def _wait_readers(states: list[_StreamPump], *, timeout: float) -> None:
         state.finished.wait(timeout=max(0.0, remaining))
 
 
-def _close_pipes(proc: subprocess.Popen[bytes]) -> None:
+def _close_pipes(proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -> None:
     """Close owned pipes when no reader thread exists (spawn failure path)."""
     for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
         try:
@@ -506,7 +511,7 @@ def run_process(
     return wait_process(proc, job, args, timeout, capture_limit_bytes=capture_limit_bytes)
 
 
-def attach_process_tree(proc: subprocess.Popen[bytes]) -> ProcessTreeOwner | None:
+def attach_process_tree(proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -> ProcessTreeOwner | None:
     """Attach a process to the platform process-tree owner, when available."""
     if os.name != "nt":
         return None

@@ -329,7 +329,7 @@ def _load_index(provider_id: str, state_home: str | Path | None) -> dict[str, An
         data = read_json_strict(index_path, max_bytes=MAX_INDEX_BYTES) or {}
     except StoreCorruption:
         backup_corrupt_file(index_path)
-        data = {}
+        data = dict[str, object]()
     if type(data.get("schema_version")) is not int or data.get("schema_version") != 1 or not isinstance(data.get("generations"), dict):
         return {
             "schema_version": 1,
