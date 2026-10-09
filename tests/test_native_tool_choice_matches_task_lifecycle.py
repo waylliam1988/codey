@@ -1,4 +1,4 @@
-"""Active native turns require calls; terminal receipts withdraw tools."""
+"""Active native turns require calls; terminal receipts close locally."""
 from __future__ import annotations
 
 import json
@@ -69,7 +69,7 @@ def test_active_native_http_request_requires_a_tool(monkeypatch, method):
     assert turn.tool_calls[0].name == "done"
 
 
-def test_plain_text_and_terminal_receipt_do_not_force_tools(monkeypatch):
+def test_plain_text_is_generated_and_terminal_receipt_closes_without_generation(monkeypatch):
     seen = []
 
     def reply(request, timeout=None):
@@ -82,11 +82,13 @@ def test_plain_text_and_terminal_receipt_do_not_force_tools(monkeypatch):
     provider._messages.append({"role": "assistant", "content": "", "tool_calls": [
         {"id": "done1", "type": "function", "function": {"name": "done", "arguments": "{}"}},
     ]})
-    provider.send_tool_results([ProviderToolResult('done1', 'OK: done accepted')], [])
+    provider.acknowledge_tool_results([ProviderToolResult('done1', 'OK: done accepted')], [])
     assert all("tools" not in payload and "tool_choice" not in payload
                and "parallel_tool_calls" not in payload for payload in seen)
     assert seen[0]["max_tokens"] == provider.context_budget.output_tokens
-    assert seen[1]["max_tokens"] == 1  # Only acknowledgement, never the user answer.
+    assert len(seen) == 1
+    assert provider.context_ledger.view[-1]["tool_call_id"] == "done1"
+    provider._codec.validate_view(provider.context_ledger.view)
 
 
 def test_gate_records_the_actual_required_request(monkeypatch, tmp_path):
@@ -105,11 +107,12 @@ def test_gate_records_the_actual_required_request(monkeypatch, tmp_path):
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
     assert rows[0]["payload"] == wire[0]
     assert rows[0]["payload"]["tool_choice"] == "required"
-    provider.send_tool_results([ProviderToolResult('c1', 'OK: done accepted')], [])
+    provider.acknowledge_tool_results([ProviderToolResult('c1', 'OK: done accepted')], TOOLS)
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
     requests = [row["payload"] for row in rows if row["type"] == "request"]
     assert requests == wire
-    assert requests[1]["max_tokens"] == 1
+    assert len(requests) == 1
+    assert provider.context_ledger.view[-1]["tool_call_id"] == "c1"
 
 
 def test_gate_metadata_includes_the_provider_and_transport_being_tested(monkeypatch):
@@ -154,27 +157,28 @@ def test_real_kernel_does_not_enter_optional_answer_branch(monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "1")
     monkeypatch.setattr(api_transport, "open_request", reply)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=3)
+    provider = ApiProvider("http://model.test/v1", "test")
     result = run_task_kernel(
         session,
         request=KernelRunRequest(
             transport=KernelTransportDeps(
-                provider=ApiProvider("http://model.test/v1", "test"),
+                provider=provider,
                 provider_id="local",
                 run_id="required-tool-choice",
             ),
         ),
     )
     assert result.completed is True
-    assert len(seen) == 2
+    assert len(seen) == 1
     assert seen[0]["tool_choice"] == "required"
-    assert any("Call exactly one native tool per turn" in item.get("content", "") for item in seen[0]["messages"])
+    assert any("Use the provided native tool schemas" in item.get("content", "") for item in seen[0]["messages"])
     assert any("wait for its result" in item.get("content", "") for item in seen[0]["messages"])
-    assert "tools" not in seen[1] and "tool_choice" not in seen[1]
-    assert seen[1]["messages"][-1]["tool_call_id"] == "c1"
+    assert provider.context_ledger.view[-1]["tool_call_id"] == "c1"
+    provider._codec.validate_view(provider.context_ledger.view)
 
 
 @pytest.mark.parametrize("terminal", ["done", "cancel", "budget"])
-def test_terminal_kernel_receipts_close_ids_without_advertising_tools(monkeypatch, tmp_path, terminal):
+def test_terminal_kernel_receipts_close_ids_without_a_new_request(monkeypatch, tmp_path, terminal):
     seen = []
     stop = Event()
     executed = []
@@ -188,21 +192,18 @@ def test_terminal_kernel_receipts_close_ids_without_advertising_tools(monkeypatc
                 stop.set()
             return _Response(_call("done", {"summary": "finished"}) if terminal == "done"
                              else _call("read_file", {"path": "a.py"}))
-        assert "tools" not in payload and "tool_choice" not in payload
-        # Even an endpoint ignoring the withdrawn tools must get its id closed.
-        if len(seen) == 2:
-            return _Response(_call("read_file", {"path": "a.py"}, "late"))
-        return _Response({"finish_reason": "stop", "message": {"content": "ack"}})
+        raise AssertionError("terminal closure must not submit another request")
 
     monkeypatch.setenv("NATIVE_TOOLS", "1")
     monkeypatch.setattr(api_transport, "open_request", reply)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
                           project=str(tmp_path), max_turns=1)
+    provider = ApiProvider("http://model.test/v1", "test")
     result = run_task_kernel(
         session,
         request=KernelRunRequest(
             transport=KernelTransportDeps(
-                provider=ApiProvider("http://model.test/v1", "test"),
+                provider=provider,
                 provider_id="local",
                 run_id=f"terminal-{terminal}",
                 stop_flag=stop,
@@ -215,8 +216,9 @@ def test_terminal_kernel_receipts_close_ids_without_advertising_tools(monkeypatc
     )
     assert result.stop_reason == {"done": "done", "cancel": "stopped", "budget": "max_turns"}[terminal]
     assert executed == (["read_file"] if terminal == "budget" else [])
-    assert len(seen) == 3
-    assert [payload["messages"][-1]["tool_call_id"] for payload in seen[1:]] == ["c1", "late"]
+    assert len(seen) == 1
+    assert provider.context_ledger.view[-1]["tool_call_id"] == "c1"
+    provider._codec.validate_view(provider.context_ledger.view)
 
 
 @pytest.mark.parametrize("first_tool", ["done", "unknown_tool"])
@@ -235,10 +237,7 @@ def test_rejected_reply_at_last_turn_still_closes_the_followup_id(monkeypatch, t
             assert payload["messages"][-1]["tool_call_id"] == "early"
             assert payload["messages"][-1]["content"].startswith("ERROR:")
             return _Response(_call("edit", {"path": "a.py", "content": "x = 2\n"}, "late-edit"))
-        assert "tools" not in payload and "tool_choice" not in payload
-        assert payload["messages"][-1]["tool_call_id"] == "late-edit"
-        assert "not executed" in payload["messages"][-1]["content"]
-        return _Response({"finish_reason": "stop", "message": {"content": "ack"}})
+        raise AssertionError("terminal closure must not submit another request")
 
     monkeypatch.setenv("NATIVE_TOOLS", "1")
     monkeypatch.setattr(api_transport, "open_request", reply)
@@ -246,11 +245,12 @@ def test_rejected_reply_at_last_turn_still_closes_the_followup_id(monkeypatch, t
                                            required_checks=("project_changes_required",)),
                           project=str(tmp_path), max_turns=1)
     executed = []
+    provider = ApiProvider("http://model.test/v1", "test")
     result = run_task_kernel(
         session,
         request=KernelRunRequest(
             transport=KernelTransportDeps(
-                provider=ApiProvider("http://model.test/v1", "test"),
+                provider=provider,
                 provider_id="local",
                 run_id="reject-last-turn",
             ),
@@ -264,4 +264,7 @@ def test_rejected_reply_at_last_turn_still_closes_the_followup_id(monkeypatch, t
     assert result.stop_reason == "max_turns"
     assert executed == []
     assert (tmp_path / "a.py").read_text() == "x = 1\n"
-    assert len(seen) == 3
+    assert len(seen) == 2
+    assert provider.context_ledger.view[-1]["tool_call_id"] == "late-edit"
+    assert "not executed" in provider.context_ledger.view[-1]["content"]
+    provider._codec.validate_view(provider.context_ledger.view)

@@ -97,7 +97,7 @@ def test_incomplete_tool_arguments_never_become_an_executable_call():
         provider = ApiProvider(url, "fixture", api_protocol="openai-responses")
         with pytest.raises(RuntimeError):
             provider.send_turn("read", [READ])
-        assert provider._messages == []
+        assert provider._messages == [{"role": "user", "content": "read"}]
 
 
 def test_text_output_limit_is_normalized_without_raw_decision_fields():
@@ -111,7 +111,7 @@ def test_text_output_limit_is_normalized_without_raw_decision_fields():
 
 
 @pytest.mark.parametrize("stream", [False, True])
-def test_plain_responses_output_limit_cannot_execute_text_json_or_commit_history(stream):
+def test_plain_responses_output_limit_retains_request_without_committing_partial_reply(stream):
     from codey.providers.error_classification import OutputLengthError
 
     body = response([{"type": "message", "content": [{"type": "output_text", "text": '{"tool":"done","args":{"summary":"premature"}}'}]}], "incomplete")
@@ -120,7 +120,7 @@ def test_plain_responses_output_limit_cannot_execute_text_json_or_commit_history
         provider = ApiProvider(url, "fixture", api_protocol="openai-responses", native_tools=False, stream=stream)
         with pytest.raises(OutputLengthError):
             provider.send("Complete the task")
-        assert provider._messages == []
+        assert provider._messages == [{"role": "user", "content": "Complete the task"}]
         assert len(requests) == 1
 
 

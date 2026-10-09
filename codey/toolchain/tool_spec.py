@@ -174,11 +174,14 @@ def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
     specs["read_tool_result"] = ToolSpec(
         name="read_tool_result", grant="control", executor="receipt", replay_class="safe",
-        description="Read a stored result from this task without repeating its execution.",
+        description="Read a stored result from this task without repeating its execution. "
+                    "Use query (a literal keyword, 1-512 characters) to locate a bounded excerpt in long output; "
+                    "offset starts the search or selects a page. Not a regular expression.",
         parameters=(("result_ref", {"type": "string"}), ("offset", {"type": "integer", "minimum": 0}),
-                    ("limit", {"type": "integer", "minimum": 1, "maximum": 8000})),
+                    ("limit", {"type": "integer", "minimum": 1, "maximum": 8000}),
+                    ("query", {"type": "string"})),
         required=("result_ref",),
-        json_examples=('{"tool":"read_tool_result","args":{"result_ref":"...","offset":0,"limit":4000}}',),
+        json_examples=('{"tool":"read_tool_result","args":{"result_ref":"...","query":"FAILED","limit":4000}}',),
     )
     for name, spec in _research_specs().items():
         if name == "done":

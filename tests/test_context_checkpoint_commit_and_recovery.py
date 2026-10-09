@@ -71,7 +71,7 @@ def test_close_preserves_last_committed_view_for_reopen(tmp_path):
     assert other._messages == expected
 
 
-def test_malformed_native_reset_is_durable_without_deleting_original_events(tmp_path):
+def test_malformed_native_reply_preserves_valid_input_durably_without_archiving_bad_calls(tmp_path):
     provider = ApiProvider("http://localhost:9/v1", "fixture")
     provider.bind_context("a", tmp_path)
     original = [{"role": "user", "content": "accepted work"}]
@@ -81,11 +81,12 @@ def test_malformed_native_reset_is_durable_without_deleting_original_events(tmp_
         {"id": "bad", "function": {"name": "run", "arguments": "{"}}]}}]}
     with patch("codey.providers.api_transport.generate", return_value=malformed):
         provider.send_turn("continue")
-    assert provider._messages == []
+    expected = [*original, {"role": "user", "content": "continue"}]
+    assert provider._messages == expected
     other = ApiProvider("http://localhost:9/v1", "fixture")
     other.bind_context("a", tmp_path)
-    assert other._messages == []
-    assert other.context_ledger.events() == original
+    assert other._messages == expected
+    assert other.context_ledger.events() == expected
 
 
 def test_emergency_multi_segment_compaction_commits_all_lineage_with_the_answer():

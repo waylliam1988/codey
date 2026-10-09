@@ -17,6 +17,9 @@ def read_tool_result(delegate: Any, call: ToolCall) -> ToolResult:
         offset, limit = call.args.get("offset", 0), call.args.get("limit", 4000)
         if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 8000:
             raise ValueError("invalid stored result page")
+        query = call.args.get("query")
+        if "query" in call.args and (not isinstance(query, str) or not 1 <= len(query) <= 512):
+            raise ValueError("query must be a nonempty literal string of at most 512 characters")
         result = delegate.session._memory_results[identity]
         text = result.model_text
         managed = result.audit.get("managed_output")
@@ -28,9 +31,20 @@ def read_tool_result(delegate: Any, call: ToolCall) -> ToolResult:
             if metadata.get("sha256") != managed.get("sha256"):
                 raise ValueError("stored output digest differs from receipt")
             clipped = metadata.get("stored_truncated") is True or result.audit.get("capture_truncated") is True
+        match_offset = None
+        if isinstance(query, str):
+            found = text.find(query, offset)
+            if found >= 0:
+                match_offset = found
+                offset = max(offset, found - min(200, limit // 4))
+        excerpt = text[offset:offset + limit] if query is None or match_offset is not None else ""
         data = {"result_ref": identity, "ok": result.ok, "exit_code": result.audit.get("exit_code"),
                 "offset": offset, "next_offset": offset + limit if offset + limit < len(text) else None,
-                "stored_chars": len(text), "original_output_incomplete": clipped, "text": text[offset:offset + limit]}
+                "stored_chars": len(text), "original_output_incomplete": clipped, "text": excerpt}
+        if query is not None:
+            data["match_offset"] = match_offset
+            if match_offset is None:
+                data["next_offset"] = None
         return ToolResult(call, json.dumps(data, ensure_ascii=False), ok=True)
     except (OSError, ValueError, KeyError) as exc:
         return ToolResult(call, f"ERROR: {exc}. Read failure does not authorize re-execution.", ok=False)

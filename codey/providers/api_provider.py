@@ -224,10 +224,8 @@ class ApiProvider:
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout)
 
     def _exchange(self, pending: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
-                  *, timeout: float | None = None, text_only: bool = False,
-                  terminal_tools: list[ProviderToolDefinition] | None = None) -> AssistantTurn:
+                  *, timeout: float | None = None, text_only: bool = False) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
-        from codey.providers import api_transport
         from codey.providers.error_classification import OutputLengthError
 
         if not self._send_lock.acquire(blocking=False):
@@ -236,41 +234,26 @@ class ApiProvider:
         try:
             with self._state_lock:
                 generation = self._inflight_generation = self._generation
-                if terminal_tools is not None and any(tool not in self._declared_tools for tool in terminal_tools):
-                    raise ValueError("terminal tools must belong to the previously declared set")
                 base_revision = self._history_revision
                 candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
                                                  tools=tools)
             checkpoints: list[dict[str, Any]] = []
             body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints)
-            turn, output = self._codec.decode_exchange(body, text_only=text_only,
-                                                       text_decoder=self._text_decoder)
-            with self._state_lock:
-                if generation != self._generation:
-                    raise api_transport.GenerationUnknownError("generation cancelled; late response discarded")
+            try:
+                turn, output = self._codec.decode_exchange(body, text_only=text_only,
+                                                           text_decoder=self._text_decoder)
                 if text_only and turn.finish is TurnFinish.OUTPUT_LIMIT:
                     raise OutputLengthError("text-only output truncated; refusing incomplete text execution")
                 if text_only and turn.tool_calls:
                     raise RuntimeError("unexpected native tool calls in a text-only exchange")
-                if output is None:
-                    # Malformed native batches cannot be retained as legal history.
-                    self.abandon_inflight()
-                else:
-                    if base_revision != self._history_revision:
-                        # Rebase append onto a committed background view; the request
-                        # itself was already counted and sent from its own snapshot.
-                        candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt, tools=tools)
-                        checkpoints = []
-                    self.context_ledger.commit([*candidate, *output], events=[*pending, *output],
-                        checkpoint={"kind": "transaction", "segments": checkpoints} if checkpoints else None)
-                    self._compaction.accept(checkpoints)
-                    self._messages = [*candidate, *output]
-                    self._last_output_estimate = estimate_request({"messages": output}, deadline=time.monotonic()).value or 0
-                    self._history_revision += 1
-                    committed = True
-                    if tools:
-                        self._declared_tools = list(tools)
-                    self._last_reasoned_reply = (turn.text, turn.reasoning)
+            except Exception:
+                # The service answered this request. A decode failure cannot
+                # erase its valid inputs or results of already executed tools.
+                self._commit_exchange(generation, base_revision, candidate, pending, [], tools, checkpoints)
+                raise
+            self._commit_exchange(generation, base_revision, candidate, pending, output or [], tools, checkpoints,
+                                  (turn.text, turn.reasoning) if output is not None else None)
+            committed = output is not None
             return turn
         finally:
             with self._state_lock:
@@ -279,6 +262,28 @@ class ApiProvider:
             if committed and self.purpose == "conversation":
                 self._schedule_maintenance()
 
+    def _commit_exchange(self, generation: int, base_revision: int, candidate: list[dict[str, Any]],
+                         pending: list[dict[str, Any]], output: list[dict[str, Any]],
+                         tools: list[ProviderToolDefinition] | None, checkpoints: list[dict[str, Any]],
+                         reasoned_reply: tuple[str, str] | None = None) -> None:
+        from codey.providers import api_transport
+
+        with self._state_lock:
+            if generation != self._generation:
+                raise api_transport.GenerationUnknownError("generation cancelled; late response discarded")
+            if base_revision != self._history_revision:
+                candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt, tools=tools)
+                checkpoints = []
+            self.context_ledger.commit([*candidate, *output], events=[*pending, *output],
+                checkpoint={"kind": "transaction", "segments": checkpoints} if checkpoints else None)
+            self._compaction.accept(checkpoints)
+            self._messages = [*candidate, *output]
+            self._last_output_estimate = estimate_request({"messages": output}, deadline=time.monotonic()).value or 0
+            self._history_revision += 1
+            if tools:
+                self._declared_tools = list(tools)
+            self._last_reasoned_reply = reasoned_reply
+
     def _generate(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None = None,
                   *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         from codey.providers import api_transport
@@ -286,8 +291,32 @@ class ApiProvider:
         settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
                                       self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens)
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
-        exchange_id, connection_id, sink = uuid4().hex, self.connection_id, self.on_usage
+        connection_id, sink = self.connection_id, self.on_usage
         payload = self._admit_request(messages, tools, settings, deadline, checkpoints)
+        for attempt in range(3):
+            try:
+                return self._generate_attempt(payload, deadline, connection_id, sink)
+            except api_transport.GenerationRejectedError as exc:
+                # Complete overload rejection only. Gateway/connection failures
+                # may hide an accepted generation and must not be replayed.
+                delay = exc.retry_after if exc.retry_after is not None else .25 * (2 ** attempt)
+                if exc.status != 503 or attempt == 2 or time.monotonic() + delay >= deadline:
+                    raise
+                until = time.monotonic() + delay
+                while True:
+                    if self._is_cancelled():
+                        raise api_transport.GenerationNotSentError("generation retry cancelled before submission") from exc
+                    remaining = until - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(.02, remaining))
+        raise AssertionError("unreachable generation retry state")
+
+    def _generate_attempt(self, payload: dict[str, Any], deadline: float, connection_id: str,
+                          sink: Callable[[ApiExchangeUsage], None]) -> dict[str, Any]:
+        from codey.providers import api_transport
+
+        exchange_id = uuid4().hex
         collector = UsageCollector(self.usage_parser)
         count, budget, outcome = self.last_context_count, self.context_budget, "unknown"
         try:
@@ -537,14 +566,27 @@ class ApiProvider:
 
     def acknowledge_tool_results(self, results: list[ProviderToolResult],
                                  declared_tools: list[ProviderToolDefinition], timeout: float | None = None) -> AssistantTurn:
-        """Deliver terminal results; the kernel never executes returned calls.
+        """Commit terminal receipts locally; stateless APIs need no new reply.
 
-        Auto-only services retain the admitted declaration set. Other services
-        withdraw declarations. This is a bounded generation, not a network ACK.
+        Pairing and journal persistence still decide whether closure succeeded.
+        Continuing the conversation uses send_tool_results instead.
         """
-        return self._exchange(self._codec.encode_results(results),
-                              declared_tools if self.tool_choice == "auto" else [],
-                              timeout=min(timeout or self.timeout, 30.0), terminal_tools=declared_tools)
+        if not self._send_lock.acquire(blocking=False):
+            raise RuntimeError("API provider busy: concurrent sends are not supported")
+        try:
+            with self._state_lock:
+                if any(tool not in self._declared_tools for tool in declared_tools):
+                    raise ValueError("terminal tools must belong to the previously declared set")
+                pending = self._codec.encode_results(results)
+                candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
+                                                 tools=declared_tools)
+                self.context_ledger.commit(candidate, events=pending)
+                self._messages = candidate
+                self._history_revision += 1
+                self._last_reasoned_reply = None
+            return AssistantTurn()
+        finally:
+            self._send_lock.release()
 
     def _notify_http_attempt(self, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float) -> None:
         # Diagnostic storage must not turn a successful request into a retry.

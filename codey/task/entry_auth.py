@@ -31,7 +31,8 @@ _WEB_NEGATION_MARKERS = (
 
 _READONLY_MUST_NOT_CHANGE_MARKERS = (
     "不要修改", "不要改", "不修改", "不改动", "只检查", "只读", "不要改动",
-    "read-only", "readonly", "do not modify", "don't modify", "do not change",
+    "read-only", "readonly", "do not modify", "don't modify", "do not change", "don't change",
+    "do not edit", "don't edit", "must not modify", "must not change", "must not edit",
 )
 
 _CLAUSE_SPLIT_CHARS = ("，", "。", "；", "、", ",", ".", ";", "!", "?", "！", "？", "\n")
@@ -66,7 +67,7 @@ def _explicit_readonly_task(task: str) -> bool:
                 r"(?:(?:the|existing|original)\s+)*(?:tests\b|test suite\b|[\w/-]+\.(?:py|js|ts|tsx|jsx|json|md|txt)\b)",
                 suffix,
             )
-            if marker in {"do not modify", "don't modify", "do not change"} and scoped:
+            if marker.endswith((" modify", " change", " edit")) and scoped:
                 remainder = re.split(r"[.!?;\n]", suffix[scoped.end():], maxsplit=1)[0]
                 if not re.search(r"\b(?:any|all|other)\b.*\bfiles?\b", remainder):
                     continue

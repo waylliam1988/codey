@@ -344,6 +344,32 @@ one research entry.
 - `no_external_advisor_models` is an opt-in fixture for scripted entry tests;
   real service selection remains active, while user model discovery is isolated.
 
+## Agent stability fixes and delivery boundaries
+
+The native Codey/Pi probe is `manual/codey_vs_pi_agent_stability_ab.py`.
+Product regressions use existing pytest fixtures and actual execution boundaries:
+
+- `test_api_rejected_generation_retry_lifecycle.py`: bounded complete-503 retry,
+  deadline, cancellation, identical payload and separate physical observations.
+- `test_entry_readonly_imperatives_enforce_permissions.py`: global read-only
+  imperatives and preservation of scoped exclusions.
+- `test_stored_tool_output_keyword_search.py` and
+  `test_managed_command_capture_preserves_searchable_middle.py`: literal lookup,
+  ownership/digest checks and real subprocess capture without a second execution.
+- `test_api_terminal_receipts_commit_without_generation.py`: local terminal
+  closure, exact call pairing and cancelled-history isolation in both codecs.
+- `test_writer_checkpoint_scope_reaches_completion_gate.py`,
+  `test_restored_settled_tool_receipts_remain_readable.py` and
+  `test_tool_completion_event_follows_durable_checkpoint.py`: continuation scope,
+  actual durable receipt recovery and facts preceding observable completion.
+- `test_kernel_runtime_guidance_for_verified_and_blocked_tasks.py` and
+  `test_native_tool_prompts_use_wire_schemas_without_text_wrappers.py`: current
+  verification facts, authorized blocked answers and one native wire contract.
+- `test_unusable_native_reply_preserves_accepted_context.py`: retain valid inputs
+  and executed results while rejecting malformed or unfinished output.
+- `test_headless_final_summary_preserves_structured_answers.py`: real CLI delivery
+  of long structured answers, explicit overflow and unchanged preview bounds.
+
 ## Live Gates
 
 - Automatic local review contracts (also required by `machine_contract_gate`):

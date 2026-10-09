@@ -42,7 +42,7 @@ def test_a_denied_or_unknown_command_is_not_reported_as_completed():
     import json
     session = TaskSession(policy=None)
     session.executed["denied"] = {"name": "run", "exit_code": None, "ok": False}
-    state = json.loads(kernel_prompt.working_context(session).split("\n", 1)[1].split("\nRead stored", 1)[0])
+    state = json.loads(kernel_prompt.working_context(session).splitlines()[1])
     assert state["executions"][0]["status"] == "unknown"
 
 

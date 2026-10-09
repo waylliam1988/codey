@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Agent execution continuity fixes (2026-10-09)
+
+- Enforce explicit read-only requests; preserve searchable managed output before
+  clipping previews. Add bounded literal search to the existing result reader.
+- Retry complete 503 rejections within the original deadline, with separate
+  attempt usage. Close terminal tool receipts locally without another generation.
+- Restore validated result caches and checkpoint edit scope; publish tool completion
+  after checkpoint projection. Retain valid input when native reply decoding fails,
+  and use only wire schemas in native tool prompts.
+- Separate final-answer delivery from short progress previews; preserve structured
+  answers up to 64,000 characters and explicitly mark oversized summaries.
+- TDD adds 68 cases in 12 behavior-named files. Expanded targeted regression:
+  **1,600 passed, 64 subtests**; machine contracts **798 passed**. Static checks pass;
+  full pytest remains waived. No compatibility layer or release is added.
+- Frozen local comparison: **Codey 18/20, Pi 9/20**, after 76 intermediate runs.
+  Two Codey semantic failures remain. Ineffective reviewer prompt experiments were
+  removed; no universal superiority or total-token ranking is claimed. See
+  [the follow-up report](docs/codey-vs-pi-agent-stability-fixes-2026-10-09.zh-CN.md).
+
 ## Unreleased - Real Codey/Pi agent stability comparison (2026-10-09)
 
 - Rename `real_local_ab.py` to `codey_vs_pi_agent_stability_ab.py`; add isolated

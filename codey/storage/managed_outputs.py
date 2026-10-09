@@ -19,6 +19,7 @@ from codey.policies.action import (
     evaluate_action,
 )
 from codey.runtime.core import cancellation
+from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
 from codey.storage.atomic_io import write_bytes_atomic
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import session_key, write_json_atomic
@@ -208,6 +209,9 @@ def run_command_with_managed_output(
         command,
         permission_profile=permission_profile,
         phase=phase,
+        # The archive cannot recover bytes discarded by the process pumps.
+        # Capture up to its existing capacity; the model preview is clipped later.
+        capture_limit_bytes=MAX_MANAGED_OUTPUT_BYTES if store is not None else CAPTURE_LIMIT_BYTES,
     )
     if isinstance(raw, ToolOutcome):
         return raw

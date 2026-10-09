@@ -10,7 +10,7 @@ from codey.providers.base import ProviderToolDefinition
 
 @pytest.mark.parametrize("kind", ["function_call", "message"])
 @pytest.mark.parametrize("status", ["in_progress", "incomplete", "failed", "unknown"])
-def test_incomplete_output_item_never_reaches_kernel_or_commits_history(monkeypatch, kind, status):
+def test_incomplete_output_item_is_rejected_while_valid_input_is_retained(monkeypatch, kind, status):
     provider = ApiProvider("http://fixture.test/v1", "fixture", api_protocol="openai-responses")
     item = {"type": kind, "status": status}
     if kind == "function_call":
@@ -20,5 +20,5 @@ def test_incomplete_output_item_never_reaches_kernel_or_commits_history(monkeypa
     monkeypatch.setattr(api_transport, "generate", lambda *a, **kw: {"status": "completed", "output": [item]})
     with pytest.raises(RuntimeError, match="output item.*not complete"):
         provider.send_turn("Edit a.py", [ProviderToolDefinition("edit", "edit", {})])
-    assert not provider.has_transport_history
-    assert not provider._declared_tools
+    assert provider._messages == [{"role": "user", "content": "Edit a.py"}]
+    assert [tool.name for tool in provider._declared_tools] == ["edit"]

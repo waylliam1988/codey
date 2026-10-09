@@ -31,6 +31,7 @@ from codey.runtime.core.models import (
     model_text_with_audit_markers,
     normalized_managed_output,
 )
+from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
 from codey.storage.atomic_io import write_text_atomic
 from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
@@ -1248,6 +1249,7 @@ def run_command_raw(
     *,
     permission_profile: str,
     phase: str = "tool_runtime",
+    capture_limit_bytes: int = CAPTURE_LIMIT_BYTES,
 ) -> RunCommandRawResult | ToolOutcome:
     command = command.strip()
     decision = evaluate_action(ActionSubject(
@@ -1276,15 +1278,13 @@ def run_command_raw(
     started_at = _utc_now_iso()
     started_monotonic = time.monotonic()
     try:
-        from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
-
         proc = cancellation.run_process(
             argv,
             cwd=cwd,
             env=env,
             timeout=timeout,
             shell=False,
-            capture_limit_bytes=CAPTURE_LIMIT_BYTES,
+            capture_limit_bytes=capture_limit_bytes,
         )
     except FileNotFoundError:
         return ToolOutcome.error(f"command not found: {argv[0]}")

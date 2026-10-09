@@ -30,5 +30,5 @@ def test_native_first_send_does_not_demand_json_from_read_file_context(monkeypat
     ))
     assert len(sent) == 1
     assert "Files read this run: app.py" in sent[0]
-    assert "Call exactly one native tool" in sent[0]
+    assert "Use the provided native tool schemas" in sent[0]
     assert "Reply with exactly one JSON object" not in sent[0]

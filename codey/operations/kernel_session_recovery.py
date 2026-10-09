@@ -112,6 +112,7 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
             except (TypeError, ValueError, KeyError, AttributeError) as exc:
                 raise RecoveryFailed(f"research ledger recovery failed: {exc}") from exc
         _replay_recovered_facts(session, [row], [prior])
+        session._memory_results[identity] = prior
         session.restored_effect_ids.add(identity)
     try:
         resume_start = max(int(getattr(r, "turn", 0) or 0) for r in fact_rows) + 1 if fact_rows else 1

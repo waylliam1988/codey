@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 import http.client
 import json
 import socket
@@ -11,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from codey.providers.diagnostics import (
@@ -34,8 +36,18 @@ class GenerationNotSentError(RuntimeError):
 class GenerationRejectedError(RuntimeError):
     """A complete HTTP failure response, distinct from an unknown generation."""
 
-    def __init__(self, status: int, detail: str) -> None:
+    def __init__(self, status: int, detail: str, retry_after: str | None = None) -> None:
         self.status = status
+        self.retry_after: float | None = None
+        if retry_after:
+            if retry_after.isdecimal():
+                self.retry_after = float(retry_after)
+            else:
+                with contextlib.suppress(ValueError, TypeError, OverflowError):
+                    date = parsedate_to_datetime(retry_after)
+                    if date.tzinfo is None:
+                        date = date.replace(tzinfo=datetime.UTC)
+                    self.retry_after = max(0.0, date.timestamp() - time.time())
         self.error_type = ""
         reason = detail
         with contextlib.suppress(ValueError, TypeError):
@@ -243,7 +255,7 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
             detail = exc.read(2000).decode("utf8", "replace")
         if errors.classify_http_error(exc.code, detail) == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
             raise errors.ContextOverflowError(detail[:400]) from exc
-        raise GenerationRejectedError(exc.code, detail) from exc
+        raise GenerationRejectedError(exc.code, detail, exc.headers.get("Retry-After")) from exc
     except (http.client.IncompleteRead, urllib.error.URLError, TimeoutError, OSError) as exc:
         reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
         if isinstance(reason, (ConnectionRefusedError, socket.gaierror)):

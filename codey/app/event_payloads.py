@@ -10,6 +10,7 @@ from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_
 from codey.utils.refs import strict_exit_code
 
 SCHEMA_VERSION = 1
+MAX_FINAL_SUMMARY_CHARS = 64_000
 _INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 
@@ -109,15 +110,20 @@ def _payload_tool(common: dict[str, object], event: dict[str, Any]) -> dict[str,
 
 
 def _payload_task_done(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+    summary = str(event.get("summary") or "")
     payload = {
         **common,
-        "summary": clip_event_text(event.get("summary") or ""),
+        # A final answer is a delivery, not a progress preview. Keep structured
+        # answers intact within the final-answer bound and expose any clipping.
+        "summary": clip_event_text(summary, MAX_FINAL_SUMMARY_CHARS),
         "stop_reason": clip_event_text(event.get("stop_reason") or "", 80),
         "turns": _int_or_zero(event.get("turns")),
         "max_turns": _int_or_zero(event.get("max_turns")),
         "provider": clip_event_text(event.get("provider") or "", 80),
         "mode": clip_event_text(event.get("mode") or "", 40),
     }
+    if len(summary) > MAX_FINAL_SUMMARY_CHARS:
+        payload["summary_truncated"] = True
     if event.get("changed") is not None:
         payload["changed"] = bool(event.get("changed"))
     if event.get("final_delivery") in {"not_required", "success", "failed", "unknown"}:

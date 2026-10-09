@@ -130,7 +130,7 @@ class ZenProvider:
                 raise RuntimeError("Zen text-only tool refusals exceeded their closure budget")
             results = [ProviderToolResult(call.id,
                 "Not executed: tools are unavailable for this text-only request. Reply with text only.") for call in turn.tool_calls]
-            turn = self.runtime.acknowledge_tool_results(results, declared, timeout=remaining())
+            turn = self.runtime.send_tool_results(results, declared, timeout=remaining())
         raise AssertionError("unreachable text-only closure state")
 
     def normalize_reply(self, reply: str) -> object:

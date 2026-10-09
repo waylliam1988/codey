@@ -1,5 +1,38 @@
 # Codey Test Report
 
+## Agent execution continuity fixes (2026-10-09)
+
+Starting commit `dce411c8017bb0b9c583162e9710c4974b5d6749`; Windows,
+Python 3.12.8 / Node 24.19.0. Production fixes follow behavioral red/green tests:
+read-only admission, bounded 503 rejection retries, searchable managed capture,
+local terminal receipt commit, checkpoint scope and publication order, result
+restoration, accepted input retention, native schemas and structured final delivery.
+No completion gate, real Local reviewer or cancellation protection was disabled.
+
+- New tests: **12 behavior-named files, 68 cases**.
+- Expanded targeted regression: **1,600 passed, 64 subtests passed in 91.85s**.
+- Required machine contracts: **798 passed in 174.74s**.
+- Ruff whole tree, mypy Windows/Linux (**402 source files**), compileall and
+  diff checks passed. Direct Pyrefly: **0 errors, 47 suppressed / 838 warnings not shown**.
+- Earlier runs found 17 outdated targeted assertions and 19 outdated machine-contract
+  assertions. They were updated to require legitimate input retention and local
+  closure, while retaining call pairing, late cancellation and real receipt checks.
+- **Full pytest was not run, following the user's explicit waiver.** No new complete
+  full-suite result is claimed. Results above were collected before documentation.
+
+Local native experiments: **76 intermediate runs**, then **40 frozen runs** with
+new seeds 51/52. Final acceptance is **Codey 18/20, Pi 9/20**. The two remaining
+Codey failures misinterpreted a task's punctuation operation and were incorrectly
+approved by Local review despite passing visible tests. An additional **26 isolated
+reviewer-only calls** found no benefit from prompt/order/task-first variants; those
+production changes and their prompt-shape tests were removed, and observations
+retained. Intermediate win rates are not aggregated. Pi build/source correspondence
+and incomplete streaming usage still prevent broad or token-cost claims.
+
+See [root causes, stage results and limitations](docs/codey-vs-pi-agent-stability-fixes-2026-10-09.zh-CN.md)
+and [portable numeric evidence](docs/reports/codey-vs-pi-agent-stability-fixes-2026-10-09.json).
+Version remains 0.5.11; no tag or release.
+
 ## Real Codey/Pi agent stability harness (2026-10-09)
 
 Starting product commit `699b83ace686bd4520f0775a01bc267e7d0cf12a`;

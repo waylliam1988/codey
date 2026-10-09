@@ -135,9 +135,9 @@ class _RunHookCallbacks:
         if self.work.record_agent_events_in_ledger:
             self.append_ledger(lambda ledger: ledger.append_run_event(event))
         payload = run_event_ui_payload(self.run_id, self.session_id, event)
-        if payload is not None:
-            self.state.emit(payload)
         if event.kind == "tool_start":
+            if payload is not None:
+                self.state.emit(payload)
             return
         if self.project and _workspace_edit_event(event) and not _adopt_kernel_workspace_state(self.work, event):
             # Kernel edits already bumped exactly once in
@@ -163,6 +163,10 @@ class _RunHookCallbacks:
                 run_id=self.run_id,
                 update_checkpoint=self.update_checkpoint,
             )
+        # Observers may close or interrupt the process as soon as completion
+        # becomes visible. Project its continuation facts before publishing it.
+        if payload is not None:
+            self.state.emit(payload)
 
     def on_shell_request(self, approval: ShellApprovalRequest) -> None:
         if not self.project:

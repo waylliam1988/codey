@@ -171,7 +171,8 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
                 fresh, recovery, delivered, rows, resume_start, _deps2 = _recover_formal(
                     project, state, logdir, session_id, run_id
                 )
-                self.assertEqual(fresh._memory_results, {})
+                self.assertEqual(len(fresh._memory_results), 1)
+                self.assertEqual(next(iter(fresh._memory_results.values())).call.name, "edit")
                 self.assertEqual(fresh.edited_files, session.edited_files)
 
                 identity = turn_effect_id("r-persist-1:task", 1, 0)

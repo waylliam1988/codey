@@ -61,11 +61,11 @@ def test_failed_exchange_keeps_committed_history_and_does_not_replay(provider, m
     assert len(calls) == 1
 
 
-def test_plain_truncation_does_not_commit(provider, monkeypatch):
+def test_plain_truncation_retains_input_without_committing_partial_answer(provider, monkeypatch):
     monkeypatch.setattr(api_transport, "generate", lambda *a, **k: reply_body(provider.api_protocol, limited=True))
     with pytest.raises(OutputLengthError):
         provider.send("do not accept a partial answer")
-    assert not provider.has_transport_history
+    assert provider._messages == [{"role": "user", "content": "do not accept a partial answer"}]
 
 
 def test_native_exchange_updates_reasoning_for_the_latest_reply(provider, monkeypatch):
@@ -83,7 +83,7 @@ def test_unrequested_native_calls_are_not_silently_accepted_as_plain_text(provid
     monkeypatch.setattr(api_transport, "generate", lambda *a, **k: reply_body(provider.api_protocol, call=call))
     with pytest.raises(RuntimeError, match="text-only"):
         provider.send("answer with text")
-    assert not provider.has_transport_history
+    assert provider._messages == [{"role": "user", "content": "answer with text"}]
 
 
 def test_native_call_and_result_are_committed_once_with_exact_identity(provider, monkeypatch):
@@ -152,4 +152,4 @@ def test_malformed_empty_chat_tool_calls_cannot_be_committed_as_plain_text(monke
     monkeypatch.setattr(api_transport, "generate", lambda *a, **k: body)
     with pytest.raises(RuntimeError, match="malformed tool_calls"):
         provider.send("text only")
-    assert not provider.has_transport_history
+    assert provider._messages == [{"role": "user", "content": "text only"}]

@@ -118,9 +118,10 @@ def probe(root):
                     assert result.completed, result
                     assert session.read_files == {"fixture.txt"}
                     assert source.read_text(encoding="utf8") == "READ_MARKER"
-                    assert len(requests) - start == 3
+                    assert len(requests) - start == 2
                     totals = trace.manifest.to_payload()["api_usage_totals"]
-                    assert totals == {"requests": 3, "known_input_tokens": 30, "known_output_tokens": 9, "incomplete_requests": 0}
+                    assert totals == {"requests": 2, "known_input_tokens": 20, "known_output_tokens": 6, "incomplete_requests": 0}
+                    provider._codec.validate_view(provider.context_ledger.view)
                     results = requests[start + 1].get("messages", requests[start + 1].get("input"))
                     assert any("READ_MARKER" in str(r) for r in results)
                 finally:

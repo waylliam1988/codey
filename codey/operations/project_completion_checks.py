@@ -280,9 +280,7 @@ def _is_projectable_row(row: dict[str, Any], command: str) -> bool:
 def _normalized_scope_and_change(session: Any, context: Any) -> tuple[tuple[str, ...], bool]:
     def get(key: str) -> Any:
         return _context_get(context, key)
-    scope = tuple(get("scope_files") or ())
-    if not scope:
-        scope = _session_scope_files(session)
+    scope = tuple(dict.fromkeys((*tuple(get("scope_files") or ()), *_session_scope_files(session))))
     provided_changed = get("task_changed")
     if provided_changed is None:
         task_changed = bool(scope)

@@ -11,7 +11,9 @@ from typing import Any
 
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolResult
+from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
+from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 __all__ = [
     "kernel_prompt_for_session",
@@ -70,13 +72,13 @@ def kernel_prompt_for_session(
     parts.append(f"Visible tools: {names}")
     if contract_text:
         if native:
-            parts.append(f"Tool contract (use exactly these tools):\n{contract_text}")
+            parts.append("Use the provided native tool schemas for tool names and arguments.")
         else:
             parts.append(f"Tool contract (use exactly these shapes):\n{contract_text}")
     if native:
         parts.append(
             "Call exactly one native tool per turn and wait for its result before choosing the next tool. "
-            "Call done separately, only after the required checks have passed. Do not reply with raw JSON."
+            "Call done separately to deliver the final answer; do not send a raw JSON tool call or prose instead."
         )
     else:
         parts.append(
@@ -84,6 +86,12 @@ def kernel_prompt_for_session(
             r"Escape line breaks and tabs inside JSON strings as \n and \t. "
             r'For example: "content":"first line\nsecond line\n".'
         )
+    parts.append(
+        "Preserve the user's requested final format inside done's summary string, including JSON if requested. "
+        "If the task cannot be completed within authorized capabilities, report it as blocked with the reason; "
+        "never claim a fix or passing verification that did not happen. For completed changes, required checks "
+        "must pass on the current workspace before done."
+    )
     return "\n\n".join(parts)
 
 
@@ -93,7 +101,11 @@ def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:
         f"({(error or 'invalid').strip()}). "
     )
     if native:
-        instruction = "Call exactly one native tool from the contract below. Do not reply with raw JSON or prose."
+        return (
+            intro + "Call exactly one of the provided native tools with schema-correct arguments. "
+            "Do not emit text tool-call tags, JSON tool wrappers or prose. "
+            "Resend the intended call with complete arguments and concise file contents."
+        )
     else:
         instruction = (
             'Reply with exactly one JSON object using {"tool":"ACTUAL_TOOL_NAME","args":{...}}. '
@@ -111,7 +123,11 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
     text = str(result.model_text or "")
     result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
     if result_ref:
-        text += f"\nStored result: {result_ref}\nRead it with read_tool_result; do not repeat execution to recover output."
+        instruction = (
+            "For omitted detail, use read_tool_result with query (a literal keyword) or a bounded offset."
+            if result.truncated else "If more detail is needed, use read_tool_result."
+        )
+        text += f"\nStored result: {result_ref}\n{instruction} do not repeat execution to recover output."
     if result.call.name == "web_search" and session.search_results:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.search_results.items())[-12:])
         return f"{text}\n\nAvailable result IDs for open_result:\n{refs}"
@@ -155,10 +171,33 @@ def working_context(session: TaskSession) -> str:
             "exit_code": record.get("exit_code"), "result_available": result is not None,
             "workspace_identity": fingerprint,
             "verification": "current" if fingerprint and fingerprint == session.workspace_fingerprint else "stale or unknown"})
+    verifications: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in session.verifications[-12:]:
+        revision = valid_workspace_revision(row.get("workspace_revision"))
+        fingerprint = valid_workspace_fingerprint(row.get("workspace_fingerprint"))
+        code = strict_exit_code(row.get("exit_code"))
+        state = "unknown"
+        if revision and fingerprint and code is not None:
+            if revision != session.workspace_revision or fingerprint != session.workspace_fingerprint:
+                state = "stale"
+            else:
+                state = "current_pass" if strict_verification_success(row.get("passed"), code) else "current_fail"
+        command, cwd = str(row.get("command", "")), str(row.get("cwd", "."))
+        verifications[command, cwd] = {"command": command, "cwd": cwd, "state": state,
+            "exit_code": code, "workspace_revision": revision, "workspace_fingerprint": fingerprint}
+    can_modify = session.policy.allows("project.write") if session.policy is not None else None
+    finish_guidance = (
+        "For read-only work, report diagnostic findings in done's summary using the requested final format. "
+        "If the requested fix requires forbidden changes, report blocked and why. "
+        "Do not rerun unchanged checks to try to repair a defect. "
+        if session.task_kind == "project" and can_modify is False else
+        "If the user's requirements are satisfied and required verification is current and passing, call done. "
+        "Do not change correct files merely to make progress. "
+    )
     return ("Current work observations (runtime records):\n" + json.dumps({"user_task": session.task_text,
         "project": session.project, "workspace_revision": session.workspace_revision,
         "workspace_fingerprint": session.workspace_fingerprint, "changed_files": list(session.edited_files),
         "read_files": sorted(session.read_files),
-        "executions": executions}, ensure_ascii=False)
-        + "\nRead stored results before deciding the next action. Do not repeat an execution merely to recover its output. "
-          "A changed workspace may need a new verification; stale results cannot prove current correctness.")
+        "executions": executions, "verifications": list(verifications.values()), "can_modify_project": can_modify}, ensure_ascii=False)
+        + "\n" + finish_guidance + "Read stored results only when more detail is needed. "
+          "Do not repeat an execution merely to recover its output. Stale results cannot prove current correctness.")

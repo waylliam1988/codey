@@ -334,7 +334,7 @@ def test_http_error_body_is_bounded(monkeypatch) -> None:
     assert closed == [True]
 
 
-def test_content_filter_is_explicit_error_and_leaves_history(monkeypatch) -> None:
+def test_content_filter_retains_only_the_accepted_user_requests(monkeypatch) -> None:
     import pytest
 
     provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
@@ -347,7 +347,7 @@ def test_content_filter_is_explicit_error_and_leaves_history(monkeypatch) -> Non
     _install_fake(monkeypatch, body)
     with pytest.raises(RuntimeError, match="content filtered"):
         provider.send("hello")
-    assert provider._messages == []
+    assert provider._messages == [{"role": "user", "content": "hello"}]
     turn_body = {
         "choices": [{
             "finish_reason": "content_filter",
@@ -357,7 +357,7 @@ def test_content_filter_is_explicit_error_and_leaves_history(monkeypatch) -> Non
     _install_fake(monkeypatch, turn_body)
     with pytest.raises(RuntimeError, match="content filtered"):
         provider.send_turn("hello")
-    assert provider._messages == []
+    assert provider._messages == [{"role": "user", "content": "hello"}] * 2
 
 
 def test_malformed_tool_calls_shape_is_protocol_error(monkeypatch) -> None:
@@ -373,12 +373,12 @@ def test_malformed_tool_calls_shape_is_protocol_error(monkeypatch) -> None:
     _install_fake(monkeypatch, body)
     with pytest.raises(RuntimeError, match="malformed tool_calls"):
         provider.send_turn("do work")
-    assert provider._messages == []
+    assert provider._messages == [{"role": "user", "content": "do work"}]
     with pytest.raises(RuntimeError, match="malformed tool_calls"):
         __import__("codey.providers.api_chat", fromlist=["_parse_tool_calls"])._parse_tool_calls({"content": "", "tool_calls": "nope"})
 
 
-def test_done_illegal_json_fails_closed_without_history(monkeypatch) -> None:
+def test_done_illegal_json_retains_request_without_committing_a_call(monkeypatch) -> None:
     provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {
         "choices": [{
@@ -399,10 +399,10 @@ def test_done_illegal_json_fails_closed_without_history(monkeypatch) -> None:
     # calls and the raw assistant block is never committed to history.
     assert turn.tool_calls == ()
     assert "malformed" in turn.text.lower()
-    assert provider._messages == []
+    assert provider._messages == [{"role": "user", "content": "finish it"}]
 
 
-def test_regular_tool_illegal_json_fails_closed_without_history(monkeypatch) -> None:
+def test_regular_tool_illegal_json_retains_request_without_committing_a_call(monkeypatch) -> None:
     provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
     body = {
         "choices": [{
@@ -421,7 +421,7 @@ def test_regular_tool_illegal_json_fails_closed_without_history(monkeypatch) -> 
     turn = provider.send_turn("read app")
     assert turn.tool_calls == ()
     assert "malformed" in turn.text.lower()
-    assert provider._messages == []
+    assert provider._messages == [{"role": "user", "content": "read app"}]
 
 
 def test_legal_empty_object_arguments_pass_through(monkeypatch) -> None:
@@ -446,7 +446,7 @@ def test_legal_empty_object_arguments_pass_through(monkeypatch) -> None:
     assert provider._messages[-1]["tool_calls"][0]["id"] == "call_1"
 
 
-def test_blank_and_null_arguments_fail_closed_without_history(monkeypatch) -> None:
+def test_blank_and_null_arguments_retain_request_without_committing_a_call(monkeypatch) -> None:
     for raw in ("", "   ", "null", "123"):
         provider = ApiProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
         body = {
@@ -466,4 +466,4 @@ def test_blank_and_null_arguments_fail_closed_without_history(monkeypatch) -> No
         turn = provider.send_turn("finish it")
         assert turn.tool_calls == (), raw
         assert "malformed" in turn.text.lower(), raw
-        assert provider._messages == [], raw
+        assert provider._messages == [{"role": "user", "content": "finish it"}], raw

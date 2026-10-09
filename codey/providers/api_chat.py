@@ -91,8 +91,6 @@ def build_payload(messages: list[dict[str, Any]], tools: list[ProviderToolDefini
         body["max_tokens"] = settings.output_tokens
     if tools:
         body.update(tools=encode_tools(tools), tool_choice=settings.choice, parallel_tool_calls=False)
-    elif tools is not None and messages and messages[-1].get("role") == "tool":
-        body["max_tokens"] = 1
     return body
 
 def _parse_tool_calls(message: dict[str, Any]) -> tuple[list[dict[str, object]], int]:

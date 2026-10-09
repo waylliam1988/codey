@@ -1,0 +1,486 @@
+{
+  "schema_version": 1,
+  "scope": "Stateless Local reviewer probes; not native agent runs or hidden-test enforcement.",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "generation_calls": 26,
+  "outcome": "All wrong-patch reviews falsely approved; prompt changes were removed.",
+  "sampling": {
+    "temperature": 0.0,
+    "paired_seeds": [
+      61,
+      62
+    ],
+    "task_first_seed": 63
+  },
+  "variants": [
+    {
+      "variant": "guidance-only",
+      "raw_sha256": "e03b208e48db0e54178b770d0141ec64a5ee97342803345fb2acfd3cfa10146b",
+      "before_source_sha256": "923daca7f1164dbf5fd9ec9b7516bf0fe427c098f45c235673122017ca7a5ce2",
+      "after_source_sha256": "2301b39970cc9b8ae54e4af6205aa340480db73322ebd83532cafe0808cfafa1",
+      "description": "Exact captured inputs, same settings, no hidden tests or answers added to either prompt.",
+      "results": [
+        {
+          "arm": "before",
+          "case": "wrong",
+          "seed": 61,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 2.452999999979511,
+          "prompt_sha256": "f9959691f0fd8b7d09256b278b2dc1e3493308e247f25c6e4352ed1eaf55659e",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles lowercasing, punctuation removal (by replacing with spaces to facilitate collapsing), trimming, and hyphenation while preserving digits. The tests passed successfully.\",\"findings\":[]}",
+          "usage": {
+            "prompt_tokens": 1666,
+            "completion_tokens": 46,
+            "total_tokens": 1712
+          }
+        },
+        {
+          "arm": "after",
+          "case": "wrong",
+          "seed": 61,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 2.8910000000614673,
+          "prompt_sha256": "ef0f13285bca5d547b23ccd9dd83aea69bff8884c32e631523fcf133fcf25eee",
+          "response": "```json\n{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, removing punctuation (by replacing with spaces to ensure proper collapsing), trimming, and joining with hyphens while preserving digits. The tests passed successfully.\",\"findings\":[]}\n```",
+          "usage": {
+            "prompt_tokens": 1741,
+            "completion_tokens": 57,
+            "total_tokens": 1798
+          }
+        },
+        {
+          "arm": "before",
+          "case": "correct",
+          "seed": 61,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.2659999998286366,
+          "prompt_sha256": "487dabfa152f615129163fea702c3de3da3ed838a24499c042a6956077a5b9af",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, removing punctuation, trimming, and collapsing whitespace into hyphens while preserving digits. The tests passed successfully.\"}",
+          "usage": {
+            "prompt_tokens": 1530,
+            "completion_tokens": 41,
+            "total_tokens": 1571
+          }
+        },
+        {
+          "arm": "after",
+          "case": "correct",
+          "seed": 61,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.3280000002123415,
+          "prompt_sha256": "56d498b5e9962c4c06c5ee22c2172a28ba83ffe1a659f62eac48c6972e718e4d",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, punctuation removal, trimming, and collapsing whitespace into hyphens while preserving digits. The tests passed successfully.\"}",
+          "usage": {
+            "prompt_tokens": 1605,
+            "completion_tokens": 41,
+            "total_tokens": 1646
+          }
+        },
+        {
+          "arm": "after",
+          "case": "wrong",
+          "seed": 62,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 2.219000000040978,
+          "prompt_sha256": "ef0f13285bca5d547b23ccd9dd83aea69bff8884c32e631523fcf133fcf25eee",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, removing punctuation (by replacing with spaces to ensure proper collapsing), trimming, and joining with hyphens while preserving digits.\"}",
+          "usage": {
+            "prompt_tokens": 1741,
+            "completion_tokens": 44,
+            "total_tokens": 1785
+          }
+        },
+        {
+          "arm": "before",
+          "case": "wrong",
+          "seed": 62,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 2.594000000040978,
+          "prompt_sha256": "f9959691f0fd8b7d09256b278b2dc1e3493308e247f25c6e4352ed1eaf55659e",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, removing punctuation (by replacing with spaces to facilitate collapsing), trimming, and joining with hyphens. The tests passed successfully.\",\"findings\":[]}",
+          "usage": {
+            "prompt_tokens": 1666,
+            "completion_tokens": 48,
+            "total_tokens": 1714
+          }
+        },
+        {
+          "arm": "after",
+          "case": "correct",
+          "seed": 62,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.75,
+          "prompt_sha256": "56d498b5e9962c4c06c5ee22c2172a28ba83ffe1a659f62eac48c6972e718e4d",
+          "response": "```json\n{\"verdict\":\"approved\",\"summary\":\"The implementation correctly satisfies all requirements: it removes punctuation using a translation table, lowercases the string, trims outer whitespace, and collapses internal whitespace into hyphens while preserving digits. The tests passed successfully.\"}\n```",
+          "usage": {
+            "prompt_tokens": 1605,
+            "completion_tokens": 55,
+            "total_tokens": 1660
+          }
+        },
+        {
+          "arm": "before",
+          "case": "correct",
+          "seed": 62,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.4840000001713634,
+          "prompt_sha256": "487dabfa152f615129163fea702c3de3da3ed838a24499c042a6956077a5b9af",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly satisfies all requirements: it removes punctuation using a translation table, lowercases the string, trims outer whitespace, and collapses internal whitespace into hyphens while preserving digits. The tests passed successfully.\",\"findings\":[]}",
+          "usage": {
+            "prompt_tokens": 1530,
+            "completion_tokens": 53,
+            "total_tokens": 1583
+          }
+        }
+      ]
+    },
+    {
+      "variant": "boundary-guidance",
+      "raw_sha256": "fc47d169a20e895a36a5f95ab3840ac25a90d5753a8d153f094368f5da6eac86",
+      "before_source_sha256": "923daca7f1164dbf5fd9ec9b7516bf0fe427c098f45c235673122017ca7a5ce2",
+      "after_source_sha256": "c886cf2f0e4664523fc405f1047f5446bbff58c9cb6addbb70b58b802a54e18f",
+      "description": "Exact captured inputs, same settings, no hidden tests or answers added to either prompt.",
+      "results": [
+        {
+          "arm": "before",
+          "case": "wrong",
+          "seed": 61,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 2.6879999998491257,
+          "prompt_sha256": "f9959691f0fd8b7d09256b278b2dc1e3493308e247f25c6e4352ed1eaf55659e",
+          "response": "```json\n{\"verdict\":\"approved\",\"summary\":\"The implementation correctly follows all requirements: lowercasing, removing punctuation (by replacing with spaces to facilitate collapsing), trimming, and joining with hyphens. The tests passed successfully.\"}\n```",
+          "usage": {
+            "prompt_tokens": 1666,
+            "completion_tokens": 50,
+            "total_tokens": 1716
+          }
+        },
+        {
+          "arm": "after",
+          "case": "wrong",
+          "seed": 61,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 3.547000000020489,
+          "prompt_sha256": "8f93e7f69f3f63de21f145bc85cf522374c2dd04c53dca3548f446c57aba9f8e",
+          "response": "```json\n{\"summary\":\"The implementation correctly handles the requirements by converting punctuation to spaces before splitting, which ensures that adjacent punctuation marks (e.g., 'hello, world') or punctuation at the start/end of words are correctly collapsed into single hyphens. The logic preserves digits and handles the lowercase/trim requirements as specified.\",\"findings\":[],\"verdict\":\"approved\"}\n```",
+          "usage": {
+            "prompt_tokens": 1842,
+            "completion_tokens": 79,
+            "total_tokens": 1921
+          }
+        },
+        {
+          "arm": "before",
+          "case": "correct",
+          "seed": 61,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.2810000001918525,
+          "prompt_sha256": "487dabfa152f615129163fea702c3de3da3ed838a24499c042a6956077a5b9af",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, removing punctuation, trimming, and collapsing whitespace into hyphens while preserving digits. The tests passed successfully.\"}",
+          "usage": {
+            "prompt_tokens": 1530,
+            "completion_tokens": 41,
+            "total_tokens": 1571
+          }
+        },
+        {
+          "arm": "after",
+          "case": "correct",
+          "seed": 61,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.7660000000614673,
+          "prompt_sha256": "343c6d1c99e05d8794bc08f0dd68ad1f0ea6a719653a87d8608e6e142839a55c",
+          "response": "```json\n{\"summary\":\"The implementation correctly handles the requirements: it removes punctuation using a translation table, lowercases the string, trims outer whitespace, and collapses internal whitespace into hyphens while preserving digits.\",\"findings\":[],\"verdict\":\"approved\"}\n```",
+          "usage": {
+            "prompt_tokens": 1706,
+            "completion_tokens": 53,
+            "total_tokens": 1759
+          }
+        },
+        {
+          "arm": "after",
+          "case": "wrong",
+          "seed": 62,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 2.530999999959022,
+          "prompt_sha256": "8f93e7f69f3f63de21f145bc85cf522374c2dd04c53dca3548f446c57aba9f8e",
+          "response": "{\"summary\":\"The logic replaces punctuation with spaces before splitting, which correctly handles cases where punctuation is adjacent to letters (e.g., 'hello,-world!' becomes 'hello  world' then 'hello-world').\",\"findings\":[],\"verdict\":\"approved\"}",
+          "usage": {
+            "prompt_tokens": 1842,
+            "completion_tokens": 54,
+            "total_tokens": 1896
+          }
+        },
+        {
+          "arm": "before",
+          "case": "wrong",
+          "seed": 62,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 2.6089999999385327,
+          "prompt_sha256": "f9959691f0fd8b7d09256b278b2dc1e3493308e247f25c6e4352ed1eaf55659e",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, removing punctuation (by replacing with spaces to facilitate collapsing), trimming, and joining with hyphens. The tests passed successfully.\",\"findings\":[]}",
+          "usage": {
+            "prompt_tokens": 1666,
+            "completion_tokens": 48,
+            "total_tokens": 1714
+          }
+        },
+        {
+          "arm": "after",
+          "case": "correct",
+          "seed": 62,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.75,
+          "prompt_sha256": "343c6d1c99e05d8794bc08f0dd68ad1f0ea6a719653a87d8608e6e142839a55c",
+          "response": "```json\n{\"summary\":\"The implementation correctly follows all requirements: it removes punctuation using a translation table, lowercases the string, trims outer whitespace, and collapses internal whitespace into hyphens while preserving digits.\",\"findings\":[],\"verdict\":\"approved\"}\n```",
+          "usage": {
+            "prompt_tokens": 1706,
+            "completion_tokens": 53,
+            "total_tokens": 1759
+          }
+        },
+        {
+          "arm": "before",
+          "case": "correct",
+          "seed": 62,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.3129999998491257,
+          "prompt_sha256": "487dabfa152f615129163fea702c3de3da3ed838a24499c042a6956077a5b9af",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, removing punctuation, trimming, and collapsing whitespace into hyphens while preserving digits. The tests passed successfully.\"}",
+          "usage": {
+            "prompt_tokens": 1530,
+            "completion_tokens": 41,
+            "total_tokens": 1571
+          }
+        }
+      ]
+    },
+    {
+      "variant": "without-writer-claims",
+      "raw_sha256": "64da4bfd463283c23678f376a60ff1fdbc1144043f1db1fd3238ebcb9f98b64d",
+      "before_source_sha256": "923daca7f1164dbf5fd9ec9b7516bf0fe427c098f45c235673122017ca7a5ce2",
+      "after_source_sha256": "c886cf2f0e4664523fc405f1047f5446bbff58c9cb6addbb70b58b802a54e18f",
+      "description": "Exact captured inputs, same settings, no hidden tests or answers added to either prompt.",
+      "prototype_without_writer_claims": true,
+      "results": [
+        {
+          "arm": "before",
+          "case": "wrong",
+          "seed": 61,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 2.4850000001024455,
+          "prompt_sha256": "f9959691f0fd8b7d09256b278b2dc1e3493308e247f25c6e4352ed1eaf55659e",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles lowercasing, punctuation removal (by replacing with spaces to facilitate collapsing), trimming, and hyphenation while preserving digits. The tests passed successfully.\",\"findings\":[]}",
+          "usage": {
+            "prompt_tokens": 1666,
+            "completion_tokens": 46,
+            "total_tokens": 1712
+          }
+        },
+        {
+          "arm": "after",
+          "case": "wrong",
+          "seed": 61,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 3.672000000020489,
+          "prompt_sha256": "c99aa68defb28df1c6dda5639bba5561b26b26e5e07f3e11f0335d6591bd9344",
+          "response": "```json\n{\"summary\":\"The implementation correctly handles the requirements: lowercasing, removing punctuation (by replacing with spaces to ensure proper collapsing), trimming, and collapsing whitespace into hyphens. The logic handles the 'hello,-world!' -> 'hello-world' case correctly because the comma becomes a space, and the split/join handles the resulting multiple spaces.\",\"findings\":[],\"verdict\":\"approved\"}\n```",
+          "usage": {
+            "prompt_tokens": 1717,
+            "completion_tokens": 85,
+            "total_tokens": 1802
+          }
+        },
+        {
+          "arm": "before",
+          "case": "correct",
+          "seed": 61,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.25,
+          "prompt_sha256": "487dabfa152f615129163fea702c3de3da3ed838a24499c042a6956077a5b9af",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, removing punctuation, trimming, and collapsing whitespace into hyphens while preserving digits. The tests passed successfully.\"}",
+          "usage": {
+            "prompt_tokens": 1530,
+            "completion_tokens": 41,
+            "total_tokens": 1571
+          }
+        },
+        {
+          "arm": "after",
+          "case": "correct",
+          "seed": 61,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 4.7189999998081475,
+          "prompt_sha256": "159565521c7ad925549d9fb851d4a080272f39e733e9bdc793a0e81b574135b4",
+          "response": "{\"summary\":\"The current implementation removes punctuation first, then lowercases, then strips, and finally joins by hyphens. However, if punctuation is removed before whitespace is collapsed, multiple spaces (or a mix of spaces and punctuation) might result in multiple hyphens if not handled correctly. The current logic `'-'.join(value.split())` correctly handles collapsing multiple spaces into a single hyphen, but the order of operations (punctuation removal before splitting) ensures that a string like 'Hello, World!' becomes 'hello world' then 'hello-world'.\",\"findings\":[],\"verdict\":\"approved\"}",
+          "usage": {
+            "prompt_tokens": 1583,
+            "completion_tokens": 122,
+            "total_tokens": 1705
+          }
+        },
+        {
+          "arm": "after",
+          "case": "wrong",
+          "seed": 62,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 5.047000000020489,
+          "prompt_sha256": "c99aa68defb28df1c6dda5639bba5561b26b26e5e07f3e11f0335d6591bd9344",
+          "response": "{\"summary\":\"The current implementation replaces punctuation with spaces before splitting, which correctly handles cases like 'hello,-world!' becoming 'hello-world' (since the comma becomes a space, and the split/join collapses it). However, the task specifies 'removes ASCII punctuation'. If punctuation is adjacent to a letter (e.g., 'hello,world'), replacing it with a space and then collapsing it results in 'hello-world'. If punctuation is between two spaces (e.g., 'hello , world'), replacing it with a space results in 'hello   world', which also collapses to 'hello-world'. This logic is robust for the requirements.\",\"findings\":[],\"verdict\":\"approved\"}",
+          "usage": {
+            "prompt_tokens": 1717,
+            "completion_tokens": 144,
+            "total_tokens": 1861
+          }
+        },
+        {
+          "arm": "before",
+          "case": "wrong",
+          "seed": 62,
+          "expected": "changes_requested",
+          "verdict": "approved",
+          "accepted": false,
+          "seconds": 2.5780000002123415,
+          "prompt_sha256": "f9959691f0fd8b7d09256b278b2dc1e3493308e247f25c6e4352ed1eaf55659e",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, removing punctuation (by replacing with spaces to facilitate collapsing), trimming, and joining with hyphens. The tests passed successfully.\",\"findings\":[]}",
+          "usage": {
+            "prompt_tokens": 1666,
+            "completion_tokens": 48,
+            "total_tokens": 1714
+          }
+        },
+        {
+          "arm": "after",
+          "case": "correct",
+          "seed": 62,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.780999999959022,
+          "prompt_sha256": "159565521c7ad925549d9fb851d4a080272f39e733e9bdc793a0e81b574135b4",
+          "response": "```json\n{\"summary\":\"The implementation correctly follows all requirements: it removes ASCII punctuation using a translation table, lowercases the string, trims outer whitespace, and collapses internal whitespace into hyphens while preserving digits.\",\"findings\":[],\"verdict\":\"approved\"}\n```",
+          "usage": {
+            "prompt_tokens": 1583,
+            "completion_tokens": 54,
+            "total_tokens": 1637
+          }
+        },
+        {
+          "arm": "before",
+          "case": "correct",
+          "seed": 62,
+          "expected": "approved",
+          "verdict": "approved",
+          "accepted": true,
+          "seconds": 2.5939999998081475,
+          "prompt_sha256": "487dabfa152f615129163fea702c3de3da3ed838a24499c042a6956077a5b9af",
+          "response": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly satisfies all requirements: it removes punctuation using a translation table, lowercases the string, trims outer whitespace, and collapses internal whitespace into hyphens while preserving digits. The tests passed successfully.\",\"findings\":[]}",
+          "usage": {
+            "prompt_tokens": 1530,
+            "completion_tokens": 53,
+            "total_tokens": 1583
+          }
+        }
+      ]
+    }
+  ],
+  "task_first": {
+    "raw_sha256": "4f5ba552c9596ab4424933b4a19379fab08384d6aaad92d476116e3e1360ef4a",
+    "prompt": "Before seeing any implementation, derive a concise acceptance brief solely from the user task below. Interpret requested operations literally, keep exclusions, and give minimal distinguishing boundary inputs with expected outputs for input transformations. Do not assume the provided tests cover all requirements. Do not write or run code. Return JSON with requirements and boundary_examples.\n\nOriginal user task:\nFix app.py so normalize_name lowercases ASCII letters, removes ASCII punctuation, trims outer whitespace, and collapses whitespace into hyphens. Preserve digits. Do not modify tests. Inspect tests, edit only app.py, run python -m unittest discover -v, and finish only after tests pass.",
+    "body": {
+      "id": "chatcmpl-A384913",
+      "object": "chat.completion",
+      "created": 1791554766,
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "usage": {
+        "prompt_tokens": 144,
+        "completion_tokens": 244,
+        "total_tokens": 388
+      },
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "```json\n{\n  \"requirements\": [\n    \"Lowercase all ASCII letters.\",\n    \"Remove all ASCII punctuation marks.\",\n    \"Trim leading and trailing whitespace.\",\n    \"Collapse internal whitespace into single hyphens.\",\n    \"Preserve all digits.\",\n    \"Maintain the original order of characters (except for whitespace transformations).\"\n  ],\n  \"boundary_examples\": [\n    {\n      \"input\": \"  Hello, World!  \",\n      \"expected_output\": \"hello-world\"\n    },\n    {\n      \"input\": \"  Space   Test  \",\n      \"expected_output\": \"space-test\"\n    },\n    {\n      \"input\": \"123-456\",\n      \"expected_output\": \"123-456\"\n    },\n    {\n      \"input\": \"  !@#$  \",\n      \"expected_output\": \"\"\n    },\n    {\n      \"input\": \"A1 b2\",\n      \"expected_output\": \"a1-b2\"\n    }\n  ]\n}\n```",
+            "tool_calls": []
+          },
+          "finish_reason": "stop",
+          "logprobs": null
+        }
+      ]
+    },
+    "seconds": 7.0,
+    "review": {
+      "id": "chatcmpl-A501020",
+      "object": "chat.completion",
+      "created": 1791554769,
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "usage": {
+        "prompt_tokens": 1926,
+        "completion_tokens": 52,
+        "total_tokens": 1978
+      },
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"verdict\":\"approved\",\"summary\":\"The implementation correctly handles all requirements: lowercasing, punctuation removal (by replacing with spaces to facilitate collapsing), trimming, and collapsing whitespace into hyphens while preserving digits. The tests passed successfully.\",\"findings\":[]}",
+            "tool_calls": []
+          },
+          "finish_reason": "stop",
+          "logprobs": null
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Before prompts match the captured failed review exactly.",
+    "Hidden inputs and answers were not added to reviewer prompts.",
+    "Prompt ordering tests do not establish semantic correctness.",
+    "Correct-patch controls remained approved."
+  ]
+}

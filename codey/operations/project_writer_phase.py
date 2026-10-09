@@ -152,6 +152,7 @@ def _run_one_writer_attempt(
         completion_context={
             "execution_evidence": ctx.work.evidence,
             "analysis_run_payloads": ctx.work.analysis_run_payloads,
+            "scope_files": spec.checkpoint.changed_files,
         },
         project_changes_required=bool(getattr(ctx.request, "project_changes_required", False) is True),
         research_tools=_writer_research_tools(ctx),
