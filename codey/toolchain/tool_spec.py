@@ -172,6 +172,14 @@ def _research_json_type(pytype: type) -> str:
 
 def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
+    specs["read_tool_result"] = ToolSpec(
+        name="read_tool_result", grant="control", executor="receipt", replay_class="safe",
+        description="Read a stored result from this task without repeating its execution.",
+        parameters=(("result_ref", {"type": "string"}), ("offset", {"type": "integer", "minimum": 0}),
+                    ("limit", {"type": "integer", "minimum": 1, "maximum": 8000})),
+        required=("result_ref",),
+        json_examples=('{"tool":"read_tool_result","args":{"result_ref":"...","offset":0,"limit":4000}}',),
+    )
     for name, spec in _research_specs().items():
         if name == "done":
             # summary stays canonical; retain the research completion metadata.
@@ -392,7 +400,7 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None)
             allowed = None
     order = ("list_dir", "read_file", "read_files", "grep", "find_references", "parallel", "edit", "run", "shell",
              "web_search", "open_url", "source_search", "knowledge_search", "knowledge_read",
-             "knowledge_write", "knowledge_link", "done")
+             "knowledge_write", "knowledge_link", "read_tool_result", "done")
     names: list[str] = []
     for name in order:
         spec = tool_specs().get(name)

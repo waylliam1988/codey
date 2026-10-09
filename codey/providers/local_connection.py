@@ -148,7 +148,7 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
                            thinking_enabled=selection.thinking_enabled, reasoning_effort=selection.reasoning_effort,
                            text_decoder=normalize_local_reply,
                            usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
-                           budget_source=selection.budget_source,
+                           budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens,
                            request_counter=counter_for(selection.token_counter, config.base_url, selection.model_id,
                                                        config.api_key, selection.context_window_tokens))
     return provider

@@ -157,6 +157,15 @@ def _receive_turn_plan(
     never loops, executes tools, or accepts completion.
     """
     try:
+        if state.pending_reply is None:
+            from codey.operations.kernel_prompt import working_context
+
+            update = getattr(provider, "set_working_context", None)
+            if callable(update):
+                update(working_context(session))
+            refs = getattr(provider, "set_result_refs", None)
+            if callable(refs):
+                refs(tuple(session._memory_results))
         reply, state.pending_reply, state.pending_messages = _transport.send_kernel_reply(
             provider, native, state.prompt, native_tools, state.pending_reply, state.pending_messages,
         )

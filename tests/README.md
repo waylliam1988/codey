@@ -6,9 +6,37 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+## Traceable context views and local comparisons
+
+Sixteen focused files exercise deterministic behavior without real inference:
+
+- `test_context_budget_sources_and_input_limits.py`: independent input limits and selection sources.
+- `test_context_compaction_within_long_tool_turn.py`: Chat/Responses closed units and long tool turns.
+- `test_context_checkpoint_commit_and_recovery.py`: durable events, atomic heads, reset/reopen and lineage.
+- `test_context_compaction_transactions_and_lifecycle.py`: foreground transactions, background races, lifecycle and effective targets.
+- `test_runtime_execution_receipt_projection.py`: fresh command status, timestamps, references and verification validity.
+- `test_tool_result_read_scope_and_integrity.py`: read-only task scope, managed-output integrity and pagination.
+- `test_zen_compaction_auxiliary_request_boundary.py`: partner envelopes, counted packing and nonexecuting closure.
+- `test_context_work_state_portability_across_models_and_protocols.py`: plain semantic state across identities without opaque items.
+- `test_compaction_request_token_accounting.py`: summary purpose, physical costs and latest conversation context.
+- `test_compaction_source_reduction_and_packing.py`: repeated-line source encoding and measured auxiliary packing.
+- `test_context_compaction_benchmark_scoring.py`: exact facts and honest incomplete/cost outcomes.
+- `test_context_compaction_benchmark_isolation.py`: loopback/import isolation, real-task contract and frozen sources.
+- `test_context_compaction_joint_comparison.py`: matching snapshots/pairs and unmeasured execution metrics.
+- `test_opencode_compaction_reference_replay.py`: actual OpenCode selection and summary prompts.
+- `test_pi_compaction_reference_replay.py`: actual Pi split turns, file tracking and two-summary plans.
+- `test_compaction_reference_fixture_integrity.py`: licensed source fixture digests.
+
+Manual loopback-only inference uses `context_compaction_benchmark_ab.py`,
+`codey_vs_opencode_compaction_ab.py`, `codey_vs_pi_compaction_ab.py`, and
+`context_compaction_joint_ab.py`. Actual licensed reference functions are tested
+through Node 24; full competing agent runtimes are not claimed. See
+[measured scope and commands](../docs/context-compaction-ab-2026-10-09.zh-CN.md)
+and [final verification](../TEST_REPORT.md).
+
 ## Request budgets and token accounting
 
-Nine focused files contain 50 behavior cases. They use scripted responses and
+Nine focused files cover request budgets and token accounting. They use scripted responses and
 loopback fake servers, without real model inference:
 
 - `test_api_context_budget_admission.py`: selected 262K budget, no API static

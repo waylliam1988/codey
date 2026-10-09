@@ -1,0 +1,2521 @@
+{
+  "date": "2026-10-09",
+  "measured_snapshot_sha256": "10f42e24555dcdd1a4e8bf5ffbb415b64e4bbcd1049cfb00c670aae54a5dbf7c",
+  "final_snapshot_sha256": "b3b4f6c25e6afce77bdde5e501fa3019eb834690ad2da3e9c4e8c44389bfe905",
+  "final_lf_normalized_package_sha256": "e17aab1ecc737a739f338370d478ae226ede4621f0a7dc957b2cc7e0ee3af15a",
+  "last_fix": "Bound the recent-history target by the independent effective input limit; TDD/regression only. User stopped the new A/B run.",
+  "full_pytest": "8059 passed, 7 skipped, 1503 subtests passed in 869.72s (0:14:29)",
+  "matrix": {
+    "after_source_sha256": "10f42e24555dcdd1a4e8bf5ffbb415b64e4bbcd1049cfb00c670aae54a5dbf7c",
+    "comparisons": {
+      "old-codey": {
+        "verdict": "quality_gain_with_cost",
+        "cases": {
+          "test-result": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 1353,
+              "seconds": 10.86,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 2436,
+              "seconds": 27.454,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "repeated": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 1977,
+              "seconds": 17.626,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 6021,
+              "seconds": 60.171,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "model-change": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 324,
+              "seconds": 8.422,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 2172,
+              "seconds": 25.672,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "tool-heavy": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 2157,
+              "seconds": 11.453,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 4398,
+              "seconds": 31.578,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "segmented": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 1581,
+              "seconds": 17.032,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 45732,
+              "seconds": 112.906,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "correction": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 1230,
+              "seconds": 10.811,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 2256,
+              "seconds": 26.735,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "incremental": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 82374,
+              "seconds": 79.407,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 104714,
+              "seconds": 99.609,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "real-task": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 29148,
+              "seconds": 42.125,
+              "duplicate_executions": 0,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 38467,
+              "seconds": 71.203,
+              "duplicate_executions": 0,
+              "infrastructure_errors": 0
+            }
+          }
+        }
+      },
+      "opencode": {
+        "verdict": "quality_gain_with_cost",
+        "cases": {
+          "test-result": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 0,
+              "seconds": 4.812,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 2436,
+              "seconds": 27.454,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "tool-heavy": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 14466,
+              "seconds": 38.063,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 4398,
+              "seconds": 31.516,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "segmented": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 0,
+              "seconds": 4.812,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 44566,
+              "seconds": 95.625,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "correction": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 0,
+              "seconds": 4.782,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 2256,
+              "seconds": 26.641,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "incremental": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 96837,
+              "seconds": 119.045,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 104718,
+              "seconds": 99.858,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "repeated": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 0,
+              "seconds": 5.672,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 6021,
+              "seconds": 60.095,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          }
+        }
+      },
+      "pi": {
+        "verdict": "quality_gain_with_cost",
+        "cases": {
+          "test-result": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 0,
+              "seconds": 4.892,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 2436,
+              "seconds": 27.64,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "tool-heavy": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 14049,
+              "seconds": 34.39,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 4398,
+              "seconds": 31.547,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "segmented": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 0,
+              "seconds": 5.547,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 45644,
+              "seconds": 111.923,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "correction": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 0,
+              "seconds": 4.874,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 2256,
+              "seconds": 26.89,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "incremental": {
+            "before": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 99090,
+              "seconds": 142.156,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 104718,
+              "seconds": 99.485,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          },
+          "repeated": {
+            "before": {
+              "successes": 0,
+              "trials": 3,
+              "tokens": 0,
+              "seconds": 4.859,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            },
+            "after": {
+              "successes": 3,
+              "trials": 3,
+              "tokens": 6021,
+              "seconds": 59.766,
+              "duplicate_executions": null,
+              "infrastructure_errors": 0
+            }
+          }
+        }
+      }
+    },
+    "dominates_all_measured_metrics": false,
+    "scope": "Local algorithm replay; no claim about complete reference agents or other models"
+  },
+  "comparisons": {
+    "old-codey": {
+      "before_ref": "8456c0c0870420d032be122b05afa4ca755bf729",
+      "control": false,
+      "driver_sha256": "f14864f65cd7d71d5e00aa5c40daf807ab2621416485bf1c49e73fd0810c343a",
+      "verdict": "quality_gain_with_cost",
+      "limits": [
+        "one loaded model",
+        "seed does not guarantee determinism",
+        "completed pytest, not async processes"
+      ],
+      "after_source_sha256": "10f42e24555dcdd1a4e8bf5ffbb415b64e4bbcd1049cfb00c670aae54a5dbf7c",
+      "adapter_sha256": "0d1f8e57e4aa65ba455bb295bb9aa3192d72a4b391d0d54a8d438c9679bc02c8",
+      "raw_report_sha256": "c9ab47e476c57d46b11df30d72f2d46da3930bf6a759d0cb9d0e3be4e643997f",
+      "trials": [
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 5.813000000081956,
+          "total_tokens": 659,
+          "summary_requests": 0,
+          "constraints": false,
+          "latest_correction": false,
+          "evidence": false,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 20.094000000040978,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 3.6089999999385327,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 8.968999999808148,
+          "total_tokens": 752,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 3.625,
+          "total_tokens": 451,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 9.202999999979511,
+          "total_tokens": 812,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "model-change",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 2.827999999979511,
+          "total_tokens": 108,
+          "summary_requests": 0,
+          "constraints": false,
+          "latest_correction": false,
+          "evidence": false,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "model-change",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 8.594000000040978,
+          "total_tokens": 724,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "summary-failure",
+          "seed": 41,
+          "arm": "before",
+          "robustness_only": true,
+          "seconds": 3.625,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "summary-failure",
+          "seed": 41,
+          "arm": "after",
+          "success": true,
+          "robustness_only": true,
+          "seconds": 2.297000000020489,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "real-task",
+          "seed": 41,
+          "arm": "before",
+          "success": true,
+          "kernel_stop_reason": "done",
+          "executed_commands": [
+            {
+              "command": "python -m pytest -q",
+              "cwd": ".",
+              "workspace_revision": 1,
+              "exit_code": 0
+            }
+          ],
+          "duplicate_executions": 0,
+          "workspace_check_passed": true,
+          "seconds": 14.75,
+          "total_tokens": 9716,
+          "summary_requests": 0
+        },
+        {
+          "case": "real-task",
+          "seed": 41,
+          "arm": "after",
+          "success": true,
+          "kernel_stop_reason": "done",
+          "executed_commands": [
+            {
+              "command": "python -m pytest -q",
+              "cwd": ".",
+              "workspace_revision": 1,
+              "exit_code": 0
+            }
+          ],
+          "duplicate_executions": 0,
+          "workspace_check_passed": true,
+          "seconds": 23.95299999997951,
+          "total_tokens": 12802,
+          "summary_requests": 1
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 3.8120000001508743,
+          "total_tokens": 719,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 10.452999999979511,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 5.656999999890104,
+          "total_tokens": 527,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 37.609999999869615,
+          "total_tokens": 15244,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 26.359000000171363,
+          "total_tokens": 27458,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.437000000150874,
+          "total_tokens": 34902,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "repeated",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 19.937000000150874,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "repeated",
+          "seed": 42,
+          "arm": "before",
+          "seconds": 5.890999999828637,
+          "total_tokens": 659,
+          "summary_requests": 0,
+          "constraints": false,
+          "latest_correction": false,
+          "evidence": false,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "correction",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 8.938000000081956,
+          "total_tokens": 752,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 42,
+          "arm": "before",
+          "seconds": 3.6090000001713634,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 9.110000000102445,
+          "total_tokens": 812,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 42,
+          "arm": "before",
+          "seconds": 3.625,
+          "total_tokens": 451,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "model-change",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 8.515999999828637,
+          "total_tokens": 724,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "model-change",
+          "seed": 42,
+          "arm": "before",
+          "seconds": 2.797000000020489,
+          "total_tokens": 108,
+          "summary_requests": 0,
+          "constraints": false,
+          "latest_correction": false,
+          "evidence": false,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "summary-failure",
+          "seed": 42,
+          "arm": "after",
+          "success": true,
+          "robustness_only": true,
+          "seconds": 2.327999999979511,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "summary-failure",
+          "seed": 42,
+          "arm": "before",
+          "robustness_only": true,
+          "seconds": 3.6560000001918525,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "real-task",
+          "seed": 42,
+          "arm": "after",
+          "success": true,
+          "kernel_stop_reason": "done",
+          "executed_commands": [
+            {
+              "command": "python -m pytest -q",
+              "cwd": ".",
+              "workspace_revision": 1,
+              "exit_code": 0
+            }
+          ],
+          "duplicate_executions": 0,
+          "workspace_check_passed": true,
+          "seconds": 23.531000000191852,
+          "total_tokens": 12823,
+          "summary_requests": 1
+        },
+        {
+          "case": "real-task",
+          "seed": 42,
+          "arm": "before",
+          "success": true,
+          "kernel_stop_reason": "done",
+          "executed_commands": [
+            {
+              "command": "python -m pytest -q",
+              "cwd": ".",
+              "workspace_revision": 1,
+              "exit_code": 0
+            }
+          ],
+          "duplicate_executions": 0,
+          "workspace_check_passed": true,
+          "seconds": 13.625,
+          "total_tokens": 9716,
+          "summary_requests": 0
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 10.577999999979511,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 42,
+          "arm": "before",
+          "seconds": 3.797000000020489,
+          "total_tokens": 719,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 37.65599999995902,
+          "total_tokens": 15244,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 42,
+          "arm": "before",
+          "seconds": 5.687000000150874,
+          "total_tokens": 527,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 42,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 32.92200000002049,
+          "total_tokens": 34906,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 42,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 26.484999999869615,
+          "total_tokens": 27458,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "repeated",
+          "seed": 43,
+          "arm": "before",
+          "seconds": 5.922000000020489,
+          "total_tokens": 659,
+          "summary_requests": 0,
+          "constraints": false,
+          "latest_correction": false,
+          "evidence": false,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "repeated",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 20.140000000130385,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 43,
+          "arm": "before",
+          "seconds": 3.593000000109896,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 8.828000000212342,
+          "total_tokens": 752,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 43,
+          "arm": "before",
+          "seconds": 3.6100000001024455,
+          "total_tokens": 451,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 9.141000000061467,
+          "total_tokens": 812,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "model-change",
+          "seed": 43,
+          "arm": "before",
+          "seconds": 2.797000000020489,
+          "total_tokens": 108,
+          "summary_requests": 0,
+          "constraints": false,
+          "latest_correction": false,
+          "evidence": false,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "model-change",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 8.561999999918044,
+          "total_tokens": 724,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "summary-failure",
+          "seed": 43,
+          "arm": "before",
+          "robustness_only": true,
+          "seconds": 3.6410000000614673,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "summary-failure",
+          "seed": 43,
+          "arm": "after",
+          "success": true,
+          "robustness_only": true,
+          "seconds": 2.327999999979511,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "real-task",
+          "seed": 43,
+          "arm": "before",
+          "success": true,
+          "kernel_stop_reason": "done",
+          "executed_commands": [
+            {
+              "command": "python -m pytest -q",
+              "cwd": ".",
+              "workspace_revision": 1,
+              "exit_code": 0
+            }
+          ],
+          "duplicate_executions": 0,
+          "workspace_check_passed": true,
+          "seconds": 13.75,
+          "total_tokens": 9716,
+          "summary_requests": 0
+        },
+        {
+          "case": "real-task",
+          "seed": 43,
+          "arm": "after",
+          "success": true,
+          "kernel_stop_reason": "done",
+          "executed_commands": [
+            {
+              "command": "python -m pytest -q",
+              "cwd": ".",
+              "workspace_revision": 1,
+              "exit_code": 0
+            }
+          ],
+          "duplicate_executions": 0,
+          "workspace_check_passed": true,
+          "seconds": 23.719000000040978,
+          "total_tokens": 12842,
+          "summary_requests": 1
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 43,
+          "arm": "before",
+          "seconds": 3.844000000040978,
+          "total_tokens": 719,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 10.547000000020489,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 43,
+          "arm": "before",
+          "seconds": 5.688000000081956,
+          "total_tokens": 527,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 37.639999999897555,
+          "total_tokens": 15244,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 43,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 26.563000000081956,
+          "total_tokens": 27458,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 43,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.25,
+          "total_tokens": 34906,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        }
+      ]
+    },
+    "opencode": {
+      "before_ref": "8456c0c0870420d032be122b05afa4ca755bf729",
+      "control": false,
+      "driver_sha256": "f14864f65cd7d71d5e00aa5c40daf807ab2621416485bf1c49e73fd0810c343a",
+      "verdict": "quality_gain_with_cost",
+      "limits": [
+        "one loaded model",
+        "seed does not guarantee determinism",
+        "completed pytest, not async processes"
+      ],
+      "comparison_scope": "Actual reference compaction functions; shared Codey transport, not complete product runtime",
+      "reference_name": "OpenCode",
+      "reference_ref": "ecc4916b5a9608c30e6dd58a67f2137b594407ca",
+      "after_source_sha256": "10f42e24555dcdd1a4e8bf5ffbb415b64e4bbcd1049cfb00c670aae54a5dbf7c",
+      "adapter_sha256": "0d1f8e57e4aa65ba455bb295bb9aa3192d72a4b391d0d54a8d438c9679bc02c8",
+      "reference_source_sha256": {
+        "packages/core/src/session/compaction.ts": "a81fac50c8ba5fac25214a455c8572186d93603604cef18690f3716100f09224",
+        "packages/core/src/util/token.ts": "e98bce0656a99b9e0247fb4c92ee1d4ca2bb38036030abaac86344719277d09d"
+      },
+      "raw_report_sha256": "f3cd6f91eed7929a51e2991f7bb8a73ec688228a3fc660b84e34d91a7a041aa9",
+      "trials": [
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 2.469000000040978,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 20.219000000040978,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 41,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.6099999998696148,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "correction",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 8.827999999979511,
+          "total_tokens": 752,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 41,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.6099999998696148,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "test-result",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 9.155999999959022,
+          "total_tokens": 812,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 12.688000000081956,
+          "total_tokens": 4822,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 10.5,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.577999999979511,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 37.01599999982864,
+          "total_tokens": 15200,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 39.48399999993853,
+          "total_tokens": 32257,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.23400000017136,
+          "total_tokens": 34906,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "repeated",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 19.984999999869615,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "repeated",
+          "seed": 42,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.5940000000409782,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "correction",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 8.922000000020489,
+          "total_tokens": 752,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 42,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.5940000000409782,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "test-result",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 9.156999999890104,
+          "total_tokens": 812,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 42,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.593000000109896,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 10.610000000102445,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 42,
+          "arm": "before",
+          "seconds": 12.672000000020489,
+          "total_tokens": 4822,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 21.531000000191852,
+          "total_tokens": 14166,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 42,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.625,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "incremental",
+          "seed": 42,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.389999999897555,
+          "total_tokens": 34906,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 42,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 39.640000000130385,
+          "total_tokens": 32278,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "repeated",
+          "seed": 43,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.6089999999385327,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "repeated",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 19.891000000061467,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 43,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.5780000002123415,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "correction",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 8.891000000061467,
+          "total_tokens": 752,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 43,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.6089999999385327,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "test-result",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 9.140999999828637,
+          "total_tokens": 812,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 43,
+          "arm": "before",
+          "seconds": 12.702999999979511,
+          "total_tokens": 4822,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 10.405999999959022,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 43,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.6089999999385327,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "segmented",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 37.07799999997951,
+          "total_tokens": 15200,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 43,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 39.92100000008941,
+          "total_tokens": 32302,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 43,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.23400000017136,
+          "total_tokens": 34906,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        }
+      ]
+    },
+    "pi": {
+      "before_ref": "8456c0c0870420d032be122b05afa4ca755bf729",
+      "control": false,
+      "driver_sha256": "f14864f65cd7d71d5e00aa5c40daf807ab2621416485bf1c49e73fd0810c343a",
+      "verdict": "quality_gain_with_cost",
+      "limits": [
+        "one loaded model",
+        "seed does not guarantee determinism",
+        "completed pytest, not async processes"
+      ],
+      "comparison_scope": "Actual reference compaction functions; shared Codey transport, not complete product runtime",
+      "reference_name": "Pi",
+      "reference_ref": "a276dabe57911253350bffb93cb7d7aff6a73261",
+      "after_source_sha256": "10f42e24555dcdd1a4e8bf5ffbb415b64e4bbcd1049cfb00c670aae54a5dbf7c",
+      "adapter_sha256": "0d1f8e57e4aa65ba455bb295bb9aa3192d72a4b391d0d54a8d438c9679bc02c8",
+      "reference_source_sha256": {
+        "packages/ai/src/utils/text.ts": "d37c1825855c7fc71669a545b5b266810242c1c7e58d57228c0c143f29c1c544",
+        "packages/coding-agent/src/core/messages.ts": "5397e3c96c9504266e4ee8b6e88d5098b3280ee7dbb0c687b74708c62a06c8d4",
+        "packages/coding-agent/src/core/compaction/utils.ts": "cc0baada8a2e31bcf1dbc18948c69ba2264fb2ad4d2c583ceb772fd3c3233674",
+        "packages/coding-agent/src/core/compaction/compaction.ts": "d5aebd41333957b57fa3f1bee2a18b3c00b5d47bb1b4af6f913cf8cd791099c8",
+        "packages/coding-agent/src/core/session-manager.ts": "450d82c529933214e088b8422f00061815e617f352f6c834689787a314064bff",
+        "packages/coding-agent/src/core/usage-totals.ts": "8b18dd04d65e90af9b331cd5aa23d7891aab8a296f38a6026ce17a098d674ee9"
+      },
+      "raw_report_sha256": "3afba5f1513886d603d0b9862161273ce43d3f7580442e9026b685242d857574",
+      "trials": [
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.6560000001918525,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 19.859999999869615,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 41,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.6090000001713634,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "correction",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 8.875,
+          "total_tokens": 752,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 41,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.656999999890104,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "test-result",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 9.280999999959022,
+          "total_tokens": 812,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 11.437000000150874,
+          "total_tokens": 4683,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 10.452999999979511,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.827999999979511,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 37.17200000002049,
+          "total_tokens": 15200,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 47.359999999869615,
+          "total_tokens": 33030,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.188000000081956,
+          "total_tokens": 34906,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "repeated",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 19.95299999997951,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "repeated",
+          "seed": 42,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.625,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "correction",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 8.952999999979511,
+          "total_tokens": 752,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 42,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.625,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "test-result",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 9.109000000171363,
+          "total_tokens": 812,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 42,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.6099999998696148,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 10.530999999959022,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 42,
+          "arm": "before",
+          "seconds": 11.437999999849126,
+          "total_tokens": 4683,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 37.562999999849126,
+          "total_tokens": 15244,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 42,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.8589999999385327,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "incremental",
+          "seed": 42,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.28099999995902,
+          "total_tokens": 34906,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 42,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 47.35899999993853,
+          "total_tokens": 33030,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "repeated",
+          "seed": 43,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.577999999979511,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "repeated",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 19.95299999997951,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 43,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.6400000001303852,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "correction",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 9.061999999918044,
+          "total_tokens": 752,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "test-result",
+          "seed": 43,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.625,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "test-result",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 9.25,
+          "total_tokens": 812,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 43,
+          "arm": "before",
+          "seconds": 11.515000000130385,
+          "total_tokens": 4683,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 10.563000000081956,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 43,
+          "arm": "before",
+          "success": false,
+          "failure_kind": "context_overflow",
+          "seconds": 1.8600000001024455,
+          "total_tokens": 0,
+          "summary_requests": 0
+        },
+        {
+          "case": "segmented",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 37.187999999849126,
+          "total_tokens": 15200,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 43,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 47.437000000150874,
+          "total_tokens": 33030,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 43,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.01600000006147,
+          "total_tokens": 34906,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        }
+      ]
+    }
+  },
+  "exploratory_profiles": {
+    "incremental-0.6.json": {
+      "snapshot": "5cb15a2fb13fcfe853fa77a4d2c48061f75f708030b6d5995208dde462b6346c",
+      "verdict": "tradeoff",
+      "raw_report_sha256": "8e959d984a9591f7d1a6412d5a4f5d747bb149015bc791c7da2b52e3bdd31e30",
+      "trials": [
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 26.92200000002049,
+          "total_tokens": 27458,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 43.609999999869615,
+          "total_tokens": 35111,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        }
+      ]
+    },
+    "incremental-0.8.json": {
+      "snapshot": "10f42e24555dcdd1a4e8bf5ffbb415b64e4bbcd1049cfb00c670aae54a5dbf7c",
+      "verdict": "tradeoff",
+      "raw_report_sha256": "8f72ebefd3e5f1c240ca7ee2ffbd4c45e9e8ae432128150b87fedd205eca3683",
+      "trials": [
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 26.516000000061467,
+          "total_tokens": 27458,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.311999999918044,
+          "total_tokens": 34902,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        }
+      ]
+    },
+    "incremental-0.9.json": {
+      "snapshot": "3fd7459ff368e593645ac25f01f3034967fd51104973071ac664c4c5a5e56f99",
+      "verdict": "tradeoff",
+      "raw_report_sha256": "3c796ab1db22f9b14efc101137d87b3fc4be4a160387a08e9256fce5923bb764",
+      "trials": [
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "before",
+          "waves_completed": 8,
+          "seconds": 26.593000000109896,
+          "total_tokens": 27458,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "incremental",
+          "seed": 41,
+          "arm": "after",
+          "waves_completed": 8,
+          "seconds": 33.60899999993853,
+          "total_tokens": 34800,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        }
+      ]
+    },
+    "tune-512.json": {
+      "snapshot": "94c615571d7d9afc5ca4839ccc179a5ea1d4db9a1f9ab3598dc739b88bdd9d3c",
+      "verdict": "quality_gain_with_cost",
+      "raw_report_sha256": "18fad5dcc30f658663bf801f91463728542c507a6551c3b400b8a58cafa5d0f4",
+      "trials": [
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 5.984000000171363,
+          "total_tokens": 659,
+          "summary_requests": 0,
+          "constraints": false,
+          "latest_correction": false,
+          "evidence": false,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 19.968000000109896,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 3.797000000020489,
+          "total_tokens": 299,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 10.719000000040978,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 5.75,
+          "total_tokens": 527,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 37.156999999890104,
+          "total_tokens": 15215,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        }
+      ]
+    },
+    "tune-2000.json": {
+      "snapshot": "94c615571d7d9afc5ca4839ccc179a5ea1d4db9a1f9ab3598dc739b88bdd9d3c",
+      "verdict": "quality_gain_with_cost",
+      "raw_report_sha256": "077207def2cff202deadc440e1b904e1feed4ef6eb0a270f5b8b8401b97f71a5",
+      "trials": [
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 5.984000000171363,
+          "total_tokens": 659,
+          "summary_requests": 0,
+          "constraints": false,
+          "latest_correction": false,
+          "evidence": false,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 20.233999999938533,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 3.797000000020489,
+          "total_tokens": 719,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 10.625,
+          "total_tokens": 1466,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 5.734000000171363,
+          "total_tokens": 527,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 37.75,
+          "total_tokens": 15244,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        }
+      ]
+    },
+    "tune-4000.json": {
+      "snapshot": "94c615571d7d9afc5ca4839ccc179a5ea1d4db9a1f9ab3598dc739b88bdd9d3c",
+      "verdict": "inconclusive",
+      "raw_report_sha256": "f55edf92ce312764377e1ec4d6612e42836a187b6c2bdca43da1116b0a3d8ad3",
+      "trials": [
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 5.952999999979511,
+          "total_tokens": 659,
+          "summary_requests": 0,
+          "constraints": false,
+          "latest_correction": false,
+          "evidence": false,
+          "result_reference": false,
+          "success": false
+        },
+        {
+          "case": "repeated",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 19.95299999997951,
+          "total_tokens": 2007,
+          "summary_requests": 2,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 3.765000000130385,
+          "total_tokens": 719,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "tool-heavy",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 12.672000000020489,
+          "total_tokens": 4883,
+          "summary_requests": 1,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 7.655999999959022,
+          "total_tokens": 3824,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "segmented",
+          "seed": 41,
+          "arm": "after",
+          "success": false,
+          "seconds": 39.21900000004098,
+          "total_tokens": 7653,
+          "summary_requests": 1
+        }
+      ]
+    },
+    "final-aa.json": {
+      "snapshot": "3f1894d32829ccada221f6b8e6f2adb36f1f62871566d3103a71f40dbac470d9",
+      "verdict": "no_gain",
+      "raw_report_sha256": "945054e198c8fa8306c79d2a4e2f41d19beb176c96856aea7669bcbb62f5f414",
+      "trials": [
+        {
+          "case": "correction",
+          "seed": 41,
+          "arm": "before",
+          "seconds": 4.562000000150874,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 41,
+          "arm": "after",
+          "seconds": 5.422000000020489,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 42,
+          "arm": "after",
+          "seconds": 3.8589999999385327,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 42,
+          "arm": "before",
+          "seconds": 3.577999999979511,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 43,
+          "arm": "before",
+          "seconds": 3.469000000040978,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        },
+        {
+          "case": "correction",
+          "seed": 43,
+          "arm": "after",
+          "seconds": 3.2660000000614673,
+          "total_tokens": 410,
+          "summary_requests": 0,
+          "constraints": true,
+          "latest_correction": true,
+          "evidence": true,
+          "result_reference": true,
+          "success": true
+        }
+      ]
+    }
+  }
+}

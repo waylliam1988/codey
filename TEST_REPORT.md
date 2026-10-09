@@ -1,5 +1,63 @@
 # Codey Test Report
 
+## Traceable context views and local algorithm comparisons (2026-10-09)
+
+Windows / Python 3.12.8, Node 24.19.0; baseline `8456c0c0`. Documentation was
+updated after the final full run. Version remains 0.5.11; no tag or release.
+
+### TDD and deterministic fixes
+
+New behavior tests first failed for independent input limits, atomic long-turn
+selection, durable views, source/late-response transactions, auxiliary cost
+ownership, receipt reading and portable work state, before their production fixes.
+The focused scripts are listed in tests/README.md; names distinguish projection
+and portability tests from unimplemented asynchronous process recovery.
+
+Additional valid red → green cases lock down: latest pytest tool-unit retention;
+15 subsequent reads not evicting a command receipt; repeated identical summaries
+having distinct source identities; durable malformed-native reset; staged commit
+diagnostics; 80% maintenance scheduling; and Zen packing its actual prefix/tools.
+The last red case had 5380 estimated input, a 2048 independent limit and a 12000
+recent target: it wrongly refused feasible compression. The target now cannot
+override the effective input limit; the same case and related regressions passed
+(24 cases total).
+
+Fixture/setup errors are not counted as TDD red evidence. Broad regression found
+three scripted `_generate` overrides missing the new staging argument; fixtures
+were updated, with 40 related cases green. A prior Pi replay missed the actual
+`combineUsage` dependency; it is now covered by a two-summary planning test. Its
+incomplete earlier run is excluded from comparative claims.
+
+The first full run was deliberately interrupted around 18% after discovering the
+input-limit boundary above; it has no full-suite conclusion. The user then stopped
+the new A/B run. Final code is checked by deterministic regression and full pytest;
+the report explicitly separates the completed A/B snapshot from the last fix.
+
+### Final verification
+
+- Ruff: `python -m ruff check .` passed.
+- mypy: 402 source files, no issues.
+- Pyrefly: 0 new errors, existing baseline 68 suppressed / 832 warnings not shown;
+  the baseline was not expanded.
+- Compileall, 20 JavaScript asset syntax checks, and `git diff --check` passed.
+- Required machine contracts: **761 passed in 169.92s**; no skips.
+- Full pytest: **8059 passed, 7 skipped, 1503 subtests passed in 869.72s (0:14:29)**.
+- Sixteen new focused files: **77 cases** in the final full XML.
+- Seven skips: six Windows/POSIX platform boundaries and one opt-in real Edge E2E.
+
+### Model measurements
+
+The completed, uniformly frozen three-seed replay gives old Codey 18/24 versus
+24/24, OpenCode/Pi each 6/18 versus 18/18. Both reference comparisons execute real
+pure compaction functions through the common local transport, not complete agents.
+Failure injection is separate, 3/3 original histories preserved; six real coding
+tasks completed, with zero duplicate agent commands. Passive replay does not claim
+to measure execution duplication. Local Gemma/KoboldCpp only; no paid inference.
+
+Costs are not universally better: normal growth adds tokens; unique history can
+require expensive semantic reading. See [the full comparison and limits](docs/context-compaction-ab-2026-10-09.zh-CN.md)
+and [redacted measured evidence](docs/reports/context-compaction-ab-2026-10-09.json).
+
 ## Request budgets, counting and connector-owned usage (2026-10-09)
 
 基线：`e46c9018bc0755cae5e294efac2238bcecd0935b`；Windows、Python **3.12.8**。

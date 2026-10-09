@@ -265,9 +265,10 @@ def test_compaction_noop_cut_leaves_messages_untouched() -> None:
         {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "function": {"name": "read"}}]},
     ]
     before = [dict(m) for m in messages]
-    from codey.providers.api_chat import compact
+    from codey.providers import api_chat
+    from codey.providers.context_checkpoint import select_range
 
-    assert compact(messages) is None
+    assert select_range(api_chat, messages) is None
     assert messages == before
 
 

@@ -2,6 +2,26 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Traceable background context maintenance (2026-10-09)
+
+- Preserve accepted protocol events separately from replaceable context views;
+  validate closed tool units, source identity and final counted payloads before
+  atomic commit. Keep failed summaries from deleting history, and portable work
+  state free of provider-private protocol objects.
+- Project current execution receipts independently of summaries; read stored
+  task results without executing commands. Keep Zen auxiliary envelopes and
+  closure inside Zen, and account for every summary generation separately.
+- Tune maintenance to 80% using local replay; bound recent-history targets by
+  effective independent input limits. Remove old snippet/drop-history paths.
+- Add 16 accurately scoped behavior-test files and local old-Codey/OpenCode/Pi
+  comparison scripts. Measurements show retention gains and cost tradeoffs,
+  not universal superiority. The last budget fix has TDD/full regression coverage;
+  further A/B was stopped at the user's request.
+- Final pytest: **8059 passed, 7 skipped, 1503 subtests passed in 869.72s (0:14:29)**; machine contracts **761 passed**. Ruff, mypy,
+  baseline-aware Pyrefly, compileall, JS syntax and diff checks passed.
+  Documentation updated afterward; no version change, tag or release.
+  See [implementation and measured comparisons](docs/context-compaction-ab-2026-10-09.zh-CN.md).
+
 ## Unreleased - Request budgets and connector-owned token usage (2026-10-09)
 
 - Freeze the selected model budget, remove API static capacity overrides and

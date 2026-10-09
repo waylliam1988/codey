@@ -26,17 +26,21 @@ class ContextBudget:
     safety_tokens: int
     keep_recent_tokens: int
     source: str = "configuration"
+    input_limit_tokens: int | None = None
 
     def __post_init__(self) -> None:
         for value in (self.window_tokens, self.output_tokens, self.keep_recent_tokens):
             if type(value) is not int or value <= 0:
                 raise ValueError("context budget limits must be positive integers")
+        if self.input_limit_tokens is not None and (type(self.input_limit_tokens) is not int or self.input_limit_tokens <= 0):
+            raise ValueError("independent input limit must be a positive integer")
         if type(self.safety_tokens) is not int or self.safety_tokens < 0 or self.input_limit <= 0:
             raise ValueError("context budget has no input capacity")
 
     @property
     def input_limit(self) -> int:
-        return self.window_tokens - self.output_tokens - self.safety_tokens
+        residual = self.window_tokens - self.output_tokens - self.safety_tokens
+        return residual if self.input_limit_tokens is None else min(residual, self.input_limit_tokens)
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,7 @@ class ApiExchangeUsage:
     usage: ReportedUsage
     usage_status: str
     outcome: str
+    purpose: str = "conversation"
 
     def to_payload(self) -> dict[str, object]:
         return asdict(self)

@@ -52,21 +52,32 @@ def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, sys
     return candidate
 
 
-def compact(items: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-    from codey.agents.context_compaction import (
-        SUMMARY_PREFIX_TEXT,
-        compact_openai_messages,
-        summarize_prefix_deterministically,
-    )
+def validate_view(items: list[dict[str, Any]]) -> None:
+    from codey.agents.context_compaction import group_messages_for_compaction
 
-    def summary(item: dict[str, Any]) -> bool:
-        return item.get("role") == "user" and str(item.get("content", "")).startswith(SUMMARY_PREFIX_TEXT)
+    groups = group_messages_for_compaction(items)
+    additions: list[dict[str, Any]] = []
+    if groups:
+        group = groups[-1]
+        calls = items[group[0]].get("tool_calls")
+        if isinstance(calls, list):
+            answered = {items[i].get("tool_call_id") for i in group[1:]}
+            additions = [{"role": "tool", "tool_call_id": call.get("id"), "content": ""}
+                         for call in calls if isinstance(call, dict) and call.get("id") not in answered]
+    # Empty placeholders only validate an unfinished tail; they never enter a
+    # request, materialized view, receipt or archive.
+    prepare(items, additions, system="", tools=None)
 
-    starts = [i for i, item in enumerate(items) if item.get("role") == "user" and not summary(item)]
-    if len(starts) < 2:
-        return [item for item in items if not summary(item)] if any(summary(item) for item in items) else None
-    cut = starts[1]
-    return compact_openai_messages(items, summarize_prefix_deterministically(items[:cut]), cut)
+
+def closed_spans(items: list[dict[str, Any]]) -> list[tuple[int, int]]:
+    from codey.agents.context_compaction import group_messages_for_compaction, is_tool_group_complete
+
+    return [(group[0], group[-1] + 1) for group in group_messages_for_compaction(items)
+            if is_tool_group_complete(items, group) and items[group[0]].get("role") not in {"system", "developer"}]
+
+
+def checkpoint_item(text: str) -> dict[str, Any]:
+    return {"role": "assistant", "content": "Current project state:\n" + text}
 
 
 def build_payload(messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,

@@ -89,6 +89,10 @@ Connection → Advanced → `API protocol` 明确选择 Chat Completions
 连接与 Zen 请求前计数明确为估算。实际 API 用量只来自服务端报告，不能把分词计数
 当作消耗。详见[请求预算与 token 统计](docs/token-accounting.zh-CN.md)。
 
+API 会话在后台维护经过计数的工作上下文，并保留已接纳的原始事件。执行回执
+独立于模型摘要，读取已有测试结果不会重新执行命令；维护不增加聊天进度提示。
+详见[实现与本地对比报告](docs/context-compaction-ab-2026-10-09.zh-CN.md)，其中也记录额外摘要成本。
+
 ## 命令行
 
 ```powershell

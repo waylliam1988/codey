@@ -22,6 +22,7 @@ class ApiRunSelection:
     output_tokens: int | None = None
     token_counter: str = "estimated"
     budget_source: str = "configuration"
+    input_limit_tokens: int | None = None
 
     def __post_init__(self) -> None:
         for value in (self.connection_id, self.connection_revision, self.model_id):
@@ -45,6 +46,8 @@ class ApiRunSelection:
             raise ValueError("invalid API context budget")
         if self.context_window_tokens <= self.context_reserve_tokens or self.context_keep_recent_tokens > self.context_window_tokens - self.context_reserve_tokens:
             raise ValueError("inconsistent API context budget")
+        if self.input_limit_tokens is not None and (type(self.input_limit_tokens) is not int or self.input_limit_tokens <= 0):
+            raise ValueError("invalid independent input limit")
         if self.output_tokens is not None and (type(self.output_tokens) is not int or self.output_tokens <= 0
                                                or self.output_tokens > self.context_reserve_tokens):
             raise ValueError("invalid API output budget")

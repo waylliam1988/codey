@@ -1,0 +1,14 @@
+{
+  "revision": "a276dabe57911253350bffb93cb7d7aff6a73261",
+  "source": "https://github.com/earendil-works/pi",
+  "session-manager.ts": "Exact sessionEntryToContextMessages function excerpt; unrelated I/O not loaded",
+  "files": {
+    "packages/ai/src/utils/text.ts": "d37c1825855c7fc71669a545b5b266810242c1c7e58d57228c0c143f29c1c544",
+    "packages/coding-agent/src/core/messages.ts": "5397e3c96c9504266e4ee8b6e88d5098b3280ee7dbb0c687b74708c62a06c8d4",
+    "packages/coding-agent/src/core/session-manager.ts": "97e6f3f1f63c9d206695c844b7e844b72de7049aee2f3c5327d1a462ad7d7265",
+    "packages/coding-agent/src/core/compaction/compaction.ts": "d5aebd41333957b57fa3f1bee2a18b3c00b5d47bb1b4af6f913cf8cd791099c8",
+    "packages/coding-agent/src/core/compaction/utils.ts": "cc0baada8a2e31bcf1dbc18948c69ba2264fb2ad4d2c583ceb772fd3c3233674",
+    "packages/coding-agent/src/core/usage-totals.ts": "8b18dd04d65e90af9b331cd5aa23d7891aab8a296f38a6026ce17a098d674ee9"
+  },
+  "normalization": "LF"
+}

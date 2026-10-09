@@ -56,7 +56,7 @@ class _ScriptedLocalProvider(ApiProvider):
         self.directory, self.stage = directory, stage
         self.responses = 0
 
-    def _generate(self, messages, tools=None, *, timeout=None):
+    def _generate(self, messages, tools=None, *, timeout=None, checkpoints=None):
         self.responses += 1
         _append(self.directory / "scripted-requests.jsonl", {"messages": messages, "tools": encode_tools(tools)})
         if tools == []:

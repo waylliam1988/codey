@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codey.agents import context_compaction as compaction
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
-from codey.providers import api_chat
 from codey.providers import error_classification as errors
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.file_mutation_queue import group_tool_calls_for_execution
@@ -14,56 +12,6 @@ from codey.toolchain.runtime import (
     edit_file,
     retry_replacement_without_line_numbers,
 )
-
-
-def test_compaction_never_splits_tool_group() -> None:
-    messages = [
-        {"role": "system", "content": "sys"},
-        {"role": "user", "content": "do work " + ("x" * 5000)},
-        {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "function": {"name": "read"}}]},
-        {"role": "tool", "tool_call_id": "c1", "content": "contents " + ("y" * 5000)},
-        {"role": "user", "content": "follow up"},
-    ]
-    groups = compaction.group_messages_for_compaction(messages)
-    assert any(len(g) == 2 and g[0] == 2 for g in groups)
-    compacted = api_chat.compact(messages)
-    assert compacted is not None
-    assert all(m.get("role") != "tool" for m in compacted)
-    assert not any(m.get("tool_calls") for m in compacted)
-    assert compaction.is_tool_group_complete(messages, [2, 3])
-
-
-def test_compact_in_place_keeps_system_and_tail() -> None:
-    messages: list[dict] = [
-        {"role": "system", "content": "sys"},
-        {"role": "user", "content": "old " + ("a" * 3000)},
-        {"role": "assistant", "content": "old answer " + ("b" * 3000)},
-        {"role": "user", "content": "latest request"},
-    ]
-    messages = api_chat.compact(messages)
-    assert messages is not None
-    summary = messages[1]["content"].removeprefix(compaction.SUMMARY_PREFIX_TEXT).strip()
-    assert summary
-    assert messages[0]["role"] == "system"
-    assert messages[-1]["content"] == "latest request"
-
-
-def test_compaction_prefix_appears_exactly_once() -> None:
-    from codey.agents.context_compaction import SUMMARY_PREFIX_TEXT
-
-    messages: list[dict] = [
-        {"role": "system", "content": "sys"},
-        {"role": "user", "content": "old " + ("a" * 3000)},
-        {"role": "assistant", "content": "old answer " + ("b" * 3000)},
-        {"role": "user", "content": "latest request"},
-    ]
-    messages = api_chat.compact(messages)
-    assert messages is not None
-    summary = messages[1]["content"].removeprefix(compaction.SUMMARY_PREFIX_TEXT).strip()
-    assert summary
-    assert SUMMARY_PREFIX_TEXT not in summary
-    joined = "\n".join(str(m.get("content") or "") for m in messages)
-    assert joined.count(SUMMARY_PREFIX_TEXT) == 1
 
 
 def test_overflow_classification() -> None:

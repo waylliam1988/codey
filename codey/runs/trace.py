@@ -484,7 +484,8 @@ class RunTraceRecorder:
             totals["known_output_tokens"] += record.usage.output_tokens or 0
             if record.usage.input_tokens is None or record.usage.output_tokens is None or record.outcome == "unknown":
                 totals["incomplete_requests"] += 1
-            self.manifest.api_usage_latest = record.to_payload()
+            if record.purpose == "conversation":
+                self.manifest.api_usage_latest = record.to_payload()
             if len(self.manifest.api_usage) < MAX_API_USAGE_ROWS:
                 self.manifest.api_usage.append(record.to_payload())
             self.flush()

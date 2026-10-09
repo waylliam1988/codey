@@ -149,6 +149,8 @@ class ExecutionDelegate:
         spec = self._resolve_spec(name)
         if spec is None:
             return False
+        if spec.executor == "receipt":
+            return self.session is not None
         if spec.executor == "project":
             return self.project_path is not None and self.tool_fns is not None
         if spec.executor in {"source", "knowledge"}:
@@ -168,6 +170,11 @@ class ExecutionDelegate:
             executor = spec.executor if spec is not None else ""
         except Exception:
             executor = ""
+        if executor == "receipt":
+            from codey.operations.tool_result_reader import read_tool_result
+
+            result = read_tool_result(self, call)
+            return result, result.ok, None
         if executor == "project":
             return self._execute_project(call)
         if executor in {"source", "knowledge"}:

@@ -29,19 +29,23 @@ class ZenModel:
     context: int
     output: int
     efforts: tuple[str, ...] = ()
+    input_limit_tokens: int | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def _model_limits(model: dict[str, Any]) -> tuple[int, int] | None:
+def _model_limits(model: dict[str, Any]) -> tuple[int, int, int | None] | None:
     limits = model.get("limit")
     if not isinstance(limits, dict):
         return None
     context, output = limits.get("context"), limits.get("output")
     if type(context) is not int or context < 1024 or type(output) is not int or output <= 0:
         return None
-    return context, output
+    input_limit = limits.get("input")
+    if input_limit is not None and (type(input_limit) is not int or input_limit <= 0):
+        return None
+    return context, output, input_limit
 
 
 def parse_models(directory: object, available: set[str]) -> tuple[ZenModel, ...]:
@@ -72,14 +76,14 @@ def parse_models(directory: object, available: set[str]) -> tuple[ZenModel, ...]
         limits = _model_limits(model)
         if limits is None:
             continue
-        context, output = limits
+        context, output, input_limit = limits
         options = model.get("reasoning_options") or []
         if not isinstance(options, list):
             continue
         efforts = tuple(value for option in options if isinstance(option, dict) and option.get("type") == "effort"
                         and isinstance(option.get("values"), list) for value in option["values"]
                         if isinstance(value, str) and value in {"minimal", "low", "medium", "high", "xhigh", "max"})
-        result.append(ZenModel(identity, str(model.get("name") or identity), protocol, context, output, efforts))
+        result.append(ZenModel(identity, str(model.get("name") or identity), protocol, context, output, efforts, input_limit))
     return tuple(sorted(result, key=lambda model: model.id))
 
 

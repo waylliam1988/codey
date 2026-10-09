@@ -116,12 +116,12 @@ class RecordingProvider(ApiProvider):
         self.exchange_number = 0
         self.recorder_id = uuid.uuid4().hex
 
-    def _generate(self, messages, tools=None, *, timeout=None):
+    def _generate(self, messages, tools=None, *, timeout=None, checkpoints=None):
         self.exchange_number += 1
         number = self.exchange_number
         started = time.perf_counter()
         try:
-            body = super()._generate(messages, tools, timeout=timeout)
+            body = super()._generate(messages, tools, timeout=timeout, checkpoints=checkpoints)
         except Exception as exc:
             self._record({"type": "error", "exchange": number, "error": f"{type(exc).__name__}: {exc}",
                           "seconds": time.perf_counter() - started})

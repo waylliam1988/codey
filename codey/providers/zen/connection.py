@@ -12,6 +12,7 @@ from codey.providers.api_provider import ApiProvider
 from codey.providers.api_transport import GenerationRejectedError, GenerationUnknownError
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.providers.error_classification import OutputLengthError
+from codey.providers.token_accounting import RequestContextCount
 from codey.providers.zen.catalog import ZenCatalog
 from codey.providers.zen.declarations import TEXT_PROMPT_PREFIX, prepare_declarations, transport_identity
 from codey.providers.zen.identity import CONNECTION_REVISION, ZEN_BASE_URL, ZenIdentity
@@ -30,7 +31,7 @@ class ZenProvider:
     native_tools = True
     thread_safe_send = True
 
-    def __init__(self, runtime: Any, *, on_plain_refused: Callable[[], None] | None = None,
+    def __init__(self, runtime: ApiProvider, *, on_plain_refused: Callable[[], None] | None = None,
                  on_plain_succeeded: Callable[[], None] | None = None) -> None:
         self.runtime = runtime
         self.on_plain_refused = on_plain_refused
@@ -45,7 +46,7 @@ class ZenProvider:
 
     @property
     def model_identity(self) -> str:
-        return transport_identity(str(self.runtime.model_identity))
+        return transport_identity(self.runtime.model_identity)
 
     def abandon_inflight(self) -> None:
         with self._state_lock:
@@ -57,7 +58,10 @@ class ZenProvider:
         self.abandon_inflight()
 
     def close(self) -> None:
-        self.abandon_inflight()
+        with self._state_lock:
+            self._generation += 1
+            self._last_text_reply = None
+        self.runtime.close()
 
     @contextlib.contextmanager
     def _sending(self) -> Iterator[int]:
@@ -75,6 +79,10 @@ class ZenProvider:
         with self._state_lock:
             if generation != self._generation:
                 raise GenerationUnknownError("Zen generation cancelled; late reply discarded")
+
+    def count_text(self, text: str, *, deadline: float) -> RequestContextCount:
+        declared, _ = prepare_declarations(None)
+        return self.runtime.count_text(TEXT_PROMPT_PREFIX + text, tools=declared, deadline=deadline)
 
     def send(self, text: str, timeout: float | None = None) -> str:
         try:
@@ -173,7 +181,8 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
     reserve = min(8192, model.context // 4)
     return ApiRunSelection("zen", CONNECTION_REVISION, model.id, model.protocol, True, model.context,
                            reserve, min(12000, model.context - reserve), reasoning_effort=effort,
-                           stream=True, tool_choice="auto", output_tokens=min(model.output, reserve), budget_source="model_catalog")
+                           stream=True, tool_choice="auto", output_tokens=min(model.output, reserve), budget_source="model_catalog",
+                           input_limit_tokens=model.input_limit_tokens)
 
 
 def validate_selection(selection: ApiRunSelection) -> None:
@@ -197,7 +206,8 @@ def open_selection(selection: ApiRunSelection) -> ZenProvider:
                            context_keep_recent_tokens=selection.context_keep_recent_tokens, reasoning_effort=selection.reasoning_effort,
                            system_prompt="You are a coding assistant.",
                            usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
-                           budget_source=selection.budget_source)
+                           budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens)
+    provider.auxiliary_connection = ZenProvider
     return ZenProvider(provider,
         on_plain_refused=lambda: catalog().access.record_plain_refusal(selection.model_id, selection.protocol),
         on_plain_succeeded=lambda: catalog().access.record_plain_success(selection.model_id, selection.protocol))

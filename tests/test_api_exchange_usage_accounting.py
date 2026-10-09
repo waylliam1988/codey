@@ -34,7 +34,7 @@ def test_usage_is_observed_before_decode_and_usage_only_stream_frames_are_delive
         assert any("usage" in event for event in events)
         return original(*args, **kwargs)
 
-    provider._codec = SimpleNamespace(prepare=provider._codec.prepare, compact=provider._codec.compact,
+    provider._codec = SimpleNamespace(prepare=provider._codec.prepare,
                                      build_payload=provider._codec.build_payload, endpoint=provider._codec.endpoint,
                                      decode_exchange=decode)
     assert provider.send("hello") == "ok"

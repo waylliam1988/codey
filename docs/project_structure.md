@@ -77,7 +77,10 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/providers/base.py` | Protocol-neutral tool definitions/results and explicit assistant finish state |
 | `codey/providers/api_provider.py`, `api_transport.py` | One exchange lifecycle owns locks, cancellation and candidate commit; shared bounded transport never replays unknown outcomes |
 | `codey/providers/api_codec.py` | Stateless codec contract and generation settings; connection factories resolve budgets, the provider selects its codec once |
-| `codey/providers/api_chat.py`, `api_responses.py` | Protocol-owned tools, results, wire history, complete-exchange compaction and reply decoding; Responses replays reasoning items and uses call_id |
+| `codey/providers/api_chat.py`, `api_responses.py` | Protocol-owned tools, results, wire history, closed context units, paired-call validation and reply decoding; Responses replays reasoning items and uses call_id |
+| `codey/providers/context_ledger.py` | Durable accepted protocol events, hash-chained sources and atomic replaceable-view heads |
+| `codey/providers/context_checkpoint.py`, `compaction.py` | Closed-range selection, recoverable output reduction, source validation and background/foreground context transactions |
+| `codey/operations/tool_result_reader.py` | Read-only current-task receipts, managed-output integrity and bounded pagination; no execution |
 | `codey/providers/api_connections.py`, `local_connection.py` | Lazy connection factories and admitted Local configuration; shared runtime does not import Zen |
 | `codey/providers/model_preferences.py` | Atomic revisioned source/model consent; catalog observations never change selection |
 | `codey/app/model_settings.py`, `provider_services.py` | Generic source descriptors, explicit discovery, model-use protection and selected-scope services |

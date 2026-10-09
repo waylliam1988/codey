@@ -103,6 +103,9 @@ def connect_and_build_frame(
     provider = preflight.provider
     provider_id = preflight.provider_id
     bind_api_usage(provider, provider_id, trace)
+    context_home = getattr(getattr(state, "managed_outputs", None), "root", None)
+    if context_home is not None and callable(getattr(provider, "bind_context", None)):
+        provider.bind_context(request.session_id, context_home.parent)
     conversation = state.conversation_for(request.session_id)
     conversation_plan = build_conversation_plan(
         state=state,

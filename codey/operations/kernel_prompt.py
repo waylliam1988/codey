@@ -109,6 +109,9 @@ def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:
 
 def _result_context(result: ToolResult, session: TaskSession) -> str:
     text = str(result.model_text or "")
+    result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
+    if result_ref:
+        text += f"\nStored result: {result_ref}\nRead it with read_tool_result; do not repeat execution to recover output."
     if result.call.name == "web_search" and session.search_results:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.search_results.items())[-12:])
         return f"{text}\n\nAvailable result IDs for open_result:\n{refs}"
@@ -132,3 +135,30 @@ def _format_results(results: list[ToolResult], session: TaskSession) -> str:
         label = str(getattr(result.call, "name", "") or "tool")
         blocks.append(f"[result: {label}]\n{_result_context(result, session)}".rstrip())
     return "\n\n".join(blocks) + "\n\nContinue with the next single JSON tool call, or done."
+
+
+def working_context(session: TaskSession) -> str:
+    """Fresh execution facts; narrative checkpoints cannot amend these observations."""
+    import json
+
+    executions: list[dict[str, Any]] = []
+    commands = [(identity, record) for identity, record in session.executed.items() if record.get("name") == "run"]
+    for identity, record in commands[-12:]:
+        result = session._memory_results.get(identity)
+        args = result.call.args if result is not None else {}
+        fingerprint = record.get("workspace_fingerprint")
+        audit: dict[str, Any] = dict(result.audit) if result is not None else {}
+        executions.append({"execution_ref": identity, "command": args.get("command", record.get("command", "")),
+            "cwd": args.get("path", record.get("cwd", ".")),
+            "status": "complete" if type(record.get("exit_code")) is int else "unknown",
+            "started_at": audit.get("command_started_at"), "finished_at": audit.get("command_finished_at"),
+            "exit_code": record.get("exit_code"), "result_available": result is not None,
+            "workspace_identity": fingerprint,
+            "verification": "current" if fingerprint and fingerprint == session.workspace_fingerprint else "stale or unknown"})
+    return ("Current work observations (runtime records):\n" + json.dumps({"user_task": session.task_text,
+        "project": session.project, "workspace_revision": session.workspace_revision,
+        "workspace_fingerprint": session.workspace_fingerprint, "changed_files": list(session.edited_files),
+        "read_files": sorted(session.read_files),
+        "executions": executions}, ensure_ascii=False)
+        + "\nRead stored results before deciding the next action. Do not repeat an execution merely to recover its output. "
+          "A changed workspace may need a new verification; stale results cannot prove current correctness.")

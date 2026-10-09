@@ -76,7 +76,10 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/providers/base.py` | 协议中立工具声明/结果与明确的回复结束状态 |
 | `codey/providers/api_provider.py`、`api_transport.py` | 统一最终请求计数/裁剪/准入、锁、取消与候选提交；传输交付原始 usage 事件，不重发未知结果 |
 | `codey/providers/api_codec.py` | 无状态 codec 契约及生成参数；连接工厂解析预算，Provider 构造时选定协议 |
-| `codey/providers/api_chat.py`、`api_responses.py` | 各自拥有工具、结果、wire 历史、完整交换组裁剪和回复解码；Responses 保留 reasoning items 并使用 call_id |
+| `codey/providers/api_chat.py`、`api_responses.py` | 各自拥有工具、结果、wire 历史、完整上下文单元、调用配对验证和回复解码；Responses 保留 reasoning items 并使用 call_id |
+| `codey/providers/context_ledger.py` | 已接纳协议原文、哈希链来源与可替换视图的原子 head |
+| `codey/providers/context_checkpoint.py`、`compaction.py` | 完整范围选择、可信回执输出缩减、来源验证和前后台上下文事务 |
+| `codey/operations/tool_result_reader.py` | 当前任务已有回执只读、托管输出完整性与有界分页；不执行命令 |
 | `codey/providers/api_connections.py`、`local_connection.py` | lazy 连接工厂与冻结 Local 配置；共享 runtime 不导入 Zen |
 | `codey/providers/token_accounting.py`、`api_metering.py` | 独立的预算、上下文计数与服务端用量契约；计数端口和每请求 usage collector，无厂商字段解释 |
 | `codey/providers/local_tokens.py`、`local_usage.py` | Local 自有 KoboldCpp 完整模板计数能力及两种协议的 usage 解释 |

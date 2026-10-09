@@ -46,12 +46,39 @@ def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, sys
     return candidate
 
 
-def compact(items: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-    starts = [i for i, item in enumerate(items) if item.get("role") == "user"]
-    if len(starts) < 2:
-        return None
-    prefix = [item for item in items[:starts[0]] if item.get("role") in {"system", "developer"}]
-    return prefix + items[starts[1]:]
+def validate_view(items: list[dict[str, Any]]) -> None:
+    calls = {item.get("call_id") for item in items if item.get("type") == "function_call"}
+    answered = {item.get("call_id") for item in items if item.get("type") == "function_call_output"}
+    additions = [{"type": "function_call_output", "call_id": identity, "output": ""}
+                 for identity in calls - answered]
+    prepare(items, additions, system="", tools=None)
+
+
+def closed_spans(items: list[dict[str, Any]]) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    start = 0
+    calls: set[str] = set()
+    for index, item in enumerate(items):
+        kind = item.get("type")
+        if kind == "function_call":
+            identity = item.get("call_id")
+            if not isinstance(identity, str) or not identity or identity in calls:
+                raise RequestPrepError("Responses history has invalid call IDs")
+            calls.add(identity)
+        elif kind == "function_call_output":
+            identity = item.get("call_id")
+            if identity not in calls:
+                raise RequestPrepError("Responses history has unpaired results")
+            calls.remove(identity)
+        if not calls and kind != "reasoning":
+            if items[start].get("role") not in {"system", "developer"}:
+                spans.append((start, index + 1))
+            start = index + 1
+    return spans
+
+
+def checkpoint_item(text: str) -> dict[str, Any]:
+    return {"role": "assistant", "content": "Current project state:\n" + text}
 
 
 def build_payload(items: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,

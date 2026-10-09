@@ -5049,6 +5049,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "http://localhost:1234"
             from codey.providers.token_accounting import ContextBudget
             provider.context_budget = ContextBudget(32768, 8192, 0, 12000)
+            provider.export_work_state.return_value = ""
             provider.send.side_effect = [
                 json.dumps({"tool": "web_search", "args": {"query": "2026 US Iran war predictions"}}),
                 json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
@@ -5108,6 +5109,7 @@ class SessionThreadingTests(unittest.TestCase):
             while not events.empty():
                 emitted.append(events.get_nowait())
         done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(done["stop_reason"], "done", done)
         tool_events = [event for event in emitted if event["type"] == "tool"]
         pdf_event = next(event for event in tool_events if event["path"] == pdf_url)
         note_event = next(event for event in tool_events if event["kind"] == "note")

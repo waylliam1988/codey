@@ -81,7 +81,12 @@ def build_conversation_plan(
         force_rollover=continue_task or provider_session_changed,
         next_prompt=task,
     )
-    if fresh_chat and can_summarize_current_chat:
+    if fresh_chat and isinstance(budget, ContextBudget):
+        export = getattr(provider, "export_work_state", None)
+        work_state = export() if callable(export) else ""
+        if work_state:
+            handoff = "\n\n".join(part for part in (handoff, work_state) if part)
+    if fresh_chat and can_summarize_current_chat and not isinstance(budget, ContextBudget):
 
         def send_handoff_summary(summary_prompt: str) -> str:
             record_provider_send_prompt(
@@ -131,10 +136,13 @@ def build_conversation_plan(
     recovered_owner_prompt = ""
     if fresh_chat:
         if handoff or visible_excerpt:
+            preserved_work_state = work_state if isinstance(budget, ContextBudget) else ""
             handoff = render_recovered_handoff(
                 prior_snapshot,
                 visible_excerpt,
             )
+            if preserved_work_state:
+                handoff += "\n\n" + preserved_work_state
         if visible_excerpt:
             recovered_owner_prompt = handoff
     return ConversationPlan(

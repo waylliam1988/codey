@@ -146,7 +146,7 @@ def test_concurrent_sends_do_not_interleave_history(monkeypatch) -> None:
     entered_network = threading.Event()
     release_network = threading.Event()
 
-    def fake_complete(messages, tools=None, *, timeout=None) -> dict:
+    def fake_complete(messages, tools=None, *, timeout=None, checkpoints=None) -> dict:
         del messages, timeout
         entered_network.set()
         assert release_network.wait(timeout=10.0)
@@ -182,7 +182,7 @@ def test_close_discards_late_reply(monkeypatch) -> None:
     entered_network = threading.Event()
     release_network = threading.Event()
 
-    def fake_complete(messages, tools=None, *, timeout=None) -> dict:
+    def fake_complete(messages, tools=None, *, timeout=None, checkpoints=None) -> dict:
         del messages, timeout
         entered_network.set()
         assert release_network.wait(timeout=10.0)
@@ -268,7 +268,7 @@ def test_stale_turn_skips_history_after_abandon(monkeypatch) -> None:
     entered_network = threading.Event()
     release_network = threading.Event()
 
-    def fake_generate(messages, tools=None, *, timeout=None) -> dict:
+    def fake_generate(messages, tools=None, *, timeout=None, checkpoints=None) -> dict:
         del messages, tools, timeout
         entered_network.set()
         assert release_network.wait(timeout=10.0)

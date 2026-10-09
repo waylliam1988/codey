@@ -29,7 +29,9 @@ Zen 目录必须明确提供 context 和 output；缺失时不生成伪默认值
 
 ```text
 输入计数 + 输出预留 + 安全余量 <= 窗口
-input_limit = window_tokens - output_tokens - safety_tokens
+residual = window_tokens - output_tokens - safety_tokens
+input_limit = min(residual, independent_input_limit)  # 仅在独立限制已知时
+# 未提供独立限制时使用 residual；None 不是伪默认值。
 ```
 
 现有配置字段 `context_reserve_tokens` 表示输出预留与安全余量之和。
@@ -41,6 +43,20 @@ Zen 的输出上限同时受目录 output 和本次预留限制。
 裁剪不能拆开调用/结果组或删除当前交换；失败不提交候选历史。计数期间的取消和超时也会阻止生成。
 API 不再使用网页字符累计值触发 rollover；明确继续任务、切换会话等真实生命周期动作仍保留。
 
+## 可替换上下文视图
+
+`context_ledger.py` 保存已接纳协议原文和检查点来源；`context_checkpoint.py`
+选择完整已闭合单元；`compaction.py` 管理候选验证与事务，codec 不再各自删除历史。
+最近原文是目标，不得超过有效输入上限；最新请求和工具往返仍不可拆。
+后台增长判断是启发式，最终请求、摘要分块和提交候选都用连接的完整请求计数。
+紧急摘要与回答一起提交，失败保留原视图；重新连接可携带普通语义工作状态。
+执行退出码和验证新鲜度由当前运行时重新投影，摘要不能修改这些事实。
+
+辅助生成使用 `purpose=compaction`，与正常请求隔离历史、取消和用量身份；Zen 的
+前缀、必需声明及内部闭合由 Zen 包提供，预计数包含同一个实际外壳。所有物理
+摘要生成进入用量汇总，但不能替换 Run details 的最后正常请求上下文。
+详见[实现、TDD 与本地比较](context-compaction-ab-2026-10-09.zh-CN.md)。
+
 ## 三类计数依据
 
 | 连接 | 请求前计数 | 请求后用量 |
@@ -51,7 +67,7 @@ API 不再使用网页字符累计值触发 rollover；明确继续任务、切�
 | Zen | 完整请求的显式估算 | Zen 包按实际协议解析服务端 usage |
 
 估算没有统一误差保证。语言、代码、特殊 token、隐藏网页提示、模板与工具格式都会影响误差；
-本轮没有用真实服务做精度标定，也不把估算包装成精确计数。
+本地压缩回放使用 KoboldCpp 完整请求计数；没有标定网页或 Zen 估算误差，也不把估算包装成精确计数。
 
 KoboldCpp 必须确认标准 `/v1` 地址、Chat 协议、Jinja 模板及有效运行窗口。
 有效窗口取配置与运行窗口的较小值。计数前核对加载模型和窗口，模型更换或窗口缩小时要求重新选择。

@@ -1,0 +1,9 @@
+{
+  "revision": "ecc4916b5a9608c30e6dd58a67f2137b594407ca",
+  "source": "https://github.com/anomalyco/opencode",
+  "files": {
+    "packages/core/src/session/compaction.ts": "35bc2da1578b6bb80a3c39c1d6c51f234f34ce6586dd4f9d230e2a31b257138d",
+    "packages/core/src/util/token.ts": "a157df378a5baaf7a35ac1cb9c94dd29266d916329545529604274d6cddbc635"
+  },
+  "normalization": "LF"
+}

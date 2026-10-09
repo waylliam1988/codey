@@ -26,6 +26,7 @@ def test_exact_counter_gates_request_and_receives_template_tools_and_full_histor
         return RequestContextCount(151, "tokenizer")
 
     provider.request_counter = count
+    provider.summarize_context = lambda *_: "Goal: old"
     monkeypatch.setattr(api_transport, "open_request", lambda request, timeout: (sent.append(request) or Response(b'{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}')))
     with pytest.raises(ContextOverflowError):
         provider.send_turn("new", [ProviderToolDefinition("read", "read file", {})])

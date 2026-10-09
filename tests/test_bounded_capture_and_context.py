@@ -574,7 +574,7 @@ class LocalPrepareRequestTests(unittest.TestCase):
         provider = self._provider()
         with (
             mock.patch(
-                "codey.providers.api_chat.compact",
+                "codey.providers.compaction.CompactionCoordinator.compact",
                 side_effect=RuntimeError("boom"),
             ),
             mock.patch(

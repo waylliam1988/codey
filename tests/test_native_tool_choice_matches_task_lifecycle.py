@@ -167,8 +167,8 @@ def test_real_kernel_does_not_enter_optional_answer_branch(monkeypatch):
     assert result.completed is True
     assert len(seen) == 2
     assert seen[0]["tool_choice"] == "required"
-    assert "Call exactly one native tool per turn" in seen[0]["messages"][0]["content"]
-    assert "wait for its result" in seen[0]["messages"][0]["content"]
+    assert any("Call exactly one native tool per turn" in item.get("content", "") for item in seen[0]["messages"])
+    assert any("wait for its result" in item.get("content", "") for item in seen[0]["messages"])
     assert "tools" not in seen[1] and "tool_choice" not in seen[1]
     assert seen[1]["messages"][-1]["tool_call_id"] == "c1"
 

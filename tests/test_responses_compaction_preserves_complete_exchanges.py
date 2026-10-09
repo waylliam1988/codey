@@ -8,7 +8,7 @@ from codey.providers.base import ProviderToolResult
 from codey.providers.error_classification import ContextOverflowError
 
 
-def test_compaction_drops_old_exchange_as_a_whole_without_mutating_history():
+def test_checkpoint_keeps_recent_complete_exchanges_without_mutating_history():
     old = [{"role": "user", "content": "old " * 3000},
            {"type": "reasoning", "encrypted_content": "old opaque"},
            {"type": "function_call", "call_id": "old", "name": "read", "arguments": "{}"},
@@ -21,10 +21,12 @@ def test_compaction_drops_old_exchange_as_a_whole_without_mutating_history():
     provider = ApiProvider("http://localhost:9/v1", "fixture", api_protocol="openai-responses",
                            context_window_tokens=1500, context_reserve_tokens=300, context_keep_recent_tokens=900)
     provider._messages = history
+    provider.summarize_context = lambda *_: "Goal: preserve original work"
     with patch("codey.providers.api_transport.generate", return_value={"status": "completed", "output": []}):
         provider.send_tool_results([ProviderToolResult("new", "current result")], [])
     compacted = provider._messages
-    assert compacted == recent + [result]
+    assert compacted[1:] == old[1:] + recent + [result]
+    assert "Goal: preserve original work" in str(compacted[0])
     assert history == old + recent
 
 
