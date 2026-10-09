@@ -1,5 +1,53 @@
 # Codey Test Report
 
+## Counted context optimization and evidence recovery (2026-10-09)
+
+Windows / Python 3.12.8, Node 24.19.0; baseline
+`a28df7beb41fb3d1ff767b67c2c109848e05de2b`. Final production package SHA-256:
+`0eaa6f93252b138a6ce8ba03c10263e7d449f0cc3c3a7793b127d04bc7fd9f91`.
+Documentation was updated after the final full run. Version remains 0.5.11;
+no tag or release.
+
+New tests first reproduced missing variable-line encoding, unique middle/tail
+evidence retention, incorrect character-only cost choice, summary instruction
+isolation, early counted views, repeated count probes, receipt batching, quoted
+receipt identity, incomplete recovery scoring and paired regressions. Each
+production change followed its relevant red test and was regressed. Five accurately
+named new scripts contribute **29 cases**; two scoring cases and one joint-comparison
+case extend existing scripts, for **32 additional full-suite cases**.
+
+The first full run found two incomplete usage-test codec doubles:
+**2 failed, 8089 passed, 7 skipped, 1503 subtests passed in 880.22s**. They omitted
+`closed_spans`; the fixture now wraps only real `decode_exchange`, preserving the
+complete production interface. This is a fixture correction, not TDD red evidence
+or a new production fallback. Its targeted regression passed **18 cases**; the
+usage file also joined required machine contracts. Production remained frozen
+through both full runs and the final comparison.
+
+Final checks, before the last full run:
+
+- Ruff: `python -m ruff check .` passed.
+- mypy: **402 source files**, no issues.
+- Pyrefly: **0 errors**, unchanged baseline **68 suppressed / 832 warnings not shown**.
+- Compileall, **20 JavaScript asset** syntax checks, and `git diff --check` passed.
+- Required machine contracts: **798 passed in 169.29s (0:02:49)**; no skips.
+- Final full pytest: **8091 passed, 7 skipped, 1503 subtests passed in 898.23s (0:14:58)**.
+- Seven skips: six Windows/POSIX boundaries and the opt-in real Edge E2E.
+
+Final local reference-function comparisons: Codey **72/72** across three paired
+runs, baseline Codey **21/24**, OpenCode **7/24**, Pi **9/24**. Common-success
+token totals fall **28.5%**, **24.9%**, **21.3%** respectively. The final package
+also completed all six real coding tasks (three seeds per side), with zero
+duplicate agent commands; all six failure injections preserved history and
+all six same-model reconnections passed. These runtime trials compare Codey
+versions, not complete competing agents.
+
+Supplementary measurements and same-baseline A/A are recorded in the
+[optimization report](docs/context-compaction-optimization-2026-10-09.zh-CN.md) and
+[redacted numeric evidence](docs/reports/context-compaction-optimization-2026-10-09.json).
+Passive histories do not measure command duplication; reconnection is not a real
+cross-model switch, and no asynchronous command recovery is claimed.
+
 ## Traceable context views and local algorithm comparisons (2026-10-09)
 
 Windows / Python 3.12.8, Node 24.19.0; baseline `8456c0c0`. Documentation was

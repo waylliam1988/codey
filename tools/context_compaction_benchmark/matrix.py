@@ -30,6 +30,7 @@ def comparison_matrix(reports):
             for case in {row['case'] for row in rows}:
                 cases[case][arm] = arm_stats([row for row in rows if row['case'] == case])
         result = verdict(arms['before'], arms['after'])
+        dominates &= result not in {'regression', 'inconclusive'}
         comparisons[name] = {'verdict':result,'cases':dict(cases)}
         for values in cases.values():
             before, after = values['before'], values['after']

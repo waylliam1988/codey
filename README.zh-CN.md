@@ -91,7 +91,8 @@ Connection → Advanced → `API protocol` 明确选择 Chat Completions
 
 API 会话在后台维护经过计数的工作上下文，并保留已接纳的原始事件。执行回执
 独立于模型摘要，读取已有测试结果不会重新执行命令；维护不增加聊天进度提示。
-详见[实现与本地对比报告](docs/context-compaction-ab-2026-10-09.zh-CN.md)，其中也记录额外摘要成本。
+可逆工具输出视图与简洁工作状态减少重复输入，保留独特观察与当前任务内的回执读取。
+详见[最新优化对比与验证边界](docs/context-compaction-optimization-2026-10-09.zh-CN.md)。
 
 ## 命令行
 

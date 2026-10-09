@@ -47,16 +47,19 @@ class CompactionCoordinator:
         self.diagnostics: list[dict[str, Any]] = []
 
     def compact(self, items: Items, tools: Tools, deadline: float, snapshot: ContextSnapshot, *,
-                merge_checkpoints: bool = False, staged: list[dict[str, Any]] | None = None) -> Items | None:
+                merge_checkpoints: bool = False, staged: list[dict[str, Any]] | None = None,
+                deterministic_only: bool = False) -> Items | None:
         if self.snapshot().generation != snapshot.generation:
             return None
         started = time.time()
-        reduced = reduce_old_outputs(self.codec, items, snapshot.result_refs)
+        reduced, reduction_counts = self._reduce_outputs(items, tools, deadline, snapshot.result_refs)
         if reduced != items:
             selected = ContextRange(0, len(items), digest(items))
             replacement = reduced
             checkpoint: dict[str, Any] = {"kind": "output_reduction", "source": items}
         else:
+            if deterministic_only:
+                return None
             starts = [start for start, _ in self.codec.closed_spans(items)]
             low, high = 0, len(starts)
             while low < high:
@@ -81,7 +84,7 @@ class CompactionCoordinator:
             checkpoint = {"kind": "work_state", "source": source, "item_digest": digest(item), "text": summary}
         candidate = replace_range(items, selected, replacement)
         self.codec.validate_view(candidate)
-        before, after = self.count(items, tools, deadline), self.count(candidate, tools, deadline)
+        before, after = reduction_counts or (self.count(items, tools, deadline), self.count(candidate, tools, deadline))
         if before.value is None or after.value is None or after.value >= before.value:
             from codey.providers.error_classification import ContextOverflowError
 
@@ -98,6 +101,17 @@ class CompactionCoordinator:
         del self.diagnostics[:-32]
         return candidate
 
+    def _reduce_outputs(self, items: Items, tools: Tools, deadline: float, result_refs: frozenset[str]
+                        ) -> tuple[Items, tuple[RequestContextCount, RequestContextCount] | None]:
+        candidate = reduce_old_outputs(self.codec, items, result_refs)
+        if candidate == items:
+            return items, None
+        initial = self.count(items, tools, deadline)
+        measured = self.count(candidate, tools, deadline)
+        if initial.value is None or measured.value is None:
+            raise ValueError("context view count is unavailable")
+        return (items, None) if measured.value >= initial.value else (candidate, (initial, measured))
+
     def accept(self, checkpoints: list[dict[str, Any]]) -> None:
         """Mark staged diagnostics only after their durable transaction commits."""
         accepted = {(row["source_digest"], row["started_at"]) for row in checkpoints}
@@ -105,7 +119,7 @@ class CompactionCoordinator:
             if (row.get("source_digest"), row.get("started_at")) in accepted:
                 row["committed"] = True
 
-    def schedule(self, tools: Tools, timeout: float) -> None:
+    def schedule(self, tools: Tools, timeout: float, *, deterministic_only: bool = False) -> None:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
@@ -113,7 +127,8 @@ class CompactionCoordinator:
 
             def maintain() -> None:
                 try:
-                    self.compact(copy.deepcopy(snapshot.items), tools, time.monotonic() + timeout, snapshot)
+                    self.compact(copy.deepcopy(snapshot.items), tools, time.monotonic() + timeout, snapshot,
+                                 deterministic_only=deterministic_only)
                 except Exception as exc:
                     self.diagnostics.append({"source_digest": digest(snapshot.items), "committed": False,
                                              "error": str(exc)[:300], "finished_at": time.time()})

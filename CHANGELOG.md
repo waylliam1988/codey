@@ -2,6 +2,26 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Counted context optimization and evidence recovery (2026-10-09)
+
+- Factor variable lines and repeated text into reversible model-facing sources,
+  retaining distinct values and line endings. Choose source forms with the
+  admitted connection's count; keep the latest complete tool exchange intact.
+- Reduce old tool views before semantic maintenance. Batch verified receipts at
+  pressure to limit prefix rewrites, use scoped read pointers, and reuse source
+  and candidate counts while still recounting the live commit.
+- Separate historical questions from concise work-state instructions. Fix quoted
+  receipt IDs overriding the runtime's final reference; unavailable final receipts
+  keep their bodies. Original events and runtime verification remain authoritative.
+- Add held-out evidence recovery, honest paired regression scoring, HTTP timing,
+  and isolated calibration checks. New behavior tests preceded production fixes;
+  an incomplete usage-test codec was corrected to wrap the real interface.
+- Final pytest: **8091 passed, 7 skipped, 1503 subtests passed in 898.23s (0:14:58)**;
+  required contracts **798 passed**. Ruff, mypy, baseline-aware Pyrefly, compileall,
+  JS syntax and diff checks passed. Documentation updated after full pytest;
+  version remains 0.5.11, with no tag or release.
+  See [the measured comparison and limits](docs/context-compaction-optimization-2026-10-09.zh-CN.md).
+
 ## Unreleased - Traceable background context maintenance (2026-10-09)
 
 - Preserve accepted protocol events separately from replaceable context views;

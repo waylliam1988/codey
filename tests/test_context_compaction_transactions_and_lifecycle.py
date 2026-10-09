@@ -99,6 +99,8 @@ def test_background_output_reduction_commits_without_a_model_request():
     provider._messages = [{"role": "user", "content": "task"},
         {"role": "assistant", "tool_calls": [{"id": "a", "function": {"name": "run", "arguments": "{}"}}]},
         {"role": "tool", "tool_call_id": "a", "content": "output " * 1000 + "\nStored result: exec-17"},
+        {"role": "assistant", "tool_calls": [{"id": "latest", "function": {"name": "read", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "latest", "content": "latest observation"},
         {"role": "assistant", "content": "recent"}, {"role": "user", "content": "continue"}]
     provider.set_result_refs(("exec-17",))
     with patch("codey.providers.api_transport.generate", side_effect=AssertionError("no semantic request needed")):

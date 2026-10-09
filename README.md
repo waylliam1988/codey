@@ -105,8 +105,9 @@ only from service reports. See [token accounting](docs/token-accounting.zh-CN.md
 API conversations maintain a counted working context in the background while
 preserving accepted original events. Runtime execution receipts remain separate
 from model summaries, so reading a stored test result does not rerun its command.
-Maintenance adds no chat progress chrome. See [implementation and local comparison
-results](docs/context-compaction-ab-2026-10-09.zh-CN.md), including cost tradeoffs.
+Maintenance adds no chat progress chrome. Counted reversible tool views and concise
+work state reduce repeated input while preserving distinct observations and scoped
+receipt reads. See [the latest local comparison and its limits](docs/context-compaction-optimization-2026-10-09.zh-CN.md).
 
 ## CLI
 

@@ -8,7 +8,7 @@ pytest -q
 
 ## Traceable context views and local comparisons
 
-Sixteen focused files exercise deterministic behavior without real inference:
+Twenty-one focused files exercise deterministic behavior without real inference:
 
 - `test_context_budget_sources_and_input_limits.py`: independent input limits and selection sources.
 - `test_context_compaction_within_long_tool_turn.py`: Chat/Responses closed units and long tool turns.
@@ -20,6 +20,11 @@ Sixteen focused files exercise deterministic behavior without real inference:
 - `test_context_work_state_portability_across_models_and_protocols.py`: plain semantic state across identities without opaque items.
 - `test_compaction_request_token_accounting.py`: summary purpose, physical costs and latest conversation context.
 - `test_compaction_source_reduction_and_packing.py`: repeated-line source encoding and measured auxiliary packing.
+- `test_compaction_source_encoding_and_summary_contract.py`: exact variable-line reconstruction, Unicode/line endings, unique evidence, actual-count choice and isolated historical questions.
+- `test_compaction_counted_tool_views.py`: counted lossless/pointer views, latest tool retention, unavailable/quoted receipt identity, cache batching and three necessary count probes.
+- `test_compaction_held_out_evidence_recovery.py`: genuine scoped receipt reads, late-selected middle/tail probes, unavailable outputs and answer-free output schemas.
+- `test_compaction_benchmark_request_timing.py`: path-level request timing without retaining prompts.
+- `test_compaction_benchmark_policy_calibration.py`: semantic-threshold calibration preserves the independent receipt batch threshold.
 - `test_context_compaction_benchmark_scoring.py`: exact facts and honest incomplete/cost outcomes.
 - `test_context_compaction_benchmark_isolation.py`: loopback/import isolation, real-task contract and frozen sources.
 - `test_context_compaction_joint_comparison.py`: matching snapshots/pairs and unmeasured execution metrics.
@@ -31,8 +36,14 @@ Manual loopback-only inference uses `context_compaction_benchmark_ab.py`,
 `codey_vs_opencode_compaction_ab.py`, `codey_vs_pi_compaction_ab.py`, and
 `context_compaction_joint_ab.py`. Actual licensed reference functions are tested
 through Node 24; full competing agent runtimes are not claimed. See
-[measured scope and commands](../docs/context-compaction-ab-2026-10-09.zh-CN.md)
+[latest measured scope and commands](../docs/context-compaction-optimization-2026-10-09.zh-CN.md)
 and [final verification](../TEST_REPORT.md).
+
+The five new files contribute 29 cases; scoring and joint comparison add three
+cases to existing files. The final suite is **8091 passed, 7 skipped, 1503 subtests
+passed**. Required machine contracts are **798 passed**, including the existing
+`test_api_exchange_usage_accounting.py` check using the real codec interface.
+Fixture failures are not counted as valid TDD red evidence.
 
 ## Request budgets and token accounting
 

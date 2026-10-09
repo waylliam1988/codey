@@ -41,3 +41,18 @@ def test_worker_crash_is_inconclusive_and_does_not_turn_missing_usage_into_zero(
 def test_history_only_replays_do_not_claim_to_have_measured_duplicate_execution():
     result = comparison_matrix({'pi':report(8)})
     assert result['comparisons']['pi']['cases']['tool-heavy']['after']['duplicate_executions'] is None
+
+
+def test_aggregate_wins_cannot_hide_a_regression_on_one_paired_seed():
+    value = report(8)
+    for row in value['rows']:
+        row['duplicate_executions'] = 0
+    value['rows'][1]['success'] = False
+    value['rows'] += [
+        {'arm': 'before', 'case': 'tool-heavy', 'seed': 42, 'success': False,
+         'total_tokens': 10, 'seconds': 2, 'duplicate_executions': 0},
+        {'arm': 'after', 'case': 'tool-heavy', 'seed': 42, 'success': True,
+         'total_tokens': 8, 'seconds': 1, 'duplicate_executions': 0}]
+    result = comparison_matrix({'pi': value})
+    assert result['comparisons']['pi']['verdict'] == 'regression'
+    assert not result['dominates_all_measured_metrics']

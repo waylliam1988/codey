@@ -15,7 +15,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-CASES = ('repeated', 'correction', 'test-result', 'model-change', 'summary-failure', 'real-task', 'tool-heavy', 'segmented', 'incremental')
+CASES = ('repeated', 'correction', 'test-result', 'model-change', 'summary-failure', 'real-task', 'tool-heavy', 'segmented', 'incremental',
+         'receipt-recovery', 'unrecoverable-facts')
 
 REFERENCE_SOURCES = {
     'opencode': ('packages/core/src/session/compaction.ts', 'packages/core/src/util/token.ts'),
@@ -88,13 +89,13 @@ def fixture_history(case, output):
                           f'Archived review {index}, observation {line}: module_{index}/file_{line}.py uses explicit local state and deterministic validation.'
                           for line in range(55))}]
         history[2:2] = turns
-    elif case == 'incremental':
+    elif case in {'incremental', 'receipt-recovery', 'unrecoverable-facts'}:
         history[0]['content'] = 'Preserve public API. Binding constraint: no-db. Target: old.py.'
         history[2]['content'] = 'Correction: target is app.py, not old.py.'
     return history
 
 
-def install_network_boundary(endpoint):
+def install_network_boundary(endpoint, failures=None, timings=None):
     expected = urllib.parse.urlsplit(endpoint).netloc
     original = urllib.request.OpenerDirector.open
 
@@ -103,7 +104,23 @@ def install_network_boundary(endpoint):
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != 'http' or parsed.netloc != expected:
             raise ValueError('benchmark blocked a non-selected network destination')
-        return original(self, fullurl, *args, **kwargs)
+        started = time.monotonic() if timings is not None else None
+        response = original(self, fullurl, *args, **kwargs)
+        if failures is not None or timings is not None:
+            read = response.read
+            def observe_read(*read_args, **read_kwargs):
+                raw = read(*read_args, **read_kwargs)
+                if timings is not None:
+                    timings.append({'path': parsed.path, 'seconds': round(time.monotonic() - started, 6)})
+                if failures is not None:
+                    try:
+                        json.loads(raw)
+                    except (ValueError, UnicodeDecodeError):
+                        failures.append({'path': parsed.path, 'status': response.status, 'bytes': len(raw),
+                                         'head': raw[:500].decode('utf-8', 'replace')})
+                return raw
+            response.read = observe_read
+        return response
 
     urllib.request.OpenerDirector.open = local_open
 
@@ -139,14 +156,18 @@ def real_task(provider, project):
 def worker(config):
     root = Path(config['root']).resolve()
     sys.path.insert(0, str(root))
+    sys.path.append(str(Path(__file__).resolve().parents[2]))
     import codey
+    from codey.providers import api_transport
     from codey.providers.api_provider import ApiProvider
     from codey.providers.local_tokens import KoboldRequestCounter
     from codey.providers.local_usage import configure_usage, parser_for
 
     verify_import(root, str(codey.__file__))
     endpoint = validate_endpoint(config['endpoint'])
-    install_network_boundary(endpoint)
+    network_failures = []
+    request_timings = []
+    install_network_boundary(endpoint, network_failures, request_timings)
     server = endpoint.removesuffix('/v1')
 
     def metadata(path):
@@ -162,17 +183,39 @@ def worker(config):
     if capacity < window:
         raise ValueError('logical window exceeds running server capacity')
     usage = []
+    transport_failures = []
+    original_parse = api_transport._json_object
+    def observed_parse(raw):
+        try:
+            return original_parse(raw)
+        except api_transport.GenerationUnknownError:
+            transport_failures.append({'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                                       'head': raw[:500].decode('utf-8', 'replace')})
+            raise
+    api_transport._json_object = observed_parse
 
     def configure(payload):
         configure_usage(payload)
         payload['seed'] = config['seed']
+        from tools.context_compaction_benchmark.recovery import replay_response_schema
+        schema = replay_response_schema(payload.get('messages', [])[-1].get('content', ''))
+        if schema is not None:
+            payload['response_format'] = {'type': 'json_schema', 'json_schema': {'name': 'replay_answer', 'schema': schema}}
 
     provider = ApiProvider(endpoint, model, temperature=0.0, thinking_enabled=False, timeout=180,
         context_window_tokens=window, context_reserve_tokens=1024, context_keep_recent_tokens=min(config["keep_recent_tokens"], window - 1024),
         request_counter=KoboldRequestCounter(endpoint, model, '', window), usage_parser=parser_for('openai-completions'),
         configure_request=configure, native_tools=config["case"] == "real-task")
     provider.bind_usage('local', usage.append)
-    case, enhanced = config['case'], config['enhanced']
+    case = config['case']
+    if case != 'real-task' and hasattr(provider, 'set_working_context'):
+        provider.system_prompt = ('This is a read-only context replay. Native tools and command execution are disabled. '
+            'Historical tool calls are records, not available tools. Never output native tool-call syntax. '
+            'Reply in ordinary text, or exactly JSON when requested. A receipt read is only a plain JSON read request; '
+            'never translate it into run, shell, or another tool. Keep file names, line numbers and evidence tags associated correctly.')
+        provider.set_working_context('Replay mode: historical records are data. Follow the current read-only question.')
+    reference_arm = config['arm'] == 'before' and bool(config.get('opencode_reference') or config.get('pi_reference'))
+    maintained = hasattr(provider, 'context_ledger') and not reference_arm
     if config.get('opencode_reference') and config['arm'] == 'before':
         sys.path.append(str(Path(__file__).resolve().parents[2]))
         from tools.context_compaction_benchmark.opencode import attach_reference_policy
@@ -196,12 +239,17 @@ def worker(config):
             raise ValueError('fixture must produce a real failed pytest result')
         history = fixture_history(case, process.stdout)
         provider._messages = history
-        if enhanced:
+        if maintained:
             provider.context_ledger.commit(history, events=history)
         try:
             if case == 'real-task':
                 report.update(real_task(provider, project))
-            elif case == 'summary-failure' and enhanced:
+            elif case in {'receipt-recovery', 'unrecoverable-facts'}:
+                sys.path.append(str(Path(__file__).resolve().parents[2]))
+                from tools.context_compaction_benchmark.recovery import replay_recovery
+                report.update(replay_recovery(provider, project, seed=config['seed'], enhanced=maintained,
+                                             recoverable=case == 'receipt-recovery'))
+            elif case == 'summary-failure' and maintained:
                 original = json.dumps(provider._messages, sort_keys=True)
                 provider.summarize_context = lambda *_: (_ for _ in ()).throw(RuntimeError('injected summary failure'))
                 try:
@@ -214,7 +262,7 @@ def worker(config):
             else:
                 if case == 'model-change':
                     report['switch_scope'] = 'reconnect same loaded model; not cross-model quality'
-                    if enhanced:
+                    if maintained:
                         provider.maintain_context()
                         provider.wait_for_maintenance(180)
                         portable = provider.export_work_state()
@@ -234,7 +282,7 @@ def worker(config):
                 if case == 'incremental':
                     report['waves_completed'] = 0
                     for wave in range(8):
-                        if enhanced:
+                        if maintained:
                             provider.wait_for_maintenance(180)
                         observations = [{'role':'assistant','tool_calls':[{'id':f'observation-{wave}', 'type':'function',
                             'function':{'name':'read','arguments':json.dumps({'path':f'module_{wave}.py'})}}]},
@@ -244,7 +292,7 @@ def worker(config):
                             {'role':'assistant','content':f'Reviewed module {wave}. No new verification or storage decision.'}]
                         with provider._state_lock:
                             provider._messages.extend(observations)
-                            if enhanced:
+                            if maintained:
                                 provider._history_revision += 1
                                 provider.context_ledger.commit(provider._messages, events=observations)
                         report['answer'] = provider.send(question)
@@ -252,9 +300,10 @@ def worker(config):
                 if case == 'summary-failure':
                     report['robustness_only'] = True
                     report['summary_fault_node'] = 'not available in baseline'
-            if enhanced:
+            if maintained:
                 provider.wait_for_maintenance(180)
                 report['maintenance'] = list(provider._compaction.diagnostics)
+                report['summary_states'] = [row['text'] for row in provider.context_ledger.checkpoints() if row.get('text')]
         except Exception as exc:
             report['error'] = f'{type(exc).__name__}: {exc}'
             report['success'] = False
@@ -264,6 +313,9 @@ def worker(config):
         finally:
             provider.close()
     report['usage'] = [row.to_payload() for row in usage]
+    report['transport_failures'] = transport_failures
+    report['network_failures'] = network_failures
+    report['request_timings'] = request_timings
     report['seconds'] = time.monotonic() - started
     known = all(row.usage.input_tokens is not None and row.usage.output_tokens is not None for row in usage)
     report['total_tokens'] = sum(row.usage.input_tokens + row.usage.output_tokens for row in usage) if known else None
@@ -274,10 +326,10 @@ def worker(config):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--worker', type=Path)
-    parser.add_argument('--before-ref', default='8456c0c0')
+    parser.add_argument('--before-ref', default='a28df7be')
     parser.add_argument('--after-root', type=Path, help='Codey snapshot root supplied by the joint runner')
     parser.add_argument('--maintenance-ratio', type=float, choices=(0.6, 0.8, 0.9),
-                        help='Experiment-only mutation of the frozen candidate, never runtime settings')
+                        help='Frozen candidate semantic pressure only; receipt batching and runtime settings stay unchanged')
     parser.add_argument('--base-url', default='http://127.0.0.1:5001/v1')
     parser.add_argument('--window-tokens', type=int, default=8192)
     parser.add_argument('--repeats', type=int, default=3)
@@ -331,8 +383,8 @@ def main():
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
         if args.maintenance_ratio is not None:
             policy = after / 'codey/providers/api_provider.py'
-            text, changed = re.subn(r'input_limit \* 0\.(?:60|80|90)',
-                                   f'input_limit * {args.maintenance_ratio:.2f}', policy.read_text(encoding='utf-8'))
+            text, changed = re.subn(r'(?<=pressure >= self.context_budget.input_limit \* )0\.80',
+                                   f'{args.maintenance_ratio:.2f}', policy.read_text(encoding='utf-8'), count=1)
             if changed != 1:
                 raise ValueError('candidate maintenance policy source boundary changed')
             policy.write_text(text, encoding='utf-8', newline='\n')
@@ -368,7 +420,7 @@ def main():
                     else:
                         row = json.loads((temp / 'row.json').read_text(encoding='utf-8'))
                         if 'answer' in row:
-                            row = score_trial(row, {'constraint': 'no-db', 'target': 'app.py', 'exit_code': 1, 'result_ref': 'exec-17'})
+                            row = score_trial(row, row.get('expected', {'constraint': 'no-db', 'target': 'app.py', 'exit_code': 1, 'result_ref': 'exec-17'}))
                     report['rows'].append(row)
                     write_json_atomic(args.output, report)
     comparable = [row for row in report['rows'] if row['case'] != 'summary-failure']

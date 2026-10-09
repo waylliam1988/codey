@@ -17,6 +17,7 @@ from tools.context_compaction_benchmark.matrix import comparison_matrix
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repeats', type=int, default=3)
+    parser.add_argument('--before-ref', default='a28df7be')
     parser.add_argument('--keep-recent-tokens', type=int, default=2000)
     parser.add_argument('--cases', help='Same replay cases for all three comparisons')
     parser.add_argument('--maintenance-ratio', type=float, choices=(0.6, 0.8, 0.9))
@@ -40,6 +41,7 @@ def main():
                     extra += ['--maintenance-ratio', str(args.maintenance_ratio)]
                 subprocess.run([sys.executable, '-m', f'tests.manual.{module}', '--repeats', str(args.repeats),
                                 '--after-root', str(snapshot), '--keep-recent-tokens', str(args.keep_recent_tokens),
+                                '--before-ref', args.before_ref,
                                 '--output', str(output), *extra], check=True)
             reports[name] = json.loads(output.read_text(encoding='utf-8'))
     result = comparison_matrix(reports)
