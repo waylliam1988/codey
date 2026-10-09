@@ -12,6 +12,7 @@ def test_local_protocols_bootstrap_history_and_gate_work_without_zen(tmp_path):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(result.stdout.strip().splitlines()[-1])
+    assert report.get("usage_without_zen") is True
     assert report == {"local_protocols": ["openai-completions", "openai-responses"],
                       "bootstrap": True, "cli": True, "old_history": True,
-                      "old_connection_rejected": True, "local_gate": True, "zen_imports": []}
+                      "old_connection_rejected": True, "local_gate": True, "zen_imports": [], "usage_without_zen": True}

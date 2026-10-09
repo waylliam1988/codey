@@ -6,6 +6,37 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+## Request budgets and token accounting
+
+Nine focused files contain 50 behavior cases. They use scripted responses and
+loopback fake servers, without real model inference:
+
+- `test_api_context_budget_admission.py`: selected 262K budget, no API static
+  capacity, unresolved budget rejection and output reservation bounds.
+- `test_api_request_context_counting.py`: complete payload identity, tools and
+  template parameters, admission, tokenizer failure and exhausted deadlines.
+- `test_koboldcpp_request_token_counting.py`: admitted/direct Local factories,
+  running-capacity clamping, full text/tool payload counting and changed server state.
+- `test_token_accounting_semantics.py`: unknown versus zero, strict budget/count
+  validation and inclusive cache/reasoning details.
+- `test_api_exchange_usage_accounting.py`: JSON/SSE observation before decoding,
+  missing/failed exchanges, unique identities and binding ownership.
+- `test_api_usage_trace_persistence.py`: normalized persistence, deduplication,
+  incomplete totals and bounded details without truncated aggregates.
+- `test_run_details_token_accounting.py`: independent request context and known
+  API totals, estimate provenance and incomplete observations.
+- `test_zen_usage_parsing.py`: Zen's two protocol parsers, streaming trailers,
+  nullable details and internal closure requests.
+- `test_local_api_usage_parsing.py`: Local's own protocol parsers and nullable details.
+
+Catalog capacity cases extend `test_zen_catalog_free_protocols_and_scoped_identity.py`;
+`test_optional_zen_removal_preserves_local_api.py` blocks Zen imports while running
+both Local protocols and usage. `test_ui_workflow_uses_packaged_document_and_assets.py`
+injects broken document/asset transport to prove workflow boot uses production
+page generation and shipped files. HTTP delivery/auth retain integration tests.
+Read [the architecture](../docs/token-accounting.zh-CN.md) and
+[the actual TDD/full results](../TEST_REPORT.md).
+
 ## UI continuity
 
 The following behavior tests use shipped frontend assets, local HTTP/storage

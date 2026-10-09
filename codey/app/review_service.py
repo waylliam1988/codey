@@ -111,6 +111,9 @@ def run_review_attempt(
                 emit_review_with_payload(ctx, session_id, "Previous review reused", reused)
                 return reviewer_id, reused
         cancellation.check()
+        from codey.operations.provider_session import bind_api_usage
+
+        bind_api_usage(reviewer, reviewer_id, trace_recorder)
         reviewer.new_chat()
         reply = _send_review_prompt(
             reviewer, trace_recorder, prepared.prompt

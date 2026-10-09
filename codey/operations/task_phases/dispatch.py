@@ -38,6 +38,7 @@ from codey.operations.project_completion_context import (
 )
 from codey.operations.project_completion_flow import run_project_mode
 from codey.operations.provider_preflight import connect_provider_with_preflight
+from codey.operations.provider_session import bind_api_usage
 from codey.operations.recovery import rebuilt_policy_from_log, record_entry_policy
 from codey.operations.research_flow import (
     ResearchFlowDeps,
@@ -101,6 +102,7 @@ def connect_and_build_frame(
     )
     provider = preflight.provider
     provider_id = preflight.provider_id
+    bind_api_usage(provider, provider_id, trace)
     conversation = state.conversation_for(request.session_id)
     conversation_plan = build_conversation_plan(
         state=state,

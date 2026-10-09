@@ -2,6 +2,26 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Request budgets and connector-owned token usage (2026-10-09)
+
+- Freeze the selected model budget, remove API static capacity overrides and
+  invented Zen catalog limits, and centralize final-payload counting, safe
+  compaction and admission. Confirmed KoboldCpp Jinja connections count the
+  complete request; counting failures never silently switch to estimates.
+- Record normalized usage per physical generation before answer decoding,
+  including streaming trailers and internal closure requests. Keep request
+  context separate from known API totals and mark incomplete observations.
+  Zen owns its protocol field maps; Local and history remain usable without Zen.
+- Add 50 cases in nine accurately scoped token-accounting test files, extend
+  catalog/removal coverage, and isolate workflow documents as well as assets
+  from loopback transport. Preserve actual HTTP integration coverage.
+- Final Windows/Python 3.12 suite: **7985 passed, 7 skipped, 1503 subtests passed
+  in 875.22s**; required machine contracts **684 passed**. Ruff, mypy, JS syntax
+  and diff checks pass; Pyrefly has no new errors against the existing workspace
+  baseline. The initial failed full run is recorded in TEST_REPORT.md.
+- Documentation updated after the final full run. No version change, tag,
+  release or real model inference. See [token accounting](docs/token-accounting.zh-CN.md).
+
 ## Unreleased - Consistent model-source actions (2026-10-08)
 
 - Keep Select all and Clear adjacent in every source toolbar. Align only the

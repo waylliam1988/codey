@@ -52,7 +52,7 @@ CONTRACT_TESTS = (
     "tests/test_native_auto_initial_turn_prepared_once.py",
     "tests/test_optional_zen_removal_preserves_local_api.py",
     "tests/test_ui_workflow_readiness_without_animation_frames.py",
-    "tests/test_ui_workflow_assets_are_local.py",
+    "tests/test_ui_workflow_uses_packaged_document_and_assets.py",
     "tests/test_dynamic_api_model_menu_and_per_chat_effort.py",
     "tests/test_ui_model_management.py",
     "tests/test_model_preferences.py",

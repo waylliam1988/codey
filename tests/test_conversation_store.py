@@ -66,7 +66,7 @@ class ConversationStoreTests(unittest.TestCase):
             path = store.path_for("chat-1")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
-                json.dumps({"schema_version": 1, "used_tokens": 7}),
+                json.dumps({"schema_version": 1, "estimated_context_tokens": 7}),
                 encoding="utf-8",
             )
             restored = store.load("chat-1")
@@ -77,7 +77,7 @@ class ConversationStoreTests(unittest.TestCase):
         self.assertEqual(restored.hard_limit, DEFAULT_HARD_CONTEXT_TOKENS)
         self.assertEqual(restored.reserve_tokens, defaults.reserve_tokens)
         self.assertEqual(restored.keep_recent_tokens, defaults.keep_recent_tokens)
-        self.assertEqual(restored.used_tokens, 7)
+        self.assertEqual(restored.estimated_context_tokens, 7)
 
     def test_state_reloads_same_session_and_keeps_new_session_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as td:

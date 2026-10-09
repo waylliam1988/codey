@@ -38,7 +38,7 @@ def encode_results(results: list[ProviderToolResult]) -> list[dict[str, Any]]:
 
 
 def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, system: str,
-            tools: list[ProviderToolDefinition] | None, budget: tuple[int, int, int]) -> list[dict[str, Any]]:
+            tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
     from codey.agents import context_compaction as compaction
     from codey.providers import error_classification as errors
 
@@ -46,20 +46,27 @@ def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, sys
     if not candidate and system:
         candidate.append({"role": "system", "content": system})
     candidate.extend(dict(item) for item in pending)
-    window, reserve, keep = budget
     groups = compaction.group_messages_for_compaction(candidate)
     if any(not compaction.is_tool_group_complete(candidate, group) for group in groups):
         raise errors.RequestPrepError("local tool history has incomplete or invalid ID pairing")
-    declarations = encode_tools(tools)
-    try:
-        compaction.compact_openai_messages_in_place(candidate, tools=declarations,
-                                                   context_window_tokens=window, reserve_tokens=reserve, keep_recent_tokens=keep)
-        estimated = compaction.estimate_messages_tokens(candidate) + compaction.estimate_tools_tokens(declarations) + reserve
-    except Exception as exc:
-        raise errors.RequestPrepError(f"local context compaction failed: {exc}") from exc
-    if estimated > window:
-        raise errors.ContextOverflowError(f"local model context overflow before send: estimated {estimated} tokens exceeds window {window} (reserve {reserve} for reply)")
     return candidate
+
+
+def compact(items: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    from codey.agents.context_compaction import (
+        SUMMARY_PREFIX_TEXT,
+        compact_openai_messages,
+        summarize_prefix_deterministically,
+    )
+
+    def summary(item: dict[str, Any]) -> bool:
+        return item.get("role") == "user" and str(item.get("content", "")).startswith(SUMMARY_PREFIX_TEXT)
+
+    starts = [i for i, item in enumerate(items) if item.get("role") == "user" and not summary(item)]
+    if len(starts) < 2:
+        return [item for item in items if not summary(item)] if any(summary(item) for item in items) else None
+    cut = starts[1]
+    return compact_openai_messages(items, summarize_prefix_deterministically(items[:cut]), cut)
 
 
 def build_payload(messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,

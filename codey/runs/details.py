@@ -252,6 +252,7 @@ def _summary_rows(
     context = _context_summary(projection, trace)
     if context:
         rows.append(RunDetailsRow("Context", context))
+    rows.extend(_api_usage_rows(trace))
 
     actions = _actions_summary(projection)
     if actions:
@@ -275,6 +276,29 @@ def _summary_rows(
     if verification:
         rows.append(RunDetailsRow("Verification", verification, verification_tone))
 
+    return rows
+
+
+def _api_usage_rows(trace: Mapping[str, object]) -> list[RunDetailsRow]:
+    rows: list[RunDetailsRow] = []
+    totals = trace.get("api_usage_totals")
+    if not isinstance(totals, Mapping) or not totals.get("requests"):
+        return rows
+    inputs = coerce_int(totals.get("known_input_tokens"))
+    outputs = coerce_int(totals.get("known_output_tokens"))
+    missing = coerce_int(totals.get("incomplete_requests"))
+    text = f"{inputs:,} input · {outputs:,} output"
+    if missing:
+        noun = "request" if missing == 1 else "requests"
+        text = f"Known: {text} · {missing} {noun} with incomplete usage"
+    rows.append(RunDetailsRow("API usage", text))
+    latest = trace.get("api_usage_latest")
+    if isinstance(latest, Mapping):
+        context, budget = latest.get("context"), latest.get("budget")
+        if isinstance(context, Mapping) and isinstance(budget, Mapping) and type(context.get("value")) is int:
+            prefix = "~" if context.get("method") == "estimated" else ""
+            text = f"{prefix}{coerce_int(context['value']):,} / {coerce_int(budget.get('window_tokens')):,} tokens"
+            rows.append(RunDetailsRow("Request context", text + " · Last prepared request"))
     return rows
 
 

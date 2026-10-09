@@ -20,6 +20,8 @@ class ApiRunSelection:
     stream: bool = False
     tool_choice: str = "required"
     output_tokens: int | None = None
+    token_counter: str = "estimated"
+    budget_source: str = "configuration"
 
     def __post_init__(self) -> None:
         for value in (self.connection_id, self.connection_revision, self.model_id):
@@ -27,6 +29,10 @@ class ApiRunSelection:
                 raise ValueError("invalid API connection or model identity")
         if self.protocol not in {"openai-completions", "openai-responses"}:
             raise ValueError("unsupported API protocol")
+        if not isinstance(self.token_counter, str) or not self.token_counter or len(self.token_counter) > 80:
+            raise ValueError("unsupported request token counter")
+        if not isinstance(self.budget_source, str) or not self.budget_source or len(self.budget_source) > 80:
+            raise ValueError("invalid context budget source")
         if type(self.native_tools) is not bool or type(self.stream) is not bool:
             raise ValueError("API capability flags must be booleans")
         if self.thinking_enabled is not None and type(self.thinking_enabled) is not bool:
@@ -39,7 +45,8 @@ class ApiRunSelection:
             raise ValueError("invalid API context budget")
         if self.context_window_tokens <= self.context_reserve_tokens or self.context_keep_recent_tokens > self.context_window_tokens - self.context_reserve_tokens:
             raise ValueError("inconsistent API context budget")
-        if self.output_tokens is not None and (type(self.output_tokens) is not int or self.output_tokens <= 0):
+        if self.output_tokens is not None and (type(self.output_tokens) is not int or self.output_tokens <= 0
+                                               or self.output_tokens > self.context_reserve_tokens):
             raise ValueError("invalid API output budget")
 
     def to_payload(self) -> dict[str, Any]:

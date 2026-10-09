@@ -15,6 +15,7 @@ from codey.providers.error_classification import OutputLengthError
 from codey.providers.zen.catalog import ZenCatalog
 from codey.providers.zen.declarations import TEXT_PROMPT_PREFIX, prepare_declarations, transport_identity
 from codey.providers.zen.identity import CONNECTION_REVISION, ZEN_BASE_URL, ZenIdentity
+from codey.providers.zen.usage import configure_usage, parser_for
 from codey.runtime.core import cancellation
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import DEFAULT_STATE_HOME
@@ -172,7 +173,7 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
     reserve = min(8192, model.context // 4)
     return ApiRunSelection("zen", CONNECTION_REVISION, model.id, model.protocol, True, model.context,
                            reserve, min(12000, model.context - reserve), reasoning_effort=effort,
-                           stream=True, tool_choice="auto", output_tokens=min(model.output, 8192))
+                           stream=True, tool_choice="auto", output_tokens=min(model.output, reserve), budget_source="model_catalog")
 
 
 def validate_selection(selection: ApiRunSelection) -> None:
@@ -194,7 +195,9 @@ def open_selection(selection: ApiRunSelection) -> ZenProvider:
                            request_headers=headers, native_tools=selection.native_tools,
                            context_window_tokens=selection.context_window_tokens, context_reserve_tokens=selection.context_reserve_tokens,
                            context_keep_recent_tokens=selection.context_keep_recent_tokens, reasoning_effort=selection.reasoning_effort,
-                           system_prompt="You are a coding assistant.")
+                           system_prompt="You are a coding assistant.",
+                           usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
+                           budget_source=selection.budget_source)
     return ZenProvider(provider,
         on_plain_refused=lambda: catalog().access.record_plain_refusal(selection.model_id, selection.protocol),
         on_plain_succeeded=lambda: catalog().access.record_plain_success(selection.model_id, selection.protocol))

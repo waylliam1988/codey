@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from codey.providers.token_accounting import ApiExchangeUsage
 from codey.research.guards import (
     valid_digest_ref,
 )
@@ -51,6 +53,7 @@ from codey.runs.trace_research import (
 from codey.runs.trace_schema import (
     CHECKPOINT_FLUSH_INTERVAL,
     MAX_ANALYSIS_RUNS,
+    MAX_API_USAGE_ROWS,
     MAX_ARTIFACT_REFS,
     MAX_BRIEF_PROJECTIONS,
     MAX_COMPLETION_PROOFS,
@@ -265,6 +268,10 @@ class RunTraceManifest:
     provider_initial: str = ""
     provider_final: str = ""
     permission_profile: str = ""
+    api_usage: list[dict[str, object]] = field(default_factory=list)
+    api_usage_latest: dict[str, object] = field(default_factory=dict)
+    api_usage_totals: dict[str, int] = field(default_factory=lambda: {
+        "requests": 0, "known_input_tokens": 0, "known_output_tokens": 0, "incomplete_requests": 0})
     permission_profiles: list[dict[str, str]] = field(default_factory=list)
     mode_selection: ModeSelectionTrace | None = None
     prompt_sections: list[PromptSectionTrace] = field(default_factory=list)
@@ -376,6 +383,11 @@ class RunTraceManifest:
             "warnings": list(_bounded_refs(self.warnings, limit=MAX_WARNINGS)),
             "status": _identifier(self.status, 40),
         }
+        if self.api_usage_totals["requests"]:
+            payload["api_usage"] = self.api_usage
+            payload["api_usage_latest"] = dict(self.api_usage_latest)
+            payload["api_usage_totals"] = dict(self.api_usage_totals)
+            payload["api_usage_truncated"] = self.api_usage_totals["requests"] > len(self.api_usage)
         return payload
 
 
@@ -457,6 +469,25 @@ class RunTraceRecorder:
         self._completion_repair_keys: set[str] = set()
         self._prompt_surface_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
+        self._api_usage_keys: set[str] = set()
+        self._api_usage_lock = threading.RLock()
+
+    def record_api_usage(self, record: ApiExchangeUsage) -> None:
+        """Persist normalized facts once per physical request, before answer decoding."""
+        with self._api_usage_lock:
+            if record.exchange_id in self._api_usage_keys:
+                return
+            self._api_usage_keys.add(record.exchange_id)
+            totals = self.manifest.api_usage_totals
+            totals["requests"] += 1
+            totals["known_input_tokens"] += record.usage.input_tokens or 0
+            totals["known_output_tokens"] += record.usage.output_tokens or 0
+            if record.usage.input_tokens is None or record.usage.output_tokens is None or record.outcome == "unknown":
+                totals["incomplete_requests"] += 1
+            self.manifest.api_usage_latest = record.to_payload()
+            if len(self.manifest.api_usage) < MAX_API_USAGE_ROWS:
+                self.manifest.api_usage.append(record.to_payload())
+            self.flush()
 
     def record_mode_selection(
         self,

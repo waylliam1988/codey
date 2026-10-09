@@ -74,10 +74,13 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/operations/kernel_session_recovery.py`、`kernel_receipts.py` | 恢复原策略/事实/结算结果，并验证收据身份 |
 | `codey/providers/local_response_codec.py` | 本地响应信封与模型方言，在进入内核前归一 |
 | `codey/providers/base.py` | 协议中立工具声明/结果与明确的回复结束状态 |
-| `codey/providers/api_provider.py`、`api_transport.py` | 一个交换生命周期拥有锁、取消与候选提交；共享有界传输不重发未知结果 |
+| `codey/providers/api_provider.py`、`api_transport.py` | 统一最终请求计数/裁剪/准入、锁、取消与候选提交；传输交付原始 usage 事件，不重发未知结果 |
 | `codey/providers/api_codec.py` | 无状态 codec 契约及生成参数；连接工厂解析预算，Provider 构造时选定协议 |
 | `codey/providers/api_chat.py`、`api_responses.py` | 各自拥有工具、结果、wire 历史、完整交换组裁剪和回复解码；Responses 保留 reasoning items 并使用 call_id |
 | `codey/providers/api_connections.py`、`local_connection.py` | lazy 连接工厂与冻结 Local 配置；共享 runtime 不导入 Zen |
+| `codey/providers/token_accounting.py`、`api_metering.py` | 独立的预算、上下文计数与服务端用量契约；计数端口和每请求 usage collector，无厂商字段解释 |
+| `codey/providers/local_tokens.py`、`local_usage.py` | Local 自有 KoboldCpp 完整模板计数能力及两种协议的 usage 解释 |
+| `codey/runs/trace.py`、`details.py` | 规范化请求记录、有界明细与完整已知量汇总；显示上次请求上下文和不完整用量，不依赖连接包 |
 | `codey/providers/model_preferences.py` | 带 revision 的原子来源/模型偏好；目录观察不改变选择 |
 | `codey/app/model_settings.py`、`provider_services.py` | 通用来源描述、显式发现、使用中模型保护与已选范围服务 |
 | `codey/web/assets/models.js`、`model_settings.js` | 前端权威快照与共用暂存编辑器；可选连接提供数据，不增加专属 UI 分支 |
@@ -85,7 +88,7 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/web/assets/conversation_ui.js`、`conversation_nav.js` | 明确阅读意图、有界缓存与阅读锚点、当前回答选区动作；引用编辑现有草稿 |
 | `codey/web/assets/changes_drawer.js` | 唯一拥有 Changes 项目、显示数据、新鲜度和操作；局部刷新保留阅读现场，旧数据禁止恢复 |
 | `codey/web/assets/settings.js` | 独立连接字段 baseline 与保存生命周期；模型偏好修改判断和来源行更新留在 model_settings.js |
-| `codey/providers/zen/` | 动态免费目录、限定合作身份与访问观察；`declarations.py` 拥有临时不可用 read/shell 网络声明，`connection.py` 拥有有界文本调用拒绝；不授予任务权限，删除生产包和注册时还需清理专用测试、gate 和文档 |
+| `codey/providers/zen/` | 动态免费目录、限定合作身份与访问观察；`usage.py` 独占 Zen 两种协议字段映射，`declarations.py` 拥有临时不可用 read/shell 网络声明，`connection.py` 拥有有界文本调用拒绝；不授予任务权限，删除生产包和注册时还需清理专用测试、gate 和文档 |
 | `codey/runtime/core/api_selection.py`、`operation_payload.py` | 无秘密的冻结 API 选择，以及严格接纳/交付 payload 校验 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |
 | `codey/app/context.py`、`event_bus.py`、`event_payloads.py` | 公共出口补全运行身份和模式、严格状态；总线负责重放，纯投影模块生成有界机器事件与收据 |

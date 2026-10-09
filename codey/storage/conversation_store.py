@@ -122,7 +122,8 @@ class ConversationStore:
             hard_limit=_positive_int(payload.get("hard_limit"), DEFAULT_HARD_CONTEXT_TOKENS),
             reserve_tokens=_nonnegative_int(payload.get("reserve_tokens"), defaults.reserve_tokens),
             keep_recent_tokens=_nonnegative_int(payload.get("keep_recent_tokens"), defaults.keep_recent_tokens),
-            used_tokens=_nonnegative_int(payload.get("used_tokens")),
+            estimated_context_tokens=(None if payload.get("estimated_context_tokens") is None else
+                                      _nonnegative_int(payload["estimated_context_tokens"])),
             provider_id=str(payload.get("provider_id") or ""),
             mode=str(payload.get("mode") or ""),
             project=str(payload.get("project") or ""),
@@ -144,7 +145,7 @@ class ConversationStore:
                     "hard_limit": max(0, context.hard_limit),
                     "reserve_tokens": max(0, context.reserve_tokens),
                     "keep_recent_tokens": max(0, context.keep_recent_tokens),
-                    "used_tokens": max(0, context.used_tokens),
+                    "estimated_context_tokens": context.estimated_context_tokens,
                     "provider_id": context.provider_id,
                     "mode": context.mode,
                     "project": context.project,

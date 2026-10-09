@@ -7,7 +7,7 @@ from typing import Any
 
 from codey.providers.api_codec import GenerationSettings
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
-from codey.providers.error_classification import ContextOverflowError, OutputLengthError, RequestPrepError
+from codey.providers.error_classification import OutputLengthError, RequestPrepError
 from codey.toolchain.tool_spec import thaw_schema_value
 
 endpoint = "responses"
@@ -23,9 +23,7 @@ def encode_results(results: list[ProviderToolResult]) -> list[dict[str, Any]]:
 
 
 def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, system: str,
-            tools: list[ProviderToolDefinition] | None, budget: tuple[int, int, int]) -> list[dict[str, Any]]:
-    from codey.agents.handoff import estimate_tokens
-
+            tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
     candidate = [dict(item) for item in history]
     if not candidate and system:
         candidate.append({"role": "system", "content": system})
@@ -45,27 +43,15 @@ def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, sys
             raise RequestPrepError("Responses history has unanswered calls")
     if calls:
         raise RequestPrepError("Responses history has unanswered calls")
-    window, reserve, keep = budget
-    declarations_size = estimate_tokens(json.dumps(encode_tools(tools)))
-
-    def size(items: list[dict[str, Any]]) -> int:
-        return estimate_tokens(json.dumps(items, ensure_ascii=False)) + declarations_size
-
-    if size(candidate) + reserve <= window:
-        return candidate
-    # A user request begins one indivisible exchange (including its chained
-    # reasoning, calls, and results). Never trim inside the current exchange.
-    starts = [i for i, item in enumerate(candidate) if item.get("role") == "user"]
-    prefix = [item for item in candidate[:starts[0] if starts else 0] if item.get("role") in {"system", "developer"}]
-    for start in starts[1:]:
-        compacted = prefix + candidate[start:]
-        if size(compacted) <= min(keep + declarations_size, window - reserve):
-            return compacted
-    if starts and size(prefix + candidate[starts[-1]:]) + reserve <= window:
-        return prefix + candidate[starts[-1]:]
-    if size(candidate) + reserve > window:
-        raise ContextOverflowError("Responses context overflow before send")
     return candidate
+
+
+def compact(items: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    starts = [i for i, item in enumerate(items) if item.get("role") == "user"]
+    if len(starts) < 2:
+        return None
+    prefix = [item for item in items[:starts[0]] if item.get("role") in {"system", "developer"}]
+    return prefix + items[starts[1]:]
 
 
 def build_payload(items: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,

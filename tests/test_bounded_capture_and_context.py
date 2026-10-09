@@ -528,8 +528,8 @@ class LocalPrepareRequestTests(unittest.TestCase):
             {"role": "user", "content": "short history"}
         ]
         before = [dict(message) for message in provider._messages]
-        with mock.patch.object(
-            provider, "_generate",
+        with mock.patch(
+            "codey.providers.api_transport.open_request",
             side_effect=AssertionError("must not send"),
         ), self.assertRaises(errors.ContextOverflowError):
             provider.send("x" * 5000)
@@ -549,8 +549,8 @@ class LocalPrepareRequestTests(unittest.TestCase):
             ProviderToolResult("call_1", "y" * 3000),
             ProviderToolResult("call_2", "z" * 3000),
         ]
-        with mock.patch.object(
-            provider, "_generate",
+        with mock.patch(
+            "codey.providers.api_transport.open_request",
             side_effect=AssertionError("must not send"),
         ), self.assertRaises(errors.ContextOverflowError):
             provider.send_tool_results(results, tools)
@@ -561,8 +561,8 @@ class LocalPrepareRequestTests(unittest.TestCase):
 
         provider = self._provider()
         before: list[dict] = []
-        with mock.patch.object(
-            provider, "_generate",
+        with mock.patch(
+            "codey.providers.api_transport.open_request",
             side_effect=AssertionError("must not send"),
         ), self.assertRaises(errors.ContextOverflowError):
             provider.send("z" * 20000)
@@ -572,19 +572,19 @@ class LocalPrepareRequestTests(unittest.TestCase):
         from codey.providers import error_classification as errors
 
         provider = self._provider()
-        before: list[dict] = []
         with (
             mock.patch(
-                "codey.agents.context_compaction.compact_openai_messages_in_place",
+                "codey.providers.api_chat.compact",
                 side_effect=RuntimeError("boom"),
             ),
-            mock.patch.object(
-                provider, "_generate",
+            mock.patch(
+                "codey.providers.api_transport.open_request",
                 side_effect=AssertionError("must not send"),
             ),self.assertRaisesRegex(errors.RequestPrepError, "compaction failed")
         ):
+            provider._messages = [{"role": "user", "content": "old" * 1000}]
             provider.send("hello")
-        self.assertEqual(provider._messages, before)
+        self.assertEqual(provider._messages, [{"role": "user", "content": "old" * 1000}])
 
     def test_prep_failure_settles_not_sent_without_rollover(self) -> None:
         import tempfile

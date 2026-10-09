@@ -8,6 +8,19 @@ import math
 import time
 from typing import Any
 
+from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget
+from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
+
+
+def bind_api_usage(provider: Any, connection_id: str, trace: Any) -> None:
+    if isinstance(getattr(provider, "context_budget", None), ContextBudget):
+        sink = FailOpenPromptTrace(trace)
+
+        def record_usage(record: ApiExchangeUsage) -> None:
+            sink.call("record_api_usage", record)
+
+        provider.bind_usage(connection_id, record_usage)
+
 
 def reply_text_for_accounting(reply: Any) -> str:
     if isinstance(reply, str):

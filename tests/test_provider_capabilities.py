@@ -31,6 +31,9 @@ class ProviderCapabilityTests(unittest.TestCase):
                 self.assertIn(capability.coding_fit, (FIT_OK, FIT_AVOID))
                 self.assertIn(capability.research_fit, (FIT_OK, FIT_AVOID))
                 self.assertIn(capability.review_fit, (FIT_OK, FIT_AVOID))
+                if provider_id in {"local", "zen"}:
+                    self.assertEqual(capability.context_window_tokens, 0)
+                    continue
                 self.assertGreater(capability.context_window_tokens, 0)
                 self.assertGreater(capability.context_reserve_tokens, 0)
                 self.assertGreater(capability.context_keep_recent_tokens, 0)

@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 请求预算与连接自有用量解析（2026-10-09）
+
+- 冻结本次实际模型预算，移除 API 静态容量覆盖和 Zen 目录伪默认值；最终请求的
+  计数、完整交换裁剪及准入统一归运行时。确认支持 Jinja 的 KoboldCpp 对完整请求
+  分词；计数失败不悄悄退回估算。
+- 每次物理生成在回答解码前记录规范化 usage，覆盖流式末尾事件与内部闭合请求。
+  请求上下文与已知 API 消耗分开显示，缺失用量明确为不完整。Zen 自有协议字段
+  解析；移除 Zen 后 Local 和历史统计继续可用。
+- 九个按行为命名的新测试文件共 50 项，并补目录、移除和边界回归；UI 工作流的
+  首页与资产均复用发布内容，不依赖 loopback 传输，真实 HTTP 集成测试保留。
+- 最终 Windows/Python 3.12 全量：**7985 passed、7 skipped、1503 subtests passed，
+  875.22 秒**；机器契约 **684 passed**。Ruff、mypy、JS 语法、diff 通过；Pyrefly
+  按工作区现有基线零新增错误。首轮全量失败如实记入 TEST_REPORT.md。
+- 文档在最终全量完成后更新；不改版本、不创建 tag/release，不运行真实模型推理。
+  详见[请求预算与 token 统计](docs/token-accounting.zh-CN.md)。
+
 ## 未发布 - 统一模型来源操作行（2026-10-08）
 
 - 三组来源的 Select all / Clear 均靠左相邻。仅明确标记的 Refresh models 靠右，

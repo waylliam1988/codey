@@ -573,7 +573,7 @@ def test_shared_writer_updates_conversation_window_usage(tmp_path) -> None:
         fresh_chat=True, conversation=conversation, on_event=lambda _event: None,
     ))
     assert conversation.initialized
-    assert conversation.used_tokens > 0
+    assert conversation.estimated_context_tokens > 0
     assert conversation.project == str(tmp_path)
 
 
@@ -1278,7 +1278,7 @@ def test_native_writer_uses_same_durable_delivery_chain(tmp_path, monkeypatch) -
     ))
     assert result.stop_reason == "done"
     assert sent[0].call_id == "c1"
-    assert conversation.used_tokens > 0
+    assert conversation.estimated_context_tokens > 0
     assert ToolResultDeliveryStore(log).load_batches("s", "r")[0].is_delivered
 
 

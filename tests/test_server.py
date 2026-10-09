@@ -5047,6 +5047,8 @@ class SessionThreadingTests(unittest.TestCase):
             provider = mock.Mock()
             provider.name = "Local"
             provider.location = "http://localhost:1234"
+            from codey.providers.token_accounting import ContextBudget
+            provider.context_budget = ContextBudget(32768, 8192, 0, 12000)
             provider.send.side_effect = [
                 json.dumps({"tool": "web_search", "args": {"query": "2026 US Iran war predictions"}}),
                 json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),

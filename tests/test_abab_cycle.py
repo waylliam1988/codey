@@ -227,11 +227,11 @@ def test_mutation_groups_drive_execution_order(tmp_path: Path) -> None:
     assert groups == [[0, 1], [2]]
 
 
-def test_local_context_defaults_come_from_capability() -> None:
+def test_local_context_defaults_belong_to_connection_configuration() -> None:
     from codey.providers.api_provider import ApiProvider
-    from codey.providers.capabilities import capability_for
+    from codey.providers.local_config import LocalProviderConfig, resolve_local_context_budget
 
-    capability = capability_for("local")
+    capability = resolve_local_context_budget(LocalProviderConfig())
     assert capability.context_window_tokens == 32_768
     assert capability.context_reserve_tokens == 8_192
     assert capability.context_keep_recent_tokens == 12_000
@@ -242,13 +242,14 @@ def test_local_context_defaults_come_from_capability() -> None:
         context_reserve_tokens=capability.context_reserve_tokens,
         context_keep_recent_tokens=capability.context_keep_recent_tokens,
     )
-    assert provider.context_window_tokens == 32_768
-    assert provider.context_keep_recent_tokens == 12_000
+    assert provider.context_budget.window_tokens == 32_768
+    assert provider.context_budget.keep_recent_tokens == 12_000
 
 
-def test_conversation_plan_applies_capability_budgets() -> None:
+def test_conversation_plan_applies_selected_api_budget() -> None:
     from codey.agents.handoff import ConversationContext
     from codey.operations.conversation_plan import build_conversation_plan
+    from codey.providers.api_provider import ApiProvider
 
     class _State:
         def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
@@ -262,7 +263,7 @@ def test_conversation_plan_applies_capability_budgets() -> None:
         state=_State(),  # type: ignore[arg-type]
         session_id="s",
         provider_id="local",
-        provider=None,
+        provider=ApiProvider("http://localhost:9/v1", "fixture"),
         conversation=conversation,
         task_kind="project",
         project=None,

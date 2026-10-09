@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 
@@ -15,6 +16,10 @@ pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
 
 class ScriptedProvider:
     name = "Local"
+    context_budget = ContextBudget(32768, 8192, 0, 12000)
+
+    def bind_usage(self, connection_id, sink):
+        pass
 
     def __init__(self, replies):
         self.replies = iter(replies)

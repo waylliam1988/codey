@@ -672,7 +672,7 @@ def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
         )
         conversation.begin_window("deepseek", "chat")
         conversation.update_snapshot(snapshot)
-        conversation.used_tokens = conversation.soft_limit
+        conversation.estimated_context_tokens = conversation.soft_limit
         state.set_provider_session("deepseek", session_id)
 
         with mock.patch.object(state, "get_provider", return_value=provider):

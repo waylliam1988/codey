@@ -293,9 +293,9 @@ class RolloverDiscardTests(unittest.TestCase):
             root = Path(td).resolve()
             context = ConversationContext(hard_limit=100_000)
             context.begin_window("deepseek", "project", str(root))
-            # Park used_tokens just under the soft limit so the followup
+            # Park estimated_context_tokens just under the soft limit so the followup
             # prompt plus its repair section trips needs_rollover().
-            context.used_tokens = int(context.soft_limit) - 10
+            context.estimated_context_tokens = int(context.soft_limit) - 10
             result = self.run_agent(trace, provider, root, context)
 
         self.assertEqual(result.stop_reason, "done")

@@ -120,7 +120,7 @@ class HandoffTests(unittest.TestCase):
         context = ConversationContext(hard_limit=100)
         context.begin_window("deepseek", "chat")
         context.update_snapshot(ConversationSnapshot(mode="chat", goal="Keep this fact"))
-        context.used_tokens = 70
+        context.estimated_context_tokens = 70
 
         fresh, handoff = context.plan_request(
             provider_id="deepseek",

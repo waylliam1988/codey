@@ -5,6 +5,7 @@ from codey.providers import local_config as _local_config
 from codey.providers import local_discovery as _local_discovery
 from codey.providers.api_provider import ApiProvider
 from codey.providers.local_response_codec import normalize_local_reply
+from codey.providers.local_usage import configure_usage, parser_for
 from codey.runtime.core.api_selection import ApiRunSelection
 
 
@@ -51,18 +52,28 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         raise RuntimeError(
             f"local model at {effective.base_url} returned no usable model"
         )
+    from codey.providers.local_tokens import admitted_counter, counter_for
+
+    budget = effective.context
+    counter, window = admitted_counter(effective.base_url, effective.api_key, config.api_protocol, budget.context_window_tokens)
+    if window <= budget.context_reserve_tokens:
+        raise ValueError("Local running context cannot accommodate the configured output reserve")
     return ApiProvider(
         effective.base_url,
         effective.model,
         api_key=effective.api_key,
-        context_window_tokens=effective.context.context_window_tokens,
+        context_window_tokens=window,
         context_reserve_tokens=effective.context.context_reserve_tokens,
-        context_keep_recent_tokens=effective.context.context_keep_recent_tokens,
+        context_keep_recent_tokens=min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens),
+        output_tokens=budget.context_reserve_tokens,
         thinking_enabled=config.thinking_enabled if selection.base_url == config.base_url else None,
         reasoning_effort=config.reasoning_effort if selection.base_url == config.base_url else None,
         api_protocol=config.api_protocol,
         native_tools=effective.native_tools,
         text_decoder=normalize_local_reply,
+        usage_parser=parser_for(config.api_protocol), configure_request=configure_usage,
+        request_counter=counter_for(counter, effective.base_url, effective.model, effective.api_key, window),
+        budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration",
     )
 
 
@@ -86,10 +97,17 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
         selection = {"base_url": target.base_url, "model": target.model}
     config = capture_local_run_config(selection)
     budget = _local_config.resolve_local_context_budget(config)
+    from codey.providers.local_tokens import admitted_counter
+
+    counter, window = admitted_counter(config.base_url, config.api_key, config.api_protocol, budget.context_window_tokens)
+    if window <= budget.context_reserve_tokens:
+        raise ValueError("Local running context cannot accommodate the configured output reserve")
     return ApiRunSelection("local", _target_revision(config), config.model, config.api_protocol,
-                           _local_config.resolve_local_native_tools(config), budget.context_window_tokens,
-                           budget.context_reserve_tokens, budget.context_keep_recent_tokens,
-                           config.thinking_enabled, config.reasoning_effort)
+                           _local_config.resolve_local_native_tools(config), window,
+                           budget.context_reserve_tokens, min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens),
+                           config.thinking_enabled, config.reasoning_effort,
+                           output_tokens=budget.context_reserve_tokens, token_counter=counter,
+                           budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration")
 
 
 def _target_revision(config: _local_config.LocalProviderConfig) -> str:
@@ -119,6 +137,8 @@ def config_for_selection(selection: ApiRunSelection) -> _local_config.LocalProvi
 
 
 def open_selection(selection: ApiRunSelection) -> ApiProvider:
+    from codey.providers.local_tokens import counter_for
+
     config = config_for_selection(selection)
     # The admitted budgets/mode cannot be overwritten by environment changes.
     provider = ApiProvider(config.base_url, selection.model_id, api_key=config.api_key, api_protocol=selection.protocol,
@@ -126,7 +146,11 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
                            output_tokens=selection.output_tokens, context_window_tokens=selection.context_window_tokens,
                            context_reserve_tokens=selection.context_reserve_tokens, context_keep_recent_tokens=selection.context_keep_recent_tokens,
                            thinking_enabled=selection.thinking_enabled, reasoning_effort=selection.reasoning_effort,
-                           text_decoder=normalize_local_reply)
+                           text_decoder=normalize_local_reply,
+                           usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
+                           budget_source=selection.budget_source,
+                           request_counter=counter_for(selection.token_counter, config.base_url, selection.model_id,
+                                                       config.api_key, selection.context_window_tokens))
     return provider
 
 

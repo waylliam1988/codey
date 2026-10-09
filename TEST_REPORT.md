@@ -1,5 +1,103 @@
 # Codey Test Report
 
+## Request budgets, counting and connector-owned usage (2026-10-09)
+
+基线：`e46c9018bc0755cae5e294efac2238bcecd0935b`；Windows、Python **3.12.8**。
+本节、设计手册、架构/模型说明、中英文 README/Changelog 和测试索引均在最终
+全量完成后更新。版本保持 0.5.11，无 tag/release 或真实模型生成请求。
+
+### 四批 TDD 与实际边界
+
+| 批次 | 生产修改前的有效红测 | 最终行为 |
+| --- | --- | --- |
+| 预算来源 | 4 failed：262K 被静态预算覆盖、Zen 缺失 context/output 仍被接纳 | 冻结实际预算；API capability 不声称容量；目录缺失限制明确不可用 |
+| 最终请求计数 | 3 failed：计数器未参与准入、最终 payload 未被计数、计数失败仍生成；Local 工厂另有运行窗口未收敛的红测 | 一个准入循环；完整交换裁剪后重新计数；KoboldCpp 两个入口的普通/工具请求与生成 payload 相同 |
+| usage 生命周期 | 4 failed：缺少解码前记录与原始事件交付；契约/持久化补测 5 failed、9 passed | 每物理请求独立记录；断流未知、不重发；规范化去重、已知量与完整性汇总 |
+| Zen 自有解析 | 5 failed：两协议、流末 usage 与内部闭合请求均缺少规范化用量 | 字段映射只在 Zen 包；Local 自有解析；阻断 Zen 导入后 Local 两协议工具往返及 usage 仍正常 |
+
+另以测试先锁定并修复：计数耗尽 deadline 后仍启动生成；直接 Local 连接绕过
+运行容量收敛；可选 usage 明细为 null 时丢弃有效总量；小窗口输出预留超界；
+输出上限偷偷扩大已接纳的总预留。容量缺失错误文案与 Run details 的统计语义也先测红。
+其他已经通过的边界保护不冒充红测。
+
+九个新测试文件在最终全量中共 **50 passed**，文件名分别为：
+`test_api_context_budget_admission.py`、`test_api_request_context_counting.py`、
+`test_koboldcpp_request_token_counting.py`、`test_token_accounting_semantics.py`、
+`test_api_exchange_usage_accounting.py`、`test_api_usage_trace_persistence.py`、
+`test_run_details_token_accounting.py`、`test_zen_usage_parsing.py`、
+`test_local_api_usage_parsing.py`。目录与可选集成移除继续扩展原有测试。
+
+删除旧的两套独立估算裁剪路径及未使用的 compaction helper，不保留旧字段别名、
+迁移器、失败时切换计数方式、额外统计 API/存储或厂商框架。网页保留明确的估算，
+API 的字符累计 rollover 禁用，实际生命周期切换仍可恢复事实。
+
+最初计数测试的错误 HTTP 夹具、Run details 测试的错误入口等无效尝试均先修正，
+随后在生产修改前重新获得目标行为失败；这些夹具/入口错误不计入有效 TDD 证据。
+`.e2e-artifacts/` 下保留本地 red/green XML，属于忽略的运行产物，不进入提交。
+
+### 回归中发现的测试边界
+
+较大范围回归曾得到 **1947 passed、592 subtests passed，224.96s**。
+之后继续收紧边界并运行 **310 passed、383 subtests passed，43.33s** 的运行时回归。
+任务入口补充回归为 **360 passed、10 subtests passed，45.96s**。
+模型设置假端点明确隔离真实本机元数据；脚本化 API provider 补齐新预算/usage
+接口，保留真实生产准入要求，不为测试在产品里增加宽松路径。
+
+第一轮全量实际为 **7981 passed、3 failed、7 skipped、1 error、1503 subtests
+passed，868.05s**，不是通过：三个用例仍断言普通请求不传 max_tokens，未更新为
+显式输出预算；另一次 Page.goto 首页出现 loopback ERR_CONNECTION_FAILED。
+该传输故障没有被认定为确定性的生产 server bug。
+
+普通请求断言改为实际配置预算，结束回执保留 1-token 上限。另先将首页/资产
+连接确定性断开，得到 **1 failed，2.11s**，锁定工作流夹具仍依赖首页 HTTP；
+随后直接复用生产 send_index 和发布资产，不添加重试或产品 fallback。
+测试更名为 `test_ui_workflow_uses_packaged_document_and_assets.py`，同步机器契约
+清单；HTTP 服务、认证及资产交付仍由真实集成测试覆盖。修正后相关回归
+**48 passed，45.42s**。第一轮全量后没有再修改产品代码。
+
+### 最终验证顺序与结果
+
+全部行为修改完成后先运行静态检查与机器契约，再运行最终全量。之后更新文档；
+提交检查额外发现两份新测试有多余 EOF 空行，清理前后 AST 完全一致，未改变执行逻辑。
+
+| 检查 | 实际结果 |
+| --- | --- |
+| Ruff：python -m ruff check codey tests tools | All checks passed |
+| mypy：python -m mypy codey | 398 source files，no issues |
+| Pyrefly 1.3.2：现有工作区 baseline 下检查 codey | 0 errors，68 suppressed、832 warnings not shown |
+| JavaScript：所有发布 assets/*.js 的 node --check | 通过 |
+| git diff --check | 通过 |
+| python -m tools.machine_contract_gate | **684 passed，160.89s**，无跳过 |
+| 最终全量 pytest | **7985 passed、7 skipped、1503 subtests passed，875.22s** |
+
+最终全量命令：
+
+```powershell
+python -m pytest -q -o faulthandler_timeout=120 --junitxml=.e2e-artifacts/token-accounting-full.xml
+```
+
+Pyrefly 使用本轮开始前已存在的工作区基线
+`tools/pyrefly-baseline-2026-10-09.json`，没有扩充基线以掩盖新增问题。
+零新增诊断不代表历史诊断或 warnings 已清零；现有 Pyrefly CI、依赖与基线文件
+属于预先存在的改动，本次提交不包含它们。
+
+七项跳过为六项 POSIX/Windows 能力差异及一项 opt-in 真实 Edge E2E。
+本轮没有执行真实 KoboldCpp/Zen 推理、Python 3.11/Linux 全量或真实服务精度标定；
+不把本机结果扩称为这些检查通过。
+
+### 统计与产品限制
+
+请求前 tokenizer 计数不是服务端生成 usage；网页及没有准确计数能力的连接仍为
+显式估算，没有统一精度保证。KoboldCpp 要求确认同一 Jinja 模板，运行窗口取配置
+与服务端较小值；计数失败阻止生成，不降级。外部服务在计数与生成之间改变配置
+无法被两次 HTTP 操作原子锁住。
+
+RunTrace 明细最多 64 条，最后一次请求及全部已观察请求的汇总独立保留，超限
+显式标记。缺失字段保持 None；不完整请求独立计数；缓存/推理明细不重复相加。
+本地观察不是供应商账单，落盘失败不重发生成，也不承诺崩溃前所有观察都已持久化。
+现有 Run details 分开展示 API usage 和 Last prepared request，估算带 `~`，
+不冒称下一请求或实时占用。详见[架构说明](docs/token-accounting.zh-CN.md)。
+
 ## Model-source action layout and capability-driven refresh (2026-10-08)
 
 基线：`ba04feef2f9df464fddd3236626e0bd64970a1c2`；Windows、Python **3.12.8**。

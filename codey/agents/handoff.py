@@ -176,7 +176,7 @@ class ConversationContext:
     hard_limit: int = DEFAULT_HARD_CONTEXT_TOKENS
     reserve_tokens: int = 16_384
     keep_recent_tokens: int = 20_000
-    used_tokens: int = 0
+    estimated_context_tokens: int | None = 0
     provider_id: str = ""
     mode: str = ""
     project: str = ""
@@ -204,7 +204,7 @@ class ConversationContext:
         )
 
     def clear(self) -> None:
-        self.used_tokens = 0
+        self.estimated_context_tokens = 0 if self.estimated_context_tokens is not None else None
         self.provider_id = ""
         self.mode = ""
         self.project = ""
@@ -217,7 +217,7 @@ class ConversationContext:
         self.provider_id = provider_id
         self.mode = mode
         self.project = project
-        self.used_tokens = 0
+        self.estimated_context_tokens = 0 if self.estimated_context_tokens is not None else None
         self.initialized = True
         self.handoff_summary = ""
         self.snapshot = replace(self.snapshot, conversation_summary="")
@@ -238,7 +238,8 @@ class ConversationContext:
             raise
         except Exception:
             return self.prepare_handoff()
-        self.used_tokens += estimate_tokens(prompt) + estimate_tokens(reply)
+        if self.estimated_context_tokens is not None:
+            self.estimated_context_tokens += estimate_tokens(prompt) + estimate_tokens(reply)
         self.snapshot = replace(
             self.snapshot,
             conversation_summary=_normalize_model_summary(reply),
@@ -247,7 +248,7 @@ class ConversationContext:
 
     def update_snapshot(self, snapshot: ConversationSnapshot) -> None:
         self.snapshot = snapshot
-        if self.used_tokens >= self.soft_limit:
+        if self.estimated_context_tokens is not None and self.estimated_context_tokens >= self.soft_limit:
             self.prepare_handoff()
         else:
             self._changed()
@@ -258,10 +259,11 @@ class ConversationContext:
         reply: str,
         snapshot: ConversationSnapshot | None = None,
     ) -> None:
-        self.used_tokens += estimate_tokens(prompt) + estimate_tokens(reply)
+        if self.estimated_context_tokens is not None:
+            self.estimated_context_tokens += estimate_tokens(prompt) + estimate_tokens(reply)
         if snapshot is not None:
             self.snapshot = snapshot
-        if self.used_tokens >= self.soft_limit:
+        if self.estimated_context_tokens is not None and self.estimated_context_tokens >= self.soft_limit:
             self.prepare_handoff()
         else:
             self._changed()
@@ -269,7 +271,8 @@ class ConversationContext:
     def needs_rollover(self, next_prompt: str = "") -> bool:
         return (
             self.initialized
-            and self.used_tokens + estimate_tokens(next_prompt) >= self.soft_limit
+            and self.estimated_context_tokens is not None
+            and self.estimated_context_tokens + estimate_tokens(next_prompt) >= self.soft_limit
         )
 
     def plan_request(

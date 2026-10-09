@@ -57,9 +57,9 @@ class ProviderDeadFieldsGoneTests(unittest.TestCase):
         local = capability_for("local")
         self.assertTrue(local.supports_native_tools)
         self.assertTrue(local.native_tools_default)
-        self.assertGreater(local.context_window_tokens, 0)
-        self.assertGreater(local.context_reserve_tokens, 0)
-        self.assertGreater(local.context_keep_recent_tokens, 0)
+        self.assertEqual(local.context_window_tokens, 0)
+        self.assertEqual(local.context_reserve_tokens, 0)
+        self.assertEqual(local.context_keep_recent_tokens, 0)
         # ranking still works
         self.assertEqual(
             rank_providers(("mimo", "stepfun", "deepseek"), "research"),

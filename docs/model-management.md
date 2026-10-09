@@ -60,6 +60,16 @@ Model names come from connector metadata, user display names or actual IDs.
 Display names never become request IDs. A selected model's display name persists
 with the chat so a removed integration remains readable and unavailable.
 
+## Request budgets and usage
+
+Model admission also freezes its context budget and counting method. API static
+capabilities carry no model capacity. Zen requires explicit catalog context and
+output limits; Local presets are configuration, clamped to the running window
+for confirmed KoboldCpp Jinja connections. The latter counts the entire final
+request and blocks generation on counting failure. Other supported connections
+explicitly estimate preflight context. Service-reported usage remains separate;
+missing usage is unknown. See [token accounting](token-accounting.zh-CN.md).
+
 ## Removing an optional integration
 
 Remove its `API_CONNECTIONS` registration and backend package. The shared
@@ -69,6 +79,9 @@ fallback is required. Old chats retain their identity and draft; Send requires
 an explicit enabled choice. The removal probe makes the Zen package unimportable
 and exercises Local, bootstrap, history and release-gate metadata. A browser
 test removes an arbitrary optional source, independently of the Zen name.
+The same probe now executes both Local protocols with tool exchanges and usage
+while Zen imports are blocked. Raw Zen usage parsing lives only in its package;
+normalized historical records and Run details do not import Zen.
 
 ## Offline inspection
 
@@ -93,8 +106,8 @@ delivery and package inclusion retain separate integration coverage. Scripted
 Research sources use scoped DNS answers and fresh caches while executing the
 real URL policy, so offline verification does not depend on public DNS.
 
-Latest Windows/Python 3.12 verification: **7912 passed, 7 skipped, 1503 subtests**;
-required machine contracts **679 passed**. See [the test report](../TEST_REPORT.md)
+Latest Windows/Python 3.12 verification: **7985 passed, 7 skipped, 1503 subtests**;
+required machine contracts **684 passed**. See [the test report](../TEST_REPORT.md)
 for TDD, the interrupted first continuity run, historical replay and platform limits.
 
 Primary tests: `tests/test_model_preferences.py`,

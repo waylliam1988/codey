@@ -225,16 +225,8 @@ def _config_path() -> Path:
 
 
 def _default_budget() -> LocalContextBudget:
-    """Capability is the single source of default budgets (never hardcodes)."""
-    from codey.providers.capabilities import capability_for
-
-    capability = capability_for("local")
-    return LocalContextBudget(
-        int(capability.context_window_tokens),
-        int(capability.context_reserve_tokens),
-        int(capability.context_keep_recent_tokens),
-        source="default",
-    )
+    """Initial configurable Local preset; never an asserted remote-model limit."""
+    return LocalContextBudget(32_768, 8_192, 12_000, source="default")
 
 
 def parse_native_tools_mode(value: object) -> str | None:

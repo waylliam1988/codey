@@ -16,6 +16,7 @@ from codey.completion.contract import (
 SCHEMA_VERSION = 1
 TRACE_KIND = "run_trace_manifest"
 MAX_TRACE_BYTES = 256 * 1024
+MAX_API_USAGE_ROWS = 64
 MAX_TEXT_CHARS = 240
 MAX_PROMPT_SECTIONS = 80
 MAX_REFS = 64

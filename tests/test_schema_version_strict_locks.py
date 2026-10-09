@@ -62,9 +62,9 @@ def test_conversation_rejects_bool_schema(tmp_path: Path) -> None:
 
     store = ConversationStore(tmp_path)
     path = store.path_for("sess-1")
-    _write(path, {"schema_version": True, "used_tokens": 123})
+    _write(path, {"schema_version": True, "estimated_context_tokens": 123})
     loaded = store.load("sess-1")
-    assert loaded.used_tokens == 0, "True schema must fail closed to default"
+    assert loaded.estimated_context_tokens == 0, "True schema must fail closed to default"
 
 
 def test_ui_state_rejects_bool_schema(tmp_path: Path) -> None:

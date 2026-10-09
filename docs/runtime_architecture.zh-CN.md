@@ -77,6 +77,14 @@ API 的文本、原生首轮、工具结果及结束交付都走同一个 `_exch
 解码；共享层不查询 Local 能力。HTTP 失败、取消后的迟到结果、不完整文本和意外
 文本通道原生调用都不提交候选历史。连接工厂提供完整预算。
 
+本次选择冻结模型容量、计数能力与预算来源，API 不读取静态网页容量，也不使用
+字符累计值触发 rollover。ApiProvider 统一编码后计数、按 codec 的完整交换边界
+裁剪、重新计数并准入，最终发送同一份 payload。Local 拥有 KoboldCpp 完整模板
+计数；Local 与 Zen 各自解释原始 usage。transport 只交付原始事件，每次物理请求
+在回答解码前规范化记录到现有 RunTrace；缺失用量不记成零。运行详情只读普通
+记录，移除 Zen 不影响 Local 与历史统计。统计属于观察，不成为完成证据或第二套
+任务事实。详见[请求预算与 token 统计](token-accounting.zh-CN.md)。
+
 `final_delivery` 与 completion proof 分开记录。发送结束工具结果仍是有界生成请求，
 并非专用网络 ACK；返回的新工具不能执行，只能在有限预算内关闭调用链。
 交付 failed/unknown 不丢弃完成证明或已执行变更，恢复处理交付事实，不重新写文件。

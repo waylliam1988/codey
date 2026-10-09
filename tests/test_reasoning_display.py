@@ -80,11 +80,11 @@ def test_thinking_options_are_explicit_and_not_sent_to_every_endpoint(monkeypatc
 
 
 def test_reasoning_counts_toward_the_next_request_context_budget() -> None:
-    from codey.agents.context_compaction import estimate_message_tokens
+    from codey.providers.api_metering import estimate_request
 
     ordinary = {"role": "assistant", "content": "Done"}
     reasoning = {**ordinary, "reasoning_content": "Inspect carefully. " * 1000}
-    assert estimate_message_tokens(reasoning) > estimate_message_tokens(ordinary) + 1000
+    assert estimate_request({"messages": [reasoning]}, deadline=0).value > estimate_request({"messages": [ordinary]}, deadline=0).value + 1000
 
 
 def test_plain_reply_without_reasoning_cannot_reuse_previous_thoughts() -> None:

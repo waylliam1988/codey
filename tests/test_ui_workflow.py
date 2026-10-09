@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+from io import BytesIO
 from unittest import mock
 from urllib.parse import urlsplit
 
@@ -10,7 +11,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect, sync_playwright
 
 from codey.app import server
-from codey.app.http_plumbing import resolve_web_asset
+from codey.app.http_plumbing import resolve_web_asset, send_index
 
 
 @pytest.fixture(scope="module")
@@ -42,6 +43,11 @@ def page(ui_browser):
     page.on("pageerror", lambda error: boot_errors.append(str(error)))
     page.on("requestfailed", lambda request: boot_errors.append(f"{urlsplit(request.url).path}: {request.failure}"))
     page.add_init_script("window.EventSource = class { static OPEN = 1; readyState = 1; close() {} };")
+
+    document = mock.Mock(headers={}, wfile=BytesIO())
+    send_index(document)
+    page.route(lambda url: urlsplit(url).path in {"/", "/index.html"},
+               lambda route: route.fulfill(body=document.wfile.getvalue(), content_type="text/html; charset=utf-8"))
 
     def asset(route):
         # Behavior tests use the exact shipped files. HTTP asset delivery has

@@ -26,12 +26,22 @@ class ZenModel:
     id: str
     name: str
     protocol: str
-    context: int = 32768
-    output: int = 4096
+    context: int
+    output: int
     efforts: tuple[str, ...] = ()
 
     def to_payload(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _model_limits(model: dict[str, Any]) -> tuple[int, int] | None:
+    limits = model.get("limit")
+    if not isinstance(limits, dict):
+        return None
+    context, output = limits.get("context"), limits.get("output")
+    if type(context) is not int or context < 1024 or type(output) is not int or output <= 0:
+        return None
+    return context, output
 
 
 def parse_models(directory: object, available: set[str]) -> tuple[ZenModel, ...]:
@@ -59,12 +69,10 @@ def parse_models(directory: object, available: set[str]) -> tuple[ZenModel, ...]
         protocol = PROTOCOLS.get(npm) if isinstance(npm, str) else None
         if protocol is None:
             continue
-        limits = model.get("limit") or {}
-        if not isinstance(limits, dict):
+        limits = _model_limits(model)
+        if limits is None:
             continue
-        context, output = limits.get("context", 32768), limits.get("output", 4096)
-        if type(context) is not int or context < 1024 or type(output) is not int or output <= 0:
-            continue
+        context, output = limits
         options = model.get("reasoning_options") or []
         if not isinstance(options, list):
             continue
@@ -144,4 +152,7 @@ class ZenCatalog:
         for model in self.refresh():
             if model.id == model_id and (not protocol or model.protocol == protocol):
                 return model
+        model = self._directory.get("opencode", {}).get("models", {}).get(model_id)
+        if isinstance(model, dict) and _model_limits(model) is None:
+            raise ValueError("selected Zen model is missing valid context and output limits")
         raise ValueError("selected model is not currently listed as a supported free Zen model")

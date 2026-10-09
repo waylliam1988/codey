@@ -96,6 +96,12 @@ to every task mode. Muse coding and Space Bunny review were verified; see
 
 See [model management and optional connection removal](docs/model-management.md).
 
+Request context and accumulated API usage are separate. Run details labels the
+last prepared request, prefixes estimates with `~`, and marks incomplete usage.
+Confirmed KoboldCpp Jinja connections count the complete request; other Local
+connections and Zen preflight use explicit estimates. Actual API usage comes
+only from service reports. See [token accounting](docs/token-accounting.zh-CN.md).
+
 ## CLI
 
 ```powershell

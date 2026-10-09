@@ -12,7 +12,7 @@ def _conversation():
     from codey.agents.handoff import ConversationContext
 
     conv = ConversationContext()
-    conv.used_tokens = 12000
+    conv.estimated_context_tokens = 12000
     return conv
 
 
@@ -35,7 +35,7 @@ def test_native_exchange_accounts_for_tool_arguments():
 
 def test_begin_window_only_after_successful_new_chat():
     conv = _conversation()
-    conv.used_tokens = 12000
+    conv.estimated_context_tokens = 12000
 
     calls: list[str] = []
 
@@ -53,7 +53,7 @@ def test_begin_window_only_after_successful_new_chat():
     outcome = _open_fresh_session(conv, _FailingProvider(), provider_id="local", kind="hybrid")
     assert outcome.ok is False, "新会话打开失败必须停止"
     assert calls == ["new_chat"], f"失败后不得向旧会话发送：{calls}"
-    assert conv.used_tokens == 12000, "失败不得清空原预算"
+    assert conv.estimated_context_tokens == 12000, "失败不得清空原预算"
 
 
 def test_successful_new_chat_resets_window_before_first_send():
@@ -70,7 +70,7 @@ def test_successful_new_chat_resets_window_before_first_send():
     outcome = _open_fresh_session(conv, _GoodProvider(), provider_id="local", kind="hybrid")
     assert outcome.ok is True
     assert calls == ["new_chat"]
-    assert conv.used_tokens == 0
+    assert conv.estimated_context_tokens == 0
     assert conv.snapshot.conversation_summary == ""
 
 
@@ -145,7 +145,7 @@ def test_entry_kernel_continuing_run_keeps_budget_and_summary():
 
     conv = _conversation()
     conv.begin_window("local", "chat", "")
-    conv.used_tokens = 12000
+    conv.estimated_context_tokens = 12000
     conv.snapshot = ConversationSnapshot(
         **{**conv.snapshot.__dict__, "conversation_summary": "prior summary"},
     )
@@ -156,7 +156,7 @@ def test_entry_kernel_continuing_run_keeps_budget_and_summary():
     ):
         run_entry_kernel(frame, _entry_work(), _entry_hooks(), _entry_deps(), task_kind="chat")
     assert provider.calls == ["send"], f"继续会话只发送任务：{provider.calls}"
-    assert conv.used_tokens >= 12000, f"累计预算必须保留：{conv.used_tokens}"
+    assert conv.estimated_context_tokens >= 12000, f"累计预算必须保留：{conv.estimated_context_tokens}"
     assert conv.snapshot.conversation_summary != "", "原有摘要不得被清空"
 
 
@@ -176,7 +176,7 @@ def test_entry_kernel_fresh_chat_failure_stops_without_send():
         )
     assert provider.calls == ["new_chat"], f"失败后不得发送：{provider.calls}"
     assert outcome.event.get("stop_reason") == "provider_failure"
-    assert conv.used_tokens == 12000, "失败不得清空原预算"
+    assert conv.estimated_context_tokens == 12000, "失败不得清空原预算"
 
 
 def test_nested_provider_adapters_select_protocol_from_actual_provider():

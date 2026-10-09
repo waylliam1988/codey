@@ -6,6 +6,7 @@ import pytest
 
 from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, run_headless
 from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core import cancellation
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
@@ -23,8 +24,12 @@ def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tm
 
     class Provider:
         name = "Local"
+        context_budget = ContextBudget(32768, 8192, 0, 12000)
         calls = 0
         closed = False
+
+        def bind_usage(self, connection_id, sink):
+            pass
 
         def new_chat(self, timeout=None):
             pass

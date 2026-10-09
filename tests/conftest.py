@@ -34,6 +34,7 @@ def scripted_local_api_connection(monkeypatch):
     config = LocalProviderConfig(base_url="http://scripted.test/v1", model="scripted-fixture", connection_revision="scripted-fixture")
     monkeypatch.setattr("codey.providers.local_config.load_local_config", lambda: config)
     monkeypatch.setattr(local_selection, "load_local_config", lambda: config)
+    monkeypatch.setattr("codey.providers.local_tokens._metadata_json", lambda *_: {})
 
 
 @pytest.fixture

@@ -10,6 +10,7 @@ from codey.agents.handoff import (
     render_recovered_handoff,
 )
 from codey.operations.task_state import TaskState
+from codey.providers.token_accounting import ContextBudget
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 from codey.task.kind import conversation_mode
 
@@ -40,20 +41,30 @@ def build_conversation_plan(
 ) -> ConversationPlan:
     mode = conversation_mode(task_kind, project)
     project_text = _project_text(project)
-    try:
+    budget = getattr(provider, "context_budget", None)
+    if isinstance(budget, ContextBudget):
+        conversation.hard_limit = budget.input_limit
+        conversation.reserve_tokens = budget.output_tokens + budget.safety_tokens
+        conversation.keep_recent_tokens = budget.keep_recent_tokens
+        conversation.estimated_context_tokens = None
+    else:
         from codey.providers.capabilities import capability_for
+        from codey.providers.catalog import API_CONNECTIONS
+
+        if provider_id in API_CONNECTIONS:
+            raise ValueError("API connection requires a resolved context budget")
 
         capability = capability_for(provider_id)
-        window = int(getattr(capability, "context_window_tokens", 0) or 0)
-        reserve = int(getattr(capability, "context_reserve_tokens", 0) or 0)
-        keep_recent = int(getattr(capability, "context_keep_recent_tokens", 0) or 0)
+        window = capability.context_window_tokens
+        reserve = capability.context_reserve_tokens
+        keep_recent = capability.context_keep_recent_tokens
         if window > reserve > 0:
             conversation.hard_limit = window - reserve
             conversation.reserve_tokens = reserve
         if keep_recent > 0:
             conversation.keep_recent_tokens = keep_recent
-    except Exception:
-        pass
+        if conversation.estimated_context_tokens is None:
+            conversation.estimated_context_tokens = 0
     provider_session_changed = state.provider_session_changed(
         provider_id,
         session_id,

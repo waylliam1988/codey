@@ -64,6 +64,9 @@ def test_real_headless_hybrid_executes_search_and_open_in_isolated_state(tmp_pat
         name="Local", new_chat=lambda: None, close=lambda: None,
         send=lambda text, timeout=None: json.dumps(next(replies)),
     )
+    from codey.providers.token_accounting import ContextBudget
+    provider.context_budget = ContextBudget(32768, 8192, 0, 12000)
+    provider.bind_usage = lambda connection_id, sink: None
     rows = []
     with (
         mock.patch("codey.research.search_factory.default_research_search_provider", side_effect=Search),

@@ -84,6 +84,11 @@ Connection → Advanced → `API protocol` 明确选择 Chat Completions
 
 详见[模型管理与可选连接拆除](docs/model-management.md)。
 
+请求上下文与累计 API 用量分别统计。Run details 标明上次准备的请求，估算带 `~`，
+缺失用量明确显示不完整。确认支持 Jinja 的 KoboldCpp 对完整请求分词；其他 Local
+连接与 Zen 请求前计数明确为估算。实际 API 用量只来自服务端报告，不能把分词计数
+当作消耗。详见[请求预算与 token 统计](docs/token-accounting.zh-CN.md)。
+
 ## 命令行
 
 ```powershell

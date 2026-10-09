@@ -134,7 +134,8 @@ def _json_object(raw: bytes) -> dict[str, Any]:
     return body
 
 
-def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool]) -> dict[str, Any]:
+def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
+             on_event: Callable[[dict[str, Any]], None] = lambda event: None) -> dict[str, Any]:
     data: list[bytes] = []
     total = 0
     chat: dict[str, Any] = {"content": "", "tool_calls": []}
@@ -164,6 +165,7 @@ def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool]) -
             chat_done = True
             break
         event = _json_object(frame)
+        on_event(event)
         kind = event.get("type")
         if kind in {"response.completed", "response.incomplete", "response.failed"}:
             result = event.get("response")
@@ -193,7 +195,8 @@ def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool]) -
 
 def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str, str], *, timeout: float,
              observe: Callable[..., None], cancelled: Callable[[], bool] = lambda: False,
-             opened: Callable[[Any], None] = lambda response: None) -> dict[str, Any]:
+             opened: Callable[[Any], None] = lambda response: None,
+             on_event: Callable[[dict[str, Any]], None] = lambda event: None) -> dict[str, Any]:
     from codey.providers import error_classification as errors
 
     if cancelled():
@@ -213,13 +216,14 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
             deadline_guard.start()
             try:
                 if "text/event-stream" in str(getattr(response, "headers", {}).get("Content-Type", "")):
-                    body = read_sse(response, deadline=started + timeout, cancelled=cancelled)
+                    body = read_sse(response, deadline=started + timeout, cancelled=cancelled, on_event=on_event)
                 else:
                     raw = response.read(MAX_RESPONSE_BYTES + 1)
                     count = len(raw)
                     if count > MAX_RESPONSE_BYTES:
                         raise GenerationUnknownError("generation response exceeded its byte limit")
                     body = _json_object(raw)
+                    on_event(body)
             finally:
                 deadline_guard.cancel()
         if cancelled():

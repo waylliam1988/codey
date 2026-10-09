@@ -259,17 +259,15 @@ def test_native_protocol_error_answers_chain(tmp_path: Path) -> None:
 
 
 def test_compaction_noop_cut_leaves_messages_untouched() -> None:
-    from codey.agents import context_compaction as compaction
 
     messages: list[dict] = [
         {"role": "system", "content": "sys"},
         {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "function": {"name": "read"}}]},
     ]
     before = [dict(m) for m in messages]
-    summary = compaction.compact_openai_messages_in_place(
-        messages, context_window_tokens=10, reserve_tokens=9_000, keep_recent_tokens=100,
-    )
-    assert summary == ""
+    from codey.providers.api_chat import compact
+
+    assert compact(messages) is None
     assert messages == before
 
 

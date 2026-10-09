@@ -1,7 +1,9 @@
 """Compaction must not hide missing results behind duplicate or foreign IDs."""
 import pytest
 
-from codey.agents.context_compaction import find_safe_cut, is_tool_group_complete
+from codey.agents.context_compaction import is_tool_group_complete
+from codey.providers.api_chat import prepare
+from codey.providers.error_classification import RequestPrepError
 
 
 @pytest.mark.parametrize("calls,results", [
@@ -17,7 +19,8 @@ def test_invalid_pairing_is_not_complete_or_compactable(calls, results):
         {"role": "user", "content": "continue"},
     ]
     assert is_tool_group_complete(messages, range(1, len(messages) - 1)) is False
-    assert find_safe_cut(messages, reserve_tokens=100, keep_recent_tokens=1, context_window_tokens=1) == 0
+    with pytest.raises(RequestPrepError):
+        prepare(messages, [], system="", tools=[])
 
 
 def test_out_of_order_unique_results_are_complete():

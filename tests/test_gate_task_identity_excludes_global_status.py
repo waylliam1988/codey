@@ -79,6 +79,11 @@ class GateTaskIdentityExcludesGlobalStatusTests(unittest.TestCase):
 
         class _FakeDoneProvider:
             name = "fake-done"
+            from codey.providers.token_accounting import ContextBudget
+            context_budget = ContextBudget(32768, 8192, 0, 12000)
+
+            def bind_usage(self, connection_id, sink):
+                pass
 
             def new_chat(self, timeout=None) -> None:
                 return None

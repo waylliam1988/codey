@@ -5,12 +5,22 @@ from __future__ import annotations
 import contextlib
 import json
 import threading
+import time
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Any, cast
+from uuid import uuid4
 
 from codey.providers.api_codec import ApiCodec, GenerationSettings
+from codey.providers.api_metering import (
+    RequestCounter,
+    UsageCollector,
+    UsageParser,
+    estimate_request,
+    no_reported_usage,
+)
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish
+from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget, RequestContextCount
 
 DEFAULT_TIMEOUT = 600.0
 DEFAULT_TEMPERATURE = 0.3
@@ -52,6 +62,10 @@ class ApiProvider:
         request_headers: Any = None,
         native_tools: bool | None = None,
         text_decoder: Callable[[str], str | AssistantTurn] | None = None,
+        request_counter: RequestCounter = estimate_request,
+        usage_parser: UsageParser = no_reported_usage,
+        configure_request: Callable[[dict[str, Any]], None] = lambda payload: None,
+        budget_source: str = "configuration",
     ) -> None:
         """Runtime only: the target is already resolved (no env/discovery)."""
         if not base_url.strip():
@@ -64,9 +78,9 @@ class ApiProvider:
         self.timeout = timeout
         self.temperature = temperature
         self.system_prompt = system_prompt
-        self.context_window_tokens = context_window_tokens
-        self.context_reserve_tokens = context_reserve_tokens
-        self.context_keep_recent_tokens = context_keep_recent_tokens
+        output = output_tokens if output_tokens is not None else context_reserve_tokens
+        self._context_budget = ContextBudget(context_window_tokens, output, context_reserve_tokens - output,
+                                             context_keep_recent_tokens, budget_source)
         self.thinking_enabled = thinking_enabled
         self.reasoning_effort = reasoning_effort
         if api_protocol not in {"openai-completions", "openai-responses"}:
@@ -77,7 +91,12 @@ class ApiProvider:
         self.api_protocol = api_protocol
         self.stream = stream
         self.tool_choice = tool_choice
-        self.output_tokens = output_tokens
+        self.request_counter = request_counter
+        self.usage_parser = usage_parser
+        self.configure_request = configure_request
+        self.on_usage: Callable[[ApiExchangeUsage], None] = lambda record: None
+        self.connection_id = ""
+        self.last_context_count = RequestContextCount(None, "unknown")
         self.request_headers = request_headers
         self.native_tools = native_tools
         self._text_decoder = text_decoder
@@ -91,14 +110,18 @@ class ApiProvider:
         self._declared_tools: list[ProviderToolDefinition] = []
 
     @property
+    def context_budget(self) -> ContextBudget:
+        return self._context_budget
+
+    @property
     def model_identity(self) -> str:
         import hashlib
 
         settings = {name: getattr(self, name) for name in (
-            "base_url", "model", "api_protocol", "temperature", "system_prompt", "context_window_tokens",
-            "context_reserve_tokens", "context_keep_recent_tokens", "reasoning_effort", "thinking_enabled",
-            "stream", "tool_choice", "output_tokens",
+            "base_url", "model", "api_protocol", "temperature", "system_prompt", "reasoning_effort", "thinking_enabled",
+            "stream", "tool_choice",
         )}
+        settings["context_budget"] = asdict(self.context_budget)
         return hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     @property
@@ -182,7 +205,7 @@ class ApiProvider:
                 if terminal_tools is not None and any(tool not in self._declared_tools for tool in terminal_tools):
                     raise ValueError("terminal tools must belong to the previously declared set")
                 candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
-                                                 tools=tools, budget=self._context_budget())
+                                                 tools=tools)
             body = self._generate(candidate, tools, timeout=timeout)
             turn, output = self._codec.decode_exchange(body, text_only=text_only,
                                                        text_decoder=self._text_decoder)
@@ -214,12 +237,70 @@ class ApiProvider:
         from codey.providers import api_transport
 
         settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
-                                      self.reasoning_effort, self.tool_choice, self.output_tokens)
-        return api_transport.generate(
-            f"{self.base_url}/{self._codec.endpoint}", self._codec.build_payload(messages, tools, settings), self._headers(),
-            timeout=timeout or self.timeout, observe=self._notify_http_attempt,
-            cancelled=lambda: self._inflight_generation != self._generation, opened=self._opened_response,
-        )
+                                      self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens)
+        deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
+        exchange_id, connection_id, sink = uuid4().hex, self.connection_id, self.on_usage
+        payload = self._admit_request(messages, tools, settings, deadline)
+        collector = UsageCollector(self.usage_parser)
+        count, budget, outcome = self.last_context_count, self.context_budget, "unknown"
+        try:
+            body = api_transport.generate(
+                f"{self.base_url}/{self._codec.endpoint}", payload, self._headers(),
+                timeout=max(0.001, deadline - time.monotonic()), observe=self._notify_http_attempt,
+                cancelled=lambda: self._inflight_generation != self._generation, opened=self._opened_response,
+                on_event=collector.observe,
+            )
+            outcome = "response"
+            return body
+        except api_transport.GenerationNotSentError:
+            outcome = "not_sent"
+            raise
+        except api_transport.GenerationRejectedError:
+            outcome = "rejected"
+            raise
+        finally:
+            record = ApiExchangeUsage(exchange_id, connection_id, self.model, self.api_protocol, count, budget,
+                                      collector.usage, collector.status, outcome)
+            # Observation failure must never replay or invalidate a generated answer.
+            with contextlib.suppress(OSError, ValueError):
+                sink(record)
+
+    def bind_usage(self, connection_id: str, sink: Callable[[ApiExchangeUsage], None]) -> None:
+        self.connection_id, self.on_usage = connection_id, sink
+
+    def _admit_request(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
+                       settings: GenerationSettings, deadline: float) -> dict[str, Any]:
+        from codey.providers.error_classification import ContextOverflowError, RequestPrepError
+
+        candidate = list(messages)
+        budget = self.context_budget
+        target = budget.input_limit
+        while True:
+            if self._inflight_generation != self._generation or time.monotonic() >= deadline:
+                raise RequestPrepError("context counting cancelled or deadline exceeded before generation")
+            payload = self._codec.build_payload(candidate, tools, settings)
+            self.configure_request(payload)
+            count = self.request_counter(payload, deadline=deadline)
+            if self._inflight_generation != self._generation or time.monotonic() >= deadline:
+                raise RequestPrepError("context counting cancelled or deadline exceeded before generation")
+            if count.value is None:
+                raise RequestPrepError("request context count is unavailable")
+            self.last_context_count = count
+            if count.value <= target:
+                messages[:] = candidate
+                return payload
+            try:
+                compacted = self._codec.compact(candidate)
+            except (RuntimeError, ValueError) as exc:
+                raise RequestPrepError(f"context compaction failed: {exc}") from exc
+            if compacted is None:
+                if count.value <= budget.input_limit:
+                    messages[:] = candidate
+                    return payload
+                raise ContextOverflowError(f"model context overflow before send: {count.method} input {count.value} "
+                                           f"exceeds limit {budget.input_limit} (window {budget.window_tokens})")
+            candidate = compacted
+            target = min(budget.keep_recent_tokens, budget.input_limit)
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -239,10 +320,6 @@ class ApiProvider:
         return self._exchange(self._codec.encode_results(results),
                               declared_tools if self.tool_choice == "auto" else [],
                               timeout=min(timeout or self.timeout, 30.0), terminal_tools=declared_tools)
-
-    def _context_budget(self) -> tuple[int, int, int]:
-        """Resolved generic limits; connection factories supply their own budgets."""
-        return self.context_window_tokens, self.context_reserve_tokens, self.context_keep_recent_tokens
 
     def _notify_http_attempt(self, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float) -> None:
         # Diagnostic storage must not turn a successful request into a retry.

@@ -74,9 +74,9 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         review_fit=FIT_OK,
         supports_native_tools=True,
         native_tools_default=True,
-        context_window_tokens=32_768,
-        context_reserve_tokens=8_192,
-        context_keep_recent_tokens=12_000,
+        context_window_tokens=0,
+        context_reserve_tokens=0,
+        context_keep_recent_tokens=0,
     ) for connection_id in API_CONNECTIONS},
 }
 

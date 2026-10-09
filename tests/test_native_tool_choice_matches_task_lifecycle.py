@@ -85,7 +85,7 @@ def test_plain_text_and_terminal_receipt_do_not_force_tools(monkeypatch):
     provider.send_tool_results([ProviderToolResult('done1', 'OK: done accepted')], [])
     assert all("tools" not in payload and "tool_choice" not in payload
                and "parallel_tool_calls" not in payload for payload in seen)
-    assert "max_tokens" not in seen[0]
+    assert seen[0]["max_tokens"] == provider.context_budget.output_tokens
     assert seen[1]["max_tokens"] == 1  # Only acknowledgement, never the user answer.
 
 
@@ -131,9 +131,9 @@ def test_plain_native_turn_without_tools_keeps_its_answer_budget(monkeypatch, to
         return _Response({"finish_reason": "stop", "message": {"content": "full answer"}})
 
     monkeypatch.setattr(api_transport, "open_request", reply)
-    provider = ApiProvider("http://model.test/v1", "test")
+    provider = ApiProvider("http://model.test/v1", "test", output_tokens=2048)
     assert provider.send_turn("explain", tools).text == "full answer"
-    assert "max_tokens" not in seen[0]
+    assert seen[0]["max_tokens"] == 2048
 
 
 def test_real_kernel_does_not_enter_optional_answer_branch(monkeypatch):

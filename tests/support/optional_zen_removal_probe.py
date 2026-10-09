@@ -83,13 +83,13 @@ def probe(root):
                 output = [{"type": "function_call", "id": "item-id", "call_id": call[0], "name": call[1],
                            "arguments": json.dumps(call[2])}] if call else [
                     {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "received"}]}]
-                self.respond({"status": "completed", "output": output})
+                self.respond({"status": "completed", "output": output, "usage": {"input_tokens": 10, "output_tokens": 3}})
             else:
                 message = {"content": "received"}
                 if call:
                     message["tool_calls"] = [{"id": call[0], "type": "function", "function": {
                         "name": call[1], "arguments": json.dumps(call[2])}}]
-                self.respond({"choices": [{"finish_reason": "stop", "message": message}]})
+                self.respond({"choices": [{"finish_reason": "stop", "message": message}], "usage": {"prompt_tokens": 10, "completion_tokens": 3}})
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
@@ -104,6 +104,9 @@ def probe(root):
                     native_tools_mode="on", connection_revision="fixture-revision"))
                 selection = capture_selection("local", {"base_url": base, "model": "fixture"})
                 provider = open_selection(selection)
+                trace = RunTraceStore(root).open(run_id=protocol, session_id="usage", project=None,
+                                                 mode_initial="project", provider_initial="local")
+                provider.bind_usage("local", trace.record_api_usage)
                 try:
                     start = len(requests)
                     session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"})),
@@ -116,6 +119,8 @@ def probe(root):
                     assert session.read_files == {"fixture.txt"}
                     assert source.read_text(encoding="utf8") == "READ_MARKER"
                     assert len(requests) - start == 3
+                    totals = trace.manifest.to_payload()["api_usage_totals"]
+                    assert totals == {"requests": 3, "known_input_tokens": 30, "known_output_tokens": 9, "incomplete_requests": 0}
                     results = requests[start + 1].get("messages", requests[start + 1].get("input"))
                     assert any("READ_MARKER" in str(r) for r in results)
                 finally:
@@ -155,7 +160,7 @@ def probe(root):
         assert not any("providers/zen/" in path for path in metadata["production_hashes"])
         assert not missing.attempted
         return {"local_protocols": protocols, "bootstrap": True, "cli": True, "old_history": True,
-                "old_connection_rejected": True, "local_gate": True, "zen_imports": missing.attempted}
+                "old_connection_rejected": True, "local_gate": True, "zen_imports": missing.attempted, "usage_without_zen": True}
     finally:
         server.shutdown()
         server.server_close()

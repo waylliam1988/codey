@@ -4,6 +4,7 @@ from pathlib import Path
 
 from codey.agents import context_compaction as compaction
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
+from codey.providers import api_chat
 from codey.providers import error_classification as errors
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.file_mutation_queue import group_tool_calls_for_execution
@@ -25,12 +26,10 @@ def test_compaction_never_splits_tool_group() -> None:
     ]
     groups = compaction.group_messages_for_compaction(messages)
     assert any(len(g) == 2 and g[0] == 2 for g in groups)
-    cut = compaction.find_safe_cut(
-        messages, reserve_tokens=100_000, keep_recent_tokens=500,
-        context_window_tokens=1000, tools_tokens=0,
-    )
-    # Cut must not land between assistant tool_calls (2) and its tool result (3).
-    assert cut not in (3,)
+    compacted = api_chat.compact(messages)
+    assert compacted is not None
+    assert all(m.get("role") != "tool" for m in compacted)
+    assert not any(m.get("tool_calls") for m in compacted)
     assert compaction.is_tool_group_complete(messages, [2, 3])
 
 
@@ -41,9 +40,9 @@ def test_compact_in_place_keeps_system_and_tail() -> None:
         {"role": "assistant", "content": "old answer " + ("b" * 3000)},
         {"role": "user", "content": "latest request"},
     ]
-    summary = compaction.compact_openai_messages_in_place(
-        messages, context_window_tokens=1000, reserve_tokens=500, keep_recent_tokens=100,
-    )
+    messages = api_chat.compact(messages)
+    assert messages is not None
+    summary = messages[1]["content"].removeprefix(compaction.SUMMARY_PREFIX_TEXT).strip()
     assert summary
     assert messages[0]["role"] == "system"
     assert messages[-1]["content"] == "latest request"
@@ -58,9 +57,9 @@ def test_compaction_prefix_appears_exactly_once() -> None:
         {"role": "assistant", "content": "old answer " + ("b" * 3000)},
         {"role": "user", "content": "latest request"},
     ]
-    summary = compaction.compact_openai_messages_in_place(
-        messages, context_window_tokens=1000, reserve_tokens=500, keep_recent_tokens=100,
-    )
+    messages = api_chat.compact(messages)
+    assert messages is not None
+    summary = messages[1]["content"].removeprefix(compaction.SUMMARY_PREFIX_TEXT).strip()
     assert summary
     assert SUMMARY_PREFIX_TEXT not in summary
     joined = "\n".join(str(m.get("content") or "") for m in messages)

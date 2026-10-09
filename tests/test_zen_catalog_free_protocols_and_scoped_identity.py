@@ -14,7 +14,7 @@ from codey.providers.zen.identity import ZenIdentity
 def directory():
     return {"opencode": {"npm": "@ai-sdk/openai-compatible", "api": "https://opencode.ai/zen/v1", "models": {
         "chat-free": {"name": "Chat Free", "tool_call": True, "cost": {"input": 0, "output": 0}, "limit": {"context": 32768, "output": 4096}},
-        "response-free": {"name": "Responses Free", "tool_call": True, "cost": {"input": 0, "output": 0}, "provider": {"npm": "@ai-sdk/openai"}},
+        "response-free": {"limit": {"context": 131072, "output": 8192}, "name": "Responses Free", "tool_call": True, "cost": {"input": 0, "output": 0}, "provider": {"npm": "@ai-sdk/openai"}},
         "paid": {"tool_call": True, "cost": {"input": 1, "output": 0}},
         "unknown-price": {"tool_call": True, "cost": {"output": 0}},
         "other-protocol": {"tool_call": True, "cost": {"input": 0, "output": 0}, "provider": {"npm": "@ai-sdk/anthropic"}},
@@ -96,3 +96,29 @@ def test_upstream_identifier_resets_counter_when_timestamp_changes(monkeypatch):
     values = [identity.identifier("ses") for _ in range(3)]
     expected = [(1_000_000 * 4096 + 1), (1_000_000 * 4096 + 2), (1_000_001 * 4096 + 1)]
     assert [int(value[4:16], 16) for value in values] == expected
+
+
+@pytest.mark.parametrize("limits", [{}, {"context": 262144}, {"output": 8192}])
+def test_zen_models_without_explicit_context_and_output_limits_are_not_admitted(limits):
+    directory = {"opencode": {"npm": "@ai-sdk/openai-compatible", "models": {
+        "incomplete": {"tool_call": True, "cost": {"input": 0, "output": 0}, "limit": limits}}}}
+    assert parse_models(directory, {"incomplete"}) == ()
+
+
+def test_selected_model_without_capacity_explains_why_it_cannot_be_admitted(tmp_path):
+    listing = {"opencode": {"npm": "@ai-sdk/openai-compatible", "models": {
+        "incomplete": {"tool_call": True, "cost": {"input": 0, "output": 0}}}}}
+    catalog = ZenCatalog(tmp_path, fetch=lambda url, etag: (
+        {"data": [{"id": "incomplete"}]} if url.endswith("/models") else listing, ""))
+    with pytest.raises(ValueError, match="context and output limits"):
+        catalog.require("incomplete")
+
+
+def test_model_output_reservation_fits_small_selected_context(monkeypatch):
+    from codey.providers.zen import connection
+    from codey.providers.zen.catalog import ZenModel
+
+    monkeypatch.setattr(connection, "catalog", lambda: SimpleNamespace(
+        require=lambda _: ZenModel("small", "Small", "openai-completions", 4096, 8192)))
+    selection = connection.capture_selection({"model": "small"})
+    assert selection.output_tokens == 1024

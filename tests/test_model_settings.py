@@ -8,6 +8,12 @@ from codey.providers.local_config import LocalProviderConfig
 from codey.providers.local_connection import connect_local
 
 
+@pytest.fixture(autouse=True)
+def scripted_local_metadata(monkeypatch):
+    """Connection-setting tests use a generic fake endpoint, never user services."""
+    monkeypatch.setattr("codey.providers.local_tokens._metadata_json", lambda *_: {})
+
+
 def test_display_name_roundtrips_and_resets_for_another_target():
     from codey.providers.local_config import config_from_dict, config_to_payload, parse_local_config_update
 

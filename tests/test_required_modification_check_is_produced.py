@@ -69,6 +69,10 @@ def test_real_headless_required_edit_and_fresh_verification_finish(tmp_path, mon
     ])
     class Provider:
         name = "Local"
+        from codey.providers.token_accounting import ContextBudget
+        context_budget = ContextBudget(32768, 8192, 0, 12000)
+        def bind_usage(self, connection_id, sink):
+            pass
         def new_chat(self):
             pass
         def close(self):
