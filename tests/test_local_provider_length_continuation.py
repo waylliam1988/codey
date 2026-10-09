@@ -72,4 +72,5 @@ def test_local_provider_length_with_tool_calls_fails_closed(monkeypatch):
     monkeypatch.setattr(api_transport, "open_request", lambda request, timeout=None: _Response(body))
     with pytest.raises(provider_errors.OutputLengthError):
         provider.send_turn("finish", [ProviderToolDefinition('done', '', {})])
-    assert provider._messages == []
+    # The server accepted this input; the truncated tool call still cannot commit.
+    assert provider._messages == [{"role": "user", "content": "finish"}]

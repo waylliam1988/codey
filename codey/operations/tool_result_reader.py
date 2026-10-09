@@ -12,7 +12,7 @@ def read_tool_result(delegate: Any, call: ToolCall) -> ToolResult:
         if not delegate.session.policy.allows("control"):
             raise ValueError("receipt access denied")
         identity = call.args.get("result_ref")
-        if not isinstance(identity, str) or identity not in delegate.session._memory_results:
+        if not isinstance(identity, str):
             raise ValueError("stored result unavailable in this task")
         offset, limit = call.args.get("offset", 0), call.args.get("limit", 4000)
         if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 8000:
@@ -20,7 +20,21 @@ def read_tool_result(delegate: Any, call: ToolCall) -> ToolResult:
         query = call.args.get("query")
         if "query" in call.args and (not isinstance(query, str) or not 1 <= len(query) <= 512):
             raise ValueError("query must be a nonempty literal string of at most 512 characters")
-        result = delegate.session._memory_results[identity]
+        result = delegate.session._memory_results.get(identity)
+        if result is None:
+            # Behavioral probes run outside the model tool loop. Their real
+            # archive is addressed by its own scoped, digest-verified handle;
+            # never fabricate a kernel execution or accept arbitrary paths.
+            if delegate.managed_outputs is None:
+                raise ValueError("stored result unavailable in this task")
+            text, metadata = delegate.managed_outputs.read_tool_output(delegate.session_id, delegate.run_id, identity)
+            if metadata.get('tool_name') != 'behavioral_verification':
+                raise ValueError("stored result unavailable in this task")
+            observed = json.loads(text)
+            if not isinstance(observed, dict) or observed.get('status') not in {'pass', 'fail', 'not_run'}:
+                raise ValueError('invalid behavioral result')
+            result = ToolResult(call, text, ok=observed['status'] == 'pass',
+                                truncated=metadata.get('stored_truncated') is True)
         text = result.model_text
         managed = result.audit.get("managed_output")
         clipped = result.truncated

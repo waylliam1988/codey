@@ -1,5 +1,59 @@
 # Codey Test Report
 
+## Limited behavioral verification and native Pi comparison (2026-10-10)
+
+Starting commit `8faaa0f4bc702b0437c041b04c31bf06e11f521c`; Windows,
+Python 3.12.8 / Node 24.19.0. Final native production-source SHA-256:
+`f180758c226fb70fb393848c22b7c88fbf4f257f0513cca56eb1e24938e979a7`.
+Production remained frozen during each timed round and after the final original
+comparison. Later edits affect tests, manual instrumentation, gates and documentation.
+
+- New tests: **10 behavior-named files, 89 cases**. Genuine reds cover admission,
+  actual Python counterexamples, stale evidence, false reviewer approval, bounded
+  repair with fresh tests/review, receipt ownership, explicit execution requirements,
+  transient sharing violations and normal module import identity.
+- Focused initial/final-boundary regression: **121 passed**. Expanded correction
+  regression: **258 passed, 14 subtests in 40.97s**. These selections overlap;
+  their counts are not a distinct combined total.
+- Final required machine contracts: **912 passed, 14 subtests in 190.06s**.
+- Ruff, compileall and working diff checks pass. Mypy Windows/Linux reports
+  **406 source files**, no issues; Pyrefly reports **0 errors**, 47 suppressed /
+  838 warnings not shown. Settings and suppressions were not relaxed.
+- Initial full run: **11 failed, 8284 passed, 7 skipped, 1503 subtests in 934.21s**.
+  Four incomplete fake contexts, two stale review assertions, four obsolete
+  accepted-input assertions and one experiment environment naming check were fixed.
+  Earlier machine selection found three stale review assertions. Real-file tests
+  still require fresh review identity; mocked routing tests require a second call
+  reading the repaired summary/scope. No production compatibility branch was added.
+- **Final full pytest: 8295 passed, 7 skipped, 1503 subtests in 915.05s**.
+  Command: `python -m pytest -q -o faulthandler_timeout=120`.
+  Initial and final logs remain in `artifacts/behavioral-verification-20261010/checks/`.
+  Missing fixture wiring and a malformed initial readonly executor fixture were
+  not counted as behavioral TDD reds; the corrected real-execution test was red
+  with the new terminal projection disabled, then green when enabled.
+
+Original native scenario tuning retained three **19/20** Codey rounds before
+the final **20/20**, against Pi **9/20**. Twenty comparable pairs use seeds
+51/52, temperature 0, a 32,768 window, 2,048 output tokens, 24 generation
+requests including real Codey Local review, and 180 seconds per arm. These are
+reused tuning samples. Ten admitted definitions produced eight passing behavioral
+observations; two definitions belong to interrupted first phases. No native
+counterexample-triggered repair is claimed: that path is demonstrated with
+scripted model responses and actual function/test execution in the E2E tests.
+
+Supplemental new callable/file tasks with seed 61 completed two pairs:
+**Codey 2/2, Pi 0/2**. The next Codey seed-62 generation had no first byte in
+180 seconds; backend isolation remained unavailable for 300 seconds. Its timeout
+is retained as the fifth observation, not counted as a paired win; three planned
+observations were not run. Supplemental results are therefore incomplete.
+Pi's executed dist build has an unknown matching source commit and incomplete
+streaming usage. No universal reliability or total-token superiority is claimed.
+
+See [implementation, all rounds and limitations](docs/codey-behavioral-verification-and-pi-comparison-2026-10-10.zh-CN.md)
+and [portable evidence](docs/reports/codey-behavioral-verification-and-pi-comparison-2026-10-10.json).
+Documentation was updated after the final full run. Version remains 0.5.11;
+no tag or release.
+
 ## Agent execution continuity fixes (2026-10-09)
 
 Starting commit `dce411c8017bb0b9c583162e9710c4974b5d6749`; Windows,

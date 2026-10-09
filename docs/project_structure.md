@@ -72,6 +72,10 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/operations/kernel_execution.py`, `task_execution.py` | Execution boundary and domain adapters |
 | `codey/operations/completion_gate.py` | Final completion-proof composition; a model's `done` is only a proposal |
 | `codey/operations/project_completion_checks.py`, `research_completion_checks.py` | Project and source/strict-Research check providers |
+| `codey/completion/behavioral_checks.py` | Bounded original-requirement admission, frozen definitions and one aggregate completion check; no model or I/O |
+| `codey/operations/behavioral_verification.py`, `behavioral_probe_worker.py` | Authorized bounded Python function observations, workspace identity and managed results; a fixed worker accepts data, not scripts |
+| `codey/operations/project_review_phase.py::validate_candidate` | Shared initial/post-repair candidate validation, with current observations and a fresh review |
+| `codey/operations/explicit_execution_requirements.py` | Receipt-based once, requested output-read and proven readonly-fix obstruction projections; no independent state |
 | `codey/operations/kernel_session_recovery.py`, `kernel_receipts.py` | Restore original policy/facts and settled results; validate receipt identity |
 | `codey/providers/local_response_codec.py` | Local response envelopes and model dialects, before the kernel |
 | `codey/providers/base.py` | Protocol-neutral tool definitions/results and explicit assistant finish state |
@@ -95,6 +99,7 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/app/context.py`, `event_bus.py`, `event_payloads.py` | Common run identity/mode and strict status publication; replay bus and pure bounded machine-event/receipt projection |
 | `codey/app/headless_runner.py`, `cli.py`, `web/assets/sse.js` | Consume common events as JSONL, CLI text and browser reconciliation without inferring success |
 | `tools/machine_contract_gate.py` | Shared CI/local required checks; missing tests, failures and skips close the gate |
+| `tests/manual/behavioral_verification_local_holdout_ab.py` | New callable/file fixtures and correct-source controls through the same native Codey/Pi comparison loop and oracle |
 | `tools/local_model_gate_recovery.py` | Gate-only process interruption and independent recovery verification using the formal entry, with no model loop of its own |
 | `codey/operations/research_iteration.py` | `run_research_iteration`, the pipeline's shared-kernel adapter |
 

@@ -23,7 +23,7 @@ from codey.operations.project_completion_context import (
     project_has_user_files,
 )
 from codey.operations.project_completion_enforcement import enforce_completion
-from codey.operations.project_review_phase import run_review_phase
+from codey.operations.project_review_phase import validate_candidate
 from codey.operations.project_writer_phase import run_writer_phase
 from codey.operations.prompting import (
     record_secondary_input_prepared_trace as _record_secondary_input_prepared_trace,
@@ -335,8 +335,10 @@ def run_project_mode(
 
     try:
         _prepare_project_context(ctx)
+        from codey.operations.behavioral_verification import prepare_behavioral_validation
+        prepare_behavioral_validation(ctx)
         run_writer_phase(ctx)
-        run_review_phase(ctx)
+        validate_candidate(ctx)
         enforce_completion(ctx)
         return _finalize_project(ctx)
     finally:

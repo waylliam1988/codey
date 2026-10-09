@@ -85,6 +85,7 @@ class ReviewCoordinator:
         repair_writer: Callable[[str, CheckpointView], RunResult],
         set_checkpoint_status: Callable[[str], None],
         emit_review_unavailable: Callable[[], None],
+        allow_repair: bool = True,
     ) -> ReviewCycleResult:
         if result.stop_reason != "done" or not task_changed or stop_requested():
             return ReviewCycleResult(result, task_changed, changes, changes_dirty)
@@ -174,7 +175,7 @@ class ReviewCoordinator:
                 changes_dirty,
                 review_attempted=True,
             )
-        if not bool(getattr(review, "needs_writer_repair", False)):
+        if not allow_repair or not bool(getattr(review, "needs_writer_repair", False)):
             return ReviewCycleResult(
                 result,
                 task_changed,

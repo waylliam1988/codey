@@ -26,10 +26,10 @@ def test_agent_verification_is_fresh_only_for_the_final_file_contents(tmp_path, 
     (project / "app.py").write_text(
         "import re\ndef normalize_name(value): return '-'.join(re.sub(r'[^a-z0-9\\s]', '', value.lower()).split())\n",
         encoding="utf-8")
-    env = dict(os.environ, CODEY_AB_TRACE=str(trace))
+    env = dict(os.environ, AGENT_AB_TRACE=str(trace))
     subprocess.run([sys.executable, "-m", "unittest", "discover", "-v"], cwd=project, env=env, check=True,
                    capture_output=True)
-    monkeypatch.setenv("CODEY_AB_TRACE", str(trace))
+    monkeypatch.setenv("AGENT_AB_TRACE", str(trace))
     assert _run_verification(project, case=case)["agent_verification_fresh"] is True
     with (project / "app.py").open("a", encoding="utf-8") as handle:
         handle.write("\n# changed after verification\n")

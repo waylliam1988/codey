@@ -192,7 +192,7 @@ def _build_review_verification_map(
     )
 
 
-def run_review_phase(ctx: ProjectRun) -> None:
+def run_review_phase(ctx: ProjectRun, *, allow_repair: bool = True) -> None:
     assert ctx.result is not None
     review_coordinator = ReviewCoordinator(ctx.deps.verification.collect_changes)
     ctx.review_cycle = review_coordinator.run_cycle(
@@ -207,7 +207,7 @@ def run_review_phase(ctx: ProjectRun) -> None:
         writer_id=ctx.frame.provider_id,
         recent_log="\n".join(ctx.work.recent_events[-ctx.deps.review.review_log_lines :]),
         render_change_brief=partial(_render_review_change_brief, ctx),
-        execution_evidence=ctx.work.evidence.render_for_review(),
+        execution_evidence=ctx.work.evidence.render_for_review() + _behavioral_facts(ctx),
         successful_checks=ctx.work.evidence.successful_checks,
         checkpoint_prompt=ctx.checkpoint_prompt,
         checks_before_review_followup=(
@@ -222,6 +222,7 @@ def run_review_phase(ctx: ProjectRun) -> None:
         repair_writer=partial(_repair_writer, ctx),
         set_checkpoint_status=partial(_set_checkpoint_status, ctx),
         emit_review_unavailable=partial(_emit_review_unavailable, ctx),
+        allow_repair=allow_repair,
     )
     ctx.result = ctx.review_cycle.result
     ctx.task_changed = ctx.review_cycle.task_changed
@@ -234,6 +235,26 @@ def run_review_phase(ctx: ProjectRun) -> None:
     collected_changed = change_state(ctx.task_changes)
     if collected_changed is not None:
         ctx.task_changed = collected_changed
+
+
+def _behavioral_facts(ctx: ProjectRun) -> str:
+    from codey.operations.behavioral_verification import behavioral_review_facts
+    return behavioral_review_facts(ctx)
+
+
+def validate_candidate(ctx: ProjectRun, *, allow_review_repair: bool = True) -> None:
+    """One bounded candidate validation entry before initial/final proof.
+
+    Writer checks remain required by the existing completion gate. Every
+    post-review edit invalidates observations and receives a new review.
+    """
+    from codey.operations.behavioral_verification import refresh_behavioral_observation
+
+    refresh_behavioral_observation(ctx)
+    run_review_phase(ctx, allow_repair=allow_review_repair)
+    if ctx.review_cycle.review_repair_attempted and ctx.result is not None and ctx.result.stop_reason == 'done':
+        refresh_behavioral_observation(ctx)
+        run_review_phase(ctx, allow_repair=False)
 
 
 __all__ = [

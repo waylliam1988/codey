@@ -141,7 +141,7 @@ def _run_arm(
             "LOCAL_OPENAI_CONTEXT_WINDOW": "32768",
             "LOCAL_OPENAI_CONTEXT_RESERVE": str(max_tokens),
             "LOCAL_OPENAI_CONTEXT_KEEP": "12000",
-            "CODEY_AB_TRACE": str(trace),
+            "AGENT_AB_TRACE": str(trace),
         }
     )
     command = _codey_command(project_root, run_dir / "state", max_turns)

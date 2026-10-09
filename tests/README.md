@@ -6,6 +6,31 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+## Behavioral verification and candidate continuity
+
+Ten behavior-named files add 89 cases:
+
+- `test_behavioral_requirement_admission_and_discriminating_inputs.py`: original requirement binding, rejected ambiguity/conditions and deletion-versus-separation inputs.
+- `test_python_behavioral_probe_observes_properties_and_failures.py`: actual functions, JSON values/exceptions, permissions, timeout, source identity and normal imports.
+- `test_behavioral_failures_block_completion_and_stale_observations.py`: aggregate failure, missing/stale evidence and the existing proof limit.
+- `test_behavioral_completion_repair_revalidates_and_reviews_candidate.py`: false approval, actual counterexamples and fresh tests/review after bounded repair.
+- `test_behavioral_receipt_reader_scope_and_integrity.py`: existing managed-result ownership, digest validation and malformed result data.
+- `test_atomic_write_transient_windows_sharing_violations.py`: bounded WinError 32 replacement/cleanup and concurrent target changes.
+- `test_explicit_once_command_blocks_repeat_until_workspace_changes.py`: original execution limits, retained results and fresh verification after edits.
+- `test_requested_stored_output_read_precedes_mutation_and_completion.py`: actual requested result reads, mutation admission and the shared completion gate.
+- `test_behavioral_local_holdout_case_contracts.py`: new callable/file fixtures and correct-source controls using the original oracle.
+- `test_readonly_required_fix_stops_blocked_on_current_failed_verification.py`: real failed tests, current identity, permissions, stagnation and cancellation priority.
+
+Manual loopback-only native comparison uses `manual/codey_vs_pi_agent_stability_ab.py`;
+`manual/behavioral_verification_local_holdout_ab.py` supplies additional fixtures to
+that same loop. Experiment-private variables use `AGENT_AB_` without old aliases.
+The benchmark records its case contract, source and executed Pi build identities.
+The original scenario score includes expected blocked and stopped outcomes.
+
+Final full pytest: **8295 passed, 7 skipped, 1503 subtests**. Required contracts:
+**912 passed, 14 subtests**. Earlier incomplete or failed runs remain documented
+in [the test report](../TEST_REPORT.md) and [native comparison](../docs/codey-behavioral-verification-and-pi-comparison-2026-10-10.zh-CN.md).
+
 ## Full-tree typing and execution boundaries
 
 - `test_ci_full_tree_typing_gate.py`: full-tree mypy and direct Pyrefly commands,

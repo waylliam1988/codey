@@ -41,6 +41,7 @@ from codey.runtime.core.operation_state import (
 )
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
+from codey.runtime.observe.execution_evidence import CheckEvidence
 
 
 def _enforcement_scope(
@@ -160,11 +161,21 @@ def _record_completion_evidence(ctx: ProjectRun) -> None:
             "execution_evidence": ctx.work.evidence,
             "analysis_run_payloads": ctx.work.analysis_run_payloads,
             "checkpoint_green": bool(ctx.checkpoint_green),
+            "behavioral_plan": ctx.behavioral_plan,
+            "behavioral_observation": ctx.behavioral_observation,
         })
         ctx.proof = verdict.proof
         if verdict.proof is None:
             ctx.blocked_reason = "unobserved"
-        ctx.decision = replace(ctx.decision, proof=ctx.proof)
+        failure_class = ctx.decision.failure_class
+        if ctx.proof is not None:
+            for check_row in ctx.proof.checks:
+                if check_row.check_id == 'behavioral_verification' and check_row.status != 'pass':
+                    if check_row.status == 'fail':
+                        failure_class = 'product_failure'
+                    elif failure_class != 'product_failure':
+                        failure_class = 'verification_unavailable'
+        ctx.decision = replace(ctx.decision, proof=ctx.proof, failure_class=failure_class)
     ctx.result = replace(ctx.result, proof=ctx.proof, facts=ctx.task_session)
     record_completion_proof_trace(ctx.frame.trace, ctx.proof)
     record_edit_integrity_trace(ctx.frame.trace, ctx.integrity)
@@ -224,6 +235,7 @@ def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
                 ctx.files,
                 root=ctx.project,
             ),
+            _behavioral_failure_fact(ctx),
         ),
         changed_files=ctx.files,
         analysis_run_refs=ctx.decision.analysis_run_refs,
@@ -351,9 +363,22 @@ def _apply_repair_result(ctx: ProjectRun, repair_result: RunResult) -> None:
             checks_ran=ctx.result.checks_ran or repair_result.checks_ran,
             facts=repair_result.facts or ctx.task_session,
         )
+        from codey.operations.project_review_phase import validate_candidate
+        validate_candidate(ctx, allow_review_repair=False)
         _record_completion_evidence(ctx)
     else:
         ctx.result = replace(repair_result, turns=turns)
+
+
+def _behavioral_failure_fact(ctx: ProjectRun) -> CheckEvidence | None:
+    observation, plan = ctx.behavioral_observation, ctx.behavioral_plan
+    if observation is None or plan is None or observation.status != 'fail':
+        return None
+    return CheckEvidence('behavioral_verification', exit_code=1,
+        result_summary=f'Requirement: {plan.requirement_quote}. Inserting deleted punctuation must preserve the result. '
+                       + observation.summary,
+        managed_output_handle=observation.output_ref,
+        workspace_fingerprint=observation.workspace_fingerprint)
 
 
 def _settle_blocked_completion(ctx: ProjectRun) -> None:

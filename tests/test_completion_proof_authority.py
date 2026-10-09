@@ -148,6 +148,7 @@ def test_final_project_gate_cannot_drop_required_web_evidence(monkeypatch):
         task_changed=False, files=(), task_changes={}, selected_check=None,
         work=SimpleNamespace(evidence=object(), analysis_run_payloads=()), project=".",
         checkpoint_green=False, verification_forbidden=False,
+        behavioral_plan=None, behavioral_observation=None,
         completion_engine=SimpleNamespace(evaluate=lambda **kw: evaluation),
     )
     monkeypatch.setattr(enforcement, "_commit_operation_proof", lambda *_: None)

@@ -2,6 +2,32 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Behavioral verification and fresh candidate review (2026-10-10)
+
+- Admit a bounded, explicit ASCII punctuation deletion requirement from the
+  original task; freeze its callable and input pairs. Execute the current Python
+  function through a fixed worker and archive actual values using managed output.
+  One required completion check represents all pairs; missing or stale evidence
+  cannot pass, and review approval cannot override a failed observation.
+- Share candidate validation before initial completion and after bounded repairs:
+  current behavioral observation, current review, then the existing completion gate.
+  Retain the original task's real verification requirements and permission checks.
+- Prevent unchanged-workspace repeats of explicitly once-only commands; require
+  a requested saved-output read before writing and completion. Explain a proven
+  readonly fix obstruction when the existing stagnation stop fires. Retry only
+  transient Windows sharing violations without overwriting a changed target.
+- Add 89 cases in 10 behavior-named files and an additional native local task
+  comparison driver. Fix stale fixtures and assertions exposed by the full suite;
+  rename experiment-private environment variables without compatibility aliases.
+- Final pytest: **8295 passed, 7 skipped, 1503 subtests**; machine contracts:
+  **912 passed, 14 subtests**. Ruff, mypy Windows/Linux, Pyrefly, compileall and
+  diff checks pass. Documentation is updated after the complete final run.
+- Frozen original scenarios: **Codey 20/20, Pi 9/20**. Supplemental paired tasks:
+  **Codey 2/2, Pi 0/2**; a subsequent Codey request timed out and backend isolation
+  failed, so the supplemental round is incomplete. Preserve all earlier failures
+  and measured limits in [the report](docs/codey-behavioral-verification-and-pi-comparison-2026-10-10.zh-CN.md).
+  Version remains 0.5.11; no release.
+
 ## Unreleased - Agent execution continuity fixes (2026-10-09)
 
 - Enforce explicit read-only requests; preserve searchable managed output before

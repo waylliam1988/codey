@@ -28,7 +28,8 @@ def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tm
         reply = {"verdict": "changes_requested", "summary": "Add requested documentation.",
                  "findings": [{"path": "math_utils.py", "issue": "The requested docstring is missing.",
                                "suggested_fix": "Add a docstring to add."}]}
-    reviewer = ScriptedLocal("reviewer", [reply], timeline)
+    approval = {"verdict": "approved", "summary": "Correct documented addition.", "findings": []}
+    reviewer = ScriptedLocal("reviewer", [reply, approval] if finding else [reply], timeline)
     def connect_reviewer(provider_id):
         assert provider_id == "local"
         return reviewer
@@ -48,12 +49,16 @@ def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tm
     )
     assert result.stop_reason == "done", rows
     assert result.exit_code == 0
-    assert reviewer.chats == 1, rows
+    assert reviewer.chats == (2 if finding else 1), rows
     assert writer.chats == 1
-    assert len(reviewer.prompts) == 1
-    assert reviewer.closed == 1
+    assert len(reviewer.prompts) == (2 if finding else 1)
+    assert reviewer.closed == (2 if finding else 1)
     assert "return a + b" in reviewer.prompts[0]
     assert timeline.index(("reviewer", "new_chat")) > max(index for index, item in enumerate(timeline) if item == ("writer", "send"))
+    if finding:
+        assert '"""Return the sum."""' in reviewer.prompts[-1]
+        final_review = max(index for index, item in enumerate(timeline) if item == ("reviewer", "new_chat"))
+        assert final_review > max(index for index, item in enumerate(timeline) if item == ("repair", "send"))
     assert (project / "math_utils.py").read_text() == (repaired if finding else written)
     assert len(repair.prompts) == (4 if finding else 0)
     terminal = [row for row in rows if row["type"] == "task_done"]
@@ -65,6 +70,7 @@ def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tm
     assert recorded is not None
     assert recorded[1].identity.self_review is True
     assert recorded[1].identity.model_id
+    assert recorded[1].verdict == 'approved'
     tools = [row for row in rows if row["type"] == "tool" and row.get("ok") is True]
     assert sum(row["tool_name"] == "edit" for row in tools) == (2 if finding else 1)
     assert sum(row["tool_name"] == "run" for row in tools) == (2 if finding else 1)

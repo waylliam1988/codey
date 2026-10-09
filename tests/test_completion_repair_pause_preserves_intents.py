@@ -21,6 +21,7 @@ def test_paused_repair_does_not_claim_driver_settlement(tmp_path, reason):
         decision=SimpleNamespace(failure_class="tests_failed", analysis_run_refs=()),
         selected_check=None, work=SimpleNamespace(evidence=object()), files=("pricing.py",), project=tmp_path,
         blocked_reason="", hooks=SimpleNamespace(on_event=lambda e: None),
+        behavioral_plan=None, behavioral_observation=None,
         frame=SimpleNamespace(provider_id="local"), failover=SimpleNamespace(run=lambda **kw: repair_result),
     )
     transitions = []

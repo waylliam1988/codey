@@ -61,7 +61,7 @@ class ProjectCompletionSplitLockTests(unittest.TestCase):
         ):
             self.assertNotIn(name, defined, f"main must not define {name}")
         # Orchestrator calls the public phase entries.
-        for token in ("run_writer_phase(", "run_review_phase(", "enforce_completion("):
+        for token in ("run_writer_phase(", "validate_candidate(", "enforce_completion("):
             self.assertIn(token, main, f"main must call {token.rstrip('(')}")
 
     def test_orchestration_and_helpers_are_importable_from_their_owners(self) -> None:

@@ -34,9 +34,9 @@ def test_watchdog_cleanup_cannot_be_reported_as_agent_child_cleanup(tmp_path):
     child = "import time; time.sleep(30)"
     script = ("import subprocess,sys,os,json; from pathlib import Path; "
               f"p=subprocess.Popen([sys.executable,'-c',{child!r}],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); "
-              "(Path(os.environ['CODEY_AB_TRACE'])/'executions.jsonl').write_text(json.dumps({'pid':p.pid})+'\\n'); "
+              "(Path(os.environ['AGENT_AB_TRACE'])/'executions.jsonl').write_text(json.dumps({'pid':p.pid})+'\\n'); "
               "print('{\"type\":\"task_done\",\"stop_reason\":\"stopped\"}',flush=True)")
-    result = _run_process([sys.executable, "-c", script], project, dict(os.environ, CODEY_AB_TRACE=str(trace)),
+    result = _run_process([sys.executable, "-c", script], project, dict(os.environ, AGENT_AB_TRACE=str(trace)),
                           artifacts, deadline=time.monotonic() + 5)
     assert result["live_fixture_processes"]
     assert result["forced_cleanup"] is True
@@ -48,7 +48,7 @@ def test_single_shot_agent_receives_eof_instead_of_waiting_for_stdin(tmp_path):
     trace.mkdir()
     artifacts.mkdir()
     result = _run_process([sys.executable, "-c", "import sys; sys.stdin.read(); print('finished')"], tmp_path,
-                          dict(os.environ, CODEY_AB_TRACE=str(trace)), artifacts,
+                          dict(os.environ, AGENT_AB_TRACE=str(trace)), artifacts,
                           deadline=time.monotonic() + .5)
     assert result["status"] == "completed"
     assert "finished" in (artifacts / "stdout.log").read_text()

@@ -127,7 +127,7 @@ def _run_process(command, root, env, directory, *, deadline, control="", rpc_tas
     stop_at = None
     live_pids = []
     initial = _snapshot_files(root)
-    trace = Path(env["CODEY_AB_TRACE"])
+    trace = Path(env["AGENT_AB_TRACE"])
 
     def write_rpc(payload):
         with lock:
@@ -313,13 +313,13 @@ def _run_arm(arm, root, run_dir, proxy_url, proxy_records, *, case: ExperimentCa
     trace.mkdir()
     env = {k: v for k, v in os.environ.items() if not k.endswith(("_API_KEY", "_AUTH_TOKEN", "_OAUTH_TOKEN"))}
     env.update({"PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8",
-        "PYTHONPATH": str(ROOT), "NATIVE_TOOLS": "1", "CODEY_AB_TRACE": str(trace),
+        "PYTHONPATH": str(ROOT), "NATIVE_TOOLS": "1", "AGENT_AB_TRACE": str(trace),
         "PI_OFFLINE": "1", "PI_TELEMETRY": "0",
-        "CODEY_AB_TEMPERATURE": str(temperature), "CODEY_AB_SEED": str(seed),
+        "AGENT_AB_TEMPERATURE": str(temperature), "AGENT_AB_SEED": str(seed),
         "LOCAL_OPENAI_BASE_URL": proxy_url + "/v1", "LOCAL_OPENAI_MODEL": model_id, "LOCAL_OPENAI_API_KEY": "local",
         "LOCAL_OPENAI_CONTEXT_WINDOW": str(window), "LOCAL_OPENAI_CONTEXT_RESERVE": str(max_tokens),
-        "LOCAL_OPENAI_CONTEXT_KEEP": str(keep), "CODEY_AB_WAIT": "1" if case.control == "cancel" else "0",
-        "CODEY_AB_LONG_OUTPUT": "1" if case.case_id == "long-output" else "0"})
+        "LOCAL_OPENAI_CONTEXT_KEEP": str(keep), "AGENT_AB_WAIT": "1" if case.control == "cancel" else "0",
+        "AGENT_AB_LONG_OUTPUT": "1" if case.case_id == "long-output" else "0"})
     node = shutil.which("node")
     pi_root = ROOT / "reference-projects/pi"
     if arm == "pi" and (not node or not (pi_root / "node_modules").exists()):
@@ -346,7 +346,7 @@ def _run_arm(arm, root, run_dir, proxy_url, proxy_records, *, case: ExperimentCa
     phases = [phase]
     if case.followup and phase["triggered"] and not phase["forced_cleanup"]:
         (trace / "stop").unlink(missing_ok=True)
-        env["CODEY_AB_WAIT"] = "0"
+        env["AGENT_AB_WAIT"] = "0"
         if case.case_id == "correction-after-stop":
             test = (root / "test_app.py").read_text(encoding="utf-8").replace("hello-world", "hello_world")
             (root / "test_app.py").write_text(test, encoding="utf-8")
@@ -397,7 +397,7 @@ def _pi_build_identity(path):
     return {"dist_sha256": digest.hexdigest(), "matching_source_commit": None}
 
 
-def main():
+def main(*, cases=TASK_CASES):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--upstream", default="http://127.0.0.1:5001")
@@ -413,7 +413,7 @@ def main():
     parser.add_argument("--idle-timeout", type=float, default=300,
                         help="isolation wait outside scored agent time; a busy backend stops the experiment")
     parser.add_argument("--seeds", default="41,42")
-    parser.add_argument("--cases", default=",".join(c.case_id for c in TASK_CASES))
+    parser.add_argument("--cases", default=",".join(c.case_id for c in cases))
     parser.add_argument("--pi-entry", choices=("source", "dist"), default="source",
                         help="explicit runtime selection; never automatically substitutes a build")
     args = parser.parse_args()
@@ -424,7 +424,7 @@ def main():
     if model not in {m["id"] for m in catalog["data"]}:
         parser.error("selected model is not loaded")
     selected = set(args.cases.split(","))
-    if selected - {c.case_id for c in TASK_CASES}:
+    if selected - {c.case_id for c in cases}:
         parser.error("unknown case selection")
     seeds = [int(s) for s in args.seeds.split(",")]
     if len(set(seeds)) != len(seeds) or any(s < 0 for s in seeds):
@@ -441,8 +441,9 @@ def main():
         backend = json.load(response)
     result = {"model": model, "backend": backend, "sampling": {"temperature": args.temperature, "seeds": seeds},
               "execution_environment": environment,
-              "selected_cases": [c.case_id for c in TASK_CASES if c.case_id in selected],
-              "unselected_cases": [c.case_id for c in TASK_CASES if c.case_id not in selected],
+              "selected_cases": [c.case_id for c in cases if c.case_id in selected],
+              "unselected_cases": [c.case_id for c in cases if c.case_id not in selected],
+              "case_contract_sha256": hashlib.sha256(_json_line([vars(c) for c in cases if c.case_id in selected]).encode()).hexdigest(),
               "provider_profile": {"enabled_sources": ["local"], "codey_reviewer": "same local model",
                                    "sampling_stage": "before admission", "proxy": "observe without rewriting"},
               "budgets": {"window": args.window, "output": args.max_tokens, "keep": args.keep,
@@ -464,7 +465,7 @@ def main():
     save()
     try:
         for repeat, seed in enumerate(seeds):
-            for case_index, case in enumerate(c for c in TASK_CASES if c.case_id in selected):
+            for case_index, case in enumerate(c for c in cases if c.case_id in selected):
                 arms = ("pi", "codey") if (repeat + case_index) % 2 == 0 else ("codey", "pi")
                 for arm in arms:
                     _wait_for_backend_idle(upstream, timeout=args.idle_timeout)

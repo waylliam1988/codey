@@ -14,4 +14,5 @@ def test_unanswerable_native_ids_are_not_coerced_or_committed(ids):
         turn = provider.send_turn("task")
     assert turn.tool_calls == ()
     assert turn.raw["malformed_dropped"] > 0
-    assert provider._messages == []
+    # Accepted user input survives decoder failure; no invalid assistant call commits.
+    assert provider._messages == [{"role": "user", "content": "task"}]

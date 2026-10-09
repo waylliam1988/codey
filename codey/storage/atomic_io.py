@@ -14,7 +14,9 @@ import errno
 import json
 import os
 import stat
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +46,7 @@ def write_bytes_atomic(
     directory = target.parent if str(target.parent) else Path(".")
     directory.mkdir(parents=True, exist_ok=True)
     tmp = directory / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    initial_identity = _target_identity(target)
     existing_mode = _existing_mode(target)
     creation_mode = (
         mode if mode is not None else (existing_mode if (preserve_mode and existing_mode is not None) else 0o666)
@@ -63,7 +66,10 @@ def write_bytes_atomic(
                 _apply_mode(handle.fileno(), tmp, existing_mode, required=False)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp, target)
+        _retry_sharing_violation(
+            lambda: os.replace(tmp, target),
+            unchanged=lambda: _target_identity(target) == initial_identity,
+        )
         _fsync_dir(directory)
     finally:
         _cleanup_temp_file(tmp)
@@ -235,14 +241,38 @@ def _read_existing_bytes_no_follow(target: Path) -> bytes:
         return b""
 
 
+def _target_identity(path: Path) -> tuple[int, int, int, int, int] | None:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return None
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_mode
+
+
+def _retry_sharing_violation(action: Callable[[], None], *, unchanged: Callable[[], bool] | None = None) -> None:
+    """Retry only WinError 32, keeping the same temp and original target."""
+    for attempt in range(8):
+        try:
+            action()
+            return
+        except OSError as exc:
+            if getattr(exc, "winerror", None) != 32 or attempt == 7:
+                raise
+            time.sleep(0.01 * (attempt + 1))
+            if unchanged is not None and not unchanged():
+                raise OSError(errno.EBUSY, "target changed during atomic replacement") from exc
+
+
 def _cleanup_temp_file(path: Path) -> None:
     try:
-        path.unlink(missing_ok=True)
-    except PermissionError:
+        _retry_sharing_violation(lambda: path.unlink(missing_ok=True))
+    except PermissionError as exc:
+        if getattr(exc, "winerror", None) == 32:
+            return
         try:
             mode = stat.S_IMODE(path.stat().st_mode)
             os.chmod(path, mode | stat.S_IWRITE | stat.S_IWUSR)
-            path.unlink(missing_ok=True)
+            _retry_sharing_violation(lambda: path.unlink(missing_ok=True))
         except OSError:
             pass
     except OSError:

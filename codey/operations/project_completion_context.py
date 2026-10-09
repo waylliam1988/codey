@@ -16,6 +16,7 @@ from typing import Any, cast
 
 from codey.agents.tools import AgentToolFns
 from codey.agents.writer_failover import WriterFailoverRunner
+from codey.completion.behavioral_checks import BehavioralObservation, BehavioralPlan
 from codey.completion.contract import completion_proof_trace_payload
 from codey.completion.edit_integrity import EditIntegrityObservation
 from codey.completion.engine import CompletionEngine, blocked_note
@@ -383,6 +384,8 @@ class ProjectRun:
     research_tools: Any = None
     blocked_reason: str = ""
     repaired_once: bool = False
+    behavioral_plan: BehavioralPlan | None = None
+    behavioral_observation: BehavioralObservation | None = None
     writer_attempt_index: int = 0
     receipt: Any = None
 

@@ -6206,11 +6206,11 @@ class SessionThreadingTests(unittest.TestCase):
         reviewer = mock.Mock()
         reviewer.name = "DeepSeek Web"
         reviewer.location = "https://chat.deepseek.com/"
-        reviewer.send.return_value = (
+        reviewer.send.side_effect = [(
             '{"verdict":"changes_requested","summary":"Fix one issue",'
             '"findings":[{"path":"app.py","issue":"Missing empty case",'
             '"suggested_fix":"Add a guard"}]}'
-        )
+        ), '{"verdict":"approved","summary":"Guard verified","findings":[]}']
         changes = {
             "ok": True,
             "changed_count": 1,
@@ -6241,9 +6241,9 @@ class SessionThreadingTests(unittest.TestCase):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
 
-        connect_self_review.assert_called_once_with("deepseek")
-        reviewer.new_chat.assert_called_once_with()
-        reviewer.close.assert_called_once_with()
+        self.assertEqual(connect_self_review.call_args_list, [mock.call("deepseek"), mock.call("deepseek")])
+        self.assertEqual(reviewer.new_chat.call_count, 2)
+        self.assertEqual(reviewer.close.call_count, 2)
         self.assertEqual(agent_run.call_count, 2)
         followup_request = agent_run.call_args_list[1].args[0]
         followup = followup_request.task
@@ -6258,6 +6258,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(review_event["text"], "DeepSeek self-review suggested changes")
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["summary"], "self-review fixed")
+        self.assertEqual(reviewer.send.call_count, 2)
+        self.assertIn("self-review fixed", reviewer.send.call_args_list[-1].args[0])
 
     def test_review_repair_uses_writer_failover(self) -> None:
         state = server.AppContext()
@@ -6265,11 +6267,11 @@ class SessionThreadingTests(unittest.TestCase):
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         reviewer = mock.Mock()
-        reviewer.send.return_value = (
+        reviewer.send.side_effect = [(
             '{"verdict":"changes_requested","summary":"Fix it",'
             '"findings":[{"path":"app.py","issue":"Bug",'
             '"suggested_fix":"Repair it"}]}'
-        )
+        ), '{"verdict":"approved","summary":"Repair verified","findings":[]}']
         provider_failure = ProviderActionError(
             ProviderFailure(
                 "DeepSeek",
@@ -6313,7 +6315,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 task_submit,
                 "collect_changes",
-                side_effect=[changes, repaired_changes],
+                side_effect=[changes, repaired_changes, repaired_changes],
             ) as collect_changes,
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
@@ -6321,7 +6323,8 @@ class SessionThreadingTests(unittest.TestCase):
             _run_task_with_ghost_wait("session-review-failover", td, "task", 12, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 3)
-        self.assertEqual(collect_changes.call_count, 2)
+        self.assertEqual(collect_changes.call_count, 3)
+        self.assertEqual(reviewer.send.call_count, 2)
         self.assertEqual(get_provider.call_count, 3)
         first_repair = agent_run.call_args_list[1].args[0]
         sibling_repair = agent_run.call_args_list[2].args[0]
@@ -6332,6 +6335,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
         self.assertEqual(state.run_registry.last_terminal_event()["summary"], "fixed by sibling")
         self.assertEqual(state.run_registry.last_terminal_event()["changes"]["changed_count"], 2)
+        self.assertIn("tests/test_app.py", reviewer.send.call_args_list[-1].args[0])
+        self.assertIn("fixed by sibling", reviewer.send.call_args_list[-1].args[0])
         self.assertEqual(
             state.run_registry.last_terminal_event()["changes"]["files"],
             repaired_changes["files"],

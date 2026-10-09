@@ -27,7 +27,7 @@ class ControlledContext(headless_runner.HeadlessAppContext):
         self._observer_thread.start()
 
     def _observe_stop(self):
-        control = Path(os.environ["CODEY_AB_TRACE"]) / "stop"
+        control = Path(os.environ["AGENT_AB_TRACE"]) / "stop"
         while not self._observer_closed.wait(.02):
             if control.exists():
                 self.request_stop()  # Same production stop action used by the UI.
@@ -44,12 +44,12 @@ def sampling_provider(provider_id, **kwargs):
         raise RuntimeError("This experiment permits only Local providers")
     provider = connect_provider(provider_id, **kwargs)
     configure = provider.configure_request
-    provider.temperature = float(os.environ["CODEY_AB_TEMPERATURE"])
+    provider.temperature = float(os.environ["AGENT_AB_TEMPERATURE"])
 
     def before_count(payload):
         configure(payload)
-        payload["seed"] = int(os.environ["CODEY_AB_SEED"])
-        payload["temperature"] = float(os.environ["CODEY_AB_TEMPERATURE"])
+        payload["seed"] = int(os.environ["AGENT_AB_SEED"])
+        payload["temperature"] = float(os.environ["AGENT_AB_TEMPERATURE"])
 
     provider.configure_request = before_count
     return provider

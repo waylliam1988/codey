@@ -12,6 +12,7 @@ _VALID_FP = "sha256:" + "a" * 64
 def _session(policy: TaskPolicy, **kw) -> SimpleNamespace:
     base = dict(
         task_kind="project",
+        task_text="",
         policy=policy,
         edited_files={},
         verifications=[],

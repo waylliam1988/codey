@@ -329,6 +329,12 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     }
     if coding_proof is not None:
         evidence_refs = (*coding_proof.evidence_refs, *evidence_refs)
+    from codey.completion.behavioral_checks import BehavioralObservation, BehavioralPlan
+    plan, observation = get('behavioral_plan'), get('behavioral_observation')
+    if isinstance(plan, BehavioralPlan):
+        refs['external_refs'] = (*refs['external_refs'], 'behavioral_plan:' + plan.digest)
+        if isinstance(observation, BehavioralObservation) and observation.output_ref:
+            refs['external_refs'] = (*refs['external_refs'], observation.output_ref)
     try:
         contract = build_completion_contract(domain=domain, subject_ref=subject, checks=deduped, evidence_refs=evidence_refs, **refs)
     except Exception as exc:

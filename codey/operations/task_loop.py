@@ -725,6 +725,11 @@ def _stop_no_progress(progress: Any, results: Any, session: Any, provider: Any, 
             return _provider_failure(exc, turns_used, propagate=propagate)
     if cancelled:
         return KernelResult(False, "stopped", turns_used, "stopped")
+    from codey.operations.explicit_execution_requirements import readonly_fix_obstruction
+
+    obstruction = readonly_fix_obstruction(session)
+    if obstruction is not None:
+        return KernelResult(False, obstruction, turns_used, "blocked")
     return KernelResult(False, "stopped after repeated tool results without progress", turns_used, "no_progress")
 
 

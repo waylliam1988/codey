@@ -9,7 +9,7 @@ from tests.manual import agent_stability_codey_worker as worker
 
 
 def test_experiment_context_enables_only_the_actual_local_model(tmp_path, monkeypatch):
-    monkeypatch.setenv("CODEY_AB_TRACE", str(tmp_path / "trace"))
+    monkeypatch.setenv("AGENT_AB_TRACE", str(tmp_path / "trace"))
     monkeypatch.setenv("LOCAL_OPENAI_MODEL", "actual-model")
     ctx = worker.ControlledContext(tmp_path / "state", port=9222, emit_jsonl=lambda row: None)
     try:
@@ -34,7 +34,7 @@ def test_writer_and_reviewer_use_the_same_pre_admission_sampling_factory(tmp_pat
 
 def test_sampling_factory_refuses_nonlocal_providers_before_connecting(monkeypatch):
     attempted = []
-    monkeypatch.setenv("CODEY_AB_TEMPERATURE", "0")
+    monkeypatch.setenv("AGENT_AB_TEMPERATURE", "0")
     monkeypatch.setattr(worker, "connect_provider", lambda *a, **k: (
         attempted.append(a) or SimpleNamespace(configure_request=lambda payload: None)))
     with pytest.raises(RuntimeError, match="only Local"):

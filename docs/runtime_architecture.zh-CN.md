@@ -59,6 +59,29 @@ runtime/observe/  events / evidence / prompt_* / terminalizer
 - CLI `task_done.summary` 是最终交付，独立上限为 64,000 字符；超限明确携带
   `summary_truncated: true`。进度预览保持 1,000 字符，工具结果预览保持 200 字符。
 
+## 有限行为验证与候选身份（2026-10-10）
+
+- `completion/behavioral_checks.py` 只拥有纯准入与状态投影。原始任务、明确函数绑定、
+  输入对组成冻结定义；已识别的条件、例外、歧义和未匹配形式不交给模型确认后放行。
+  当前支持有限英文 ASCII 标点删除性质，尚不具备通用自然语言需求理解能力。
+- `operations/behavioral_verification.py` 静态发现根目录单参数同步 Python 函数，
+  在授权后复制有界 Python 源码，由固定 worker 实际调用并记录 JSON 返回值或异常。
+  临时副本保护原工作树，不是主机沙箱；导入项目代码仍是受授权的真实执行。
+  取消、超时和进程归属复用现有 runtime，执行前后核对工作区 fingerprint。
+- 定义与观察进入既有 run ledger，详细结果进入 `ManagedOutputStore`。
+  `read_tool_result` 可按当前 session/run 与 digest 读取这些行为结果，不制造工具执行回执。
+  完成门只新增一条聚合检查，任务身份、定义、工作区或结果引用不匹配均不能通过。
+- `project_review_phase.validate_candidate()` 是首次完成及有界修复共用的验证入口。
+  当前行为观察先于 review；review 修复后重新观察并重新 review，再交既有完成门。
+  原任务指定验证仍按实际代码身份独立判定，review 批准不能抵消必需行为失败。
+  原有 advisory review 与不可用审查语义保持原契约，不另建审核链。
+- `explicit_execution_requirements.py` 从有限原始要求投影执行约束：相同工作区的显式 once
+  命令重复引用既有结果；要求读取保存结果时，写入与完成前必须有真实读取。
+  停滞已触发后，明确要求修复、禁止写入且当前验证真实失败时可表达 blocked；
+  取消、未知或过期观察不能被这个投影改写。状态继续归属现有 TaskSession。
+- 原子写入只重试真实 WinError 32，沿用同一临时文件；期间目标身份改变则停止覆盖。
+  无第二套状态机、存储或厂商依赖。上述定义与历史结果均为普通 Codey 数据。
+
 ## 三个硬锁（测试里）
 
 1. `SessionView` 只有 `state / effects / batches` 三个字段，不准长出

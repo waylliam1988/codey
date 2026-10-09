@@ -526,4 +526,15 @@ def _guarded_slot_result(
         except Exception:
             # Fail closed: controller evaluation failure never means unlimited.
             return _error_result(call, "controller state unavailable; cannot authorize tool")
+    if name == "run":
+        from codey.operations.explicit_execution_requirements import completed_once_command
+
+        return completed_once_command(session, call, project=project_path, ignored_paths=ignored_paths or ())
+    from codey.toolchain.tool_spec import spec_for_tool
+
+    spec = frozen_specs.get(name) if frozen_specs is not None else spec_for_tool(name)
+    if spec is not None and spec.grant == 'project.write':
+        from codey.operations.explicit_execution_requirements import required_read_before_write
+
+        return required_read_before_write(session, call)
     return None

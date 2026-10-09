@@ -32,7 +32,8 @@ def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, 
         if finding:
             response = {"verdict": "changes_requested", "summary": "Requested docstring missing", "findings": [
                 {"path": "math_utils.py", "issue": "Requested docstring missing", "suggested_fix": "Add a docstring to add"}]}
-        reviewer = ScriptedLocal("reviewer", [response], [])
+        approval = {"verdict": "approved", "summary": "Correct documented addition", "findings": []}
+        reviewer = ScriptedLocal("reviewer", [response, approval] if finding else [response], [])
         writers = iter((writer, repair))
         monkeypatch.setattr("codey.app.review_service.providers.connect_fresh_provider_tab", lambda *_, reviewer=reviewer: reviewer)
         task = "Fix add to return the sum and document it."
@@ -52,12 +53,15 @@ def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, 
                                   "--state-home", str(root / "state"), "--max-turns", "8", "--json", task])
             assert exit_code == 0
             rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-        assert reviewer.chats == 1, (entry, rows)
-        assert len(reviewer.prompts) == 1
+        assert reviewer.chats == (2 if finding else 1), (entry, rows)
+        assert len(reviewer.prompts) == (2 if finding else 1)
+        if finding:
+            assert '"""Return the sum."""' in reviewer.prompts[-1]
         assert len(repair.prompts) == (4 if finding else 0)
         assert (project / "math_utils.py").read_text() == (repaired if finding else written)
         terminal = [row for row in rows if row["type"] == "task_done"]
         assert len(terminal) == 1 and terminal[0]["stop_reason"] == "done"
         assert terminal[0]["review"]["status"] == "complete"
+        assert terminal[0]["review"]["verdict"] == "approved"
         results.append([(row.get("tool_name", row.get("tool")), row.get("ok")) for row in rows if row["type"] == "tool"])
     assert results[0] == results[1]

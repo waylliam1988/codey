@@ -23,16 +23,16 @@ CORRECT_APP = (
     "    return '-'.join(cleaned.split())\n"
 )
 
-# The suite observes real executions; the outside oracle sets CODEY_AB_ORACLE and
+# The suite observes real executions; the outside oracle sets AGENT_AB_ORACLE and
 # therefore never contributes agent evidence. The journal is outside allowed files.
 OBSERVER = '''
 import hashlib, json, os, time
 from pathlib import Path
 
 def _record(kind, **values):
-    if os.environ.get('CODEY_AB_ORACLE') == '1' or not os.environ.get('CODEY_AB_TRACE'):
+    if os.environ.get('AGENT_AB_ORACLE') == '1' or not os.environ.get('AGENT_AB_TRACE'):
         return
-    trace = Path(os.environ['CODEY_AB_TRACE'])
+    trace = Path(os.environ['AGENT_AB_TRACE'])
     trace.mkdir(parents=True, exist_ok=True)
     files = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
              for p in Path('.').glob('*.py')}
@@ -42,11 +42,11 @@ def _record(kind, **values):
 class ObservedSuite(unittest.TestSuite):
     def run(self, result, debug=False):
         _record('verification_started')
-        if os.environ.get('CODEY_AB_ORACLE') != '1':
-            if os.environ.get('CODEY_AB_LONG_OUTPUT') == '1':
+        if os.environ.get('AGENT_AB_ORACLE') != '1':
+            if os.environ.get('AGENT_AB_LONG_OUTPUT') == '1':
                 for i in range(12000):
                     print('diagnostic %d: %s' % (i, 'REQUIRED_VALUE=river' if i == 6000 else 'ordinary log line'), flush=True)
-            if os.environ.get('CODEY_AB_WAIT') == '1':
+            if os.environ.get('AGENT_AB_WAIT') == '1':
                 for i in range(300):
                     _record('heartbeat', sequence=i)
                     time.sleep(.1)
@@ -159,7 +159,7 @@ def execution_rows(trace: Path | None) -> list[dict]:
 def run_verification(root: Path, case: ExperimentCase | None = None,
                      baseline_hashes: dict[str, str] | None = None, *, trace: Path | None = None) -> dict:
     started = time.perf_counter()
-    env = dict(os.environ, CODEY_AB_ORACLE="1", PYTHONDONTWRITEBYTECODE="1")
+    env = dict(os.environ, AGENT_AB_ORACLE="1", PYTHONDONTWRITEBYTECODE="1")
     proc = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-v"], cwd=root,
                           capture_output=True, text=True, timeout=120, check=False, env=env)
     inputs = [("  Hello   World  ", "hello-world"), (" Hello, World! ", "hello-world"),
@@ -183,8 +183,8 @@ def run_verification(root: Path, case: ExperimentCase | None = None,
                      if baseline_hashes is not None and baseline_hashes.get(p) != hashes.get(p))
     allowed = set(case.allowed_paths) if case else {"app.py"}
     scope_ok = set(changed) <= allowed
-    if trace is None and os.environ.get("CODEY_AB_TRACE"):
-        trace = Path(os.environ["CODEY_AB_TRACE"])
+    if trace is None and os.environ.get("AGENT_AB_TRACE"):
+        trace = Path(os.environ["AGENT_AB_TRACE"])
     executions = execution_rows(trace)
     verifications = [r for r in executions if r.get("kind") == "verification_finished"]
     current_sources = {p: h for p, h in hashes.items() if p.endswith(".py") and "/" not in p}

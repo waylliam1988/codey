@@ -375,6 +375,24 @@ def project_completion_checks(session: Any, context: Any = None) -> list[Complet
     without an evidence context. There is no second session-only verdict.
     """
     _refresh_completion_workspace(session, context)
-    return _engine_checks(session, context)
+    rows = _engine_checks(session, context)
+    from codey.operations.explicit_execution_requirements import requested_output_read_check
+
+    requested_read = requested_output_read_check(session, str(_context_get(context, 'task') or session.task_text))
+    if requested_read is not None:
+        rows.append(requested_read)
+    from codey.completion.behavioral_checks import BehavioralObservation, BehavioralPlan, behavioral_completion_check
+    from codey.workspace.revision import workspace_fingerprint
+
+    plan = _context_get(context, 'behavioral_plan')
+    if isinstance(plan, BehavioralPlan):
+        observation = _context_get(context, 'behavioral_observation')
+        root = _context_get(context, 'project') or getattr(session, 'project', '')
+        fingerprint = workspace_fingerprint(root) if root else ''
+        row = behavioral_completion_check(plan, observation if isinstance(observation, BehavioralObservation) else None,
+            str(_context_get(context, 'task') or session.task_text), fingerprint)
+        if row is not None:
+            rows.append(row)
+    return rows
 
 __all__ = ["project_completion_checks"]

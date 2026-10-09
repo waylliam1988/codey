@@ -273,6 +273,12 @@ Manual Retry belongs to the fixed identity of a user message. Each explicit retr
 
 **Run Details** (inline receipt expansion):
 
+`checks passed` reflects current required observations. Review approval does not
+replace a failed, missing or stale required check. A repair receives current
+verification and review before completion. Behavioral checks use the existing
+task result and evidence paths; they add no permanent counter, confidence meter
+or separate UI entry. A permission-blocked fix must not imply that a fix succeeded.
+
 ```
 DONE · 2 files changed · checks passed        Details   View diff
 

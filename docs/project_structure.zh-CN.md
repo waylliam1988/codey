@@ -71,6 +71,10 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/operations/kernel_execution.py`、`task_execution.py` | 执行边界及领域适配器 |
 | `codey/operations/completion_gate.py` | 最终完成证明组合；模型的 done 只是候选 |
 | `codey/operations/project_completion_checks.py`、`research_completion_checks.py` | 项目、来源与严格 Research 检查提供者 |
+| `codey/completion/behavioral_checks.py` | 有限原文准入、冻结行为定义与聚合完成检查；无模型调用或 I/O |
+| `codey/operations/behavioral_verification.py`、`behavioral_probe_worker.py` | 授权后的有界 Python 函数观察、代码身份与受管结果；固定执行器不接收脚本或表达式 |
+| `codey/operations/project_review_phase.py::validate_candidate` | 首次完成及修复后的共同候选验证入口，重新观察并重新审查当前补丁 |
+| `codey/operations/explicit_execution_requirements.py` | 从原始要求与既有回执投影 once、先读后写及明确只读修复阻塞；无独立状态 |
 | `codey/operations/kernel_session_recovery.py`、`kernel_receipts.py` | 恢复原策略/事实/结算结果，并验证收据身份 |
 | `codey/providers/local_response_codec.py` | 本地响应信封与模型方言，在进入内核前归一 |
 | `codey/providers/base.py` | 协议中立工具声明/结果与明确的回复结束状态 |
@@ -97,6 +101,7 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/app/context.py`、`event_bus.py`、`event_payloads.py` | 公共出口补全运行身份和模式、严格状态；总线负责重放，纯投影模块生成有界机器事件与收据 |
 | `codey/app/headless_runner.py`、`cli.py`、`web/assets/sse.js` | 消费公共事件，负责 JSONL、CLI 文字与网页协调，不另行推断成功 |
 | `tools/machine_contract_gate.py` | CI/本地必跑契约，缺失、失败或 skip 都不通过 |
+| `tests/manual/behavioral_verification_local_holdout_ab.py` | 不同函数/文件及正确实现对照；复用原生 Codey/Pi 比较循环与独立评分 |
 | `tools/local_model_gate_recovery.py` | 发布门专用进程中断注入与独立校验；使用正式入口，不拥有另一个模型循环 |
 | `codey/operations/research_iteration.py` | 函数 `run_research_iteration`，pipeline 对共同内核的适配入口 |
 
