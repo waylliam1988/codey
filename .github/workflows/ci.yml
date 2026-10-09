@@ -43,6 +43,10 @@ jobs:
       - name: Full-tree mypy
         run: python -m mypy codey
 
+      - name: Pyrefly (new diagnostics)
+        if: matrix.python-version == '3.12'
+        run: pyrefly check codey --baseline=tools/pyrefly-baseline-2026-10-09.json
+
       - name: Required machine contracts (no skips)
         run: python -m tools.machine_contract_gate
 
