@@ -82,6 +82,13 @@ operation state 保持严格 schema 1，冷启动不做迁移；review 重启保
 
 最终全量为 **8392 passed、7 skipped、1504 subtests**；机器契约为 **1008 passed、14 subtests**。
 
+## 提交后定向回放
+
+预算和 schema 修正后的第九轮 stale-search 新版本在 42.412 秒通过。第九、十轮反例回放都取得了
+正确源码、真实测试通过和新行为观察，但 Local Reviewer 返回 `changes_requested`，意见承认实现正确
+却提出假设性风险；完成门按契约阻塞。两轮均无误完成。这说明 review 输出随机性仍然存在，不能用
+放宽 review 或外部 oracle 补齐完成证明。
+
 ## 检查与复现
 
 相关旧回归 **29 通过（8.28 秒）**：行为完成修复、失效观察、只读停滞、修复上下文与审批暂停。

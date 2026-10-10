@@ -2708,5 +2708,28 @@
       "git diff --check",
       "untracked whitespace"
     ]
-  }
+  },
+  "post_commit_targeted_replays": [
+    {
+      "round": "09",
+      "scenario": "stale-search-replay",
+      "production_status": "passed",
+      "seconds": 42.412,
+      "false_completion": false
+    },
+    {
+      "round": "09",
+      "scenario": "counterexample-repair-replay",
+      "production_status": "blocked",
+      "reason": "fresh Local review returned speculative changes_requested after correct code and fresh behavior pass",
+      "false_completion": false
+    },
+    {
+      "round": "10",
+      "scenario": "counterexample-repair-replay",
+      "production_status": "blocked",
+      "reason": "repeat fresh Local review changes_requested; no evidence gap or false completion",
+      "false_completion": false
+    }
+  ]
 }

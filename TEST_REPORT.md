@@ -25,6 +25,19 @@ and all boundary failures remain preserved as historical evidence.
 Evidence and logs: `artifacts/candidate-recovery-production-ab-20261010-08/`
 and `artifacts/candidate-recovery-final-checks-20261010-04/`.
 
+## Post-commit targeted replay of the budget fix (2026-10-10)
+
+After the strict schema 1 and review-reentry budget corrections, the targeted
+production replay used the same 30-turn / 24-generation limits. Round 09 stale
+replay passed for the new version in **42.412 seconds**; its counterexample arm
+was blocked after a fresh Local review returned `changes_requested`. Round 10
+repeated that counterexample pair: the repaired code, visible tests and fresh
+behavior observation passed, while the reviewer again returned a speculative
+`changes_requested`, so the runtime blocked completion. Both targeted failures
+had zero false completions. This is retained evidence of reviewer/model
+randomness and the strict current-review gate; it does not replace round 08's
+complete 4/4 production A/B, and no review rejection was converted to approval.
+
 ## Native installed OpenCode observation and comparison (2026-10-10)
 
 Starting commit `ded65fac65b45e493168168e996e701669f5a9fc`; Windows / Python 3.12.8.

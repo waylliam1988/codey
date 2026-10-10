@@ -23,6 +23,11 @@
   **1008 passed, 14 subtests**; Ruff, Windows/Linux mypy, Pyrefly, compileall,
   diff and untracked-file whitespace checks passed. No release or tag.
 
+Post-commit targeted replay kept the stale-search path green (42.412s). Two
+independent counterexample replays reached correct code and fresh behavior
+passes but were blocked by speculative fresh-review `changes_requested` results;
+false completions stayed at zero. The strict review gate remains in force.
+
 ## Unreleased - Native installed OpenCode comparison (2026-10-10)
 
 - Add `codey_vs_opencode_agent_stability_ab.py` and an observer of the installed

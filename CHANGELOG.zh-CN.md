@@ -15,6 +15,9 @@
 - 最终检查：**8392 passed、7 skipped、1504 subtests**；机器契约 **1008 passed、14 subtests**；
   Ruff、Windows/Linux mypy、Pyrefly、compileall、diff 及未跟踪文件空白检查通过。不发布、不创建 tag。
 
+提交后的定向回放中，stale-search 路径仍通过（42.412 秒）。两次独立反例回放都得到正确代码和新鲜行为通过，
+但 Local Reviewer 返回带假设性意见的 `changes_requested`，所以严格完成门阻塞；误完成仍为零。未把 review 拒绝改成批准。
+
 ## 未发布 - 安装版 OpenCode 原生实机比较（2026-10-10）
 
 - 新增 `codey_vs_opencode_agent_stability_ab.py` 和安装版 sidecar 观察器，
