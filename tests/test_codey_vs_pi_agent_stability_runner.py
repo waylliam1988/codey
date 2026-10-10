@@ -194,6 +194,14 @@ def test_agent_process_receives_the_fixture_as_its_working_directory(arm, tmp_pa
     case = next(c for c in ab.TASK_CASES if c.case_id == "normalize-name")
     root = tmp_path / "fixture"
     ab._fixture(root, case)
+    if arm == "pi":
+        # _run_arm performs the real Pi environment admission before spawning
+        # the process. The command is mocked below, so provide only the
+        # dependency marker needed to reach that shared process boundary.
+        fake_root = tmp_path / "codey-root"
+        (fake_root / "reference-projects" / "pi" / "node_modules").mkdir(parents=True)
+        monkeypatch.setattr(ab, "ROOT", fake_root)
+        monkeypatch.setattr(ab.shutil, "which", lambda name: "node.exe" if name == "node" else None)
     working_directories = []
     def process(command, cwd, *a, **k):
         working_directories.append(cwd)
