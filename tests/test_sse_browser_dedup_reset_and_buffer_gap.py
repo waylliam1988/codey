@@ -1,4 +1,5 @@
 """Execute the actual browser SSE runtime with deterministic transport events."""
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -9,6 +10,9 @@ SOURCE = Path(__file__).resolve().parents[1] / "codey/web/assets/sse.js"
 
 @pytest.mark.parametrize("scenario", ["dedup_reset", "buffer_gap"])
 def test_browser_cursor_and_reconcile_gap(scenario):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js unavailable")
     script = r'''
 const vm = require('node:vm');
 const fs = require('node:fs');
@@ -44,5 +48,5 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   }
 })().catch(e=>{console.error(e);process.exitCode=1;});
 '''
-    result = subprocess.run(["node", "-e", script, str(SOURCE), scenario], capture_output=True, text=True, timeout=10)
+    result = subprocess.run([node, "-e", script, str(SOURCE), scenario], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr

@@ -1,5 +1,54 @@
 # Codey Test Report
 
+## Iterative code, test, and architecture hygiene review (2026-10-10)
+
+This review completed **9 independent rounds (A–I)** before the final suite:
+
+- **A production behavior:** state transitions, fail-closed exceptions,
+  provider/API/SSE transport, retries, cancellation, resource lifecycle,
+  headless/CLI cold start. 3 candidates; 0 production bugs.
+- **B test quality:** AST scan for vacuous assertions, exit-code-only tests,
+  mock/fixture semantic drift, failure branches, and skip/xfail reasons. 1
+  excluded candidate; 0 bugs. Quality subset: 1,196 passed, 455 subtests.
+- **C architecture/compatibility:** import/call ownership, duplicate loops,
+  dead exports, legacy paths, and cold-start boundaries. 1 excluded candidate;
+  0 bugs. Subset: 1,139 passed, 454 subtests.
+- **D user experience/performance:** UI/SSE reconnect and deduplication,
+  provider retries/connections, browser worker lifecycle, waits, and external
+  resource isolation. Found and fixed D-001, a missing Node.js precondition in
+  two browser subprocess tests.
+- **E repair reverse review:** callers, HTML boot ordering, auth/SSE fallback,
+  fixtures, and shared desktop/headless entry. 0 new candidates.
+- **F state/call-flow scan:** `RunRegistry` → `AppContext` → task submission →
+  the single `run_task_kernel` → SSE/terminal settlement. 0 new candidates;
+  287 passed, 24 subtests.
+- **G fixture/fallback/cold-start scan:** found and fixed D-002, the same
+  missing Node.js precondition in five OpenCode/Pi reference replay tests.
+  Post-fix: 2 passed, 5 explicit skips; architecture rescan 140 passed, 393
+  subtests.
+- **H recovery/concurrency/idempotence:** pending/unknown effects, cancellation,
+  duplicate settlement, process cleanup, worker generations, and reconnects. 0
+  new candidates; 49 passed, 1 platform skip.
+- **I final hygiene scan:** collection, AST quality, Node call sites,
+  compatibility/fallback references, and mypy. 0 new candidates; 8,414 tests
+  collected; no vacuous tests; mypy clean on 407 files.
+
+Confirmed fixes were test-only portability guards D-001 and D-002. A-001–A-003
+and B-001/C-001 were excluded as intentional fail-closed behavior, valid
+dynamic entry points, or subprocess tests with inner behavioral assertions.
+Rounds H and I were the two most recent independent scans without a new stable
+candidate. Node.js/browser-driver absence remains an explicit environment risk;
+external providers and CDP remain isolated from deterministic evidence.
+
+Pre-final gates passed: Ruff, mypy, compileall, `git diff --check`, test
+collection, and affected tests (125 passed, 10 skipped, 383 subtests).
+The unique final full run was:
+
+**8384 passed, 30 skipped, 1503 subtests passed in 1013.92s (0:16:53).**
+
+Commit and push results are recorded below after the documentation-only
+commit.
+
 ## Candidate recovery and evidence-boundary repair (2026-10-10)
 
 The final source also includes the bounded read-only stagnation completion

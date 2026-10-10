@@ -1,5 +1,8 @@
 """Pi's real cut and split-turn summary planning remain atomic in replay."""
+import shutil
 from pathlib import Path
+
+import pytest
 
 from tools.context_compaction_benchmark.pi import select_pi
 
@@ -14,6 +17,8 @@ def history():
 
 
 def test_actual_pi_cut_never_starts_at_an_unpaired_tool_result():
+    if shutil.which("node") is None:
+        pytest.skip("Node.js unavailable")
     result = select_pi(ROOT, history(), keep_tokens=100)
     assert result["cut"] == 2
     assert result["split"] is True
@@ -22,6 +27,8 @@ def test_actual_pi_cut_never_starts_at_an_unpaired_tool_result():
 
 
 def test_actual_pi_tracks_read_files_in_its_checkpoint():
+    if shutil.which("node") is None:
+        pytest.skip("Node.js unavailable")
     items = history() + [{"role":"user", "content":"continue"}]
     result = select_pi(ROOT, items, keep_tokens=1)
     assert "app.py" in result["summary"]
@@ -29,6 +36,8 @@ def test_actual_pi_tracks_read_files_in_its_checkpoint():
 
 
 def test_actual_pi_can_plan_both_history_and_split_turn_summaries():
+    if shutil.which("node") is None:
+        pytest.skip("Node.js unavailable")
     items = [{'role':'user', 'content':'first task'}, {'role':'assistant','content':'finished old work ' * 500},
              {'role':'user','content':'current task'}, *history()[1:]]
     result = select_pi(ROOT, items, keep_tokens=100)

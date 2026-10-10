@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -12,6 +13,9 @@ SOURCE = Path(__file__).resolve().parents[1] / "codey/web/assets/operator_auth.j
 
 @pytest.mark.parametrize("fragment,authorized", [("#codey_bootstrap=secret", True), ("", True), ("", False)])
 def test_browser_removes_launch_fragment_and_checks_session(fragment, authorized):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js unavailable")
     script = f"""
 const vm = require('node:vm');
 const fs = require('node:fs');
@@ -31,7 +35,7 @@ vm.runInContext(fs.readFileSync({str(SOURCE).replace(chr(92), '/')!r}, 'utf8'), 
   }} else if (events[0][2].method) throw new Error('must probe existing cookie');
 }})().catch(error => {{console.error(error); process.exitCode = 1;}});
 """
-    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=10)
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
 
 
