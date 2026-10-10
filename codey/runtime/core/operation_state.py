@@ -102,7 +102,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         LEAF_REPAIR_SETTLED,
         LEAF_TERMINAL,
     }),
-    LEAF_REPAIR_SETTLED: frozenset({LEAF_COMPLETION_PROOF_RECORDED, LEAF_TERMINAL}),
+    LEAF_REPAIR_SETTLED: frozenset({LEAF_REPAIR_RUNNING, LEAF_COMPLETION_PROOF_RECORDED, LEAF_TERMINAL}),
     LEAF_TERMINAL: frozenset({LEAF_TERMINAL}),
 }
 
@@ -133,40 +133,15 @@ _VERDICT_LEAVES = frozenset({
     LEAF_TERMINAL,
 })
 
-_KNOWN_PAYLOAD_KEYS = frozenset(
-    {
-        "schema_version",
-        "kind",
-        "session_id",
-        "run_id",
-        "operation_id",
-        "lane",
-        "project_ref",
-        "provider_id",
-        "turn_budget",
-        "max_repair_rounds",
-        "leaf",
-        "started_at",
-        "updated_at",
-        "task_kind",
-        "task_policy",
-        "model_selection",
-        "reviewer_selection",
-        "final_delivery",
-        "writer_attempt",
-        "turns_used",
-        "stop_reason",
-        "completion_proof_ref",
-        "completion_proof_status",
-        "repair_rounds",
-        "repair_context_ref",
-        "blocked_reason",
-        "driver",
-        "turn",
-        "tool_index",
-        "terminal",
-    }
-)
+_KNOWN_PAYLOAD_KEYS = frozenset({
+    "schema_version", "kind", "session_id", "run_id", "operation_id", "lane",
+    "project_ref", "provider_id", "turn_budget", "max_repair_rounds", "leaf",
+    "started_at", "updated_at", "task_kind", "task_policy",
+    "model_selection", "reviewer_selection", "final_delivery",
+    "writer_attempt", "candidate_validation_attempted", "turns_used", "stop_reason",
+    "completion_proof_ref", "completion_proof_status", "repair_rounds",
+    "repair_context_ref", "blocked_reason", "driver", "turn", "tool_index", "terminal",
+})
 _KNOWN_TERMINAL_KEYS = frozenset(
     {
         "stop_reason",
@@ -186,9 +161,6 @@ _RECORDED_PROOF_STATUSES = frozenset(
 )
 _BLOCKABLE_PROOF_STATUSES = frozenset({"failed", "blocked"})
 _REPAIR_SOURCE_PROOF_STATUSES = frozenset({"failed"})
-
-
-
 
 
 @dataclass(frozen=True)
@@ -254,6 +226,7 @@ class RuntimeOperationState:
     reviewer_selection: dict[str, object] = field(default_factory=dict)
     final_delivery: str = "not_required"
     writer_attempt: int = 1
+    candidate_validation_attempted: bool = False
     turns_used: int = 0
     stop_reason: str = ""
     completion_proof_ref: str = ""
@@ -283,6 +256,7 @@ class RuntimeOperationState:
             "updated_at": self.updated_at,
             "task_kind": self.task_kind,
             "writer_attempt": self.writer_attempt,
+            "candidate_validation_attempted": self.candidate_validation_attempted,
             "turns_used": self.turns_used,
             "stop_reason": self.stop_reason,
             "completion_proof_ref": self.completion_proof_ref,
@@ -323,6 +297,9 @@ class RuntimeOperationState:
                 _parse_operation_counts(payload)
             )
             project_ref, writer_attempt, stop_reason = _parse_operation_project(payload)
+            validation_attempted = payload.get('candidate_validation_attempted')
+            if type(validation_attempted) is not bool or (validation_attempted and writer_attempt < 2):
+                raise RuntimeOperationTransitionError('invalid candidate validation consumption')
             proof_ref, proof_status, satisfied, repair_context_ref, driver = _parse_operation_proof(
                 payload,
                 leaf=leaf,
@@ -383,6 +360,7 @@ class RuntimeOperationState:
                 reviewer_selection=_parse_model_selection(payload.get("reviewer_selection")),
                 final_delivery=_parse_final_delivery(payload.get("final_delivery", "not_required")),
                 writer_attempt=writer_attempt,
+                candidate_validation_attempted=validation_attempted,
                 turns_used=turns_used,
                 stop_reason=stop_reason,
                 completion_proof_ref=proof_ref,
@@ -563,7 +541,9 @@ def _require_fresh_leaf_facts(
 ) -> None:
     if leaf == LEAF_ACCEPTED and (writer_attempt != 1 or turns_used or stop_reason):
         raise RuntimeOperationTransitionError("accepted must be fresh")
-    if leaf == LEAF_WRITER_RUNNING and (turns_used or stop_reason):
+    # A continuation preserves the budget already consumed. It must never
+    # carry a settled verdict; the initial attempt still starts at zero.
+    if leaf == LEAF_WRITER_RUNNING and (stop_reason or (writer_attempt == 1 and turns_used)):
         raise RuntimeOperationTransitionError("writer_running cannot carry settled facts")
 
 
@@ -715,7 +695,7 @@ def mark_writer_running(
         if attempt <= state.writer_attempt or state.stop_reason != "done" or state.completion_proof_ref:
             raise RuntimeOperationTransitionError("writer restart requires a new attempt after done before final proof")
         return _transition(state, LEAF_WRITER_RUNNING, provider_id=provider,
-                           writer_attempt=attempt, turns_used=0, stop_reason="")
+                           writer_attempt=attempt, turns_used=state.turns_used, stop_reason="")
     if state.leaf in {LEAF_WRITER_RUNNING, LEAF_TOOL_DELIVERY_PENDING}:
         # Rebinding a writer changes transport metadata, never acknowledges
         # delivery or restarts the task state machine.
@@ -728,6 +708,32 @@ def mark_writer_running(
         provider_id=provider,
         writer_attempt=attempt,
     )
+
+
+def mark_candidate_validation_running(
+    state: RuntimeOperationState,
+    *,
+    provider_id: str,
+    writer_attempt: int,
+) -> RuntimeOperationState:
+    """Admit one candidate check across writer and bounded repair phases.
+
+    Authorization and check selection belong to the operation/kernel. This
+    transition only protects the durable phase, identity and remaining budget.
+    """
+    provider = _text(provider_id, "provider_id")
+    attempt = _count(writer_attempt, 'writer_attempt', minimum=state.writer_attempt + 1)
+    repair = state.leaf == LEAF_REPAIR_SETTLED
+    if (state.leaf not in {LEAF_WRITER_SETTLED, LEAF_REPAIR_SETTLED} or state.stop_reason != "no_progress"
+            or state.candidate_validation_attempted or state.blocked_reason
+            or (not repair and state.completion_proof_ref)
+            or (repair and (state.completion_proof_status != 'failed' or not state.repair_context_ref
+                            or state.repair_rounds != 1))
+            or state.turn_budget - state.turns_used < 2 or state.provider_id != provider
+            or state.task_kind != "project"):
+        raise RuntimeOperationTransitionError("stopped candidate validation admission is unavailable")
+    return _transition(state, LEAF_REPAIR_RUNNING if repair else LEAF_WRITER_RUNNING,
+                       writer_attempt=attempt, candidate_validation_attempted=True, stop_reason="")
 
 
 def mark_writer_settled(
@@ -1227,6 +1233,7 @@ __all__ = [
     "mark_tool_effect_pending",
     "mark_tool_effect_settled",
     "mark_writer_running",
+    "mark_candidate_validation_running",
     "mark_writer_settled",
     "new_operation_state",
     "operation_id_for_run",

@@ -1,0 +1,2712 @@
+{
+  "date": "2026-10-10",
+  "base_commit": "0188a06a0a9a26994f796b489f961d11ef750468",
+  "purpose": "Deterministic boundary experiment plus integrated production candidate recovery and behavioral-repair validation.",
+  "scripts": {
+    "tests/manual/candidate_validation_and_behavioral_repair_experiment.py": "e3173fdfd5978579afc9e2ceba7dac23017b63799710d7c774c5dddf89c46b18",
+    "tests/manual/candidate_recovery_test_proposal.py": "e0cca6cc3c73585062a6237e0debca3cf83bfd4e3f5542f8747b11c7ac5f98e4"
+  },
+  "raw_report_sha256": {
+    "current-final.json": "377fe36b724a213e742a4af70026c6b4e0db320ecb1b90a2b15d7192cc4861b0",
+    "candidate-final.json": "399b103d8d14fc65ae14ecfc9a51644aa6d900b17626ee839ffd7683f062cb2d"
+  },
+  "runs": [
+    {
+      "variant": "current",
+      "exit_code": 1,
+      "script_sha256": "e3173fdfd5978579afc9e2ceba7dac23017b63799710d7c774c5dddf89c46b18",
+      "test_only_proposal_applied": false,
+      "production_files_written": false,
+      "model_calls": 0,
+      "limitations": [
+        "Scripted choices; no claim about real-model reliability.",
+        "Candidate is a process-local test proposal, not a production implementation."
+      ],
+      "results": [
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_correct_candidate_after_three_stale_searches_gets_real_check_review_and_proof",
+          "phase": "call",
+          "outcome": "failed",
+          "observations": {
+            "stop_reason": "no_progress",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": "tests\\manual\\candidate_validation_and_behavioral_repair_experiment.py:198: in test_correct_candidate_after_three_stale_searches_gets_real_check_review_and_proof\n    assert_complete(result)\ntests\\manual\\candidate_validation_and_behavioral_repair_experiment.py:178: in assert_complete\n    assert event['stop_reason'] == 'done', event.get('summary', event)\nE   AssertionError: stopped after repeated tool results without progress\nE   assert 'no_progress' == 'done'\nE     \nE     - done\nE     + no_progress"
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_cancellation_denied_permissions_and_exhausted_budget_never_promote_stopped_candidate[cancel-20]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "stopped",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_cancellation_denied_permissions_and_exhausted_budget_never_promote_stopped_candidate[deny_project.verify-20]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "no_progress",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_cancellation_denied_permissions_and_exhausted_budget_never_promote_stopped_candidate[deny_project.write-20]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "protocol",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_cancellation_denied_permissions_and_exhausted_budget_never_promote_stopped_candidate[-7]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "no_progress",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_incorrect_stopped_candidate_cannot_be_completed_by_false_approval",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "no_progress",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "e9815d65b9086940a9df3f25fab8e5ebcf4027d0b8969fec80d04233afe5840e"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "e9815d65b9086940a9df3f25fab8e5ebcf4027d0b8969fec80d04233afe5840e"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "e9815d65b9086940a9df3f25fab8e5ebcf4027d0b8969fec80d04233afe5840e"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "e9815d65b9086940a9df3f25fab8e5ebcf4027d0b8969fec80d04233afe5840e"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_recorded_counterexample_guides_repair_without_a_new_unapproved_probe",
+          "phase": "call",
+          "outcome": "failed",
+          "observations": {
+            "stop_reason": "approval",
+            "writer_attempts": 2,
+            "reviews": 1,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": "tests\\manual\\candidate_validation_and_behavioral_repair_experiment.py:226: in test_recorded_counterexample_guides_repair_without_a_new_unapproved_probe\n    assert_complete(result)\ntests\\manual\\candidate_validation_and_behavioral_repair_experiment.py:178: in assert_complete\n    assert event['stop_reason'] == 'done', event.get('summary', event)\nE   AssertionError: shell command requires approval\nE   assert 'approval' == 'done'\nE     \nE     - done\nE     + approval"
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_existing_behavioral_repair_keeps_actual_counterexample_and_refreshes_all_evidence",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "done",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "complete",
+                "satisfied": true
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0002_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[missing_tests]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 2,
+            "reviews": 1,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[missing_behavior]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "blocked",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[missing_review]",
+          "phase": "call",
+          "outcome": "failed",
+          "observations": {
+            "stop_reason": "done",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "complete",
+                "satisfied": true
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0002_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": "tests\\manual\\candidate_validation_and_behavioral_repair_experiment.py:248: in test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete\n    assert result['terminal']['stop_reason'] not in {'done', 'error', 'provider_failure'}\nE   AssertionError: assert 'done' not in {'done', 'error', 'provider_failure'}"
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[stale_review]",
+          "phase": "call",
+          "outcome": "failed",
+          "observations": {
+            "stop_reason": "done",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "complete",
+                "satisfied": true
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0002_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": "tests\\manual\\candidate_validation_and_behavioral_repair_experiment.py:248: in test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete\n    assert result['terminal']['stop_reason'] not in {'done', 'error', 'provider_failure'}\nE   AssertionError: assert 'done' not in {'done', 'error', 'provider_failure'}"
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[rejected_review]",
+          "phase": "call",
+          "outcome": "failed",
+          "observations": {
+            "stop_reason": "done",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "complete",
+                "satisfied": true
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0002_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": "tests\\manual\\candidate_validation_and_behavioral_repair_experiment.py:248: in test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete\n    assert result['terminal']['stop_reason'] not in {'done', 'error', 'provider_failure'}\nE   AssertionError: assert 'done' not in {'done', 'error', 'provider_failure'}"
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[ignore_guidance]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "approval",
+            "writer_attempts": 2,
+            "reviews": 1,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_new_visible_pass_and_false_approval_cannot_override_repeated_behavior_failure",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0002_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_stopped_semantically_wrong_candidate_cannot_pass_with_green_ordinary_tests",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "no_progress",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        }
+      ]
+    },
+    {
+      "variant": "candidate",
+      "exit_code": 0,
+      "script_sha256": "e3173fdfd5978579afc9e2ceba7dac23017b63799710d7c774c5dddf89c46b18",
+      "test_only_proposal_applied": true,
+      "production_files_written": false,
+      "model_calls": 0,
+      "limitations": [
+        "Scripted choices; no claim about real-model reliability.",
+        "Candidate is a process-local test proposal, not a production implementation."
+      ],
+      "results": [
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_correct_candidate_after_three_stale_searches_gets_real_check_review_and_proof",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "done",
+            "writer_attempts": 2,
+            "reviews": 1,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "complete",
+                "satisfied": true
+              }
+            ],
+            "behavior": [
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0001_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_cancellation_denied_permissions_and_exhausted_budget_never_promote_stopped_candidate[cancel-20]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "stopped",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_cancellation_denied_permissions_and_exhausted_budget_never_promote_stopped_candidate[deny_project.verify-20]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "no_progress",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_cancellation_denied_permissions_and_exhausted_budget_never_promote_stopped_candidate[deny_project.write-20]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "protocol",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_cancellation_denied_permissions_and_exhausted_budget_never_promote_stopped_candidate[-7]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "no_progress",
+            "writer_attempts": 1,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_incorrect_stopped_candidate_cannot_be_completed_by_false_approval",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "max_turns",
+            "writer_attempts": 2,
+            "reviews": 0,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "e9815d65b9086940a9df3f25fab8e5ebcf4027d0b8969fec80d04233afe5840e"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "e9815d65b9086940a9df3f25fab8e5ebcf4027d0b8969fec80d04233afe5840e"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "e9815d65b9086940a9df3f25fab8e5ebcf4027d0b8969fec80d04233afe5840e"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "e9815d65b9086940a9df3f25fab8e5ebcf4027d0b8969fec80d04233afe5840e"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "e9815d65b9086940a9df3f25fab8e5ebcf4027d0b8969fec80d04233afe5840e"
+              }
+            ],
+            "proofs": [],
+            "behavior": []
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_recorded_counterexample_guides_repair_without_a_new_unapproved_probe",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "done",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "complete",
+                "satisfied": true
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0002_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_existing_behavioral_repair_keeps_actual_counterexample_and_refreshes_all_evidence",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "done",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "complete",
+                "satisfied": true
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0002_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[missing_tests]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 2,
+            "reviews": 1,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[missing_behavior]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "blocked",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[missing_review]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0002_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[stale_review]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0002_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[rejected_review]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "291f5e0971aabc944142a7a0e15a131c3e32e35f01470a6726fae9fd463a9028"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "pass",
+                "reason": "matched",
+                "output_ref": "out_0002_88901f5ec3f0",
+                "workspace_fingerprint": "sha256:b60e828654b7550edfb13a5236d588940821f3bd1caf57edb224d0375b2dfb2a"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_missing_repaired_tests_or_fresh_review_and_unapproved_probe_cannot_complete[ignore_guidance]",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "approval",
+            "writer_attempts": 2,
+            "reviews": 1,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_new_visible_pass_and_false_approval_cannot_override_repeated_behavior_failure",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 2,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0002_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": ""
+        },
+        {
+          "test": "tests/manual/candidate_validation_and_behavioral_repair_experiment.py::test_stopped_semantically_wrong_candidate_cannot_pass_with_green_ordinary_tests",
+          "phase": "call",
+          "outcome": "passed",
+          "observations": {
+            "stop_reason": "blocked",
+            "writer_attempts": 3,
+            "reviews": 2,
+            "tools": [
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": false,
+                "exit_code": 1,
+                "error_code": "error",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "41bdc802293f2aaee903c01024b1ffed3a440158f046dbc6c5a2cd4e09886b21"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": false,
+                "exit_code": null,
+                "error_code": "error",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "read",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "edit",
+                "command": null,
+                "ok": true,
+                "exit_code": null,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              },
+              {
+                "tool": "run",
+                "command": "python -m unittest discover -v",
+                "ok": true,
+                "exit_code": 0,
+                "error_code": "",
+                "source_sha256": "691c5aaeac264260d2e6ff72a0e5eb0cd50fe0485dbb05801fb2e46d877942ab"
+              }
+            ],
+            "proofs": [
+              {
+                "status": "failed",
+                "satisfied": false
+              },
+              {
+                "status": "failed",
+                "satisfied": false
+              }
+            ],
+            "behavior": [
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0001_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              },
+              {
+                "status": "fail",
+                "reason": "property_mismatch",
+                "output_ref": "out_0002_73d17046a9fe",
+                "workspace_fingerprint": "sha256:0471d361fd2da9e2e5f48c4f2157f1166b259918f6ad301a21e173199279df31"
+              }
+            ]
+          },
+          "failure": ""
+        }
+      ]
+    }
+  ],
+  "early_proposal_failure": "candidate-v1: 2 failed, 11 passed; durable writer restart rejected no_progress. Candidate-v2 added a single qualified process-local admission, without forging done.",
+  "checks": {
+    "related_regression": "29 passed in 8.28s",
+    "ruff": "passed",
+    "compileall": "passed",
+    "git_diff_check": "passed",
+    "full_pytest": "not run",
+    "real_model_ab": "not run",
+    "production_files": "unchanged",
+    "post_document_environment_contract": "4 passed, 14 subtests passed in 0.60s"
+  },
+  "limitations": [
+    "The needs_guidance arm uses a disclosed scripted decision rule; it cannot prove LLM compliance.",
+    "The validation provider has a fixed fixture command; production must bind an admitted actual task check.",
+    "The proposal requires fresh approval only for continued candidates; it does not change first-attempt best-effort review policy.",
+    "Tests remain manually invoked and are not default pytest discovery; production integration is not performed."
+  ],
+  "production_integration": {
+    "runtime_module": "codey/operations/project_candidate_validation.py",
+    "operation_state_schema_version": 1,
+    "cold_start_migration": false,
+    "production_ab_artifact": "artifacts/candidate-recovery-production-ab-20261010-08/result.json",
+    "production_ab_summary": {
+      "new_version": "4/4",
+      "baseline": "3/4",
+      "false_completions": {
+        "new_version": 0,
+        "baseline": 0
+      },
+      "stale_search_replay_seconds": 40.714
+    },
+    "scope_limits": [
+      "Two task contracts only.",
+      "Two recorded-prefix arms are controlled replay evidence, not native-model task scores.",
+      "No general language-understanding or efficiency claim."
+    ],
+    "historical_failures_preserved": [
+      "production-ab-20261010-01",
+      "production-ab-20261010-06",
+      "production-ab-20261010-04-boundary"
+    ]
+  },
+  "final_checks": {
+    "full_pytest": {
+      "passed": 8392,
+      "skipped": 7,
+      "subtests": 1504,
+      "collection": 8397,
+      "seconds": 983.7
+    },
+    "machine_contract": {
+      "passed": 1008,
+      "subtests": 14,
+      "seconds": 277.83
+    },
+    "static": [
+      "ruff",
+      "mypy windows",
+      "mypy linux",
+      "pyrefly check codey",
+      "compileall",
+      "git diff --check",
+      "untracked whitespace"
+    ]
+  }
+}

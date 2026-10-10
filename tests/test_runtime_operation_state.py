@@ -206,9 +206,9 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 mutated = dict(payload)
                 mutated[key] = value
                 self.assertIsNone(RuntimeOperationState.from_payload(mutated))
-        # Cold-start strictness: bool/float must not pass as int 1, and
-        # dev-period v2 logs fail closed under v1.
-        for bad_version in (True, False, 1.0, 2, 0, "1", None):
+        # Cold-start strictness: reject future schemas and values whose types
+        # differ from the current integer schema version.
+        for bad_version in (True, False, SCHEMA_VERSION + 1, 2.0, 0, "1", None):
             with self.subTest(bad_version=bad_version):
                 mutated = dict(payload)
                 mutated["schema_version"] = bad_version

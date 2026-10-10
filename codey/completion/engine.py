@@ -21,8 +21,8 @@ from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
 COMPLETION_BLOCKED_NOTES = {
     "unobserved": (
-        "Completion blocked: the required verification was never observed "
-        "locally. Unobserved is not failure, but it is not done either."
+        "Completion blocked: required local completion evidence is missing "
+        "or incomplete. The completion gate's diagnostic identifies the gap."
     ),
     "max_repair_rounds": (
         "Completion blocked: local verification still failing after the "

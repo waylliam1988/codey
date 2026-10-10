@@ -166,7 +166,9 @@ def working_context(session: TaskSession) -> str:
         audit: dict[str, Any] = dict(result.audit) if result is not None else {}
         executions.append({"execution_ref": identity, "command": args.get("command", record.get("command", "")),
             "cwd": args.get("path", record.get("cwd", ".")),
-            "status": "complete" if type(record.get("exit_code")) is int else "unknown",
+            "status": ("denied_before_execution"
+                       if record.get("execution_disposition") == "denied_before_execution"
+                       else "complete" if type(record.get("exit_code")) is int else "unknown"),
             "started_at": audit.get("command_started_at"), "finished_at": audit.get("command_finished_at"),
             "exit_code": record.get("exit_code"), "result_available": result is not None,
             "workspace_identity": fingerprint,

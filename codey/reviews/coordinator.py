@@ -38,6 +38,7 @@ class ReviewCycleResult:
     # caller records this as inherited provenance -- never as this round's
     # clean verification fact.
     inherited_checks_passed: bool = False
+    approved_current_snapshot: bool = False
 
 
 def change_state(changes: object) -> bool | None:
@@ -174,6 +175,7 @@ class ReviewCoordinator:
                 changes,
                 changes_dirty,
                 review_attempted=True,
+                approved_current_snapshot=True,
             )
         if not allow_repair or not bool(getattr(review, "needs_writer_repair", False)):
             return ReviewCycleResult(

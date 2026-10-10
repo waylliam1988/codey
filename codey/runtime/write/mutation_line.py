@@ -25,6 +25,9 @@ from codey.runtime.core.operation_state import (
     start_entries,
 )
 from codey.runtime.core.operation_state import (
+    mark_candidate_validation_running as state_mark_candidate_validation_running,
+)
+from codey.runtime.core.operation_state import (
     mark_completion_blocked as state_mark_completion_blocked,
 )
 from codey.runtime.core.operation_state import (
@@ -264,6 +267,13 @@ class RuntimeMutationLine:
                 writer_attempt=writer_attempt,
             ),
         )
+
+    def mark_candidate_validation_running(
+        self, session_id: str, run_id: str, *, provider_id: str, writer_attempt: int,
+    ) -> RuntimeOperationState | None:
+        return self._commit_state(session_id, run_id,
+            lambda state: state_mark_candidate_validation_running(state, provider_id=provider_id,
+                                                                  writer_attempt=writer_attempt))
 
     def set_task_policy(
         self,

@@ -70,6 +70,8 @@ def effective_project_profile(permission_profile: object) -> str:
 
 def _tool_result(call: ToolCall, outcome: Any) -> ToolResult:
     audit = dict(getattr(outcome, "audit", {}) or {})
+    # Tool implementations cannot classify a request as a runtime guard refusal.
+    audit.pop("execution_disposition", None)
     if call.name == "edit":
         changed = getattr(outcome, "changed", False)
         audit["changed"] = changed if type(changed) is bool else False
@@ -257,7 +259,9 @@ class ExecutionDelegate:
         project_path = self.project_path
         denied, message, _approval = self._policy_check(call)
         if denied:
-            result = ToolResult(ok=False, call=call, model_text=f"ERROR: {message}")
+            from codey.operations.kernel_result import policy_denial_result
+
+            result = policy_denial_result(call, message)
             return result, False, None
         name = str(call.name or "").strip().lower()
         runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",

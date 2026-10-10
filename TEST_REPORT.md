@@ -1,5 +1,30 @@
 # Codey Test Report
 
+## Candidate recovery and evidence-boundary repair (2026-10-10)
+
+Production source was frozen for the final checks after the recorded KoboldCpp
+round 08. The new version completed all four scenarios; the baseline completed
+three. Both had zero false completions. The stale-search replay passed in
+40.714 seconds after the review-regression fix; round 06's 180-second timeout
+and all boundary failures remain preserved as historical evidence.
+
+- Final production A/B: new **4/4**, baseline **3/4**. Native scenarios were
+  2/2 and recorded-prefix scenarios were 2/2; the latter are controlled replay
+  evidence, not native-model task scores. The new version used more turns/tokens
+  in successful native cases, so this round establishes recovery correctness,
+  not efficiency.
+- Final full pytest: **8392 passed, 7 skipped, 1504 subtests** in 983.70s.
+  Collection was 8397 tests. The machine contract gate passed **1008 tests and
+  14 subtests** in 277.83s.
+- Ruff, mypy Windows/Linux (407 files), Pyrefly (`check codey`, 0 errors),
+  compileall, `git diff --check`, and untracked-file whitespace checks passed.
+- The operation state remains strict schema 1 because this is a cold-start
+  contract with no migration. Review reentry preserves accumulated turns, and
+  the new persistence test covers interruption before repair settlement.
+
+Evidence and logs: `artifacts/candidate-recovery-production-ab-20261010-08/`
+and `artifacts/candidate-recovery-final-checks-20261010-04/`.
+
 ## Native installed OpenCode observation and comparison (2026-10-10)
 
 Starting commit `ded65fac65b45e493168168e996e701669f5a9fc`; Windows / Python 3.12.8.

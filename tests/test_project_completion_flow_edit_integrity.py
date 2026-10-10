@@ -30,6 +30,7 @@ from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
+from tests.test_project_completion_flow_enforcement import _current_snapshot_review
 
 
 def _edit(path: str = "tests/test_mod.py") -> RunEvent:
@@ -122,7 +123,7 @@ def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskRunDep
     )
 
 
-def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -> TaskRunDeps:
+def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict], *, review=None) -> TaskRunDeps:
     """Runner whose successive change collections come from ``collected``."""
 
     return TaskRunDeps(state=state,
@@ -130,7 +131,7 @@ def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: (
             collected.pop(0) if collected else dict(collected[-1])
         )),
-        run_review=mock.Mock(return_value=None),
+        run_review=review or mock.Mock(return_value=None),
         capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
@@ -329,6 +330,7 @@ class RepairRoundTests(unittest.TestCase):
                     state,
                     writer,
                     [_changes("src/mod.py"), _changes("tests/test_mod.py")],
+                    review=_current_snapshot_review,
                 ),
                 state,
                 project,
@@ -368,6 +370,7 @@ class RepairRoundTests(unittest.TestCase):
                     state,
                     writer,
                     [_changes("tests/test_mod.py"), _changes("src/mod.py")],
+                    review=_current_snapshot_review,
                 ),
                 state,
                 project,

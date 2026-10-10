@@ -255,6 +255,18 @@ def _gap_for_latest_row(row: dict[str, Any], command: str) -> str:
     return ""
 
 
+def verification_gap_diagnostics(session: Any) -> str:
+    """Bounded explanation using the same latest rows as the completion gate."""
+    latest_edit = max([0, *(getattr(session, "edited_files", {}) or {}).values()])
+    rows = _latest_observations_by_key(getattr(session, "verifications", []) or [], latest_edit)
+    details = []
+    for (command, cwd), row in rows.items():
+        reason = _gap_for_latest_row(row, command)
+        if reason:
+            details.append(f"{reason}: command={command[:160]!r}, cwd={cwd[:80]!r}")
+    return "\n".join(details[:4])
+
+
 def _projection_gaps_for_latest(
     latest_by_key: dict[tuple[str, str], dict[str, Any]],
 ) -> tuple[set[tuple[str, str]], list[str]]:

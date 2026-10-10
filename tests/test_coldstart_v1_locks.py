@@ -1,7 +1,7 @@
 """Cold-start v1 locks (red-first).
 
 Desired contracts after the cleanup:
-- Runtime operation state, local config, Ghost control surface are schema v1.
+- Runtime operation state, local config, and Ghost control surface are schema v1.
 - Local config read requires type(schema_version) is int and == 1.
 - Provider profiles require exact v1 (file schema + each profile).
 - Shell approval event fields require the current complete record and verify
@@ -61,10 +61,11 @@ def test_operation_rejects_v2_payload_after_coldstart() -> None:
     from codey.runtime.core.operation_state import RuntimeOperationState
 
     payload = _op_state().to_payload()
-    # Simulate a dev-period v2 log: must fail closed under v1.
-    v2_payload = dict(payload)
-    v2_payload["schema_version"] = 2
-    assert RuntimeOperationState.from_payload(v2_payload) is None
+    # Cold start accepts only current exact v1, without migration.
+    for bad_version in (2, 999, "1"):
+        bad_payload = dict(payload)
+        bad_payload["schema_version"] = bad_version
+        assert RuntimeOperationState.from_payload(bad_payload) is None
 
 
 def test_local_config_schema_is_v1() -> None:

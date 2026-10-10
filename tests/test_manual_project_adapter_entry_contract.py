@@ -51,18 +51,46 @@ def test_manual_scripts_use_agent_request_entry() -> None:
     assert offenders == []
 
 
-def test_manual_scripts_construct_agent_request() -> None:
-    """Every manual script that calls run() must build an AgentRequest nearby."""
+def _request_entry_offenders(tree: ast.Module) -> list[int]:
+    """Accept constructors or callbacks forwarding a typed AgentRequest."""
+    if any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+           and node.func.id == "AgentRequest" for node in ast.walk(tree)):
+        return []
+    forwarded: set[int] = set()
+    for function in ast.walk(tree):
+        if not isinstance(function, ast.FunctionDef):
+            continue
+        parameters = {arg.arg for arg in function.args.args
+                      if isinstance(arg.annotation, ast.Name)
+                      and arg.annotation.id == "AgentRequest"}
+        for node in ast.walk(function):
+            if (isinstance(node, ast.Call) and len(node.args) == 1
+                    and isinstance(node.args[0], ast.Name) and node.args[0].id in parameters):
+                forwarded.add(id(node))
+    return [node.lineno for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in {"run", "run_agent"} and id(node) not in forwarded]
+
+
+def test_manual_scripts_construct_or_forward_agent_request() -> None:
+    """Manual entries build requests or accept them from the headless runner."""
     offenders: list[str] = []
     for path in sorted((ROOT / "tests" / "manual").glob("*.py")):
         text = path.read_text(encoding="utf-8-sig")
         tree = ast.parse(text, filename=str(path))
-        calls_run = any(
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id in {"run", "run_agent"}
-            for node in ast.walk(tree)
-        )
-        if calls_run and "AgentRequest(" not in text:
+        if _request_entry_offenders(tree):
             offenders.append(path.name)
     assert offenders == []
+
+
+def test_typed_request_forwarding_is_an_entry() -> None:
+    tree = ast.parse("def writer(request: AgentRequest):\n    return run(request)\n")
+    assert _request_entry_offenders(tree) == []
+
+
+def test_untyped_or_different_argument_is_not_request_forwarding() -> None:
+    for source in (
+        "def writer(request):\n    return run(request)\n",
+        "def writer(request: AgentRequest):\n    return run(other)\n",
+    ):
+        assert _request_entry_offenders(ast.parse(source)) == [2]

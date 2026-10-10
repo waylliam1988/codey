@@ -165,6 +165,19 @@ def _error_result(call: ToolCall, message: str) -> ToolResult:
     return ToolResult(ok=False, call=call, model_text=f"ERROR: {message}")
 
 
+def policy_denial_result(call: ToolCall, message: str) -> ToolResult:
+    """Runtime guard receipt: the executor has not been invoked."""
+    return ToolResult(ok=False, call=call, model_text=f"ERROR: {message}",
+                      audit={"execution_disposition": "denied_before_execution"})
+
+
+def denied_before_execution(result: ToolResult) -> bool:
+    """Only normalized runtime receipts may carry this disposition."""
+    return (result.ok is False
+            and result.audit.get("execution_disposition") == "denied_before_execution"
+            and result.audit.get("exit_code") is None)
+
+
 def _call_args_digest(call: ToolCall) -> str:
     try:
         from codey.runtime.effects.effect_records import compute_args_digest
@@ -177,7 +190,9 @@ def _call_args_digest(call: ToolCall) -> str:
         return ""
 
 
-def _consistent_tool_result(requested: ToolCall, produced: ToolResult) -> ToolResult:
+def _consistent_tool_result(
+    requested: ToolCall, produced: ToolResult, *, runtime_guard: bool = False,
+) -> ToolResult:
     """Ensure a custom executor ToolResult reuses the requested call identity.
 
     Native chains receipt every requested call id; a rogue call with its own
@@ -223,6 +238,8 @@ def _consistent_tool_result(requested: ToolCall, produced: ToolResult) -> ToolRe
         cleaned_audit = _strip_executor_workspace_audit(
             dict(produced.audit) if isinstance(getattr(produced, "audit", None), dict) else {}
         )
+        if not runtime_guard:
+            cleaned_audit.pop("execution_disposition", None)
         return ToolResult(
             ok=produced.ok, call=requested,
             model_text=produced.model_text,

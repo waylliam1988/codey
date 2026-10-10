@@ -140,6 +140,8 @@ def behavioral_review_facts(ctx: ProjectRun) -> str:
         return ''
     return ('\nBehavioral verification (runtime observation, not writer claims):\n'
             + json.dumps({'requirement': plan.requirement_quote, 'plan_digest': plan.digest,
+                          'function': plan.function, 'required_relation': 'right_value == left_value',
+                          'value_role': 'actual',
                           'workspace_fingerprint': observation.workspace_fingerprint,
                           'status': observation.status, 'reason': observation.reason,
                           'result_ref': observation.output_ref, 'observation': observation.summary}, ensure_ascii=False))

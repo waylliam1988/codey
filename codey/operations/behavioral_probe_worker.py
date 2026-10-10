@@ -38,10 +38,12 @@ def probe(root: Path) -> dict[str, object]:
             a_json, b_json = (json.dumps(value, allow_nan=False, sort_keys=True) for value in (a, b))
         except (TypeError, ValueError) as exc:
             return {'status': 'not_run', 'reason': 'unsupported_return', 'summary': str(exc), 'rows': rows}
-        rows.append({'left': left, 'right': right, 'left_value': a, 'right_value': b, 'equal': a_json == b_json})
+        rows.append({'left': left, 'right': right, 'left_value': a, 'right_value': b, 'equal': a_json == b_json,
+                     'required_right_value_given_left': a})
     mismatches = [row for row in rows if not row['equal']]
     summary = json.dumps(mismatches[:1] or rows[:1], ensure_ascii=False)
-    return {'status': 'fail' if mismatches else 'pass', 'reason': 'property_mismatch' if mismatches else 'matched',
+    return {'value_role': 'actual', 'required_relation': 'right_value == left_value',
+            'status': 'fail' if mismatches else 'pass', 'reason': 'property_mismatch' if mismatches else 'matched',
             'summary': summary, 'rows': rows}
 
 

@@ -6151,11 +6151,11 @@ class SessionThreadingTests(unittest.TestCase):
         reviewer = mock.Mock()
         reviewer.name = "StepFun Chat"
         reviewer.location = "https://chat.stepfun.com/chats/"
-        reviewer.send.return_value = (
+        reviewer.send.side_effect = [(
             '{"verdict":"changes_requested","summary":"Fix one issue",'
             '"findings":[{"path":"app.py","issue":"Missing empty case",'
             '"suggested_fix":"Add a guard"}]}'
-        )
+        ), '{"verdict":"approved","summary":"Current candidate checked","findings":[]}']
         changes = {
             "ok": True,
             "changed_count": 1,
@@ -6179,6 +6179,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+            (Path(td) / "app.py").write_text("new\n", encoding="utf-8")
             _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 2)
@@ -6194,6 +6195,7 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         review_event = next(event for event in emitted if event["type"] == "review")
         self.assertEqual(review_event["text"], "MiMo suggested changes")
+        self.assertEqual(reviewer.send.call_count, 2)
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["summary"], "review fixed")
 
@@ -6351,11 +6353,11 @@ class SessionThreadingTests(unittest.TestCase):
         reviewer = mock.Mock()
         reviewer.name = "StepFun Chat"
         reviewer.location = "https://chat.stepfun.com/chats/"
-        reviewer.send.return_value = (
+        reviewer.send.side_effect = [(
             '{"verdict":"changes_requested","summary":"Verify one claim",'
             '"findings":[{"path":"app.py","issue":"Possible issue",'
             '"suggested_fix":"Check before changing"}]}'
-        )
+        ), '{"verdict":"approved","summary":"Current candidate checked","findings":[]}']
         changes = {
             "ok": True,
             "mode": "snapshot",
@@ -6380,11 +6382,13 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+            (Path(td) / "app.py").write_text("new\n", encoding="utf-8")
             _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
+        self.assertEqual(reviewer.send.call_count, 2)
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["summary"], "review claim was invalid")
         self.assertTrue(task_done["receipt"]["verification"]["checks_passed"])
@@ -6402,11 +6406,11 @@ class SessionThreadingTests(unittest.TestCase):
         reviewer = mock.Mock()
         reviewer.name = "StepFun Chat"
         reviewer.location = "https://chat.stepfun.com/chats/"
-        reviewer.send.return_value = (
+        reviewer.send.side_effect = [(
             '{"verdict":"changes_requested","summary":"Verify one claim",'
             '"findings":[{"path":"app.py","issue":"Possible issue",'
             '"suggested_fix":"Check before changing"}]}'
-        )
+        ), '{"verdict":"approved","summary":"Current candidate checked","findings":[]}']
         changes = {
             "ok": True,
             "mode": "snapshot",
@@ -6430,14 +6434,16 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
+            (Path(td) / "app.py").write_text("new\n", encoding="utf-8")
             _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
+        self.assertEqual(reviewer.send.call_count, 2)
         task_done = next(event for event in emitted if event["type"] == "task_done")
-        # 0.4.13: the failed-check repair left no locally observed facts, so
-        # the prior claimed green is not inherited and done is blocked.
+        # Current review approval cannot turn unobserved verification claims
+        # into checks passed or inherit the prior claimed green.
         self.assertEqual(task_done["stop_reason"], "blocked")
         self.assertTrue(task_done["summary"].startswith("tests failed"))
         self.assertIn("[Completion blocked:", task_done["summary"])

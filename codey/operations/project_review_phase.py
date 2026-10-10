@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from dataclasses import replace
 from functools import partial
 from typing import Any
 
@@ -76,6 +77,11 @@ def _repair_writer(
 ) -> Any:
     runner = ctx.failover
     assert runner is not None
+    assert ctx.result is not None
+    previous_turns = ctx.result.turns
+    remaining = ctx.request.max_turns - previous_turns
+    if remaining <= 0:
+        return replace(ctx.result, stop_reason='max_turns', checks_passed=False)
     commit_runtime_operation(
         ctx, "mark_writer_running",
         lambda mutations, session_id, run_id: mutations.mark_writer_running(
@@ -85,12 +91,13 @@ def _repair_writer(
     )
     try:
         result = runner.run(
-            task=followup,
-            turn_budget=min(ctx.request.max_turns, ctx.deps.review.review_fix_turns),
+            task=followup + _behavioral_facts(ctx),
+            turn_budget=min(remaining, ctx.deps.review.review_fix_turns),
             fresh=False,
             handoff="",
             checkpoint=checkpoint,
         )
+        result = replace(result, turns=previous_turns + result.turns)
         if result.stop_reason not in {"approval", "stopped"}:
             commit_runtime_operation(
                 ctx, "mark_writer_settled",
@@ -249,12 +256,32 @@ def validate_candidate(ctx: ProjectRun, *, allow_review_repair: bool = True) -> 
     post-review edit invalidates observations and receives a new review.
     """
     from codey.operations.behavioral_verification import refresh_behavioral_observation
+    from codey.operations.project_candidate_validation import validate_stopped_candidate
 
+    validate_stopped_candidate(ctx)
     refresh_behavioral_observation(ctx)
     run_review_phase(ctx, allow_repair=allow_review_repair)
-    if ctx.review_cycle.review_repair_attempted and ctx.result is not None and ctx.result.stop_reason == 'done':
+    repaired_after_review = ctx.review_cycle.review_repair_attempted
+    review_deferred = False
+    if repaired_after_review and ctx.result is not None and ctx.result.stop_reason == 'done':
         refresh_behavioral_observation(ctx)
-        run_review_phase(ctx, allow_repair=False)
+        from codey.completion.behavioral_checks import behavioral_completion_check
+        from codey.workspace.revision import workspace_fingerprint
+
+        check = behavioral_completion_check(ctx.behavioral_plan, ctx.behavioral_observation,
+                                           ctx.request.task, workspace_fingerprint(ctx.project))
+        review_deferred = check is not None and check.status == 'fail'
+        # A fresh observed failure belongs to the existing completion repair.
+        # Reviewing this known failing candidate cannot supply missing proof.
+        if not review_deferred:
+            run_review_phase(ctx, allow_repair=False)
+    if (ctx.result is not None and ctx.result.stop_reason == 'done' and ctx.task_changed
+            and ((ctx.work.operation is not None and ctx.work.operation.candidate_validation_attempted)
+                 or ctx.repaired_once or repaired_after_review)
+            and not review_deferred and not ctx.review_cycle.approved_current_snapshot):
+        ctx.blocked_reason = 'current_candidate_review_unavailable_or_not_approved'
+        ctx.result = replace(ctx.result, stop_reason='blocked', checks_passed=False,
+                             summary='Current candidate requires a fresh approved review.')
 
 
 __all__ = [

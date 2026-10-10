@@ -9,6 +9,15 @@ from __future__ import annotations
 import pytest
 
 CONTRACT_TESTS = (
+    'tests/test_review_repair_retains_behavior_facts_and_defers_failed_candidate_review.py',
+    'tests/test_denied_probe_preserves_candidate_validation_evidence.py',
+    'tests/test_stopped_candidate_validation_and_behavioral_repair_fresh_evidence.py',
+    'tests/test_stopped_candidate_validation_for_nonbehavioral_tasks.py',
+    'tests/test_stopped_candidate_validation_runtime_admission.py',
+    'tests/test_stagnant_completion_repair_requires_current_validation.py',
+    'tests/test_review_repair_preserves_total_turn_budget.py',
+    'tests/test_review_output_limit_recovery_preserves_snapshot_and_retry_budget.py',
+    'tests/test_candidate_recovery_live_replay_isolation_and_prefixes.py',
     "tests/test_opencode_installed_agent_observation_and_isolation.py",
     "tests/test_behavioral_requirement_admission_and_discriminating_inputs.py",
     "tests/test_python_behavioral_probe_observes_properties_and_failures.py",

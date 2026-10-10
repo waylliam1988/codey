@@ -6,7 +6,7 @@ from typing import Any
 
 from codey.operations.kernel_protocol import _CONTROLLER_ALIASES
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _session_workspace_identity
-from codey.operations.kernel_result import strict_exit_code_or_none
+from codey.operations.kernel_result import denied_before_execution, strict_exit_code_or_none
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import canonical_tool_name
@@ -136,6 +136,30 @@ def _record_read_fact(session: TaskSession, args: dict[str, Any]) -> None:
         pass
 
 
+def _record_run_fact(session: TaskSession, args: dict[str, Any], result: ToolResult, *,
+                     ok: bool, exit_code: int | None) -> None:
+    text = str(result.model_text or "")
+    if denied_before_execution(result):
+        if text:
+            session.transcript_notes.append(f"run refused before execution: {text[:500]}")
+        return
+    # Unknown attempted runs remain observations. Never revive an older pass
+    # by discarding an outcome whose execution/result is uncertain.
+    effective_exit = strict_exit_code_or_none(exit_code) if exit_code is not None else None
+    if effective_exit is None and isinstance(result.audit, dict):
+        effective_exit = strict_exit_code_or_none(result.audit.get("exit_code"))
+    sess_rev, sess_fp = _session_workspace_identity(session)
+    identity = _kernel_workspace_identity_of(result)
+    if identity is not None:
+        sess_rev, sess_fp = identity.revision, identity.fingerprint
+    elif session.project:
+        # A recovered observation cannot borrow the resumed version.
+        sess_rev, sess_fp = 0, ""
+    _record_run_verification(session, args, effective_exit, sess_rev, sess_fp, ok=ok)
+    if text:
+        session.transcript_notes.append(f"run: {text[:500]}")
+
+
 def record_facts_for_result(
     session: TaskSession,
     call: ToolCall,
@@ -149,7 +173,6 @@ def record_facts_for_result(
     name = canonical_tool_name(call.name)
     args = call.args if isinstance(call.args, dict) else {}
     text = str(result.model_text or "")
-    sess_rev, sess_fp = _session_workspace_identity(session)
     if name == "edit" and _canonical_mapping(result).get("workspace_unconfirmed") is True:
         # A failed identity bump does not undo the file effect. This fact is
         # persisted in the ordinary receipt and replayed even when ok=False.
@@ -158,26 +181,7 @@ def record_facts_for_result(
             session.transcript_notes.append(f"edit: {text[:500]}")
         return
     if name == "run":
-        # Single record path: every executed run is an observation, known or
-        # unknown. Unknown (missing/invalid exit) records passed=False with
-        # no exit_code so the latest observation blocks instead of reviving
-        # an older success. Text never implies pass.
-        effective_exit = strict_exit_code_or_none(exit_code) if exit_code is not None else None
-        if (
-            effective_exit is None
-            and isinstance(result.audit, dict)
-            and result.audit.get("exit_code") is not None
-        ):
-            effective_exit = strict_exit_code_or_none(result.audit.get("exit_code"))
-        identity = _kernel_workspace_identity_of(result)
-        if identity is not None:
-            sess_rev, sess_fp = identity.revision, identity.fingerprint
-        elif session.project:
-            # A recovered observation cannot borrow the resumed version.
-            sess_rev, sess_fp = 0, ""
-        _record_run_verification(session, args, effective_exit, sess_rev, sess_fp, ok=ok)
-        if text:
-            session.transcript_notes.append(f"run: {text[:500]}")
+        _record_run_fact(session, args, result, ok=ok, exit_code=exit_code)
         return
     if name == "source_search":
         if not ok:

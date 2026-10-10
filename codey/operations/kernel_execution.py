@@ -36,6 +36,8 @@ from codey.operations.kernel_result import (
     _error_result,
     _normalize_delegate_result,
     _normalize_explicit_result,
+    denied_before_execution,
+    policy_denial_result,
     strict_exit_code_or_none,
 )
 from codey.operations.task_session import TaskSession, effect_coordinates, turn_effect_id
@@ -127,7 +129,7 @@ def _explicit_policy_denial(
             denied, message, _approval = check(call)
             if denied:
                 return (
-                    ToolResult(ok=False, call=call, model_text=f"ERROR: {message}"),
+                    policy_denial_result(call, message),
                     False,
                     None,
                 )
@@ -182,7 +184,13 @@ def _run_via_delegate_or_fn(
             turn=active_turn,
             tool_index=tool_index,
         )
-        result = _consistent_tool_result(call, result)
+        # Only the production project's guard owns this disposition; custom
+        # and injected executor metadata is normalized without this authority.
+        from codey.operations.task_execution import ExecutionDelegate
+
+        runtime_guard = (type(delegate) is ExecutionDelegate
+                         and name == "run" and denied_before_execution(result))
+        result = _consistent_tool_result(call, result, runtime_guard=runtime_guard)
         result, ok, exit_code = _normalize_delegate_result(name, result, ok, exit_code)
         return result, ok, exit_code
     return _error_result(call, f"unknown tool executor: {name or '?'}"), False, None
@@ -598,6 +606,8 @@ def _settle_slot(
             strict_exit = strict_exit_code_or_none(result.audit.get("exit_code"))
         if strict_exit is not None:
             record["exit_code"] = strict_exit
+        if denied_before_execution(result):
+            record["execution_disposition"] = "denied_before_execution"
     except Exception as exc:
         raise EffectSettlementFailed(f"effect settlement failed for {identity}: {exc}") from exc
     # Minimal durable provenance: only the kernel side-channel is persisted,

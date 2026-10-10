@@ -55,6 +55,7 @@ from codey.runtime.observe.events import RunEvent
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
+from tests.test_project_completion_flow_enforcement import _current_snapshot_review
 
 SESSION = "s-opstate"
 RESEARCH_ITERATION = "codey.operations.research_iteration.run_research_iteration"
@@ -155,11 +156,12 @@ def _runner(
     writer: ObservingWriter,
     *,
     agent_run=None,
+    review=None,
 ) -> TaskRunDeps:
     return TaskRunDeps(state=state,
         agent_run=agent_run or writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes("src/mod.py")),
-        run_review=mock.Mock(return_value=None),
+        run_review=review or mock.Mock(return_value=None),
         capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
@@ -665,7 +667,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
             state = server.AppContext(Path(td) / "state")
-            event = _run(_runner(state, writer), state, project, writer)
+            event = _run(_runner(state, writer, review=_current_snapshot_review), state, project, writer)
 
             operation = _operation(state, str(event["run_id"]))
 
@@ -743,7 +745,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
             state = server.AppContext(Path(td) / "state")
-            event = _run(_runner(state, writer), state, project, writer)
+            event = _run(_runner(state, writer, review=_current_snapshot_review), state, project, writer)
 
             operation = _operation(state, str(event["run_id"]))
 

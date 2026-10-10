@@ -74,6 +74,7 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/completion/behavioral_checks.py` | 有限原文准入、冻结行为定义与聚合完成检查；无模型调用或 I/O |
 | `codey/operations/behavioral_verification.py`、`behavioral_probe_worker.py` | 授权后的有界 Python 函数观察、代码身份与受管结果；固定执行器不接收脚本或表达式 |
 | `codey/operations/project_review_phase.py::validate_candidate` | 首次完成及修复后的共同候选验证入口，重新观察并重新审查当前补丁 |
+| `codey/operations/project_candidate_validation.py` | 对获准的停滞候选执行一次由运行时拥有的有界验证；复用原验证命令，不能直接声明完成 |
 | `codey/operations/explicit_execution_requirements.py` | 从原始要求与既有回执投影 once、先读后写及明确只读修复阻塞；无独立状态 |
 | `codey/operations/kernel_session_recovery.py`、`kernel_receipts.py` | 恢复原策略/事实/结算结果，并验证收据身份 |
 | `codey/providers/local_response_codec.py` | 本地响应信封与模型方言，在进入内核前归一 |
@@ -155,6 +156,8 @@ Research fetch 适配器返回 `status`（`ok/error/skipped`），失败时还�
 接纳时把 `model_selection`、必要时的 `reviewer_selection` 写入 canonical
 operation state，保存连接版本、模型、协议、能力和生成参数，不保存凭据。
 冷启动沿用原选择，Settings 改动不覆盖旧任务；原连接不可用就阻塞恢复。
+冷启动期间 operation state 继续使用严格 schema 1；新增字段必须存在且类型正确，
+缺失或畸形字段直接 fail closed，不做迁移。
 协议历史由各适配器在内存中拥有，没有可复用历史时，新窗口接收原任务要求和
 已结算事实，不重复已结算写入。`final_delivery` 单独保存 success/failed/unknown，
 交付失败不会擦掉已成立的完成证明或已执行效果。

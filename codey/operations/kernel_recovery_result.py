@@ -439,6 +439,11 @@ def spec_from_persisted_record(
             if type(exit_code) is not int:
                 raise RecoveryFailed("persisted replay exit_code must be an integer")
             audit["exit_code"] = exit_code
+        if isinstance(record, Mapping) and "execution_disposition" in record:
+            disposition = record["execution_disposition"]
+            if disposition != "denied_before_execution" or ok or "exit_code" in audit:
+                raise RecoveryFailed("persisted execution disposition is inconsistent")
+            audit["execution_disposition"] = disposition
     except Exception as exc:
         raise RecoveryFailed(f"persisted replay unreadable: {exc}") from exc
     return RecoveredResultSpec(

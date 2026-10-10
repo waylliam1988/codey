@@ -164,6 +164,11 @@ def blocked_result(result: RunResult, reason: str) -> RunResult:
     """Turn a claimed-done result into an honest blocked stop."""
     note = blocked_note(reason)
     summary = result.summary.strip()
+    from codey.operations.project_completion_checks import verification_gap_diagnostics
+
+    details = verification_gap_diagnostics(result.facts)
+    if details:
+        note += "\n" + details
     return replace(
         result,
         stop_reason="blocked",

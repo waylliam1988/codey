@@ -2,6 +2,27 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Candidate recovery and evidence-boundary repair (2026-10-10)
+
+- Add one runtime-owned, bounded validation attempt for a stopped `no_progress`
+  candidate, shared by the initial writer and completion repair. It reuses the
+  original authorized verification, kernel execution, permissions, receipts,
+  current behavior observation, review and completion proof.
+- Classify policy denial before execution separately from an executed run with a
+  failed or missing result. Denied probes remain auditable without polluting
+  executed verification facts; uncertain execution still blocks completion.
+- Preserve actual behavior facts through review repair and defer review of a
+  freshly failed candidate until the existing bounded completion repair. Review
+  repair now preserves the already consumed operation turns across interruption
+  and cold recovery. Operation state remains strict schema v1 without migration.
+- Production KoboldCpp A/B round 08: new version **4/4**, baseline **3/4**,
+  false completions **0/0**. The two native and two recorded-prefix scenarios
+  are reported separately; this is evidence for the two authorized task
+  contracts, not a general language-understanding or speed claim.
+- Final checks: **8392 passed, 7 skipped, 1504 subtests**; machine contract
+  **1008 passed, 14 subtests**; Ruff, Windows/Linux mypy, Pyrefly, compileall,
+  diff and untracked-file whitespace checks passed. No release or tag.
+
 ## Unreleased - Native installed OpenCode comparison (2026-10-10)
 
 - Add `codey_vs_opencode_agent_stability_ab.py` and an observer of the installed

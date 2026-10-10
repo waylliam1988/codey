@@ -2,6 +2,19 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 候选恢复与证据边界修复（2026-10-10）
+
+- 为 `no_progress` 停滞候选增加一次由运行时拥有的有界真实验证，初始 Writer 与完成门修复共用。
+  继续使用原任务已授权验证、内核执行、权限、回执、当前行为观察、review 与完成证明。
+- 将执行前策略拒绝与实际执行后的失败/缺失结果分开记录。被拒绝探测保留审计但不污染已执行验证；
+  实际执行结果不确定时仍阻止完成。
+- review 修复保留真实行为事实；新候选行为刚失败时先进入已有一次完成修复，再取得当前 review。
+  review 重启在中断和冷恢复时保留已经消耗的操作 turn。操作状态继续使用严格 schema 1，不做迁移。
+- KoboldCpp 生产 A/B 第八轮：新版本 **4/4**、基线 **3/4**，双方误完成均为 **0**。
+  两个原生场景和两个记录前缀场景分开解释；这只覆盖两个已授权任务契约，不能宣称通用需求理解或速度优势。
+- 最终检查：**8392 passed、7 skipped、1504 subtests**；机器契约 **1008 passed、14 subtests**；
+  Ruff、Windows/Linux mypy、Pyrefly、compileall、diff 及未跟踪文件空白检查通过。不发布、不创建 tag。
+
 ## 未发布 - 安装版 OpenCode 原生实机比较（2026-10-10）
 
 - 新增 `codey_vs_opencode_agent_stability_ab.py` 和安装版 sidecar 观察器，

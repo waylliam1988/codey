@@ -75,6 +75,7 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/completion/behavioral_checks.py` | Bounded original-requirement admission, frozen definitions and one aggregate completion check; no model or I/O |
 | `codey/operations/behavioral_verification.py`, `behavioral_probe_worker.py` | Authorized bounded Python function observations, workspace identity and managed results; a fixed worker accepts data, not scripts |
 | `codey/operations/project_review_phase.py::validate_candidate` | Shared initial/post-repair candidate validation, with current observations and a fresh review |
+| `codey/operations/project_candidate_validation.py` | One bounded runtime-owned validation of an admitted stopped candidate; it reuses the original verification command and cannot declare completion |
 | `codey/operations/explicit_execution_requirements.py` | Receipt-based once, requested output-read and proven readonly-fix obstruction projections; no independent state |
 | `codey/operations/kernel_session_recovery.py`, `kernel_receipts.py` | Restore original policy/facts and settled results; validate receipt identity |
 | `codey/providers/local_response_codec.py` | Local response envelopes and model dialects, before the kernel |
@@ -164,6 +165,8 @@ Admission records `model_selection` and, when used, `reviewer_selection` in the
 canonical operation state: connection revision, model, protocol, capabilities
 and generation settings, without credentials. Cold restart reuses this choice;
 changed Settings do not replace it, and an unavailable connection blocks recovery.
+The operation state keeps strict schema version 1 during cold start; new fields
+are required and malformed or missing fields fail closed without migration.
 Protocol history is in-memory and protocol-owned. Without reusable history,
 recovery creates a fresh window with original task requirements and settled facts,
 never repeating a settled write. `final_delivery` records success/failed/unknown

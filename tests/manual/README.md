@@ -1,5 +1,29 @@
 # Manual live benchmarks
 
+The current production candidate-recovery implementation is integrated in the
+shared runtime. The deterministic experiment below remains a boundary test and
+does not replace the production KoboldCpp A/B. The latest production result is
+round 08: new 4/4, baseline 3/4, with zero false completions. Recorded-prefix
+arms and native arms are scored separately.
+
+`candidate_validation_and_behavioral_repair_experiment.py` is an offline,
+explicitly invoked pytest experiment for stopped candidate validation and
+counterexample repair. It uses scripted choices with real project tools,
+unittest, behavioral executions, review snapshots and completion proofs.
+It never calls a model or edits production files. The `current` variant
+intentionally exits nonzero when the proposed contract is not met; `candidate`
+installs process-local overrides from `candidate_recovery_test_proposal.py`.
+Neither script is part of default pytest discovery or a production runtime.
+
+```powershell
+python -m tests.manual.candidate_validation_and_behavioral_repair_experiment --variant current --report artifacts/candidate-recovery-current.json
+python -m tests.manual.candidate_validation_and_behavioral_repair_experiment --variant candidate --report artifacts/candidate-recovery-proposal.json
+```
+
+See [the experiment report](../../docs/candidate-validation-and-behavioral-repair-experiment-2026-10-10.zh-CN.md).
+Passing scripted choices establish workflow feasibility and boundaries, not
+real-model compliance or an agent benchmark score.
+
 The installed OpenCode native agent comparison is
 `codey_vs_opencode_agent_stability_ab.py`. It reuses the Codey/Pi task fixtures,
 verification journals, loopback proxy, budgets and paired scoring, but executes

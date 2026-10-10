@@ -20,6 +20,8 @@ from codey.operations.project_completion_context import (
 )
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
+from codey.reviews.core import ReviewResult
+from codey.reviews.identity import ReviewIdentity, capture_snapshot
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
@@ -124,11 +126,23 @@ def _scoped_run_event(command: str, path: str, ok: bool) -> RunEvent:
     )
 
 
-def _runner(state: server.AppContext, writer: ScriptedWriter) -> TaskRunDeps:
+def _current_snapshot_review(**kwargs):
+    """Scripted approval tied to this invocation's real workspace snapshot."""
+    project = kwargs['project']
+    files = tuple(row['path'] for row in kwargs['changes']['files'])
+    snapshot = capture_snapshot(project, files)
+    assert snapshot.ok
+    identity = ReviewIdentity('scope', 'prompt', 'snapshot', str(project), 'fixture-review', '', 1,
+        'reviewer', False, snapshot_root=snapshot.root, snapshot_files=snapshot.files,
+        snapshot_inventory_digest=snapshot.inventory_digest)
+    return 'fixture-review', ReviewResult('approved', 'Fixture candidate reviewed', [], identity=identity)
+
+
+def _runner(state: server.AppContext, writer: ScriptedWriter, *, review=None) -> TaskRunDeps:
     return TaskRunDeps(state=state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes("src/mod.py")),
-        run_review=mock.Mock(return_value=None),
+        run_review=review or mock.Mock(return_value=None),
         capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
@@ -233,7 +247,7 @@ def test_fresh_fail_runs_one_repair_round_then_completes() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
         state = server.AppContext(Path(td) / "state")
-        event = _run(_runner(state, writer), state, project)
+        event = _run(_runner(state, writer, review=_current_snapshot_review), state, project)
 
         assert len(writer.calls) == 2
         repair_call = writer.calls[1]
@@ -296,7 +310,7 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
         runner = TaskRunDeps(state=state,
             agent_run=writer,
             collect_changes=mock.Mock(side_effect=collect),
-            run_review=mock.Mock(return_value=None),
+            run_review=_current_snapshot_review,
             capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
@@ -336,7 +350,7 @@ def test_still_failing_after_repair_round_blocks_honestly() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
         state = server.AppContext(Path(td) / "state")
-        event = _run(_runner(state, writer), state, project)
+        event = _run(_runner(state, writer, review=_current_snapshot_review), state, project)
 
         assert len(writer.calls) == 2
         assert event["stop_reason"] == "blocked"

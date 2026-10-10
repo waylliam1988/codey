@@ -329,6 +329,8 @@ def replay_slot_typed(
         persisted_payload: dict[str, object] = {"ok": was_ok, "excerpt": excerpt, "name": stored_name}
         if exit_code is not None:
             persisted_payload["exit_code"] = exit_code
+        if "execution_disposition" in record:
+            persisted_payload["execution_disposition"] = record["execution_disposition"]
         spec = _spec_persisted(
             persisted_payload,
             want,

@@ -18,7 +18,7 @@ from codey.operations.task_state import TaskState
 from codey.policies.limits import REVIEW_TIMEOUT
 from codey.providers import controls as provider_controls
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
-from codey.reviews.core import ReviewResult, parse_review_with_repair
+from codey.reviews.core import REVIEW_REPAIR_PROMPT, ReviewResult, parse_review_response, parse_review_with_repair
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.reviews.review_policy import WEB_IF_AVAILABLE, allow_self_review
 from codey.runtime.core import cancellation
@@ -115,12 +115,7 @@ def run_review_attempt(
 
         bind_api_usage(reviewer, reviewer_id, trace_recorder)
         reviewer.new_chat()
-        reply = _send_review_prompt(
-            reviewer, trace_recorder, prepared.prompt
-        )
-        review = _parse_with_single_repair(
-            reviewer, trace_recorder, reply, prepared
-        )
+        review = _request_review_result(reviewer, trace_recorder, prepared, snapshot)
         return reviewer_id, _finalize_review(
             ctx, session_id, project, reviewer_id, self_review,
             prepared, snapshot, review, trace_recorder, run_id, review_policy, model_id,
@@ -180,6 +175,32 @@ def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any) -> Any:
         raise
     except Exception as exc:
         raise ReviewSendUnknown(str(exc)) from exc
+
+
+def _request_review_result(reviewer: Any, trace_recorder: object | None, prepared: Any, snapshot: Any) -> ReviewResult:
+    """Known output truncation and malformed JSON share one format attempt.
+
+    A completed generation cut short is distinct from an unknown send. Only
+    this read-only response may be regenerated; snapshot applicability still
+    guards both the retry and the final result.
+    """
+    from codey.providers.error_classification import OutputLengthError
+    from codey.reviews.identity import verify_snapshot
+
+    try:
+        reply = _send_review_prompt(reviewer, trace_recorder, prepared.prompt)
+    except ReviewSendUnknown as exc:
+        if not isinstance(exc.__cause__, OutputLengthError):
+            raise
+        cancellation.check()
+        if not verify_snapshot(snapshot):
+            return ReviewResult('unknown', 'Review outdated · files changed', [], status='stale',
+                                diagnostics=('snapshot_stale_before_format_repair',))
+        reply = _send_review_prompt(reviewer, trace_recorder, REVIEW_REPAIR_PROMPT
+            + '\nKeep summary under 160 characters; each finding must identify a concrete defect. '
+              'Do not put step-by-step analysis in JSON fields.')
+        return parse_review_response(reply, changes=prepared.reviewer_view)
+    return cast(ReviewResult, _parse_with_single_repair(reviewer, trace_recorder, reply, prepared))
 
 
 def _parse_with_single_repair(reviewer: Any, trace_recorder: Any, reply: Any, prepared: Any) -> Any:
