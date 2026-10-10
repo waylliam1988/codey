@@ -46,8 +46,8 @@ The unique final full run was:
 
 **8384 passed, 30 skipped, 1503 subtests passed in 1013.92s (0:16:53).**
 
-Commit and push results are recorded below after the documentation-only
-commit.
+Commit `5ca88ff9be3f2266c2c2982488219b453356bd05` was created after the final
+run and pushed successfully to `origin/master`.
 
 ## Candidate recovery and evidence-boundary repair (2026-10-10)
 

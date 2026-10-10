@@ -153,8 +153,9 @@ without a new stable candidate, satisfying the no-new convergence rule.
 All required pre-final gates passed: Ruff, mypy, compileall, test collection,
 diff check, and affected tests. The unique final full pytest run passed **8384
 tests, skipped 30, and reported 1503 subtests in 1013.92s (0:16:53)**. No
-production or test files were changed after that run. The documentation-only
-commit hash and push result are added here after commit.
+production or test files were changed after that run. Commit
+`5ca88ff9be3f2266c2c2982488219b453356bd05` was pushed successfully to
+`origin/master`.
 
 ## Risks and environment limits
 
