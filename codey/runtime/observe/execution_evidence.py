@@ -132,6 +132,7 @@ class ExecutionEvidence:
         self.checks_after_edit: list[CheckEvidence] = []
         self.failed_checks_after_edit: list[CheckEvidence] = []
         self.environment_failures_after_edit: list[CheckEvidence] = []
+        self.denied_checks_after_edit: list[CheckEvidence] = []
         self.truncated_results: list[TruncatedEvidence] = []
         self.duplicate_info_tools = 0
         self.observed_tool_events = 0
@@ -179,6 +180,7 @@ class ExecutionEvidence:
             self.checks_after_edit.clear()
             self.failed_checks_after_edit.clear()
             self.environment_failures_after_edit.clear()
+            self.denied_checks_after_edit.clear()
             self._seen_info.clear()
             path = _text(args.get("path"), 240)
             if path and path not in self.changed_files:
@@ -247,6 +249,7 @@ class ExecutionEvidence:
         self.checks_after_edit.clear()
         self.failed_checks_after_edit.clear()
         self.environment_failures_after_edit.clear()
+        self.denied_checks_after_edit.clear()
 
     def render_for_review(self) -> str:
         all_reads = self._unique(item.path for item in self.reads if item.ok)
@@ -290,6 +293,7 @@ class ExecutionEvidence:
             f"- Successful checks after latest edit: {self._checks(list(self.successful_checks))}",
             f"- Failed checks after latest edit: {self._checks(list(self.failed_checks))}",
             f"- Environment failures after latest edit: {self._checks(list(self.environment_failures))}",
+            f"- Checks refused before execution after latest edit: {self._checks(list(self.denied_checks))}",
             f"- Truncated tool results during task: {self._joined(truncated)}",
             f"- Repeated identical information calls within edit epochs: {self.duplicate_info_tools}",
             "This is execution evidence, not proof of correctness or coverage.",
@@ -343,6 +347,22 @@ class ExecutionEvidence:
         command = str(args.get("command") or "").strip()
         cwd = str(args.get("path") or ".").strip() or "."
         if not command:
+            return
+        audit = getattr(outcome, "audit", {})
+        if (
+            isinstance(audit, dict)
+            and audit.get("execution_disposition") == "denied_before_execution"
+            and getattr(outcome, "exit_code", None) is None
+        ):
+            item = CheckEvidence(
+                command,
+                cwd,
+                error_code=_text(getattr(outcome, "error_code", ""), 80),
+                result_summary=check_failure_summary(outcome),
+                workspace_revision=self.workspace_revision,
+                workspace_fingerprint=self.workspace_fingerprint,
+            )
+            self._append_check(self.denied_checks_after_edit, item, MAX_FAILED_CHECKS)
             return
         from codey.utils.refs import strict_run_success
 
@@ -399,6 +419,14 @@ class ExecutionEvidence:
             item.workspace_revision == self.workspace_revision
             and bool(self.workspace_fingerprint)
             and item.workspace_fingerprint == self.workspace_fingerprint
+        )
+
+    @property
+    def denied_checks(self) -> tuple[CheckEvidence, ...]:
+        return tuple(
+            item
+            for item in self.denied_checks_after_edit
+            if self._check_matches_workspace(item)
         )
 
     @staticmethod

@@ -86,6 +86,26 @@ class ExecutionEvidenceTests(unittest.TestCase):
         self.assertEqual(len(evidence.environment_failures_after_edit), 1)
         self.assertEqual(evidence.environment_failures_after_edit[0].error_code, "policy_denied")
 
+    def test_preexecution_refusal_is_audited_but_not_a_failed_check(self) -> None:
+        evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
+        args = {"path": ".", "command": "python -c \"print(12345)\""}
+        evidence.record(event(
+            "run",
+            args,
+            ToolOutcome(
+                "ERROR: project guard denied",
+                False,
+                audit={"execution_disposition": "denied_before_execution"},
+                error_code="policy_denied",
+            ),
+        ))
+
+        self.assertEqual(evidence.failed_checks_after_edit, [])
+        self.assertEqual(evidence.environment_failures_after_edit, [])
+        self.assertEqual(len(evidence.denied_checks_after_edit), 1)
+        self.assertIn("python -c", evidence.render_for_review())
+        self.assertIn("Checks refused before execution", evidence.render_for_review())
+
     def test_timeout_run_does_not_clear_green_checks(self) -> None:
         evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
         args = {"path": ".", "command": "python -m pytest"}

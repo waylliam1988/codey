@@ -1,10 +1,13 @@
 """Installed OpenCode observations preserve native facts and local isolation."""
 import json
+from http.client import RemoteDisconnected
+from urllib.error import URLError
 
 import pytest
 
 from tests.manual.agent_stability_measurements import paired_summary, stored_output_was_read
 from tests.manual.opencode_installed_agent_worker import (
+    LocalApiClient,
     installed_identity,
     local_api_url,
     local_config,
@@ -13,6 +16,53 @@ from tests.manual.opencode_installed_agent_worker import (
     sidecar_ready,
     terminal_observation,
 )
+
+
+def test_local_api_reuses_connection_and_never_retries_post(monkeypatch, tmp_path):
+    class Response:
+        status = 200
+        reason = 'OK'
+        will_close = False
+
+        def getheaders(self):
+            return [('Content-Type', 'application/json')]
+
+        def read(self):
+            return b'{"ok": true}'
+
+    class Connection:
+        instances = []
+
+        def __init__(self, host, port, timeout):
+            self.requests = []
+            self.closed = False
+            self.__class__.instances.append(self)
+
+        def request(self, method, target, body=None, headers=None):
+            self.requests.append((method, target, body, headers))
+            if method == 'POST':
+                raise RemoteDisconnected('request outcome is unknown')
+
+        def getresponse(self):
+            return Response()
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr('tests.manual.opencode_installed_agent_worker.HTTPConnection', Connection)
+    client = LocalApiClient('http://127.0.0.1:8123', tmp_path)
+    assert client.request('/global/health') == {'ok': True}
+    assert client.request('/global/health') == {'ok': True}
+    assert len(Connection.instances) == 1
+    assert len(Connection.instances[0].requests) == 2
+    try:
+        client.request('/session', 'POST', {})
+    except URLError as exc:
+        assert isinstance(exc.reason, RemoteDisconnected)
+    else:
+        raise AssertionError('POST must propagate an uncertain outcome')
+    assert len(Connection.instances) == 1
+    client.close()
 
 
 def test_pairing_names_opencode_without_substituting_pi():

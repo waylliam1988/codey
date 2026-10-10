@@ -12,10 +12,11 @@ import os
 import socket
 import subprocess
 import time
+from http.client import HTTPConnection, HTTPException
+from io import BytesIO
 from pathlib import Path
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 from tests.manual.agent_stability_proxy import local_url
 
@@ -101,6 +102,57 @@ def local_api_url(base, path, project):
     return base + path + ('' if path.startswith('/global/') else '?' + urlencode({'directory': str(project)}))
 
 
+class LocalApiClient:
+    """Use one sidecar connection and never replay an uncertain mutation."""
+
+    def __init__(self, base_url, project):
+        parsed = local_url(base_url)
+        from urllib.parse import urlsplit
+        parts = urlsplit(parsed)
+        self._base_url = parsed
+        self._project = project
+        self._host = parts.hostname or '127.0.0.1'
+        self._port = parts.port or 80
+        self._connection = None
+
+    def _get_connection(self):
+        if self._connection is None:
+            self._connection = HTTPConnection(self._host, self._port, timeout=10)
+        return self._connection
+
+    def close(self):
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+
+    def request(self, path, method='GET', data=None, timeout=10):
+        target = local_api_url(self._base_url, path, self._project)
+        from urllib.parse import urlsplit
+        parsed = urlsplit(target)
+        selector = parsed.path + (f'?{parsed.query}' if parsed.query else '')
+        payload = json.dumps(data).encode() if data is not None else None
+        headers = {'Authorization': 'Basic b3BlbmNvZGU6bG9jYWwtYmVuY2htYXJr',
+                   'Content-Type': 'application/json', 'Connection': 'keep-alive'}
+        attempts = 2 if method == 'GET' else 1
+        for attempt in range(attempts):
+            try:
+                connection = self._get_connection()
+                connection.timeout = timeout
+                connection.request(method, selector, body=payload, headers=headers)
+                response = connection.getresponse()
+                raw = response.read()
+                if response.will_close:
+                    self.close()
+                if response.status >= 400:
+                    raise HTTPError(target, response.status, response.reason,
+                                    dict(response.getheaders()), BytesIO(raw))
+                return json.loads(raw) if raw else None
+            except (OSError, HTTPException) as exc:
+                self.close()
+                if attempt + 1 == attempts:
+                    raise URLError(exc) from exc
+
+
 def sidecar_ready(log):
     if not log.exists():
         return False
@@ -142,14 +194,9 @@ def main():
     for folder in ('state', 'data', 'config', 'cache'):
         (directory / folder).mkdir(exist_ok=True)
     host = sidecar_host(args.install.resolve(), directory, port)
+    api_client = LocalApiClient(f'http://127.0.0.1:{port}', args.project.resolve())
     def api(path, method='GET', data=None, timeout=10):
-        request = Request(local_api_url(f'http://127.0.0.1:{port}', path, args.project.resolve()),
-            data=json.dumps(data).encode() if data is not None else None,
-            headers={'Authorization': 'Basic b3BlbmNvZGU6bG9jYWwtYmVuY2htYXJr', 'Content-Type': 'application/json'},
-            method=method)
-        with urlopen(request, timeout=timeout) as response:
-            raw = response.read()
-            return json.loads(raw) if raw else None
+        return api_client.request(path, method, data, timeout)
 
     def emit(row):
         print(json.dumps(row, ensure_ascii=False), flush=True)
@@ -213,6 +260,7 @@ def main():
                 time.sleep(.1)
             return 0
         finally:
+            api_client.close()
             if proc.poll() is None:
                 if proc.stdin:
                     proc.stdin.write(b'stop\n')
