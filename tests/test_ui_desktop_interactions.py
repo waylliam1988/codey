@@ -217,15 +217,27 @@ def test_selection_copy_failure_keeps_retryable_menu_and_selected_snapshot(page)
     assert page.evaluate("copiedSelections") == [selected, selected]
 
 
-def test_selection_menu_is_bounded_and_dismissed_on_scroll_and_outside_click(page):
+@pytest.mark.parametrize("scroll_start", [0, 100])
+def test_selection_menu_is_bounded_and_dismissed_on_scroll_and_outside_click(page, scroll_start):
     body = select_message(page, text="Before SELECTED 中文 after\n" * 100)
+    area = page.locator("#chat-area")
+    initial = area.evaluate("""(e, top) => {
+        e.dispatchEvent(new WheelEvent('wheel', {deltaY:-50}));
+        e.scrollTop=top; e.dispatchEvent(new Event('scroll')); return e.scrollTop;
+    }""", scroll_start)
+    assert initial == scroll_start
     right_click(body, 1277, 797)
     menu = page.get_by_role("menu", name="Selection", exact=True)
     expect(menu).to_be_visible()
     box = menu.bounding_box()
     assert box["x"] >= 8 and box["x"] + box["width"] <= 1272
     assert box["y"] >= 8 and box["y"] + box["height"] <= 792
-    page.locator("#chat-area").evaluate("e=>{e.scrollTop=0;e.dispatchEvent(new Event('scroll'));}")
+    before, after = area.evaluate("""e => {
+        const before=e.scrollTop;
+        e.scrollTop=before === 0 ? 100 : 0;
+        e.dispatchEvent(new Event('scroll')); return [before,e.scrollTop];
+    }""")
+    assert after != before, "Menu dismissal requires an actual scroll position change"
     expect(menu).to_be_hidden()
     open_selection_menu(page, body)
     page.locator("#task").click()
