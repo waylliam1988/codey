@@ -795,6 +795,7 @@ def _metadata(target: attempts.GateTarget) -> dict:
                          "codey/app/headless_runner.py", "codey/app/task_services.py", "codey/task/entry_auth.py",
                          "codey/operations/kernel_recovery.py",
                          "codey/operations/project_adapter.py",
+                         "codey/operations/project_candidate_validation.py",
                          "codey/operations/task_loop.py", "codey/operations/kernel_prompt.py", "codey/operations/kernel_preparation.py",
                          "codey/operations/task_guidance.py", "codey/research/completion_guidance.py",
                          "codey/research/tool_contract.py", "codey/reviews/report_sections.py",
@@ -807,7 +808,9 @@ def _metadata(target: attempts.GateTarget) -> dict:
                          "codey/reviews/core.py", "codey/reviews/input.py", "codey/reviews/identity.py",
                          "codey/reviews/persistence.py", "codey/reviews/reuse.py",
                          "codey/app/review_service.py", "codey/operations/project_review_phase.py",
-                         "codey/runtime/core/operation_state.py")
+                         "codey/runtime/core/operation_state.py",
+                         "codey/agents/context_compaction.py", "codey/providers/compaction.py",
+                         "codey/providers/context_checkpoint.py", "codey/providers/context_ledger.py")
         },
         "server_observations": _server_observations(target.base_url) if target.provider_id == "local" else {},
         "chat_template": "not_reported", "quantization": "model_name_only; not independently verified",

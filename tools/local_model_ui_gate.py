@@ -410,7 +410,7 @@ def _exercise_page(
     if provider_id == "local":
         page.locator("#btn-settings").click()
         expect(page.locator("#local-config-pop")).to_be_visible()
-        page.locator("#local-config-close").click()
+        page.get_by_role("button", name="Close settings", exact=True).click()
         expect(page.locator("#local-config-pop")).not_to_be_visible()
 
     checks: list[str] = []

@@ -41,7 +41,10 @@ def completed_once_command(session: Any, call: ToolCall, *, project: Any,
                           f'The original request permits it once. Read its saved output with '
                           f'read_tool_result using result_ref={result_ref}; no new execution occurred. '
                           f'After changing the workspace, verification can run again.', ok=False,
-                          audit={'error_code': 'policy_denied'})
+                          audit={
+                              'execution_disposition': 'denied_before_execution',
+                              'error_code': 'policy_denied',
+                          })
     return None
 
 

@@ -84,8 +84,23 @@ def _task_kind_and_policy(request: AgentRequest) -> tuple[str, Any]:
     from codey.agents.protocol import task_forbids_verification
     from codey.policies.task_policy import build_task_policy
 
-    task_kind = "planning" if request.permission_profile == "planning_readonly" else "project"
     existing = getattr(request, "task_policy", None)
+    # A read-only writer continuation narrows tool permissions for this
+    # attempt; it must retain the parent project's task identity and
+    # conversation mode. Standalone planning requests have no project-write
+    # grant in their entry policy and remain planning tasks.
+    inherited_kind = str(getattr(getattr(request, "task_session", None), "task_kind", "") or "").strip().lower()
+    if inherited_kind in {"project", "hybrid", "research", "planning"}:
+        task_kind = inherited_kind
+    elif request.permission_profile == "planning_readonly":
+        task_kind = (
+            "project"
+            if existing is not None and callable(getattr(existing, "allows", None))
+            and existing.allows("project.write")
+            else "planning"
+        )
+    else:
+        task_kind = "project"
     if existing is not None and callable(getattr(existing, "allows", None)):
         return task_kind, existing
     policy = build_task_policy(

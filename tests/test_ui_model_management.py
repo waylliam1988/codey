@@ -136,6 +136,16 @@ def test_uniform_source_switches_keep_choices_and_apply_only_after_save(page, mo
     expect(page.locator("#send")).to_be_enabled()
 
 
+def test_local_settings_use_visible_close_settings_action_when_connection_is_collapsed(page, models):
+    del models
+    page.locator("#btn-settings").click()
+    expect(page.locator("#local-config-pop")).to_be_visible()
+    expect(page.locator("#local-connection-editor")).not_to_be_visible()
+    expect(page.locator("#local-config-close")).not_to_be_visible()
+    page.get_by_role("button", name="Close settings", exact=True).click()
+    expect(page.locator("#local-config-pop")).to_be_hidden()
+
+
 def test_actual_model_names_and_new_catalog_entries_do_not_change_allowlist(page, models):
     page.locator("#provider-button").click()
     expect(page.locator('[data-model="actual-local-id"]')).to_have_text("Actual server title", timeout=1500)

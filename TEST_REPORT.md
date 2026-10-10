@@ -2,6 +2,14 @@
 
 ## Candidate recovery and evidence-boundary repair (2026-10-10)
 
+The final source also includes the bounded read-only stagnation completion
+path. Its deterministic contract covers a current successful check, a denied
+repeat request with no second execution, safe stop when no `done` is submitted,
+the real `repair_settled` mutation path with accumulated turns, and preservation
+of the parent project conversation mode while using the read-only permission
+profile. The local model UI gate closes settings through the visible dialog
+action, and the machine contract includes this test.
+
 Production source was frozen for the final checks after the recorded KoboldCpp
 round 08. The new version completed all four scenarios; the baseline completed
 three. Both had zero false completions. The stale-search replay passed in
@@ -13,9 +21,8 @@ and all boundary failures remain preserved as historical evidence.
   evidence, not native-model task scores. The new version used more turns/tokens
   in successful native cases, so this round establishes recovery correctness,
   not efficiency.
-- Final full pytest: **8392 passed, 7 skipped, 1504 subtests** in 983.70s.
-  Collection was 8397 tests. The machine contract gate passed **1008 tests and
-  14 subtests** in 277.83s.
+- Final full pytest: **8407 passed, 7 skipped, 1503 subtests** in 1021.79s.
+  The machine contract gate passed **1021 tests and 14 subtests** in 288.95s.
 - Ruff, mypy Windows/Linux (407 files), Pyrefly (`check codey`, 0 errors),
   compileall, `git diff --check`, and untracked-file whitespace checks passed.
 - The operation state remains strict schema 1 because this is a cold-start

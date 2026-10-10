@@ -19,8 +19,16 @@
   false completions **0/0**. The two native and two recorded-prefix scenarios
   are reported separately; this is evidence for the two authorized task
   contracts, not a general language-understanding or speed claim.
-- Final checks: **8392 passed, 7 skipped, 1504 subtests**; machine contract
-  **1008 passed, 14 subtests**; Ruff, Windows/Linux mypy, Pyrefly, compileall,
+- Add the read-only stagnation completion contract: one bounded `done`
+  submission can reuse a current successful check without rerunning it;
+  repeated test requests are denied before execution, repair-stage settlement
+  preserves the accumulated operation budget, and the parent project task
+  identity remains unchanged while the attempt uses `planning_readonly`.
+- Fix the local model UI gate to use the visible `Close settings` action, add
+  the read-only contract to the machine gate, and include candidate-validation
+  and context-compaction modules in release fingerprints.
+- Final checks: **8407 passed, 7 skipped, 1503 subtests**; machine contract
+  **1021 passed, 14 subtests**; Ruff, Windows/Linux mypy, Pyrefly, compileall,
   diff and untracked-file whitespace checks passed. No release or tag.
 
 Post-commit targeted replay kept the stale-search path green (42.412s). Two

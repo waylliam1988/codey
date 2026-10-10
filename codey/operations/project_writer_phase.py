@@ -71,6 +71,8 @@ def _run_one_writer_attempt(
     ctx: ProjectRun,
     spec: WriterAttempt,
     note_turn: Callable[[int], None],
+    *,
+    permission_profile: str = "coding_writer",
 ) -> RunResult:
     workspace_revision_store = ctx.deps.verification.workspace_revisions
     if workspace_revision_store is None:
@@ -128,7 +130,7 @@ def _run_one_writer_attempt(
             if ctx.repair_projection is not None
             else None
         ),
-        permission_profile="coding_writer",
+        permission_profile=permission_profile,
         tool_fns=managed_tool_fns(
             ctx.deps,
             session_id=ctx.request.session_id,

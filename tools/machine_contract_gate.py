@@ -29,6 +29,7 @@ CONTRACT_TESTS = (
     "tests/test_requested_stored_output_read_precedes_mutation_and_completion.py",
     "tests/test_behavioral_local_holdout_case_contracts.py",
     "tests/test_readonly_required_fix_stops_blocked_on_current_failed_verification.py",
+    "tests/test_readonly_stagnation_completion.py",
     "tests/test_completion_proof_authority.py",
     "tests/test_completion_repair_pause_preserves_intents.py",
     "tests/test_completion_source_vs_strict_research.py",

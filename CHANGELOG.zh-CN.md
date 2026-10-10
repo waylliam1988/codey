@@ -12,7 +12,10 @@
   review 重启在中断和冷恢复时保留已经消耗的操作 turn。操作状态继续使用严格 schema 1，不做迁移。
 - KoboldCpp 生产 A/B 第八轮：新版本 **4/4**、基线 **3/4**，双方误完成均为 **0**。
   两个原生场景和两个记录前缀场景分开解释；这只覆盖两个已授权任务契约，不能宣称通用需求理解或速度优势。
-- 最终检查：**8392 passed、7 skipped、1504 subtests**；机器契约 **1008 passed、14 subtests**；
+- 增加只读停滞收尾契约：当前成功验证可复用一次有界 `done` 提交机会，重复测试请求在执行前拒绝，
+  修复阶段结算保留累计操作预算；收尾使用 `planning_readonly` 时仍保留父项目任务身份。
+- 本地模型 UI gate 改用可见的“Close settings”入口；只读契约加入机器契约清单；候选验证和上下文压缩模块加入 release 指纹。
+- 最终检查：**8407 passed、7 skipped、1503 subtests**；机器契约 **1021 passed、14 subtests**；
   Ruff、Windows/Linux mypy、Pyrefly、compileall、diff 及未跟踪文件空白检查通过。不发布、不创建 tag。
 
 提交后的定向回放中，stale-search 路径仍通过（42.412 秒）。两次独立反例回放都得到正确代码和新鲜行为通过，

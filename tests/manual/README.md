@@ -24,6 +24,17 @@ See [the experiment report](../../docs/candidate-validation-and-behavioral-repai
 Passing scripted choices establish workflow feasibility and boundaries, not
 real-model compliance or an agent benchmark score.
 
+The installed OpenCode and Pi comparisons, including their actual build
+identities, failure classifications, and the production candidate-recovery
+rounds, are consolidated in
+[the 2026-10-10 comparison report](../../docs/codey-opencode-pi-comparison-2026-10-10.zh-CN.md).
+The read-only stagnation replay is deterministic and uses the real kernel,
+verification receipts, completion gate, and runtime mutation log:
+
+```powershell
+python -m tests.manual.readonly_stagnation_replay --run-dir artifacts/readonly-stagnation-replay-current
+```
+
 The installed OpenCode native agent comparison is
 `codey_vs_opencode_agent_stability_ab.py`. It reuses the Codey/Pi task fixtures,
 verification journals, loopback proxy, budgets and paired scoring, but executes

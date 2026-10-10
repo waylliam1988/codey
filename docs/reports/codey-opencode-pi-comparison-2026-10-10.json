@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-10",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "backend": {"name": "KoboldCpp", "version": "1.117.1", "base_url": "http://127.0.0.1:5001"},
+  "sampling": {"temperature": 0, "seeds": [51, 52], "window": 32768, "max_tokens": 2048, "keep_recent": 12000},
+  "budgets": {"request_limit": 24, "timeout_seconds": 180},
+  "identities": {
+    "codey_commit": "bada8cd91536086051704d82ea08a4e2d98b8f55",
+    "codey_source_sha256": "bfe81c03dde12aed19b5ffb6e3cee4f30899acfe0b4e6785461cb8f0d4f08529",
+    "opencode_version": "1.18.35",
+    "opencode_executable_sha256": "e1e09d8ef8cf360318cf40ef4d7f91a25155f0707530523f43ce49730990c7dd",
+    "opencode_bundle_sha256": "aaa772c154f6ca3a604052ae4a15b63303883cb9a6ee0573be0bc9acedb31a39",
+    "pi_dist_sha256": "189b8f8868f437c28ebbbd6be6fa9e357b7047fd2aab484ff1e31abb34020eb3",
+    "pi_node_version": "v22.20.0"
+  },
+  "comparisons": {
+    "opencode": {"artifact": "artifacts/codey-vs-opencode-post-recovery-20261010-03/result.json", "pairs": 20, "codey_success": 20, "opencode_success": 14, "both": 14, "codey_only": 6, "opencode_only": 0, "codey_false_completion": 0, "opencode_false_completion": 2},
+    "pi": {"artifact": "artifacts/codey-vs-pi-post-recovery-20261010-02/result.json", "pairs": 20, "codey_success": 19, "pi_success": 10, "both": 9, "codey_only": 10, "pi_only": 1, "codey_false_completion": 0, "pi_false_completion": 1}
+  },
+  "candidate_recovery": {
+    "first_production_artifact": "artifacts/candidate-recovery-production-ab-20261010-01/result.json",
+    "first_production": {"baseline": "3/4", "production": "3/4", "failure": "repair-after-counterexample entered no_progress after stale SEARCH and lacked fresh completion evidence"},
+    "later_production_artifact": "artifacts/candidate-recovery-production-ab-20261010-08/result.json",
+    "later_production": {"baseline": "3/4", "production": "4/4", "false_completion": 0}
+  },
+  "scope": ["controlled replay is not unknown-task coverage", "incomplete usage is not treated as zero", "oracle approval is not agent completion evidence"]
+}

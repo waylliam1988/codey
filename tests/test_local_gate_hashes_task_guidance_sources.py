@@ -13,5 +13,8 @@ def test_live_gate_metadata_hashes_actual_task_guidance_and_context_sources(monk
         "codey/operations/task_guidance.py", "codey/research/completion_guidance.py",
         "codey/research/tool_contract.py", "codey/reviews/report_sections.py",
         "codey/operations/project_prompt_context.py", "codey/workspace/coding_context.py",
+        "codey/operations/project_candidate_validation.py", "codey/agents/context_compaction.py",
+        "codey/providers/compaction.py", "codey/providers/context_checkpoint.py",
+        "codey/providers/context_ledger.py",
     ):
         assert metadata["production_hashes"].get(path) == hashlib.sha256((REPO_ROOT / path).read_bytes()).hexdigest()

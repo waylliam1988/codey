@@ -256,9 +256,13 @@ def validate_candidate(ctx: ProjectRun, *, allow_review_repair: bool = True) -> 
     post-review edit invalidates observations and receives a new review.
     """
     from codey.operations.behavioral_verification import refresh_behavioral_observation
-    from codey.operations.project_candidate_validation import validate_stopped_candidate
+    from codey.operations.project_candidate_validation import (
+        submit_readonly_completion_candidate,
+        validate_stopped_candidate,
+    )
 
     validate_stopped_candidate(ctx)
+    submit_readonly_completion_candidate(ctx)
     refresh_behavioral_observation(ctx)
     run_review_phase(ctx, allow_repair=allow_review_repair)
     repaired_after_review = ctx.review_cycle.review_repair_attempted
