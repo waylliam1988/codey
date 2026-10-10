@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 CONTRACT_TESTS = (
+    "tests/test_opencode_installed_agent_observation_and_isolation.py",
     "tests/test_behavioral_requirement_admission_and_discriminating_inputs.py",
     "tests/test_python_behavioral_probe_observes_properties_and_failures.py",
     "tests/test_behavioral_failures_block_completion_and_stale_observations.py",

@@ -6,6 +6,24 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+## Native installed OpenCode comparison
+
+`manual/codey_vs_opencode_agent_stability_ab.py` compares native Codey and the
+installed OpenCode desktop sidecar using the existing shared cases and oracle.
+`manual/opencode_installed_agent_worker.py` observes native API/session/tool facts;
+it does not implement another agent. Explicit install path and isolated state are required.
+
+`test_opencode_installed_agent_observation_and_isolation.py` adds **16 cases** for
+loopback sampling/configuration, installed build identity, native tool deduplication,
+ready/health, actual terminal facts, async admission, saved-output paths and pairing.
+It is part of the required machine contract gate.
+
+Latest full suite: **8311 passed, 7 skipped, 1503 subtests**; machine contracts:
+**928 passed, 14 subtests**; focused comparison regressions: **70 passed**.
+The [native comparison](../docs/codey-vs-opencode-agent-stability-2026-10-10.zh-CN.md)
+retains failed/invalid pilots and the incomplete backend-isolation round. Original
+scores are **18/20 vs 14/20**, not a universal superiority claim. Production code is unchanged.
+
 ## Behavioral verification and candidate continuity
 
 Ten behavior-named files add 89 cases:

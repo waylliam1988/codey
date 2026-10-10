@@ -32138,7 +32138,7 @@
         "Pi readonly controls ran a passing test, then changed labels.py despite the instruction; final source has an IndentationError.",
         "All four Codey behavioral observations passed on the first candidate; no native counterexample-triggered repair is claimed.",
         "Harness returns nonzero when any arm fails its scenario; all eight arms and four pairs completed without timeout.",
-        "Case fixture hash differs from the previous partial round solely because the already-committed private observer variables were renamed CODEY_AB_ to AGENT_AB_; substituting that name back reproduces the preceding contract SHA-256 exactly. Business requirements and scoring are unchanged."
+        "Case fixture hash differs from the previous partial round solely because the already-committed private observer variable prefix was replaced by AGENT_AB_; substituting that name back reproduces the preceding contract SHA-256 exactly. Business requirements and scoring are unchanged."
       ]
     }
   ],

@@ -307,7 +307,8 @@ def _score_scenario(case, measured, verification, phases, baseline_hashes, recor
 
 
 def _run_arm(arm, root, run_dir, proxy_url, proxy_records, *, case: ExperimentCase, baseline_hashes, max_turns,
-             model_id, max_tokens, seed=41, temperature=0.0, timeout=180, window=32768, keep=12000, pi_entry="source"):
+             model_id, max_tokens, seed=41, temperature=0.0, timeout=180, window=32768, keep=12000, pi_entry="source",
+             opencode_install=None):
     run_dir.mkdir(parents=True, exist_ok=True)
     trace = run_dir / "trace"
     trace.mkdir()
@@ -334,6 +335,11 @@ def _run_arm(arm, root, run_dir, proxy_url, proxy_records, *, case: ExperimentCa
             "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "-e", str(extension),
             "--session", str(run_dir / "pi.session.jsonl")]
         command = base + ["--mode", "rpc"] if case.control == "cancel" else base + ["--mode", "json", "--print", case.task]
+    elif arm == "opencode":
+        base = [sys.executable, "-B", "-m", "tests.manual.opencode_installed_agent_worker",
+                "--install", str(opencode_install), "--run-dir", str(run_dir / "opencode-state"),
+                "--project", str(root)]
+        command = base + [case.task]
     else:
         base = [sys.executable, "-B", "-m", "tests.manual.agent_stability_codey_worker", "--project", str(root),
             "--state-home", str(run_dir / "state"), "--session-id", "ab_session", "--max-turns", str(max_turns)]
@@ -352,7 +358,7 @@ def _run_arm(arm, root, run_dir, proxy_url, proxy_records, *, case: ExperimentCa
             (root / "test_app.py").write_text(test, encoding="utf-8")
             baseline_hashes = {**baseline_hashes, "test_app.py": _snapshot_files(root)["test_app.py"]}
         next_command = (base + ["--mode", "json", "--print", case.followup] if arm == "pi"
-                        else base + (["--continue"] if case.control == "crash-after-edit" else []) + [case.followup])
+                        else base + (["--continue"] if arm == "codey" and case.control == "crash-after-edit" else []) + [case.followup])
         next_dir = run_dir / "phase-2"
         next_dir.mkdir()
         phases.append(_run_process(next_command, root, env, next_dir, deadline=deadline))
@@ -367,7 +373,8 @@ def _run_arm(arm, root, run_dir, proxy_url, proxy_records, *, case: ExperimentCa
     arm_records = list(proxy_records)
     measured = _metrics(rows, arm_records, verification, phases[-1]["returncode"])
     _score_scenario(case, measured, verification, phases, baseline_hashes, arm_records)
-    return {"arm": arm, "case": case.case_id, "status": phases[-1]["status"], "seed": seed,
+    return {"arm": arm, "case": case.case_id,
+            "status": "harness_error" if any(r.get("type") == "observer_error" for r in rows) else phases[-1]["status"], "seed": seed,
             "wall_time_seconds": sum(p["wall_time_seconds"] for p in phases),
             "verification": verification, "metrics": measured,
             "phases": [{k: v for k, v in p.items() if k != "rows"} for p in phases], "artifacts": str(run_dir)}
@@ -397,8 +404,8 @@ def _pi_build_identity(path):
     return {"dist_sha256": digest.hexdigest(), "matching_source_commit": None}
 
 
-def main(*, cases=TASK_CASES):
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(*, cases=TASK_CASES, opponent="pi"):
+    parser = argparse.ArgumentParser(description=f"Native Codey/{opponent} loopback agent comparison")
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--upstream", default="http://127.0.0.1:5001")
     parser.add_argument("--proxy-port", type=int, default=0)
@@ -416,6 +423,8 @@ def main(*, cases=TASK_CASES):
     parser.add_argument("--cases", default=",".join(c.case_id for c in cases))
     parser.add_argument("--pi-entry", choices=("source", "dist"), default="source",
                         help="explicit runtime selection; never automatically substitutes a build")
+    if opponent == "opencode":
+        parser.add_argument("--opencode-install", type=Path, required=True)
     args = parser.parse_args()
     upstream = local_url(args.upstream)
     with urlopen(upstream + "/v1/models", timeout=5) as response:
@@ -435,7 +444,21 @@ def main(*, cases=TASK_CASES):
         parser.error("recent-context budget must fit the input budget")
     run_dir = args.run_dir.resolve()
     run_dir.mkdir(parents=True, exist_ok=False)
-    environment = _preflight_pi(run_dir / "preflight", args.pi_entry)
+    opencode_install = args.opencode_install.resolve() if opponent == "opencode" else None
+    if opencode_install is not None:
+        import struct
+
+        from tests.manual.opencode_installed_agent_worker import installed_identity
+        with (opencode_install / "resources/app.asar").open("rb") as bundle:
+            sizes = struct.unpack("<4I", bundle.read(16))
+            header = json.loads(bundle.read(sizes[3]))
+            package = header["files"]["package.json"]
+            bundle.seek(8 + sizes[1] + int(package["offset"]))
+            version = json.loads(bundle.read(package["size"]))["version"]
+        environment = {"opencode_installed": installed_identity(opencode_install, version),
+                       "platform": sys.platform, "python_version": platform.python_version()}
+    else:
+        environment = _preflight_pi(run_dir / "preflight", args.pi_entry)
     projects = _new_project_root()
     with urlopen(upstream + "/api/extra/version", timeout=5) as response:
         backend = json.load(response)
@@ -448,25 +471,33 @@ def main(*, cases=TASK_CASES):
                                    "sampling_stage": "before admission", "proxy": "observe without rewriting"},
               "budgets": {"window": args.window, "output": args.max_tokens, "keep": args.keep,
                           "seconds_per_arm": args.timeout, "generation_requests_per_arm": args.request_limit},
-              "sources": {"codey": _source_identity(ROOT), "pi": _source_identity(ROOT / "reference-projects/pi")},
-              "project_root": str(projects), "results": [], "pi_entry": args.pi_entry,
+              "sources": {"codey": _source_identity(ROOT), opponent: _source_identity(ROOT / ("reference-projects/" + opponent))},
+              "project_root": str(projects), "results": [], "opponent": opponent, "pi_entry": args.pi_entry,
               "not_measured": ["live steering vs follow-up queues", "cross-model switching", "ambiguous edit injection",
                                "parallel speedup in a dedicated workload", "large real repository task completion"]}
-    if args.pi_entry == "dist":
+    if opponent == "pi" and args.pi_entry == "dist":
         result["sources"]["pi"]["executed_build"] = _pi_build_identity(ROOT / "reference-projects/pi")
+    if opponent == "opencode":
+        result["sources"]["opencode"]["executed_build"] = environment["opencode_installed"]
+        result["sources"]["opencode"]["reference_only_commit"] = result["sources"]["opencode"].pop("commit")
     digest = hashlib.sha256()
     for path in sorted((ROOT / "tests/manual").glob("agent_stability*.py")) + [Path(__file__).resolve()]:
         digest.update(path.name.encode())
         digest.update(path.read_bytes())
+    if opponent == "opencode":
+        for name in ("opencode_installed_agent_worker.py", "codey_vs_opencode_agent_stability_ab.py"):
+            path = ROOT / "tests/manual" / name
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
     result["benchmark_sha256"] = digest.hexdigest()
     def save():
-        result["paired_summary"] = paired_summary(result["results"])
+        result["paired_summary"] = paired_summary(result["results"], opponent=opponent)
         (run_dir / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     save()
     try:
         for repeat, seed in enumerate(seeds):
             for case_index, case in enumerate(c for c in cases if c.case_id in selected):
-                arms = ("pi", "codey") if (repeat + case_index) % 2 == 0 else ("codey", "pi")
+                arms = (opponent, "codey") if (repeat + case_index) % 2 == 0 else ("codey", opponent)
                 for arm in arms:
                     _wait_for_backend_idle(upstream, timeout=args.idle_timeout)
                     directory = run_dir / f"seed-{seed}" / case.case_id / arm
@@ -483,7 +514,7 @@ def main(*, cases=TASK_CASES):
                         row = _run_arm(arm, root, directory, f"http://127.0.0.1:{proxy.server_port}", proxy.records,
                             case=case, baseline_hashes=_snapshot_files(root), max_turns=args.max_turns, model_id=model,
                             max_tokens=args.max_tokens, seed=seed, temperature=args.temperature, timeout=args.timeout,
-                            window=args.window, keep=args.keep, pi_entry=args.pi_entry)
+                            window=args.window, keep=args.keep, pi_entry=args.pi_entry, opencode_install=opencode_install)
                     except Exception as exc:
                         row = {"arm": arm, "case": case.case_id, "seed": seed, "status": "harness_error",
                                "error": f"{type(exc).__name__}: {exc}"}
@@ -503,6 +534,8 @@ def main(*, cases=TASK_CASES):
                         row["metrics"].update(usage_totals(proxy.records))
                     result["results"].append(row)
                     save()
+                    if row.get("status") == "harness_error":
+                        raise RuntimeError(f'{opponent} observer failed; stop instead of counting a paired win')
                     print(_json_line({"seed": seed, "case": case.case_id, "arm": arm, "status": row["status"],
                         "success": row.get("metrics", {}).get("scenario_success"), "seconds": row.get("wall_time_seconds"),
                         "tokens": row.get("metrics", {}).get("token_usage")}), flush=True)

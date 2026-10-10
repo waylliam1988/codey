@@ -182,14 +182,15 @@ def stored_output_was_read(records, marker):
             name = function.get("name")
             if name == "read_tool_result":
                 return True
-            if name in {"read", "read_file"} and args.get("path") and str(args["path"]).replace("\\", "/").split("/")[-1] not in {"app.py", "test_app.py"}:
+            path = args.get("path") or args.get("filePath")
+            if name in {"read", "read_file"} and path and str(path).replace("\\", "/").split("/")[-1] not in {"app.py", "test_app.py"}:
                 return True
             if name in {"bash", "shell", "run"} and args.get("command") and "unittest" not in args["command"] and "test_app.py" not in args["command"]:
                 return True
     return False
 
 
-def paired_summary(rows):
+def paired_summary(rows, *, opponent="pi"):
     grouped = {}
     for row in rows:
         key = row["seed"], row["case"]
@@ -199,13 +200,13 @@ def paired_summary(rows):
         pair[row["arm"]] = row
     pairs, excluded = [], []
     for (seed, case), arms in sorted(grouped.items()):
-        if set(arms) != {"codey", "pi"} or any(r.get("backend_isolation_error") or r.get("status") in {"environment_error", "harness_error"}
+        if set(arms) != {"codey", opponent} or any(r.get("backend_isolation_error") or r.get("status") in {"environment_error", "harness_error"}
                                                for r in arms.values()):
             excluded.append({"seed": seed, "case": case, "reason": "missing arm or setup/isolation/observer failure"})
             continue
-        codey, pi = arms["codey"], arms["pi"]
+        codey, pi = arms["codey"], arms[opponent]
         a, b = [r.get("metrics", {}).get("scenario_success") is True for r in (codey, pi)]
-        outcome = "both" if a and b else "codey_only" if a else "pi_only" if b else "neither"
+        outcome = "both" if a and b else "codey_only" if a else opponent + "_only" if b else "neither"
         time_delta, token_delta = None, None
         if a and b:
             left, right = codey.get("wall_time_seconds"), pi.get("wall_time_seconds")

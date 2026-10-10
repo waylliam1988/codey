@@ -1,5 +1,54 @@
 # Codey Test Report
 
+## Native installed OpenCode observation and comparison (2026-10-10)
+
+Starting commit `ded65fac65b45e493168168e996e701669f5a9fc`; Windows / Python 3.12.8.
+Production source remains `f180758c226fb70fb393848c22b7c88fbf4f257f0513cca56eb1e24938e979a7`.
+Installed OpenCode 1.18.35 uses bundled Node 24.15.0 / Electron 42.3.3; exe and
+app.asar hashes identify the executed build, whose matching source commit is unknown.
+
+- TDD: **16 cases** in `test_opencode_installed_agent_observation_and_isolation.py`.
+  Genuine reds lock local admission/sampling, native tool/terminal facts, ready and
+  health, prompt admission, saved-output `filePath`, build provenance and pairing.
+  The initial missing-module import failure is not a behavioral red. Invalid
+  startup/admission calibration pilots are excluded from opponent task scores.
+- Final focused regression: **70 passed in 7.10s**. Final required machine
+  contracts: **928 passed, 14 subtests in 190.92s**. Counts overlap, not additive.
+- Initial contracts: **1 failed, 927 passed, 14 subtests in 219.74s**. The existing
+  brand-free environment check caught two prose notes in the already committed Pi
+  report. Only those notes changed; raw metrics/hashes and the allowlist did not.
+  The same test became green: **4 passed, 14 subtests in 0.88s**, then all contracts passed.
+- Ruff, mypy Windows/Linux (**406 production files**), Pyrefly `check codey`
+  (**0 errors, 47 suppressed, 838 warnings not shown**), compileall and diff pass.
+  An accidental unscoped Pyrefly invocation is retained separately; no configuration
+  or suppression was relaxed to fix its out-of-scope result.
+- **Final full pytest: 8311 passed, 7 skipped, 1503 subtests in 895.06s**.
+  Command: `python -m pytest -q -o faulthandler_timeout=120`.
+  One full run followed all repairs, focused checks, type checks and final contracts.
+  Logs are in `artifacts/opencode-native-comparison-20261010/checks/`.
+
+Frozen native original replay completed **40 arms / 20 pairs**: **Codey 18/20,
+OpenCode 14/20**, with 12 both-success, six Codey-only and two OpenCode-only pairs.
+The Codey failures are no_progress after a correct but not freshly verified patch,
+and an unauthorized repair probe after a real behavioral counterexample. Neither
+is misreported as completion. Original Codey false completions: zero; OpenCode: one.
+Only the 12 both-success pairs enter the lifecycle timing ratio (-38.5% Codey);
+API polling/startup/cleanup overhead is included, so this is not a UI latency claim.
+OpenCode streaming usage is incomplete; total-token superiority is not measured.
+
+Supplemental round is **incomplete: five of eight arms started**. Seed 61 completed
+both repair/readonly pairs, **2/2 each**. Codey seed-62 generation timed out at
+179.996s; Kobold remained busy, then its port refused connection. The isolation
+failure and missing opponent are retained; three arms never started. No invented
+4/4, missing-arm win or universal superiority claim. All calibrations, including
+a valid OpenCode semantic false completion followed by a later passing replay,
+remain available in the portable evidence.
+
+See [comparison and root causes](docs/codey-vs-opencode-agent-stability-2026-10-10.zh-CN.md)
+and [portable evidence](docs/reports/codey-vs-opencode-agent-stability-2026-10-10.json).
+This section and the final reports were written after full pytest completed.
+Production code and version 0.5.11 are unchanged; no release.
+
 ## Limited behavioral verification and native Pi comparison (2026-10-10)
 
 Starting commit `8faaa0f4bc702b0437c041b04c31bf06e11f521c`; Windows,

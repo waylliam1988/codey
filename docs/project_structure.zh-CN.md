@@ -102,6 +102,7 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/app/headless_runner.py`、`cli.py`、`web/assets/sse.js` | 消费公共事件，负责 JSONL、CLI 文字与网页协调，不另行推断成功 |
 | `tools/machine_contract_gate.py` | CI/本地必跑契约，缺失、失败或 skip 都不通过 |
 | `tests/manual/behavioral_verification_local_holdout_ab.py` | 不同函数/文件及正确实现对照；复用原生 Codey/Pi 比较循环与独立评分 |
+| `tests/manual/codey_vs_opencode_agent_stability_ab.py`、`opencode_installed_agent_worker.py` | 显式安装构建的原生 agent 比较及本地 sidecar 观察；复用任务与评分、独立状态，不替换生产 agent |
 | `tools/local_model_gate_recovery.py` | 发布门专用进程中断注入与独立校验；使用正式入口，不拥有另一个模型循环 |
 | `codey/operations/research_iteration.py` | 函数 `run_research_iteration`，pipeline 对共同内核的适配入口 |
 

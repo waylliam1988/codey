@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Native installed OpenCode comparison (2026-10-10)
+
+- Add `codey_vs_opencode_agent_stability_ab.py` and an observer of the installed
+  desktop sidecar. Reuse native tasks, isolation, verification and scoring; retain
+  OpenCode's own agent, tools, permissions, retries and context management.
+- TDD locks local configuration, native ready/terminal facts, async admission,
+  stored-output paths and actual build provenance with 16 cases. Required contracts
+  include these observations. Fix two prior report prose notes caught by the
+  existing environment-name contract; experimental metrics and hashes are unchanged.
+- Complete original replay: **Codey 18/20, OpenCode 14/20**. Supplemental seed 61:
+  **2/2 each**; retain the unpaired seed-62 timeout and backend isolation failure.
+  Report stale-edit verification and blocked repair weaknesses, incomplete usage,
+  unknown installed/source alignment and observer timing limits. No universal ranking.
+- Final pytest **8311 passed, 7 skipped, 1503 subtests**; machine contracts
+  **928 passed, 14 subtests**; targeted regression **70 passed**. Static checks pass.
+  See [the report](docs/codey-vs-opencode-agent-stability-2026-10-10.zh-CN.md).
+  Production code and version 0.5.11 are unchanged; no tag or release.
+
 ## Unreleased - Behavioral verification and fresh candidate review (2026-10-10)
 
 - Admit a bounded, explicit ASCII punctuation deletion requirement from the

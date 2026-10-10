@@ -1,5 +1,29 @@
 # Manual live benchmarks
 
+The installed OpenCode native agent comparison is
+`codey_vs_opencode_agent_stability_ab.py`. It reuses the Codey/Pi task fixtures,
+verification journals, loopback proxy, budgets and paired scoring, but executes
+the installed desktop's own sidecar through `opencode_installed_agent_worker.py`.
+Its prompts, tools, retries and context management remain native.
+
+```powershell
+python tests/manual/codey_vs_opencode_agent_stability_ab.py `
+  --run-dir artifacts/opencode-native-new-round `
+  --opencode-install 'C:/Users/Administrator/AppData/Local/Programs/@opencode-aidesktop' `
+  --seeds 51,52 `
+  --cases normalize-name,test-first,no-op,scope-blocked,multi-file,long-output,http-503,cancel-running-test,resume-after-edit,correction-after-stop `
+  --timeout 180 --request-limit 24 --max-tokens 2048 --window 32768 --keep 12000
+```
+
+The run directory must not exist and KoboldCpp must be loaded and idle. Both
+arms use isolated fixtures/state and a local placeholder key; no dependencies
+are installed. An observer/isolation failure stops the round rather than
+fabricating an opponent loss. A nonzero scenario result is retained as a failure.
+Installed exe/bundle hashes identify the executed build; matching the reference
+checkout's version string does not establish its source commit. Native policy,
+streaming, polling and lifecycle differences must remain visible in comparisons.
+See [the complete original and incomplete supplemental report](../../docs/codey-vs-opencode-agent-stability-2026-10-10.zh-CN.md).
+
 Post-0.4.13 live testing follows the stabilization protocol in
 `docs/0.4_ab_stabilization_plan.zh-CN.md`: run one provider and one arm at a
 time, persist JSON/journal/transcripts, classify every failure before spending

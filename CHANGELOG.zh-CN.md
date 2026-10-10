@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 安装版 OpenCode 原生实机比较（2026-10-10）
+
+- 新增 `codey_vs_opencode_agent_stability_ab.py` 和安装版 sidecar 观察器，
+  复用任务、隔离、实际验证及评分；保留 OpenCode 原生 agent、工具、权限、重试和上下文处理。
+- TDD 增加 16 项检查，锁定回环配置、ready/终态、异步准入、保存输出路径和实际构建身份，
+  纳入机器契约。既有命名测试发现上一份报告的两条说明问题，只改说明，不改实验指标和哈希。
+- 原 40 次运行完整验收 **Codey 18/20、OpenCode 14/20**；补充种子 61 两边各 **2/2**。
+  保留未配对的种子 62 超时及后端隔离失败，明确过期编辑后的验证收尾、反例修复审批等短板；
+  不把缺失 usage 当零，不宣称安装版与参考源码同提交或全面领先。
+- 全量 pytest **8311 passed、7 skipped、1503 subtests**；机器契约 **928 passed、14 subtests**；
+  定向回归 **70 passed**；静态检查通过。
+  详见[比较报告](docs/codey-vs-opencode-agent-stability-2026-10-10.zh-CN.md)。
+  生产代码及版本 0.5.11 不变，不创建 tag 或 release。
+
 ## 未发布 - 行为验证与候选补丁重新审查（2026-10-10）
 
 - 从原始要求接纳有限、明确的 ASCII 标点删除性质，冻结函数绑定与输入对；

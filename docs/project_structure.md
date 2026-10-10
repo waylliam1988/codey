@@ -100,6 +100,7 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/app/headless_runner.py`, `cli.py`, `web/assets/sse.js` | Consume common events as JSONL, CLI text and browser reconciliation without inferring success |
 | `tools/machine_contract_gate.py` | Shared CI/local required checks; missing tests, failures and skips close the gate |
 | `tests/manual/behavioral_verification_local_holdout_ab.py` | New callable/file fixtures and correct-source controls through the same native Codey/Pi comparison loop and oracle |
+| `tests/manual/codey_vs_opencode_agent_stability_ab.py`, `opencode_installed_agent_worker.py` | Explicit installed-build native agent comparison and local sidecar observer; shared task/scoring machinery, independent state, no production agent replacement |
 | `tools/local_model_gate_recovery.py` | Gate-only process interruption and independent recovery verification using the formal entry, with no model loop of its own |
 | `codey/operations/research_iteration.py` | `run_research_iteration`, the pipeline's shared-kernel adapter |
 
