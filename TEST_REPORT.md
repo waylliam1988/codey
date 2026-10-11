@@ -1,5 +1,31 @@
 # Codey Test Report
 
+## Isolated local reviewer experiments (2026-10-11, stopped)
+
+Production baseline: `4f0237e59ae505592ec479a92a5db42f43a2f68a`.
+Production files remain unchanged. Only experimental scripts, contracts,
+reports and documentation are added; no generalized reviewer is installed.
+
+The final fact-only study planned 77 samples. At the user's stop request,
+59 attempts were recorded, 57 yielded results, two were incomplete and
+18 had not been attempted. Unknown generations were not resent or treated
+as zero-cost semantic outcomes. Only five of 24 planned repair arms yielded
+results, so no balanced full-lifecycle quality claim is made.
+
+TDD: evidence-isolation contracts failed on leaked proposal interpretations
+before implementation. A final accounting contract reproduced `KeyError` on
+an incomplete repair record; the offline audit now preserves it as unknown.
+Five experiment contract files: **70 passed in 6.82s**. Ruff passed;
+mypy found no issues in **404 source files**; Pyrefly reported **0 errors**
+(48 suppressed, 839 warnings not shown); diff checks passed.
+No new full pytest or live inference was run after stopping.
+
+[Final partial report](docs/fact-only-review-quality-12b-ab-2026-10-11.zh-CN.md)
+distinguishes patch correctness, full completion, unavailable review and
+the interrupted arm's unavailable-review downgrade. Local raw artifacts are
+not committed; aggregate results and their source hashes are retained in
+[the committed audit](docs/reports/reviewer-quality-isolated-12b-2026-10-11.json).
+
 ## Removal of task-specific punctuation verification (2026-10-11)
 
 Scope: remove production requirement admission for ASCII punctuation deletion,

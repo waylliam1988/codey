@@ -2,6 +2,17 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Isolated local reviewer experiments (2026-10-11)
+
+- Add experiment-only self-review, counterexample observation, named-probe and
+  fact-only evidence-isolation runners, contracts and comparison reports.
+- Preserve original requirements, actual observations, unknown generations and
+  incremental costs without installing task-specific production checks.
+- Stop the final live study at user request. Partial repair results do not
+  establish generalized quality gains; no production reviewer change is merged.
+- Focused experiment contracts: **70 passed**. Ruff, mypy, Pyrefly and diff
+  checks passed. No new full pytest run, release or tag.
+
 ## Unreleased - Remove task-specific punctuation verification (2026-10-11)
 
 - Remove the ASCII punctuation requirement recognizer, automatic probes, worker,

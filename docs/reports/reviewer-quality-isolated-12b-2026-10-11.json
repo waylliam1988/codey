@@ -1,0 +1,694 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-11",
+  "scope": "Experiment-only; no production changes; stopped at user request.",
+  "base_commit": "4f0237e59ae505592ec479a92a5db42f43a2f68a",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "controls": {
+    "seeds": [
+      91,
+      92
+    ],
+    "max_turns": 24,
+    "max_tokens": 1536,
+    "request_limit": 48,
+    "timeout": 360,
+    "temperature": 0.2
+  },
+  "planned_samples": 77,
+  "attempted_samples": 59,
+  "known_results": 57,
+  "incomplete_records": [
+    {
+      "stage": "proposal",
+      "case": "first-record-per-id-correct",
+      "seed": 92,
+      "arm": "plan-native",
+      "success": null,
+      "usage": {
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 1
+      },
+      "error": "RuntimeError: KoboldCpp backend remained busy; paired isolation could not be established"
+    },
+    {
+      "stage": "repair",
+      "case": "first-record-per-id-bug",
+      "seed": 92,
+      "arm": "codey",
+      "success": null,
+      "usage": {
+        "input_tokens": null,
+        "known_input_tokens": null,
+        "output_tokens": null,
+        "known_output_tokens": null,
+        "token_usage": null,
+        "known_token_usage": null,
+        "usage_complete": false,
+        "usage_observed_exchanges": 0,
+        "physical_generation_exchanges": 1
+      },
+      "error": "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+    }
+  ],
+  "unattempted_samples": 18,
+  "summary": {
+    "replay": {
+      "codey": {
+        "rows": 7,
+        "incomplete_arms": 0,
+        "bug_rows": 4,
+        "control_rows": 3,
+        "bug_rejections": 3,
+        "false_rejections": 0,
+        "unavailable_reviews": 0,
+        "full_successes": null,
+        "bug_full_successes": null,
+        "control_full_successes": null,
+        "qualified_patches": null,
+        "false_completions": null,
+        "domain_valid_probes": 0,
+        "valid_counterexamples": 0,
+        "wrong_expectations": 0,
+        "known_tokens": 11134,
+        "usage_complete": true,
+        "known_seconds": 117.5676915999502,
+        "time_complete": true
+      },
+      "exposed": {
+        "rows": 7,
+        "incomplete_arms": 0,
+        "bug_rows": 4,
+        "control_rows": 3,
+        "bug_rejections": 4,
+        "false_rejections": 1,
+        "unavailable_reviews": 0,
+        "full_successes": null,
+        "bug_full_successes": null,
+        "control_full_successes": null,
+        "qualified_patches": null,
+        "false_completions": null,
+        "domain_valid_probes": 14,
+        "valid_counterexamples": 3,
+        "wrong_expectations": 3,
+        "known_tokens": 15096,
+        "usage_complete": true,
+        "known_seconds": 65.48391880001873,
+        "time_complete": true
+      },
+      "fact-only": {
+        "rows": 7,
+        "incomplete_arms": 0,
+        "bug_rows": 4,
+        "control_rows": 3,
+        "bug_rejections": 4,
+        "false_rejections": 0,
+        "unavailable_reviews": 0,
+        "full_successes": null,
+        "bug_full_successes": null,
+        "control_full_successes": null,
+        "qualified_patches": null,
+        "false_completions": null,
+        "domain_valid_probes": 14,
+        "valid_counterexamples": 3,
+        "wrong_expectations": 3,
+        "known_tokens": 10862,
+        "usage_complete": true,
+        "known_seconds": 82.77324469992891,
+        "time_complete": true
+      }
+    },
+    "proposal": {
+      "plan-native": {
+        "rows": 8,
+        "incomplete_arms": 1,
+        "bug_rows": 4,
+        "control_rows": 3,
+        "bug_rejections": 0,
+        "false_rejections": 0,
+        "unavailable_reviews": null,
+        "full_successes": null,
+        "bug_full_successes": null,
+        "control_full_successes": null,
+        "qualified_patches": null,
+        "false_completions": null,
+        "domain_valid_probes": 10,
+        "valid_counterexamples": 2,
+        "wrong_expectations": 5,
+        "known_tokens": 7778,
+        "usage_complete": false,
+        "known_seconds": 91.93878549989313,
+        "time_complete": false
+      }
+    },
+    "semantic": {
+      "codey": {
+        "rows": 8,
+        "incomplete_arms": 0,
+        "bug_rows": 4,
+        "control_rows": 4,
+        "bug_rejections": 4,
+        "false_rejections": 0,
+        "unavailable_reviews": 0,
+        "full_successes": null,
+        "bug_full_successes": null,
+        "control_full_successes": null,
+        "qualified_patches": null,
+        "false_completions": null,
+        "domain_valid_probes": 0,
+        "valid_counterexamples": 0,
+        "wrong_expectations": 0,
+        "known_tokens": 12492,
+        "usage_complete": true,
+        "known_seconds": 60.3155407004524,
+        "time_complete": true
+      },
+      "exposed": {
+        "rows": 8,
+        "incomplete_arms": 0,
+        "bug_rows": 4,
+        "control_rows": 4,
+        "bug_rejections": 4,
+        "false_rejections": 0,
+        "unavailable_reviews": 2,
+        "full_successes": null,
+        "bug_full_successes": null,
+        "control_full_successes": null,
+        "qualified_patches": null,
+        "false_completions": null,
+        "domain_valid_probes": 10,
+        "valid_counterexamples": 2,
+        "wrong_expectations": 5,
+        "known_tokens": 27772,
+        "usage_complete": true,
+        "known_seconds": 172.5789457994979,
+        "time_complete": true
+      },
+      "fact-only": {
+        "rows": 8,
+        "incomplete_arms": 0,
+        "bug_rows": 4,
+        "control_rows": 4,
+        "bug_rejections": 4,
+        "false_rejections": 0,
+        "unavailable_reviews": 0,
+        "full_successes": null,
+        "bug_full_successes": null,
+        "control_full_successes": null,
+        "qualified_patches": null,
+        "false_completions": null,
+        "domain_valid_probes": 10,
+        "valid_counterexamples": 2,
+        "wrong_expectations": 5,
+        "known_tokens": 17687,
+        "usage_complete": true,
+        "known_seconds": 86.50734360027127,
+        "time_complete": true
+      }
+    },
+    "repair": {
+      "codey": {
+        "rows": 2,
+        "incomplete_arms": 1,
+        "bug_rows": 1,
+        "control_rows": 0,
+        "bug_rejections": 1,
+        "false_rejections": 0,
+        "unavailable_reviews": 0,
+        "full_successes": 0,
+        "bug_full_successes": 0,
+        "control_full_successes": 0,
+        "qualified_patches": 1,
+        "false_completions": 0,
+        "domain_valid_probes": 0,
+        "valid_counterexamples": 0,
+        "wrong_expectations": 0,
+        "known_tokens": 35731,
+        "usage_complete": false,
+        "known_seconds": 58.47502690018155,
+        "time_complete": false
+      },
+      "exposed": {
+        "rows": 2,
+        "incomplete_arms": 0,
+        "bug_rows": 2,
+        "control_rows": 0,
+        "bug_rejections": 2,
+        "false_rejections": 0,
+        "unavailable_reviews": 0,
+        "full_successes": 0,
+        "bug_full_successes": 0,
+        "control_full_successes": 0,
+        "qualified_patches": 1,
+        "false_completions": 0,
+        "domain_valid_probes": 2,
+        "valid_counterexamples": 2,
+        "wrong_expectations": 0,
+        "known_tokens": 62482,
+        "usage_complete": true,
+        "known_seconds": 97.50601649982855,
+        "time_complete": true
+      },
+      "fact-only": {
+        "rows": 2,
+        "incomplete_arms": 0,
+        "bug_rows": 2,
+        "control_rows": 0,
+        "bug_rejections": 2,
+        "false_rejections": 0,
+        "unavailable_reviews": 0,
+        "full_successes": 1,
+        "bug_full_successes": 1,
+        "control_full_successes": 0,
+        "qualified_patches": 1,
+        "false_completions": 0,
+        "domain_valid_probes": 4,
+        "valid_counterexamples": 4,
+        "wrong_expectations": 0,
+        "known_tokens": 69164,
+        "usage_complete": true,
+        "known_seconds": 164.13508039992303,
+        "time_complete": true
+      }
+    }
+  },
+  "audit": {
+    "incremental_costs": {
+      "replay": {
+        "codey": {
+          "rows": 7,
+          "known_tokens": 11134,
+          "total_tokens": 11134,
+          "usage_complete": true,
+          "seconds_including_selection": 117.5676915999502,
+          "limitations": "Fixed author cost omitted; initial shared plan charged separately to each deployed method; cold cache timings not normalized."
+        },
+        "exposed": {
+          "rows": 7,
+          "known_tokens": 21385,
+          "total_tokens": 21385,
+          "usage_complete": true,
+          "seconds_including_selection": 127.287855199771,
+          "limitations": "Fixed author cost omitted; initial shared plan charged separately to each deployed method; cold cache timings not normalized."
+        },
+        "fact-only": {
+          "rows": 7,
+          "known_tokens": 17151,
+          "total_tokens": 17151,
+          "usage_complete": true,
+          "seconds_including_selection": 144.57718109968118,
+          "limitations": "Fixed author cost omitted; initial shared plan charged separately to each deployed method; cold cache timings not normalized."
+        }
+      },
+      "semantic": {
+        "codey": {
+          "rows": 8,
+          "known_tokens": 12492,
+          "total_tokens": 12492,
+          "usage_complete": true,
+          "seconds_including_selection": 60.3155407004524,
+          "limitations": "Fixed author cost omitted; initial shared plan charged separately to each deployed method; cold cache timings not normalized."
+        },
+        "exposed": {
+          "rows": 8,
+          "known_tokens": 35550,
+          "total_tokens": null,
+          "usage_complete": false,
+          "seconds_including_selection": 264.517731299391,
+          "limitations": "Fixed author cost omitted; initial shared plan charged separately to each deployed method; cold cache timings not normalized."
+        },
+        "fact-only": {
+          "rows": 8,
+          "known_tokens": 25465,
+          "total_tokens": null,
+          "usage_complete": false,
+          "seconds_including_selection": 178.4461291001644,
+          "limitations": "Fixed author cost omitted; initial shared plan charged separately to each deployed method; cold cache timings not normalized."
+        }
+      },
+      "repair": {
+        "codey": {
+          "rows": 2,
+          "known_tokens": 35731,
+          "total_tokens": null,
+          "usage_complete": false,
+          "seconds_including_selection": 58.47502690018155,
+          "limitations": "Fixed author cost omitted; initial shared plan charged separately to each deployed method; cold cache timings not normalized."
+        },
+        "exposed": {
+          "rows": 2,
+          "known_tokens": 64337,
+          "total_tokens": 64337,
+          "usage_complete": true,
+          "seconds_including_selection": 114.02891329978593,
+          "limitations": "Fixed author cost omitted; initial shared plan charged separately to each deployed method; cold cache timings not normalized."
+        },
+        "fact-only": {
+          "rows": 2,
+          "known_tokens": 71019,
+          "total_tokens": 71019,
+          "usage_complete": true,
+          "seconds_including_selection": 180.6579771998804,
+          "limitations": "Fixed author cost omitted; initial shared plan charged separately to each deployed method; cold cache timings not normalized."
+        }
+      }
+    },
+    "repair_details": [
+      {
+        "case": "first-record-per-id-bug",
+        "seed": 91,
+        "arm": "codey",
+        "available": true,
+        "success": false,
+        "qualified_patch": true,
+        "reason": "stopped",
+        "hidden_passed": true,
+        "scope_ok": true,
+        "fresh": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "first_review": {
+          "status": "available",
+          "verdict": "changes_requested",
+          "findings": [
+            {
+              "path": "app.py",
+              "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}` keeps the last occurrence of each id because subsequent occurrences overwrite the previous ones. To keep the first occurrence, we should only add the record if the id hasn't been seen yet.",
+              "suggested_fix": "def select(records):\n    seen = set()\n    result = []\n    for record in records:\n        if record['id'] not in seen:\n            result.append(record)\n            seen.add(record['id'])\n    return result",
+              "hunk_index": null,
+              "new_line": null,
+              "old_line": null
+            }
+          ],
+          "detail": {
+            "review": {
+              "verdict": "changes_requested",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 1,
+              "attempt_id": "cf639cb5afaf",
+              "artifact_sha256": "197c9d036eb07bc07d956f9f36b80bc4b56461478b0e7fa1a6c616736745b7f7",
+              "source_review_run_id": "",
+              "summary": "The current implementation of select keeps the last occurrence of each id instead of the first.",
+              "findings": [
+                {
+                  "path": "app.py",
+                  "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}` keeps the last occurrence of each id because subsequent occurrences overwrite the previous ones. To keep the first occurrence, we should only add the record if the id hasn't been seen yet.",
+                  "suggested_fix": "def select(records):\n    seen = set()\n    result = []\n    for record in records:\n        if record['id'] not in seen:\n            result.append(record)\n            seen.add(record['id'])\n    return result",
+                  "hunk_index": null,
+                  "new_line": null,
+                  "old_line": null
+                }
+              ]
+            }
+          }
+        },
+        "review_count": 1,
+        "false_completion": false
+      },
+      {
+        "case": "first-record-per-id-bug",
+        "seed": 91,
+        "arm": "exposed",
+        "available": true,
+        "success": false,
+        "qualified_patch": true,
+        "reason": "no_progress",
+        "hidden_passed": true,
+        "scope_ok": true,
+        "fresh": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "first_review": {
+          "status": "available",
+          "verdict": "changes_requested",
+          "findings": [
+            {
+              "path": "app.py",
+              "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}` overwrites the value for each ID, resulting in the last occurrence of an ID being preserved. The task requires retaining the first record for each ID.",
+              "suggested_fix": "Use a loop to build the list while keeping track of seen IDs, or use a dictionary comprehension that only sets the value if the key is not already present. For example: `seen = set(); return [r for r in records if r['id'] not in seen and not seen.add(r['id'])]` or a more readable loop.",
+              "hunk_index": 1,
+              "new_line": null,
+              "old_line": null
+            }
+          ],
+          "detail": {
+            "review": {
+              "verdict": "changes_requested",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 1,
+              "attempt_id": "989a151b8043",
+              "artifact_sha256": "14338642f98d1a8551b6c12bc904c22bee2d734954a9d9b23e11f88d77adecf7",
+              "source_review_run_id": "",
+              "summary": "The current implementation retains the last record for each ID instead of the first.",
+              "findings": [
+                {
+                  "path": "app.py",
+                  "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}` overwrites the value for each ID, resulting in the last occurrence of an ID being preserved. The task requires retaining the first record for each ID.",
+                  "suggested_fix": "Use a loop to build the list while keeping track of seen IDs, or use a dictionary comprehension that only sets the value if the key is not already present. For example: `seen = set(); return [r for r in records if r['id'] not in seen and not seen.add(r['id'])]` or a more readable loop.",
+                  "hunk_index": 1,
+                  "new_line": null,
+                  "old_line": null
+                }
+              ]
+            }
+          }
+        },
+        "review_count": 1,
+        "false_completion": false
+      },
+      {
+        "case": "first-record-per-id-bug",
+        "seed": 91,
+        "arm": "fact-only",
+        "available": true,
+        "success": false,
+        "qualified_patch": false,
+        "reason": "blocked",
+        "hidden_passed": false,
+        "scope_ok": true,
+        "fresh": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "first_review": {
+          "status": "available",
+          "verdict": "changes_requested",
+          "findings": [
+            {
+              "path": "app.py",
+              "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}` overwrites the value for an ID every time it appears, resulting in the last record for each ID being kept. The task requires retaining only the first record for each ID.",
+              "suggested_fix": "Use a loop to keep the first occurrence: `seen = set(); result = []; for r in records: if r['id'] not in seen: result.append(r); seen.add(r['id']); return result`",
+              "hunk_index": 1,
+              "new_line": 2,
+              "old_line": null
+            }
+          ],
+          "detail": {
+            "review": {
+              "verdict": "changes_requested",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 1,
+              "attempt_id": "ec891b49dd9e",
+              "artifact_sha256": "79433f676810c4470aa4ca415dc60813dadf5d7a245e839642602b399c63aad7",
+              "source_review_run_id": "",
+              "summary": "The current implementation keeps the last occurrence of each ID instead of the first.",
+              "findings": [
+                {
+                  "path": "app.py",
+                  "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}` overwrites the value for an ID every time it appears, resulting in the last record for each ID being kept. The task requires retaining only the first record for each ID.",
+                  "suggested_fix": "Use a loop to keep the first occurrence: `seen = set(); result = []; for r in records: if r['id'] not in seen: result.append(r); seen.add(r['id']); return result`",
+                  "hunk_index": 1,
+                  "new_line": 2,
+                  "old_line": null
+                }
+              ]
+            }
+          }
+        },
+        "review_count": 2,
+        "false_completion": false
+      },
+      {
+        "case": "first-record-per-id-bug",
+        "seed": 92,
+        "arm": "exposed",
+        "available": true,
+        "success": false,
+        "qualified_patch": false,
+        "reason": "blocked",
+        "hidden_passed": false,
+        "scope_ok": true,
+        "fresh": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "first_review": {
+          "status": "available",
+          "verdict": "changes_requested",
+          "findings": [
+            {
+              "path": "app.py",
+              "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}` keeps the *last* record encountered for each id. The task requires retaining only the *first* record for each id while preserving the order of first appearance.",
+              "suggested_fix": "def select(records):\n    seen = set()\n    result = []\n    for record in records:\n        if record['id'] not in seen:\n            result.append(record)\n            seen.add(record['id'])\n    return result",
+              "hunk_index": null,
+              "new_line": null,
+              "old_line": null
+            }
+          ],
+          "detail": {
+            "review": {
+              "verdict": "changes_requested",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 1,
+              "attempt_id": "9f5a813bd7b5",
+              "artifact_sha256": "cc568827bf0873f9136ee3748b71ec65a9c5ce1b04da47f95da92c2a564f66a8",
+              "source_review_run_id": "",
+              "summary": "The current implementation of select does not preserve the first occurrence of each id.",
+              "findings": [
+                {
+                  "path": "app.py",
+                  "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}` keeps the *last* record encountered for each id. The task requires retaining only the *first* record for each id while preserving the order of first appearance.",
+                  "suggested_fix": "def select(records):\n    seen = set()\n    result = []\n    for record in records:\n        if record['id'] not in seen:\n            result.append(record)\n            seen.add(record['id'])\n    return result",
+                  "hunk_index": null,
+                  "new_line": null,
+                  "old_line": null
+                }
+              ]
+            }
+          }
+        },
+        "review_count": 2,
+        "false_completion": false
+      },
+      {
+        "case": "first-record-per-id-bug",
+        "seed": 92,
+        "arm": "fact-only",
+        "available": true,
+        "success": true,
+        "qualified_patch": true,
+        "reason": "done",
+        "hidden_passed": true,
+        "scope_ok": true,
+        "fresh": true,
+        "changed_paths": [
+          "app.py"
+        ],
+        "first_review": {
+          "status": "available",
+          "verdict": "changes_requested",
+          "findings": [
+            {
+              "path": "app.py",
+              "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}.values()` returns the values in the order they were last seen (or the order of the last occurrence of each unique ID). The task requires retaining the first record for each id in the order those ids first appear.",
+              "suggested_fix": "Use a dictionary to keep track of seen IDs to preserve the first occurrence order: \n\ndef select(records):\n    seen = set()\n    result = []\n    for record in records:\n        if record['id'] not in seen:\n            result.append(record)\n            seen.add(record['id'])\n    return result",
+              "hunk_index": 1,
+              "new_line": null,
+              "old_line": null
+            }
+          ],
+          "detail": {
+            "review": {
+              "verdict": "changes_requested",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 1,
+              "attempt_id": "87ab0261dfe2",
+              "artifact_sha256": "5d2579a84b6cfd7b116ac1a8898dd3ac9617183c39dd8f68126dd38bbbf55914",
+              "source_review_run_id": "",
+              "summary": "The current implementation of select does not preserve the original order of the first occurrences of each id.",
+              "findings": [
+                {
+                  "path": "app.py",
+                  "issue": "The dictionary comprehension `{record[\"id\"]:record for record in records}.values()` returns the values in the order they were last seen (or the order of the last occurrence of each unique ID). The task requires retaining the first record for each id in the order those ids first appear.",
+                  "suggested_fix": "Use a dictionary to keep track of seen IDs to preserve the first occurrence order: \n\ndef select(records):\n    seen = set()\n    result = []\n    for record in records:\n        if record['id'] not in seen:\n            result.append(record)\n            seen.add(record['id'])\n    return result",
+                  "hunk_index": 1,
+                  "new_line": null,
+                  "old_line": null
+                }
+              ]
+            }
+          }
+        },
+        "review_count": 2,
+        "false_completion": false
+      },
+      {
+        "case": "first-record-per-id-bug",
+        "seed": 92,
+        "arm": "codey",
+        "available": false,
+        "success": null,
+        "false_completion": null,
+        "error": "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+      }
+    ],
+    "fact_packets_checked": 19,
+    "isolation_mismatches": []
+  },
+  "production_fingerprint_sha256": "073cb1d47db822ae819cb7b95b9752eceb87b40f8ee7673f461824d23697f677",
+  "frozen_inference_script_hashes": {
+    "fact_only_review_adapter.py": "f73f68daf6154268e6ead3e96f2432fbe65d6076004e0ef0b62f6744fe8b32c6",
+    "fact_only_review_holdout_cases.py": "4428985061e4af0de2dee4d4570fdfaa829064906bb573da4cee18d09be63809",
+    "fact_only_review_worker.py": "32ccc6e3c07a787c5d9b85e852b510da3907bb6b222185ac42db36b91eedf5c1",
+    "fact_only_review_quality_ab.py": "00892ef7575afa65356eb618a24ff0d02313519587d5b1014b13792ae3e68dd6",
+    "named_probe_review_adapter.py": "5530f3b086556c1e5e3b6ca48bf2e9c4479b4e479f5a2addf65f4694ecfbec8a",
+    "named_probe_review_worker.py": "cb3d087ce7a85190ee635d4d50096588c6c23eb67a9ad3b73a2c9eef1a5e01ac",
+    "counterexample_review_adapter.py": "977069dc204b57a4537d9ddd0a8e619b0eace9079b545dcf5374b9c1a94a758b",
+    "counterexample_observation_worker.py": "5cbb5522981a4a94552842da7e0630dd218a32ff4c4310db1971b186d549a755",
+    "counterexample_review_experiment_worker.py": "5ff755f4a9a7ead7f08ff820f7852b5dd3d83aae0a651b9b9be06c55672c75e4",
+    "counterexample_review_quality_ab.py": "1208c307d03b8b108b696ac94982483dae79601f53008d56cb9ad53638ed0e9e",
+    "named_probe_review_cases.py": "c9888b4445cee41fcc452af06811cf4792d68bb93db533db2f7d02ea73e4446d",
+    "open_code_review_self_review_ab.py": "fcd41033f787eaff4731a4b9725ca5bed3d0836a9b1f8dd83ce305d7bb2569ee",
+    "codey_vs_pi_agent_stability_ab.py": "a53cd04ae0394d958342a21b8edba0483d46c3faf771df94a7f48638aef0e9b3",
+    "agent_stability_codey_worker.py": "01647148902186105e729d597e08762afd769918fcf1af26ead865929bf06db5",
+    "agent_stability_proxy.py": "8e13afd426bdd6813b621065d7222fcb1b35368ade6c673a66f0aa2a3a1c105e"
+  },
+  "source_sha256": {
+    "artifacts/open-code-review-self-review-12b-20261011-04/combined-result.json": "8ac29bfd1da0c506dbf5b9658efb65b9e4ef471d7fb35fb27dac9ec41afdc542",
+    "artifacts/counterexample-review-quality-12b-20261011-01/result.json": "1f18dac2960285f25146f442d942bd3c7bade1f1fb67122c7707835eb3a73658",
+    "artifacts/named-probe-review-quality-12b-20261011-02/result.json": "d26d2a7fa5d1faf4edc467add8f42d048534efeb877b3b8413dcbbe8a1bb37f3",
+    "artifacts/fact-only-review-quality-12b-20261011-01/result.json": "4e3419c2bc39940ad174b8b1db64fee971ea7ef9c130a42167bb222615df1151",
+    "artifacts/fact-only-review-quality-12b-20261011-02/result.json": "d20aa1bc61f6b62aa209400b49b0a391b573b85435eea60b0dfb218dfbc5c13b",
+    "artifacts/fact-only-review-quality-12b-20261011-02/continuation.json": "e7c959161f9c6ed7823bdbbeebd34469eeec6e6c70fa9151f5cfecd78170276c",
+    "artifacts/fact-only-review-quality-12b-20261011-02/outcome-audit.json": "e12af68636a4bf6bced7a3b543277ebfbf84ee739f7d77853dacf8b604a9208b"
+  },
+  "integrity": {
+    "prior_25_rows_preserved": true,
+    "unique_attempt_keys": 59,
+    "production_identity_unchanged": true,
+    "frozen_inference_scripts_unchanged": true,
+    "no_unknown_generation_resent": true
+  },
+  "validation": {
+    "focused_pytest_passed": 70,
+    "full_pytest_run": false,
+    "ruff": "passed",
+    "mypy": "passed, 404 production files",
+    "pyrefly": "0 errors",
+    "diff_check": "passed"
+  },
+  "interrupted_arm_diagnostic": {
+    "case": "first-record-per-id-bug",
+    "seed": 92,
+    "arm": "codey",
+    "review": "unavailable after connection reset",
+    "child_terminal": "done",
+    "candidate": "frozen buggy candidate; no repair edit observed",
+    "classification": "Incomplete externally interrupted trial; not a normal quality success or semantic failure. Unavailable-review downgrade remains visible for separate audit."
+  },
+  "conclusion": "Fact-only evidence reduced some misleading findings, but small partial repair data and higher costs do not establish generalized net benefit. No production reviewer merged."
+}
