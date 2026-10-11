@@ -8,8 +8,7 @@ import pytest
 
 from codey.app import review_service
 from codey.providers.error_classification import OutputLengthError
-from tests.manual.candidate_validation_and_behavioral_repair_experiment import ReportPlugin
-from tests.manual.candidate_validation_and_behavioral_repair_experiment import variant as variant
+from tests.manual.pytest_experiment_report import ReportPlugin
 
 APPROVED = '{"verdict":"approved","summary":"Current code meets the requirement","findings":[]}'
 
@@ -73,11 +72,9 @@ def test_files_changed_during_truncated_review_cannot_obtain_fresh_approval(tmp_
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--variant', choices=('current', 'candidate'), default='current')
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
-    return pytest.main([str(Path(__file__).resolve()), '-q', '--tb=short',
-                        '--experiment-variant=' + args.variant], plugins=[ReportPlugin(args.report, args.variant)])
+    return pytest.main([str(Path(__file__).resolve()), '-q', '--tb=short'], plugins=[ReportPlugin(args.report)])
 
 
 if __name__ == '__main__':

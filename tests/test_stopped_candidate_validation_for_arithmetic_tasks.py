@@ -3,7 +3,7 @@ import hashlib
 
 import pytest
 
-from tests.manual.candidate_validation_and_behavioral_repair_experiment import COMMAND, scenario
+from tests.project_candidate_recovery_fixture import COMMAND, scenario
 
 TASK = 'Fix names.py so invoice_total multiplies price and quantity. Do not modify tests. Run ' + COMMAND + '.'
 INITIAL = 'def invoice_total(price, quantity): return price + quantity\n'
@@ -14,7 +14,7 @@ VISIBLE = ('import unittest\nfrom names import invoice_total\nclass Invoice(unit
 
 
 @pytest.mark.parametrize('source,completed', [(CORRECT, True), (WRONG, False)])
-def test_stopped_invoice_candidate_uses_actual_checks_and_review_without_a_behavioral_plan(tmp_path, source, completed):
+def test_stopped_invoice_candidate_uses_actual_checks_and_review_without_task_specific_probes(tmp_path, source, completed):
     result = scenario(tmp_path, source=source, fault='runtime_validation',
                       task=TASK, initial=INITIAL, visible=VISIBLE)
     terminal = result['terminal']

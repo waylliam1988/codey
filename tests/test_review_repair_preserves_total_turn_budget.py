@@ -11,7 +11,6 @@ def context(used, maximum=20):
     runner = SimpleNamespace(provider=object(), provider_id='local', switches=0,
                              run=Mock(return_value=RunResult('Checked', 'done', 2)))
     return SimpleNamespace(failover=runner, result=RunResult('Candidate', 'done', used),
-        behavioral_plan=None, behavioral_observation=None,
         request=SimpleNamespace(max_turns=maximum), deps=SimpleNamespace(review=SimpleNamespace(review_fix_turns=50)),
         frame=SimpleNamespace(provider_id='local'), writer_attempt_index=1)
 

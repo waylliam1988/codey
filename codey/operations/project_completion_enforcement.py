@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 from typing import Any
 
@@ -42,7 +41,6 @@ from codey.runtime.core.operation_state import (
 )
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
-from codey.runtime.observe.execution_evidence import CheckEvidence
 
 
 def _enforcement_scope(
@@ -162,8 +160,6 @@ def _record_completion_evidence(ctx: ProjectRun) -> None:
             "execution_evidence": ctx.work.evidence,
             "analysis_run_payloads": ctx.work.analysis_run_payloads,
             "checkpoint_green": bool(ctx.checkpoint_green),
-            "behavioral_plan": ctx.behavioral_plan,
-            "behavioral_observation": ctx.behavioral_observation,
         })
         ctx.proof = verdict.proof
         if verdict.proof is None:
@@ -171,15 +167,7 @@ def _record_completion_evidence(ctx: ProjectRun) -> None:
             # Keep the exact gate diagnosis; a missing proof does not mean
             # no command ran. These details cannot alter the gate verdict.
             ctx.result = replace(ctx.result, summary=ctx.result.summary + '\n\n' + verdict.followup)
-        failure_class = ctx.decision.failure_class
-        if ctx.proof is not None:
-            for check_row in ctx.proof.checks:
-                if check_row.check_id == 'behavioral_verification' and check_row.status != 'pass':
-                    if check_row.status == 'fail':
-                        failure_class = 'product_failure'
-                    elif failure_class != 'product_failure':
-                        failure_class = 'verification_unavailable'
-        ctx.decision = replace(ctx.decision, proof=ctx.proof, failure_class=failure_class)
+        ctx.decision = replace(ctx.decision, proof=ctx.proof)
     ctx.result = replace(ctx.result, proof=ctx.proof, facts=ctx.task_session)
     record_completion_proof_trace(ctx.frame.trace, ctx.proof)
     record_edit_integrity_trace(ctx.frame.trace, ctx.integrity)
@@ -239,7 +227,6 @@ def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
                 ctx.files,
                 root=ctx.project,
             ),
-            _behavioral_failure_fact(ctx),
         ),
         changed_files=ctx.files,
         analysis_run_refs=ctx.decision.analysis_run_refs,
@@ -276,7 +263,7 @@ def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
     try:
         assert ctx.failover is not None
         repair_result = ctx.failover.run(
-            task=_completion_repair_task(ctx),
+            task=COMPLETION_REPAIR_FOLLOWUP,
             turn_budget=remaining_turns,
             fresh=False,
             handoff="",
@@ -378,56 +365,6 @@ def _apply_repair_result(ctx: ProjectRun, repair_result: RunResult) -> None:
         _record_completion_evidence(ctx)
     else:
         ctx.result = replace(repair_result, turns=turns)
-
-
-def _completion_repair_task(ctx: ProjectRun) -> str:
-    followup: str = COMPLETION_REPAIR_FOLLOWUP
-    observation = ctx.behavioral_observation
-    if observation is None or observation.status != 'fail':
-        return followup
-    output_ref: str = observation.output_ref
-    return (followup
-        + '\nUse the recorded actual counterexample; do not create a new probe command.'
-        + '\nMake the smallest exact replacement needed to satisfy the failed check. '
-          'Keep source changes concise; do not insert speculative analysis into code comments.'
-        + '\nRepair only authorized files. Run the original requested verification: ' + str(ctx.request.task)
-        + '\nThe recorded behavioral failure belongs to the previous candidate. After repairing the code '
-          'and passing the original verification, call done to submit the repaired candidate. '
-          'Submission triggers a new behavioral observation and review; it does not declare success. '
-          'Do not repeat a passing suite to refresh the old behavioral observation.'
-        + '\nThe ordinary test results do not contain these behavioral inputs. Use the behavioral_verification '
-          'result_ref ' + output_ref + ' for details. The counterexample is actual execution evidence. '
-          'Its left_value and right_value are observed outputs of the rejected candidate. '
-          'Apply the recorded required_relation; required_right_value_given_left is derived from that relation, '
-          'not from an external oracle.')
-
-
-def _behavioral_failure_fact(ctx: ProjectRun) -> CheckEvidence | None:
-    observation, plan = ctx.behavioral_observation, ctx.behavioral_plan
-    if observation is None or plan is None or observation.status != 'fail':
-        return None
-    summary = observation.summary
-    try:
-        rows = json.loads(summary)
-    except json.JSONDecodeError:
-        rows = None
-    if isinstance(rows, list) and rows and isinstance(rows[0], dict) and rows[0].get('equal') is False:
-        row = rows[0]
-        left_call = plan.function + '(' + json.dumps(row['left'], ensure_ascii=False) + ')'
-        right_call = plan.function + '(' + json.dumps(row['right'], ensure_ascii=False) + ')'
-        # The repair projection caps each line at 200 characters. Keep the
-        # relation and its observed operands on separate short lines so the
-        # required relation cannot disappear behind a serialized observation.
-        summary = ('Required relation: right_value == left_value.\n'
-            + 'Required: ' + right_call + ' == ' + left_call + '.'
-            + '\nActual outputs (not expected outputs): '
-            + json.dumps({'left_value': row['left_value'], 'right_value': row['right_value']}, ensure_ascii=False)
-            + '\nrequired_right_value_given_left: ' + right_call + ' = '
-            + json.dumps(row['left_value'], ensure_ascii=False))
-    return CheckEvidence('behavioral_verification', exit_code=1,
-        result_summary=summary,
-        managed_output_handle=observation.output_ref,
-        workspace_fingerprint=observation.workspace_fingerprint)
 
 
 def _settle_blocked_completion(ctx: ProjectRun) -> None:

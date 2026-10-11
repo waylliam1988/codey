@@ -4,7 +4,7 @@ from unittest import mock
 
 import pytest
 
-from tests.manual.candidate_validation_and_behavioral_repair_experiment import (
+from tests.project_candidate_recovery_fixture import (
     BAD,
     COMMAND,
     GOOD,
@@ -29,7 +29,7 @@ def test_denied_probe_then_stagnation_gets_actual_current_validation_and_complet
     with (mock.patch.object(kernel_execution, 'record_facts_for_result', side_effect=capture),
           mock.patch.object(tools.AgentToolFns, 'execute_run_command', autospec=True,
                             side_effect=original_execute) as execute):
-        result = scenario(tmp_path, kind='behavioral' if phase == 'repair' else 'stagnant',
+        result = scenario(tmp_path, kind='repair' if phase == 'repair' else 'stagnant',
                           repair_stagnates=phase == 'repair', denied_probe=True, max_turns=30)
     # The guard still refuses the probe; no process execution is requested.
     commands = [call.args[3] for call in execute.call_args_list]
@@ -43,8 +43,6 @@ def test_denied_probe_then_stagnation_gets_actual_current_validation_and_complet
     assert not any('python -c' in row['command'] for session in sessions for row in session.verifications)
     assert result['calls'][-1].provider.name == 'runtime candidate validation'
     assert len([r for r in result['ledger'] if r['type'] == 'candidate_validation_admitted']) == 1
-    if phase == 'repair':
-        assert [r['status'] for r in result['ledger'] if r['type'] == 'behavioral_observed'] == ['fail', 'pass']
 
 
 @pytest.mark.parametrize('injected', [False, True])
@@ -96,17 +94,17 @@ def test_executor_cannot_forge_preexecution_refusal_to_hide_missing_result(tmp_p
     assert not session.verifications[-1]['passed']
 
 
-@pytest.mark.parametrize('fault', ['missing_behavior', 'missing_review', 'stale_review', 'rejected_review'])
-def test_refusal_does_not_relax_fresh_behavior_or_current_review(tmp_path, fault):
-    result = scenario(tmp_path, kind='behavioral', repair_stagnates=True,
+@pytest.mark.parametrize('fault', ['missing_review', 'stale_review', 'rejected_review'])
+def test_refusal_does_not_relax_fresh_validation_or_current_review(tmp_path, fault):
+    result = scenario(tmp_path, kind='repair', repair_stagnates=True,
                       denied_probe=True, fault=fault, max_turns=30)
     assert result['terminal']['stop_reason'] not in {'done', 'error', 'provider_failure'}
     assert not result['terminal']['receipt']['verification']['checks_passed']
 
 
-@pytest.mark.parametrize('source', [BAD, "def clean_name(text): return ''\n"])
-def test_refusal_cannot_hide_failed_actual_behavior_or_tests(tmp_path, source):
-    result = scenario(tmp_path, kind='behavioral', repair_stagnates=True,
+@pytest.mark.parametrize('source', [BAD, "def clean_name(text): return text\n"])
+def test_refusal_cannot_hide_failed_actual_tests(tmp_path, source):
+    result = scenario(tmp_path, kind='repair', repair_stagnates=True,
                       denied_probe=True, source=source, max_turns=30)
     assert result['terminal']['stop_reason'] not in {'done', 'error', 'provider_failure'}
     assert not result['terminal']['receipt']['verification']['checks_passed']
@@ -129,7 +127,7 @@ def test_actual_run_with_lost_exit_still_blocks_and_reports_the_specific_gap(tmp
         return outcome
 
     with mock.patch.object(AgentToolFns, 'execute_run_command', lose_result):
-        result = scenario(tmp_path, kind='behavioral', repair_stagnates=True,
+        result = scenario(tmp_path, kind='repair', repair_stagnates=True,
                           denied_probe=True, max_turns=30)
     assert uncertain_runs
     assert result['terminal']['stop_reason'] == 'blocked'

@@ -18,36 +18,34 @@ loopback sampling/configuration, installed build identity, native tool deduplica
 ready/health, actual terminal facts, async admission, saved-output paths and pairing.
 It is part of the required machine contract gate.
 
-Latest full suite: **8311 passed, 7 skipped, 1503 subtests**; machine contracts:
+Comparison-time full suite: **8311 passed, 7 skipped, 1503 subtests**; machine contracts:
 **928 passed, 14 subtests**; focused comparison regressions: **70 passed**.
 The [native comparison](../docs/codey-vs-opencode-agent-stability-2026-10-10.zh-CN.md)
 retains failed/invalid pilots and the incomplete backend-isolation round. Original
-scores are **18/20 vs 14/20**, not a universal superiority claim. Production code is unchanged.
+scores are **18/20 vs 14/20**, not a universal superiority claim. That comparison did not modify production code.
 
-## Behavioral verification and candidate continuity
+## Candidate continuity without task-specific probes
 
-Ten behavior-named files add 89 cases:
+Current removal checks: **8339 passed, 7 skipped, 1503 subtests**; required machine
+contracts: **948 passed, 14 subtests**. See [the test report](../TEST_REPORT.md)
+for red/green evidence and the scope of the removed capability.
 
-- `test_behavioral_requirement_admission_and_discriminating_inputs.py`: original requirement binding, rejected ambiguity/conditions and deletion-versus-separation inputs.
-- `test_python_behavioral_probe_observes_properties_and_failures.py`: actual functions, JSON values/exceptions, permissions, timeout, source identity and normal imports.
-- `test_behavioral_failures_block_completion_and_stale_observations.py`: aggregate failure, missing/stale evidence and the existing proof limit.
-- `test_behavioral_completion_repair_revalidates_and_reviews_candidate.py`: false approval, actual counterexamples and fresh tests/review after bounded repair.
-- `test_behavioral_receipt_reader_scope_and_integrity.py`: existing managed-result ownership, digest validation and malformed result data.
-- `test_atomic_write_transient_windows_sharing_violations.py`: bounded WinError 32 replacement/cleanup and concurrent target changes.
-- `test_explicit_once_command_blocks_repeat_until_workspace_changes.py`: original execution limits, retained results and fresh verification after edits.
-- `test_requested_stored_output_read_precedes_mutation_and_completion.py`: actual requested result reads, mutation admission and the shared completion gate.
-- `test_behavioral_local_holdout_case_contracts.py`: new callable/file fixtures and correct-source controls using the original oracle.
-- `test_readonly_required_fix_stops_blocked_on_current_failed_verification.py`: real failed tests, current identity, permissions, stagnation and cancellation priority.
 
-Manual loopback-only native comparison uses `manual/codey_vs_pi_agent_stability_ab.py`;
-`manual/behavioral_verification_local_holdout_ab.py` supplies additional fixtures to
-that same loop. Experiment-private variables use `AGENT_AB_` without old aliases.
-The benchmark records its case contract, source and executed Pi build identities.
-The original scenario score includes expected blocked and stopped outcomes.
+- `test_project_completion_without_task_specific_probes.py`: punctuation requirements no longer generate hidden checks or proof dependencies; special tool names cannot authorize unindexed archives.
+- `test_stopped_candidate_validation_and_repair_fresh_evidence.py`: stopped candidates and bounded repairs require current registered verification and review.
+- `test_stopped_candidate_validation_for_arithmetic_tasks.py`: the same recovery path applies to arithmetic tasks.
+- `test_stagnant_completion_repair_requires_current_validation.py`: repairs share cancellation, permissions and cumulative budgets with initial validation.
+- `test_denied_probe_preserves_candidate_validation_evidence.py`: denied commands do not count as executions; missing or stale actual results still block completion.
+- `test_semantic_holdout_case_contracts.py`: external fixture/oracle controls, independent of production requirement admission.
 
-Final full pytest: **8295 passed, 7 skipped, 1503 subtests**. Required contracts:
-**912 passed, 14 subtests**. Earlier incomplete or failed runs remain documented
-in [the test report](../TEST_REPORT.md) and [native comparison](../docs/codey-behavioral-verification-and-pi-comparison-2026-10-10.zh-CN.md).
+The punctuation-specific production feature and its exclusive tests were removed.
+Shared execution, permissions, review snapshots, receipt integrity and completion
+contracts remain covered. Historical scores in earlier reports were collected
+before this removal and are not new quality claims.
+
+Manual comparisons use `manual/codey_vs_pi_agent_stability_ab.py` and
+`manual/codey_vs_opencode_agent_stability_ab.py`; additional semantic fixtures are
+in `manual/semantic_holdout_local_ab.py`. This change does not run live comparisons.
 
 ## Full-tree typing and execution boundaries
 

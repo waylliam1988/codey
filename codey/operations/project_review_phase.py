@@ -91,7 +91,7 @@ def _repair_writer(
     )
     try:
         result = runner.run(
-            task=followup + _behavioral_facts(ctx),
+            task=followup,
             turn_budget=min(remaining, ctx.deps.review.review_fix_turns),
             fresh=False,
             handoff="",
@@ -214,7 +214,7 @@ def run_review_phase(ctx: ProjectRun, *, allow_repair: bool = True) -> None:
         writer_id=ctx.frame.provider_id,
         recent_log="\n".join(ctx.work.recent_events[-ctx.deps.review.review_log_lines :]),
         render_change_brief=partial(_render_review_change_brief, ctx),
-        execution_evidence=ctx.work.evidence.render_for_review() + _behavioral_facts(ctx),
+        execution_evidence=ctx.work.evidence.render_for_review(),
         successful_checks=ctx.work.evidence.successful_checks,
         checkpoint_prompt=ctx.checkpoint_prompt,
         checks_before_review_followup=(
@@ -244,18 +244,12 @@ def run_review_phase(ctx: ProjectRun, *, allow_repair: bool = True) -> None:
         ctx.task_changed = collected_changed
 
 
-def _behavioral_facts(ctx: ProjectRun) -> str:
-    from codey.operations.behavioral_verification import behavioral_review_facts
-    return behavioral_review_facts(ctx)
-
-
 def validate_candidate(ctx: ProjectRun, *, allow_review_repair: bool = True) -> None:
     """One bounded candidate validation entry before initial/final proof.
 
     Writer checks remain required by the existing completion gate. Every
-    post-review edit invalidates observations and receives a new review.
+    post-review edit requires current verification evidence and a new review.
     """
-    from codey.operations.behavioral_verification import refresh_behavioral_observation
     from codey.operations.project_candidate_validation import (
         submit_readonly_completion_candidate,
         validate_stopped_candidate,
@@ -263,26 +257,14 @@ def validate_candidate(ctx: ProjectRun, *, allow_review_repair: bool = True) -> 
 
     validate_stopped_candidate(ctx)
     submit_readonly_completion_candidate(ctx)
-    refresh_behavioral_observation(ctx)
     run_review_phase(ctx, allow_repair=allow_review_repair)
     repaired_after_review = ctx.review_cycle.review_repair_attempted
-    review_deferred = False
     if repaired_after_review and ctx.result is not None and ctx.result.stop_reason == 'done':
-        refresh_behavioral_observation(ctx)
-        from codey.completion.behavioral_checks import behavioral_completion_check
-        from codey.workspace.revision import workspace_fingerprint
-
-        check = behavioral_completion_check(ctx.behavioral_plan, ctx.behavioral_observation,
-                                           ctx.request.task, workspace_fingerprint(ctx.project))
-        review_deferred = check is not None and check.status == 'fail'
-        # A fresh observed failure belongs to the existing completion repair.
-        # Reviewing this known failing candidate cannot supply missing proof.
-        if not review_deferred:
-            run_review_phase(ctx, allow_repair=False)
+        run_review_phase(ctx, allow_repair=False)
     if (ctx.result is not None and ctx.result.stop_reason == 'done' and ctx.task_changed
             and ((ctx.work.operation is not None and ctx.work.operation.candidate_validation_attempted)
                  or ctx.repaired_once or repaired_after_review)
-            and not review_deferred and not ctx.review_cycle.approved_current_snapshot):
+            and not ctx.review_cycle.approved_current_snapshot):
         ctx.blocked_reason = 'current_candidate_review_unavailable_or_not_approved'
         ctx.result = replace(ctx.result, stop_reason='blocked', checks_passed=False,
                              summary='Current candidate requires a fresh approved review.')

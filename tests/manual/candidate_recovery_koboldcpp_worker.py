@@ -72,7 +72,7 @@ def main():
     args = parser.parse_args()
     variant = os.environ['CANDIDATE_AB_VARIANT']
     boundary = os.environ.get('CANDIDATE_AB_BOUNDARY', '')
-    if variant not in {'current', 'proposal', 'production'}:
+    if variant not in {'current', 'production'}:
         raise ValueError('Unknown candidate experiment variant')
     home = str(args.state_home.resolve())
     os.environ.update({'HOME': home, 'USERPROFILE': home})
@@ -83,13 +83,6 @@ def main():
     from codey.app import headless_runner
     from codey.operations.project_adapter import run
     from tests.manual.agent_stability_codey_worker import ControlledContext, sampling_provider
-    patches = None
-    if variant == 'proposal':
-        from pytest import MonkeyPatch
-
-        from tests.manual.candidate_recovery_test_proposal import install
-        patches = MonkeyPatch()
-        install(patches)
     attempts = 0
 
     def writer(request: AgentRequest):
@@ -135,12 +128,8 @@ def main():
           'remaining_writer_and_review': 'native Local model'})
     request = headless_runner.HeadlessRequest(project=args.project, task=args.task, provider_id='local',
         state_home=args.state_home, session_id=args.session_id, max_turns=args.max_turns)
-    try:
-        return headless_runner.run_headless(request, agent_run=writer, emit_jsonl=emit,
-            connect_provider=sampling_provider, connect_reviewer=sampling_provider).exit_code
-    finally:
-        if patches is not None:
-            patches.undo()
+    return headless_runner.run_headless(request, agent_run=writer, emit_jsonl=emit,
+        connect_provider=sampling_provider, connect_reviewer=sampling_provider).exit_code
 
 
 if __name__ == '__main__':

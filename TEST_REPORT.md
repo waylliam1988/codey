@@ -1,5 +1,50 @@
 # Codey Test Report
 
+## Removal of task-specific punctuation verification (2026-10-11)
+
+Scope: remove production requirement admission for ASCII punctuation deletion,
+its automatic probes/worker, project fields, review and repair facts, completion
+checks/references, and special archive-read authority. No disabled feature,
+compatibility alias or empty module remains. No generalized review replacement
+was implemented and no live-model A/B was run.
+
+TDD evidence:
+
+- Before production edits, the two new removal tests failed for the intended
+  reasons: the project ledger still contained automatic plans/observations,
+  and an unindexed archive gained read authority from the special tool name.
+- The expanded `test_project_completion_without_task_specific_probes.py`
+  passed with the related completion, receipt, review and runtime contracts
+  (**52 passed** in that batch). Recovery/repair boundary regressions passed
+  (**34 passed**); the retained review-output experiment passed **6 tests**.
+- Generic recovery fixtures now use a real failed registered test instead of
+  a hidden punctuation property. The outer repair boundary deliberately receives
+  a false Writer completion proposal; actual failed execution facts are retained,
+  and only fresh verification/current review can admit the repaired candidate.
+- Cancellation, denied permissions, exhausted shared budgets, failed/missing/stale
+  actual checks, and unavailable/stale/rejected repaired-candidate review remain
+  covered. Registered receipt scope, integrity and bounded reads remain covered.
+- A deliberately wrong punctuation interpretation that passes visible checks and
+  scripted review is now allowed by those checks. This locks the removed feature's
+  actual effect; it does not claim complete semantic correctness or quality gains.
+
+The exclusive property tests and obsolete proposal were retired. Generic stopped
+candidate tests were preserved/renamed, and external semantic holdout fixtures
+remain independent of production. Earlier model benchmark scores are historical
+and were not revalidated for this removal.
+
+Pre-final checks: Ruff and `git diff --check` passed; mypy reported no issues in
+**404 source files**; Pyrefly reported **0 errors** (48 suppressed, 839 warnings
+not shown). Required machine contracts: **948 passed, 14 subtests** in 251.21s.
+Production and test source were frozen before the single final full pytest run:
+
+**8339 passed, 7 skipped, 1503 subtests passed in 991.83s (0:16:31).**
+
+After pytest completed, only documentation and trailing blank lines in two
+new test helpers were cleaned up; no execution logic changed. The final staged
+`git diff --check` passed. No release or tag was created.
+
+
 ## Cold-start boundary audit (2026-10-11)
 
 This audit locked and fixed two deterministic input-boundary defects with

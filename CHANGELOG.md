@@ -2,6 +2,22 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Remove task-specific punctuation verification (2026-10-11)
+
+- Remove the ASCII punctuation requirement recognizer, automatic probes, worker,
+  project state, review/repair prompts and completion-proof dependencies.
+- Remove special archive-read authority. Registered tool receipts retain their
+  existing scope, integrity and bounded-read checks.
+- Preserve generic candidate recovery, actual verification, permissions,
+  cancellation, cumulative budgets, current reviews and completion proofs.
+- Retire the obsolete test-only proposal; retain generic recovery tests and
+  independent semantic holdout fixtures. No generalized review replacement or
+  live-model quality claim is introduced.
+
+- Final full pytest: **8339 passed, 7 skipped, 1503 subtests**. Required machine
+  contracts: **948 passed, 14 subtests**. Mypy (404 files), Pyrefly, Ruff and
+  `git diff --check` passed. Test report updated after pytest; no release/tag.
+
 ## Unreleased - Cold-start input boundary audit (2026-10-11)
 
 - Reject malformed local `/models` entries whose `id` is not a non-empty

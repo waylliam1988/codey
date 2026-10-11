@@ -1,28 +1,16 @@
 # Manual live benchmarks
 
-The current production candidate-recovery implementation is integrated in the
-shared runtime. The deterministic experiment below remains a boundary test and
-does not replace the production KoboldCpp A/B. The latest production result is
-round 08: new 4/4, baseline 3/4, with zero false completions. Recorded-prefix
-arms and native arms are scored separately.
+The stopped-candidate recovery path remains in the shared runtime. Its
+registered-check, permission, budget and current-review boundaries are tested by
+`test_stopped_candidate_validation_and_repair_fresh_evidence.py` and the shared
+`tests/project_candidate_recovery_fixture.py`.
 
-`candidate_validation_and_behavioral_repair_experiment.py` is an offline,
-explicitly invoked pytest experiment for stopped candidate validation and
-counterexample repair. It uses scripted choices with real project tools,
-unittest, behavioral executions, review snapshots and completion proofs.
-It never calls a model or edits production files. The `current` variant
-intentionally exits nonzero when the proposed contract is not met; `candidate`
-installs process-local overrides from `candidate_recovery_test_proposal.py`.
-Neither script is part of default pytest discovery or a production runtime.
-
-```powershell
-python -m tests.manual.candidate_validation_and_behavioral_repair_experiment --variant current --report artifacts/candidate-recovery-current.json
-python -m tests.manual.candidate_validation_and_behavioral_repair_experiment --variant candidate --report artifacts/candidate-recovery-proposal.json
-```
-
-See [the experiment report](../../docs/candidate-validation-and-behavioral-repair-experiment-2026-10-10.zh-CN.md).
-Passing scripted choices establish workflow feasibility and boundaries, not
-real-model compliance or an agent benchmark score.
+The old offline candidate proposal and punctuation-specific behavioral worker
+were retired on 2026-10-11. Earlier [experiment results](../../docs/candidate-validation-and-behavioral-repair-experiment-2026-10-10.zh-CN.md)
+remain historical evidence. They are not evidence for the current removal or
+for generalized review quality. `candidate_recovery_koboldcpp_ab.py` now accepts
+only frozen-source `production-ab`; no proposal is injected.
+Additional external semantic cases live in `semantic_holdout_local_ab.py`.
 
 The installed OpenCode and Pi comparisons, including their actual build
 identities, failure classifications, and the production candidate-recovery

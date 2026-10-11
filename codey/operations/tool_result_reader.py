@@ -22,19 +22,7 @@ def read_tool_result(delegate: Any, call: ToolCall) -> ToolResult:
             raise ValueError("query must be a nonempty literal string of at most 512 characters")
         result = delegate.session._memory_results.get(identity)
         if result is None:
-            # Behavioral probes run outside the model tool loop. Their real
-            # archive is addressed by its own scoped, digest-verified handle;
-            # never fabricate a kernel execution or accept arbitrary paths.
-            if delegate.managed_outputs is None:
-                raise ValueError("stored result unavailable in this task")
-            text, metadata = delegate.managed_outputs.read_tool_output(delegate.session_id, delegate.run_id, identity)
-            if metadata.get('tool_name') != 'behavioral_verification':
-                raise ValueError("stored result unavailable in this task")
-            observed = json.loads(text)
-            if not isinstance(observed, dict) or observed.get('status') not in {'pass', 'fail', 'not_run'}:
-                raise ValueError('invalid behavioral result')
-            result = ToolResult(call, text, ok=observed['status'] == 'pass',
-                                truncated=metadata.get('stored_truncated') is True)
+            raise ValueError("stored result unavailable in this task")
         text = result.model_text
         managed = result.audit.get("managed_output")
         clipped = result.truncated

@@ -1,4 +1,4 @@
-"""Loopback candidate preflight and frozen-source production recovery A/B.
+"""Loopback frozen-source production recovery A/B.
 
 Two native tasks and two explicitly recorded failure prefixes are scored
 separately. Repairs and final reviews use the real loaded Local model. The
@@ -45,7 +45,7 @@ def source_digest(root):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-dir', type=Path, required=True)
-    parser.add_argument('--mode', choices=('preflight', 'production-ab'), required=True)
+    parser.add_argument('--mode', choices=('production-ab',), required=True)
     parser.add_argument('--baseline', type=Path)
     parser.add_argument('--upstream', default='http://127.0.0.1:5001')
     parser.add_argument('--timeout', type=float, default=180)
@@ -63,7 +63,7 @@ def main():
         model = json.load(response)['data'][0]['id']
     with urlopen(upstream + '/api/extra/version', timeout=5) as response:
         backend = json.load(response)
-    variants = [('proposal', ROOT)] if args.mode == 'preflight' else [('current', args.baseline.resolve()), ('production', ROOT)]
+    variants = [('current', args.baseline.resolve()), ('production', ROOT)]
     report = {'mode': args.mode, 'model': model, 'backend': backend,
               'sampling': {'temperature': 0, 'seeds': [51, 52]},
               'budgets': {'window': 32768, 'output': 2048, 'keep': 12000, 'turns': 30,
@@ -71,8 +71,7 @@ def main():
               'sources': {v: source_digest(root) for v, root in variants},
               'selected_scenarios': selected,
               'control_sha256': {path: hashlib.sha256((ROOT / 'tests/manual' / path).read_bytes()).hexdigest()
-                  for path in ('candidate_recovery_koboldcpp_ab.py', 'candidate_recovery_koboldcpp_worker.py',
-                               'candidate_recovery_test_proposal.py')},
+                  for path in ('candidate_recovery_koboldcpp_ab.py', 'candidate_recovery_koboldcpp_worker.py')},
               'limitations': ['Recorded failure prefixes are not native task success scores.',
                               'Same seed does not imply identical requests or deterministic model output.',
                               'Only the two targeted task contracts are measured, not the full twenty runs.'],

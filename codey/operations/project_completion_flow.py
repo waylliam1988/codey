@@ -335,8 +335,6 @@ def run_project_mode(
 
     try:
         _prepare_project_context(ctx)
-        from codey.operations.behavioral_verification import prepare_behavioral_validation
-        prepare_behavioral_validation(ctx)
         run_writer_phase(ctx)
         validate_candidate(ctx)
         enforce_completion(ctx)
