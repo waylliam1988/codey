@@ -49,7 +49,7 @@ HTTP / CLI -> shared task services + entry authorization
                 -> provider result delivery -> completion_gate -> final result
 ```
 
-Project, Research, planning and authorized mixed tasks share the model/tool
+Chat, Project, Research, planning and authorized mixed tasks share the model/tool
 kernel. Domain strategies can schedule follow-up work; they do not own another
 model/tool loop. The Research button selects strict evidence/report requirements.
 Using web tools in ordinary coding does not automatically require research notes.
@@ -61,14 +61,15 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/app/task_services.py`, `task/entry_auth.py` | Compose desktop/headless review and advisor services once; derive HTTP and CLI authorization with one rule set |
 | `codey/operations/task_state.py` | `TaskState` and the typed submission-store bundle |
 | `codey/operations/task_run.py`, `task_phases/` | Run resource lifecycle, provider setup, callbacks and terminal settlement |
+| `codey/workspace/session.py` | Resolve managed Chat roots; application state is not the file-tool root |
 | `codey/operations/task_entry.py`, `task_session.py` | Entry policy and per-task facts |
 | `codey/operations/task_loop.py` | One production model/tool loop; typed transport/execution/observation dependencies |
 | `codey/operations/task_guidance.py`, `research/completion_guidance.py` | Task composition selects domain-owned completion guidance; the kernel receives text, not a Research workflow |
 | `codey/operations/project_prompt_context.py`, `workspace/coding_context.py` | Prepare immutable coding facts with the existing verification decision, then render JSON/native context without I/O |
 | `codey/operations/kernel_prompt.py`, `research/tool_contract.py` | Compose supplied guidance/context and protocol instructions; logical note-ID usage belongs to the shared tool definition |
-| `codey/operations/kernel_preparation.py` | Prepare the frozen snapshot and actual prompt once for Auto/kernel; received native turns reuse that input and belong to the original TaskSession |
+| `codey/operations/kernel_preparation.py` | Prepare the frozen snapshot and prompt once for the shared kernel; every received turn belongs to that TaskSession |
 | `codey/toolchain/tool_spec.py` | Tool definitions, schemas and permission-aware turn snapshots |
-| `codey/operations/kernel_protocol.py` | JSON/native normalization and validation against the current snapshot |
+| `codey/operations/kernel_protocol.py` | Natural-answer candidates and JSON/native calls validated against the current snapshot |
 | `codey/operations/kernel_execution.py`, `task_execution.py` | Execution boundary and domain adapters |
 | `codey/operations/completion_gate.py` | Final completion-proof composition; a model's `done` is only a proposal |
 | `codey/operations/project_completion_checks.py`, `research_completion_checks.py` | Project and source/strict-Research check providers |

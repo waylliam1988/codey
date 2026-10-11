@@ -19,7 +19,6 @@ from codey.operations.result import ModeOutcome
 from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.operations.task_state import TaskState
 from codey.runtime.observe.events import RunEvent, render_run_event, run_event_ui_payload
-from codey.task.model import execution_task
 from codey.workspace.config import ProjectConfigLoadResult
 from codey.workspace.facts import ProjectFactsStore
 
@@ -126,7 +125,7 @@ def run_planning_readonly_mode(
         result = deps.agent_run(AgentRequest(
             provider=frame.provider,
             project=Path(project),
-            task=execution_task(request),
+            task=request.task,
             max_turns=request.max_turns,
             on_event=lambda event: record_planning_event(deps, frame, work, event),
             on_shell_request=None,

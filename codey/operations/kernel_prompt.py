@@ -57,12 +57,12 @@ def kernel_prompt_for_session(
     names = ", ".join(visible_names) or "none"
     parts = [
         f"User task (verbatim):\n{task_text or '(no task text)'}\n",
-        f"Project: {project}\nTask kind: {getattr(session, 'task_kind', '')}",
+        f"Workspace: {project}\nTask kind: {getattr(session, 'task_kind', '')}",
     ]
     if handoff:
         parts.append(f"Factual handoff from prior work:\n{handoff}")
     if context_text:
-        parts.append(f"Project context:\n{context_text}")
+        parts.append(f"Task context:\n{context_text}")
     if coding_context is not None:
         current = render_coding_context(coding_context, native=native)
         if current:
@@ -77,20 +77,24 @@ def kernel_prompt_for_session(
             parts.append(f"Tool contract (use exactly these shapes):\n{contract_text}")
     if native:
         parts.append(
-            "Call exactly one native tool per turn and wait for its result before choosing the next tool. "
-            "Call done separately to deliver the final answer; do not send a raw JSON tool call or prose instead."
+            "Answer directly when no action is needed. For actions, call one native tool per turn and "
+            "wait for its result before choosing the next tool. Use native tool calls, not JSON in prose. "
+            "Deliver the final answer as normal text or call done separately."
         )
     else:
         parts.append(
-            "Reply with exactly one JSON tool call per turn, or done. "
+            "Answer directly when no action is needed. For actions, reply with exactly one bare JSON tool call "
+            "per turn and wait for its result. Do not wrap executable calls in code fences. "
+            "Deliver the final answer as normal text or call done. "
             r"Escape line breaks and tabs inside JSON strings as \n and \t. "
             r'For example: "content":"first line\nsecond line\n".'
         )
     parts.append(
-        "Preserve the user's requested final format inside done's summary string, including JSON if requested. "
+        "Preserve the user's requested final format, including JSON if requested. "
         "If the task cannot be completed within authorized capabilities, report it as blocked with the reason; "
         "never claim a fix or passing verification that did not happen. For completed changes, required checks "
-        "must pass on the current workspace before done."
+        "must pass on the current workspace before completion. Tool availability alone does not require edits or tests. "
+        "Shell runs on the execution host and requires approval. A working directory is not a system sandbox."
     )
     return "\n\n".join(parts)
 
@@ -150,7 +154,7 @@ def _format_results(results: list[ToolResult], session: TaskSession) -> str:
     for result in results:
         label = str(getattr(result.call, "name", "") or "tool")
         blocks.append(f"[result: {label}]\n{_result_context(result, session)}".rstrip())
-    return "\n\n".join(blocks) + "\n\nContinue with the next single JSON tool call, or done."
+    return "\n\n".join(blocks) + "\n\nContinue with one bare JSON tool call, or deliver the final answer."
 
 
 def working_context(session: TaskSession) -> str:

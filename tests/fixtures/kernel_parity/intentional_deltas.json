@@ -211,11 +211,12 @@
     }
   },
   "protocol/coding/coding_writer/json/envelope/prose": {
-    "status": "INTENTIONAL_DENY",
-    "category": "canonical-envelope",
-    "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text.",
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
     "tests": [
-      "tests/test_kernel_provider_protocol_boundary.py",
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
       "tests/test_kernel_legacy_parity.py"
     ],
     "changelog": "CHANGELOG.md",
@@ -233,17 +234,18 @@
       "done": null
     },
     "after": {
-      "accepted": false,
+      "accepted": true,
       "calls": [],
-      "done": null
+      "done": "Please execute {\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"
     }
   },
   "protocol/coding/coding_writer/json/envelope/think": {
-    "status": "INTENTIONAL_DENY",
-    "category": "canonical-envelope",
-    "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text.",
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
     "tests": [
-      "tests/test_kernel_provider_protocol_boundary.py",
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
       "tests/test_kernel_legacy_parity.py"
     ],
     "changelog": "CHANGELOG.md",
@@ -261,17 +263,18 @@
       "done": null
     },
     "after": {
-      "accepted": false,
+      "accepted": true,
       "calls": [],
-      "done": null
+      "done": "<think>consider alternatives</think>{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"
     }
   },
   "protocol/coding/coding_writer/json/envelope/unknown-template": {
-    "status": "INTENTIONAL_DENY",
-    "category": "canonical-envelope",
-    "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text.",
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
     "tests": [
-      "tests/test_kernel_provider_protocol_boundary.py",
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
       "tests/test_kernel_legacy_parity.py"
     ],
     "changelog": "CHANGELOG.md",
@@ -289,9 +292,9 @@
       "done": null
     },
     "after": {
-      "accepted": false,
+      "accepted": true,
       "calls": [],
-      "done": null
+      "done": "<alien_call>{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}</alien_call>"
     }
   },
   "protocol/coding/coding_writer/json/envelope/done-answer": {
@@ -526,11 +529,12 @@
     }
   },
   "protocol/coding/planning_readonly/json/envelope/prose": {
-    "status": "INTENTIONAL_DENY",
-    "category": "canonical-envelope",
-    "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text.",
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
     "tests": [
-      "tests/test_kernel_provider_protocol_boundary.py",
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
       "tests/test_kernel_legacy_parity.py"
     ],
     "changelog": "CHANGELOG.md",
@@ -548,17 +552,18 @@
       "done": null
     },
     "after": {
-      "accepted": false,
+      "accepted": true,
       "calls": [],
-      "done": null
+      "done": "Please execute {\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"
     }
   },
   "protocol/coding/planning_readonly/json/envelope/think": {
-    "status": "INTENTIONAL_DENY",
-    "category": "canonical-envelope",
-    "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text.",
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
     "tests": [
-      "tests/test_kernel_provider_protocol_boundary.py",
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
       "tests/test_kernel_legacy_parity.py"
     ],
     "changelog": "CHANGELOG.md",
@@ -576,17 +581,18 @@
       "done": null
     },
     "after": {
-      "accepted": false,
+      "accepted": true,
       "calls": [],
-      "done": null
+      "done": "<think>consider alternatives</think>{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"
     }
   },
   "protocol/coding/planning_readonly/json/envelope/unknown-template": {
-    "status": "INTENTIONAL_DENY",
-    "category": "canonical-envelope",
-    "reason": "Only whole canonical JSON documents or a generic JSON fence are executable; prose, think tags and unknown provider templates remain text.",
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
     "tests": [
-      "tests/test_kernel_provider_protocol_boundary.py",
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
       "tests/test_kernel_legacy_parity.py"
     ],
     "changelog": "CHANGELOG.md",
@@ -604,9 +610,9 @@
       "done": null
     },
     "after": {
-      "accepted": false,
+      "accepted": true,
       "calls": [],
-      "done": null
+      "done": "<alien_call>{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}</alien_call>"
     }
   },
   "protocol/coding/planning_readonly/json/envelope/done-answer": {
@@ -2887,12 +2893,12 @@
     }
   },
   "protocol/research/research/json/envelope/fenced": {
-    "status": "INTENTIONAL_CHANGE",
-    "category": "shared-grammar",
-    "reason": "Research now shares the canonical JSON fence/name envelope and text deduplication grammar with coding; no model-specific template is recognized.",
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
     "tests": [
-      "tests/test_kernel_provider_protocol_boundary.py",
-      "tests/test_kernel_parity_regressions.py",
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
       "tests/test_kernel_legacy_parity.py"
     ],
     "changelog": "CHANGELOG.md",
@@ -2903,16 +2909,8 @@
     },
     "after": {
       "accepted": true,
-      "calls": [
-        {
-          "args": {
-            "query": "helium"
-          },
-          "id": "",
-          "name": "web_search"
-        }
-      ],
-      "done": null
+      "calls": [],
+      "done": "```json\n{\"tool\": \"web_search\", \"args\": {\"query\": \"helium\"}}\n```"
     }
   },
   "protocol/research/research/json/envelope/adjacent": {
@@ -2986,12 +2984,12 @@
     }
   },
   "protocol/research/research/json/envelope/name-flat": {
-    "status": "INTENTIONAL_CHANGE",
-    "category": "shared-grammar",
-    "reason": "Research now shares the canonical JSON fence/name envelope and text deduplication grammar with coding; no model-specific template is recognized.",
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
     "tests": [
-      "tests/test_kernel_provider_protocol_boundary.py",
-      "tests/test_kernel_parity_regressions.py",
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
       "tests/test_kernel_legacy_parity.py"
     ],
     "changelog": "CHANGELOG.md",
@@ -3002,16 +3000,8 @@
     },
     "after": {
       "accepted": true,
-      "calls": [
-        {
-          "args": {
-            "query": "helium"
-          },
-          "id": "",
-          "name": "web_search"
-        }
-      ],
-      "done": null
+      "calls": [],
+      "done": "{\"name\": \"web_search\", \"query\": \"helium\"}"
     }
   },
   "protocol/research/research/native/batch/8": {
@@ -5354,6 +5344,400 @@
       "accepted": false,
       "calls": [],
       "done": null
+    }
+  },
+  "protocol/coding/coding_writer/json/envelope/fenced": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "a.py"
+          },
+          "id": "",
+          "name": "read_file"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "```json\n{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}\n```"
+    }
+  },
+  "protocol/coding/coding_writer/json/envelope/plain": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "I have completed the task"
+    }
+  },
+  "protocol/coding/coding_writer/json/envelope/name-flat": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "a.py"
+          },
+          "id": "",
+          "name": "read_file"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "{\"name\": \"read_file\", \"path\": \"a.py\"}"
+    }
+  },
+  "protocol/coding/coding_writer/native/batch/0": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "a.py"
+          },
+          "id": "",
+          "name": "read_file"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"
+    }
+  },
+  "protocol/coding/planning_readonly/json/envelope/fenced": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "a.py"
+          },
+          "id": "",
+          "name": "read_file"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "```json\n{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}\n```"
+    }
+  },
+  "protocol/coding/planning_readonly/json/envelope/plain": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "I have completed the task"
+    }
+  },
+  "protocol/coding/planning_readonly/json/envelope/name-flat": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "a.py"
+          },
+          "id": "",
+          "name": "read_file"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "{\"name\": \"read_file\", \"path\": \"a.py\"}"
+    }
+  },
+  "protocol/coding/planning_readonly/native/batch/0": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "path": "a.py"
+          },
+          "id": "",
+          "name": "read_file"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"
+    }
+  },
+  "protocol/research/research/json/envelope/prose": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "Please execute {\"tool\": \"web_search\", \"args\": {\"query\": \"helium\"}}"
+    }
+  },
+  "protocol/research/research/json/envelope/think": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "<think>consider alternatives</think>{\"tool\": \"web_search\", \"args\": {\"query\": \"helium\"}}"
+    }
+  },
+  "protocol/research/research/json/envelope/unknown-template": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "<alien_call>{\"tool\": \"web_search\", \"args\": {\"query\": \"helium\"}}</alien_call>"
+    }
+  },
+  "protocol/research/research/json/envelope/plain": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "I have completed the task"
+    }
+  },
+  "protocol/research/research/native/batch/0": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "Normal text, examples and JSON data are answer candidates. Only canonical standalone tool frames or native tool_calls execute; fenced examples, surrounding prose and name fields cannot authorize execution. Candidates still pass the common completion gate.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "query": "helium"
+          },
+          "id": "",
+          "name": "web_search"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium\"}}"
+    }
+  },
+  "loop/invalid-stop": {
+    "status": "INTENTIONAL_ANSWER_CANDIDATE",
+    "category": "workspace-answer-protocol",
+    "reason": "A normal textual answer is now a completion candidate in the shared workspace kernel; this frozen script contains no malformed JSON or required modification. Completion requirements remain enforced separately.",
+    "tests": [
+      "tests/test_chat_workspace_tools_and_answer_completion.py",
+      "tests/test_chat_workspace_lifecycle_and_required_evidence.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "protocol",
+        "turns": 2
+      },
+      "snapshot": null
+    },
+    "after": {
+      "error": "",
+      "files": {
+        "a.py": "x = 1\n",
+        "b.py": "y = 2\n"
+      },
+      "fresh": 1,
+      "handoff_visible": true,
+      "operations": [
+        {
+          "args": [
+            "."
+          ],
+          "kwargs": {},
+          "tool": "list_directory"
+        }
+      ],
+      "receipt_ids": [],
+      "result": {
+        "changed": false,
+        "checks_passed": false,
+        "checks_ran": false,
+        "stop_reason": "done",
+        "turns": 1
+      },
+      "snapshot": null
     }
   }
 }

@@ -44,8 +44,9 @@ python -m codey
 
 Codey 会打开本地 UI：`http://127.0.0.1:<port>/`。模型网站只在发送时按需打开，
 启动或选择模型不会自动打开网站。第一次打开某个网页 provider 时，
-在专用浏览器窗口里手动登录一次。之后选择项目文件夹并直接描述任务；如果只想普通聊天，
-留在 `New Chat`，不要选择项目。
+在专用浏览器窗口里手动登录一次。直接在 `New Chat` 描述需求即可：普通问题直接回答，
+写脚本等任务使用 `~/.codey/workspaces/<session_key>`，本机 Shell 命令仍需审批。
+选择项目文件夹后，同一套工具使用该目录和上下文，不需要切换聊天模式。
 
 Codey 打开的本地 UI 会自动完成操作者认证。原生窗口无法打开时，使用终端打印的
 完整启动链接。链接只能使用一次、五分钟后过期；已使用或过期时，重启 Codey 获取
@@ -113,7 +114,7 @@ python -m codey agent --json --provider qwen --project E:\my-project "修复失�
 python -m codey agent --provider zen --model muse-spark-1.3-contributor-free --project E:\my-project "修复失败的测试"
 ```
 
-`agent` 与桌面共用任务服务和授权规则，默认是 `project`；`--auto` 自动选路，
+`agent` 与桌面共用任务服务和授权规则，默认是 `project`；`--auto` 使用共用 Chat 工作区流程，
 `--intent` 可指定 `chat/research/hybrid/review/planning_readonly`。聊天和 Research
 不必关联项目；`--readonly` 选择只读规划；`--allow-web/--allow-write` 提供明确授权，
 仍受任务的禁止项约束。`--session-id` 选择会话，`--continue` 继续该会话；
@@ -156,7 +157,8 @@ Reviewer 连接器。审查通过不能代替新鲜验证。
 
 ## 安全边界
 
-模型只能在你选择的项目文件夹里工作。本地动作会经过 Codey 的工具契约、权限配置、
+文件工具限定在所选目录或受管 Chat 工作区内。获批 Shell 在本机执行，工作目录不是
+系统沙箱。本地动作会经过 Codey 的工具契约、权限配置、
 action policy、completion proof 和 Research evidence 检查。审计视图使用有界摘要和引用；
 本地受管输出与恢复收据可能保留读取的源码、网页正文和工具结果。对话存储与启用的 Ghost
 经历也会在本地保留用户消息/回答；这与仅记录 manifest/digest、不记录 raw prompt 的

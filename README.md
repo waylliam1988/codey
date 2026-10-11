@@ -49,8 +49,10 @@ python -m codey
 Codey opens a local UI at `http://127.0.0.1:<port>/`. Model websites open only
 when you send to them; startup and model selection do not launch them. When a
 provider browser opens, log in once with the web AI account you already use. Choose a
-project folder and ask for a change, or stay in `New Chat` for ordinary
-conversation with no project access.
+project folder and ask for a change, or stay in `New Chat` to talk or work in
+a managed session workspace under `~/.codey/workspaces/<session_key>`. Chat
+can write scripts and request local commands without choosing a folder.
+Both use the same tools; Shell commands still require approval.
 
 The local UI authorizes itself automatically when Codey opens it. If the native
 window cannot open, use the complete launch link printed by Codey. That link is
@@ -129,7 +131,7 @@ python -m codey agent --provider zen --model muse-spark-1.3-contributor-free --p
 ```
 
 `agent` uses the same task services and authorization rules as the desktop.
-It defaults to `project`; use `--auto` for automatic routing or `--intent` for
+It defaults to `project`; use `--auto` for the shared Chat workspace flow or `--intent` for
 `chat`, `research`, `hybrid`, `review` or `planning_readonly`. A project folder
 is optional for chat/Research. `--readonly` selects read-only planning;
 `--allow-web` and `--allow-write` supply explicit grants, subject to task denials.
@@ -181,7 +183,8 @@ See [desktop/CLI parity evidence](docs/desktop-cli-task-parity-2026-10-04.zh-CN.
 
 ## Safety Model
 
-Models can work only inside the project folder you choose. Local actions pass
+File tools work inside the selected folder or managed Chat workspace. Approved
+Shell runs on the host; its working directory is not a system sandbox. Local actions pass
 through Codey's tool contract, permission profile, action policy, completion
 proof, and research evidence checks. Audit views use bounded summaries and
 references. Local managed outputs and recovery receipts may retain read source

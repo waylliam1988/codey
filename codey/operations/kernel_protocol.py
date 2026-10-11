@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from codey.protocols.json_scanner import balanced_json_spans
-from codey.providers.base import AssistantTurn
+from codey.providers.base import AssistantTurn, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
 
@@ -270,14 +270,8 @@ def _invalid_plan(message: str, *, tool: str = "", kind: str = "invalid_args") -
 
 def _extract_json_objects(text: str) -> list[dict[str, Any]] | ToolPlan:
     source = str(text or "").strip()
-    if source.startswith("```") and source.endswith("```"):
-        first_newline = source.find("\n")
-        if first_newline < 0:
-            return []
-        language = source[3:first_newline].strip().lower()
-        if language not in {"", "json"}:
-            return []
-        source = source[first_newline + 1:-3].strip()
+    if source.startswith("```"):
+        return []
     objects: list[dict[str, Any]] = []
     spans = balanced_json_spans(source)
     if not spans:
@@ -312,12 +306,12 @@ def _extract_json_objects(text: str) -> list[dict[str, Any]] | ToolPlan:
 
 
 def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
-    tool = str(obj.get("tool", "") or obj.get("name", "") or "").strip().lower()
+    tool = str(obj.get("tool", "") or "").strip().lower()
     raw_args = obj.get("args", None)
     if isinstance(raw_args, dict):
         args = dict(raw_args)
     elif raw_args is None:
-        args = {k: v for k, v in obj.items() if k not in {"tool", "name"}}
+        args = {k: v for k, v in obj.items() if k != "tool"}
     else:
         args = dict[str, object]()
     return tool, args
@@ -583,6 +577,8 @@ def _text_tool_objects(text: str) -> list[tuple[str, dict[str, Any], str]] | Too
         return objects
     if not objects:
         return _invalid_plan("no JSON tool call found", kind="no_json")
+    if all("tool" not in obj for obj in objects):
+        return _invalid_plan("JSON data answer", kind="no_json")
     items: list[tuple[str, dict[str, Any], str]] = []
     for obj in objects[:MAX_NATIVE_CALLS_PER_TURN]:
         tool, args = _tool_and_args(obj)
@@ -628,6 +624,37 @@ def _native_tool_objects(calls: list[Any]) -> list[tuple[str, dict[str, Any], st
     return items
 
 
+def _text_response(text: str) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+    items = _text_tool_objects(text)
+    if not isinstance(items, ToolPlan) or items.protocol_error_kind != "no_json" or not text.strip():
+        return items
+    source = text.strip()
+    if source.startswith("<|tool_call>"):
+        return items
+    if source.startswith(("{", "[")):
+        try:
+            json.loads(source)
+        except (ValueError, RecursionError):
+            return _invalid_plan("incomplete or malformed JSON response", kind="invalid_json")
+    return ToolPlan(calls=[], control=Control(kind="done", body=source))
+
+
+def _response_objects(reply: str | object) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+    if isinstance(reply, AssistantTurn):
+        if reply.finish is TurnFinish.PROTOCOL_ERROR:
+            return _invalid_plan("provider returned malformed tool calls", kind="invalid_args")
+        if reply.finish is not TurnFinish.COMPLETE:
+            return _invalid_plan("assistant response was truncated", kind="output_limit")
+        if not reply.tool_calls:
+            if not reply.text.strip():
+                return _invalid_plan("empty assistant answer", kind="empty_answer")
+            return ToolPlan(calls=[], control=Control(kind="done", body=reply.text.strip()))
+    tool_calls = getattr(reply, "tool_calls", None) if not isinstance(reply, str) else None
+    if tool_calls:
+        return _native_tool_objects(list(tool_calls))
+    return _text_response(reply if isinstance(reply, str) else str(getattr(reply, "text", "") or ""))
+
+
 def normalize_turn(
     reply: str | object,
     *,
@@ -650,13 +677,7 @@ def normalize_turn(
             return _invalid_plan(f"invalid tool snapshot: {exc}")
     else:
         allowed = None if controller_allowed is None else {str(n or "").strip().lower() for n in controller_allowed}
-    tool_calls = getattr(reply, "tool_calls", None) if not isinstance(reply, str) else None
-    if isinstance(reply, str) or tool_calls is None:
-        text = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or "")
-        items = _text_tool_objects(text)
-    else:
-        calls = list(tool_calls or ())
-        items = _native_tool_objects(calls) if calls else _text_tool_objects(str(getattr(reply, "text", "") or ""))
+    items = _response_objects(reply)
     if isinstance(items, ToolPlan):
         return items
     return _plan_from_tool_objects(

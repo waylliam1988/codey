@@ -637,7 +637,6 @@ def shell_approval_response(
         ctx.record_shell_result(event)
         # 拒绝同样回答原调用并继续任务（模型据此改道，不再悬挂 native 链）。
         continued = False
-        project = str(pending.get("project") or "").strip()
         max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
         if bool(pending.get("continue_after")) and not ctx.run_registry.stop_flag.is_set():
             shell_row = shell_service.shell_result_row(pending, denied_result, approved=False)
@@ -650,12 +649,12 @@ def shell_approval_response(
             )
             continuation_run = submit_task_after_slot_release(
                 session_id,
-                project or None,
+                pending["attached_project"],
                 continuation_plan.continuation,
                 max_turns,
                 True,
                 continuation_plan.provider_id,
-                "project",
+                pending["intent"],
                 previous_run_id=str(pending.get("run_id") or ""),
                 initial_shell_results=tuple(continuation_plan.shell_results or ()),
                 **({"model_selection": pending["_api_selection"]} if pending.get("_api_selection") is not None else {}),
@@ -676,7 +675,6 @@ def shell_approval_response(
     )
     if pending is None:
         return 404, {"error": "approval not found"}
-    project = str(pending.get("project") or "").strip()
     max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
     session_id = pending["session_id"]
     if ticket is None:
@@ -719,12 +717,12 @@ def shell_approval_response(
             )
             continuation_run = submit_task_after_slot_release(
                 session_id,
-                project or None,
+                pending["attached_project"],
                 continuation_plan.continuation,
                 max_turns,
                 True,
                 continuation_plan.provider_id,
-                "project",
+                pending["intent"],
                 previous_run_id=str(pending.get("run_id") or ""),
                 initial_shell_results=tuple(continuation_plan.shell_results or ()),
                 **({"model_selection": pending["_api_selection"]} if pending.get("_api_selection") is not None else {}),

@@ -41,6 +41,7 @@ def tools_from_specs(specs: tuple[Any, ...]) -> list[ProviderToolDefinition]:
 class TurnFinish(Enum):
     COMPLETE = "complete"
     OUTPUT_LIMIT = "output_limit"
+    PROTOCOL_ERROR = "protocol_error"
 
 
 @dataclass(frozen=True)

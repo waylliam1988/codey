@@ -141,6 +141,42 @@
         "tests/test_api_chat_native_turns_and_history.py",
         "tests/test_responses_protocol_tool_history_and_stream_completion.py"
       ]
+    },
+    "codey/operations/chat.py": {
+      "current_owners": [
+        "codey/operations/task_entry.py",
+        "codey/operations/task_loop.py",
+        "codey/operations/task_phases/dispatch.py"
+      ],
+      "tests": [
+        "tests/test_architecture.py",
+        "tests/test_chat_workspace_tools_and_answer_completion.py",
+        "tests/test_chat_workspace_receipt_and_restart_restore.py"
+      ]
+    },
+    "codey/operations/auto_loop.py": {
+      "current_owners": [
+        "codey/operations/task_entry.py",
+        "codey/operations/task_loop.py",
+        "codey/operations/task_phases/dispatch.py"
+      ],
+      "tests": [
+        "tests/test_architecture.py",
+        "tests/test_chat_workspace_tools_and_answer_completion.py",
+        "tests/test_chat_workspace_receipt_and_restart_restore.py"
+      ]
+    },
+    "codey/operations/mode_dispatch.py": {
+      "current_owners": [
+        "codey/operations/task_entry.py",
+        "codey/operations/task_loop.py",
+        "codey/operations/task_phases/dispatch.py"
+      ],
+      "tests": [
+        "tests/test_architecture.py",
+        "tests/test_chat_workspace_tools_and_answer_completion.py",
+        "tests/test_chat_workspace_receipt_and_restart_restore.py"
+      ]
     }
   },
   "entry_chains": {

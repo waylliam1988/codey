@@ -1,5 +1,87 @@
 # Codey Test Report
 
+## Shared Chat workspace kernel (2026-10-12)
+
+Baseline: `1a10f658de9bffd4fbb33ae870aa736e95662904`, Windows / Python 3.12.8.
+The UI still says Chat. Unbound conversations use
+`<state_home>/workspaces/<session_key>`; choosing a folder supplies that root
+and its context. Both use the existing tools, immutable authorization,
+execution receipts, cancellation, recovery and completion gate.
+
+Production removes `operations/chat.py`, `auto_loop.py`, `mode_dispatch.py`
+and the model-generated task hint. No compatibility wrapper or route fallback
+replaces them. Production code is **596 lines smaller**. Natural answers are
+completion candidates; tool availability does not require a tool call.
+
+### TDD and deterministic corrections
+
+Behavior tests failed before implementation for missing unbound workspace tools,
+normal native/text answer completion, common receipts and approval continuation.
+Focused tests lock these boundaries and the corrections found during development:
+
+- File edits stay within the resolved workspace; ordinary greetings use one
+  generation request and acquire no writer lease. User denials still win.
+- Approval preserves the original attached-folder association, intent, model,
+  policy and call identity. Allow and Deny both resume the same task contract.
+- Text examples in code fences and ordinary JSON `name` fields cannot execute
+  tools. Native JSON text without native calls is an answer candidate.
+- Malformed native batches use a typed protocol error, so they cannot become
+  successful natural answers or mark the Zen plain-response probe successful.
+- Writer lock and acquisition failures close native call IDs without writing;
+  delivery errors and invalid completion verdicts cannot claim completion.
+- Chat records real action ledgers, changes, proof references and restart restore.
+  Recovery restores the original task kind before settling pending effects.
+- Temporary workspace roots do not become long-term Ghost project scopes.
+  Caught provider failures retain structured diagnostic records.
+
+New filenames describe workspace tools/answer completion, lifecycle/evidence,
+receipts/restart restore, entry constraints, submission ledgers, approval scope,
+native snapshot ownership and Zen workspace tools. Obsolete router tests were
+removed or migrated to the shared behavior they protect.
+
+The suite was not green on its first attempt. Earlier stopped runs exposed old
+prose-as-protocol-error, missing-workspace, forced `done.summary`, restart-scope
+and parity fixtures. A completed run reported **4 failed, 8401 passed, 7 skipped**:
+three evidence-follow-up fixtures still fenced executable JSON, and a ledger
+fault fixture injected a Project executor while selecting Auto. Fixtures now use
+bare calls and explicit workflow identity. Their **26 tests passed** before the
+final full run. Production code did not change during these fixture migrations.
+
+### Verification before the final full run
+
+| Check | Result |
+| --- | --- |
+| Ruff | passed |
+| mypy | no issues in 402 source files |
+| Pyrefly | 0 errors; 48 suppressed, 831 warnings not shown |
+| git diff --check | passed |
+| Required machine contracts | 1102 passed, 14 subtests passed; 285.46s |
+| Shared prompt/protocol regressions | 1002 passed, 403 subtests passed; 75.63s |
+| Legacy parity contracts | 694 passed; 682 scenarios: 540 unchanged, 142 exact intentional differences, 0 unclassified |
+| Restart/handoff persistence regression | 52 passed |
+| Scripted shipped UI E2E | all 19 checks passed, including Stop, approval recovery, diff and restore |
+| KoboldCpp live Chat | all 6 cases passed across native/text; greetings 1 request, edits 2, Shell 1 then approval |
+
+The live probe made **8 generation requests** in temporary workspaces.
+[Aggregate observations](docs/reports/chat-workspace-live-2026-10-12.json) record
+the actual model, outputs, timings and script hash. Zen/Muse Spark 1.3 shared
+workspace tools and Shell approval are deterministic transport/runtime tests;
+no Zen upstream live generation was performed. Removing the Zen package and
+registration still permits Local Chat, edits and Shell requests with both APIs.
+
+### Final full pytest
+
+`python -m pytest -q -ra -o faulthandler_timeout=120`
+
+**8405 passed, 7 skipped, 1503 subtests passed in 988.55s (16:28).**
+Six skips are Windows/POSIX platform contracts; one is opt-in real browser E2E.
+The separate scripted UI gate above ran successfully. Hashes of all **1424**
+source/test files stayed unchanged throughout the final run. Documentation was
+updated only after it completed. The documentation-dependent architecture check
+then passed **95 tests and 383 subtests**; final diff checks passed. No package
+version change, release or tag. Staged diff checking then removed one extra EOF
+blank line in the receipt test (AST unchanged); its two cases passed again.
+
 ## Isolated local reviewer experiments (2026-10-11, stopped)
 
 Production baseline: `4f0237e59ae505592ec479a92a5db42f43a2f68a`.

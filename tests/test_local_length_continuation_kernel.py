@@ -73,7 +73,7 @@ def test_kernel_consumes_one_local_length_continuation_before_done():
                 provider=provider,
                 run_id="local-length-continuation",
                 provider_id="local",
-                user_task="already complete",
+                user_task="Change the implementation",
             ),
             execution=KernelExecutionDeps(
                 executors={},
@@ -127,7 +127,7 @@ def test_second_local_length_stop_is_provider_failure() -> None:
                 provider=provider,
                 run_id="local-double-length",
                 provider_id="local",
-                user_task="already complete",
+                user_task="Change the implementation",
             ),
             execution=KernelExecutionDeps(
                 executors={},
@@ -140,7 +140,7 @@ def test_second_local_length_stop_is_provider_failure() -> None:
     assert len(provider.prompts) == 2
 
 
-def test_plain_text_after_length_never_completes() -> None:
+def test_natural_answer_after_length_cannot_bypass_required_changes() -> None:
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
@@ -159,15 +159,16 @@ def test_plain_text_after_length_never_completes() -> None:
         task_kind="project",
         project="",
         max_turns=2,
+        project_changes_required=True,
     )
     result = run_task_kernel(
         session,
         request=KernelRunRequest(
             transport=KernelTransportDeps(
                 provider=provider,
-                run_id="local-plain-after-length",
+                run_id="local-required-changes-after-length",
                 provider_id="local",
-                user_task="already complete",
+                user_task="Change the implementation",
             ),
             execution=KernelExecutionDeps(
                 executors={},

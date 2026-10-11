@@ -21,11 +21,15 @@ def _edit(content=CONTENT):
 
 @pytest.mark.parametrize("control", ["\n", "\r", "\t"])
 @pytest.mark.parametrize("fenced", [False, True])
-def test_literal_control_character_is_rejected_with_actionable_json_diagnostic(control, fenced):
+def test_bare_json_control_characters_are_rejected_and_fenced_examples_are_not_executed(control, fenced):
     text = _edit("first" + control + "second").replace(json.dumps(control)[1:-1], control)
     if fenced:
         text = "```json\n" + text + "\n```"
     plan = normalize_turn(text, policy=POLICY)
+    if fenced:
+        assert not plan.calls and plan.control is not None
+        assert plan.control.body == text and not plan.protocol_error
+        return
     assert not plan.calls and plan.control is None
     assert plan.protocol_error_kind == "invalid_json"
     assert "escape" in plan.protocol_error.lower()

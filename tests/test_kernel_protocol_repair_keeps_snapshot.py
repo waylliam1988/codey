@@ -8,7 +8,7 @@ from codey.operations import kernel_prompt
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn
+from codey.providers.base import AssistantTurn, TurnFinish
 from codey.runtime.core.models import ToolResult
 
 
@@ -49,7 +49,7 @@ def test_native_repair_requests_native_calls_instead_of_json(monkeypatch):
         if len(prompts) == 2:
             assert "native tool" in prompt.lower()
             assert "exactly one JSON object" not in prompt
-        return AssistantTurn(text="ordinary prose")
+        return AssistantTurn(text="malformed native batch", finish=TurnFinish.PROTOCOL_ERROR)
 
     monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *args, **kwargs: True)
     result = run_task_kernel(

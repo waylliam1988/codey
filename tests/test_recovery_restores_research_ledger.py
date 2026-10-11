@@ -15,7 +15,8 @@ from codey.research.tools import ResearchToolOutput
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from tests.stress.test_completion_truthful_oracle_real_run import _real_research_gate
-from tests.test_auto_direct_answer_continues_to_kernel import _auto_frame, _SeqProvider
+from tests.support.workspace_conversation import TextConversation
+from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 
 
@@ -60,15 +61,16 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     restored_tools = SimpleNamespace(ledger=ResearchLedger())
     monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *args: (None, None, restored_tools))
     import json
-    provider = _SeqProvider([json.dumps({"tool": "done", "args": {"summary": report}})])
-    frame = _auto_frame("Research helium supply", provider, frame_run_id="r")
+    provider = TextConversation(*[json.dumps({"tool": "done", "args": {"summary": report}})])
+    frame = workspace_frame("", provider, task="Research helium supply")
+    frame.run_id = "r"
     frame.request = replace(frame.request, session_id="s", intent="research", max_turns=8)
     frame.task_kind = "research"
     frame.provider_id = "local"
     frame.recovered_tool_outcomes = recovered.recovered_tool_outcomes
     frame.settled_tool_outcomes = recovered.settled_tool_outcomes
     frame.recovered_tool_result_batch_id = recovered.recovered_tool_result_batch_id
-    deps.state = SimpleNamespace()
+    deps.state = SimpleNamespace(set_provider_session=lambda *args: None)
     outcome = run_entry_kernel(frame, RunWork([], ExecutionEvidence()),
                                SimpleNamespace(on_event=lambda _: None, on_shell_request=None), deps,
                                task_kind="research")

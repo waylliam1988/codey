@@ -2883,7 +2883,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Visible tools", provider.sent[0])
         self.assertNotIn("Research controller current allowed actions", provider.sent[0])
 
-    def test_research_iteration_repair_for_direct_answer_uses_done_shape(self) -> None:
+    def test_research_natural_answer_requires_opened_source_evidence(self) -> None:
         provider = FakeProvider(
             "## 结论\nAlpha requires notice.\n\n## 来源\n[1] Alpha - https://example.com",
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
@@ -2895,7 +2895,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("valid tool call", provider.sent[1])
+        self.assertIn("research_sources_opened", provider.sent[1])
         self.assertNotIn('{"tool":"done","args":{"summary":"<the full report>"}}', provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
@@ -2933,7 +2933,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("valid tool call", provider.sent[1])
+        self.assertIn("research_sources_opened", provider.sent[1])
 
     def test_research_iteration_unknown_tool_repair_respects_disabled_source_search(self) -> None:
         provider = FakeProvider(

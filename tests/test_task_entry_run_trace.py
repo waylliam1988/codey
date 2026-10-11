@@ -591,7 +591,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
         assert "SECRET_REVIEW_IMPACT_SHOULD_NOT_BE_SAVED" not in serialized
 
 
-def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
+def test_chat_workspace_prompt_is_traced_by_digest_without_hidden_consensus() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(Path(td) / "state")
         secret_task = "SECRET_CONSENSUS_TASK_SHOULD_NOT_BE_SAVED"
@@ -617,16 +617,16 @@ def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
         names = {item["name"] for item in payload["prompt_sections"]}
         serialized = json.dumps(payload, ensure_ascii=False)
 
-        consensus.assert_called_once()
-        assert "consensus_task" in names
-        assert "chat_outbound_prompt" not in names
-        consensus_task = next(item for item in payload["prompt_sections"] if item["name"] == "consensus_task")
-        assert consensus_task["freshness"] == "secondary_input_prepared"
-        assert consensus_task["source_refs"] == ["secondary_input:consensus:task"]
+        consensus.assert_not_called()
+        assert "consensus_task" not in names
+        assert "workspace_outbound_prompt" in names
+        consensus_task = next(item for item in payload["prompt_sections"] if item["name"] == "workspace_outbound_prompt")
+        assert consensus_task["freshness"] == "provider_send"
+        assert consensus_task["source_refs"] == ["provider_send:workspace"]
         assert secret_task not in serialized
 
 
-def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
+def test_chat_outbound_prompt_carries_shared_workspace_kernel_provenance() -> None:
     # Non-consensus chat sends go straight through the runner's own prompt
     # boundary; their outbound row must name the capability that owns it.
     with tempfile.TemporaryDirectory() as td:
@@ -650,13 +650,13 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-chat-provenance", run_id)
-        outbound = next(item for item in payload["prompt_sections"] if item["name"] == "chat_outbound_prompt")
+        outbound = next(item for item in payload["prompt_sections"] if item["name"] == "workspace_outbound_prompt")
 
         assert outbound["freshness"] == "provider_send"
-        assert outbound["capability_id"] == "chat_runner"
+        assert outbound["capability_id"] == "agent_runner"
         assert outbound["admission_reason"] == "provider_turn_boundary"
         assert outbound["epoch_id"].startswith("ctx_epoch:")
-        assert outbound["source_refs"] == ["provider_send:chat"]
+        assert outbound["source_refs"] == ["provider_send:workspace"]
 
 
 def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
@@ -670,7 +670,12 @@ def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
             goal="Keep the existing chat plan",
             provider_id="deepseek",
         )
-        conversation.begin_window("deepseek", "chat")
+        from dataclasses import replace
+
+        from codey.workspace.session import session_workspace
+        workspace = str(session_workspace(Path(td) / "state", session_id))
+        snapshot = replace(snapshot, project=workspace)
+        conversation.begin_window("deepseek", "chat", workspace)
         conversation.update_snapshot(snapshot)
         conversation.estimated_context_tokens = conversation.soft_limit
         state.set_provider_session("deepseek", session_id)

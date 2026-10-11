@@ -30,7 +30,7 @@ def claim_or_route_ghost_work(
     baseline_task_kind: str,
     run_id: str,
 ) -> _ClaimRoute:
-    """Claim a ghost work item; auto model routing lives in auto_loop."""
+    """Claim an explicitly eligible Ghost work item before shared execution."""
     claimed_work_item: GhostWorkItem | None = None
     task_kind = baseline_task_kind
     claim_result = maybe_claim_work_item(ghost_deps, request, run_id=run_id)

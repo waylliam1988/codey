@@ -363,9 +363,15 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
     task_context_started = False
     writer_acquired = False
     try:
+        if not project and baseline_task_kind == "chat":
+            from codey.storage.local_store import DEFAULT_STATE_HOME
+            from codey.workspace.session import session_workspace
+
+            home = getattr(deps.workspace_revisions, "state_home", None) or DEFAULT_STATE_HOME
+            project = str(session_workspace(home, session_id))
         trace = open_run_trace(deps, session_id, run_id, project, baseline_task_kind, provider_id)
         trace_sink = FailOpenPromptTrace(trace)
-        project_config_result = load_project_config(project) if project else ProjectConfigLoadResult()
+        project_config_result = load_project_config(request.project) if request.project else ProjectConfigLoadResult()
 
         bind_provider_handlers(state)
         provider_controls.begin_task_context(session_id)
@@ -376,9 +382,6 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
         # Single persistent writer: snapshot projects claim cross-process
         # ownership here; a busy project fails fast instead of forking baselines.
         # Only lock contention maps to project_write_busy; IO errors propagate.
-        # Unified auto defers the lock: an auto greeting with a project must not
-        # claim the writer before the first model output chooses an edit action;
-        # auto_loop.py acquires it only when the chosen action needs it.
         needs_writer = requires_project_writer_lease(request, baseline_task_kind)
         if needs_writer:
             try:
@@ -486,12 +489,17 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
             deps, setup, "ERROR: Runtime operation state unavailable.", current_work=empty_work
         )
 
+    if work.operation is not None and (work.operation.task_policy or work.operation.leaf != "accepted"):
+        original_kind = work.operation.task_kind
+        if original_kind not in {"chat", "project", "research", "hybrid", "planning", "planning_readonly", "readonly", "review"}:
+            return None, _fail_early_run(deps, setup, "ERROR: Unknown recovered task kind.", current_work=work)
+        setup.task_kind = original_kind
     recovery = recover_effects_for_resume(
         deps,
         session_id=setup.session_id,
         run_id=setup.run_id,
         project=setup.project or "",
-        task_kind=setup.baseline_task_kind,
+        task_kind=setup.task_kind,
         ignored_paths=tuple(setup.project_config_result.config.ignored_paths),
     )
     if not recovery.ok:
@@ -501,11 +509,6 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
             current_work=work,
         )
     if recovery.recovered_tool_outcomes or recovery.settled_tool_outcomes or getattr(work.operation, "task_policy", {}):
-        original_kind = getattr(work.operation, "task_kind", "")
-        if original_kind in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly"}:
-            setup.task_kind = original_kind
-        elif setup.task_kind not in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly"}:
-            setup.task_kind = "hybrid"
         if not setup.continue_task:
             setup.request = replace(setup.request, continue_task=True)
             setup.continue_task = True
@@ -724,22 +727,11 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             return early
 
         completion_deps = project_completion_deps(deps)
-        # Unified auto defers the ledger mode until the first model output
-        # chooses an action; auto_loop opens it via open_ledger_for(). Recovered
-        # replays and claimed Ghost work items keep the existing path: their
-        # mode is already decided before this point.
-        from codey.operations.auto_loop import is_auto_request as _is_auto
-
-        if not (
-            _is_auto(setup.request)
-            and not workload.recovered_tool_outcomes
-            and not workload.settled_tool_outcomes
-            and setup.claimed_work_item is None
-        ):
-            open_run_ledger(
-                deps, workload.work, setup.request,
-                run_id=setup.run_id, task_kind=setup.task_kind, provider_id=setup.provider_id,
-            )
+        open_run_ledger(
+            deps, workload.work, setup.request,
+            run_id=setup.run_id, task_kind=setup.task_kind, provider_id=setup.provider_id,
+            workspace=setup.project,
+        )
 
         hooks = build_hooks(
             deps,
@@ -771,11 +763,6 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             setup.task_kind,
             setup.project_config_result,
         )
-        # Unified auto may decide a different kind on its first normal call;
-        # sync it back so trace finish, ledger projection, and settlement all
-        # report the executed mode instead of the deferred baseline.
-        if frame.task_kind != setup.task_kind:
-            setup.task_kind = frame.task_kind
         return finish_mode_outcome(
             deps,
             setup.ghost_deps,

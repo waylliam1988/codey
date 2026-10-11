@@ -39,7 +39,7 @@ def test_readonly_task_can_report_blocked_in_user_requested_format(native):
         task_text='Diagnose only; report JSON {"status":"blocked","reason":"..."} if edits would be required.')
     prompt = kernel_prompt_for_session(session, native=native)
     assert "cannot be completed within" in prompt and "blocked" in prompt
-    assert "requested final format" in prompt and "summary" in prompt
+    assert "requested final format" in prompt and "Deliver the final answer as normal text" in prompt
     assert "only after the required checks have passed" not in prompt
 
 

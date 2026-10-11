@@ -35,7 +35,6 @@ from codey.runs.receipt import VERIFICATION_TRUST_TRUSTED, build_task_receipt
 from codey.runtime.core import cancellation
 from codey.runtime.observe.execution_evidence import CheckEvidence
 from codey.runtime.observe.terminalizer import task_done_event
-from codey.task.model import execution_task
 from codey.workspace.change_brief import (
     new_project_change_brief,
     project_audit_change_brief,
@@ -51,7 +50,7 @@ __all__ = [
 def _prepare_project_context(ctx: ProjectRun) -> None:
     ctx.state = ctx.deps.state
     ctx.request = ctx.frame.request
-    ctx.agent_task = execution_task(ctx.request)
+    ctx.agent_task = ctx.request.task
     ctx.agent_fresh_chat = ctx.frame.fresh_chat
     if ctx.work.ledger is not None:
         ctx.work.record_agent_events_in_ledger = True
@@ -136,7 +135,7 @@ def _prepare_new_project_context(ctx: ProjectRun) -> None:
             planned = None
         if planned is not None:
             ctx.change_brief = new_project_change_brief(ctx.request.task, planned.answer)
-            ctx.agent_task = ctx.change_brief.apply_to_task(execution_task(ctx.request))
+            ctx.agent_task = ctx.change_brief.apply_to_task(ctx.request.task)
     elif ctx.deps.agent.run_project_audit is not None and ctx.has_user_files:
         context = render_project_context(
             ctx.frame.conversation.snapshot,
@@ -165,7 +164,7 @@ def _prepare_new_project_context(ctx: ProjectRun) -> None:
             reports = ()
         if reports:
             ctx.change_brief = project_audit_change_brief(ctx.request.task, reports)
-            ctx.agent_task = ctx.change_brief.apply_to_task(execution_task(ctx.request))
+            ctx.agent_task = ctx.change_brief.apply_to_task(ctx.request.task)
             ctx.used_project_audit = True
 
 

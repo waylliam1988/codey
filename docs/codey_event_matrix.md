@@ -33,9 +33,7 @@ Valid `capability_id` stamps are documentation-owned architecture boundaries,
 not runtime dispatch objects.
 
 - `agent_runner`
-- `auto_runner`
 - `changes_presenter`
-- `chat_runner`
 - `completion_contract`
 - `completion_repair_context`
 - `consensus_advisors`
@@ -117,6 +115,7 @@ UI surface vocabulary:
 | run_ledger.changes_collected | codey.operations.project_completion_flow | run_ledger, changes_drawer, receipt_projection | changes_presenter | run_ledger | false | changes_drawer | false | false | file paths, counts, and diff summary metadata only |
 | run_details.summary | codey.runs.details | server, chat_stream | run_details | none | false | chat_stream | false | false | bounded user-facing run explanation derived from ledger, trace, and runtime operation metadata only |
 | runtime_operation.state | codey.runtime.core.operation_state | task_run, run_details | runtime_operations | runtime_session_log | false | false | false | false | leaf, driver, turn/tool coordinates, provider id, turn counts, proof refs/status, repair round count, repair-context digest, and bounded blocked reason only; pending effect ids and delivery batch refs are derived from `codey.runtime.log.session_view`, not stored; prompts, replies, stdout, diffs, and source bodies are excluded |
+| run_trace.workspace_outbound_prompt | codey.operations.kernel_trace.record_outbound | run_trace, prompt_envelope | agent_runner | run_trace | false | false | false | true | actual shared-workspace send manifest and digest; no raw prompt and no duplicate replay/result-delivery trace |
 | run_trace.prompt_sections | codey.runtime.observe.prompt_envelope | run_trace, prompt_envelope | prompt_envelope | run_trace | false | false | false | true | section names, source refs, lengths, truncation flags, and hashes only |
 | run_trace.policy_decisions | codey.policies.action | run_trace, policy_guard | policy_guard | run_trace | false | false | true | true | decision, guard id, reason code, phase, subject ref, and display digest |
 | run_trace.fallbacks | codey.operations.task_run | run_trace, provider_factory | provider_factory | run_trace | false | false | true | true | provider ids, phases, bounded reason codes, and recovery outcome |

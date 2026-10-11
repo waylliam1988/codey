@@ -1,9 +1,8 @@
-"""Red-first: probe exception must not leak state dir; auto plan must not swallow."""
+"""Red-first: probe exceptions return the state directory for caller cleanup."""
 from __future__ import annotations
 
 import importlib.util
 import unittest
-from dataclasses import dataclass
 from pathlib import Path
 
 _TOOLS_DIR = Path(__file__).resolve().parents[1] / "tools"
@@ -39,19 +38,3 @@ class ProbeCleanupTests(unittest.TestCase):
 
         shutil.rmtree(data["_root"], ignore_errors=True)
         shutil.rmtree(state_home, ignore_errors=True)
-
-
-class AutoPlanContractTests(unittest.TestCase):
-    def test_with_auto_plan_does_not_swallow_replace_errors(self) -> None:
-        from codey.operations.auto_loop import with_auto_plan
-
-        @dataclass(frozen=True)
-        class _NoHint:
-            task: str = "hi"
-
-        with self.assertRaises(TypeError):
-            with_auto_plan(_NoHint(), "plan text")
-
-
-if __name__ == "__main__":
-    unittest.main()

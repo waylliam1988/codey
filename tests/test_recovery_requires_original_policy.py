@@ -52,7 +52,7 @@ def test_every_recovery_dispatch_uses_original_policy(tmp_path, monkeypatch, kin
     record_entry_policy(mutations, session_id="s", run_id="r", policy=original)
     request = TaskSubmission("s", str(project), "edit a.py and search official web docs",
                              8, False, "web", intent=kind, run_id="r")
-    frame = SimpleNamespace(request=request, run_id="r", entry_policy=None,
+    frame = SimpleNamespace(request=request, project_text=str(project), run_id="r", entry_policy=None,
                             recovered_tool_outcomes=(), settled_tool_outcomes=("original fact",))
     seen = []
     def consume(active_frame, *args, **kwargs):
@@ -114,7 +114,7 @@ def test_project_dispatch_records_policy_before_first_tool(tmp_path, monkeypatch
     project, state, logdir = _dirs(tmp_path)
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     request = TaskSubmission("s", str(project), "edit a.py", 8, False, "local", intent="project")
-    frame = SimpleNamespace(request=request, run_id="r", entry_policy=None,
+    frame = SimpleNamespace(request=request, project_text=str(project), run_id="r", entry_policy=None,
                             recovered_tool_outcomes=(), settled_tool_outcomes=())
     seen = []
     def consume(active_frame, *args, **kwargs):
@@ -178,7 +178,7 @@ def test_resume_before_first_settlement_keeps_original_policy_or_blocks(tmp_path
     operation = RuntimeOperationStore(log).load("s", "r")
     frame = SimpleNamespace(request=TaskSubmission("s", str(project), "edit and search web", 8, False,
                                                    "local", intent="hybrid", run_id="r"),
-                            run_id="r", entry_policy=None, recovered_tool_outcomes=(), settled_tool_outcomes=())
+                            project_text=str(project), run_id="r", entry_policy=None, recovered_tool_outcomes=(), settled_tool_outcomes=())
     seen = []
     def consume(active_frame, *args, **kwargs):
         seen.append(active_frame.entry_policy)

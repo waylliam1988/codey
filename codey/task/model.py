@@ -23,14 +23,9 @@ class TaskSubmission:
     provider_id: str
     intent: str = "auto"
     run_id: str = ""
-    # Model-sourced execution hint (e.g. the unified-auto PLAN). Never user
-    # text: executors may read it via execution_task(), while persistence
-    # (ledger excerpts, observations user_text, snapshots latest_user) always
-    # reads task so model output can never wear the user's voice.
-    model_hint: str = ""
     # User-authorized capabilities for this submission (e.g. ("web.read",)).
     # Recorded at the entry boundary from explicit user intent (task text,
-    # Research button, UI toggles). Never derived from model_hint.
+    # Research button, UI toggles). Never derived from model output.
     requested_capabilities: tuple[str, ...] = ()
     # Strict Research was explicitly enabled for this submission.
     strict_research: bool = False
@@ -40,7 +35,7 @@ class TaskSubmission:
     project_changes_required: bool = False
     sources_open_required: bool = False
     # Entry-generated explicit denials (e.g.明确只读 → project.write/shell.approval).
-    # build_task_policy() 统一扣除，model_hint 与 requested 永远不能加回。
+    # build_task_policy() 统一扣除，模型输出与 requested 永远不能加回。
     denied_capabilities: tuple[str, ...] = ()
     # Shell approval continuation: previous run id (原策略复用）与已裁决的
     # shell 结果（turn-0 初始行，首发回答原 native 调用）。
@@ -91,11 +86,3 @@ def derive_project_changes_required(
     # Only project and hybrid kinds contract to change files. Read-only
     # intents stay False even with a project attached.
     return kind in {"project", "hybrid"}
-
-
-def execution_task(request: TaskSubmission) -> str:
-    """Executor-visible prompt: user task plus the model hint, if any."""
-    hint = str(getattr(request, "model_hint", "") or "").strip()
-    if not hint:
-        return request.task
-    return f"{request.task}\n\nAuto plan:\n{hint}"

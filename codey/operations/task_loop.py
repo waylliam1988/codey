@@ -28,7 +28,7 @@ from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import InitialNativeTurn
 from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
-from codey.operations.kernel_trace import record_turn
+from codey.operations.kernel_trace import record_outbound, record_turn
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import effect_coordinates
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
@@ -92,6 +92,7 @@ class KernelExecutionDeps:
     permission_profile: str = "coding_writer"
     workspace_ignored_paths: Any = ()
     workspace_revision_store: Any = None
+    ensure_workspace_writer: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -166,6 +167,8 @@ def _receive_turn_plan(
             refs = getattr(provider, "set_result_refs", None)
             if callable(refs):
                 refs(tuple(session._memory_results))
+        record_outbound(trace_recorder, state.prompt, native=native, pending_reply=state.pending_reply,
+                        pending_results=state.pending_messages)
         reply, state.pending_reply, state.pending_messages = _transport.send_kernel_reply(
             provider, native, state.prompt, native_tools, state.pending_reply, state.pending_messages,
         )
@@ -628,6 +631,10 @@ def run_task_kernel(
             continue
         if approval is not None:
             return cast(KernelResult, approval)
+        blocked = _ensure_workspace_writer(request.execution.ensure_workspace_writer, calls, provider, reply,
+                                           native_tools, turns_used, propagate_provider_failure)
+        if blocked is not None:
+            return blocked
         _events._emit_tool_starts(on_event, session, turn, calls)
         _outer_evidence = _outer_evidence_for_context(completion_context)
         results_or_failure = _call_execute_turn(
@@ -698,6 +705,27 @@ def _stop_at_turn_start(
         except Exception as exc:
             return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
     return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
+
+
+def _ensure_workspace_writer(
+    ensure: Callable[[], None] | None, calls: list[ToolCall], provider: Any, reply: Any,
+    native_tools: Any, turns_used: int, propagate: bool,
+) -> KernelResult | None:
+    if ensure is None or not any(call.name in {"edit", "run"} for call in calls):
+        return None
+    try:
+        ensure()
+    except Exception as exc:
+        from codey.workspace.changes import ProjectWriteBusy
+
+        try:
+            _transport.close_native_reply(provider, reply, f"workspace write blocked: {exc}",
+                                          declared_tools=native_tools)
+        except Exception as delivery_error:
+            return _provider_failure(delivery_error, turns_used, propagate=propagate)
+        reason = "project_write_busy" if isinstance(exc, ProjectWriteBusy) else "controller_failure"
+        return KernelResult(False, f"workspace write blocked: {exc}", turns_used, reason)
+    return None
 
 
 def _cancel_after_send(stop_flag: Any, provider: Any, reply: Any, native: Any, turns_used: Any, *,
@@ -873,6 +901,8 @@ def _handle_done_reply(
 
         refresh_verification_candidates(session)
         verdict = gate_evaluate(session, session.last_done_text, context=completion_context)
+        if type(getattr(verdict, "complete", None)) is not bool:
+            raise ValueError("completion gate returned an invalid verdict")
     except Exception as exc:
         prompt = f"Completion check failed ({exc}); cannot complete yet. Continue the task."
         try:

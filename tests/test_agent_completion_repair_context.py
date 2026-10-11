@@ -263,7 +263,7 @@ class FreshIntroAdmissionTests(unittest.TestCase):
         self.assertTrue(trace.admissions[0]["epoch_id"].startswith("ctx_epoch:"))
 
 
-class RolloverDiscardTests(unittest.TestCase):
+class RepairContextAdmissionTests(unittest.TestCase):
     def run_agent(self, trace, provider, root, context, **overrides):
         kwargs = dict(
             on_event=lambda _event: None,
@@ -279,14 +279,12 @@ class RolloverDiscardTests(unittest.TestCase):
         kwargs.update(overrides)
         return run_agent(provider, root, "Fix the failing test", **kwargs)
 
-    def test_rollover_discards_stale_rows_and_readmits_on_the_real_intro(self) -> None:
-        # A prepared repair-context section binds to nothing until its prompt
-        # actually leaves. When a rollover replaces that prompt wholesale,
-        # the stale prepared rows must be discarded -- never attributed to
-        # bytes that never left -- and the fresh intro re-admits exactly once.
+    def test_protocol_repair_preserves_single_context_admission_without_stale_rows(self) -> None:
+        # Protocol repair keeps the original context admission. A second
+        # provider request must not manufacture a second source admission.
         trace = _CapturingTrace()
         provider = FakeProvider(
-            '{"goal": "fix", "current_state": "repair pending"}',
+            '{"tool":',
             _DONE,
         )
         with tempfile.TemporaryDirectory() as td:
@@ -300,7 +298,7 @@ class RolloverDiscardTests(unittest.TestCase):
 
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(len(provider.sent), 2)
-        # Send 1 is the handoff summary probe; it never carries the section.
+        # The initial request carries the context; protocol repair must not readmit it.
         self.assertIn("Completion repair context. Facts only.", provider.sent[0])
         bound = [
             row
@@ -325,8 +323,7 @@ class RolloverDiscardTests(unittest.TestCase):
             [],
         )
 
-        # One admission row, bound to the only outbound prompt that carried
-        # the section: assembled-before-rollover never became admitted.
+        # Only the original outbound prompt admits the context section.
         self.assertEqual(len(trace.admissions), 1)
         admission = trace.admissions[0]
         self.assertTrue(admission["epoch_id"].startswith("ctx_epoch:"))

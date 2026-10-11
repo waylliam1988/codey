@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def prepare_coding_context(session: TaskSession, *, completion_context: Any = None) -> CodingContext | None:
-    if not session.coding_context_enabled or session.task_kind not in {"project", "hybrid", "planning"}:
+    if not session.coding_context_enabled:
         return None
     if not session.policy.allows("project.read"):
         return None

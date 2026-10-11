@@ -65,8 +65,8 @@ def test_receipt_roundtrip_keeps_actual_facts_and_rejects_tampered_wording(check
     assert task_receipt_from_payload(payload) is None
 
 
-@pytest.mark.parametrize("text", ["", "  \n", "ordinary answer"])
-def test_empty_or_plain_text_never_turns_into_done(text):
+@pytest.mark.parametrize("text", ["", "  \n"])
+def test_empty_response_never_turns_into_done(text):
     plan = normalize_turn(text, policy=TaskPolicy(frozenset({"control"})))
     assert plan.protocol_error == "no JSON tool call found"
     assert not plan.calls

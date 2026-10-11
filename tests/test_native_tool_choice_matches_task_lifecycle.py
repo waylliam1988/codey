@@ -1,4 +1,4 @@
-"""Active native turns require calls; terminal receipts close locally."""
+"""Native selection permits answers or calls; terminal receipts close locally."""
 from __future__ import annotations
 
 import json
@@ -46,7 +46,7 @@ TOOLS = [ProviderToolDefinition("done", "", {
 
 
 @pytest.mark.parametrize("method", ["send_turn", "send_tool_results"])
-def test_active_native_http_request_requires_a_tool(monkeypatch, method):
+def test_active_native_http_request_advertises_tools_and_allows_an_answer(monkeypatch, method):
     seen = []
 
     def reply(request, timeout=None):
@@ -62,7 +62,7 @@ def test_active_native_http_request_requires_a_tool(monkeypatch, method):
             {"id": "prior", "type": "function", "function": {"name": "read_file", "arguments": "{}"}},
         ]})
         turn = provider.send_tool_results([ProviderToolResult('prior', 'read')], TOOLS)
-    assert seen[0]["tool_choice"] == "required"
+    assert seen[0]["tool_choice"] == "auto"
     assert seen[0]["parallel_tool_calls"] is False
     assert seen[0]["tools"][0]["function"]["name"] == "done"
     assert seen[0]["tools"][0]["function"]["parameters"] == TOOLS[0].parameters
@@ -91,7 +91,7 @@ def test_plain_text_is_generated_and_terminal_receipt_closes_without_generation(
     provider._codec.validate_view(provider.context_ledger.view)
 
 
-def test_gate_records_the_actual_required_request(monkeypatch, tmp_path):
+def test_gate_records_the_actual_auto_request(monkeypatch, tmp_path):
     from tools.local_model_gate_attempts import GateTarget, RecordingProvider
 
     wire = []
@@ -106,7 +106,7 @@ def test_gate_records_the_actual_required_request(monkeypatch, tmp_path):
     provider.send_turn("finish", TOOLS)
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
     assert rows[0]["payload"] == wire[0]
-    assert rows[0]["payload"]["tool_choice"] == "required"
+    assert rows[0]["payload"]["tool_choice"] == "auto"
     provider.acknowledge_tool_results([ProviderToolResult('c1', 'OK: done accepted')], TOOLS)
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
     requests = [row["payload"] for row in rows if row["type"] == "request"]
@@ -139,7 +139,7 @@ def test_plain_native_turn_without_tools_keeps_its_answer_budget(monkeypatch, to
     assert seen[0]["max_tokens"] == 2048
 
 
-def test_real_kernel_does_not_enter_optional_answer_branch(monkeypatch):
+def test_explicit_required_selection_still_uses_native_done(monkeypatch):
     """Counterfactual server branches match the observed auto/required replay."""
     seen = []
 
@@ -157,7 +157,7 @@ def test_real_kernel_does_not_enter_optional_answer_branch(monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "1")
     monkeypatch.setattr(api_transport, "open_request", reply)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=3)
-    provider = ApiProvider("http://model.test/v1", "test")
+    provider = ApiProvider("http://model.test/v1", "test", tool_choice="required")
     result = run_task_kernel(
         session,
         request=KernelRunRequest(
@@ -233,7 +233,7 @@ def test_rejected_reply_at_last_turn_still_closes_the_followup_id(monkeypatch, t
             args = {"summary": "I edited a.py"} if first_tool == "done" else {}
             return _Response(_call(first_tool, args, "early"))
         if len(seen) == 2:
-            assert payload["tool_choice"] == "required"  # Rejected done remains active.
+            assert payload["tool_choice"] == "auto"  # Rejected done remains active.
             assert payload["messages"][-1]["tool_call_id"] == "early"
             assert payload["messages"][-1]["content"].startswith("ERROR:")
             return _Response(_call("edit", {"path": "a.py", "content": "x = 2\n"}, "late-edit"))

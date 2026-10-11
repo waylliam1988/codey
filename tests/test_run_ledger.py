@@ -455,7 +455,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
-                task_submit.run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek", get_state=server.get_state)
+                task_submit.run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek", "project", get_state=server.get_state)
 
             state.wait_for_ghost_sleep(timeout=30)
             self.assertEqual(state.run_registry.last_terminal_event()["stop_reason"], "done")

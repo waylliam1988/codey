@@ -62,7 +62,7 @@ class ApiProvider:
         reasoning_effort: str | None = None,
         api_protocol: str = "openai-completions",
         stream: bool = False,
-        tool_choice: str = "required",
+        tool_choice: str = "auto",
         output_tokens: int | None = None,
         request_headers: Any = None,
         native_tools: bool | None = None,

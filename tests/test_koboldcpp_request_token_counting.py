@@ -65,7 +65,7 @@ def test_local_factory_freezes_kobold_capability_clamps_window_and_counts_before
         assert requests[0][1]["chat_template_kwargs"] == {"enable_thinking": False}
         if request_mode == "tools":
             assert requests[0][1]["tools"][0]["function"]["name"] == "read"
-            assert requests[0][1]["tool_choice"] == "required"
+            assert requests[0][1]["tool_choice"] == "auto"
         assert provider.last_context_count.method == "tokenizer"
     finally:
         server.shutdown()

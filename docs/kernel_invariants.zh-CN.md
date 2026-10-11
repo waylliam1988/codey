@@ -6,10 +6,9 @@
 
 后续 2026-10-03 的提交后审查、边界修复与测试迁移见 [本轮审查](kernel_review_2026-10-03.zh-CN.md)。
 
-2026-10-08 增补：native auto 首轮携带原授权工具快照；完整直接回答仍过共同门，
-结构化调用通过 `InitialNativeTurn` 交给同一内核，计作首轮、不重复生成。
-网页文本 ACTION 保留。取消、无进展、协议阈值及预算关闭保留此前实际工具声明，
-关闭已收到的调用、不执行新调用。对应确定性测试与实机限制见 TEST_REPORT 最新节。
+2026-10-12 增补：Chat 与 Project 共用工作区内核，正常回答进入共同完成门。
+已删除独立 Chat/Auto 路由；无项目使用受管会话目录，原文件夹关联与执行根目录
+分别保留。下面历史验收数字保留，所有者表按当前实现更新；最新结果见 TEST_REPORT。
 
 ## 结论的准确范围
 
@@ -25,7 +24,7 @@
 
 ```text
 用户提交 → 原 TaskPolicy（首次持久化后不可替换）
-         → 项目 / 显式 Research / 规划策略，或 auto 首次回答
+         → 通用 Chat / Project / 显式 Research / 规划策略
          → TaskSession + 同一事实视图
          → run_task_kernel
              → TurnSnapshot → JSON / native 归一 → 授权 → execute_turn
@@ -42,9 +41,8 @@
 | `policies/task_policy.py` | 只从可信入口建策略；恢复严格校验全部字段，不添加默认授权、不洗类型、不丢拒绝和要求 |
 | `runtime/write/mutation_line.py::_replace_task_policy` | 首次设置策略；相同值幂等；已设置后的不同值直接拒绝，原日志不变 |
 | `runtime/core/operation_state.py::_parse_task_policy` | 无损保存 JSON 数据；不另写一套领域授权 schema |
-| `task_phases/dispatch.py::dispatch_run_mode` | 首个工具/auto 调用前持久化；恢复加载原策略，包括还没有工具结算的运行 |
+| `task_phases/dispatch.py::dispatch_run_mode` | 首个模型/工具调用前持久化；恢复加载原策略，包括还没有工具结算的运行 |
 | `task_entry.py::start_task_session` | 共同入口的任务会话所有者；续跑不得替换策略 |
-| `auto_loop.py::run_auto_mode` / `_run_native_auto` | 一次首调用；文本 ACTION 或授权 native 工具；回答过共同门，收到的 typed turn 与原快照交给同一内核，不通过模式标签重新授权 |
 | `recovery.py::recover_effects_for_resume` | 分开处理交付状态和持久事实；读取已结算原收据，不重跑这些工具 |
 | `kernel_session_recovery.py::restore_task_session` | 项目及共同入口共用恢复；暂存事实和账本，整批成功才发布；未交付结果只构建一次 |
 | `research/ledger_receipts.py` | 编码及恢复精确 Research 观察；完整正文、PDF 页和证据留在现有受管收据中，模型窗口保持有界 |
@@ -64,7 +62,7 @@
 5. **恢复原子性**：有一条账本/事实收据非法时，不发布已重放的部分结果。
 6. **来源精确**：括号和长 URL 保留；摘要中的链接不能成为真实搜索结果；严格 Research 重启后必须拥有原来源与证据。
 7. **完成来自事实**：done 只是候选；共同门检查当前要求、工作区身份、验证及严格 Research 条件。直接回答也经过该门。
-8. **连续工具任务**：auto 首调用计入总预算；下一阶段保留窗口、任务授权和会话；写锁未取得时不执行。
+8. **连续工具任务**：共同首调用计入总预算；下一阶段保留窗口、任务授权和会话；写锁未取得时不执行。
 
 这些是已编码要求的不变量。开放式自然语言目标的全部含义并没有被形式化，不能把结构化检查通过当成对任意用户意图的数学证明。
 

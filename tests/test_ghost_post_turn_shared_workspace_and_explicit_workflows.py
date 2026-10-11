@@ -114,7 +114,7 @@ class _FailingProvider(_Provider):
         raise RuntimeError("offline")
 
 
-def test_auto_research_action_continues_real_kernel_without_mode_redispatch() -> None:
+def test_chat_research_tools_continue_shared_kernel_without_mode_redispatch() -> None:
     import json
     from types import SimpleNamespace
 
@@ -126,7 +126,6 @@ def test_auto_research_action_continues_real_kernel_without_mode_redispatch() ->
         events = state.subscribe()
         main_provider = _Provider()
         replies = iter([
-            "ACTION: research\nPLAN: 查今天的版本变化",
             json.dumps({"tool": "web_search", "args": {"query": "version"}}),
             json.dumps({"tool": "open_url", "args": {"url": "https://example.com/version"}}),
             json.dumps({"tool": "done", "args": {"summary": "Observed version information."}}),
@@ -158,8 +157,8 @@ def test_auto_research_action_continues_real_kernel_without_mode_redispatch() ->
             done = _done_events(state)[0]
             observations = state.ghost_observations.read_committed(session_id="session-1")
     assert done["stop_reason"] == "done"
-    assert done["turns"] == 4
-    assert len(main_provider.prompts) == 4
+    assert done["turns"] == 3
+    assert len(main_provider.prompts) == 3
     assert "VERSION_KERNEL_MARKER" in main_provider.prompts[-1]
     assert ledger.final_url_set() == {"https://example.com/version"}
     unused.assert_not_called()
@@ -170,9 +169,8 @@ def test_auto_research_action_continues_real_kernel_without_mode_redispatch() ->
     assert "Auto plan" not in str(observations[0]["user_text"])
 
 
-def test_auto_router_hard_rule_blocks_writer_when_user_says_not_to_edit() -> None:
-    """User forbids edits and the model answers directly: unified auto stays
-    in chat and never touches the project writer."""
+def test_chat_preserves_user_no_edit_constraint() -> None:
+    """A direct answer preserves the user constraint without starting a writer."""
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
@@ -205,7 +203,7 @@ def test_auto_router_hard_rule_blocks_writer_when_user_says_not_to_edit() -> Non
     assert getattr(state, "_project_writer_leases", {}) == {}
 
 
-def test_auto_router_hard_rule_blocks_project_access_when_user_forbids_files() -> None:
+def test_chat_preserves_user_no_file_access_constraint() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
@@ -241,9 +239,8 @@ def test_auto_router_hard_rule_blocks_project_access_when_user_forbids_files() -
     assert len(observations) == 1
 
 
-def test_auto_router_chat_route_with_project_stays_in_chat_mode() -> None:
-    """Direct auto answer with a project: task_start still shows the deferred
-    baseline while the terminal event carries the decided chat mode."""
+def test_attached_workspace_keeps_chat_start_and_terminal_mode() -> None:
+    """An attached workspace keeps Chat presentation throughout the run."""
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
@@ -279,11 +276,11 @@ def test_auto_router_chat_route_with_project_stays_in_chat_mode() -> None:
     assert main_provider.prompts
     assert len(main_provider.prompts) == 1
     assert state.run_registry.last_terminal_event()["summary"] == "chat reply"
-    assert start["mode"] == "agent"
+    assert start["mode"] == "chat"
     assert state.run_registry.last_terminal_event()["mode"] == "chat"
 
 
-def test_manual_intent_bypasses_router() -> None:
+def test_explicit_research_uses_research_workflow() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
         runner = _runner(state)
@@ -315,9 +312,8 @@ def test_manual_intent_bypasses_router() -> None:
     assert research_iteration.call_count == 1
 
 
-def test_router_failure_reports_error_without_second_call() -> None:
-    """A dead auto first call propagates to error settlement instead of
-    re-issuing the abandoned request through a baseline runner."""
+def test_workspace_provider_failure_does_not_resend() -> None:
+    """A failed workspace request settles once with structured failure evidence."""
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
@@ -343,10 +339,10 @@ def test_router_failure_reports_error_without_second_call() -> None:
             )
 
     agent_run.assert_not_called()
-    assert state.run_registry.last_terminal_event()["stop_reason"] == "error"
+    assert state.run_registry.last_terminal_event()["stop_reason"] == "provider_failure"
 
 
-def test_router_cancellation_stops_task_without_running_baseline() -> None:
+def test_workspace_cancellation_stops_task_without_second_runner() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
@@ -374,11 +370,11 @@ def test_router_cancellation_stops_task_without_running_baseline() -> None:
 
     agent_run.assert_not_called()
     assert state.run_registry.last_terminal_event()["stop_reason"] == "stopped"
-    assert state.run_registry.last_terminal_event()["mode"] == "agent"
+    assert state.run_registry.last_terminal_event()["mode"] == "chat"
     assert main_provider.closed
 
 
-def test_router_control_teach_cancellation_stops_task_without_running_baseline() -> None:
+def test_workspace_teach_cancellation_stops_task_without_second_runner() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
@@ -406,13 +402,12 @@ def test_router_control_teach_cancellation_stops_task_without_running_baseline()
 
     agent_run.assert_not_called()
     assert state.run_registry.last_terminal_event()["stop_reason"] == "stopped"
-    assert state.run_registry.last_terminal_event()["mode"] == "agent"
+    assert state.run_registry.last_terminal_event()["mode"] == "chat"
     assert main_provider.closed
 
 
-def test_ghost_disable_skips_auto_router_provider_call() -> None:
-    """Ghost updates disabled: unified auto still answers (execution is not
-    learning) but no experience observation is recorded."""
+def test_ghost_disabled_preserves_chat_execution_without_learning() -> None:
+    """Disabling learning does not disable the shared workspace execution."""
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
@@ -446,14 +441,13 @@ def test_ghost_disable_skips_auto_router_provider_call() -> None:
     assert state.ghost_observations.read_committed(session_id="session-1") == ()
 
 
-def test_review_only_route_does_not_start_writer_or_repair() -> None:
-    """Unified auto review: the first normal call requests the review action;
-    the writer never starts and no repair runs."""
+def test_explicit_review_does_not_start_writer_or_repair() -> None:
+    """An explicit Review request does not start editing or automatic repair."""
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
         state = server.AppContext(Path(td, "state"))
-        main_provider = _Provider("ACTION: review\nPLAN: 只列 findings 不修改")
+        main_provider = _Provider()
         agent_run = mock.Mock(return_value=RunResult("should not run", "done", 1))
         review = ReviewResult(
             "changes_requested",
@@ -479,6 +473,7 @@ def test_review_only_route_does_not_start_writer_or_repair() -> None:
                     8,
                     False,
                     "deepseek",
+                    intent="review",
                 ),
             )
 
@@ -495,7 +490,7 @@ def test_review_only_provider_failure_is_unavailable_and_not_committed_as_succes
         project = Path(td, "project")
         project.mkdir()
         state = server.AppContext(Path(td, "state"))
-        main_provider = _Provider("ACTION: review\nPLAN: review 不要修改")
+        main_provider = _Provider()
         run_review = mock.Mock(side_effect=RuntimeError("review provider down"))
         runner = _runner(
             state,
@@ -514,6 +509,7 @@ def test_review_only_provider_failure_is_unavailable_and_not_committed_as_succes
                     8,
                     False,
                     "deepseek",
+                    intent="review",
                 ),
             )
 
@@ -540,7 +536,7 @@ def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
         tracker.capture_before("app.py")
         target.write_text("new\n", encoding="utf-8")
         tracker.capture_after("app.py")
-        main_provider = _Provider("ACTION: review\nPLAN: review 不要修改")
+        main_provider = _Provider()
         review = ReviewResult("approved", "Looks good", [])
         run_review = mock.Mock(return_value=("glm", review))
         runner = _runner(
@@ -561,6 +557,7 @@ def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
                     8,
                     False,
                     "deepseek",
+                    intent="review",
                 ),
             )
 

@@ -9,6 +9,7 @@ kernel. All production tool calls converge in
 """
 from __future__ import annotations
 
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -25,7 +26,7 @@ from codey.operations.task_loop import (
     KernelTransportDeps,
 )
 from codey.task.kind import ui_mode
-from codey.task.model import TaskSubmission, execution_task
+from codey.task.model import TaskSubmission
 
 _TASK_KINDS = frozenset({"project", "research", "hybrid", "planning", "planning_readonly", "readonly"})
 
@@ -62,7 +63,7 @@ def _task_kind(task_kind: object) -> str:
     kind = str(task_kind or "").strip().lower()
     if kind in _TASK_KINDS:
         return "planning" if kind in {"planning_readonly", "readonly"} else kind
-    return "project" if kind in {"auto"} else kind
+    return "chat" if kind == "auto" else kind
 
 
 def build_task_policy_for_entry(request: Any, task_kind: object) -> Any:
@@ -95,7 +96,7 @@ def start_task_session(frame: RunFrame, work: RunWork, policy: Any, kind: str) -
         task_kind=_task_kind(kind),
         project=frame.project_text,
         max_turns=max(1, int(getattr(request, "max_turns", 8) or 8)),
-        task_text=execution_task(request),
+        task_text=request.task,
         handoff=str(getattr(frame, "handoff", "") or ""),
         project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
         coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
@@ -119,7 +120,7 @@ def _entry_policy_with_recovery(frame: RunFrame, deps: Any, kind: str) -> Any:
     session_log = getattr(mutations, "session_log", None) if mutations is not None else None
     incoming = getattr(frame, "entry_policy", None)
     if incoming is None:
-        incoming = build_task_policy_for_entry(request, kind)
+        incoming = build_task_policy_for_entry(replace(request, project=frame.project_text or None), kind)
     if getattr(request, "previous_run_id", ""):
         if getattr(frame, "entry_policy", None) is None:
             raise RuntimeError("original task authorization unavailable for approval continuation")
@@ -207,22 +208,6 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
     return active_provider, intent_sink, stop_flag
 
 
-def prepare_auto_provider(frame: RunFrame, deps: Any) -> Any:
-    """Record authorization and unsafe first-send effects before native auto sends."""
-    from codey.operations.provider_session import ConversationProvider
-    from codey.operations.recovery import record_entry_policy
-
-    if frame.entry_session is None:
-        raise ValueError("native auto task session is not initialized")
-    record_entry_policy(getattr(deps, "runtime_mutations", None),
-                        session_id=frame.request.session_id, run_id=frame.run_id,
-                        policy=frame.entry_session.policy)
-    provider, _, _ = _entry_provider_sink(frame, deps, frame.entry_session.task_kind)
-    # Auto owns accounting for this first exchange; subsequent exchanges use
-    # the normal conversation wrapper installed by run_entry_kernel.
-    return provider.provider if isinstance(provider, ConversationProvider) else provider
-
-
 def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any) -> Any:
     if project_path is None or not policy.allows("project.write"):
         return None
@@ -259,14 +244,59 @@ def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps
     return receipt, payload
 
 
+def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> str:
+    from codey.agents.request import AgentRequest
+    from codey.operations.ghost_context import ghost_continuity, ghost_directive, ghost_experiences
+    from codey.operations.project_adapter import _project_context
+    from codey.operations.prompting import join_local_contexts, record_local_context_trace
+
+    request = frame.request
+    if frame.provider is None:
+        raise RuntimeError("provider is not connected")
+    scope = request.project or ""
+    directive = ghost_directive(deps.state, session_id=request.session_id, project=scope)
+    continuity = ghost_continuity(deps.state, session_id=request.session_id, project=scope)
+    experiences = ghost_experiences(deps.state, session_id=request.session_id, project=scope,
+                                     query=request.task, exclude_run_id=frame.run_id)
+    record_local_context_trace(getattr(frame, "trace", None), directive, continuity)
+    if not policy.allows("project.read"):
+        return join_local_contexts(directive.text, continuity.text, experiences)
+    workspace_context = _project_context(AgentRequest(
+        provider=frame.provider, project=Path(frame.project_text), task=request.task,
+        permission_profile="coding_writer" if policy.allows("project.write") else "planning_readonly",
+        trace_recorder=getattr(frame, "trace", None),
+    ))
+    return join_local_contexts(directive.text, continuity.text, experiences, workspace_context)
+
+
+def _workspace_writer(frame: RunFrame, state: Any, stack: ExitStack) -> Any:
+    acquired = False
+
+    def ensure() -> None:
+        nonlocal acquired
+        if acquired:
+            return
+        from codey.workspace.changes import ProjectWriteBusy, is_git_repository
+
+        if is_git_repository(frame.project_text):
+            return
+        if not state.acquire_project_writer(frame.project_text):
+            raise ProjectWriteBusy("another task is writing this workspace")
+        acquired = True
+        stack.callback(state.release_project_writer, frame.project_text)
+
+    return ensure
+
+
 def run_entry_kernel(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: Any,
                      *, task_kind: str = "", config_result: Any = None, continuation_followup: str = "") -> ModeOutcome:
     from codey.operations.task_execution import close_research_tools
 
     try:
-        return _run_entry_kernel(frame, work, hooks, deps,
-                                 task_kind=task_kind, config_result=config_result,
-                                 continuation_followup=continuation_followup)
+        with ExitStack() as writer_stack:
+            return _run_entry_kernel(frame, work, hooks, deps,
+                                     task_kind=task_kind, config_result=config_result,
+                                     continuation_followup=continuation_followup, writer_stack=writer_stack)
     finally:
         close_research_tools(getattr(frame, "entry_research_tools", None))
 
@@ -280,10 +310,18 @@ def _run_entry_kernel(
     task_kind: str = "",
     config_result: Any = None,
     continuation_followup: str = "",
+    writer_stack: ExitStack,
 ) -> ModeOutcome:
     from codey.operations.task_loop import run_task_kernel
     request = frame.request
     kind = _task_kind(task_kind or frame.task_kind)
+    if not frame.project_text and kind == "chat":
+        from codey.storage.local_store import DEFAULT_STATE_HOME
+        from codey.workspace.session import session_workspace
+
+        state_home = getattr(getattr(deps, "workspace_revisions", None), "state_home", None)
+        state_home = state_home or getattr(deps.state, "state_home", None) or DEFAULT_STATE_HOME
+        frame.project_text = str(session_workspace(state_home, request.session_id))
     policy = _entry_policy_with_recovery(frame, deps, kind)
     if policy is None:
         raise RuntimeError("task policy unavailable during recovery")
@@ -353,6 +391,8 @@ def _run_entry_kernel(
                 "receipt": {"display": {"summary": fresh.error[:2000]}},
             })
     active_provider, intent_sink, stop_flag = _entry_provider_sink(frame, deps, kind)
+    context_text = _entry_context(frame, deps, policy)
+    ensure_workspace_writer = _workspace_writer(frame, deps.state, writer_stack) if kind == "chat" else None
     try:
         ignored = tuple(getattr(getattr(config_result, "config", None), "ignored_paths", ()) or ())
     except Exception:
@@ -369,11 +409,11 @@ def _run_entry_kernel(
                     run_id=frame.run_id,
                     effect_scope="task",
                     provider_id=frame.provider_id,
-                    user_task=execution_task(request),
+                    user_task=request.task,
                     stop_flag=stop_flag,
                     delivered=delivered or None,
                     start_turn=max(resume_start, session.turn + 1) if continuation_followup else resume_start,
-                    context_text=continuation_followup,
+                    context_text="\n\n".join(part for part in (context_text, continuation_followup) if part),
                     initial_results=initial_results or None,
                     initial_turn=initial_turn,
                     provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
@@ -389,6 +429,7 @@ def _run_entry_kernel(
                     permission_profile="research" if kind == "research" else "coding_writer",
                     workspace_ignored_paths=ignored,
                     workspace_revision_store=getattr(deps, "workspace_revisions", None),
+                    ensure_workspace_writer=ensure_workspace_writer,
                 ),
                 observation=KernelObservationDeps(
                     intent_sink=intent_sink,
@@ -453,6 +494,10 @@ def _run_entry_kernel(
         )
         frame.conversation.update_snapshot(snapshot)
     summary = str(result.summary or "")
+    deps.state.set_provider_session(
+        frame.provider_id,
+        None if result.stop_reason in {"stopped", "provider_failure", "error"} else request.session_id,
+    )
     receipt, changes = _entry_project_receipt(frame, work, hooks, deps, session, result, tracker)
     proof = getattr(result, "proof", None)
     if proof is not None:
@@ -473,37 +518,18 @@ def _run_entry_kernel(
         "mode": ui_mode(kind, frame.project_text),
         "receipt": receipt,
     }
+    if result.stop_reason == "provider_failure":
+        from codey.providers.catalog import PROVIDER_LABELS
+        from codey.providers.diagnostics import capture_provider_failure
+
+        event["provider_failure"] = capture_provider_failure(
+            model=PROVIDER_LABELS.get(frame.provider_id, frame.provider_id), action="task", page=None,
+            error=RuntimeError(summary),
+        ).to_dict()
     if changes is not None:
         event["changed"] = changes["changed_count"] > 0
         event["changes"] = changes
     return ModeOutcome(event)
-
-
-def evaluate_direct_answer_candidate(frame: Any, answer: str, *, work: Any = None) -> Any:
-    """Evaluate against the original task state, never a weaker chat policy."""
-    from codey.operations.completion_gate import evaluate
-
-    policy = getattr(frame, "entry_policy", None)
-    if policy is None:
-        if getattr(frame, "recovered_tool_outcomes", ()) or getattr(frame, "settled_tool_outcomes", ()):
-            raise RuntimeError("original task authorization unavailable")
-        policy = build_task_policy_for_entry(frame.request, frame.task_kind)
-        if policy is None:
-            raise RuntimeError("task authorization unavailable")
-        frame.entry_policy = policy
-    session = getattr(frame, "entry_session", None)
-    if session is None:
-        session = start_task_session(frame, work, policy, _task_kind(frame.task_kind))
-    elif session.policy != policy:
-        raise ValueError("direct candidate cannot replace task authorization")
-    return evaluate(session, answer, context={
-        "run_id": frame.run_id,
-        "task": frame.request.task,
-        "question": frame.request.task,
-        "project": frame.project_text,
-        "execution_evidence": getattr(work, "evidence", None),
-        "research_ledger": getattr(getattr(frame, "entry_research_tools", None), "ledger", None),
-    })
 
 
 def run_task_mode(

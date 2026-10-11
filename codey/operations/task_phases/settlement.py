@@ -37,7 +37,7 @@ from codey.task.kind import ui_mode
 def _display_reply_text(outcome: ModeOutcome) -> str:
     """True user-visible reply carried by the mode, if any.
 
-    Chat/review publish their reply through ``display``; other modes surface
+    Review publishes its reply through ``display``; workspace tasks surface
     the task summary itself. The observation must record what the user
     actually saw, not the internal settlement summary.
     """

@@ -176,6 +176,10 @@ class _RunHookCallbacks:
         risk = classify_shell_risk(command)
         approval_id = "shell_" + uuid.uuid4().hex[:12]
         provider_label = self.current_provider_id() if self.current_provider_id is not None else ""
+        active = self.state.current_run()
+        operation = self.work.operation
+        if active is None or active.run_id != self.run_id or active.session_id != self.session_id or operation is None:
+            raise RuntimeError("shell approval has no owning task")
         # pending 形状唯一归属 build_shell_approval_pending：原生调用身份
         #（call id、provider 会话、turn/tool_index）完整持久化。
         pending = build_shell_approval_pending(
@@ -184,6 +188,8 @@ class _RunHookCallbacks:
             session_id=self.session_id,
             run_id=self.run_id,
             project=self.project,
+            attached_project=active.project,
+            intent=operation.task_kind,
             max_turns=self.max_turns,
             provider_label=provider_label,
             command_fields=dict(command_fields),

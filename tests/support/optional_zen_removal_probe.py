@@ -54,6 +54,7 @@ def probe(root):
     source = project / "fixture.txt"
     source.write_text("READ_MARKER", encoding="utf8")
     requests = []
+    shell_requested = False
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -77,8 +78,9 @@ def probe(root):
             results = [r for r in history if r.get("role") == "tool" or r.get("type") == "function_call_output"]
             call = None
             if body.get("tools"):
-                call = ("read-id", "read_file", {"path": "fixture.txt"}) if not results else (
-                    "done-id", "done", {"summary": "Read the fixture."})
+                call = ("inspect-id", "shell", {"path": ".", "command": "python --version"}) if shell_requested else (
+                    ("read-id", "read_file", {"path": "fixture.txt"}) if not results else (
+                    "done-id", "done", {"summary": "Read the fixture."}))
             if self.path.endswith("/responses"):
                 output = [{"type": "function_call", "id": "item-id", "call_id": call[0], "name": call[1],
                            "arguments": json.dumps(call[2])}] if call else [
@@ -124,6 +126,28 @@ def probe(root):
                     provider._codec.validate_view(provider.context_ledger.view)
                     results = requests[start + 1].get("messages", requests[start + 1].get("input"))
                     assert any("READ_MARKER" in str(r) for r in results)
+                    from types import SimpleNamespace
+
+                    from codey.operations.context import RunWork
+                    from codey.operations.task_entry import run_entry_kernel
+                    from codey.runtime.observe.execution_evidence import ExecutionEvidence
+                    from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
+
+                    shell_requested = True
+                    provider.new_chat()
+                    frame = workspace_frame("", provider, task="Check Python version")
+                    events = []
+                    with contextlib.closing(AppContext(root)) as state:
+                        outcome = run_entry_kernel(
+                            frame, RunWork([], ExecutionEvidence()),
+                            SimpleNamespace(on_event=events.append, on_shell_request=events.append),
+                            SimpleNamespace(state=state, workspace_revisions=state.workspace_revisions))
+                    assert outcome.event["stop_reason"] == "approval", outcome.event
+                    assert frame.request.project is None
+                    assert any(getattr(event, "command", "") == "python --version" for event in events)
+                    provider._codec.validate_view(provider.context_ledger.view)
+                    shell_requested = False
+
                 finally:
                     provider.close()
             enable_models(root, local=["fixture"])
@@ -161,7 +185,7 @@ def probe(root):
         assert not any("providers/zen/" in path for path in metadata["production_hashes"])
         assert not missing.attempted
         return {"local_protocols": protocols, "bootstrap": True, "cli": True, "old_history": True,
-                "old_connection_rejected": True, "local_gate": True, "zen_imports": missing.attempted, "usage_without_zen": True}
+                "old_connection_rejected": True, "local_gate": True, "zen_imports": missing.attempted, "usage_without_zen": True, "workspace_shell_without_zen": True}
     finally:
         server.shutdown()
         server.server_close()

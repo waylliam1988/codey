@@ -156,7 +156,7 @@ HTTP 生成字节时允许一次连接重试；代理 CONNECT 不算生成提交
 
 ## 统一 kernel 的行为边界与 parity
 
-Coding 与 Research 共用 `task_loop`、`kernel_protocol`、`kernel_execution` 和
+Chat、Coding 与 Research 共用 `task_loop`、`kernel_protocol`、`kernel_execution` 和
 completion gate。`project_adapter` 保留 AgentRequest/RunResult 边界；
 `research_iteration.run_research_iteration` 负责知识库与 synthesis 交付，不保留
 旧迭代类。`run_task_kernel` 只接收正式 `KernelRunRequest`，其依赖分为 transport、
@@ -187,18 +187,17 @@ Research 工作流，也不刷新验证或扫描工作区。`project_prompt_cont
 
 ## 原策略和恢复事实的当前所有者（2026-10-01）
 
-- 原策略在 dispatch 的首个工具/auto 调用前记录；MutationLine 首次设置后拒绝不同值，相同值幂等。
+- 原策略在 dispatch 的首个模型/工具调用前记录；MutationLine 首次设置后拒绝不同值，相同值幂等。
 - runtime 保存策略原 JSON，领域 schema 只由 TaskPolicy 校验；恢复缺失或非法就阻塞，不从新请求补授权。
 - delivery recovered 只表示已重建，不推进为 delivered；只有实际交付确认或 abandoned 才终止该批次。
 - 已交付工具观察仍投影为 TaskSession 事实；项目和共同入口共用 `kernel_session_recovery.restore_task_session`。
 - Research 观察在同一工具收据 canonical 内；`ledger_receipts` 恢复完整正文、页和证据。整批暂存，成功才发布，不建立第二持久日志。
-- auto 工具 ACTION 和拒绝完成的回答均继续同一窗口/会话/预算；模型标签不改变原授权或要求。
-- native auto 首调用经 `prepare_auto_provider` 记录原策略和发送 effect，使用授权的
-  `TurnSnapshot`。`InitialNativeTurn` 连同回复、快照及 prompt 交给同一 kernel，
-  首轮计入原预算，不二次生成；Auto/普通启动共用 `kernel_preparation`，收到首轮后
-  不再次刷新上下文或渲染 prompt，并校验其 owner_session 是同一 TaskSession。
-  完整直接回答仍经过共同完成门。网页文本 ACTION
-  路径保留，普通问候不抢写锁，编辑调用收到后取得写锁才执行，失败关闭原 call IDs。
+- Chat、Project 的首轮都直接进入共享内核；正常回答和工具调用使用原策略、窗口与累计预算。
+- `kernel_preparation` 一次准备 prompt 和工具快照。原生回复中的文字不扫描成工具，
+  文本调用必须是契约规定的裸 JSON；代码围栏和普通 `name` 字段不执行。
+- 未绑定目录的 Chat 使用 `workspace/session.py` 解析的受管根目录，应用状态不授予
+  文件工具。原文件夹关联保留在 request 中，Shell 审批续跑不把临时根目录冒充项目。
+- 普通回答不抢写锁，实际 edit/run 取得现有写锁才执行；失败关闭原 native call IDs。
 - command/cwd/URL 是完整身份；展示边界可以裁剪，事实和完成关联不裁剪。
 
 可执行检查与准确的证明边界见 [kernel_invariants.zh-CN.md](kernel_invariants.zh-CN.md)。

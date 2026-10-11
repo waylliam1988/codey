@@ -28,7 +28,7 @@ def _submission(intent: str, project: str | None) -> TaskSubmission:
 @pytest.mark.parametrize(
     ("intent", "with_project", "without_project"),
     [
-        ("auto", "project", "chat"),
+        ("auto", "chat", "chat"),
         ("chat", "chat", "chat"),
         ("hybrid", "hybrid", "research"),
         ("planning", "planning_readonly", "chat"),
@@ -47,7 +47,7 @@ def test_resolve_task_kind_is_one_table(intent: str, with_project: str, without_
 
 def test_resolve_task_kind_normalizes_intent_text() -> None:
     assert resolve_task_kind(_submission("  HYBRID  ", "E:/work/project")) == "hybrid"
-    assert resolve_task_kind(_submission("", "E:/work/project")) == "project"
+    assert resolve_task_kind(_submission("", "E:/work/project")) == "chat"
 
 
 @pytest.mark.parametrize(

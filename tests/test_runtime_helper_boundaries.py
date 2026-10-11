@@ -233,7 +233,7 @@ class ProviderWorkerSplitTests(unittest.TestCase):
 
 
 class AgentLoopSplitTests(unittest.TestCase):
-    def test_new_entry_stagnant_invalid_turns_stop(self) -> None:
+    def test_repeated_malformed_tool_turns_stop_at_protocol_limit(self) -> None:
         # Old _track_continue_progress/_check_runaway_guard deleted with the old
         # loop; stagnant handling now lives in the single run_task_kernel
         # (invalid_turns >= stagnant_turns stops as protocol).
@@ -246,7 +246,7 @@ class AgentLoopSplitTests(unittest.TestCase):
 
         class _BadProvider:
             def send(self, prompt: str, timeout: object = None) -> str:
-                return "not json at all"
+                return '{"tool":'
 
         from unittest.mock import patch
 

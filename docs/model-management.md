@@ -79,8 +79,8 @@ fallback is required. Old chats retain their identity and draft; Send requires
 an explicit enabled choice. The removal probe makes the Zen package unimportable
 and exercises Local, bootstrap, history and release-gate metadata. A browser
 test removes an arbitrary optional source, independently of the Zen name.
-The same probe now executes both Local protocols with tool exchanges and usage
-while Zen imports are blocked. Raw Zen usage parsing lives only in its package;
+The same probe now executes both Local protocols with tool exchanges, usage and
+unbound Chat edits/Shell requests while Zen imports are blocked. Raw Zen usage parsing lives only in its package;
 normalized historical records and Run details do not import Zen.
 
 ## Offline inspection
@@ -106,8 +106,8 @@ delivery and package inclusion retain separate integration coverage. Scripted
 Research sources use scoped DNS answers and fresh caches while executing the
 real URL policy, so offline verification does not depend on public DNS.
 
-Latest Windows/Python 3.12 verification: **7985 passed, 7 skipped, 1503 subtests**;
-required machine contracts **684 passed**. See [the test report](../TEST_REPORT.md)
+Latest Windows/Python 3.12 verification: **8405 passed, 7 skipped, 1503 subtests**;
+required machine contracts **1102 passed**. See [the test report](../TEST_REPORT.md)
 for TDD, the interrupted first continuity run, historical replay and platform limits.
 
 Primary tests: `tests/test_model_preferences.py`,

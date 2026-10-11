@@ -341,20 +341,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("class RunHooks", context_source)
         self.assertIn("class ModeOutcome", result_source)
 
-    def test_chat_mode_logic_lives_in_chat_operation(self) -> None:
-        task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
-        phases_source = task_phases_sources()
-        chat_source = (ROOT / "codey" / "operations" / "chat.py").read_text(encoding="utf-8")
-
-        self.assertIn(
-            "codey.operations.chat",
-            imported_modules(TASK_RUN_PATH) | task_phases_imports(),
-        )
-        self.assertIn("def run_chat_mode", chat_source)
-        self.assertIn("run_chat_mode(", task_run_source + phases_source)
-        self.assertNotIn("chat_outbound_prompt", task_run_source)
-        self.assertNotIn("chat_outbound_prompt", phases_source)
-        self.assertIn("chat_outbound_prompt", chat_source)
+    def test_chat_dispatch_uses_shared_workspace_kernel(self) -> None:
+        source = task_phases_sources()
+        self.assertIn("run_task_mode", source)
+        for retired in ("chat.py", "auto_loop.py", "mode_dispatch.py"):
+            self.assertFalse((ROOT / "codey" / "operations" / retired).exists())
+        self.assertNotIn("run_chat_mode", source)
 
     def test_project_completion_logic_lives_in_project_completion_operation(self) -> None:
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")

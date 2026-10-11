@@ -48,7 +48,7 @@ HTTP / CLI → 共用任务服务 + 入口授权
                 → 交付结果 → completion_gate → 最终结果
 ```
 
-编程、Research、规划与获授权的混合任务共用模型工具内核。领域策略可以安排
+Chat、编程、Research、规划与获授权的混合任务共用模型工具内核。领域策略可以安排
 后续动作，不另建模型工具循环。Research 按钮选择严格证据/报告要求；普通编程
 查过网页不会因此被要求创建研究笔记。
 
@@ -59,15 +59,15 @@ HTTP / CLI → 共用任务服务 + 入口授权
 | `codey/app/task_services.py`、`task/entry_auth.py` | 桌面/headless 的审查与顾问服务只有一个组合入口；HTTP/CLI 授权只有一套推导规则 |
 | `codey/operations/task_state.py` | `TaskState` 与类型化提交资源包 |
 | `codey/operations/task_run.py`、`task_phases/` | 运行资源生命周期、provider 接入、回调与终态结算 |
+| `codey/workspace/session.py` | 解析受管 Chat 工作区；应用状态目录不作为文件工具根目录 |
 | `codey/operations/task_entry.py`、`task_session.py` | 入口策略与任务事实 |
 | `codey/operations/task_loop.py` | 唯一生产模型工具循环，依赖分为 transport/execution/observation |
 | `codey/operations/task_guidance.py`、`research/completion_guidance.py` | 任务组装入口选择领域拥有的完成指导；内核接收文本，不定义 Research 工作流 |
 | `codey/operations/project_prompt_context.py`、`workspace/coding_context.py` | 经现有验证判定准备不可变编码事实，再无 I/O 地渲染 JSON/native 上下文 |
 | `codey/operations/kernel_prompt.py`、`research/tool_contract.py` | 组合已提供的指导、上下文及协议说明；逻辑 note ID 用法由共用工具定义负责 |
-| `codey/operations/kernel_preparation.py` | Auto/kernel 共用冻结快照与实际 prompt 的一次准备；已收到的 native 首轮复用原输入并绑定原 TaskSession |
+| `codey/operations/kernel_preparation.py` | 共享内核一次准备冻结快照与实际 prompt；收到的回复属于原 TaskSession |
 | `codey/toolchain/tool_spec.py` | 工具定义、schema 与按权限生成的本轮快照 |
-| `codey/operations/kernel_protocol.py` | JSON/native 归一及当前快照校验 |
-| `codey/operations/auto_loop.py`、`task_entry.py::prepare_auto_provider` | 首调用记录原授权/effect，native 回复与冻结快照经 InitialNativeTurn 交给同一 kernel；保留原预算、延迟写锁 |
+| `codey/operations/kernel_protocol.py` | 正常回答候选与 JSON/native 调用归一、当前快照校验 |
 | `codey/operations/kernel_execution.py`、`task_execution.py` | 执行边界及领域适配器 |
 | `codey/operations/completion_gate.py` | 最终完成证明组合；模型的 done 只是候选 |
 | `codey/operations/project_completion_checks.py`、`research_completion_checks.py` | 项目、来源与严格 Research 检查提供者 |

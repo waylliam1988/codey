@@ -115,7 +115,7 @@ def test_real_entry_delivers_recovered_batch_before_done(tmp_path):
     from codey.operations.task_entry import run_entry_kernel
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
     from codey.workspace.revision import WorkspaceRevisionStore
-    from tests.test_auto_direct_answer_continues_to_kernel import _auto_frame
+    from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 
     project, state, logdir = _dirs(tmp_path)
     _settle_edit_then_runs(project, state, logdir, "s", "r", [{"exit_code": 0}])
@@ -125,7 +125,9 @@ def test_real_entry_delivers_recovered_batch_before_done(tmp_path):
     fresh, recovery, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
     prompts = []
     provider = SimpleNamespace(send=lambda text: prompts.append(text) or json.dumps({"tool": "done", "args": {"summary": "done"}}))
-    frame = _auto_frame("fix a.py", provider, frame_run_id="r", project_changes_required=True)
+    frame = workspace_frame(project, provider, intent="project", task="fix a.py", project_changes_required=True)
+    frame.run_id = "r"
+    frame.fresh_chat = False
     frame.request = replace(frame.request, session_id="s", project=str(project), intent="project")
     frame.project_text = str(project)
     frame.recovered_tool_outcomes = recovery.recovered_tool_outcomes

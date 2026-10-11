@@ -134,22 +134,19 @@ def open_run_ledger(
     run_id: str,
     task_kind: str,
     provider_id: str,
+    workspace: str | None,
 ) -> None:
-    if (
-        request.project
-        and task_kind in {"project", "hybrid", "planning_readonly", "review"}
-        and deps.run_ledgers is not None
-    ):
+    if deps.run_ledgers is not None:
         try:
             work.ledger = deps.run_ledgers.open(
                 run_id=run_id,
                 session_id=request.session_id,
-                project=request.project,
+                project=workspace,
                 task=request.task,
                 provider=provider_id,
                 mode=ui_mode(task_kind, request.project),
             )
-            work.record_agent_events_in_ledger = task_kind in {"project", "planning_readonly"}
+            work.record_agent_events_in_ledger = True
         except (LedgerWriteFailed, OSError, ValueError, TimeoutError) as exc:
             logger.warning("run ledger open failed: %s", str(exc)[:120])
             work.ledger = None

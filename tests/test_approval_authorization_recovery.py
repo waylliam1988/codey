@@ -21,7 +21,7 @@ def test_shell_continuation_retains_the_original_policy():
 
 def test_missing_original_approval_policy_stops_the_continuation():
     request = SimpleNamespace(previous_run_id="previous", session_id="s")
-    frame = SimpleNamespace(request=request, run_id="next", recovered_tool_outcomes=(),
+    frame = SimpleNamespace(request=request, run_id="next", project_text="bound-workspace", recovered_tool_outcomes=(),
                             settled_tool_outcomes=())
     with pytest.raises(RecoveryFailed, match="policy"):
         dispatch_run_mode(SimpleNamespace(), None, None, None, frame, None, "project", None)

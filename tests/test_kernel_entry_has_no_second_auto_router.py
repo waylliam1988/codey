@@ -8,27 +8,28 @@ from codey.operations.context import RunWork
 from codey.operations.task_entry import run_entry_kernel
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
-from tests.test_auto_direct_answer_continues_to_kernel import _auto_frame, _SeqProvider
+from tests.support.workspace_conversation import TextConversation
+from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 
 
 def test_auto_submission_at_kernel_entry_executes_first_tool(tmp_path, monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
-    provider = _SeqProvider([
+    provider = TextConversation(*[
         json.dumps({"tool": "read_file", "args": {"path": "a.py"}}),
         json.dumps({"tool": "done", "args": {"summary": "read"}}),
     ])
-    frame = _auto_frame("read a.py", provider)
+    frame = workspace_frame(tmp_path, provider, task="read a.py", intent="auto")
     frame.project_text = str(tmp_path)
     frame.request = replace(frame.request, project=str(tmp_path))
     frame.entry_policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
     monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *args: (tmp_path, DEFAULT_TOOL_FNS, None))
     result = run_entry_kernel(frame, RunWork([], evidence=ExecutionEvidence()),
                               SimpleNamespace(on_event=lambda _: None, on_shell_request=None),
-                              SimpleNamespace(state=SimpleNamespace()), task_kind="project")
+                              SimpleNamespace(state=SimpleNamespace(set_provider_session=lambda *args: None)), task_kind="project")
     assert result.event["stop_reason"] == "done"
     assert frame.entry_session.read_files == {"a.py"}
-    assert provider.sends == 2
+    assert len(provider.requests) == 2
 
 
 def test_removed_router_and_recovery_facades_cannot_regrow():

@@ -1,0 +1,83 @@
+{
+  "date": "2026-10-12",
+  "baseline_commit": "1a10f658de9bffd4fbb33ae870aa736e95662904",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "api_protocol": "openai-completions",
+  "tool_protocols": {
+    "on": "native",
+    "off": "text"
+  },
+  "workspace": "isolated temporary workspaces",
+  "shell": "paused for approval; live probe does not approve commands",
+  "generation_requests": 8,
+  "source_sha256": "1d8d6af8a49f1bdef531cda422f1ff13ae458af3c97ef5efb4a896c0efc0b54a",
+  "results": [
+    {
+      "protocol": "on",
+      "case": "greeting",
+      "ok": true,
+      "stop_reason": "done",
+      "turns": 1,
+      "physical_requests": 1,
+      "approval_requests": 0,
+      "summary": "Hello, it is a pleasure to meet you.",
+      "seconds": 1.95
+    },
+    {
+      "protocol": "on",
+      "case": "edit",
+      "ok": true,
+      "stop_reason": "done",
+      "turns": 2,
+      "physical_requests": 2,
+      "approval_requests": 0,
+      "summary": "Created hello.txt containing \"workspace-live\".",
+      "seconds": 3.73
+    },
+    {
+      "protocol": "on",
+      "case": "shell",
+      "ok": true,
+      "stop_reason": "approval",
+      "turns": 1,
+      "physical_requests": 1,
+      "approval_requests": 1,
+      "summary": "shell command requires approval",
+      "seconds": 1.7
+    },
+    {
+      "protocol": "off",
+      "case": "greeting",
+      "ok": true,
+      "stop_reason": "done",
+      "turns": 1,
+      "physical_requests": 1,
+      "approval_requests": 0,
+      "summary": "Hello!",
+      "seconds": 1.39
+    },
+    {
+      "protocol": "off",
+      "case": "edit",
+      "ok": true,
+      "stop_reason": "done",
+      "turns": 2,
+      "physical_requests": 2,
+      "approval_requests": 0,
+      "summary": "I have created the file hello.txt containing the text 'workspace-live'.",
+      "seconds": 4.09
+    },
+    {
+      "protocol": "off",
+      "case": "shell",
+      "ok": true,
+      "stop_reason": "approval",
+      "turns": 1,
+      "physical_requests": 1,
+      "approval_requests": 1,
+      "summary": "shell command requires approval",
+      "seconds": 1.64
+    }
+  ],
+  "zen_validation": "deterministic shared-tool and package-removal tests; no upstream live request"
+}

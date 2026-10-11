@@ -2,7 +2,7 @@
 
 The policy is built once at the task entry boundary from user-visible intent
 (task text, explicit capability flags, the Research button, the task kind) and
-then treated as immutable. Model output (``TaskSubmission.model_hint``) can
+then treated as immutable. Model output (plans and answers) can
 never grant capabilities. Recovery reuses the stored policy and still passes
 through the live path/command/network guards at execution time.
 """
@@ -169,7 +169,7 @@ def build_task_policy(
 ) -> TaskPolicy:
     """Build the immutable policy for one task from user intent only."""
     kind = _normalize_kind(task_kind)
-    # The Research button is user intent; model_hint is never consulted here.
+    # The Research button is user intent; model output is never consulted here.
     strict = bool(strict_research is True) or bool(getattr(submission, "strict_research", False) is True)
     sources_open_required = bool(getattr(submission, "sources_open_required", False) is True)
     has_project = _has_project(submission)
@@ -177,7 +177,7 @@ def build_task_policy(
 
     grants: set[str] = {"control"}
 
-    if kind in {"project", "hybrid"}:
+    if kind in {"project", "hybrid", "chat", "auto"}:
         if has_project:
             grants.update({"project.read", "project.verify", "shell.approval"})
             # Strict Research with a project defaults to read/verify; write
@@ -217,7 +217,7 @@ def build_task_policy(
         # Read-only planning never grants write/shell, even when requested.
         grants.discard("project.write")
         grants.discard("shell.approval")
-    else:  # chat, review, unknown kinds: minimal surface.
+    else:  # Review and unknown kinds have a minimal surface.
         if "web.read" in requested:
             grants.add("web.read")
 

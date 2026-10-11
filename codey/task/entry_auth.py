@@ -76,7 +76,7 @@ def _explicit_readonly_task(task: str) -> bool:
 
 
 def derive_entry_auth(body: dict[str, Any] | None, *, project: str | None = None) -> EntryAuth:
-    """Derive entry auth from user submission only; never from model_hint.
+    """Derive entry auth from user submission only; never from model output.
 
     权限回答“可以做什么”，完成要求回答“必须做什么”：
     - 宽泛“查一下”不再视为联网授权，仅明确动作表达才授权；
@@ -104,7 +104,7 @@ def derive_entry_auth(body: dict[str, Any] | None, *, project: str | None = None
     if data.get("allow_write") is True:
         requested.add("project.write")
     web_via_task_text = False
-    if intent in {"project", "hybrid", "auto"}:
+    if intent in {"project", "hybrid", "auto", "chat"}:
         lowered = task.lower()
         for marker in _WEB_TASK_MARKERS:
             marker_lower = marker.lower()
@@ -129,9 +129,9 @@ def derive_entry_auth(body: dict[str, Any] | None, *, project: str | None = None
         sources_required = False
     else:
         # “可以”不等于“必须”：仅任务文本明确需要来源时才必须打开
-        sources_required = bool(web_via_task_text and intent in {"auto", "project", "hybrid"})
+        sources_required = bool(web_via_task_text and intent in {"auto", "project", "hybrid", "chat"})
     denied: set[str] = set()
-    if intent in {"project", "hybrid", "auto"} and _explicit_readonly_task(task):
+    if intent in {"project", "hybrid", "auto", "chat"} and _explicit_readonly_task(task):
         # 明确只读：取消“必须修改”，同时落实“禁止修改”。project_changes_required
         # 只表示完成要求，写权限由 denied_capabilities 独立否决。
         denied.update({"project.write", "shell.approval"})

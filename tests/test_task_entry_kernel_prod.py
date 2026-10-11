@@ -17,17 +17,12 @@ class EntryAuthTests(unittest.TestCase):
         from types import SimpleNamespace
 
         from codey.operations.task_entry import _entry_policy_with_recovery
+        from codey.task.model import TaskSubmission
 
-        request = SimpleNamespace(
-            session_id="s",
-            project="E:/tmp",
-            task="resume",
-            max_turns=8,
-            requested_capabilities=("web.read", "project.write"),
-            strict_research=False,
-            project_changes_required=True,
-        )
-        frame = SimpleNamespace(request=request, run_id="r", recovered_tool_outcomes=(object(),))
+        request = TaskSubmission("s", "E:/tmp", "resume", 8, False, "local",
+                                 requested_capabilities=("web.read", "project.write"),
+                                 project_changes_required=True)
+        frame = SimpleNamespace(request=request, run_id="r", project_text="E:/tmp", recovered_tool_outcomes=(object(),))
         deps = SimpleNamespace(runtime_mutations=None)
         with self.assertRaisesRegex(RuntimeError, "recovery policy log unavailable"):
             _entry_policy_with_recovery(frame, deps, "project")
@@ -495,13 +490,12 @@ class DispatchSwitchTests(unittest.TestCase):
         self.assertIn('"hybrid"', source)
         self.assertNotIn("run_hybrid_mode", source)
 
-    def test_model_hint_cannot_grant_web_read(self) -> None:
+    def test_task_words_without_entry_authorization_cannot_grant_web_read(self) -> None:
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
         policy = build_task_policy(
-            TaskSubmission("s", "E:/tmp", "hi", 8, False, "local",
-                           model_hint="ACTION: research\nPLAN: browse"), task_kind="project")
+            TaskSubmission("s", "E:/tmp", "ACTION: research\nPLAN: browse", 8, False, "local"), task_kind="project")
         self.assertTrue(policy.allows("project.read"))
         self.assertFalse(policy.allows("web.read"))
 

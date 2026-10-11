@@ -293,10 +293,9 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertIn("Project Map", str(seen["project_map"]))
         self.assertIn("invalid JSON", str(seen["project_config_warnings"]))
 
-    def test_auto_readonly_plan_uses_same_real_kernel_and_original_policy(self) -> None:
+    def test_auto_readonly_tools_use_same_real_kernel_and_original_policy(self) -> None:
         rows: list[dict[str, object]] = []
         main_provider = _RouteProvider([
-            "ACTION: planning_readonly\nPLAN: Inspect a.py and explain",
             json.dumps({"tool": "read_file", "args": {"path": "a.py"}}),
             json.dumps({"tool": "done", "args": {"summary": "plan only"}}),
         ])
@@ -317,9 +316,9 @@ class HeadlessRunnerTests(unittest.TestCase):
             self.assertEqual((project / "a.py").read_text(encoding="utf-8"), "READONLY_KERNEL_MARKER = 1")
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(rows[-1]["stop_reason"], "done")
-        self.assertEqual(rows[-1]["turns"], 3)
+        self.assertEqual(rows[-1]["turns"], 2)
         unused_agent.assert_not_called()
-        self.assertEqual(len(main_provider.prompts), 3)
+        self.assertEqual(len(main_provider.prompts), 2)
         self.assertIn("READONLY_KERNEL_MARKER", main_provider.prompts[-1])
         self.assertNotIn("Ghost", main_provider.prompts[0])
 

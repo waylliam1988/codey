@@ -77,20 +77,17 @@ def test_successful_new_chat_resets_window_before_first_send():
 def _entry_frame(*, fresh_chat: bool, conversation, provider) -> object:
     from types import SimpleNamespace
 
-    request = SimpleNamespace(
-        session_id="s-life", project="", task="do things", max_turns=1,
-        continue_task=False, provider_id="local", intent="chat",
-        requested_capabilities=(), strict_research=False,
-        sources_open_required=False, project_changes_required=False,
-        denied_capabilities=(), model_hint="",
-    )
+    from codey.policies.task_policy import TaskPolicy
+    from codey.task.model import TaskSubmission
+
+    request = TaskSubmission("s-life", None, "do things", 1, False, "local", intent="chat")
     return SimpleNamespace(
         request=request, run_id="r-life", task_kind="chat",
-        provider=provider, provider_id="local", project_text="",
+        provider=provider, provider_id="local", project_text="E:/codey",
         conversation=conversation, fresh_chat=fresh_chat,
         handoff="", recovered_tool_outcomes=(),
         recovered_tool_result_batch_id="", provider_session_changed=False,
-        trace=None, entry_policy=None, entry_initial_turn=None,
+        trace=None, entry_policy=TaskPolicy(grants=frozenset({"control"})), entry_initial_turn=None,
     )
 
 
@@ -98,7 +95,7 @@ def _entry_deps() -> object:
     from types import SimpleNamespace
 
     return SimpleNamespace(
-        runtime_mutations=None, managed_outputs=None, state=None,
+        runtime_mutations=None, managed_outputs=None, state=SimpleNamespace(set_provider_session=lambda *args: None),
         workspace_revisions=None,
     )
 

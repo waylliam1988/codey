@@ -236,17 +236,18 @@ def maybe_sync_work_queue(
         return
     if not _ghost_learning_enabled(deps.state):
         return
+    scope = frame.request.project or ""
     try:
         research_interest_candidates = build_research_interest_candidates(
             deps.knowledge_store,
             session_id=frame.request.session_id,
-            project=frame.project_text,
+            project=scope,
         )
         if affinity_store is not None and research_interest_candidates:
             hints = affinity_store.query_research_priority_hints(
                 research_interest_candidates,
                 session_id=frame.request.session_id,
-                project=frame.project_text,
+                project=scope,
             )
             research_interest_candidates = apply_research_affinity_hints(
                 research_interest_candidates,
@@ -261,7 +262,7 @@ def maybe_sync_work_queue(
                 research_interest_candidates=research_interest_candidates,
                 session_id=frame.request.session_id,
                 run_id=frame.run_id,
-                project=frame.project_text,
+                project=scope,
             )
         if affinity_store is not None:
             affinity_store.sync_from_sources(
@@ -271,7 +272,7 @@ def maybe_sync_work_queue(
                 run_projection=run_projection,
                 terminal_event=event,
                 session_id=frame.request.session_id,
-                project=frame.project_text,
+                project=scope,
             )
     except Exception as exc:
         _record_ghost_warning(deps, "work_queue_sync", exc, frame=frame, event=event)

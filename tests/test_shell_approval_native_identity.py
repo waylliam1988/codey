@@ -74,7 +74,7 @@ def test_approval_pending_persists_full_native_identity():
     )
     pending = build_shell_approval_pending(
         approval=req, approval_id="shell_test123", session_id="s1", run_id="r1",
-        project="E:\\codey", max_turns=10, provider_label="local",
+        project="E:\\codey", max_turns=10, provider_label="local", attached_project="E:/codey", intent="project",
         command_fields=dict(shell_command_payload("echo hi")),
         risk_label="generic", risk_title="t", risk_detail="d",
         post_approval_instructions="",
@@ -107,7 +107,7 @@ def test_approved_shell_result_answers_original_call_id_natively():
     )
     pending = build_shell_approval_pending(
         approval=req, approval_id="shell_test456", session_id="s-shell", run_id="r-prev",
-        project=".", max_turns=4, provider_label="local",
+        project=".", max_turns=4, provider_label="local", attached_project=".", intent="project",
         command_fields=dict(shell_command_payload("echo hi")),
         risk_label="generic", risk_title="t", risk_detail="d",
         post_approval_instructions="",
@@ -193,7 +193,7 @@ def test_denied_shell_result_answers_original_call_id():
     )
     pending = build_shell_approval_pending(
         approval=req, approval_id="shell_test789", session_id="s1", run_id="r1",
-        project=".", max_turns=4, provider_label="local",
+        project=".", max_turns=4, provider_label="local", attached_project=".", intent="project",
         command_fields=dict(shell_command_payload("rm -rf /")),
         risk_label="generic", risk_title="t", risk_detail="d",
         post_approval_instructions="",

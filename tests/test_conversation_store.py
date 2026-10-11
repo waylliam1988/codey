@@ -207,13 +207,17 @@ class ConversationStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             first = server.AppContext(td)
             context = first.conversation_for("chat-1")
-            context.begin_window("deepseek", "chat")
+            from codey.workspace.session import session_workspace
+
+            workspace = str(session_workspace(td, "chat-1"))
+            context.begin_window("deepseek", "chat", workspace)
             context.record_exchange(
                 "Remember the code",
                 "I will remember it",
                 ConversationSnapshot(
                     mode="chat",
                     goal="Keep ORANGE-417",
+                    project=workspace,
                     provider_id="deepseek",
                     latest_user="Remember the code",
                     latest_reply="I will remember it",

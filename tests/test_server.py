@@ -58,6 +58,8 @@ def _complete_shell_pending(base: dict) -> dict:
     command = str(base.get("command") or "")
     fields = shell_command_payload(command)
     pending = dict(base)
+    pending["intent"] = "project"
+    pending["attached_project"] = base.get("project")
     pending["command"] = command
     pending["command_preview"] = fields["command"]
     pending["command_sha256"] = fields["command_sha256"]
@@ -3805,7 +3807,8 @@ class SessionThreadingTests(unittest.TestCase):
 
         event_types = [event["type"] for event in emitted]
         self.assertEqual(provider.send.call_count, 1)
-        self.assertLess(event_types.index("reply"), event_types.index("task_done"))
+        self.assertEqual(event_types.count("task_done"), 1)
+        self.assertEqual(next(event for event in emitted if event["type"] == "task_done")["summary"], "normal reply")
         self.assertNotIn("ghost_learning_done", event_types)
         self.assertEqual(len(observations), 1)
         self.assertIn("以后回答短一点", str(observations[0]["user_text"]))
@@ -4005,40 +4008,6 @@ class SessionThreadingTests(unittest.TestCase):
                 )
 
         self.assertEqual(state.run_registry.last_terminal_event()["mode"], "planning")
-
-    def test_chat_consensus_receives_ghost_directive_only_as_owner_prompt(self) -> None:
-        self.consensus_mock.return_value = ConsensusResult("consensus reply", 1)
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            seed_ghost_style_memory(state, session_id="session-ghost")
-            seed_ghost_continuity(state, session_id="session-ghost")
-            provider = mock.Mock()
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
-
-            with (
-                mock.patch.object(server, "STATE", state),
-                mock.patch.object(state, "get_provider", return_value=provider),
-            ):
-                _run_task_with_ghost_wait(
-                    "session-ghost",
-                    None,
-                    "Answer this directly",
-                    8,
-                    False,
-                    "deepseek",
-                    "chat",
-                )
-
-        kwargs = self.consensus_mock.call_args.kwargs
-        self.assertIn("Local Context:", kwargs["owner_prompt"])
-        self.assertNotIn("Ghost", kwargs["owner_prompt"])
-        self.assertIn("reply structure = answer first", kwargs["owner_prompt"])
-        self.assertIn("Continue bounded local projection work", kwargs["owner_prompt"])
-        self.assertNotIn("Prefer concise answer-first replies.", kwargs["owner_prompt"])
-        self.assertNotIn("Local Context:", kwargs["context"])
-        self.assertNotIn("Ghost", kwargs["context"])
-        self.assertNotIn("Continue bounded local projection work", kwargs["context"])
 
     def test_planning_readonly_passes_ghost_directive_to_agent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -5417,123 +5386,26 @@ class SessionThreadingTests(unittest.TestCase):
         agent_run.assert_not_called()
         first.new_chat.assert_called_once_with()
         second.new_chat.assert_not_called()
-        second.send.assert_called_once_with("Follow-up question")
+        second.send.assert_called_once()
+        self.assertIn("User task (verbatim):\nFollow-up question", second.send.call_args.args[0])
 
-    def test_plain_chat_uses_hidden_consensus_when_advisors_are_available(self) -> None:
-        state = server.AppContext()
-        events = state.subscribe()
-        provider = mock.Mock()
-        provider.name = "DeepSeek Web"
-        provider.location = "https://chat.deepseek.com/"
-        self.consensus_mock.return_value = ConsensusResult("Combined answer", 2)
-
-        with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(task_submit, "agent_run") as agent_run,
-        ):
-            _run_task_with_ghost_wait("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
-
-        agent_run.assert_not_called()
-        provider.new_chat.assert_called_once_with()
-        provider.send.assert_not_called()
-        self.consensus_mock.assert_called_once()
-        consensus_kwargs = self.consensus_mock.call_args.kwargs
-        self.assertTrue(consensus_kwargs["draft_first"])
-        self.assertEqual(consensus_kwargs.get("owner_prompt", ""), "")
-        emitted = []
-        while not events.empty():
-            emitted.append(events.get_nowait())
-        reply = next(event for event in emitted if event["type"] == "reply")
-        self.assertEqual(reply["text"], "Combined answer")
-        self.assertIn("run_id", reply)
-        done = next(event for event in emitted if event["type"] == "task_done")
-        self.assertEqual(done["mode"], "chat")
-        self.assertEqual(done["summary"], "Combined answer")
-        self.assertEqual(done["run_id"], reply["run_id"])
-
-    def test_plain_chat_consensus_aggregate_failure_does_not_resend_prompt(self) -> None:
-        state = server.AppContext()
-        events = state.subscribe()
-        provider = mock.Mock()
-        provider.name = "DeepSeek Web"
-        provider.location = "https://chat.deepseek.com/"
-        provider.send.return_value = "unsafe fallback"
-        self.consensus_mock.side_effect = RuntimeError("aggregate timed out")
-
-        with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(task_submit, "agent_run") as agent_run,
-        ):
-            _run_task_with_ghost_wait("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
-
-        agent_run.assert_not_called()
-        provider.new_chat.assert_called_once_with()
-        provider.send.assert_not_called()
-        emitted = []
-        while not events.empty():
-            emitted.append(events.get_nowait())
-        task_done = next(event for event in emitted if event["type"] == "task_done")
-        self.assertEqual(task_done["stop_reason"], "error")
-        self.assertIn("aggregate timed out", task_done["summary"])
-
-    def test_plain_chat_degraded_consensus_forgets_provider_session(self) -> None:
-        state = server.AppContext()
-        events = state.subscribe()
-        provider = mock.Mock()
-        provider.name = "DeepSeek Web"
-        provider.location = "https://chat.deepseek.com/"
-        self.consensus_mock.return_value = ConsensusResult("Owner draft", 0, True)
-
-        with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(task_submit, "agent_run") as agent_run,
-        ):
-            _run_task_with_ghost_wait("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
-
-        agent_run.assert_not_called()
-        provider.send.assert_not_called()
-        self.assertNotIn("deepseek", state.providers.sessions_snapshot())
-        emitted = []
-        while not events.empty():
-            emitted.append(events.get_nowait())
-        reply = next(event for event in emitted if event["type"] == "reply")
-        self.assertEqual(reply["text"], "Owner draft")
-
-    def test_plain_chat_followup_consensus_uses_context_not_owner_prompt(self) -> None:
+    def test_plain_chat_uses_one_selected_model_when_advisors_are_available(self) -> None:
         with tempfile.TemporaryDirectory() as state_home:
             state = server.AppContext(state_home)
-            first = mock.Mock()
-            first.name = "DeepSeek Web"
-            first.location = "https://chat.deepseek.com/"
-            first.send.return_value = "First answer"
-            second = mock.Mock()
-            second.name = "DeepSeek Web"
-            second.location = "https://chat.deepseek.com/"
-            self.consensus_mock.side_effect = [None, ConsensusResult("Combined follow-up", 1)]
-
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.return_value = "Selected model answer"
             with (
                 mock.patch.object(server, "STATE", state),
-                mock.patch.object(state, "get_provider", side_effect=[first, second]),
-                mock.patch.object(task_submit, "agent_run") as agent_run,
+                mock.patch.object(state, "get_provider", return_value=provider),
             ):
-                _run_task_with_ghost_wait("session-1", None, "Choose a database", 8, False, "deepseek", "chat")
-                _run_task_with_ghost_wait("session-1", None, "Add a migration plan", 8, False, "deepseek", "chat")
+                _run_task_with_ghost_wait("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
+            self.consensus_mock.assert_not_called()
+            provider.send.assert_called_once()
+            self.assertEqual(state.run_registry.last_terminal_event()["summary"], "Selected model answer")
 
-        agent_run.assert_not_called()
-        second.send.assert_not_called()
-        consensus_kwargs = self.consensus_mock.call_args.kwargs
-        self.assertTrue(consensus_kwargs["draft_first"])
-        self.assertIn("Local Context:", consensus_kwargs.get("owner_prompt", ""))
-        self.assertIn("Choose a database", consensus_kwargs.get("owner_prompt", ""))
-        self.assertIn("Choose a database", consensus_kwargs["context"])
-        self.assertIn("First answer", consensus_kwargs["context"])
-        self.assertNotIn("Current request:", consensus_kwargs["context"])
-        self.assertNotIn("Local Context:", consensus_kwargs["context"])
-
-    def test_recovered_chat_handoff_goes_to_owner_not_advisor_context(self) -> None:
+    def test_recovered_chat_handoff_reaches_selected_model_without_consensus(self) -> None:
         with tempfile.TemporaryDirectory() as state_home:
             state = server.AppContext(state_home)
             context = state.conversation_for("session-1")
@@ -5573,7 +5445,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
-            self.consensus_mock.return_value = ConsensusResult("Combined answer", 1)
+            provider.send.return_value = "Recovered answer"
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -5583,13 +5455,11 @@ class SessionThreadingTests(unittest.TestCase):
                 _run_task_with_ghost_wait("session-1", None, "Add a migration plan", 8, False, "deepseek", "chat")
 
         agent_run.assert_not_called()
-        consensus_kwargs = self.consensus_mock.call_args.kwargs
-        self.assertTrue(consensus_kwargs["draft_first"])
-        self.assertIn("Choose a database", consensus_kwargs["context"])
-        self.assertNotIn("UI-HISTORY-MARKER", consensus_kwargs["context"])
-        self.assertIn("recent_visible_conversation", consensus_kwargs["owner_prompt"])
-        self.assertIn("UI-HISTORY-MARKER", consensus_kwargs["owner_prompt"])
-        self.assertNotIn("User: Add a migration plan", consensus_kwargs["owner_prompt"])
+        self.consensus_mock.assert_not_called()
+        provider.send.assert_called_once()
+        prompt = provider.send.call_args.args[0]
+        self.assertIn("recent_visible_conversation", prompt)
+        self.assertIn("UI-HISTORY-MARKER", prompt)
 
     def test_chat_to_project_handoff_reaches_writer(self) -> None:
         with tempfile.TemporaryDirectory() as state_home, tempfile.TemporaryDirectory() as td:

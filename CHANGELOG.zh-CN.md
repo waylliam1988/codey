@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Chat 共用工作区内核（2026-10-12）
+
+- 界面保持不变。Chat 复用现有读取、编辑、搜索、运行与 Shell 工具；未绑定项目时
+  使用 `.codey/workspaces/<session_key>`，选择文件夹后使用该目录、上下文及任务要求。
+- 删除独立 Chat 循环、Auto 路由、模式分派和模型任务提示。正常回答直接进入共同
+  完成门，普通问候只需一次生成请求；生产代码净减少 596 行。
+- Shell 审批保留原文件夹关联、任务意图、权限、模型和调用身份；复用实际回执、
+  diff、Stop 与重启恢复。
+- 修复 JSON 示例误执行、畸形 native 回答、写锁失败调用关闭、非法完成判定、
+  恢复顺序及临时工作区污染 Ghost 项目范围；模型失败保留结构化记录。
+- Zen/Muse 使用共同工具链，连接包仍可独立删除；删除 Zen 后 Local Chat 回归通过。
+- TDD 后检查：Ruff/mypy/Pyrefly/diff 全绿，机器契约 **1102 passed**，UI **19 项**，
+  KoboldCpp 实机 **6/6**；全量 **8405 passed、7 skipped、1503 subtests**。不 release、不打 tag。
+
 ## 未发布 - 隔离本地审核实验（2026-10-11）
 
 - 新增仅用于实验的自我审核、反例观察、命名探针及事实隔离脚本、契约测试和比较报告。

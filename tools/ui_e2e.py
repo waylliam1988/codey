@@ -44,19 +44,19 @@ class ScriptedWriter:
 
     def send(self, text: str, timeout: float | None = None) -> str:
         del timeout
-        if "Decide how to handle the user request below in one step." in text:
-            auto_prompt = text.partition("Decide how to handle the user request below in one step.")[2]
+        if "User task (verbatim):\n" in text:
+            workspace_prompt = text.partition("User task (verbatim):\n")[2]
             # This fixture's requests are single lines. Prior focus and appended
             # experience text must not select a different scripted response.
-            request = auto_prompt.partition("\nUser request:\n")[2].partition("\n")[0]
+            request = workspace_prompt.partition("\n")[0]
             if "Explain box breathing without project access" in request:
                 return "Box breathing uses equal inhale, hold, exhale, and hold phases."
             if "Discuss a breathing app without changing files" in request:
                 return "Start with one guided breathing rhythm.\n\nAdd customization after the basic exercise feels calm."
             if "Create result.txt containing exactly" in request:
-                return "ACTION: project\nPLAN: Create result.txt with the requested content and run the tests."
+                return '{"tool":"edit","args":{"path":"result.txt","content":"browser e2e passed"}}'
             if "Request a shell command" in request:
-                return "ACTION: project\nPLAN: Request the shell command and wait for approval."
+                return '{"tool":"shell","args":{"command":"git status --short","path":"."}}'
             if "Stay active across one UI reload" in request:
                 self.reload_entered.set()
                 deadline = time.monotonic() + 60
@@ -421,7 +421,7 @@ def _exercise_page(
         "ok": True,
         "url": base_url,
         "checks": [
-            "plain New Chat without project tools",
+            "New Chat using the shared workspace kernel",
             "project picker",
             "provider selection",
             "project discussion without file changes",
@@ -472,7 +472,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
         )
         provider_services.connect_provider = lambda provider_id: writer
         provider_services.connect_fresh_provider_tab = lambda provider_id: ScriptedReviewer()
-        provider_services.provider_tab_availability = lambda: {
+        provider_services.provider_tab_availability = lambda allowed=None: {
             "deepseek": True,
             "mimo": True,
             "qwen": True,

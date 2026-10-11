@@ -184,3 +184,16 @@ def test_overlapping_plain_and_native_sends_fail_fast_without_interleaving(monke
     runtime.send_turn.side_effect = reply
     assert provider.send("Review", timeout=3) == "Original"
     assert runtime.send_turn.call_count == 1
+
+
+def test_malformed_native_batch_cannot_become_successful_plain_reply():
+    from codey.providers.base import TurnFinish
+
+    runtime = Mock()
+    runtime.send_turn.return_value = AssistantTurn(text="ERROR: malformed tool calls", finish=TurnFinish.PROTOCOL_ERROR)
+    succeeded = Mock()
+    provider = ZenProvider(runtime, on_plain_succeeded=succeeded)
+    with pytest.raises(RuntimeError, match="malformed"):
+        provider.send("Review", timeout=3)
+    succeeded.assert_not_called()
+    runtime.send_tool_results.assert_not_called()

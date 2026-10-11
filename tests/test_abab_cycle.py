@@ -126,7 +126,7 @@ def test_runaway_record_failure_is_visible(tmp_path: Path) -> None:
     assert list(progress.attempts) == []
 
 
-def test_runaway_guard_failure_is_visible(tmp_path: Path) -> None:
+def test_repeated_malformed_tool_response_stops_at_protocol_limit(tmp_path: Path) -> None:
     # Old loop runaway guard deleted with the old loop; stagnation via the new
     # single entry (invalid_turns >= stagnant_turns) is locked in
     # test_runtime_helper_boundaries (new entry stagnant). This keeps the behavior
@@ -142,7 +142,7 @@ def test_runaway_guard_failure_is_visible(tmp_path: Path) -> None:
 
     class _BadProvider:
         def send(self, prompt: str, timeout: object = None) -> str:
-            return "not json"
+            return '{"tool":'
 
     with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
         result = run_task_kernel(

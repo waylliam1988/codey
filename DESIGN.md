@@ -221,6 +221,13 @@ Context menus (`.ctx-menu`):
 
 ### 5.5 Chat stream — de-bubbled messages
 
+Chat is the common workspace entry. With no chosen folder, tasks use a managed
+session workspace; choosing a folder supplies the root and context. Keep the
+existing composer, folder picker, process records, approval cards, diff and
+restore surfaces. Do not add a computer-assistant mode or a second process UI.
+Tool activity comes from execution events. Ordinary answers need no empty tool
+block or extra model classification request.
+
 Do **not** use chat bubbles, alignment by role, or role-colored backgrounds.
 
 ```
@@ -506,7 +513,7 @@ Examples:
 
 | Prefer | Avoid |
 |--------|-------|
-| `New chat` | `新建纯聊天` |
+| `New chat` | `新建聊天` |
 | `You` | `你` |
 | `Send a message to Codey…` | `给 Codey 发消息…` |
 | `View diff` | `查看改动` (in UI chrome) |

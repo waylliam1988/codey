@@ -238,12 +238,8 @@ def test_run_evidence_followup_rejects_multiple_tool_calls() -> None:
                 project="project-ev",
             )
             # Model attempts to output multiple tool calls
-            reply = """```json
-{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}}
-```
-```json
-{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fact 2", "body": "Body 2", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 2"}]}}
-```"""
+            reply = """{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}}
+{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fact 2", "body": "Body 2", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 2"}]}}"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
             material = PlanExecutionResult(
@@ -282,9 +278,7 @@ def test_run_evidence_followup_rejects_missing_tool_field() -> None:
                 project="project-ev",
             )
             # Model returns JSON without explicit "tool" field (or with "name" instead)
-            reply = """```json
-{"name": "knowledge_write", "args": {"type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}}
-```"""
+            reply = """{"name": "knowledge_write", "args": {"type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}}"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
             material = PlanExecutionResult(
@@ -320,9 +314,7 @@ def test_run_evidence_followup_rejects_missing_args_field() -> None:
                 project="project-ev",
             )
             # Model returns JSON with tool but flat fields instead of "args" dict
-            reply = """```json
-{"tool": "knowledge_write", "type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}
-```"""
+            reply = """{"tool": "knowledge_write", "type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
             material = PlanExecutionResult(
@@ -358,9 +350,7 @@ def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
                 project="project-ev",
             )
             # Model attempts to call done or search alongside knowledge_write
-            reply = """```json
-{"tool": "web_search", "args": {"query": "forbidden search"}}
-```"""
+            reply = """{"tool": "web_search", "args": {"query": "forbidden search"}}"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
             material = PlanExecutionResult(
@@ -397,9 +387,7 @@ def test_run_evidence_followup_classifies_no_relevant_done_as_noop() -> None:
                 session_id="session-ev",
                 project="project-ev",
             )
-            reply = """```json
-{"tool": "done", "args": {"summary": "The fresh URLs are unrelated to the research question, so there is no relevant evidence to extract."}}
-```"""
+            reply = """{"tool": "done", "args": {"summary": "The fresh URLs are unrelated to the research question, so there is no relevant evidence to extract."}}"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
             material = PlanExecutionResult(
@@ -436,9 +424,7 @@ def test_run_evidence_followup_classifies_done_without_evidence_as_noop() -> Non
                 session_id="session-ev",
                 project="project-ev",
             )
-            reply = """```json
-{"tool": "done", "args": {"summary": "Follow-up complete."}}
-```"""
+            reply = """{"tool": "done", "args": {"summary": "Follow-up complete."}}"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
             material = PlanExecutionResult(
@@ -484,9 +470,7 @@ def test_run_evidence_followup_extracts_evidence_with_provider() -> None:
                 text="Fresh source body text excerpt",
             ))
 
-            reply = """```json
-{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fresh Fact", "body": "Fact description", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Fresh source body", "claim": "Fresh Fact"}]}}
-```"""
+            reply = """{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fresh Fact", "body": "Fact description", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Fresh source body", "claim": "Fresh Fact"}]}}"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(
                 plan_ref="plan:123",
@@ -578,12 +562,8 @@ def test_run_evidence_followup_repairs_invalid_knowledge_write_schema_once() -> 
                 text="Fresh source body text excerpt",
             ))
 
-            first_reply = """```json
-{"tool": "knowledge_write", "args": {"type": "fact", "title": "Ordinary Note", "body": "Body", "sources": ["https://example.com/fresh"], "evidence": [], "tags": ["research"], "relations": []}}
-```"""
-            repaired_reply = """```json
-{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fresh Fact", "body": "Fact description", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Fresh source body", "claim": "Fresh Fact", "stance": "supports"}]}}
-```"""
+            first_reply = """{"tool": "knowledge_write", "args": {"type": "fact", "title": "Ordinary Note", "body": "Body", "sources": ["https://example.com/fresh"], "evidence": [], "tags": ["research"], "relations": []}}"""
+            repaired_reply = """{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fresh Fact", "body": "Fact description", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Fresh source body", "claim": "Fresh Fact", "stance": "supports"}]}}"""
             provider = _SequenceProvider(first_reply, repaired_reply)
             plan = ResearchPlan(plan_ref="plan:123")
             material = PlanExecutionResult(
@@ -624,9 +604,7 @@ def test_run_evidence_followup_reports_invalid_knowledge_write_args_after_failed
                 session_id="session-ev",
                 project="project-ev",
             )
-            reply = """```json
-{"tool": "knowledge_write", "args": {"type": "fact", "title": "Empty Evidence", "body": "Body", "sources": ["https://example.com/fresh"], "evidence": []}}
-```"""
+            reply = """{"tool": "knowledge_write", "args": {"type": "fact", "title": "Empty Evidence", "body": "Body", "sources": ["https://example.com/fresh"], "evidence": []}}"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
             material = PlanExecutionResult(

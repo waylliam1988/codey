@@ -18,7 +18,7 @@ class ApiRunSelection:
     thinking_enabled: bool | None = None
     reasoning_effort: str | None = None
     stream: bool = False
-    tool_choice: str = "required"
+    tool_choice: str = "auto"
     output_tokens: int | None = None
     token_counter: str = "estimated"
     budget_source: str = "configuration"

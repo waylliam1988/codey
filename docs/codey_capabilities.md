@@ -11,9 +11,9 @@ overview, not a release gate.
 - OpenCode Zen: dynamically discovered supported zero-cost models using the
   agreed public partner connection. The service checks access for every request;
   a free listing does not guarantee all task modes. See [live validation](../TEST_REPORT.md).
-  Its removable compatibility profile does not grant project access. Muse chat,
-  read-only and standalone review passed the current three-case smoke; this is
-  not a complete model/task matrix. Standalone API review uses the selected model.
+  Muse Spark 1.3 shares the Chat tools and Shell approval with other connections.
+  Its removable profile cannot grant permission. This change has deterministic
+  tool/removal coverage, with no upstream Zen live run. Standalone API review uses the selected model.
 - No API key is required for web providers; you log in through a dedicated Edge
   or Chrome browser profile.
 - Provider-specific browser code is isolated in adapters, so website breakage
@@ -21,26 +21,25 @@ overview, not a release gate.
 
 ## Work Modes
 
-- `New Chat` keeps the conversation detached from local project files.
-- `Choose folder` attaches the current conversation to one local project.
-- `Research` enables strict evidence, ledger and report requirements for the request.
-- Automatic mode lets the first normal model call answer directly or request
-  an action within the original task policy. Tools and incomplete answers can
-  continue through the same kernel; model mode labels cannot grant permissions.
-  There is no separate routing model call, and project writes require the writer lock.
-- Manual mode, project scope, and permission settings still win over automatic
-  mode.
+- `New Chat` uses the shared workspace kernel for answers, scripts and local
+  command requests. Its root is `<state_home>/workspaces/<session_key>`;
+  the default state home is `~/.codey`.
+- `Choose folder` supplies the file-tool root and project context to the same kernel.
+- `Research` adds strict evidence, ledger and report requirements to the request.
+- Normal answers and tool calls use one loop and completion gate. Ordinary
+  greetings need one generation request, with no ACTION/PLAN router or classifier.
+- Original permissions, denials and requirements remain authoritative. Writes
+  acquire their lease when needed; Shell requires approval. Cwd is not an OS sandbox.
 
-Coding, planning, Research and authorized mixed tasks share one tool loop.
-Web access requires task authorization; ordinary web-assisted coding does not
-automatically require a Research notebook. See the
+Project verification and Research evidence are task requirements. Tool availability
+alone does not require editing, testing or a research notebook. See the
 [source ownership map](project_structure.md).
 
 ## Coding Loop
 
 Codey can let a model read files, edit files, run allowed commands, inspect
-diffs, review changes, and restore snapshots inside the selected project
-folder.
+diffs, review changes, and restore snapshots inside the selected folder or
+managed Chat workspace.
 
 The local loop is intentionally visible:
 

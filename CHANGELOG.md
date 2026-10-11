@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Shared Chat workspace kernel (2026-10-12)
+
+- Keep the UI unchanged. Chat now uses the common workspace kernel and existing
+  read/edit/search/run/Shell tools. Unbound chats work under `.codey/workspaces`;
+  selected folders supply the root, context and applicable task requirements.
+- Remove the separate Chat loop, Auto router, mode dispatcher and model hints.
+  Natural answers enter the same completion gate; ordinary greetings need one
+  generation request. Production code is 596 lines smaller.
+- Preserve original folder association, intent, permissions and model across
+  Shell approval. Retain actual receipts, diffs, Stop and restart restore.
+- Fix JSON example execution, malformed native answer handling, writer-failure
+  call closure, invalid completion verdict handling, recovery ordering and
+  temporary-workspace Ghost scope. Preserve structured provider failures.
+- Keep Zen/Muse on the shared tool chain with an independently removable
+  connection package; verify Local Chat still works with Zen removed.
+- TDD and final checks: Ruff/mypy/Pyrefly/diff passed; machine contracts
+  **1102 passed**; UI **19 checks**; KoboldCpp **6/6 live cases**; full pytest
+  **8405 passed, 7 skipped, 1503 subtests**. No release or tag.
+
 ## Unreleased - Isolated local reviewer experiments (2026-10-11)
 
 - Add experiment-only self-review, counterexample observation, named-probe and

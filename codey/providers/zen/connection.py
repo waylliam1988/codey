@@ -117,6 +117,9 @@ class ZenProvider:
             self._check_generation(generation)
             if not isinstance(turn, AssistantTurn):
                 raise RuntimeError("Zen text-only exchange returned an invalid turn")
+            if turn.finish is TurnFinish.PROTOCOL_ERROR:
+                self.abandon_inflight()
+                raise RuntimeError("Zen text-only exchange returned malformed tool calls")
             if turn.finish is TurnFinish.OUTPUT_LIMIT:
                 self.abandon_inflight()
                 raise OutputLengthError("Zen text-only reply was truncated")

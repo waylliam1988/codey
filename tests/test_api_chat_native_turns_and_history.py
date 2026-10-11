@@ -54,7 +54,7 @@ def test_send_turn_posts_tools_and_records_tool_calls(monkeypatch) -> None:
     seen = _install_fake(monkeypatch, body)
     turn = provider.send_turn("read app", [ProviderToolDefinition('read', '', {})])
     assert seen[0]["tools"] == [{"type": "function", "function": {"name": "read", "description": "", "parameters": {}}}]
-    assert seen[0]["tool_choice"] == "required"
+    assert seen[0]["tool_choice"] == "auto"
     assert turn.tool_calls[0].id == "call_1"
     assert turn.tool_calls[0].name == "read"
     # Assistant message with tool_calls must be retained for chaining.

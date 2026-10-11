@@ -51,7 +51,7 @@ python -m tools.machine_contract_gate
 - 浏览器按正常用户环境安装；测试 bootstrap 在隔离 HOME 前保留 Playwright 缓存位置，尊重显式浏览器路径与包内缓存。必跑回归验证目录不随 HOME 隔离改变，且 DOM 测试等待真实状态恢复完成；缺浏览器仍明确失败，不自动重装或跳过。
 - 用脚本 provider 与真实存储检查认证、授权、取消/连接/交付失败、原生 ID 配对、来源状态、SSE 游标与输出身份、实际请求诊断及恢复。实际模型行为属于 Gate 3。
 - 桌面/CLI 正式入口的自动审查和单次修复、只读/联网授权、无项目、冷启动复用、顾问服务消费及配置错误也在必跑清单中。脚本 provider 场景隔离外部模型发现，不以用户当时打开的模型决定结果。
-- 两种 API 的原子交换、native Auto 首轮一次准备/所属会话，以及 Zen 包无法导入时 Local、目录和历史的正式消费者也必须通过；不能只检查连接注册是否存在。
+- 两种 API 的原子交换、共享 Chat/native 首轮一次准备/所属会话，以及 Zen 包无法导入时 Local、目录和历史的正式消费者也必须通过；不能只检查连接注册是否存在。
 - 模型来源的持久子集、空选择自动关闭、显式重新选择、目录不自动勾选、全部关闭及运行/审批/辅助模型保护必须通过。可选来源移除时，共用前端不得静默换模型或丢失草稿。
 - UI 行为测试直接读取原样发布资产并注入连接故障；HTTP 资产交付及打包另有集成检查。动态模型夹具必须保持偏好、目录和可用性响应一致，脚本 Research 的 DNS/缓存也必须隔离；不能依赖真实外部 DNS 或放宽生产 URL 策略。
 - JSONL 每行必须合法；任务事件有一致的 `schema_version/type/run_id/session_id`，全局连接状态按自己的事件契约检查；终态事件必须与实际结果一致。
@@ -96,7 +96,7 @@ python tools/local_model_release_gate.py --cases research --repeat 1 --timeout 6
 | `hybrid` | `hybrid`：网页和项目工具连续使用 | 独立公式矩阵通过，成功的 `web_search→open→read_file→edit→run→done` 收据同 run/session |
 | `discussion` | `project`：只讨论不建文件 | 文件不变且 `done`；回答质量待评审 |
 | `planning` | `planning_readonly`：对实际源码给方案 | 原文件哈希不变且 `done`；方案质量待评审 |
-| `auto` | `auto`：小任务自动选路 | 文件内容精确等于 `hello auto`（仅容忍末尾换行）+ `done` + exit 0 |
+| `auto` | `auto`：共用 Chat 工作区执行小任务 | 文件内容精确等于 `hello auto`（仅容忍末尾换行）+ `done` + exit 0 |
 | `ghost` | 隔离 state 下写→按 run_id 读→检索→删→不可检索 | roundtrip 完整；独立控制面检查，不计入模型任务成功率，不读取默认用户状态 |
 | `tests` | 为已有实现补充测试 | 测试通过、原实现未改动、变异实现必须被测试拒绝 |
 | `research` | 显式 Research：查官方 pathlib 文档 | 实际搜索和打开来源、隔离账本/报告要求通过、正常 `done` |
@@ -168,7 +168,7 @@ machine gate 必跑任务指导归属、提示渲染无副作用、native 编码
 - 每次运行创建唯一目录，每次尝试分别保存 JSONL、provider 请求/解析后的响应、最终项目和隔离状态、独立验证结果。已有 `--run-dir` 拒绝覆盖。原始产物留在忽略目录，只提交脱敏的文字报告。
 - 首次探测后固定 endpoint/model，聊天与 agent 均用同一生产连接选择；Local gate 的 temperature 固定 0，Zen 按冻结连接参数发送，实际请求另存。未发送 seed，不能宣称模型生成完全确定性。Local 的 `--protocol native/json` 分别测原生/文本 JSON 路径。
 - `--timeout` 是单个案例的总进程截止时间，包含工具和独立验证；到期终止 owned process tree。请求 timeout 不超过该预算。生成长度、结束状态与终止预算从实际 wire 请求/响应记录；Local 默认和 Zen 的显式输出预算分开。终止交付不是完成证明；Chat 可用 max_tokens=1/无工具关闭，auto-only 服务可保留此前原授权声明，以有限预算关闭调用链。
-- 活动 tool_choice/parallel 策略由冻结能力决定，支持 required 或 auto；仍校验实际返回的全部调用，不假定上游遵守单调用字段。native auto 首轮使用原授权快照，收到的 typed turn 计入同一内核预算。完成/取消/无进展/协议/预算终止不执行新调用。Zen 连接可补充显式不可用的 read/shell 网络声明；原快照仍是执行权限依据，文本消费者拒绝全部工具调用。[临时适配边界](zen_request_profile_2026-10-08.md)。[早期 Local 实机根因与 12/12 复测](local_native_protocol_2026-10-02.zh-CN.md)。
+- 活动 tool_choice/parallel 策略由冻结能力决定，支持 required 或 auto；仍校验实际返回的全部调用，不假定上游遵守单调用字段。共同 native 首轮使用原授权快照，收到的 typed turn 计入同一内核预算。完成/取消/无进展/协议/预算终止不执行新调用。Zen 连接可补充显式不可用的 read/shell 网络声明；原快照仍是执行权限依据，文本消费者拒绝全部工具调用。[临时适配边界](zen_request_profile_2026-10-08.md)。[早期 Local 实机根因与 12/12 复测](local_native_protocol_2026-10-02.zh-CN.md)。
 - recovery 确定性预检走同一正式入口与存储，仅脚本化 HTTP 响应；实机使用真实模型。新 provider 窗口接收原任务与恢复事实文本，原 call ID 保留在收据中，不向新窗口发送孤立的旧 tool result。同窗口 ID 关闭、失败保持失败、未结算危险动作不重放由机器契约验证。
 - 重启后 exchange 可能从 1 开始，请求/响应按 recorder 实例 ID 与 exchange 共同关联；诊断 hash 不能替代完成证明。
 - 元数据保存客户端上下文预算、服务端可查询信息、Python、Git commit 和脚本哈希；未报告的聊天模板/量化明确标为未知。usage 和 finish_reason 从实际响应记录，不凭模型总结估算。

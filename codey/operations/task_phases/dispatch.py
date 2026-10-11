@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -11,12 +12,6 @@ if TYPE_CHECKING:
     from codey.operations.task_run import TaskRunDeps
 
 from codey.ghost.work_queue_model import GhostWorkItem
-from codey.operations.auto_loop import (
-    AutoRunDeps,
-    is_auto_request,
-    run_auto_mode,
-)
-from codey.operations.chat import run_chat_mode
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.conversation_plan import build_conversation_plan
 from codey.operations.ghost_context import (
@@ -24,7 +19,6 @@ from codey.operations.ghost_context import (
     ghost_directive,
     ghost_experiences,
 )
-from codey.operations.mode_dispatch import ModeDispatchDeps, dispatch_task_mode
 from codey.operations.planning_flow import (
     PlanningFlowDeps,
     run_planning_readonly_mode,
@@ -227,6 +221,12 @@ def dispatch_run_mode(
     config_result: ProjectConfigLoadResult,
 ) -> ModeOutcome:
     request = getattr(frame, "request", None)
+    if request is not None and not frame.project_text and task_kind in {"chat", "auto", "project"}:
+        from codey.storage.local_store import DEFAULT_STATE_HOME
+        from codey.workspace.session import session_workspace
+
+        home = getattr(deps.workspace_revisions, "state_home", None) or DEFAULT_STATE_HOME
+        frame.project_text = str(session_workspace(home, request.session_id))
     if request is not None:
         previous = str(getattr(request, "previous_run_id", "") or "")
         operation = getattr(work, "operation", None)
@@ -240,7 +240,7 @@ def dispatch_run_mode(
                 session_id=request.session_id, run_id=previous or frame.run_id,
             )
         else:
-            frame.entry_policy = build_task_policy_for_entry(request, task_kind)
+            frame.entry_policy = build_task_policy_for_entry(replace(request, project=frame.project_text or None), task_kind)
         record_entry_policy(getattr(deps, "runtime_mutations", None),
                             session_id=request.session_id, run_id=frame.run_id, policy=frame.entry_policy)
     # Single task entry: project/research/hybrid/readonly share one
@@ -293,87 +293,11 @@ def dispatch_run_mode(
             **kwargs,
         )
 
-    mode_deps = ModeDispatchDeps(
-        chat=lambda active_frame: run_chat_mode(
-            active_frame,
-            state=deps.state,
-            run_consensus=deps.run_consensus,
-            ghost_directive=partial(ghost_directive, deps.state),
-            ghost_continuity=partial(ghost_continuity, deps.state),
-            ghost_experiences=partial(ghost_experiences, deps.state),
-        ),        project=run_project_operation,
-        research=_run_research_op,
-        review=lambda active_frame: run_review_mode(
-            review_deps,
-            active_frame,
-            append_ledger=hooks.append_ledger,
-        ),
-        planning=_run_planning_op,
-    )
-    # Unified auto runs in the same batch as the Ghost-route removal: the first
-    # normal model call decides direct answer vs permission-checked action, so
-    # unprojected auto research never degrades to pure chat. Recovered tool
-    # replays and claimed Ghost work items bypass auto: their mode is already
-    # decided and the first output must not override it.
-    if (
-        is_auto_request(frame.request)
-        and not frame.recovered_tool_outcomes
-        and not frame.settled_tool_outcomes
-        and work.claimed_work_item is None
-    ):
-        from codey.operations.review_flow import has_reviewable_diff as _has_diff
-        from codey.operations.task_entry import prepare_auto_provider
-        from codey.operations.task_phases.lifecycle import open_run_ledger as _open_ledger
-
-        def continue_task(
-            active_frame: RunFrame, active_work: RunWork, active_hooks: RunHooks, followup: str,
-        ) -> ModeOutcome:
-            if active_frame.entry_session is None:
-                raise ValueError("native auto task session is not initialized")
-            return run_entry_kernel(
-                active_frame, active_work, active_hooks, deps,
-                task_kind=active_frame.entry_session.task_kind,
-                config_result=config_result, continuation_followup=followup,
-            )
-
-        auto_deps = AutoRunDeps(
-            state=deps.state,
-            review_task=mode_deps.review,
-            acquire_writer=lambda project: deps.state.acquire_project_writer(project),
-            release_writer=lambda project: deps.state.release_project_writer(project),
-            open_ledger_for=lambda kind: _open_ledger(
-                deps, work, frame.request,
-                run_id=frame.run_id, task_kind=kind, provider_id=frame.provider_id,
-            ),
-            ghost_directive_fn=partial(ghost_directive, deps.state),
-            ghost_continuity_fn=partial(ghost_continuity, deps.state),
-            experiences_fn=partial(ghost_experiences, deps.state),
-            has_reviewable_diff_fn=lambda: _has_diff(review_deps, frame.request.project),
-            research_available=True,
-            prepare_native_provider=partial(prepare_auto_provider, deps=deps),
-            continue_task=continue_task,
-        )
-        return run_auto_mode(frame, work, hooks, auto_deps)
-    # Single entry for task kinds (no old two-phase hybrid). This stays
-    # after the auto check: auto intent must reach the first-call router
-    # before any mode entry, otherwise the writer runs directly.
-    _normalized = str(task_kind or "").strip().lower()
-    if _normalized in {"project", "research", "hybrid", "planning", "planning_readonly", "readonly"}:
-        return run_task_mode(
-            frame, work, hooks, deps,
-            task_kind=task_kind,
-            config_result=config_result,
-            run_project=run_project_operation,
-            run_research=_run_research_op,
-            run_planning=_run_planning_op,
-        )
-    return dispatch_task_mode(
-        task_kind,
-        frame,
-        work,
-        hooks,
-        mode_deps,
-        config_result=config_result,
+    if task_kind == "review":
+        return run_review_mode(review_deps, frame, append_ledger=hooks.append_ledger)
+    return run_task_mode(
+        frame, work, hooks, deps, task_kind=task_kind, config_result=config_result,
+        run_project=run_project_operation, run_research=_run_research_op, run_planning=_run_planning_op,
     )
 
 

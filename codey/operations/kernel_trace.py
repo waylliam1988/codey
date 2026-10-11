@@ -2,8 +2,17 @@
 
 from typing import Any
 
-from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 from codey.utils.refs import digest_text
+
+
+def record_outbound(trace: Any, prompt: str, *, native: bool, pending_reply: Any, pending_results: Any) -> None:
+    if pending_reply is not None or (native and pending_results is not None):
+        return
+    record_provider_send_prompt(
+        trace, name="workspace_outbound_prompt", text=prompt, purpose="shared workspace kernel request",
+        source_ref="provider_send:workspace", capability_id="agent_runner",
+    )
 
 
 def record_turn(trace: Any, *, phase: str, turn: int, snapshot: Any, plan: Any, native: bool) -> None:
