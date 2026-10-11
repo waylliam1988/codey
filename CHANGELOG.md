@@ -2,6 +2,16 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start input boundary audit (2026-10-11)
+
+- Reject malformed local `/models` entries whose `id` is not a non-empty
+  string instead of coercing arbitrary JSON values into fake model IDs.
+- Reject non-string local configuration update fields for `base_url`, `model`,
+  and `api_key` instead of silently persisting coerced values.
+- Add deterministic TDD regression tests for both boundaries. Final checks:
+  **8389 passed, 30 skipped, 1503 subtests**; mypy (407 files), Pyrefly (0
+  errors), Ruff, and `git diff --check` passed. No release or tag.
+
 ## Unreleased - Candidate recovery and evidence-boundary repair (2026-10-10)
 
 - Add one runtime-owned, bounded validation attempt for a stopped `no_progress`

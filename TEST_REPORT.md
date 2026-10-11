@@ -1,5 +1,26 @@
 # Codey Test Report
 
+## Cold-start boundary audit (2026-10-11)
+
+This audit locked and fixed two deterministic input-boundary defects with
+accurately named regression tests before changing production code:
+
+- `test_local_discovery_rejects_non_string_model_ids.py` prevents malformed
+  `/models` entries from turning dictionaries or numbers into fake model IDs.
+- `test_local_config_update_rejects_non_string_identity_fields.py` prevents
+  non-string addresses, model IDs, and API keys from being silently coerced
+  into persisted local configuration.
+
+The focused regressions and related local bootstrap/configuration tests passed
+before the final suite. Mypy reported no issues in 407 source files, Pyrefly
+reported 0 errors, Ruff passed, and `git diff --check` passed. The final full
+run was:
+
+**8389 passed, 30 skipped, 1503 subtests passed in 1008.83s (0:16:48).**
+
+No additional deterministic production bug, dead wiring, or test-only green
+path was found in the reviewed boundaries. No release or tag was created.
+
 ## Iterative code, test, and architecture hygiene review (2026-10-10)
 
 This review completed **9 independent rounds (A–I)** before the final suite:

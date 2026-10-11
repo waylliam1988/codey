@@ -355,14 +355,18 @@ def parse_local_config_update(
     protocol = body.get("api_protocol", previous.api_protocol)
     if not isinstance(protocol, str) or protocol not in {"openai-completions", "openai-responses"}:
         return None, "unsupported API protocol"
-    base_url = str(body.get("base_url") or "").strip().rstrip("/")
+    for field in ("base_url", "model", "api_key"):
+        value = body.get(field)
+        if value is not None and not isinstance(value, str):
+            return None, f"{field} must be a string"
+    base_url = (body.get("base_url") or "").strip().rstrip("/")
     if not base_url:
         return None, "base_url required"
-    model = str(body.get("model") or "").strip()
+    model = (body.get("model") or "").strip()
     raw_key = body.get("api_key")
     # Empty means "not provided": the API layer reuses the stored key only
     # for the same target, and refuses a target change without an explicit key.
-    api_key = "" if raw_key is None else str(raw_key).strip()
+    api_key = "" if raw_key is None else raw_key.strip()
     mode = parse_native_tools_mode(body.get("native_tools_mode"))
     if mode is None and "native_tools_mode" in body:
         return None, "native_tools_mode must be auto, on, or off"

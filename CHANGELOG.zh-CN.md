@@ -2,6 +2,14 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 冷启动输入边界审计（2026-10-11）
+
+- 本地 `/models` 响应中的 `id` 现在必须是非空字符串；不再把字典、数字等任意 JSON
+  值强制转换成伪模型 ID。
+- 本地配置更新中的 `base_url`、`model`、`api_key` 现在拒绝非字符串值；不再静默保存强制转换后的错误配置。
+- 增加两个准确命名的 TDD 回归测试锁定上述边界。最终检查：**8389 passed、30 skipped、1503 subtests**；
+  mypy（407 个文件）、Pyrefly（0 errors）、Ruff 与 `git diff --check` 均通过。不发布、不创建 tag。
+
 ## 未发布 - 候选恢复与证据边界修复（2026-10-10）
 
 - 为 `no_progress` 停滞候选增加一次由运行时拥有的有界真实验证，初始 Writer 与完成门修复共用。

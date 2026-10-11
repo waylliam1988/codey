@@ -93,12 +93,15 @@ def probe_local_endpoint_detail(
     data = body.get("data") if isinstance(body, dict) else None
     if not isinstance(data, list):
         return None, "invalid_json"
-    models = tuple(
-        str(item.get("id"))
-        for item in data
-        if isinstance(item, dict) and item.get("id")
-    )
-    return LocalEndpoint(url, models), "ok"
+    models: list[str] = []
+    for item in data:
+        if not isinstance(item, dict):
+            return None, "invalid_json"
+        raw_id = item.get("id")
+        if not isinstance(raw_id, str) or not raw_id.strip():
+            return None, "invalid_json"
+        models.append(raw_id.strip())
+    return LocalEndpoint(url, tuple(models)), "ok"
 
 
 def probe_local_endpoint(
