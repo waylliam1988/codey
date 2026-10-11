@@ -112,10 +112,10 @@ Source / Evidence / Claim / Assumption / AnalysisRun / Artifact / Review
 
 这些能力共同提供了 0.4 当时需要的研究底座：
 
-- `ghost/extractor.py`、`ghost/inbox.py`、`ghost/hebbian.py` 让长期偏好和纠错先进候选区，再被审计接受。
+- `ghost/schema.py`、`ghost/inbox.py`、`ghost/hebbian.py` 让长期偏好和纠错先进候选区，再被审计接受。
 - `ghost/directive.py` 和 `context_source.py` 让本地连续性以有预算的中性文本进入 prompt，且不能授权工具。
-- `ghost/learning_loop.py`、`ghost/continuity.py`、`ghost/sleep.py` 让 Codey 能记住长期主题、开放问题和用户偏好，但不保存完整聊天正文。
-- `ghost/router.py` 让 Ghost 只提出意图；手动入口、PermissionProfile 和 TaskRuntime/operation function 仍然优先。
+- `ghost/observations.py`、`ghost/continuity.py`、`ghost/sleep.py` 让 Codey 能记住长期主题、开放问题和用户偏好，但不保存完整聊天正文。
+- `ghost/continuity.py`、`ghost/work_queue.py` 和 post-turn projection 让 Ghost 只提出有界连续性建议；手动入口、PermissionProfile 和 TaskRuntime/operation function 仍然优先。
 - `ghost/work_queue.py` 和 `knowledge/research_interest.py` 让开放问题变成可追踪 work item，完成时需要 proof refs。
 - `ghost/affinity.py` 让长期主题能排序和衰减，但关联边不等于事实。
 - `Research Notes v2` 和 `research/controller.py` 让 Research 仍然是用户显式开启的受控闭环。
@@ -1730,146 +1730,403 @@ Safe read/search replay 已实现，unsafe replay count 始终为 0
 0.6 = Ghost / World Model / Protocol Adaptation on Stable Durable Runtime
 ```
 
-## 0.6 主线 - Ghost / World Model / Protocol Adaptation
+## 0.6 之后的可执行路线：一个版本只推进一个可验证增量
 
-0.6 承接原先 0.5.8 之后的 Ghost、World Model、provider/protocol learning 和可选 adapter 工作。
-这些能力都必须是 runtime core 的用户，而不是 runtime core 的一部分。
-
-0.6 做：
+0.6 之后不再把 Ghost、World Model 和 Protocol Adaptation 平铺成能力目录。
+版本号表示可交付的行为增量；`G` 阶段只表示依赖关系，不替代版本号。
 
 ```text
-Project Verification Habit Projection
-Provider / Protocol Affinity + Repair Outcome Learning
-Ghost Explain / Inspector
-World Model Event Log + Prediction Review
-World Model ContextSource + Shadow Strategy Ranker
-Protocol Adapter Dataset Export + Shadow Normalizer
-Local Protocol Classifier + Repair Strategy Selector
-Conditional Tool Projection / One Proven Dialect
-Native Structured Provider Path
-Local Training Export / Optional Tiny Adapter
-Ghost / World Model Maintenance Hardening
+G0  契约与控制面          0.6.0–0.6.5
+G1  观察经验与投影          0.6.6–0.6.10
+G2  Explain 与 shadow      0.6.11–0.6.12
+G3  选择性晋级              0.7.x
+G4  Protocol Adaptation     0.8.x
+R0  研究基准与可塑性实验    0.9.x+
 ```
 
-0.6 不做：
+以下版本都是计划项，完成条件以行为、回放、指标和边界测试为准，不以“模块已存在”为准。
+
+### 所有版本共同适用的硬门槛
+
+从 `0.6.1` 开始，每个版本都必须同时满足：
 
 ```text
-Ghost persona
-World Model 自动决策
-跨 provider 自动仲裁
-插件市场
-大 UI
-Ghost / World Model 写 EvidenceLedger 或 CompletionProof
-adapter 输出绕过 runtime validator
+Ghost 不写 EvidenceLedger、CompletionProof 或 PermissionProfile
+Ghost 不执行 provider、search、tool 或项目工作区 mutation
+所有新增的模型可见 hint 都经过 Context Epoch admission
+projection 能从领域 event log 重建
+delete 后 rebuild 不会复活已删除数据
+维护任务使用显式 as_of，不读取隐含当前墙上时间
+状态和事件都有大小上限、scope 隔离和 schema version
+失败可以 quarantine、报告并继续使用上一次有效 projection
+新增模型调用、prompt token、延迟和磁盘增长都有可观测记录
 ```
 
-### 单次模型调用下逐步补回 0.5.9 的 Ghost 能力
+每个版本的交付物固定为：实现、行为命名测试、deterministic replay fixture、指标报告、
+回滚说明和 roadmap 状态更新。没有这些交付物，版本保持未完成。
 
-0.5.9 在符合条件的 `auto` 任务前用独立 GhostRouter 调用模型，已完成的 chat
-回合后用 GhostLearningLoop 再调用模型提取结构化信号。现行产品已移除这两次
-额外调用：`auto` 的首次正常调用决定直接回答或请求动作；已提交经历在下一轮
-有界检索，用户可从经历提出并审核类型化偏好。0.6 逐步补回**用户价值**，
-不以恢复旧类、旧文件或额外调用次数作为目标。
+`0.6.0` 是 admission wiring 的前置契约版本：它只能冻结 envelope、所有权和绕过路径清单，
+不得新增模型可见的 Ghost source；从 `0.6.1` 起，旧路径和新增路径都必须经过真实 admission。
+
+### G0：契约与控制面（0.6.0–0.6.5）
+
+G0 不建立新的中央事件总线。它统一现有 observation、affinity、work queue 等领域事件的
+envelope、所有权、引用和 replay 规则；各领域仍然拥有自己的事件和 projection。
+
+#### 0.6.0 - Event Envelope and Ownership Audit
+
+目标：冻结领域事件与 GhostExperience 之间的最小公共 envelope。
+
+交付：`event_id`、`event_time`、`observed_at`、`effective_at`、`kind`、`scope`、
+`run_id`、`trace_id`、`producer`、`source`、`action_ref`、`outcome_ref`、
+`parent_event_refs`、`idempotency_key`、`retention_class`、`redaction_class`、
+`provenance_refs`、`schema_version` 和 outcome 引用的规则；标明谁能写入、谁只能读取。
+
+字段语义固定为：`source` 表示事实所属的领域，`producer` 表示实际写入组件，
+`provenance_refs` 表示可追溯来源，`action_ref` 表示导致事件的动作，`outcome_ref` 表示该动作的
+结算结果。它们不能互相替代；Ghost 不得把 `provenance_refs` 改名为 Evidence。
+
+禁止：引入第二个全局 authoritative log；把 raw transcript、raw prompt 或 raw reply 作为经验契约。
+
+验收：架构扫描能证明 runtime 写 observation、Ghost 做 projection；跨领域事件不能互相覆盖；
+畸形 envelope fail closed。
+
+#### 0.6.1 - Context Epoch Admission Wiring
+
+目标：让所有 Ghost directive、continuity 和 experiences 统一经过真正的模型上下文准入路径：
 
 ```text
-0.6.0  从已完成的验证事件投影项目验证习惯；显式项目配置优先。
-0.6.1  从 provider 协议失败、参数修复与最终 outcome 投影 bounded affinity。
-0.6.2  用确定性 Ghost Explain 展示 hint 的来源、选择与删除影响；
-       按用户显式信号扩充可审核的类型化候选，不把普通聊天自动确认为记忆。
-0.6.3–0.6.7  用冻结任务集和 shadow/manual A/B 衡量单次 auto 首次调用的
-       路由质量，以及显式候选路径相对 0.5.9 自动抽取的有效性与误报。
-0.6.8  仅在原生 structured provider 能力和 A/B 收益都成立时，试验让同一次
-       主调用返回有界 memory candidate 附属字段；web provider 不依赖该字段。
+Ghost projection
+  → ContextSource
+  → PromptEnvelope
+  → Context Epoch admission
+  → provider send
 ```
 
-单次调用的不变式：Ghost 不额外 `send`、新建 provider 会话或重试主调用来获取
-路由/记忆分类；允许主调用在既有 token 预算内携带少量上下文，但增加的
-prompt/输出 token 和延迟须单独计量。候选必须绑定用户原话引用、作用域与 run，
-经过服务端校验和人工审核才进入 Hebbian/Directive；缺失或无效附属字段只
-丢弃候选，不能吞掉正常回答。Ghost hint 仍经 ContextEpoch admission，不能
-升级为 evidence、permission 或 completion verdict。
+交付：移除聊天路径中绕过 `PromptEnvelope` 的直接字符串拼接；每个模型可见 Ghost source
+必须有 source ref、digest、budget、scope 和 admission record。`ContextEpoch` 当前的内容寻址
+和审计职责保留，但本版本补齐实际发送路径的 gate 语义。
 
-验收按可观察结果而非类名：项目习惯是否帮助选对验证命令、协议修复是否减少
-失败回合、`auto` 是否减少误路由、候选是否低误报且可拒绝/删除、Ghost Explain
-是否能追到 provenance。若单次调用方案在冻结集与 live A/B 中没有净收益，
-保持当前经历检索与显式审核路径；不为追求与 0.5.9 形式一致而增加模型调用。
+准入 owner 固定为 provider-send 前的 admission validator：`ContextSource` 负责产生候选，
+`PromptEnvelope` 负责渲染，validator 负责预算、开关和 scope 检查；只有 validator 接受的
+rendered envelope 才能交给 provider。trace 只记录准入结果，不能代替准入。
 
-### 0.6.0 - Project Verification Habit Projection v1
+验收：任何 Ghost 文本未经过 admission 都不能进入 provider payload；拒绝或超预算的 source
+不会静默拼接；prompt trace、epoch record 和实际发送字节一致。
 
-目标：让 Codey 记住项目实际验证习惯，帮助模型更容易选择正确验证命令，但不自动执行，
-也不把历史习惯当本轮 completion proof。
+#### 0.6.2 - Scope Control and Four Learning Switches
 
-边界：hint 必须经过 ContextEpoch；explicit project config 优先；历史成功只能生成 habit，不能生成 fresh verification。
+目标：把“禁用 Ghost”拆成四个独立控制：
 
-### 0.6.1 - Provider / Protocol Affinity + Repair Outcome Learning v1
+```text
+accept_events
+retrieve_projections
+run_maintenance
+admit_hints
+```
 
-目标：让 Ghost 学习 provider 在协议摩擦和 repair prompt 上的 bounded outcome，只影响诊断和 repair strategy，
-不自动切 provider、不授权工具、不进入 EvidenceLedger。
+交付：user/project/session scope 的 disable、export、reset、delete 控制；每个控制的即时生效语义。
 
-边界：只存 counts、reason codes、refs 和 digest；不存 raw prompt/reply。
+控制面由一个 Ghost-owned control projection 持有，继承顺序固定为：user 默认、project 覆盖、
+session 覆盖；更窄 scope 只能进一步收紧，不能覆盖上层的 deny。四个开关的语义为：
 
-### 0.6.2 - Ghost Explain v0 + Provenance-Safe Inspector
+```text
+accept_events=false       canonical runtime facts 仍写入；Ghost 不消费为 projection
+retrieve_projections=false 允许 export/explain；禁止检索进入普通上下文
+run_maintenance=false     禁止自动 sleep/decay/compact；显式 delete/reset 仍可用
+admit_hints=false         可继续生成 shadow 统计；禁止进入 Context Epoch
+```
 
-目标：解释 Ghost hint 为什么被选中。第一版只做 deterministic renderer 和 CLI/JSON，不进默认 prompt，
-不调用 provider，不生成工具调用。
+验收：关闭任一开关只影响对应行为；重启和并发请求不会恢复旧开关；已有状态不会被偷偷升级为新 hint。
 
-边界：payload 必须使用 `provenance_refs`，固定标注 not evidence / not policy。
+#### 0.6.3 - Durable Delete Manifest and Tombstones
 
-### 0.6.3 - World Model Event Log + Prediction Review v0
+目标：删除是持久化语义，不只是删除当前 `state.json` 或 projection。
 
-目标：记录项目/研究/环境状态预测，并用已有 proof、verification 或用户纠正复盘命中/失败。
-第一版不进 prompt，只用于 RunTrace、blocked summary 和本地诊断。
+交付：一个由 control-plane deletion event log 持有的 deletion manifest，包含
+`delete_operation_id`、scope、requested_at、retention class、tombstone digest 和每个 store
+的状态；manifest 自身可重放、可校验，不能只存在于某个 projection。各领域 event log 保留
+自己的事件，replay 永久过滤 manifest 中的 tombstone。正常 scope delete 不物理重写历史事件；
+物理 purge 另设显式、可审计的未来操作，不能和 tombstone 语义混用。
 
-边界：没有 proof/event/user-correction refs 时只能 `unjudged`，不能猜 hit/miss。
+部分失败必须可恢复：同一个 operation id 重试只处理 pending store；已完成 store 幂等跳过；
+manifest 在所有 store 确认或明确 blocked 前保持未完成。manifest 写入、tombstone 生效和
+store 执行顺序必须可回放；manifest 损坏时 fail closed，不能恢复为“未删除”。
 
-### 0.6.4 - World Model ContextSource + Shadow Strategy Ranker v1
+验收：删除后 replay、rebuild、sleep、restart 都不能复活 hint；新增事件不能写入已删除 scope；
+`delete/rebuild resurrection rate = 0`。
 
-目标：把 state estimate 变成受限 ContextSource，只提示“哪里需要复查”，不告诉模型“什么是真的”。
-Shadow ranker 只评估策略，不接管执行。
+#### 0.6.4 - Deterministic Replay and Explicit Time
 
-边界：stale projection 只能生成 re-check hint；`recheck_refs` 不能渲染成 citation/source/evidence refs。
+目标：定义可比较的 replay determinism，不要求 JSONL 字节完全相同，但要求状态、排序、hint 和健康结论相同。
 
-### 0.6.5 - Protocol Adapter Dataset Export + Shadow Normalizer v1
+交付：固定事件序列、稳定排序键、snapshot 边界和随机 ID 去除规则，并区分：
 
-目标：把 protocol telemetry、tool args repair、repair prompts 和最终 outcome 导出成可选本地数据集，
-并用 shadow normalizer 离线评估更早得到合法 ToolCall 的可能性。
+```text
+event_time          事件发生时间
+observed_at         Codey 观察到事件的时间
+effective_at        projection 生效时间
+maintenance_as_of   维护、衰减和 review 使用的逻辑时间
+```
 
-边界：默认关闭；不导出 secret、cookie、DOM、webpage body、source body 或 raw transcript。
+衰减、延迟 outcome 和 prediction review 只能使用显式 `maintenance_as_of`，不能偷偷读取 wall clock。
 
-### 0.6.6 - Local Protocol Classifier + Repair Strategy Selector v1
+验收：同一序列多次 replay 得到相同 projection digest；不同机器和不同当前时间不会改变结果；
+维护任务不得隐式读取 wall clock。随机 `event_id`、snapshot id 和操作 id 不能进入状态排序或
+projection digest；它们必须通过稳定映射或被排除后再比较。
 
-目标：用规则或小型本地 classifier 选择 repair prompt strategy、tool-args repair strictness 和 protocol hint 长度。
+#### 0.6.5 - Control Surface and Recovery Report
 
-边界：不能选择 provider，不能授权工具，不能跳过 verification；坏输出 fail closed 到默认 repair prompt。
+目标：把 disable、delete、export、reset、rebuild、quarantine、health check 统一暴露为可审计控制面。
 
-### 0.6.7 - Conditional Tool Projection + One Proven Dialect v1
+交付：每个操作的结果、warnings、affected scopes、projection digest 和恢复建议。
 
-目标：只在 A/B 证明收益后，为一个 provider/model family 启用一个替代模型可见工具面，并 lower 到 Codey canonical ToolCall。
+验收：操作幂等；损坏 event 不被静默跳过；control surface 不调用 provider、tool 或 network。
 
-边界：没有 A/B 胜出就不启用生产默认；permission/profile/policy 对所有 dialect 结果一致。
+### G1：观察经验与投影（0.6.6–0.6.10）
 
-### 0.6.8 - Native Structured Provider Path v1
+G1 只把已发生的现实事件规范化为经验，不自动把经验提升为事实或默认 prompt。
 
-目标：给真正支持原生 tool/function calling 的 API provider 一个可选 structured path，避免正文 JSON 协议摩擦。
+#### 0.6.6 - Verification Experience Projection v1
 
-边界：structured tool call 仍必须 lower 到 canonical ToolCall 并过 runtime validator；web provider 不受影响。
+目标：从真实 verification、tool settlement 和 long-term outcome 投影项目验证习惯。
 
-### 0.6.9 - Local Training Export + Optional Tiny Adapter v0
+边界：explicit project config 优先；历史习惯不能生成 fresh verification；短期 pass 与长期稳定分开记录。
 
-目标：把 protocol/error/repair/claim-gap 数据用于可选的小适配层训练或 shadow eval。默认关闭，不训练主模型。
+验收：每条习惯都有 outcome、scope 和 provenance；无法判断结果时标为 `unjudged`；不增加模型调用。
 
-边界：adapter 先 shadow；若要默认启用，必须回到 live A/B gate。
+#### 0.6.7 - Provider Outcome Canonical Event v1
 
-### 0.6.10 - Ghost / World Model Maintenance Hardening v1
+目标：先由 provider send、protocol repair 和 settlement 产出稳定的 bounded outcome event，
+再允许 Ghost 使用它；Ghost 不得从 prompt、reply 或普通日志反向猜 outcome。
 
-目标：让长期状态可衰减、可删除、可重建、可导出，维护不联网、不调用 provider、不执行工具。
+交付：`provider_outcome_observed` 事件、`action_ref`、`outcome_ref`、`parent_event_refs`、
+`idempotency_key`、bounded reason code、settlement status 和 verification refs。
 
-边界：quarantine 不删除原始 event，除非用户显式 delete scope。
+验收：send、repair、settlement 的因果关系可回放；未知 outcome 保持 unknown；缺少 settlement
+的 provider intent 不能生成成功或失败奖励；事件矩阵从 roadmap-only 变为真实 producer/consumer。
+
+#### 0.6.8 - Provider Outcome Projection v1
+
+目标：记录 provider/protocol failure、repair strategy 和最终 outcome 的 bounded affinity。
+
+边界：只保存 counts、reason codes、refs、digest 和时间窗口；不保存 raw prompt/reply；不自动切 provider。
+
+验收：重复事件不会重复奖励；provider affinity 不能改变 Permission、Evidence 或 completion；
+能计算 stale、decay 和 conflict。
+
+#### 0.6.9 - Delayed Outcome and Correction Projection v1
+
+目标：把用户纠正、后续 regression、长期稳定和失败复盘接回原始 action。
+
+交付：短期 outcome、长期 outcome、correction、supersede 和 confidence 的最小关系模型。
+
+验收：没有可追溯的 event、proof 或 user-correction refs 只能是 hypothesis/unjudged；用户明确
+否定能降低旧 projection；旧经验不会覆盖当前观察。
+
+#### 0.6.10 - Projection State Machine v1
+
+目标：冻结所有自动 projection 的晋级状态：
+
+```text
+observed
+  → projected
+  → shadow_candidate
+  ├→ manual_accepted
+  → shadow_context_admitted
+  → production_candidate
+  → default_hint
+  → demoted / quarantined / deleted
+```
+
+边界：`shadow_context_admitted` 只表示已进入 shadow Context Epoch，不改变默认 prompt；
+`production_candidate` 和 `default_hint` 只能由 G3 promotion controller 产生。用户明确确认的
+偏好可以进入 `manual_accepted` 分支，但不能绕过 scope、delete、explain 和 Context Epoch 检查；
+自动 projection 不能跳级。
+
+验收：非法跳转 fail closed；降级、隔离、删除可回放；状态变化都有 provenance 和原因。
+
+### G2：Explain 与 shadow（0.6.11–0.6.12）
+
+#### 0.6.11 - Ghost Explain Contract v1
+
+目标：把 Explain 契约提前固定，任何 shadow hint 都必须可解释。
+
+解释至少包含：来源、scope、时间、衰减、选择原因、冲突状态、当前等级和删除影响。
+
+边界：只输出 `provenance_refs`，明确标记 not evidence / not policy；不调用 provider，不自动插话。
+
+验收：每个 hint 都能解释或被拒绝；解释不能生成 citation、evidence 或 permission 结论。
+
+#### 0.6.12 - World Model Review and Shadow Context v1
+
+目标：记录 prediction、review、uncertainty 和 re-check hint，并让其进入 shadow ContextSource。
+
+边界：没有 proof、verification 或 user correction 时只能是 `unjudged`；stale projection 只能提示复查。
+
+验收：shadow 不改变默认 prompt；可以统计命中率、未判断率、stale leakage 和 context collision；
+World Model 不产生 evidence_refs。
+
+### G3：选择性晋级（0.7.x）
+
+0.7 只做一件事：证明某一类 hint 值得进入默认 Context Epoch。每个小版本只晋级一种 hint family。
+
+#### 0.7.0 - Frozen Evaluation and Shadow A/B Harness
+
+建立冻结任务集、paired treatment、结果 JSON、journal、manifest 和回滚开关。
+
+验收指标固定为：价值、安全、成本、控制权；记录 hint rejection rate、stale hint leakage rate、
+delete/rebuild resurrection rate。
+
+#### 0.7.1 - Project Verification Habit Promotion
+
+仅晋级项目验证习惯。目标是帮助选择验证命令，不自动运行、不产生 completion proof。
+
+晋级条件：冻结集和 live A/B 有净收益；false completion、permission bypass、hint-to-evidence 均为零；
+prompt token 和延迟没有不可接受回归。
+
+#### 0.7.2 - Provider Repair Hint Promotion
+
+仅晋级 provider repair context 和诊断 hint。不能自动切换 provider，不能改变工具权限。
+
+没有净收益则保持 shadow；不得为了与旧 0.5.9 形式一致而恢复额外模型调用。
+
+#### 0.7.3 - Continuity and Research Follow-up Promotion
+
+只晋级 bounded continuity 和 research follow-up hint。只能建议“值得继续什么”，不能自动 Research、联网或执行任务。
+
+#### 0.7.4 - Promotion Rollback and Quarantine
+
+验证已晋级 hint 出现冲突、陈旧或误报时，可以降级、隔离、删除并从 event log 重建；回滚不能删除未授权范围。
+
+#### 0.7.5 - Optional Single-call Candidate Field
+
+仅对已证明支持 structured response 的 provider 试验在同一次主调用中返回有界 candidate 字段。
+
+硬门槛：不增加独立 `send`、不新建会话、不重试主调用；候选必须绑定用户原话、scope 和 run，
+服务端校验后仍需人工审核；web provider 不依赖该字段。
+
+### G4：Protocol Adaptation 下游轨道（0.8.x）
+
+Protocol Adaptation 不属于 Ghost 核心，固定为：
+
+```text
+offline dataset
+  → shadow normalizer
+  → shadow classifier
+  → one proven dialect
+  → optional structured provider path
+```
+
+#### 0.8.0 - Bounded Protocol Dataset Export
+
+默认关闭，只导出脱敏的 protocol/error/repair/outcome 结构；不得写 secret、cookie、DOM、网页正文、source body 或 raw transcript。
+
+#### 0.8.1 - Shadow Normalizer
+
+离线评估更早得到合法 canonical ToolCall 的可能性，不接管生产路径。
+
+#### 0.8.2 - Local Classifier and Repair Strategy
+
+只选择 repair prompt、参数修复严格度和 hint 长度；失败时回退到固定默认策略。
+
+#### 0.8.3 - One Proven Dialect
+
+只为一个 provider/model family 试验一个模型可见 dialect，所有结果必须 lower 到同一个 canonical ToolCall 并经过 runtime validator。
+
+#### 0.8.4 - Native Structured Provider Path
+
+只接入真实支持原生 tool/function calling 的 provider；不影响 web provider，不改变 PermissionProfile。
+
+#### 0.8.5 - Local Training Export v1
+
+把 protocol/error/repair/claim-gap 数据导出为可选的本地训练或评估数据集。默认关闭，
+不训练主模型，不把 raw transcript、secret 或 source body 写入数据集。
+
+#### 0.8.6 - Optional Tiny Adapter Shadow
+
+训练或加载可选的小适配层，只做 shadow eval，默认关闭；没有 live A/B 净收益不得进入默认路径。
+
+### R0：研究基准与可塑性实验（0.9.x 以后）
+
+0.9 以后才开始研究 temporal Hebbian、eligibility trace、SDR、inhibition、normalization、recurrent、
+hierarchy 和 neuromodulation。0.7.0 的 product shadow/A-B harness 只回答“某类 hint 是否值得进入
+Context Epoch”；本节的 research benchmark 还要回答“某种学习机制是否真的改善长期能力”。两者的
+数据集、指标和结论不能混用。每个版本都必须保留同一份 Ghost API，并与生产 projection 隔离。
+
+#### 0.9.0 - Ghost Research Benchmark Harness
+
+固定 replay corpus、synthetic sequences、delayed outcome、forgetting、context collision 和长期运行基准。
+记录 prediction accuracy、retrieval latency、active nodes/edges、learning updates、memory growth、
+prompt cost、maintenance time 和 energy proxy。
+
+#### 0.9.1 - Temporal Association Experiment
+
+只验证 `A(t) → B(t+1)` 是否比同时共现更能预测下一事件；失败时保留 associative baseline。
+
+#### 0.9.2 - Eligibility Trace and Delayed Outcome
+
+只验证早期 action 是否能从延迟 reward 获得更准确的 credit assignment；不进入默认生产 Ghost。
+
+#### 0.9.3 - Synaptic Decay Experiment
+
+只测量陈旧关系的衰减速度、长期容量和 stale hint leakage；不同时改变 activation 或竞争机制。
+
+#### 0.9.4 - Weight Normalization Experiment
+
+只测量 normalization 对权重发散、长期稳定性和检索质量的影响；保持 decay 和 activation baseline 不变。
+
+#### 0.9.5 - Inhibition Experiment
+
+只测量 inhibition 对错误联想、active set 大小和检索精度的影响；不把 winner-take-all 与它隐式捆绑。
+
+#### 0.9.6 - Sparse Representation and Winner-take-all
+
+验证稀疏表示是否降低 active computation、提高容量并减少 context collision；不把“节点数更多”当作成功。
+
+#### 0.9.7 - Context-dependent Connections
+
+验证同一事件在不同 project/task/environment context 下是否能保持不同关系，且不会造成 scope 泄漏。
+
+#### 0.9.8 - Recurrent State
+
+验证多轮对话、debugging 和项目演化中的 temporal context；必须有 bounded state、snapshot 和 recovery。
+
+#### 0.9.9 - Hierarchical Representation
+
+验证从 event、local pattern、task、project 到 abstract concept 的迁移，不能把抽象 hypothesis 当事实。
+
+#### 0.9.10 - Neuromodulation
+
+根据 surprise、novelty、importance、reward 和 correction 调节学习强度；必须证明减少无价值学习，
+而不是单纯增加更新次数。
+
+每个研究版本只有在离线基准、长期稳定性、回放一致性和安全边界都通过后，才允许进入 shadow；
+没有任何研究版本自动进入默认 prompt。
+
+### 版本晋级规则
+
+```text
+实现完成 ≠ 版本完成
+
+版本完成 =
+  行为命名测试通过
+  + deterministic replay 通过
+  + delete/rebuild 不复活
+  + provenance/explain 可追溯
+  + 安全不变量通过
+  + 成本指标有基线
+  + 失败路径可回滚
+  + 文档和实验报告已更新
+```
+
+任何版本如果没有净收益、无法解释、无法删除、无法重建，或者引入额外后台意志，
+就停留在 shadow/manual，不继续向下一个晋级阶段推进。
 
 ## 插件开放边界
 
-0.6 进入 Ghost / World Model / protocol adaptation 之后，也仍然不做有限插件化。
-即使 0.6.8 以后引入 structured provider path，它也只是 provider capability，
+Ghost、World Model 和 Protocol Adaptation 进入 0.6–0.8 之后，也仍然不做有限插件化。
+即使 0.8.4 引入 structured provider path，它也只是 provider capability，
 不是插件系统。真正的开放顺序仍然应放到 runtime core 和 provider capability 都稳定后：
 
 ```text
@@ -1926,24 +2183,61 @@ monitor_error / unobserved 不能被当 clean
 恢复时读 durable state，不从事件缺失推断
 0.5.8 OperationState / RuntimeAction reducer 是 closed、total、pure
 Ghost / World Model / Protocol adapter 在 0.6 仍不能跨过 Evidence / Permission / Completion
-每个 0.6 模型可见 hint 都绑定 ContextEpoch
+0.6.1 之前先记录所有绕过 admission 的路径；从 0.6.1 起每个 Ghost 模型可见 hint 都绑定 ContextEpoch
 每个 0.6 tool dialect 都 lower 到同一个 canonical ToolCall
 ```
 
-### Ghost 单元测试
+### Ghost 当前已有测试
+
+以下文件是当前仓库中实际存在的 Ghost/Context 测试。退役的
+`test_ghost_signal_extractor.py`、`test_ghost_learning_loop.py` 和旧 `GhostRouter` 测试不再列入当前清单。
+其中 `test_ghost_post_turn_router.py` 只覆盖 post-turn projection 行为，不代表旧的模型预路由器。
 
 ```text
-tests/test_ghost_signal_extractor.py
-tests/test_ghost_inbox.py
-tests/test_ghost_hebbian.py
-tests/test_ghost_directive.py
-tests/test_ghost_learning_loop.py
-tests/test_ghost_continuity.py
-tests/test_ghost_sleep.py
-tests/test_ghost_work_queue.py
-tests/test_research_interest_queue.py
+tests/test_context_epoch.py
 tests/test_ghost_affinity.py
-tests/test_task_runner_affinity.py
+tests/test_ghost_cli_split.py
+tests/test_ghost_continuity.py
+tests/test_ghost_control_surface.py
+tests/test_ghost_corruption_contract.py
+tests/test_ghost_directive.py
+tests/test_ghost_event_log.py
+tests/test_ghost_event_projection.py
+tests/test_ghost_graph_primitives.py
+tests/test_ghost_hebbian.py
+tests/test_ghost_inbox.py
+tests/test_ghost_manual_memory.py
+tests/test_ghost_numbers.py
+tests/test_ghost_post_turn.py
+tests/test_ghost_post_turn_affinity.py
+tests/test_ghost_post_turn_router.py
+tests/test_ghost_post_turn_work_queue.py
+tests/test_ghost_projection_exception_boundaries.py
+tests/test_ghost_research_continuity_ab.py
+tests/test_ghost_sleep.py
+tests/test_ghost_warnings.py
+tests/test_ghost_work_queue.py
+tests/test_ghost_work_queue_ab.py
+tests/test_ghost_work_queue_ownership.py
+tests/test_affinity_sources_ownership.py
+```
+
+### Ghost 计划新增测试
+
+测试名称必须对应一个具体行为，不为不存在的模块预先建立空壳：
+
+```text
+tests/test_ghost_context_epoch_admission.py
+tests/test_ghost_learning_switch_ownership.py
+tests/test_ghost_delete_manifest_recovery.py
+tests/test_ghost_delete_rebuild_cannot_resurrect.py
+tests/test_ghost_replay_as_of_is_deterministic.py
+tests/test_ghost_event_action_outcome_refs.py
+tests/test_provider_outcome_canonical_event.py
+tests/test_ghost_projection_state_machine.py
+tests/test_ghost_explain_provenance.py
+tests/test_world_model_prediction_review.py
+tests/test_world_model_shadow_context.py
 ```
 
 ### 能力边界单元测试
@@ -1992,9 +2286,7 @@ tests/test_research_comparison_benchmark.py
 tests/test_ghost_research_continuity.py
 ```
 
-### Durable / Adaptation 单元测试
-
-0.5 逐步新增：
+### Durable / Adaptation 当前已有测试
 
 ```text
 tests/test_run_operation.py
@@ -2009,26 +2301,22 @@ tests/test_tool_prompt.py
 tests/test_tool_contract_drift.py
 tests/test_research_followup_quality.py
 tests/test_source_connector_done_scorer.py
-tests/test_ghost_protocol_affinity.py
-tests/test_provider_protocol_learning.py
-tests/test_project_verification_habits.py
-tests/test_task_runner_project_habits.py
-tests/test_ghost_explain.py
-tests/test_cli_ghost_explain.py
-tests/test_world_model_events.py
-tests/test_world_model_prediction.py
-tests/test_world_model_projection.py
-tests/test_world_model_context.py
-tests/test_world_model_strategy.py
-tests/test_protocol_dataset.py
-tests/test_shadow_protocol_adapter.py
-tests/test_protocol_classifier.py
-tests/test_protocol_repair_strategy.py
-tests/test_structured_provider_path.py
-tests/test_training_export.py
-tests/test_tiny_adapter_policy.py
-tests/test_world_model_maintenance.py
 tests/test_local_state_delete_export.py
+```
+
+### Durable / Adaptation 计划新增测试
+
+以下测试只有在对应版本真正接线后才加入，不把 roadmap-only 名称伪装成当前覆盖：
+
+```text
+tests/test_project_verification_habit_projection.py
+tests/test_provider_outcome_projection.py
+tests/test_protocol_dataset_export.py
+tests/test_shadow_protocol_normalizer.py
+tests/test_protocol_classifier_strategy.py
+tests/test_structured_provider_path.py
+tests/test_local_training_export.py
+tests/test_tiny_adapter_shadow_policy.py
 ```
 
 ### 架构测试
