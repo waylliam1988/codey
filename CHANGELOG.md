@@ -2,6 +2,14 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Complete API transport and protocol-window TDD (2026-10-13)
+
+- Close the native recovery lifecycle: window-bound tool-result sends now pass through durable provider-effect recording, so recovered delivery commits before the next tool batch can start.
+- Preserve the original protocol window through Shell approval, restart recovery and model-switch checks; pending native calls block an unsafe reset without erasing the persisted history.
+- Add the fixed Shell approval release cases and production source fingerprints for the complete HTTP approval-to-final-answer path.
+- Rename the shell gate marker to a brand-neutral value and retain accepted transport history after bounded Zen refusal/output-limit failures without treating it as success.
+- Ruff, mypy, Pyrefly, machine contract and the final full pytest pass: **8498 passed, 30 skipped, 1508 subtests**. No release or tag.
+
 ## Unreleased - Zen/API request reliability and connection lifecycle (2026-10-12)
 
 - Add provider-neutral request policies, logical request admission, shared concurrency/cooldown state, bounded attempt budgets and cancellable waits. Zen injects only the confirmed short-window rate-limit allowlist; quota, eligibility and unknown rejections are never replayed automatically.

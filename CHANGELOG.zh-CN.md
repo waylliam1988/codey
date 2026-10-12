@@ -2,6 +2,14 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - API 传输与协议窗口生命周期完整 TDD（2026-10-13）
+
+- 修复原生恢复链路：绑定窗口的工具结果发送现在经过持久 provider effect 记录，恢复交付提交后才能开始下一批工具调用，不再留下 `tool_delivery_pending`。
+- Shell 审批、进程重启恢复和模型切换都保留原协议窗口；存在待回答原生调用时拒绝不安全重置，且不清空持久历史。
+- 增加固定 Shell 审批发布用例，并把完整 HTTP 审批到最终回答链路的关键源码纳入指纹。
+- Shell gate 标记改为无品牌名称；Zen 有界拒绝或输出超限后保留已接受传输历史，但不把它当作成功回答。
+- Ruff、mypy、Pyrefly、machine contract 和最终全量 pytest 全部通过：**8498 passed、30 skipped、1508 subtests**。不 release、不打 tag。
+
 ## 未发布 - Zen/API 请求可靠性与连接生命周期（2026-10-12）
 
 - 新增 provider-neutral 请求策略、逻辑请求登记、共享并发/冷却、有限尝试预算和可取消等待；Zen 只注入精确的短期限流白名单，额度/资格/未知拒绝不自动重放。

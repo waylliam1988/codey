@@ -1,6 +1,7 @@
 """Local-model release gate for Codey (auto-captured, no human watch needed).
 
-Runs chat + agent (create/edit/references/hybrid/discussion/planning/auto) + ghost
+Runs chat + agent (create/edit/references/hybrid/discussion/planning/auto) + shell approval
+continuations + ghost
 against a local OpenAI-compatible endpoint (KoboldCpp is the default
 http://127.0.0.1:5001/v1), captures headless JSONL per case into
 .e2e-artifacts/local-model-release-<unique-run>/<attempt>-<case>/, and verifies independently of the
@@ -55,6 +56,7 @@ TIMEOUT = 600.0
 CASES = (
     "chat", "read", "create", "edit", "references", "hybrid", "discussion", "planning", "auto", "ghost",
     "tests", "research", "recovery", "review", "project_review",
+    "shell_approve", "shell_deny", "shell_failure",
 )
 DEFAULT_CASES = CASES
 
@@ -735,7 +737,11 @@ def _run_worker(case: str, directory: Path, target: attempts.GateTarget) -> int:
 
     os.environ[NATIVE_TOOLS_ENV] = "1" if target.protocol == "native" else "0"
     try:
-        if case == "chat":
+        if case.startswith("shell_"):
+            from tools.local_model_gate_shell import run_shell_case
+
+            data = run_shell_case(case, target, directory)
+        elif case == "chat":
             data = run_chat_case(target, directory)
         elif case == "ghost":
             data = run_ghost_case()
@@ -794,6 +800,11 @@ def _metadata(target: attempts.GateTarget) -> dict:
                          "codey/app/event_payloads.py", "codey/app/event_bus.py", "codey/app/context.py",
                          "codey/app/headless_runner.py", "codey/app/task_services.py", "codey/task/entry_auth.py",
                          "codey/operations/kernel_recovery.py",
+                         "codey/operations/conversation_plan.py", "codey/operations/conversation_window.py",
+                         "codey/operations/task_entry.py", "codey/operations/task_run.py",
+                         "codey/operations/task_phases/dispatch.py", "codey/operations/kernel_transport.py",
+                         "codey/app/api.py", "codey/app/task_submit.py", "codey/app/shell_service.py",
+                         "codey/agents/shell_approval.py", "codey/runtime/core/protocol_window.py",
                          "codey/operations/project_adapter.py",
                          "codey/operations/project_candidate_validation.py",
                          "codey/operations/task_loop.py", "codey/operations/kernel_prompt.py", "codey/operations/kernel_preparation.py",

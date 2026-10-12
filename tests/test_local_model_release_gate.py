@@ -24,6 +24,9 @@ class LocalModelReleaseGateFixtureTests(unittest.TestCase):
             if case != "recovery":
                 gate._task_for(case)
 
+    def test_cases_include_all_shell_approval_continuation_axes(self) -> None:
+        assert {"shell_approve", "shell_deny", "shell_failure"} <= set(gate.CASES)
+
     def test_default_cases_include_configured_research(self) -> None:
         self.assertIn("research", gate.DEFAULT_CASES)
         self.assertIn("research", gate.CASES)

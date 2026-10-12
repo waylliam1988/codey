@@ -43,7 +43,7 @@ def test_recovery_gate_restarts_and_finishes_without_repeating_edit(tmp_path, pr
     assert result["verification"]["ok"] is True
     if protocol == "native":
         assert result["original_call_id_preserved"] is True
-        assert result["delivery_mode"] == "fresh_window_fact_handoff"
+        assert result["delivery_mode"] == "same_window_native_resume"
 
 
 def test_recovery_is_reported_as_restart_safety_not_storage_control_plane():

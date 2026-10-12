@@ -1,5 +1,23 @@
 # Codey Test Report
 
+## API 传输与协议窗口生命周期完整 TDD（2026-10-13）
+
+本轮完成设计文档第 1–12 批的共享生命周期、连接租约、TLS 提交边界、代理协议、Zen 资源收尾、协议窗口持久化、模型切换保护、Shell 审批原生续接以及发布 gate 补强。审批恢复现在经过真实 HTTP 入口、共享运行层、codec、ledger 和窗口绑定；恢复结果发送也经过运行时 provider effect 结算，不再留下 `tool_delivery_pending`。
+
+### 最终验证
+
+| 检查 | 结果 |
+| --- | --- |
+| Ruff | passed |
+| mypy | no issues found in 408 source files |
+| Pyrefly | 0 errors |
+| Machine contract | 1087 passed, 15 skipped, 14 subtests |
+| Machine contract 补充检查 | 4 passed, 15 skipped |
+| Shell 审批/协议窗口定向回归 | passed |
+| 最终全量 pytest | **8498 passed, 30 skipped, 1508 subtests passed** |
+
+未调用 Zen 实机接口，未 release/tag。测试报告在全量 pytest 完成后更新。
+
 ## Zen/API 请求可靠性与连接生命周期（2026-10-12）
 
 本轮先用确定性测试锁定池化建连取消、复用控制器、socket 静默计时、`Connection: close`、慢错误响应、代理发现/转发/认证、最终资源释放、跨任务冷却和精确重试白名单，再修改生产代码。生产 prompt、文本协议、完成门和工具权限语义未改动。

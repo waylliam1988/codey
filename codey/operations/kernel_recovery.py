@@ -93,16 +93,11 @@ def apply_recovery_first(
     if not pending_initial:
         return prompt, pending_native_messages
     try:
-        if provider_session_changed:
-            return (
-                prompt + "\n\nContinue the unfinished task using the latest local tool results below.\n\n"
-                + format_results(pending_initial, session),
-                None,
-            )
         if native:
             recovered_messages = native_tool_messages(pending_initial, session)
-            if recovered_messages:
-                return prompt, recovered_messages
+            if not recovered_messages:
+                raise RecoveryFailed("native recovery produced no protocol tool results")
+            return prompt, recovered_messages
         return (
             prompt + "\n\nContinue the unfinished task using the latest local tool results below.\n\n"
             + format_results(pending_initial, session),

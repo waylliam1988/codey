@@ -96,6 +96,11 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
         _append(directory / f"{stage}-events.jsonl", row)
 
     context = HeadlessAppContext(state_home, port=0, emit_jsonl=emit, connect_provider=lambda *a, **k: provider)
+    # Restart recovery restores the exact persisted protocol window for the
+    # same provider binding.  Mark that binding before planning so the
+    # recovery gate exercises native result delivery in that window rather
+    # than an implicit cross-provider text fallback.
+    context.set_provider_session(target.provider_id, SESSION_ID)
     deps = TaskRunDeps.from_submission_stores(
         state=context, stores=context.task_submission_stores, agent_run=agent_run,
         collect_changes=collect_changes, run_review=lambda **kwargs: None,
@@ -167,8 +172,8 @@ def _verify_recovery(directory: Path, project: Path, prepare_exit: int) -> dict:
         requests_path = directory / "scripted-requests.jsonl"
     records = [json.loads(line) for line in requests_path.read_text(encoding="utf-8").splitlines()]
     requests = [row.get("payload", row) for row in records if row.get("type", "request") == "request"]
-    # A new provider window receives recovered facts as text. Old call ids
-    # remain in the receipts; they must not become orphan native tool results.
+    # Restart recovery reuses the exact protocol window; old call ids remain
+    # paired with their original native results.
     delivered_text = any(original["result_text"] in json.dumps(row.get("messages", row.get("input", [])), ensure_ascii=False)
                          for row in requests)
     policy_preserved = resumed["policy"] == original["policy"]
@@ -180,7 +185,7 @@ def _verify_recovery(directory: Path, project: Path, prepare_exit: int) -> dict:
         "prepare_pid": original["pid"], "resume_pid": resumed["pid"], "edit_executions": edit_executions,
         "original_result_delivered": resumed["original_result_delivered"] and delivered_text,
         "original_call_id_preserved": resumed["original_call_id_preserved"],
-        "delivery_mode": "fresh_window_fact_handoff", "policy_preserved": policy_preserved,
+        "delivery_mode": "same_window_native_resume", "policy_preserved": policy_preserved,
         "artifact_correct": artifact_correct,
         "stop_reason": resumed["stop_reason"], "verification": verification,
         "failure_stage": "" if all(checks) else "recovery_contract",

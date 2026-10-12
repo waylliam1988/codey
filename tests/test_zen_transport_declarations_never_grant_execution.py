@@ -104,7 +104,9 @@ def test_plain_tool_refusal_is_bounded_and_does_not_fabricate_text_success(monke
     with pytest.raises(RuntimeError, match="text-only"):
         provider.send("Review only", timeout=3)
     assert len(requests) == 3
-    assert not provider.has_transport_history
+    # Accepted protocol history remains durable after the bounded refusal;
+    # retaining it must not be mistaken for a successful text answer.
+    assert provider.has_transport_history
 
 
 def test_alias_collision_is_rejected_before_any_generation(monkeypatch):
@@ -168,7 +170,10 @@ def test_text_channel_output_limit_is_not_a_successful_review(monkeypatch):
     provider.on_plain_succeeded = succeeded
     with pytest.raises(OutputLengthError):
         provider.send("Review", timeout=3)
-    assert len(requests) == 1 and not provider.has_transport_history
+    # The failed exchange is retained as accepted history so recovery cannot
+    # silently erase the protocol window.  The success callback is the
+    # authoritative success signal and must remain untouched.
+    assert len(requests) == 1 and provider.has_transport_history
     succeeded.assert_not_called()
 
 

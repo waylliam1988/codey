@@ -65,6 +65,7 @@ def shell_result_row(pending: dict[str, Any], result: dict[str, Any], *, approve
     from codey.agents.request import RecoveredToolOutcome
     from codey.agents.shell_approval import valid_shell_call_id
     from codey.runtime.core.models import ToolCall
+    from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.toolchain.runtime import ToolOutcome
 
     call_id = pending.get("call_id", "")
@@ -96,6 +97,8 @@ def shell_result_row(pending: dict[str, Any], result: dict[str, Any], *, approve
         tool_index=0,
         effect_id="",
         redelivered=True,
+        window_ref=(ProtocolWindowRef.from_payload(pending["window_ref"])
+                    if isinstance(pending.get("window_ref"), dict) else None),
     )
 
 
@@ -106,6 +109,7 @@ def shell_result_payload(row: Any) -> dict[str, object] | None:
     try:
         call = getattr(row, "call", None)
         outcome = getattr(row, "outcome", None)
+        window_ref = getattr(row, "window_ref", None)
         return {
             "call_id": str(getattr(call, "call_id", "") or ""),
             "command": str((getattr(call, "args", {}) or {}).get("command") or ""),
@@ -115,6 +119,7 @@ def shell_result_payload(row: Any) -> dict[str, object] | None:
             "exit_code": getattr(outcome, "exit_code", None),
             "error_code": str(getattr(outcome, "error_code", "") or ""),
             "truncated": bool(getattr(outcome, "truncated", False)),
+            "window_ref": window_ref.to_payload() if window_ref is not None else None,
         }
     except Exception:
         return None

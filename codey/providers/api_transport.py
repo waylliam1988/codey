@@ -17,7 +17,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, cast
 from urllib.parse import unquote, urlsplit
 
-from codey.providers.api_http import ConnectionKey
+from codey.providers.api_http import ConnectionKey, ConnectionLease
 from codey.providers.api_request_policy import AttemptBudget
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
@@ -25,6 +25,7 @@ from codey.providers.diagnostics import (
     FAILURE_REQUEST_REJECTED,
     FAILURE_TRANSIENT,
 )
+from codey.providers.error_classification import RequestPrepError
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 _OPEN_WORK_SLOTS = threading.BoundedSemaphore(8)
@@ -36,6 +37,7 @@ class AttemptControl:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._connections: list[Any] = []
+        self._leases: list[ConnectionLease] = []
         self._responses: list[Any] = []
         self.cancelled = False
         self.phase = "connecting"
@@ -47,6 +49,15 @@ class AttemptControl:
             cancelled = self.cancelled
         if cancelled:
             self._shutdown(connection)
+
+    def register_lease(self, lease: ConnectionLease) -> None:
+        with self._lock:
+            self._leases.append(lease)
+            cancelled = self.cancelled
+        if cancelled:
+            connection = lease.cancel()
+            if connection is not None:
+                self._shutdown(connection)
 
     def register_response(self, response: Any) -> None:
         with self._lock:
@@ -72,16 +83,28 @@ class AttemptControl:
         with self._lock:
             self.cancelled = True
             targets = [*self._connections, *self._responses]
+            leases = list(self._leases)
+        for lease in leases:
+            connection = lease.cancel()
+            if connection is not None:
+                self._shutdown(connection)
         for target in targets:
-            self._shutdown(target)
+            if not isinstance(target, _PooledResponse):
+                self._shutdown(target)
 
     def finish(self) -> None:
         with self._lock:
             self._connections.clear()
+            self._leases.clear()
             self._responses.clear()
 
     @staticmethod
     def _shutdown(target: Any) -> None:
+        abort = getattr(target, "abort", None)
+        if callable(abort):
+            with contextlib.suppress(Exception):
+                abort()
+            return
         sock = _socket_for(target)
         with contextlib.suppress(Exception):
             if sock is not None:
@@ -197,9 +220,17 @@ class BoundedBodyReader:
 class GenerationUnknownError(RuntimeError):
     provider_failure_kind = "submission_uncertain"
 
+    def __init__(self, message: str, *, reason_code: str = "submission_uncertain") -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+
 
 class GenerationNotSentError(RuntimeError):
     provider_failure_kind = "not_submitted"
+
+    def __init__(self, message: str, *, reason_code: str = "not_submitted") -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 class GenerationRejectedError(RuntimeError):
@@ -260,11 +291,9 @@ class NoGenerationRedirect(urllib.request.HTTPRedirectHandler):
 class _PooledResponse:
     """HTTPResponse facade that returns a clean connection only after EOF."""
 
-    def __init__(self, response: Any, connection: Any, session: Any, key: ConnectionKey) -> None:
+    def __init__(self, response: Any, lease: ConnectionLease) -> None:
         self._response = response
-        self._connection = connection
-        self._session = session
-        self._key = key
+        self._lease = lease
         self._closed = False
         self._read = 0
         self.status = getattr(response, "status", getattr(response, "code", 0))
@@ -306,7 +335,8 @@ class _PooledResponse:
 
     @property
     def sock(self) -> Any:
-        return (getattr(self._connection, "sock", None)
+        connection = self._lease.connection
+        return (getattr(connection, "sock", None)
                 or getattr(self._response, "sock", None)
                 or _socket_for(self._response))
 
@@ -315,12 +345,23 @@ class _PooledResponse:
             return
         self._closed = True
         complete = self._framing_complete()
-        with contextlib.suppress(Exception):
+        close_ok = True
+        try:
             self._response.close()
-        if complete:
-            self._session.release_connection(self._key, self._connection)
-        else:
-            self._session.discard_connection(self._connection)
+        except Exception:
+            close_ok = False
+        connection = self._lease.begin_return()
+        if connection is None:
+            return
+        self._lease.finish_return(connection, complete and close_ok)
+
+    def abort(self) -> None:
+        connection = self._lease.cancel()
+        if connection is not None:
+            AttemptControl._shutdown(connection)
+            with contextlib.suppress(Exception):
+                self._response.close()
+            self._lease.finish_cancel(connection)
 
 
 def _open_pooled_request(request: urllib.request.Request, timeout: float, *, control: AttemptControl,  # noqa: C901, PLR0912, PLR0915
@@ -340,10 +381,18 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
         candidate = proxies.get(parts.scheme) or proxies.get("all") or ""
         if candidate and not urllib.request.proxy_bypass(parts.hostname):
             proxy = str(candidate)
+    if proxy:
+        proxy_scheme = urlsplit(proxy).scheme.lower()
+        if proxy_scheme != "http":
+            raise RequestPrepError(f"unsupported proxy scheme: {proxy_scheme or 'unknown'}")
     identity = str(options.get("identity") or "")
     tls = str(options.get("tls") or parts.scheme)
     key = ConnectionKey(parts.scheme + "://" + parts.netloc, proxy, identity, tls)
-    connection = http_session.acquire_connection(key)
+    lease = http_session.acquire_lease(key)
+    if lease is None:
+        lease = ConnectionLease(http_session, key)
+    control.register_lease(lease)
+    connection = lease.connection
     if connection is None:
         if proxy:
             proxy_parts = urlsplit(proxy)
@@ -362,10 +411,25 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
                     active = getattr(self, "_codey_control", control)
                     if bool(getattr(active, "cancelled", False)):
                         raise GenerationNotSentError("generation cancelled before connection")
-                    super().connect()
+                    self.establishing = True
+                    try:
+                        super().connect()
+                    finally:
+                        self.establishing = False
                     if bool(getattr(active, "cancelled", False)):
                         self.close()
                         raise GenerationNotSentError("generation cancelled before submission")
+
+                def send(self, data: Any) -> None:
+                    if self.sock is None:
+                        self.establishing = True
+                        try:
+                            self.connect()
+                        finally:
+                            self.establishing = False
+                    if not getattr(self, "establishing", False):
+                        self._codey_submission_started = True
+                    http.client.HTTPConnection.send(self, data)
 
             connection = PooledHTTPSConnection(connection_host, connection_port, timeout=timeout,
                                                context=context)
@@ -386,13 +450,25 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
             connection = PooledHTTPConnection(connection_host, connection_port, timeout=timeout)
     else:
         connection.timeout = timeout
-    connection._codey_control = control
+    connection._codey_submission_started = False
+    setattr(connection, "_codey_control", control)  # noqa: B010
     if getattr(connection, "sock", None) is not None:
         with contextlib.suppress(OSError):
             connection.sock.settimeout(timeout)
-    control.register_connection(connection)
-    if control.cancelled:
+    if lease.connection is None and not lease.attach(connection):
         http_session.discard_connection(connection)
+        raise GenerationNotSentError("generation cancelled before connection ownership", reason_code="cancelled_before_submission")
+
+    def cancel_lease() -> None:
+        owned = lease.cancel()
+        if owned is None:
+            return
+        AttemptControl._shutdown(owned)
+        with contextlib.suppress(Exception):
+            lease.finish_cancel(owned)
+
+    if control.cancelled:
+        cancel_lease()
         raise GenerationNotSentError("generation cancelled before submission")
     path = parts.path or "/"
     if parts.query:
@@ -410,24 +486,30 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
         connection.request(request.method or "GET", target, body=body, headers=headers)
     except (OSError, http.client.HTTPException) as exc:
         if bool(getattr(control, "cancelled", False)):
-            http_session.discard_connection(connection)
+            cancel_lease()
             raise GenerationUnknownError("generation cancelled after submission started") from exc
-        http_session.discard_connection(connection)
+        cancel_lease()
         reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+        if isinstance(reason, ssl.SSLEOFError):
+            if bool(getattr(connection, "_codey_submission_started", False)):
+                raise GenerationUnknownError("TLS connection closed after generation write",
+                                             reason_code="post_submission_tls_eof") from exc
+            raise GenerationNotSentError("TLS connection closed before generation submission",
+                                         reason_code="pre_submission_tls_eof") from exc
         if isinstance(reason, (ConnectionRefusedError, socket.gaierror)):
             raise GenerationNotSentError(f"generation request was not submitted: {reason}") from exc
         raise
     if bool(getattr(control, "cancelled", False)):
-        http_session.discard_connection(connection)
+        cancel_lease()
         raise GenerationUnknownError("generation cancelled after submission started")
     try:
         response = connection.getresponse()
     except (OSError, http.client.HTTPException) as exc:
-        http_session.discard_connection(connection)
+        cancel_lease()
         if control.cancelled:
             raise GenerationUnknownError("generation cancelled while waiting for response headers") from exc
         raise
-    wrapped = _PooledResponse(response, connection, http_session, key)
+    wrapped = _PooledResponse(response, lease)
     control.register_response(wrapped)
     if wrapped.status >= 400:
         raise urllib.error.HTTPError(request.full_url, wrapped.status, wrapped.reason, wrapped.headers, cast(Any, wrapped))
@@ -544,6 +626,7 @@ class _SubmissionHTTPHandler(urllib.request.HTTPHandler):
 def _open_request_sync(request: urllib.request.Request, timeout: float, *, control: AttemptControl | None = None,
                        attempt_budget: AttemptBudget | None = None,
                        http_session: Any = None, transport_options: Mapping[str, object] | None = None) -> Any:
+    _validate_proxy_scheme(transport_options, request.full_url)
     if http_session is not None:
         active_control = control or AttemptControl()
         return _open_pooled_request(request, timeout, control=active_control,
@@ -565,6 +648,27 @@ def _open_request_sync(request: urllib.request.Request, timeout: float, *, contr
                 continue
             raise GenerationNotSentError(f"TLS connection failed before generation submission: {exc.reason}") from exc
     raise AssertionError("unreachable connection retry state")
+
+
+def _selected_proxy(url: str, options: Mapping[str, object] | None) -> str:
+    explicit = str((options or {}).get("proxy") or "")
+    if explicit:
+        return explicit
+    parts = urlsplit(url)
+    proxies = urllib.request.getproxies()
+    candidate = proxies.get(parts.scheme) or proxies.get("all") or ""
+    if candidate and parts.hostname and not urllib.request.proxy_bypass(parts.hostname):
+        return str(candidate)
+    return ""
+
+
+def _validate_proxy_scheme(options: Mapping[str, object] | None, url: str = "") -> None:
+    proxy = _selected_proxy(url, options) if url else str((options or {}).get("proxy") or "")
+    if not proxy:
+        return
+    scheme = urlsplit(proxy).scheme.lower()
+    if scheme != "http":
+        raise RequestPrepError(f"unsupported proxy scheme: {scheme or 'unknown'}")
 
 
 def open_request(request: urllib.request.Request, timeout: float, *, control: AttemptControl | None = None,
@@ -619,6 +723,11 @@ def open_request(request: urllib.request.Request, timeout: float, *, control: At
 
 def abort_response(response: Any) -> None:
     if response is None:
+        return
+    abort = getattr(response, "abort", None)
+    if callable(abort):
+        with contextlib.suppress(Exception):
+            abort()
         return
     # Shutdown first so close does not wait for a blocked buffered read.
     with contextlib.suppress(AttributeError, OSError):

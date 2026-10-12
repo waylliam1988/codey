@@ -535,6 +535,7 @@ def _shell_redelivery_rows(payloads: Any) -> tuple[Any, ...]:
     from codey.agents.shell_approval import MAX_DEFERRED_TOOL_CALLS, valid_shell_call_id
     from codey.operations.kernel_errors import RecoveryFailed
     from codey.runtime.core.models import ToolCall
+    from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.toolchain.runtime import ToolOutcome
 
     if not isinstance(payloads, (tuple, list)) or len(payloads) > MAX_DEFERRED_TOOL_CALLS:
@@ -566,6 +567,8 @@ def _shell_redelivery_rows(payloads: Any) -> tuple[Any, ...]:
             call=ToolCall(name="shell", args={"command": item.get("command", ""),
                                               "path": item.get("cwd", ".")}, call_id=call_id),
             outcome=outcome, turn=0, tool_index=index, effect_id="", redelivered=True,
+            window_ref=(ProtocolWindowRef.from_payload(item["window_ref"])
+                        if isinstance(item.get("window_ref"), dict) else None),
         ))
     return tuple(rows)
 

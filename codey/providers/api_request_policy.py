@@ -104,6 +104,7 @@ def wait_until(when: float, context: RequestContext, *, interval: float = 0.05) 
 
 class LocalRequestPolicy:
     """Default policy: no shared admission and no policy-owned retries."""
+    max_attempts = 3
     def register(self, context: RequestContext) -> PendingRequest:
         return PendingRequest(lambda: None)
 
@@ -114,6 +115,8 @@ class LocalRequestPolicy:
 
     def observe_failure(self, context: RequestContext, receipt: object, failure: BaseException,
                         budget: AttemptBudget) -> RetryDirective:
+        if getattr(failure, "reason_code", "") == "pre_submission_tls_eof" and budget.used < 2:
+            return RetryDirective(True, reason="pre_submission_tls_eof")
         return RetryDirective(False, reason=str(failure))
 
     def observe_success(self, context: RequestContext, receipt: object) -> None:

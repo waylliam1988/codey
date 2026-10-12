@@ -298,7 +298,7 @@ class DoneReceiptFailureTests(unittest.TestCase):
 
 
 class CrossProviderRecoveryTests(unittest.TestCase):
-    def test_new_provider_session_uses_text_not_old_call_ids(self) -> None:
+    def test_new_provider_session_rejects_old_native_call_ids(self) -> None:
         from codey.operations.kernel_recovery import apply_recovery_first
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
@@ -307,20 +307,19 @@ class CrossProviderRecoveryTests(unittest.TestCase):
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
         pending = [ToolResult(ok=True, call=ToolCall(name="web_search", args={"query": "hi"}, call_id="old-id-1"), model_text="old result")]
-        prompt, messages = apply_recovery_first(
-            session,
-            True,
-            pending,
-            "base",
-            None,
-            provider_session_changed=True,
-            format_results=lambda rows, _session: "\n".join(item.model_text for item in rows),
-            native_tool_messages=lambda _rows, _session: [],
-        )
-        # Must fall back to text re-explanation, not native messages with stale ids.
-        self.assertIsNone(messages)
-        self.assertIn("old result", prompt)
-        self.assertNotIn("old-id-1", str(messages))
+        from codey.operations.kernel_errors import RecoveryFailed
+
+        with self.assertRaises(RecoveryFailed):
+            apply_recovery_first(
+                session,
+                True,
+                pending,
+                "base",
+                None,
+                provider_session_changed=True,
+                format_results=lambda rows, _session: "\n".join(item.model_text for item in rows),
+                native_tool_messages=lambda _rows, _session: [],
+            )
 
 
 class RequiredChecksHygieneTests(unittest.TestCase):

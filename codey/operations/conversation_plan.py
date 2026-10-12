@@ -9,8 +9,10 @@ from codey.agents.handoff import (
     render_handoff,
     render_recovered_handoff,
 )
+from codey.operations.conversation_window import OpenWindow, ReuseWindow, WindowAction, WindowOpenReason
 from codey.operations.task_state import TaskState
 from codey.providers.token_accounting import ContextBudget
+from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 from codey.task.kind import conversation_mode
 
@@ -24,9 +26,10 @@ class ConversationPlan:
     prior_snapshot: ConversationSnapshot
     recovered_owner_prompt: str
     provider_session_changed: bool
+    window_action: WindowAction | None = None
 
 
-def build_conversation_plan(
+def build_conversation_plan(  # noqa: C901, PLR0912
     *,
     state: TaskState,
     session_id: str,
@@ -38,7 +41,7 @@ def build_conversation_plan(
     task: str,
     continue_task: bool,
     trace: Any | None,
-) -> ConversationPlan:
+) -> ConversationPlan:  # noqa: C901, PLR0912
     mode = conversation_mode(task_kind, project)
     project_text = _project_text(project)
     budget = getattr(provider, "context_budget", None)
@@ -78,9 +81,17 @@ def build_conversation_plan(
         provider_id=provider_id,
         mode=mode,
         project=project_text,
-        force_rollover=continue_task or provider_session_changed,
+        # A resumed run reuses the protocol window.  Opening a new window is a
+        # separate explicit action and must never be inferred from continue_task.
+        force_rollover=provider_session_changed,
         next_prompt=task,
     )
+    if fresh_chat:
+        pending_calls = getattr(getattr(provider, "_codec", None), "pending_calls", None)
+        history = getattr(provider, "_messages", [])
+        pending = pending_calls(history) if callable(pending_calls) else ()
+        if isinstance(pending, (tuple, list, set, frozenset)) and pending:
+            raise ValueError("cannot open a new protocol window while calls are pending")
     if fresh_chat and isinstance(budget, ContextBudget):
         export = getattr(provider, "export_work_state", None)
         work_state = export() if callable(export) else ""
@@ -145,6 +156,17 @@ def build_conversation_plan(
                 handoff += "\n\n" + preserved_work_state
         if visible_excerpt:
             recovered_owner_prompt = handoff
+    raw_window_ref = getattr(provider, "window_ref", None)
+    window_ref = raw_window_ref if isinstance(raw_window_ref, ProtocolWindowRef) else None
+    if not fresh_chat and window_ref is not None:
+        window_action: WindowAction | None = ReuseWindow(window_ref)
+    elif fresh_chat:
+        window_action = OpenWindow(
+            WindowOpenReason.MODEL_CHANGE if provider_session_changed else WindowOpenReason.CONTEXT_ROLLOVER,
+            seed=handoff,
+        )
+    else:
+        window_action = None
     return ConversationPlan(
         conversation=conversation,
         fresh_chat=fresh_chat,
@@ -153,6 +175,7 @@ def build_conversation_plan(
         prior_snapshot=prior_snapshot,
         recovered_owner_prompt=recovered_owner_prompt,
         provider_session_changed=provider_session_changed,
+        window_action=window_action,
     )
 
 

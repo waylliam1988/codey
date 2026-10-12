@@ -13,6 +13,18 @@ from codey.toolchain.tool_spec import thaw_schema_value
 endpoint = "responses"
 
 
+def pending_calls(items: list[dict[str, Any]]) -> tuple[str, ...]:
+    open_calls: list[str] = []
+    for item in items:
+        kind = item.get("type")
+        call_id = item.get("call_id")
+        if kind == "function_call" and isinstance(call_id, str) and call_id:
+            open_calls.append(call_id)
+        elif kind == "function_call_output" and call_id in open_calls:
+            open_calls.remove(call_id)
+    return tuple(open_calls)
+
+
 def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
     return [{"type": "function", "name": t.name, "description": t.description,
              "parameters": thaw_schema_value(t.parameters), "strict": False} for t in tools or []]

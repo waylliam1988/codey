@@ -25,8 +25,27 @@ def call_provider_send_turn(provider: Any, prompt: str, tools: Any) -> Any:
     return provider.send_turn(prompt, tools)
 
 
-def call_provider_send_results(provider: Any, messages: Any, tools: Any) -> Any:
+def call_provider_send_results(provider: Any, messages: Any, tools: Any, *, window_ref: Any = None) -> Any:
+    if window_ref is None:
+        window_ref = getattr(provider, "window_ref", None)
+    if window_ref is not None:
+        bound = getattr(provider, "send_tool_results_bound", None)
+        if not callable(bound):
+            raise ValueError("provider cannot validate native protocol window")
+        return bound(messages, window_ref, tools)
     return provider.send_tool_results(messages, tools)
+
+
+def call_provider_acknowledge_results(provider: Any, messages: Any, tools: Any, *, window_ref: Any = None) -> Any:
+    """Close native calls through the same window binding as normal results."""
+    if window_ref is None:
+        window_ref = getattr(provider, "window_ref", None)
+    if window_ref is not None:
+        bound = getattr(provider, "acknowledge_tool_results_bound", None)
+        if not callable(bound):
+            raise ValueError("provider cannot validate native protocol window")
+        return bound(messages, window_ref, tools)
+    return provider.acknowledge_tool_results(messages, tools)
 
 
 def send_kernel_reply(
@@ -36,12 +55,13 @@ def send_kernel_reply(
     native_tools: Any,
     pending_reply: Any,
     pending_native_messages: list[ProviderToolResult] | None,
+    window_ref: Any = None,
 ) -> tuple[Any, Any, list[ProviderToolResult] | None]:
     """Send exactly one provider message and clear the consumed pending slot."""
     if pending_reply is not None:
         return pending_reply, None, pending_native_messages
     if native and pending_native_messages is not None:
-        reply = call_provider_send_results(provider, pending_native_messages, native_tools)
+        reply = call_provider_send_results(provider, pending_native_messages, native_tools, window_ref=window_ref)
         return reply, None, None
     if native:
         return call_provider_send_turn(provider, prompt, native_tools), None, pending_native_messages
@@ -134,6 +154,7 @@ def _drain_native_budget(
     *,
     error: str = "turn budget exhausted; tool call was not executed",
     declared_tools: Any = (),
+    window_ref: Any = None,
 ) -> None:
     """Deliver the final native batch when the turn budget is exhausted.
 
@@ -145,7 +166,7 @@ def _drain_native_budget(
     for _ in range(4):
         # The task has ended: close ids without inviting another tool call.
         # Still bound and receipt calls from an endpoint ignoring withdrawal.
-        reply = provider.acknowledge_tool_results(messages, list(declared_tools))
+        reply = call_provider_acknowledge_results(provider, messages, list(declared_tools), window_ref=window_ref)
         ids = [str(getattr(call, "id", "") or "") for call in (getattr(reply, "tool_calls", ()) or ())]
         ids = list(dict.fromkeys(item for item in ids if item))
         if not ids:
@@ -163,6 +184,7 @@ def repair_native_dangling(
     native: bool,
     native_tools: Any,
     error: str,
+    *, window_ref: Any = None,
 ) -> Any:
     """Close native call ids after a protocol error so the provider chain stays valid.
 
@@ -184,10 +206,11 @@ def repair_native_dangling(
         provider,
         [ProviderToolResult(item, f"ERROR: {error}") for item in ids],
         native_tools,
+        window_ref=window_ref,
     )
 
 
-def close_native_reply(provider: Any, reply: Any, error: str, *, declared_tools: Any = ()) -> None:
+def close_native_reply(provider: Any, reply: Any, error: str, *, declared_tools: Any = (), window_ref: Any = None) -> None:
     """Close a terminal reply and bounded follow-on calls without executing them."""
     if isinstance(reply, str):
         return
@@ -195,13 +218,14 @@ def close_native_reply(provider: Any, reply: Any, error: str, *, declared_tools:
                             for call in (getattr(reply, "tool_calls", ()) or ())))
     messages = [ProviderToolResult(key, f"ERROR: {error}") for key in ids if key]
     if messages:
-        _drain_native_budget(provider, messages, error=error, declared_tools=declared_tools)
+        _drain_native_budget(provider, messages, error=error, declared_tools=declared_tools, window_ref=window_ref)
 
 
 __all__ = [
     "NativeBudgetExhausted",
     "call_provider_send",
     "call_provider_send_results",
+    "call_provider_acknowledge_results",
     "call_provider_send_turn",
     "provider_uses_native",
     "repair_native_dangling",

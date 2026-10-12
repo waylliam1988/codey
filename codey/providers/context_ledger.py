@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import read_json_strict, session_key, write_json_atomic
 
@@ -25,9 +26,10 @@ def digest(value: object) -> str:
 
 
 class ContextLedger:
-    def __init__(self, root: Path | None = None, *, identity: str = "") -> None:
+    def __init__(self, root: Path | None = None, *, identity: str = "", window_ref: ProtocolWindowRef | None = None) -> None:
         self.root = root
         self.identity = identity
+        self.window_ref = window_ref
         self.sequence = 0
         self.chain = ""
         self.view: list[dict[str, Any]] = []
@@ -36,6 +38,9 @@ class ContextLedger:
             head = read_json_strict(root / "head.json", max_bytes=MAX_SEGMENT_BYTES)
             if not isinstance(head, dict) or head.get("identity") != identity:
                 raise ValueError("context ledger identity mismatch")
+            stored_ref = head.get("window_ref")
+            if stored_ref is not None:
+                self.window_ref = ProtocolWindowRef.from_payload(stored_ref)
             sequence = head.get("sequence")
             if type(sequence) is not int or sequence < 0:
                 raise ValueError("invalid context journal sequence")
@@ -54,26 +59,56 @@ class ContextLedger:
     def for_session(cls, home: Path, session_id: str, identity: str) -> ContextLedger:
         return cls(home / "context_history" / session_key(session_id) / identity, identity=identity)
 
+    @classmethod
+    def for_protocol_session(cls, home: Path, session_id: str, ref: ProtocolWindowRef) -> ContextLedger:
+        return cls(
+            home / "context_history" / session_key(session_id) / "protocol",
+            identity=f"protocol:{session_id}",
+            window_ref=ref,
+        )
+
     def events(self) -> list[dict[str, Any]]:
         return copy.deepcopy([item for row in self._records for item in row.get("events", [])])
 
     def commit(self, view: list[dict[str, Any]], *, events: list[dict[str, Any]] | None = None,
-               checkpoint: dict[str, Any] | None = None) -> None:
+               checkpoint: dict[str, Any] | None = None, window_ref: ProtocolWindowRef | None = None,
+               allow_window_change: bool = False) -> None:
+        previous_ref = self.window_ref
+        if (window_ref is not None and self.window_ref is not None
+                and self.window_ref != window_ref and not allow_window_change):
+            raise ValueError("context ledger window mismatch")
+        effective_ref = window_ref or self.window_ref
         row = copy.deepcopy({"sequence": self.sequence + 1, "previous": self.chain,
-                             "events": events or [], "checkpoint": checkpoint, "created_at": time.time()})
+                             "events": events or [], "checkpoint": checkpoint,
+                             # Keep an immutable accepted-view witness in
+                             # each journal row.  A model switch may replace
+                             # the head with an empty protocol view, while
+                             # portable work-state export still needs the
+                             # prior accepted facts.
+                             "view": view, "created_at": time.time()})
+        if effective_ref is not None:
+            row["window_ref"] = effective_ref.to_payload()
         chain = digest(row)
-        if self.root is not None:
-            with with_file_lock(self.root):
-                head_path = self.root / "head.json"
-                if head_path.exists():
-                    head = read_json_strict(head_path, max_bytes=MAX_SEGMENT_BYTES)
-                    if not isinstance(head, dict) or head.get("sequence") != self.sequence or head.get("chain") != self.chain:
-                        raise ValueError("context journal changed in another writer")
-                elif self.sequence:
-                    raise ValueError("context journal head disappeared")
-                write_json_atomic(self.root / f"{self.sequence + 1:012d}.json", row, max_bytes=MAX_SEGMENT_BYTES)
-                write_json_atomic(head_path, {"identity": self.identity, "sequence": self.sequence + 1,
-                                  "chain": chain, "view": view, "view_digest": digest(view)}, max_bytes=MAX_SEGMENT_BYTES)
+        try:
+            if self.root is not None:
+                with with_file_lock(self.root):
+                    head_path = self.root / "head.json"
+                    if head_path.exists():
+                        head = read_json_strict(head_path, max_bytes=MAX_SEGMENT_BYTES)
+                        if not isinstance(head, dict) or head.get("sequence") != self.sequence or head.get("chain") != self.chain:
+                            raise ValueError("context journal changed in another writer")
+                    elif self.sequence:
+                        raise ValueError("context journal head disappeared")
+                    write_json_atomic(self.root / f"{self.sequence + 1:012d}.json", row, max_bytes=MAX_SEGMENT_BYTES)
+                    head_payload: dict[str, Any] = {"identity": self.identity, "sequence": self.sequence + 1,
+                                      "chain": chain, "view": view, "view_digest": digest(view)}
+                    if effective_ref is not None:
+                        head_payload["window_ref"] = effective_ref.to_payload()
+                    write_json_atomic(head_path, head_payload, max_bytes=MAX_SEGMENT_BYTES)
+        except Exception:
+            self.window_ref = previous_ref
+            raise
+        self.window_ref = effective_ref
         self.sequence += 1
         self.chain = chain
         self._records.append(row)
@@ -119,14 +154,30 @@ class ContextLedger:
         if self.root is not None:
             ledgers += [ContextLedger(path.parent, identity=path.parent.name)
                         for path in self.root.parent.glob("*/head.json") if path.parent != self.root]
-        populated: list[ContextLedger] = [ledger for ledger in ledgers if ledger.view]
+        populated: list[ContextLedger] = [
+            ledger for ledger in ledgers
+            if ledger.view or ledger.events()
+            or any(isinstance(row.get("view"), list) and row.get("view") for row in ledger._records)
+        ]
         if not populated:
             return ""
         latest = max(populated, key=lambda ledger: ledger._records[-1].get("created_at", 0))
         parts: list[str] = []
         checkpoints = latest.checkpoint_digests()
-        retained = [item for index, item in enumerate(latest.view)
-                    if index >= len(latest.view) - 12 or digest(item) in checkpoints]
+        # A model switch intentionally starts an empty protocol view while
+        # retaining accepted events in the journal.  Portable work state must
+        # read those accepted facts instead of treating the new empty view as
+        # an empty task.
+        source_view = latest.view
+        if not source_view:
+            for row in reversed(latest._records):
+                candidate = row.get("view")
+                if isinstance(candidate, list) and candidate:
+                    source_view = candidate
+                    break
+        source_view = source_view or latest.events()
+        retained = [item for index, item in enumerate(source_view)
+                    if index >= len(source_view) - 12 or digest(item) in checkpoints]
         for item in retained:
             role = item.get("role", item.get("type", "record"))
             value = item.get("content", item.get("output", ""))

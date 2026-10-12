@@ -70,7 +70,17 @@ class ProviderAdapter:
 
     def __getattr__(self, name: str) -> Any:
         value = getattr(self.provider, name)
-        if name in {"send_turn", "send_tool_results", "acknowledge_tool_results"} and callable(value):
+        if name in {
+            "send_turn",
+            "send_tool_results",
+            "acknowledge_tool_results",
+            # Window-bound native delivery must use the same durable provider
+            # effect path as ordinary sends.  Leaving these as raw delegated
+            # methods bypasses KernelRecordedProvider and leaves the runtime
+            # operation in tool_delivery_pending after recovery.
+            "send_tool_results_bound",
+            "acknowledge_tool_results_bound",
+        } and callable(value):
             return partial(self._send, name)
         return value
 

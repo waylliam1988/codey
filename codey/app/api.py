@@ -490,21 +490,44 @@ def _api_selection_for_submit(ctx: Any, provider_id: str, selection: object) -> 
         return {}, (400, {"error": str(exc), "reason": "model_selection_invalid"})
 
 
-def run_submit_response(
+def run_submit_response(  # noqa: C901, PLR0912
     body: object,
     submit_task: Callable[..., str | None],
     *,
     ctx: Any = None,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, dict[str, Any]]:  # noqa: C901, PLR0912
     if not isinstance(body, dict):
         return 400, {"error": "invalid json"}
+    if "continue_task" in body:
+        return 400, {"error": "continue_task is no longer accepted; use input.kind=resume_run"}
+    input_payload = body.get("input")
+    input_kind = "start_task"
+    input_source_run = ""
+    if input_payload is not None:
+        if not isinstance(input_payload, dict):
+            return 400, {"error": "input must be an object"}
+        input_kind = str(input_payload.get("kind") or "").strip().lower()
+        if input_kind == "start_task":
+            if not isinstance(input_payload.get("text"), str) or not input_payload["text"].strip():
+                return 400, {"error": "input.text required"}
+        elif input_kind == "resume_run":
+            input_source_run = str(input_payload.get("source_run_id") or "").strip()
+            if not input_source_run:
+                return 400, {"error": "input.source_run_id required"}
+        else:
+            return 400, {"error": "unsupported input.kind"}
     session_id = str(body.get("session_id") or "").strip() or "default"
     client_run_id = body.get("run_id", "")
     if not isinstance(client_run_id, str) or (client_run_id and not re.fullmatch(r"run_[a-f0-9]{32}", client_run_id)):
         return 400, {"error": "invalid run_id"}
     project = str(body.get("project") or "").strip() or None
-    task = str(body.get("task") or "").strip()
-    continue_task = body.get("continue_task") is True
+    task = str(
+        (input_payload or {}).get("text")
+        if input_kind == "start_task" and input_payload is not None
+        else (input_payload or {}).get("instruction") if input_kind == "resume_run" and input_payload is not None
+        else body.get("task") or ""
+    ).strip()
+    continue_task = input_kind == "resume_run"
     provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
     intent = str(body.get("intent") or "auto").strip().lower()
     entry_auth = derive_entry_auth(body, project=project)
@@ -528,6 +551,8 @@ def run_submit_response(
     except (TypeError, ValueError, OverflowError):
         return 400, {"error": "invalid max_turns"}
     max_turns = max(1, min(max_turns, 500))
+    if not task and input_kind == "resume_run":
+        task = "Continue the source run"
     if not task:
         return 400, {"error": "task required"}
     if provider_id not in PROVIDER_LABELS:
@@ -558,6 +583,8 @@ def run_submit_response(
         submit_kwargs["review_source_run_id"] = review_source_run_id
     if client_run_id:
         submit_kwargs["run_id"] = client_run_id
+    if input_source_run:
+        submit_kwargs["previous_run_id"] = input_source_run
     if provider_id in API_CONNECTIONS or "model_selection" in body:
         captured, error = _api_selection_for_submit(ctx, provider_id, body.get("model_selection"))
         if error:

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from codey.operations.context import RunFrame, RunHooks, RunWork
+from codey.operations.conversation_window import WindowActivationError, activate_window
 from codey.operations.kernel_session_recovery import restore_task_session
 from codey.operations.result import ModeOutcome
 from codey.operations.task_guidance import task_guidance_for_policy
@@ -301,7 +302,7 @@ def run_entry_kernel(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: Any,
         close_research_tools(getattr(frame, "entry_research_tools", None))
 
 
-def _run_entry_kernel(
+def _run_entry_kernel(  # noqa: PLR0915
     frame: RunFrame,
     work: RunWork,
     hooks: RunHooks,
@@ -373,10 +374,19 @@ def _run_entry_kernel(
                 "mode": kind,
                 "receipt": {"display": {"summary": "provider is not connected"}},
             })
-        fresh = _open_fresh_session(
-            frame.conversation, frame.provider,
-            provider_id=frame.provider_id, kind=kind, project=frame.project_text,
-        )
+        try:
+            action = getattr(frame, "window_action", None)
+            if action is not None:
+                activate_window(frame.provider, action)
+                frame.conversation.begin_window(frame.provider_id, kind, frame.project_text)
+                fresh = FreshSessionOutcome(ok=True)
+            else:
+                fresh = _open_fresh_session(
+                    frame.conversation, frame.provider,
+                    provider_id=frame.provider_id, kind=kind, project=frame.project_text,
+                )
+        except WindowActivationError as exc:
+            fresh = FreshSessionOutcome(ok=False, error=str(exc))
         if not fresh.ok:
             return ModeOutcome({
                 "type": "task_done",
@@ -416,6 +426,7 @@ def _run_entry_kernel(
                     context_text="\n\n".join(part for part in (context_text, continuation_followup) if part),
                     initial_results=initial_results or None,
                     initial_turn=initial_turn,
+                    window_ref=getattr(active_provider, "window_ref", None),
                     provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
                 ),
                 execution=KernelExecutionDeps(

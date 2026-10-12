@@ -10,6 +10,7 @@ from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.agents.request import RecoveredToolOutcome
 from codey.agents.shell_approval import ShellApprovalRequest
 from codey.ghost.work_queue_model import GhostWorkItem
+from codey.operations.conversation_window import WindowAction
 from codey.operations.kernel_protocol import InitialNativeTurn
 from codey.providers.diagnostics import ProviderFailure
 from codey.runs.ledger import RunLedgerWriter
@@ -38,6 +39,7 @@ class RunFrame:
     provider_session_changed: bool
     preflight_tried: set[str]
     preflight_switches: int
+    window_action: WindowAction | None = None
     trace: Any | None = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     recovered_tool_result_batch_id: str = ""

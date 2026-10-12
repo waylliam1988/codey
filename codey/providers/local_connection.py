@@ -73,6 +73,7 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         text_decoder=normalize_local_reply,
         usage_parser=parser_for(config.api_protocol), configure_request=configure_usage,
         request_counter=counter_for(counter, effective.base_url, effective.model, effective.api_key, window),
+        connection_revision=config.connection_revision or "local-runtime",
         budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration",
     )
 
@@ -150,7 +151,8 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
                            usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
                            budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens,
                            request_counter=counter_for(selection.token_counter, config.base_url, selection.model_id,
-                                                       config.api_key, selection.context_window_tokens))
+                                                       config.api_key, selection.context_window_tokens),
+                           connection_revision=selection.connection_revision)
     return provider
 
 

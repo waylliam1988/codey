@@ -55,7 +55,10 @@ def test_unpaired_or_duplicate_terminal_results_cannot_mutate_history(live_provi
 
 def test_cancelled_history_is_not_revived_by_late_terminal_result(live_provider):
     provider, tools = live_provider
+    accepted_view = copy.deepcopy(provider.context_ledger.view)
     provider.abandon_inflight()
     with pytest.raises((RequestPrepError, ValueError)):
         provider.acknowledge_tool_results([ProviderToolResult("call-1", "late")], tools)
-    assert provider.context_ledger.view == []
+    # Aborting a request invalidates the late result but keeps accepted
+    # protocol history available for an explicit recovery.
+    assert provider.context_ledger.view == accepted_view

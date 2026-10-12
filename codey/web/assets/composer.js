@@ -237,6 +237,13 @@ async function continueTask(sessionId) {
     return;
   }
   deps.addToSession(sessionId, { type: 'info', text: 'continue task' });
+  const sourceMessage = [...(Array.isArray(s.messages) ? s.messages : [])].reverse()
+    .find(m => m && m.type === 'user' && Array.isArray(m.attempts) && m.attempts.length);
+  const sourceRunId = sourceMessage?.attempts?.at(-1)?.runId || '';
+  if (!sourceRunId) {
+    deps.addToSession(sessionId, { type: 'err', text: 'No source run is available to resume.', sessionId });
+    return;
+  }
   const task = [
     'Continue the unfinished task in this same conversation.',
     'Use the existing project context and finish the original user request.',
@@ -252,7 +259,7 @@ async function continueTask(sessionId) {
         session_id: sessionId,
         project: p.path,
         task,
-        continue_task: true,
+        input: { kind: 'resume_run', source_run_id: sourceRunId },
         provider: s.provider || liveDefaultProvider(),
         intent: 'project',
         ...window.CodeyProviderUI.runSelection(s, s.provider || liveDefaultProvider()),

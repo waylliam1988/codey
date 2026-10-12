@@ -129,6 +129,7 @@ def connect_and_build_frame(
         prior_snapshot=conversation_plan.prior_snapshot,
         recovered_owner_prompt=conversation_plan.recovered_owner_prompt,
         provider_session_changed=conversation_plan.provider_session_changed,
+        window_action=conversation_plan.window_action,
         preflight_tried=preflight.tried,
         preflight_switches=preflight.switches,
         trace=trace,

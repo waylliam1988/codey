@@ -77,6 +77,7 @@ class KernelTransportDeps:
     initial_results: list[ToolResult] | None = None
     provider_session_changed: bool = False
     initial_turn: InitialNativeTurn | None = None
+    window_ref: Any = None
 
 
 @dataclass(frozen=True)
@@ -146,11 +147,12 @@ class _KernelStartup:
     native_tools: list[ProviderToolDefinition]
     snapshot: Any
     pending_recovery: bool
+    window_ref: Any = None
 
 
 def _receive_turn_plan(
     session: TaskSession, provider: Any, state: _ProviderTurnState, snapshot: Any, native_tools: Any,
-    *, native: bool, provider_id: object, turn: int, stop_flag: Any, on_event: Any,
+    *, native: bool, provider_id: object, turn: int, stop_flag: Any, on_event: Any, window_ref: Any = None,
     stagnant_turns: int | None, propagate_provider_failure: bool, trace_recorder: Any,
 ) -> _ReceivedPlan | KernelResult | None:
     """Receive once; cancellation, truncation and protocol repair precede execution.
@@ -172,6 +174,7 @@ def _receive_turn_plan(
                         pending_results=state.pending_messages)
         reply, state.pending_reply, state.pending_messages = _transport.send_kernel_reply(
             provider, native, state.prompt, native_tools, state.pending_reply, state.pending_messages,
+            window_ref,
         )
     except Exception as exc:
         return _provider_failure(exc, turn, propagate=propagate_provider_failure)
@@ -264,6 +267,7 @@ def _approval_stop(
     policy: Any = None,
     permission_profile: object = "coding_writer",
     provider_id: object = "",
+    window_ref: Any = None,
 ) -> KernelResult | None:
     if on_shell_request is None or project_path is None:
         return None
@@ -313,6 +317,7 @@ def _approval_stop(
                 provider_id=str(provider_id or ""),
                 turn=int(turn),
                 tool_index=int(index),
+                window_ref=window_ref,
             )
         )
         return KernelResult(False, "shell command requires approval", turn, "approval")
@@ -420,6 +425,7 @@ def _kernel_handle_done_approval(
         policy=getattr(session, "policy", None),
         permission_profile=permission_profile,
         provider_id=provider_id,
+        window_ref=getattr(provider, "window_ref", None),
     )
     return done_action, approval, list(calls or ())
 
@@ -454,6 +460,19 @@ def _kernel_startup(
     delivered_map = dict(delivered or {})
     max_turns = max(1, int(getattr(session, "max_turns", 8) or 8))
     pending_initial = list(initial_results or [])
+    active_window = getattr(provider, "window_ref", None)
+    recovered_windows = {
+        row_window
+        for row in pending_initial
+        if (row_window := getattr(row, "window_ref", None)) is not None
+    }
+    if len(recovered_windows) > 1:
+        raise ValueError("recovered results belong to multiple protocol windows")
+    recovered_window = next(iter(recovered_windows), None)
+    for recovered in pending_initial:
+        row_window = getattr(recovered, "window_ref", None)
+        if row_window is not None and row_window != active_window:
+            raise ValueError("shell result belongs to another protocol window")
     native = _transport.provider_uses_native(provider, provider_id=provider_id)
     identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
     if initial_turn is not None and (not native or pending_initial or initial_turn.owner_session is not session
@@ -486,6 +505,10 @@ def _kernel_startup(
                                  pending_reply=initial_turn.reply if initial_turn is not None else None,
                                  pending_messages=pending_native_messages),
         native_tools=native_tools, snapshot=initial_snapshot, pending_recovery=bool(pending_initial),
+        # Keep the exact reference carried by the approval/recovery row.  The
+        # caller may not reconstruct it from the current provider binding when
+        # a continuation crossed a run boundary.
+        window_ref=recovered_window or active_window,
     )
 
 
@@ -571,6 +594,7 @@ def run_task_kernel(
     state = startup.state
     native = startup.native
     native_tools = startup.native_tools
+    window_ref = startup.window_ref or request.transport.window_ref
     progress = KernelProgress(stagnant_turns)
     prev_contract = startup.snapshot.contract_text
     for turn in range(resume_start, startup.max_turns + 1):
@@ -602,6 +626,7 @@ def run_task_kernel(
             native=native, provider_id=provider_id, turn=turn,
             stop_flag=stop_flag, on_event=on_event, stagnant_turns=stagnant_turns,
             propagate_provider_failure=propagate_provider_failure, trace_recorder=trace_recorder,
+            window_ref=window_ref,
         )
         if isinstance(received, KernelResult):
             return received

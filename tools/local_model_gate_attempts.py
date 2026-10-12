@@ -46,6 +46,9 @@ CASE_TASK_KINDS = {
     "recovery": "recovery",
     "review": "review",
     "project_review": "coding_review",
+    "shell_approve": "approval_continuation",
+    "shell_deny": "approval_continuation",
+    "shell_failure": "approval_continuation",
 }
 FAILURE_KINDS = frozenset({
     "none",

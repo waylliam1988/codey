@@ -17,6 +17,29 @@ def test_registry_retains_active_cooldown_after_last_provider_release():
     ZenResourcesRegistry.release(scope)
 
 
+def test_last_provider_release_closes_idle_session_but_keeps_cooldown():
+    scope = make_control_scope("http://zen-idle-close", "public", "r1")
+    coordinator = ZenResourcesRegistry.get_or_create(scope)
+    session = ZenResourcesRegistry.get_session(scope)
+    connection = type("Connection", (), {"closed": False, "close": lambda self: setattr(self, "closed", True)})()
+    from codey.providers.api_http import ConnectionKey
+
+    session.release_connection(ConnectionKey("http://zen", "", "", "http"), connection)
+    coordinator.publish_cooldown(scope, model_id="m", not_before=time.monotonic() + 30, reason="429")
+    ZenResourcesRegistry.release(scope)
+    assert connection.closed is True
+
+
+def test_closed_session_rejects_late_return_without_repopulating_idle_pool():
+    from codey.providers.api_http import ApiHttpSession, ConnectionKey
+
+    session = ApiHttpSession()
+    session.release()
+    connection = type("Connection", (), {"closed": False, "close": lambda self: setattr(self, "closed", True)})()
+    session.release_connection(ConnectionKey("http://late", "", "", "http"), connection)
+    assert connection.closed is True
+
+
 def test_expired_cooldown_survives_last_provider_release_for_a_single_probe():
     scope = make_control_scope("http://zen-expired", "public", "r1")
     coordinator = ZenResourcesRegistry.get_or_create(scope)

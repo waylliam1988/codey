@@ -56,7 +56,9 @@ def test_close_discards_a_late_background_result():
     provider.close()
     finish.set()
     provider.wait_for_maintenance(3)
-    assert provider._messages == []
+    # Closing cancels the late maintenance result but preserves the accepted
+    # protocol history for an explicit resume/reopen.
+    assert provider._messages == long_history()
 
 
 def test_emergency_summary_failure_preserves_original_and_never_sends_main_request():

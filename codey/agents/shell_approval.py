@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.protocol_window import ProtocolWindowRef
 
 MAX_DEFERRED_TOOL_CALLS = 8
 MAX_DEFERRED_TEXT_CHARS = 240
@@ -53,6 +54,7 @@ class ShellApprovalRequest:
     provider_id: str = ""
     turn: int = 0
     tool_index: int = 0
+    window_ref: ProtocolWindowRef | None = None
 
     def to_payload(self) -> dict[str, object]:
         deferred = tuple(self.deferred_calls[:MAX_DEFERRED_TOOL_CALLS])
@@ -74,6 +76,8 @@ class ShellApprovalRequest:
             payload["turn"] = self.turn
         if type(self.tool_index) is int and self.tool_index >= 0:
             payload["tool_index"] = self.tool_index
+        if self.window_ref is not None:
+            payload["window_ref"] = self.window_ref.to_payload()
         return payload
 
 
@@ -149,6 +153,8 @@ def build_shell_approval_pending(
         pending["turn"] = approval.turn
     if type(approval.tool_index) is int and approval.tool_index >= 0:
         pending["tool_index"] = approval.tool_index
+    if approval.window_ref is not None:
+        pending["window_ref"] = approval.window_ref.to_payload()
     ui_event: dict[str, object] = {
         "type": "shell_request",
         "run_id": run_id,

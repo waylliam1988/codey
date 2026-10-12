@@ -46,6 +46,7 @@ def service(mode="json"):
                 self.send_response(429)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
+                self.wfile.flush()
                 self.wfile.write(body)
                 self.wfile.flush()
                 return

@@ -12,6 +12,20 @@ from codey.toolchain.tool_spec import thaw_schema_value
 endpoint = "chat/completions"
 
 
+def pending_calls(items: list[dict[str, Any]]) -> tuple[str, ...]:
+    open_calls: list[str] = []
+    for item in items:
+        if item.get("role") == "assistant":
+            for call in item.get("tool_calls") or ():
+                if isinstance(call, dict) and isinstance(call.get("id"), str) and call["id"]:
+                    open_calls.append(call["id"])
+        elif item.get("role") == "tool":
+            call_id = item.get("tool_call_id")
+            if call_id in open_calls:
+                open_calls.remove(call_id)
+    return tuple(open_calls)
+
+
 def decode_exchange(body: dict[str, Any], *, text_only: bool,
                     text_decoder: Callable[[str], str | AssistantTurn] | None,
                     ) -> tuple[AssistantTurn, list[dict[str, Any]] | None]:

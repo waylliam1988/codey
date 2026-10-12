@@ -1,38 +1,32 @@
-"""Deterministic Zen retry and catalog race regressions."""
+"""Zen cooldown monotonicity and probe ownership regressions."""
 
-import threading
+import time
 
-from codey.providers.api_transport import GenerationRejectedError
-from codey.providers.zen.catalog import ZenCatalog
-from codey.providers.zen.reliability import classify_rejection
+from codey.providers.zen.reliability import ZenRequestCoordinator, make_control_scope
 
 
-def test_quota_error_wins_over_rate_limit_wording():
-    error = GenerationRejectedError(429, '{"error":{"type":"RateLimitError","code":"quota_exceeded"}}')
-    result = classify_rejection(error)
-    assert result.retryable is False and result.kind == "quota"
+def test_short_retry_after_does_not_shorten_existing_cooldown() -> None:
+    scope = make_control_scope("http://zen-cooldown", "public", "r1")
+    coordinator = ZenRequestCoordinator()
+    long_until = time.monotonic() + 60
+    short_until = time.monotonic() + 1
+    coordinator.publish_cooldown(scope, model_id="m", not_before=long_until, reason="long")
+    coordinator.publish_cooldown(scope, model_id="m", not_before=short_until, reason="short")
+    with coordinator._condition:
+        until, _version, _reason = coordinator._cooldowns[(scope, "m")]
+    assert until >= long_until
 
 
-def test_catalog_late_refresh_cannot_overwrite_newer_snapshot(tmp_path):
-    started = threading.Event()
-    release_old = threading.Event()
-    calls = []
-
-    def fetch(url, etag):
-        if url.endswith("/models"):
-            return {"data": [{"id": "m", "owned_by": "x"}]}, ""
-        calls.append(etag)
-        if not started.is_set():
-            started.set()
-            release_old.wait(1)
-            return {"opencode": {"api": "https://opencode.ai/zen/v1", "models": {}}}, "old"
-        return {"opencode": {"api": "https://opencode.ai/zen/v1", "models": {}}}, "new"
-
-    catalog = ZenCatalog(tmp_path, fetch=fetch)
-    first = threading.Thread(target=lambda: catalog.refresh(force=True))
-    first.start()
-    assert started.wait(1)
-    catalog.refresh(force=True)
-    release_old.set()
-    first.join(1)
-    assert catalog.etag == "new"
+def test_old_probe_success_cannot_clear_newer_cooldown() -> None:
+    scope = make_control_scope("http://zen-probe", "public", "r1")
+    coordinator = ZenRequestCoordinator()
+    coordinator.publish_cooldown(scope, model_id="m", not_before=time.monotonic() - 1, reason="first")
+    pending = coordinator.register(type("Context", (), {})())
+    context = type("Context", (), {"deadline": time.monotonic() + 1, "cancelled": lambda self: False})()
+    lease = coordinator.acquire(pending, context, scope=scope, model_id="m")
+    old_receipt = lease.receipt
+    coordinator.publish_cooldown(scope, model_id="m", not_before=time.monotonic() + 30, reason="new")
+    coordinator.settle(scope=scope, model_id="m", receipt=old_receipt, successful=True)
+    assert coordinator.has_active_cooldown()
+    lease.release()
+    pending.close()

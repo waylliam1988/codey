@@ -1555,7 +1555,7 @@ class ResearchServerHelperTests(unittest.TestCase):
                 "session_id": "",
                 "provider": "deepseek",
                 "max_turns": "999",
-                "continue_task": True,
+                "input": {"kind": "start_task", "text": "hello"},
                 "intent": "research",
             },
             submit,
@@ -1565,7 +1565,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(payload, {"ok": True, "run_id": "run-1"})
         # §1 entry auth: research intent carries strict_research through submit.
         submit.assert_called_once_with(
-            "default", None, "hello", 500, True, "deepseek", "research",
+            "default", None, "hello", 500, False, "deepseek", "research",
             requested_capabilities=(), strict_research=True, sources_open_required=False,
             project_changes_required=False, denied_capabilities=(),
         )
@@ -5739,11 +5739,11 @@ class SessionThreadingTests(unittest.TestCase):
             )
 
         first.new_chat.assert_called_once_with()
-        second.new_chat.assert_called_once_with()
-        self.assertIn("Return only one compact JSON object", second.send.call_args_list[0].args[0])
-        prompt = second.send.call_args_list[1].args[0]
-        self.assertIn("Factual handoff", prompt)
-        self.assertIn("Build the calculator", prompt)
+        # Continuing a task reuses the active protocol window.  A browser
+        # provider may still be a fresh object, but the continuation action
+        # itself must not force another new-chat rollover.
+        second.new_chat.assert_not_called()
+        prompt = second.send.call_args_list[0].args[0]
         self.assertIn("Continue the unfinished task.", prompt)
 
     def test_run_task_emits_receipt_and_inline_changes(self) -> None:

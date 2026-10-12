@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Literal
 
@@ -69,6 +70,9 @@ class ZenRequestCoordinator:
         self._cooldowns: dict[tuple[ControlScope, str], tuple[float, int, str]] = {}
         self._probes: dict[tuple[ControlScope, str], tuple[int, int]] = {}
         self._next_id = 0
+        self._waiter_seq = 0
+        self._waiters: deque[int] = deque()
+        self._waiter_meta: dict[int, tuple[ControlScope, str]] = {}
 
     @property
     def pending_count(self) -> int:
@@ -91,23 +95,51 @@ class ZenRequestCoordinator:
     def _remove(self, ident: int) -> None:
         with self._condition:
             self._pending.discard(ident)
+            for key, claim in list(self._probes.items()):
+                if claim[0] == ident:
+                    self._probes.pop(key, None)
             self._condition.notify_all()
 
     def acquire(self, pending: PendingRequest, context: RequestContext, *, scope: ControlScope,
                 model_id: str, timeout: float | None = None) -> RequestLease:
         end = min(context.deadline, time.monotonic() + timeout) if timeout is not None else context.deadline
         with self._condition:
+            self._waiter_seq += 1
+            ticket = self._waiter_seq
+            self._waiters.append(ticket)
+            key = (scope, model_id)
+            self._waiter_meta[ticket] = key
             while True:
                 if context.cancelled():
+                    self._waiters.remove(ticket)
+                    self._waiter_meta.pop(ticket, None)
+                    self._condition.notify_all()
                     raise RuntimeError("request cancelled while waiting for Zen request capacity")
                 now = time.monotonic()
                 cooldown = self._cooldowns.get((scope, model_id))
                 blocked_until = cooldown[0] if cooldown else 0.0
                 if now >= end:
+                    self._waiters.remove(ticket)
+                    self._waiter_meta.pop(ticket, None)
+                    self._condition.notify_all()
                     raise TimeoutError("Zen request admission timed out")
-                key = (scope, model_id)
                 probe_blocked = cooldown is not None and now >= blocked_until and key in self._probes
-                if now >= blocked_until and not probe_blocked and self._inflight < self.max_inflight:
+                eligible = None
+                if self._inflight < self.max_inflight:
+                    for queued in self._waiters:
+                        queued_key = self._waiter_meta.get(queued)
+                        if queued_key is None:
+                            continue
+                        queued_cooldown = self._cooldowns.get(queued_key)
+                        queued_until = queued_cooldown[0] if queued_cooldown else 0.0
+                        queued_probe = queued_cooldown is not None and now >= queued_until and queued_key in self._probes
+                        if now >= queued_until and not queued_probe:
+                            eligible = queued
+                            break
+                at_head = ticket == eligible
+                if at_head and now >= blocked_until and not probe_blocked and self._inflight < self.max_inflight:
+                    self._waiters.remove(ticket)
+                    self._waiter_meta.pop(ticket, None)
                     if cooldown is not None:
                         self._probes[key] = (id(pending), cooldown[1])
                     self._inflight += 1
@@ -125,7 +157,8 @@ class ZenRequestCoordinator:
         with self._condition:
             old = self._cooldowns.get((scope, model_id))
             version = (old[1] + 1) if old else 1
-            self._cooldowns[(scope, model_id)] = (not_before, version, reason)
+            effective = max(old[0], not_before) if old is not None else not_before
+            self._cooldowns[(scope, model_id)] = (effective, version, reason)
             self._probes.pop((scope, model_id), None)
             self._condition.notify_all()
             return version
@@ -205,10 +238,15 @@ class ZenResourcesRegistry:
         with cls._lock:
             if scope not in cls._resources:
                 cls._resources[scope] = (ZenRequestCoordinator(), 0)
-            return cls._sessions.setdefault(scope, ApiHttpSession())
+            session = cls._sessions.get(scope)
+            if session is None:
+                session = ApiHttpSession()
+                cls._sessions[scope] = session
+            return session
 
     @classmethod
     def release(cls, scope: ControlScope) -> None:
+        session: ApiHttpSession | None = None
         with cls._lock:
             current = cls._resources.get(scope)
             if current is None:
@@ -218,8 +256,8 @@ class ZenResourcesRegistry:
                     cls._resources[scope] = (current[0], 0)
                 else:
                     cls._resources.pop(scope, None)
-                    session = cls._sessions.pop(scope, None)
-                    if session is not None:
-                        session.release()
+                session = cls._sessions.pop(scope, None)
             else:
                 cls._resources[scope] = (current[0], current[1] - 1)
+        if session is not None:
+            session.release()

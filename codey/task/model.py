@@ -14,6 +14,37 @@ TaskKind = Literal["chat", "project", "research", "review", "planning"]
 
 
 @dataclass(frozen=True)
+class StartTask:
+    text: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str) or not self.text.strip():
+            raise ValueError("task text is required")
+
+
+@dataclass(frozen=True)
+class ResumeRun:
+    source_run_id: str
+    instruction: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_run_id, str) or not self.source_run_id.strip():
+            raise ValueError("source_run_id is required")
+
+
+@dataclass(frozen=True)
+class ResolveShellApproval:
+    approval_id: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.approval_id, str) or not self.approval_id.strip():
+            raise ValueError("approval_id is required")
+
+
+TaskInput = StartTask | ResumeRun | ResolveShellApproval
+
+
+@dataclass(frozen=True)
 class TaskSubmission:
     session_id: str
     project: str | None

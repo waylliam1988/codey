@@ -59,7 +59,11 @@ class ZenProvider:
         self.runtime.abandon_inflight()
 
     def new_chat(self, timeout: float | None = None) -> None:
+        self.reset_window()
+
+    def reset_window(self, expected_ref: Any = None) -> Any:
         self.abandon_inflight()
+        return self.runtime.reset_window(expected_ref)
 
     def close(self) -> None:
         with self._state_lock:
@@ -164,8 +168,31 @@ class ZenProvider:
     def send_tool_results(self, results: Any, tools: list[ProviderToolDefinition] | None = None, timeout: float | None = None) -> Any:
         return self._exchange("send_tool_results", results, tools, timeout)
 
+    def send_tool_results_bound(self, results: Any, window_ref: Any,
+                                tools: list[ProviderToolDefinition] | None = None,
+                                timeout: float | None = None) -> Any:
+        declared, inverse = prepare_declarations(tools)
+        with self._sending() as generation:
+            self._check_generation(generation)
+            turn: Any = self.runtime.send_tool_results_bound(results, window_ref, declared, timeout=timeout)
+            self._check_generation(generation)
+        if isinstance(turn, AssistantTurn):
+            return replace(turn, tool_calls=tuple(replace(call, name=inverse.get(call.name, call.name)) for call in turn.tool_calls))
+        return turn
+
     def acknowledge_tool_results(self, results: Any, declared_tools: list[ProviderToolDefinition], timeout: float | None = None) -> Any:
         return self._exchange("acknowledge_tool_results", results, declared_tools, timeout)
+
+    def acknowledge_tool_results_bound(self, results: Any, window_ref: Any,
+                                       declared_tools: list[ProviderToolDefinition], timeout: float | None = None) -> Any:
+        declared, _ = prepare_declarations(declared_tools)
+        with self._sending() as generation:
+            self._check_generation(generation)
+            turn = self.runtime.acknowledge_tool_results_bound(
+                results, window_ref, declared, timeout=timeout,
+            )
+            self._check_generation(generation)
+        return turn
 
 
 def catalog() -> ZenCatalog:
@@ -220,6 +247,7 @@ def open_selection(selection: ApiRunSelection) -> ZenProvider:
                            usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
                            budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens,
                            request_policy=ZenRequestPolicy(coordinator, scope),
+                           connection_revision=CONNECTION_REVISION,
                            http_session=http_session, transport_options={"body_idle_timeout": 30.0})
     provider.auxiliary_connection = ZenProvider
     wrapped = ZenProvider(provider,

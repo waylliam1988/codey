@@ -14,6 +14,7 @@ from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
 from codey.providers.base import ChatProvider
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.observe.events import RunEvent, print_run_event
 from codey.toolchain.runtime import ToolOutcome
 
@@ -47,6 +48,7 @@ class RecoveredToolOutcome:
     # any tool (including run/edit) may be redelivered from its durable
     # receipt. False means safe-replay rows, which stay safe-tools-only.
     redelivered: bool = False
+    window_ref: ProtocolWindowRef | None = None
 
 
 @dataclass(frozen=True)

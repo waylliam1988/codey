@@ -34,6 +34,7 @@ from codey.providers.compaction import CompactionCoordinator, ContextSnapshot
 from codey.providers.context_checkpoint import ContextRange, output_reduction_ready, replace_range
 from codey.providers.context_ledger import ContextLedger, digest
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget, RequestContextCount
+from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 
 DEFAULT_TIMEOUT = 600.0
 DEFAULT_TEMPERATURE = 0.3
@@ -84,6 +85,7 @@ class ApiProvider:
         request_policy: RequestPolicy | None = None,
         transport_options: Any = None,
         http_session: Any = None,
+        connection_revision: str = "runtime-v1",
     ) -> None:
         """Runtime only: the target is already resolved (no env/discovery)."""
         if not base_url.strip():
@@ -133,6 +135,8 @@ class ApiProvider:
         self.configure_request = configure_request
         self.on_usage: Callable[[ApiExchangeUsage], None] = lambda record: None
         self.connection_id = ""
+        self.connection_revision = connection_revision
+        self._window_ref: ProtocolWindowRef | None = None
         self.last_context_count = RequestContextCount(None, "unknown")
         self._last_output_estimate = 0
         self.request_headers = request_headers
@@ -178,7 +182,7 @@ class ApiProvider:
         return f"{self.base_url} ({self.model})"
 
     def new_chat(self, timeout: float | None = None) -> None:
-        self.abandon_inflight()
+        self.reset_window()
 
     def close(self) -> None:
         self._invalidate_inflight(reset_view=False)
@@ -206,7 +210,43 @@ class ApiProvider:
             return previous[1] if previous is not None and previous[0] == reply else ""
 
     def abandon_inflight(self) -> None:
-        self._invalidate_inflight(reset_view=True)
+        self._invalidate_inflight(reset_view=False)
+
+    @property
+    def window_ref(self) -> ProtocolWindowRef | None:
+        with self._state_lock:
+            return self._window_ref
+
+    def _binding(self) -> ProviderBinding:
+        return ProviderBinding(
+            self.connection_id or "local", self.connection_revision, self.model,
+            self.api_protocol, self.model_identity,
+        )
+
+    def reset_window(self, expected_ref: ProtocolWindowRef | None = None) -> ProtocolWindowRef:
+        if not self._send_lock.acquire(blocking=False):
+            raise RuntimeError("API provider busy: cannot reset protocol window")
+        try:
+            with self._state_lock:
+                current = self._window_ref
+                if expected_ref is not None and current != expected_ref:
+                    raise ValueError("protocol window reference mismatch")
+                pending = tuple(self._codec.pending_calls(self._messages))
+                if pending:
+                    raise ValueError("cannot reset protocol window with pending calls")
+                if self._active_response is not None or self._active_control is not None:
+                    raise RuntimeError("API provider busy: cannot reset protocol window")
+                next_ref = ProtocolWindowRef.new(self._context_session or "unbound", self._binding())
+                self.context_ledger.commit([], window_ref=next_ref, allow_window_change=True)
+                self._generation += 1
+                self._window_ref = next_ref
+                self._messages = []
+                self._history_revision += 1
+                self._declared_tools = []
+                self._last_reasoned_reply = None
+                return next_ref
+        finally:
+            self._send_lock.release()
 
     def _invalidate_inflight(self, *, reset_view: bool) -> None:
         """Cancel sockets before any storage work; late commits are invalidated."""
@@ -216,15 +256,16 @@ class ApiProvider:
             self._generation += 1
             response, self._active_response = self._active_response, None
             control, self._active_control = self._active_control, None
-            self._messages = []
+            if reset_view:
+                self._messages = []
             self._history_revision += 1
             auxiliary = self._auxiliary
             self._declared_tools = []
             self._last_reasoned_reply = None
-        abort_response(response)
         if control is not None:
             with contextlib.suppress(Exception):
                 control.cancel()
+        abort_response(response)
         if auxiliary is not None:
             auxiliary.abandon_inflight()
         if reset_view:
@@ -261,8 +302,16 @@ class ApiProvider:
                           timeout: float | None = None) -> AssistantTurn:
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout)
 
+    def send_tool_results_bound(self, results: list[ProviderToolResult], window_ref: ProtocolWindowRef,
+                                tools: list[ProviderToolDefinition] | None = None,
+                                timeout: float | None = None) -> AssistantTurn:
+        """Deliver native results only to the exact protocol window that created them."""
+        return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
+                              expected_window_ref=window_ref)
+
     def _exchange(self, pending: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
-                  *, timeout: float | None = None, text_only: bool = False) -> AssistantTurn:
+                  *, timeout: float | None = None, text_only: bool = False,
+                  expected_window_ref: ProtocolWindowRef | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
         from codey.providers.error_classification import OutputLengthError
 
@@ -271,6 +320,8 @@ class ApiProvider:
         committed = False
         try:
             with self._state_lock:
+                if expected_window_ref is not None and self._window_ref != expected_window_ref:
+                    raise ValueError("protocol window reference mismatch")
                 generation = self._inflight_generation = self._generation
                 base_revision = self._history_revision
                 candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
@@ -293,25 +344,40 @@ class ApiProvider:
                                   (turn.text, turn.reasoning) if output is not None else None)
             committed = output is not None
             if committed and self._request_context is not None:
-                self.request_policy.observe_success(self._request_context, self._request_receipt)
+                # Usage/diagnostic observation is optional.  A committed
+                # protocol answer must not become a failed exchange because
+                # an observer is unavailable or malfunctioning.
+                with contextlib.suppress(Exception):
+                    self.request_policy.observe_success(self._request_context, self._request_receipt)
             return turn
         finally:
+            main_error = __import__("sys").exc_info()[1]
+            settle_error: BaseException | None = None
             if self._request_context is not None:
                 settle = getattr(self.request_policy, "settle", None)
                 if settle is not None:
-                    settle(self._request_context, self._request_receipt)
+                    try:
+                        settle(self._request_context, self._request_receipt)
+                    except BaseException as exc:  # cleanup must continue
+                        settle_error = exc
             self._request_context = None
             self._request_receipt = None
             pending_request = self._pending_request
             self._pending_request = None
             if pending_request is not None:
-                pending_request.close()
+                try:
+                    pending_request.close()
+                except BaseException as exc:
+                    if settle_error is None:
+                        settle_error = exc
             with self._state_lock:
                 self._active_response = None
                 self._active_control = None
             self._send_lock.release()
             if committed and self.purpose == "conversation":
                 self._schedule_maintenance()
+            if settle_error is not None and main_error is None:
+                raise settle_error
 
     def _commit_exchange(self, generation: int, base_revision: int, candidate: list[dict[str, Any]],
                          pending: list[dict[str, Any]], output: list[dict[str, Any]],
@@ -325,7 +391,7 @@ class ApiProvider:
             if base_revision != self._history_revision:
                 candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt, tools=tools)
                 checkpoints = []
-            self.context_ledger.commit([*candidate, *output], events=[*pending, *output],
+            self.context_ledger.commit([*candidate, *output], events=[*pending, *output], window_ref=self._window_ref,
                 checkpoint={"kind": "transaction", "segments": checkpoints} if checkpoints else None)
             self._compaction.accept(checkpoints)
             self._messages = [*candidate, *output]
@@ -349,9 +415,9 @@ class ApiProvider:
         pending = self.request_policy.register(context)
         self._pending_request = pending
         self._request_context = context
-        budget = AttemptBudget(6 if isinstance(self.request_policy, LocalRequestPolicy) else 3)
+        budget = AttemptBudget(max(1, int(getattr(self.request_policy, "max_attempts", 3))))
         last_error: BaseException | None = None
-        for attempt in range(3):
+        for attempt in range(budget.max_total):
             lease = None
             try:
                 if not budget.reserve("http"):
@@ -363,34 +429,26 @@ class ApiProvider:
                 return self._generate_attempt(payload, deadline, connection_id, sink, budget)
             except api_transport.GenerationRejectedError as exc:
                 last_error = exc
-                if not isinstance(self.request_policy, LocalRequestPolicy):
-                    directive = self.request_policy.observe_failure(context, lease, exc, budget)
-                    if lease is not None:
-                        lease.release()
-                        lease = None
-                    if not directive.retry:
-                        raise
-                    if attempt == 2:
-                        raise exc
-                    if directive.not_before is not None:
-                        wait_until(directive.not_before, context)
-                    continue
-                # Complete overload rejection only. Gateway/connection failures
-                # may hide an accepted generation and must not be replayed.
-                delay = exc.retry_after if exc.retry_after is not None else .25 * (2 ** attempt)
-                if exc.status != 503 or attempt == 2 or time.monotonic() + delay >= deadline:
-                    raise
+                directive = self.request_policy.observe_failure(context, lease, exc, budget)
                 if lease is not None:
                     lease.release()
                     lease = None
-                until = time.monotonic() + delay
-                while True:
-                    if self._is_cancelled():
-                        raise api_transport.GenerationNotSentError("generation retry cancelled before submission") from exc
-                    remaining = until - time.monotonic()
-                    if remaining <= 0:
-                        break
-                    time.sleep(min(.02, remaining))
+                if not directive.retry or attempt + 1 >= budget.max_total:
+                    raise
+                if directive.not_before is not None:
+                    wait_until(directive.not_before, context)
+                continue
+            except api_transport.GenerationNotSentError as exc:
+                last_error = exc
+                directive = self.request_policy.observe_failure(context, lease, exc, budget)
+                if lease is not None:
+                    lease.release()
+                    lease = None
+                if not directive.retry or attempt + 1 >= budget.max_total:
+                    raise
+                if directive.not_before is not None:
+                    wait_until(directive.not_before, context)
+                continue
             finally:
                 if lease is not None:
                     lease.release()
@@ -496,10 +554,34 @@ class ApiProvider:
                 return
             if self._context_session:
                 self.abandon_inflight()
-            ledger = ContextLedger.for_session(Path(state_home), session_id, self.model_identity)
+            ledger = ContextLedger.for_protocol_session(Path(state_home), session_id,
+                                                        ProtocolWindowRef.new(session_id, self._binding()))
+            if ledger.window_ref is not None and ledger.window_ref.binding != self._binding():
+                # A model/protocol change creates a new protocol window, but
+                # it may never discard an unanswered native call.  The
+                # protocol view is shared by all model bindings, so inspect
+                # both codecs before recording the empty view for the new
+                # binding.  Accepted events remain in the journal as facts;
+                # only the active protocol view changes after this check.
+                pending: set[str] = set()
+                from codey.providers import api_chat, api_responses
+
+                for codec in (self._codec, api_chat, api_responses):
+                    with contextlib.suppress(Exception):
+                        pending.update(codec.pending_calls(ledger.view))
+                if pending:
+                    raise ValueError(
+                        "cannot switch protocol window while calls are pending: "
+                        + ", ".join(sorted(pending))
+                    )
+                ledger.commit([], window_ref=ProtocolWindowRef.new(session_id, self._binding()),
+                              allow_window_change=True)
             self.context_ledger = ledger
             self._context_session = session_id
             self._messages = copy.deepcopy(ledger.view)
+            self._window_ref = ledger.window_ref or ProtocolWindowRef.new(session_id, self._binding())
+            if ledger.sequence == 0:
+                ledger.commit([], window_ref=self._window_ref)
 
     def export_work_state(self) -> str:
         return self.context_ledger.portable_state()
@@ -675,6 +757,30 @@ class ApiProvider:
                 candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
                                                  tools=declared_tools)
                 self.context_ledger.commit(candidate, events=pending)
+                self._messages = candidate
+                self._history_revision += 1
+                self._last_reasoned_reply = None
+            return AssistantTurn()
+        finally:
+            self._send_lock.release()
+
+    def acknowledge_tool_results_bound(self, results: list[ProviderToolResult],
+                                       window_ref: ProtocolWindowRef,
+                                       declared_tools: list[ProviderToolDefinition],
+                                       timeout: float | None = None) -> AssistantTurn:
+        """Close native call ids only in the protocol window that created them."""
+        if not self._send_lock.acquire(blocking=False):
+            raise RuntimeError("API provider busy: concurrent sends are not supported")
+        try:
+            with self._state_lock:
+                if self._window_ref != window_ref:
+                    raise ValueError("protocol window reference mismatch")
+                if any(tool not in self._declared_tools for tool in declared_tools):
+                    raise ValueError("terminal tools must belong to the previously declared set")
+                pending = self._codec.encode_results(results)
+                candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
+                                                 tools=declared_tools)
+                self.context_ledger.commit(candidate, events=pending, window_ref=window_ref)
                 self._messages = candidate
                 self._history_revision += 1
                 self._last_reasoned_reply = None
