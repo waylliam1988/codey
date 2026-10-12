@@ -16,6 +16,7 @@ from codey.providers.token_accounting import RequestContextCount
 from codey.providers.zen.catalog import ZenCatalog
 from codey.providers.zen.declarations import TEXT_PROMPT_PREFIX, prepare_declarations, transport_identity
 from codey.providers.zen.identity import CONNECTION_REVISION, ZEN_BASE_URL, ZenIdentity
+from codey.providers.zen.reliability import ZenRequestPolicy, ZenResourcesRegistry, make_control_scope
 from codey.providers.zen.usage import configure_usage, parser_for
 from codey.runtime.core import cancellation
 from codey.runtime.core.api_selection import ApiRunSelection
@@ -32,10 +33,13 @@ class ZenProvider:
     thread_safe_send = True
 
     def __init__(self, runtime: ApiProvider, *, on_plain_refused: Callable[[], None] | None = None,
-                 on_plain_succeeded: Callable[[], None] | None = None) -> None:
+                 on_plain_succeeded: Callable[[], None] | None = None,
+                 on_close: Callable[[], None] | None = None) -> None:
         self.runtime = runtime
         self.on_plain_refused = on_plain_refused
         self.on_plain_succeeded = on_plain_succeeded
+        self.on_close = on_close
+        self._closed = False
         self._send_lock = threading.Lock()
         self._state_lock = threading.RLock()
         self._generation = 0
@@ -62,6 +66,9 @@ class ZenProvider:
             self._generation += 1
             self._last_text_reply = None
         self.runtime.close()
+        if not self._closed and self.on_close is not None:
+            self._closed = True
+            self.on_close()
 
     @contextlib.contextmanager
     def _sending(self) -> Iterator[int]:
@@ -197,9 +204,11 @@ def validate_selection(selection: ApiRunSelection) -> None:
 def open_selection(selection: ApiRunSelection) -> ZenProvider:
     validate_selection(selection)
     identity = ZenIdentity()
+    scope = make_control_scope(ZEN_BASE_URL, "public", CONNECTION_REVISION)
+    coordinator = ZenResourcesRegistry.get_or_create(scope)
+    http_session = ZenResourcesRegistry.get_session(scope)
 
     def headers(base_url: str) -> dict[str, str]:
-        validate_selection(selection)
         return identity.headers(base_url)
 
     provider = ApiProvider(ZEN_BASE_URL, selection.model_id, api_key="public", api_protocol=selection.protocol,
@@ -209,11 +218,15 @@ def open_selection(selection: ApiRunSelection) -> ZenProvider:
                            context_keep_recent_tokens=selection.context_keep_recent_tokens, reasoning_effort=selection.reasoning_effort,
                            system_prompt="You are a coding assistant.",
                            usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
-                           budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens)
+                           budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens,
+                           request_policy=ZenRequestPolicy(coordinator, scope),
+                           http_session=http_session, transport_options={"body_idle_timeout": 30.0})
     provider.auxiliary_connection = ZenProvider
-    return ZenProvider(provider,
+    wrapped = ZenProvider(provider,
         on_plain_refused=lambda: catalog().access.record_plain_refusal(selection.model_id, selection.protocol),
-        on_plain_succeeded=lambda: catalog().access.record_plain_success(selection.model_id, selection.protocol))
+        on_plain_succeeded=lambda: catalog().access.record_plain_success(selection.model_id, selection.protocol),
+        on_close=lambda: ZenResourcesRegistry.release(scope))
+    return wrapped
 
 
 def model_payload() -> dict[str, Any]:

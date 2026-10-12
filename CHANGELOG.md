@@ -2,6 +2,15 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Zen/API request reliability and connection lifecycle (2026-10-12)
+
+- Add provider-neutral request policies, logical request admission, shared concurrency/cooldown state, bounded attempt budgets and cancellable waits. Zen injects only the confirmed short-window rate-limit allowlist; quota, eligibility and unknown rejections are never replayed automatically.
+- Cover connection, response-header, body and Stop phases. Body silence is measured from actual bytes; an SSE terminal event does not imply complete HTTP framing, and unknown submissions are never resent.
+- Enable a real Zen HTTP connection pool. Only completely consumed, reusable framing returns to the pool; `Connection: close`, cancellation, truncation, timeout and dirty connections are discarded. Proxy discovery, HTTP absolute targets and HTTPS CONNECT authentication are preserved.
+- Keep cross-task cooldown/probe state beyond provider references while closing idle sockets on final session release.
+- Add real-socket, proxy, reuse, slow-fragment, error-body and cancellation regressions. Production prompts, tool protocol and completion-gate semantics are unchanged.
+- Ruff, mypy, Pyrefly, diff and machine contract checks pass; final full pytest: **8453 passed, 30 skipped, 1508 subtests**. No additional Zen live smoke, release or tag.
+
 ## Unreleased - Preserve JSON in done.summary (2026-10-12)
 
 - Remove the kernel's secondary `json.loads()` check for `done.summary`.

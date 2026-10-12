@@ -2,6 +2,15 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - Zen/API 请求可靠性与连接生命周期（2026-10-12）
+
+- 新增 provider-neutral 请求策略、逻辑请求登记、共享并发/冷却、有限尝试预算和可取消等待；Zen 只注入精确的短期限流白名单，额度/资格/未知拒绝不自动重放。
+- API 传输覆盖建连、响应头、正文和 Stop；正文按实际 bytes 更新静默计时，SSE 终止事件不冒充 HTTP framing 完成，未知提交结果不重发。
+- Zen 启用真实 HTTP 连接池：完整消费且 framing 可复用的连接才回池；`Connection: close`、取消、断流、超时和脏连接直接销毁。代理发现、HTTP 绝对目标、HTTPS CONNECT 认证均保留。
+- 跨任务冷却和 probe 状态独立于 provider 引用生命周期；最后一个引用释放时关闭空闲连接，但保留未结算冷却。
+- 新增真实 socket、代理、连接复用、慢分片、错误正文和取消回归测试；生产 prompt、工具协议和完成门语义未改变。
+- Ruff、mypy、Pyrefly、diff、machine contract 通过；最终全量 **8453 passed、30 skipped、1508 subtests**。不重复 Zen 实机、不 release、不打 tag。
+
 ## 未发布 - 保留 done.summary 中的 JSON 答案（2026-10-12）
 
 - 删除内核对 `done.summary` 的二次 `json.loads()` 判断。摘要中的 JSON 对象、数组、

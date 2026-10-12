@@ -120,6 +120,7 @@ class ZenCatalog:
         self.updated = 0.0
         self.stale = False
         self.error = ""
+        self._refresh_version = 0
         try:
             cache = read_json_strict(self.path)
             if isinstance(cache, dict) and cache.get("schema_version") == 1:
@@ -134,9 +135,12 @@ class ZenCatalog:
         with self._lock:
             if not force and time.time() - self.updated < 60:
                 return self.models
-            try:
-                directory, etag = self.fetch(DIRECTORY_URL, self.etag)
-                directory = directory if directory is not None else self._directory
+            old_directory, old_etag = self._directory, self.etag
+            self._refresh_version += 1
+            version = self._refresh_version
+        try:
+                directory, etag = self.fetch(DIRECTORY_URL, old_etag)
+                directory = directory if directory is not None else old_directory
                 listing, _ = self.fetch(ZEN_BASE_URL + "/models", "")
                 if not isinstance(listing, dict) or not isinstance(listing.get("data"), list):
                     raise ValueError("Zen endpoint returned a malformed listing")
@@ -144,13 +148,28 @@ class ZenCatalog:
                 models = parse_models(directory, available)
                 snapshot = {"opencode": directory["opencode"]}
                 updated = time.time()
-                write_json_atomic(self.path, {"schema_version": 1, "directory": snapshot, "available": sorted(available),
+                with self._lock:
+                    if version != self._refresh_version:
+                        return self.models
+                    write_json_atomic(self.path, {"schema_version": 1, "directory": snapshot, "available": sorted(available),
                                               "etag": etag, "updated": updated})
-                self._directory, self.models, self.etag, self.updated = snapshot, models, etag, updated
-                self.stale, self.error = False, ""
-            except (OSError, ValueError, TypeError, KeyError) as exc:
-                self.stale, self.error = True, str(exc)[:240]
+                    self._directory, self.models, self.etag, self.updated = snapshot, models, etag, updated
+                    self.stale, self.error = False, ""
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            with self._lock:
+                if version == self._refresh_version:
+                    self.stale, self.error = True, str(exc)[:240]
+        with self._lock:
             return self.models
+
+    def require_cached(self, model_id: str, *, protocol: str = "") -> ZenModel:
+        """Validate a frozen selection without making a request."""
+        with self._lock:
+            models = self.models
+        for model in models:
+            if model.id == model_id and (not protocol or model.protocol == protocol):
+                return model
+        raise ValueError("selected model is not present in the cached Zen catalog")
 
     def require(self, model_id: str, *, protocol: str = "") -> ZenModel:
         for model in self.refresh():

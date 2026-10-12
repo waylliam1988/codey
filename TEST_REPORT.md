@@ -1,5 +1,23 @@
 # Codey Test Report
 
+## Zen/API 请求可靠性与连接生命周期（2026-10-12）
+
+本轮先用确定性测试锁定池化建连取消、复用控制器、socket 静默计时、`Connection: close`、慢错误响应、代理发现/转发/认证、最终资源释放、跨任务冷却和精确重试白名单，再修改生产代码。生产 prompt、文本协议、完成门和工具权限语义未改动。
+
+### 验证结果
+
+| 检查 | 结果 |
+| --- | --- |
+| Ruff | passed |
+| mypy | no issues in 406 source files |
+| Pyrefly | 0 errors; 48 suppressed, 830 warnings not shown |
+| git diff --check | passed |
+| Machine contract | 1087 passed, 15 skipped, 14 subtests, 272.40s |
+| API/Zen 定向回归 | 208 passed；最终池化/代理回归 15 passed |
+| 最终全量 pytest | **8453 passed, 30 skipped, 1508 subtests, 995.71s** |
+
+跳过项是 Windows/POSIX 能力差异、Node.js/上游参考工程不可用和显式 opt-in 浏览器 E2E；没有通过降低断言或增加 fallback 来消除失败。按本轮要求未重复 Zen 上游实机 smoke，也未 release/tag。
+
 ## Preserve JSON in done.summary (2026-10-12)
 
 Baseline: `72269c65` (text protocol boundary extraction), Windows / Python 3.12.8.

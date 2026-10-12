@@ -36,6 +36,8 @@ ALLOWED_FAILURE_FACTS = frozenset({
     "waited_for",
     "http_status",
     "service_error_type",
+    "service_error_code",
+    "upstream_request_id",
 })
 
 FAILURE_KINDS = frozenset({

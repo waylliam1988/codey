@@ -21,6 +21,14 @@ from codey.providers.api_metering import (
     estimate_request,
     no_reported_usage,
 )
+from codey.providers.api_request_policy import (
+    AttemptBudget,
+    LocalRequestPolicy,
+    PendingRequest,
+    RequestContext,
+    RequestPolicy,
+    wait_until,
+)
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.providers.compaction import CompactionCoordinator, ContextSnapshot
 from codey.providers.context_checkpoint import ContextRange, output_reduction_ready, replace_range
@@ -73,6 +81,9 @@ class ApiProvider:
         budget_source: str = "configuration",
         input_limit_tokens: int | None = None,
         purpose: str = "conversation",
+        request_policy: RequestPolicy | None = None,
+        transport_options: Any = None,
+        http_session: Any = None,
     ) -> None:
         """Runtime only: the target is already resolved (no env/discovery)."""
         if not base_url.strip():
@@ -80,6 +91,15 @@ class ApiProvider:
         if not model.strip():
             raise ValueError("model is required")
         self.purpose = purpose
+        self.request_policy = request_policy or LocalRequestPolicy()
+        self.transport_options = transport_options
+        self.http_session = http_session
+        self._session_released = False
+        if self.http_session is not None and hasattr(self.http_session, "retain"):
+            self.http_session.retain()
+        self._pending_request: PendingRequest | None = None
+        self._request_context: RequestContext | None = None
+        self._request_receipt: object | None = None
         self.context_ledger = ContextLedger()
         self._context_session = ""
         self._parent_cancelled: Callable[[], bool] = lambda: False
@@ -124,6 +144,7 @@ class ApiProvider:
         self._send_lock = threading.Lock()
         self._generation = 0
         self._active_response: Any = None
+        self._active_control: Any = None
         self._inflight_generation = 0
         self._declared_tools: list[ProviderToolDefinition] = []
         self._compaction = CompactionCoordinator(codec=self._codec, snapshot=self._context_snapshot,
@@ -161,6 +182,10 @@ class ApiProvider:
 
     def close(self) -> None:
         self._invalidate_inflight(reset_view=False)
+        if self.http_session is not None and not self._session_released:
+            self._session_released = True
+            if hasattr(self.http_session, "release"):
+                self.http_session.release()
 
     def normalize_reply(self, reply: str) -> object:
         """Normalize provider-specific text frames before kernel parsing."""
@@ -190,12 +215,16 @@ class ApiProvider:
         with self._state_lock:
             self._generation += 1
             response, self._active_response = self._active_response, None
+            control, self._active_control = self._active_control, None
             self._messages = []
             self._history_revision += 1
             auxiliary = self._auxiliary
             self._declared_tools = []
             self._last_reasoned_reply = None
         abort_response(response)
+        if control is not None:
+            with contextlib.suppress(Exception):
+                control.cancel()
         if auxiliary is not None:
             auxiliary.abandon_inflight()
         if reset_view:
@@ -211,6 +240,15 @@ class ApiProvider:
                 self._active_response = response
         if stale:
             abort_response(response)
+
+    def _opened_control(self, control: Any) -> None:
+        with self._state_lock:
+            stale = self._inflight_generation != self._generation
+            if not stale:
+                self._active_control = control
+        if stale:
+            with contextlib.suppress(Exception):
+                control.cancel()
 
     def send(self, text: str, timeout: float | None = None) -> str:
         return self._exchange([{"role": "user", "content": text}], None, timeout=timeout, text_only=True).text
@@ -254,10 +292,23 @@ class ApiProvider:
             self._commit_exchange(generation, base_revision, candidate, pending, output or [], tools, checkpoints,
                                   (turn.text, turn.reasoning) if output is not None else None)
             committed = output is not None
+            if committed and self._request_context is not None:
+                self.request_policy.observe_success(self._request_context, self._request_receipt)
             return turn
         finally:
+            if self._request_context is not None:
+                settle = getattr(self.request_policy, "settle", None)
+                if settle is not None:
+                    settle(self._request_context, self._request_receipt)
+            self._request_context = None
+            self._request_receipt = None
+            pending_request = self._pending_request
+            self._pending_request = None
+            if pending_request is not None:
+                pending_request.close()
             with self._state_lock:
                 self._active_response = None
+                self._active_control = None
             self._send_lock.release()
             if committed and self.purpose == "conversation":
                 self._schedule_maintenance()
@@ -293,15 +344,45 @@ class ApiProvider:
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
         connection_id, sink = self.connection_id, self.on_usage
         payload = self._admit_request(messages, tools, settings, deadline, checkpoints)
+        context = RequestContext(self.base_url, self.model, self.api_protocol, self.purpose, uuid4().hex, deadline,
+                                 self._is_cancelled)
+        pending = self.request_policy.register(context)
+        self._pending_request = pending
+        self._request_context = context
+        budget = AttemptBudget(6 if isinstance(self.request_policy, LocalRequestPolicy) else 3)
+        last_error: BaseException | None = None
         for attempt in range(3):
+            lease = None
             try:
-                return self._generate_attempt(payload, deadline, connection_id, sink)
+                if not budget.reserve("http"):
+                    if last_error is not None:
+                        raise last_error
+                    raise RuntimeError("request attempt budget exhausted")
+                lease = self.request_policy.acquire(pending, context)
+                self._request_receipt = lease
+                return self._generate_attempt(payload, deadline, connection_id, sink, budget)
             except api_transport.GenerationRejectedError as exc:
+                last_error = exc
+                if not isinstance(self.request_policy, LocalRequestPolicy):
+                    directive = self.request_policy.observe_failure(context, lease, exc, budget)
+                    if lease is not None:
+                        lease.release()
+                        lease = None
+                    if not directive.retry:
+                        raise
+                    if attempt == 2:
+                        raise exc
+                    if directive.not_before is not None:
+                        wait_until(directive.not_before, context)
+                    continue
                 # Complete overload rejection only. Gateway/connection failures
                 # may hide an accepted generation and must not be replayed.
                 delay = exc.retry_after if exc.retry_after is not None else .25 * (2 ** attempt)
                 if exc.status != 503 or attempt == 2 or time.monotonic() + delay >= deadline:
                     raise
+                if lease is not None:
+                    lease.release()
+                    lease = None
                 until = time.monotonic() + delay
                 while True:
                     if self._is_cancelled():
@@ -310,21 +391,29 @@ class ApiProvider:
                     if remaining <= 0:
                         break
                     time.sleep(min(.02, remaining))
+            finally:
+                if lease is not None:
+                    lease.release()
         raise AssertionError("unreachable generation retry state")
 
     def _generate_attempt(self, payload: dict[str, Any], deadline: float, connection_id: str,
-                          sink: Callable[[ApiExchangeUsage], None]) -> dict[str, Any]:
+                          sink: Callable[[ApiExchangeUsage], None], budget: AttemptBudget) -> dict[str, Any]:
         from codey.providers import api_transport
 
         exchange_id = uuid4().hex
         collector = UsageCollector(self.usage_parser)
-        count, budget, outcome = self.last_context_count, self.context_budget, "unknown"
+        count, context_budget, outcome = self.last_context_count, self.context_budget, "unknown"
         try:
             body = api_transport.generate(
                 f"{self.base_url}/{self._codec.endpoint}", payload, self._headers(),
                 timeout=max(0.001, deadline - time.monotonic()), observe=self._notify_http_attempt,
-                cancelled=self._is_cancelled, opened=self._opened_response,
+                cancelled=self._is_cancelled, opened=self._opened_response, on_control=self._opened_control,
                 on_event=collector.observe,
+                attempt_budget=budget,
+                idle_timeout=(self.transport_options or {}).get("body_idle_timeout")
+                if isinstance(self.transport_options, dict) else None,
+                http_session=self.http_session,
+                transport_options=self.transport_options if isinstance(self.transport_options, dict) else None,
             )
             outcome = "response"
             return body
@@ -335,7 +424,7 @@ class ApiProvider:
             outcome = "rejected"
             raise
         finally:
-            record = ApiExchangeUsage(exchange_id, connection_id, self.model, self.api_protocol, count, budget,
+            record = ApiExchangeUsage(exchange_id, connection_id, self.model, self.api_protocol, count, context_budget,
                                       collector.usage, collector.status, outcome, self.purpose)
             # Observation failure must never replay or invalidate a generated answer.
             with contextlib.suppress(OSError, ValueError):
@@ -432,6 +521,11 @@ class ApiProvider:
             thinking_enabled=self.thinking_enabled, tool_choice="auto", request_headers=self.request_headers,
             request_counter=self.request_counter, usage_parser=self.usage_parser,
             configure_request=self.configure_request, budget_source=budget.source, purpose="compaction")
+        client.request_policy = self.request_policy
+        client.transport_options = self.transport_options
+        client.http_session = self.http_session
+        if client.http_session is not None and hasattr(client.http_session, "retain"):
+            client.http_session.retain()
         client._parent_cancelled = lambda: generation != self._generation
         client.bind_usage(self.connection_id, self.on_usage)
         return client
