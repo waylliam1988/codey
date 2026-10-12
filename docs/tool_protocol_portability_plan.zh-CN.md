@@ -27,6 +27,11 @@ canonical ingestion。本文档中 0.5 之后的部分仍是后续 protocol port
 
 ## 2026 共享内核状态
 
+2026-10-12：任务文本解码已等价迁入 `protocols/text_turn.py`；生产内核不再
+扫描原始字符串，旧 `JsonToolCodec` 仅保留为测试基线。网页补丁原地保留，
+生产提示、答案与完成规则不变；本次不采用强制 `done.summary` 的新回答约定。
+具体边界见 [Runtime 架构](runtime_architecture.zh-CN.md)。
+
 共享任务内核已经替代旧的 coding/research 生产循环：网页 JSON 与本地 native
 tool call 都经 `codey.operations.kernel_protocol`、`task_loop` 和统一完成门处理。
 Research 的旧 `controller.py` 与 `protocols.py` 已移出生产包；需要保留的研究 codec

@@ -1706,8 +1706,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_repair_context_is_rejected_as_an_unknown_model_tool(self) -> None:
         # Behavioral side of the same boundary: calling the repair context
         # through either codec is a typed unknown-tool error, not a tool.
-        from codey.protocols.json_codec import JsonToolCodec
         from codey.research.tool_contract import PROTOCOL_UNKNOWN_TOOL
+        from tests.support.legacy_json_codec import JsonToolCodec
         from tests.support.research_protocol import JsonToolCodec as ResearchCodec
 
         payload = json.dumps(
@@ -1755,11 +1755,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("write_file", TOOL_DEFINITION_BY_NAME)
         self.assertNotIn("create_file", TOOL_DEFINITION_BY_NAME)
 
-    def test_json_codec_keeps_one_tool_plan_parse_path(self) -> None:
-        source = (ROOT / "codey" / "protocols" / "json_codec.py").read_text(encoding="utf-8")
+    def test_text_turn_codec_owns_one_production_decode_path(self) -> None:
+        source = (ROOT / "codey" / "protocols" / "text_turn.py").read_text(encoding="utf-8")
 
-        self.assertNotIn("def _parse_object(", source)
-        self.assertNotIn("def _text(", source)
+        self.assertIn("def decode_text_turn(", source)
+        self.assertFalse((ROOT / "codey" / "protocols" / "json_codec.py").exists())
 
 
     def test_run_trace_only_consumes_research_projection_leaves(self) -> None:

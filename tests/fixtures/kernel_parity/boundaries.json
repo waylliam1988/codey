@@ -177,6 +177,16 @@
         "tests/test_chat_workspace_tools_and_answer_completion.py",
         "tests/test_chat_workspace_receipt_and_restart_restore.py"
       ]
+    },
+    "codey/protocols/json_codec.py": {
+      "current_owners": [
+        "tests/support/legacy_json_codec.py",
+        "codey/protocols/text_turn.py"
+      ],
+      "tests": [
+        "tests/test_legacy_json_codec_has_no_production_consumers.py",
+        "tests/test_text_turn_decoder_contract.py"
+      ]
     }
   },
   "entry_chains": {

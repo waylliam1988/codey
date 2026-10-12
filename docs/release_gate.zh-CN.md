@@ -3,6 +3,14 @@
 > 借鉴 `reference-projects/opencode`：bug 理论上永远改不完，发布不靠“零 bug”，靠**固定门槛全绿**。
 > 本文档是 codey 的发布门槛标准。暂不发版时也要按此门槛跑实机，记录结果。
 
+2026-10-12 文本边界整理不扩大 gate 判断语义：release Chat 仍是连接冒烟，
+read/create 等任务用例走真实任务入口；UI Chat 验证浏览器中的实际任务交付。
+UI gate 新建隔离状态时按 `API_CONNECTIONS` 启用所选 API provider/model，
+网页 provider 仍使用网站设置，不创建 `sources["mimo"]` 等 API 条目。
+KoboldCpp 本轮 native chat/read/create 与 UI Chat 通过；完整矩阵、网页及 Zen
+上游实机未覆盖。机器契约有 15 项必跑 Node.js 检查因环境未运行，不能称发布门全绿。
+完整数字、首次失败与产物目录见 [TEST_REPORT](../TEST_REPORT.md)。
+
 ## 0. 结论（给语音输入的你）
 
 - opencode 的门槛 = `unit（linux+windows）` + `e2e（playwright app）` + `typecheck` + `lint` + `generated client 检查` + `HttpApi exerciser（coverage/auth/effect，fail-on-missing/skip）`。

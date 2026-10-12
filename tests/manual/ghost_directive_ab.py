@@ -20,9 +20,9 @@ import contextlib
 from codey.ghost.directive import render_ghost_directive
 from codey.ghost.hebbian import GhostNode
 from codey.ghost.schema import clip_signal_text
-from codey.protocols import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
+from tests.support.legacy_json_codec import JsonToolCodec
 
 ARMS = ("baseline", "directive")
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

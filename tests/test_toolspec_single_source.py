@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import unittest
 
+from tests.support.kernel_protocol_test_helpers import normalize_turn
+
 
 class ToolSpecSingleSourceTests(unittest.TestCase):
     def test_custom_tool_passes_via_spec_alone(self) -> None:
         from types import SimpleNamespace
 
-        from codey.operations import kernel_protocol as kp
         from codey.toolchain import tool_spec as ts
 
         name = "custom_demo_tool_xyz"
@@ -16,12 +17,12 @@ class ToolSpecSingleSourceTests(unittest.TestCase):
             ts.register_custom_tool(name, grant="control", parameters=(("msg", {"type": "string"}),), required=("msg",))
             policy = SimpleNamespace(allows=lambda g: True)
             # Missing required -> rejected via spec.
-            plan = kp.normalize_turn(
+            plan = normalize_turn(
                 '{"tool":"' + name + '","args":{}}', policy=policy,
             )
             self.assertTrue(plan.protocol_error, plan)
             # Present required -> accepted via spec alone (no legacy repair).
-            plan2 = kp.normalize_turn(
+            plan2 = normalize_turn(
                 '{"tool":"' + name + '","args":{"msg":"hi"}}', policy=policy,
             )
             self.assertEqual(plan2.protocol_error, "")
@@ -32,10 +33,9 @@ class ToolSpecSingleSourceTests(unittest.TestCase):
     def test_unknown_tool_denied_never_control(self) -> None:
         from types import SimpleNamespace
 
-        from codey.operations import kernel_protocol as kp
 
         policy = SimpleNamespace(allows=lambda g: True)
-        plan = kp.normalize_turn('{"tool":"no_such_tool_xyz","args":{}}', policy=policy)
+        plan = normalize_turn('{"tool":"no_such_tool_xyz","args":{}}', policy=policy)
         self.assertEqual(plan.calls, [])
         self.assertTrue(plan.protocol_error)
         self.assertIsNone(plan.control)
@@ -44,10 +44,9 @@ class ToolSpecSingleSourceTests(unittest.TestCase):
         # Shape passes via spec (path present), traversal blocked at execution.
         from types import SimpleNamespace
 
-        from codey.operations import kernel_protocol as kp
 
         policy = SimpleNamespace(allows=lambda g: True)
-        plan = kp.normalize_turn('{"tool":"read_file","args":{"path":"../escape"}}', policy=policy)
+        plan = normalize_turn('{"tool":"read_file","args":{"path":"../escape"}}', policy=policy)
         # Spec shape allows path-like strings; execution boundary must deny.
         # Here we only lock that protocol does not claim safety (it may pass
         # shape); the execution test below locks the deny.
@@ -74,42 +73,39 @@ class ToolSpecSingleSourceTests(unittest.TestCase):
         # Old codec permission scenario now via production normalize_turn.
         from types import SimpleNamespace
 
-        from codey.operations import kernel_protocol as kp
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
         policy = SimpleNamespace(allows=lambda g: g != "project.write")
         reply = AssistantTurn(
             text="", tool_calls=(ProviderToolCall(id="c1", name="edit", arguments={"path": "a.py"}),)
         )
-        plan = kp.normalize_turn(reply, policy=policy)
+        plan = normalize_turn(reply, policy=policy)
         self.assertTrue(plan.protocol_error)
         self.assertEqual(plan.calls, [])
 
     def test_migrated_native_bad_args_become_protocol_error(self) -> None:
         from types import SimpleNamespace
 
-        from codey.operations import kernel_protocol as kp
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
         policy = SimpleNamespace(allows=lambda g: True)
         reply = AssistantTurn(
             text="", tool_calls=(ProviderToolCall(id="c2", name="read_file", arguments={"offset": "x"}),)
         )
-        plan = kp.normalize_turn(reply, policy=policy)
+        plan = normalize_turn(reply, policy=policy)
         self.assertTrue(plan.protocol_error)
         self.assertEqual(plan.calls, [])
 
     def test_migrated_mixed_done_fails_whole_turn_both_orders(self) -> None:
         from types import SimpleNamespace
 
-        from codey.operations import kernel_protocol as kp
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
         policy = SimpleNamespace(allows=lambda g: True)
         read = ProviderToolCall(id="r", name="read_file", arguments={"path": "app.py"})
         done = ProviderToolCall(id="d", name="done", arguments={"summary": "bye"})
         for calls in ((done, read), (read, done)):
-            plan = kp.normalize_turn(AssistantTurn(text="", tool_calls=calls), policy=policy)
+            plan = normalize_turn(AssistantTurn(text="", tool_calls=calls), policy=policy)
             self.assertTrue(plan.protocol_error, calls)
             self.assertEqual(plan.calls, [])
             self.assertIsNone(plan.control)
@@ -117,11 +113,10 @@ class ToolSpecSingleSourceTests(unittest.TestCase):
     def test_migrated_missing_call_id_fails_before_execution(self) -> None:
         from types import SimpleNamespace
 
-        from codey.operations import kernel_protocol as kp
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
         policy = SimpleNamespace(allows=lambda g: True)
-        plan = kp.normalize_turn(
+        plan = normalize_turn(
             AssistantTurn(
                 text="", tool_calls=(ProviderToolCall(id="", name="read_file", arguments={"path": "app.py"}),)
             ),

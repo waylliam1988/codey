@@ -23,11 +23,10 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.agents.protocol import protocol_repair_prompt
-from codey.protocols import JsonToolCodec
-from codey.protocols.json_codec import _balanced_json_objects
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.runtime.core.models import ToolPlan
+from tests.support.legacy_json_codec import JsonToolCodec, _balanced_json_objects
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "typed")

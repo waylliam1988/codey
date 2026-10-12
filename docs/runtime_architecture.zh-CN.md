@@ -5,6 +5,29 @@
 
 完整包结构与当前函数入口见[项目结构与职责地图](project_structure.zh-CN.md)。
 
+## 文本协议边界（2026-10-12）
+
+任务入口在 `task_loop._receive_turn_plan` 将文本模式的字符串交给
+`protocols/text_turn.decode_text_turn`；已有 `AssistantTurn` 直接进入内核。
+协议选择仍使用本轮冻结结果，不将文本调用伪装成带原生 ID 的 API 调用。
+辅助讨论、私有评审等 `provider.send()` 不自动启用任务文本解码。
+
+```text
+网页驱动读取／既有网页修复 → 文本 codec ┐
+文本 Local               → 文本 codec ├→ kernel_protocol → 执行／完成门
+结构化 Local／Zen        → AssistantTurn┘
+```
+
+文本 codec 只产生有序 `TextRequests`、`TextAnswer` 或保留诊断的 `TextError`，
+不读取项目、不授予权限、不执行、不判断完成。`done`、`read_files`、`parallel`
+仍由内核进行控制判断和批次展开。内核校验冻结快照、权限、参数和调用身份，
+拒绝原始字符串。旧 `JsonToolCodec` 无生产消费者，历史基线只在测试支持目录。
+
+生产提示及当前答案语义不变：整段工具形状 JSON 仍可能被识别为调用，
+`done.summary` 的嵌套调用拒绝仍保留。本轮没有解决 JSON 示例歧义。
+网页补丁维持各驱动原触发条件、顺序、输出及失败处理，不强行统一修复流水线。
+GLM 的代码弯引号修复即使外层 JSON 有效也可生效；Local、Zen 不进入网页修复链。
+
 ## 一句话
 
 durable entries 进来，经过一次标准解析，变成决策或写入，观察层只能看。

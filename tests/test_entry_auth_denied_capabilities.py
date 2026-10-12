@@ -10,9 +10,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from codey.app.api import derive_entry_auth
-from codey.operations.kernel_protocol import normalize_turn
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 def _submission_from_entry(entry) -> SimpleNamespace:

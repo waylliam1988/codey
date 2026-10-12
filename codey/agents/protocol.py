@@ -7,7 +7,8 @@ import re
 from pathlib import Path
 
 from codey.protocols import ProtocolCodec
-from codey.protocols.json_codec import (
+from codey.protocols.json_scanner import extract_candidate_json_objects
+from codey.protocols.protocol_errors import (
     PROTOCOL_DIRECT_ANSWER,
     PROTOCOL_DISALLOWED_TOOL,
     PROTOCOL_INVALID_ARGS,
@@ -15,7 +16,6 @@ from codey.protocols.json_codec import (
     PROTOCOL_NESTED_TOOL_IN_DONE,
     PROTOCOL_NO_JSON,
     PROTOCOL_UNKNOWN_TOOL,
-    _balanced_json_objects,
 )
 from codey.runtime.core.models import ToolCall, ToolPlan
 from codey.toolchain.runtime import safe_join
@@ -347,7 +347,7 @@ def previous_tool_object(
     kind: str,
     error: str,
 ) -> dict[str, object] | None:
-    objects = _balanced_json_objects(previous_reply)
+    objects = extract_candidate_json_objects(previous_reply)
     if kind == PROTOCOL_UNKNOWN_TOOL:
         target_tool = unknown_tool_from_error(error)
         if target_tool:

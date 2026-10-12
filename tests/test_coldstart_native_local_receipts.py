@@ -55,8 +55,8 @@ def test_native_codec_hash_is_native_not_json() -> None:
 def test_native_done_parses_and_respects_permissions() -> None:
     from types import SimpleNamespace
 
-    from codey.operations.kernel_protocol import normalize_turn
     from codey.providers.base import AssistantTurn, ProviderToolCall
+    from tests.support.kernel_protocol_test_helpers import normalize_turn
 
     policy = SimpleNamespace(allows=lambda g: True)
     plan = normalize_turn(

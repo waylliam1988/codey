@@ -9,6 +9,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+from tests.support.kernel_protocol_test_helpers import normalize_turn
+
 
 def _policy():
     return SimpleNamespace(allows=lambda grant: True)
@@ -16,9 +18,8 @@ def _policy():
 
 class ValidatorExceptionFailClosedTests(unittest.TestCase):
     def test_fenced_tool_example_is_an_answer_without_execution(self) -> None:
-        from codey.operations import kernel_protocol as kp
 
-        plan = kp.normalize_turn(
+        plan = normalize_turn(
             '```json\n{"tool":"read_file","args":{"path":"app.py"}}\n```',
             policy=_policy(),
         )
@@ -29,9 +30,8 @@ class ValidatorExceptionFailClosedTests(unittest.TestCase):
         assert plan.control.body.startswith("```json")
 
     def test_kernel_rejects_provider_markup_wrapping_canonical_json(self) -> None:
-        from codey.operations import kernel_protocol as kp
 
-        plan = kp.normalize_turn(
+        plan = normalize_turn(
             '<|tool_call>call:tool:read_file'
             '{"tool":"read_file","args":{"path":"app.py"}}'
             '<tool_call|>',
@@ -42,9 +42,8 @@ class ValidatorExceptionFailClosedTests(unittest.TestCase):
         assert plan.protocol_error_kind == "no_json"
 
     def test_kernel_rejects_provider_specific_tool_markup(self) -> None:
-        from codey.operations import kernel_protocol as kp
 
-        plan = kp.normalize_turn(
+        plan = normalize_turn(
             '<|tool_call>call:tool:read_file{path: "app.py"}<tool_call|>',
             policy=_policy(),
         )
@@ -63,7 +62,7 @@ class ValidatorExceptionFailClosedTests(unittest.TestCase):
             self.assertEqual(validated, {})
             self.assertTrue(error, "validator exception must return an error, not empty")
 
-            plan = kp.normalize_turn(
+            plan = normalize_turn(
                 '{"tool":"done","args":{"summary":"hi","undeclared":"x"}}',
                 policy=_policy(),
             )
@@ -71,7 +70,6 @@ class ValidatorExceptionFailClosedTests(unittest.TestCase):
             self.assertTrue(plan.protocol_error, "protocol error must be set")
 
     def test_native_done_rejected_when_spec_validator_raises(self) -> None:
-        from codey.operations import kernel_protocol as kp
 
         def boom(name, args):
             raise RuntimeError("validator boom")
@@ -80,18 +78,17 @@ class ValidatorExceptionFailClosedTests(unittest.TestCase):
         reply = SimpleNamespace(tool_calls=[call], text="")
 
         with mock.patch("codey.toolchain.tool_spec.validate_args_against_spec", side_effect=boom):
-            plan = kp.normalize_turn(reply, policy=_policy())
+            plan = normalize_turn(reply, policy=_policy())
             self.assertIsNone(plan.control)
             self.assertTrue(plan.protocol_error)
 
     def test_json_tool_rejected_when_spec_validator_raises(self) -> None:
-        from codey.operations import kernel_protocol as kp
 
         def boom(name, args):
             raise RuntimeError("validator boom")
 
         with mock.patch("codey.toolchain.tool_spec.validate_args_against_spec", side_effect=boom):
-            plan = kp.normalize_turn(
+            plan = normalize_turn(
                 '{"tool":"read_file","args":{"path":"a.py"}}',
                 policy=_policy(),
             )

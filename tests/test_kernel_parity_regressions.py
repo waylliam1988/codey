@@ -6,11 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.operations.kernel_protocol import normalize_turn
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from tests.support.kernel_parity_cases import json_call
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 from tools.kernel_parity import ROOT, load_baseline, probe
 
 

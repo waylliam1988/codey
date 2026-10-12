@@ -1,6 +1,6 @@
-from codey.operations.kernel_protocol import normalize_turn
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 def test_shell_mixed_with_read_is_rejected_before_execution() -> None:

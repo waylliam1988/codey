@@ -181,9 +181,9 @@ class HybridScopeTests(unittest.TestCase):
 
 class DonePayloadTests(unittest.TestCase):
     def test_done_text_uses_only_summary(self) -> None:
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = build_task_policy(
             TaskSubmission(

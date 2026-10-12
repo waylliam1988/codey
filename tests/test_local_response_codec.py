@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.operations.kernel_protocol import normalize_turn
 from codey.operations.kernel_transport import call_provider_send
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import AssistantTurn
@@ -11,6 +10,7 @@ from codey.providers.local_response_codec import (
     normalize_local_reply,
     parse_local_tool_markup,
 )
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 def test_local_gemma_frame_normalizes_to_standard_tool_call() -> None:

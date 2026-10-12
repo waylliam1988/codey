@@ -4,16 +4,6 @@ import json
 import unittest
 from pathlib import Path
 
-from codey.protocols import JsonToolCodec
-from codey.protocols.json_codec import (
-    PROTOCOL_DIRECT_ANSWER,
-    PROTOCOL_DISALLOWED_TOOL,
-    PROTOCOL_INVALID_ARGS,
-    PROTOCOL_NATIVE_TOOL_DENIAL,
-    PROTOCOL_NESTED_TOOL_IN_DONE,
-    PROTOCOL_NO_JSON,
-    PROTOCOL_UNKNOWN_TOOL,
-)
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.definition import (
     MAX_ACCIDENTAL_TOOL_CALLS,
@@ -25,6 +15,16 @@ from codey.toolchain.definition import (
 from codey.toolchain.definition import SUPPORTED_RUNTIME_TOOL_NAMES as SUPPORTED_TOOL_NAMES
 from codey.toolchain.runtime import MAX_REPLACEMENTS, READ_MAX_LINES
 from codey.toolchain.tool_prompt import render_coding_tool_contract_text as render_tool_contract
+from tests.support.legacy_json_codec import (
+    PROTOCOL_DIRECT_ANSWER,
+    PROTOCOL_DISALLOWED_TOOL,
+    PROTOCOL_INVALID_ARGS,
+    PROTOCOL_NATIVE_TOOL_DENIAL,
+    PROTOCOL_NESTED_TOOL_IN_DONE,
+    PROTOCOL_NO_JSON,
+    PROTOCOL_UNKNOWN_TOOL,
+    JsonToolCodec,
+)
 
 CONTRACT_FIXTURE = Path(__file__).parent / "fixtures" / "json_tool_contract.txt"
 VALID_SHA256 = "a" * 64

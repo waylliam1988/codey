@@ -10,13 +10,13 @@ import pytest
 from codey.agents.handoff import ConversationContext
 from codey.app.context import AppContext
 from codey.operations.context import RunFrame, RunWork
-from codey.operations.kernel_protocol import normalize_turn
 from codey.operations.task_entry import run_entry_kernel
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 class NativeConversation:

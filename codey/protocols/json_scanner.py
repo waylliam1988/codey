@@ -56,4 +56,56 @@ def extract_json_objects(text: str) -> list[dict[str, Any]]:
     return objects
 
 
-__all__ = ["balanced_json_spans", "extract_json_objects"]
+def extract_candidate_json_objects(text: str) -> list[dict[str, Any]]:
+    """Extract balanced candidates after removing provider think blocks.
+
+    This preserves the narrow repair-prompt lookup behavior that used to live
+    beside ``JsonToolCodec``.  It is not an execution decoder and does not
+    authorize or execute any returned object.
+    """
+    source = str(text or "")
+    lowered = source.lower()
+    cleaned: list[str] = []
+    index = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    while index < len(source):
+        if depth == 0 and lowered.startswith("<think", index):
+            tag_end = lowered.find(">", index)
+            if tag_end < 0:
+                break
+            end = lowered.find("</think>", tag_end + 1)
+            if end < 0:
+                break
+            index = end + len("</think>")
+            continue
+        char = source[index]
+        cleaned.append(char)
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"' and depth:
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}" and depth:
+            depth -= 1
+        index += 1
+    objects: list[dict[str, Any]] = []
+    cleaned_text = "".join(cleaned)
+    for start, end in balanced_json_spans(cleaned_text):
+        try:
+            value = json.loads(cleaned_text[start:end])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            objects.append(value)
+    return objects
+
+
+__all__ = ["balanced_json_spans", "extract_candidate_json_objects", "extract_json_objects"]

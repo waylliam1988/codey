@@ -129,10 +129,10 @@ class EntryAuthTests(unittest.TestCase):
 
 class ToolContractTests(unittest.TestCase):
     def test_native_alias_maps_to_canonical(self) -> None:
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.policies.task_policy import build_task_policy
         from codey.providers.base import AssistantTurn, ProviderToolCall
         from codey.task.model import TaskSubmission
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = build_task_policy(
             TaskSubmission("s", "E:/tmp", "t", 8, False, "local"), task_kind="project")
@@ -158,9 +158,9 @@ class ToolContractTests(unittest.TestCase):
         self.assertIn("path", tools["read_file"]["required"])
 
     def test_unknown_tool_denied(self) -> None:
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = build_task_policy(
             TaskSubmission("s", "E:/tmp", "t", 8, False, "local"), task_kind="project")

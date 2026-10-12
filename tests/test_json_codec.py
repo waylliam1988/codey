@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from codey.protocols.json_codec import JsonToolCodec
+from tests.support.legacy_json_codec import JsonToolCodec
 
 
 def test_parse_ignores_json_inside_think_blocks() -> None:

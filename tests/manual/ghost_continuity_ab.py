@@ -25,10 +25,10 @@ from codey.ghost.continuity import (
     build_ghost_continuity,
 )
 from codey.ghost.schema import clip_signal_text
-from codey.protocols import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
 from codey.storage.local_store import write_json_atomic
+from tests.support.legacy_json_codec import JsonToolCodec
 
 ARMS = ("baseline", "continuity")
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

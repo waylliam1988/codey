@@ -49,8 +49,8 @@ def _policy(**kwargs):
 
 class NormalizeParityTests(unittest.TestCase):
     def test_same_snapshot_same_capability_json_and_native(self) -> None:
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.providers.base import AssistantTurn, ProviderToolCall
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -75,8 +75,8 @@ class NormalizeParityTests(unittest.TestCase):
         self.assertEqual(native_plan.calls[0].name, json_plan.calls[0].name)
 
     def test_illegal_args_rejected_before_executor_on_both_paths(self) -> None:
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.providers.base import AssistantTurn, ProviderToolCall
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -101,8 +101,8 @@ class NormalizeParityTests(unittest.TestCase):
 
     def test_native_rejection_answers_every_call_id(self) -> None:
         from codey.operations.kernel_execution import execute_turn
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.providers.base import AssistantTurn, ProviderToolCall
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = _policy(task_kind="planning")
         plan = normalize_turn(
@@ -142,8 +142,8 @@ class NormalizeParityTests(unittest.TestCase):
             self.assertIn("ERROR", result.model_text)
 
     def test_controller_denial_applies_to_json_and_native(self) -> None:
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.providers.base import AssistantTurn, ProviderToolCall
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = _policy(task_kind="research", strict_research=True)
         self.assertTrue(policy.allows("knowledge.write"))
@@ -436,9 +436,9 @@ class HybridAndPlanningTests(unittest.TestCase):
 
     def test_readonly_planning_cannot_write(self) -> None:
         from codey.operations.kernel_execution import execute_turn
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = _policy(task_kind="planning")
         plan = normalize_turn('{"tool":"edit","args":{"path":"a.py","content":"x"}}', policy=policy)
@@ -580,9 +580,9 @@ class RecoveryTests(unittest.TestCase):
 
     def test_provider_switch_keeps_results(self) -> None:
         from codey.operations.kernel_execution import execute_turn
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolResult
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},

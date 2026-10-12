@@ -32,6 +32,7 @@ from codey.operations.kernel_trace import record_outbound, record_turn
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import effect_coordinates
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
+from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.workspace.coding_context import render_coding_context
@@ -189,7 +190,8 @@ def _receive_turn_plan(
         state.prompt = length_action
         state.pending_reply = None
         return None
-    plan = _normalize_turn(reply, snapshot=snapshot)
+    decoded_reply = decode_text_turn(reply) if not native and isinstance(reply, str) else reply
+    plan = _normalize_turn(decoded_reply, snapshot=snapshot)
     record_turn(trace_recorder, phase=session.task_kind, turn=turn,
                 snapshot=snapshot, plan=plan, native=native)
     protocol_action = _kernel_handle_protocol(

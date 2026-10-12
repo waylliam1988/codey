@@ -175,9 +175,15 @@ def cases(stockalarm: Path | None = None) -> dict[str, ProbeCase]:
                 "batching, including invalid nested calls and max batch sizes. "
                 "Which files should be inspected first?"
             ),
-            expected_paths=("codey/protocols/json_codec.py",),
-            expected_tests=("tests/test_protocols.py",),
-            expected_terms=("parallel", "read_files", "JsonToolCodec"),
+            expected_paths=(
+                "codey/protocols/text_turn.py",
+                "codey/operations/kernel_protocol.py",
+            ),
+            expected_tests=(
+                "tests/test_text_turn_decoder_contract.py",
+                "tests/test_protocols.py",
+            ),
+            expected_terms=("parallel", "read_files", "TextRequests", "normalize_turn"),
             tags=("codey", "protocol"),
         ),
         ProbeCase(

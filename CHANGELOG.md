@@ -2,6 +2,21 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Text protocol boundary extraction (2026-10-12)
+
+- Decode task text replies in `protocols/text_turn.py` before kernel validation.
+  Preserve structured provider replies, native call IDs, batches, diagnostics,
+  authorization and completion requirements; reject raw strings at the kernel.
+- Keep production prompts and existing web reply repairs unchanged. Existing
+  JSON example ambiguity and nested JSON rejection in `done.summary` remain.
+- Move the unused historical `JsonToolCodec` into test support, migrate fixtures
+  and navigation targets, and require specific schema/snapshot rejection reasons.
+- Fix isolated UI gate model preferences for API providers; website settings
+  retain their existing path. KoboldCpp release probes passed 3/3 and UI Chat passed.
+- Ruff/mypy/Pyrefly/diff passed. Full pytest: **8399 passed, 30 skipped,
+  1508 subtests**. Machine contracts: **1087 passed, 15 skipped, 14 subtests**;
+  required Node.js checks did not run, so that gate remains closed. No release/tag.
+
 ## Unreleased - Shared Chat workspace kernel (2026-10-12)
 
 - Keep the UI unchanged. Chat now uses the common workspace kernel and existing

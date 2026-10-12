@@ -10,6 +10,12 @@
 已删除独立 Chat/Auto 路由；无项目使用受管会话目录，原文件夹关联与执行根目录
 分别保留。下面历史验收数字保留，所有者表按当前实现更新；最新结果见 TEST_REPORT。
 
+2026-10-12 文本边界增补：原始任务文本只由 `protocols/text_turn.py` 解码，
+内核接受解码结果或 `AssistantTurn`，拒绝原始字符串。解码不做授权与执行；
+原生 ID 不丢失，文本请求不补伪原生 ID。冻结快照、整批校验、权限、完成门
+和生产提示不变。网页读取修复仍归既有驱动与修复模块，不因收窄内核而删除。
+摘要嵌套调用判断及现有文本答案规则仍保留。
+
 ## 结论的准确范围
 
 本轮已修复审查中复现的确定性问题，最终全量为 **6399 passed、29 skipped、1495 subtests passed，396.40 秒**。
@@ -49,6 +55,8 @@
 | `kernel_facts.py::record_facts_for_result` | 实时与恢复共用事实应用；真实 canonical 搜索 URL 经既有来源选择规则生成 ID |
 | `task_session.py` / `project_completion_checks.py` / `ExecutionEvidence` | 保存原 command/cwd，按完整身份选择最新观察，不用展示裁剪制造同一身份 |
 | `task_loop.py::run_task_kernel` | 共同模型工具循环；两种协议共用执行和完成边界 |
+| `protocols/text_turn.py::decode_text_turn` | 只识别当前文本消息；输出有序请求、答案或原诊断，不访问权限策略 |
+| `kernel_protocol.py::normalize_turn` | 结构化输入、冻结工具定义、权限、参数、批次与调用身份校验；不扫描原始正文 |
 
 项目 review/repair、ResearchPipeline 及其确定性策略仍有领域职责；不能把它们说成第二个模型工具内核，
 也不能宣称它们每个内部操作都已改走 `execute_turn`。显式 Research 保留严格要求；普通联网任务不会自动要求研究笔记。

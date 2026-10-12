@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unittest
 
-from codey.protocols.json_codec import JsonToolCodec
 from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_CONTRACTS
 from codey.toolchain.definition import TOOL_DEFINITIONS
 from codey.toolchain.tool_args_repair import (
@@ -14,6 +13,7 @@ from codey.toolchain.tool_args_repair import (
     SEARCH_QUERY_KEYS,
 )
 from codey.toolchain.tool_prompt import render_coding_tool_contract_text
+from tests.support.legacy_json_codec import JsonToolCodec
 
 EXPECTED_ARG_REPAIR_KINDS = {
     "path_alias",

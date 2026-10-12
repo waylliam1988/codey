@@ -607,9 +607,9 @@ class BrowserFetchAbandonTests(unittest.TestCase):
 
 class CodecPromptSingleSourceTests(unittest.TestCase):
     def test_codec_prompt_matches_rendered_writer_prompt(self) -> None:
-        from codey.protocols.json_codec import JsonToolCodec
         from codey.toolchain import definition as tool_defs
         from codey.toolchain.tool_prompt import render_coding_system_prompt
+        from tests.support.legacy_json_codec import JsonToolCodec
 
         expected = render_coding_system_prompt(
             tool_defs.TOOL_DEFINITIONS,

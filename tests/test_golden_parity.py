@@ -4,7 +4,7 @@ import contextlib
 import unittest
 from pathlib import Path
 
-from codey.protocols.json_codec import JsonToolCodec
+from tests.support.legacy_json_codec import JsonToolCodec
 from tests.support.research_controller import ResearchController, render_control_block
 from tests.support.research_protocol import JsonToolCodec as ResearchCodec
 

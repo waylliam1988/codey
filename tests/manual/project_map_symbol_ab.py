@@ -46,7 +46,11 @@ CASES = (
             "I need to change how Codey validates parallel and read_files JSON tool calls. "
             "Which files should be inspected first?"
         ),
-        expected_paths=("codey/protocols/json_codec.py", "tests/test_protocols.py"),
+        expected_paths=(
+            "codey/protocols/text_turn.py",
+            "codey/operations/kernel_protocol.py",
+            "tests/test_text_turn_decoder_contract.py",
+        ),
     ),
     ProbeCase(
         name="snapshot-restore",

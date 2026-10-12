@@ -5,11 +5,12 @@ import json
 
 import pytest
 
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import tools_from_specs
 from codey.toolchain.runtime import EditBlock, edit_file
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])

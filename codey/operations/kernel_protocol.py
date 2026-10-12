@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from codey.protocols.json_scanner import balanced_json_spans
+from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests
 from codey.providers.base import AssistantTurn, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
@@ -266,43 +266,6 @@ def _disallowed_plan(tool: str, *, controller: bool = False) -> ToolPlan:
 def _invalid_plan(message: str, *, tool: str = "", kind: str = "invalid_args") -> ToolPlan:
     return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind,
                     protocol_tool_name=str(tool or ""))
-
-
-def _extract_json_objects(text: str) -> list[dict[str, Any]] | ToolPlan:
-    source = str(text or "").strip()
-    if source.startswith("```"):
-        return []
-    objects: list[dict[str, Any]] = []
-    spans = balanced_json_spans(source)
-    if not spans:
-        return []
-    # Text mode is a canonical JSON protocol.  Do not mine an arbitrary
-    # provider frame or prose for an executable object: every non-JSON byte
-    # between the first and last object must be whitespace.
-    first_start = spans[0][0]
-    last_end = spans[-1][1]
-    if source[:first_start].strip() or source[last_end:].strip():
-        return []
-    if any(source[end:start].strip() for (_, end), (start, _) in zip(spans, spans[1:], strict=False)):
-        return []
-    for start, end in spans:
-        try:
-            value = json.loads(source[start:end])
-        except json.JSONDecodeError as exc:
-            # Reject the whole turn: skipping an invalid member would execute
-            # a partial batch. Report location, never echo file contents.
-            detail = f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}."
-            if exc.msg.startswith("Invalid control character"):
-                detail += (
-                    r" Escape line breaks and tabs inside JSON strings as \n, \r and \t;"
-                    r' for example, "content":"first line\nsecond line\n".'
-                )
-            return _invalid_plan(detail, kind="invalid_json")
-        except (ValueError, RecursionError):
-            return _invalid_plan("invalid JSON: value exceeds decoder limits", kind="invalid_json")
-        if isinstance(value, dict):
-            objects.append(value)
-    return objects
 
 
 def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -570,28 +533,6 @@ def _plan_from_tool_objects(
     return ToolPlan(calls=calls, control=Control(kind="continue", body=body))
 
 
-def _text_tool_objects(text: str) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
-    """Unwrap text JSON; authorization and argument validation stay shared."""
-    objects = _extract_json_objects(text)
-    if isinstance(objects, ToolPlan):
-        return objects
-    if not objects:
-        return _invalid_plan("no JSON tool call found", kind="no_json")
-    if all("tool" not in obj for obj in objects):
-        return _invalid_plan("JSON data answer", kind="no_json")
-    items: list[tuple[str, dict[str, Any], str]] = []
-    for obj in objects[:MAX_NATIVE_CALLS_PER_TURN]:
-        tool, args = _tool_and_args(obj)
-        items.append((tool, args, ""))
-    if len(objects) > MAX_NATIVE_CALLS_PER_TURN:
-        return _invalid_plan(
-            f"too many native tool calls in one turn ({len(objects)}); "
-            f"send at most {MAX_NATIVE_CALLS_PER_TURN}",
-            kind="too_many_tools",
-        )
-    return items
-
-
 def _native_tool_objects(calls: list[Any]) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
     """Unwrap native calls without losing or inventing provider call ids."""
     if len(calls) > MAX_NATIVE_CALLS_PER_TURN:
@@ -624,22 +565,19 @@ def _native_tool_objects(calls: list[Any]) -> list[tuple[str, dict[str, Any], st
     return items
 
 
-def _text_response(text: str) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
-    items = _text_tool_objects(text)
-    if not isinstance(items, ToolPlan) or items.protocol_error_kind != "no_json" or not text.strip():
-        return items
-    source = text.strip()
-    if source.startswith("<|tool_call>"):
-        return items
-    if source.startswith(("{", "[")):
-        try:
-            json.loads(source)
-        except (ValueError, RecursionError):
-            return _invalid_plan("incomplete or malformed JSON response", kind="invalid_json")
-    return ToolPlan(calls=[], control=Control(kind="done", body=source))
+def _decoded_text_objects(
+    decoded: TextRequests | TextAnswer | TextError,
+) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+    if isinstance(decoded, TextError):
+        return _invalid_plan(decoded.message, tool=decoded.tool, kind=decoded.kind)
+    if isinstance(decoded, TextAnswer):
+        return ToolPlan(calls=[], control=Control(kind="done", body=decoded.text))
+    return [(item.tool, dict(item.args), "") for item in decoded.items]
 
 
-def _response_objects(reply: str | object) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+def _response_objects(reply: DecodedTextTurn | AssistantTurn) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+    if isinstance(reply, (TextRequests, TextAnswer, TextError)):
+        return _decoded_text_objects(reply)
     if isinstance(reply, AssistantTurn):
         if reply.finish is TurnFinish.PROTOCOL_ERROR:
             return _invalid_plan("provider returned malformed tool calls", kind="invalid_args")
@@ -652,11 +590,16 @@ def _response_objects(reply: str | object) -> list[tuple[str, dict[str, Any], st
     tool_calls = getattr(reply, "tool_calls", None) if not isinstance(reply, str) else None
     if tool_calls:
         return _native_tool_objects(list(tool_calls))
-    return _text_response(reply if isinstance(reply, str) else str(getattr(reply, "text", "") or ""))
+    if isinstance(reply, str):
+        return _invalid_plan(
+            "raw text must be decoded by the text protocol before entering the kernel",
+            kind="raw_text",
+        )
+    return _invalid_plan("unsupported provider reply type", kind="invalid_args")
 
 
 def normalize_turn(
-    reply: str | object,
+    reply: DecodedTextTurn | AssistantTurn,
     *,
     policy: Any = None,
     controller_allowed: tuple[str, ...] | list[str] | set[str] | None = None,

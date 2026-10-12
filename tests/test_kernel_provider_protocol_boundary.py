@@ -6,8 +6,8 @@ import ast
 from pathlib import Path
 from types import SimpleNamespace
 
-from codey.operations.kernel_protocol import normalize_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 def _policy() -> SimpleNamespace:

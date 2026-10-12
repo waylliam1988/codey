@@ -3,7 +3,7 @@
 Post-cleanup expectations for items 1-5 + AppContext isolation:
 - Item1: no `check_commands` param; persisted legacy string checks are ignored;
   `{command, cwd}` dicts + CheckEvidence objects still work.
-- Item2: `codey.protocols.json_codec` exposes no `get_system_prompt` /
+- Item2: `tests.support.legacy_json_codec` exposes no `get_system_prompt` /
   `SYSTEM_PROMPT` lazy export and no `lru_cache`; single source is
   `JsonToolCodec().system_prompt()`.
 - Item3: `codey.runs.ledger/details/trace` share one `clip_text` helper with
@@ -75,7 +75,7 @@ class Item1FactsCompatTests(unittest.TestCase):
 
 class Item2SinglePromptSourceTests(unittest.TestCase):
     def test_no_module_lazy_prompt_surface(self) -> None:
-        import codey.protocols.json_codec as mod
+        import tests.support.legacy_json_codec as mod
 
         self.assertFalse(hasattr(mod, "get_system_prompt"))
         self.assertNotIn("SYSTEM_PROMPT", dir(mod))
@@ -84,9 +84,9 @@ class Item2SinglePromptSourceTests(unittest.TestCase):
         self.assertNotIn("__getattr__", source)
 
     def test_codec_prompt_matches_rendered_writer_prompt(self) -> None:
-        from codey.protocols.json_codec import JsonToolCodec
         from codey.toolchain import definition as tool_defs
         from codey.toolchain.tool_prompt import render_coding_system_prompt
+        from tests.support.legacy_json_codec import JsonToolCodec
 
         expected = render_coding_system_prompt(
             tool_defs.TOOL_DEFINITIONS,

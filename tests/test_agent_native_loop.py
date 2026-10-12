@@ -96,7 +96,7 @@ def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
 
 def test_native_call_id_flows_to_tool_result(tmp_path: Path) -> None:
     """Production protocol preserves native call ids."""
-    from codey.operations.kernel_protocol import normalize_turn
+    from tests.support.kernel_protocol_test_helpers import normalize_turn
 
     plan = normalize_turn(
         AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_9", name="read_file", arguments={"path": "x"}),)),

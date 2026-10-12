@@ -1,12 +1,11 @@
 """Observable contracts locked before the aesthetic extraction."""
 
 from copy import deepcopy
-from types import SimpleNamespace
 
 import pytest
 
-from codey.operations.kernel_protocol import normalize_turn
 from codey.policies.task_policy import TaskPolicy
+from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runs.receipt import build_task_receipt, task_receipt_from_payload
 from codey.runtime.core.operation_reducer import (
     ACTION_CONTINUE,
@@ -17,6 +16,7 @@ from codey.runtime.core.operation_reducer import (
 from codey.runtime.core.operation_state import DRIVER_WRITER, LEAF_TOOL_DELIVERY_PENDING
 from codey.runtime.effects.replay_policy import ReplayClass
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchItem
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 from tests.test_runtime_operation_reducer import _batch, _state, _tool_projection, _view
 
 
@@ -74,7 +74,10 @@ def test_empty_response_never_turns_into_done(text):
 
 
 def test_native_text_reply_keeps_explicit_turn_tool_limits():
-    reply = SimpleNamespace(tool_calls=[], text='{"tool":"read_file","args":{"path":"a.py"}}')
+    reply = AssistantTurn(
+        text="",
+        tool_calls=(ProviderToolCall(id="call-1", name="read_file", arguments={"path": "a.py"}),),
+    )
     plan = normalize_turn(reply, policy=TaskPolicy(frozenset({"control", "project.read"})),
                           snapshot_names=("done",))
     assert "not in the turn snapshot" in plan.protocol_error

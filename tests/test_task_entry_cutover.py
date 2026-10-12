@@ -1420,11 +1420,11 @@ def test_unified_research_externalizes_large_opened_source(tmp_path) -> None:
 def test_research_controller_keeps_authorized_project_read_available(tmp_path) -> None:
     from codey.operations.kernel_protocol import (
         controller_allowed_for_session,
-        normalize_turn,
     )
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_protocol_test_helpers import normalize_turn
 
     policy = build_task_policy(TaskSubmission("s", str(tmp_path), "research project", 3,
                                               False, "deepseek", intent="research"),

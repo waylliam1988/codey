@@ -69,8 +69,9 @@ def _execute_research_call(tools, call):
 
 def _validate_research_call(call):
     """当前生产校验入口：同一 snapshot 的 normalize_turn。"""
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from tests.support.kernel_protocol_test_helpers import normalize_turn
 
     session = TaskSession(
         policy=_research_policy(), task_kind="research", max_turns=2, task_text="q",

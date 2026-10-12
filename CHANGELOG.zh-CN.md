@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 文本协议解码边界整理（2026-10-12）
+
+- 任务文本先经 `protocols/text_turn.py` 解码，再交内核校验；保留结构化 provider
+  回复、原生调用 ID、批次、诊断、权限与完成要求。内核拒绝原始字符串。
+- 生产提示和既有网页读取修复保持不变；工具形状 JSON 的现有歧义，以及
+  `done.summary` 嵌套 JSON 拒绝行为仍保留，不宣称本轮已解决答案语义问题。
+- 无生产消费者的旧 `JsonToolCodec` 移入测试支持目录；迁移 fixture、导航评测目标，
+  schema 和快照拒绝测试断言具体错误原因，避免因 `raw_text` 提前拒绝而假绿。
+- 修复 UI gate 隔离状态的 API 模型启用设置，网页仍走网站设置。
+  KoboldCpp release 探针 **3/3**、UI Chat 实机通过。
+- Ruff/mypy/Pyrefly/diff 通过；全量 **8399 passed、30 skipped、1508 subtests**。
+  机器契约 **1087 passed、15 skipped、14 subtests**；必跑 Node.js 检查未运行，
+  该门仍未通过。不 Release、不打 tag。
+
 ## Unreleased - Chat 共用工作区内核（2026-10-12）
 
 - 界面保持不变。Chat 复用现有读取、编辑、搜索、运行与 Shell 工具；未绑定项目时

@@ -7,11 +7,12 @@
 
 from __future__ import annotations
 
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolResult
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 def _bind_policy() -> TaskPolicy:

@@ -1,5 +1,75 @@
 # Codey Test Report
 
+## Text protocol boundary extraction (2026-10-12)
+
+Baseline: `a4c437f5` (Shared Chat workspace kernel), Windows / Python 3.12.8.
+This is a behavior-preserving extraction of the current production text parser.
+Production prompts, web repairs, answer rules and completion requirements are
+unchanged. Text decoding now happens at the task transport boundary; structured
+`AssistantTurn` replies retain their IDs and diagnostics. The kernel rejects raw
+strings and still owns authorization, argument checks, batch lowering and completion.
+The unused historical `JsonToolCodec` resides only in `tests/support`.
+
+### Deterministic regressions and fixture corrections
+
+- Candidate extraction preserves `<think>` tags inside JSON parameters and uses
+  strict decoding. Multiple JSON data objects retain `invalid_json` with the old
+  `incomplete or malformed JSON response` diagnostic.
+- Raw-string fixture migrations cover tool examples, snapshot bindings, Research
+  validation and authorized project reads. Rejection tests require `invalid_args`
+  plus the nested tool name, or `snapshot_tool_mismatch` plus `source_search`;
+  `raw_text` cannot make them pass. These six files passed **220 tests, 7 subtests**.
+- UI gate fresh-state model preferences explicitly enable the selected API model
+  for Local or Zen. Website providers retain website preferences and do not enter
+  API initialization. This corrects pre-task selector failures, not the text decoder.
+- Navigation experiments now target existing production decoder/kernel files;
+  historical result files remain untouched.
+- One completed full run reported **2 failed, 8397 passed, 30 skipped, 1508 subtests**.
+  The removed-module parity disposition omitted `json_codec.py`, and a native
+  fixture used an unsupported `SimpleNamespace` reply. The disposition now records
+  the test-support baseline and shared decoder; the native fixture uses an actual
+  `AssistantTurn` with a `ProviderToolCall`. **721 focused tests passed** afterward.
+  Production code did not change during these final fixture corrections.
+
+### Checks before final pytest
+
+| Check | Actual result |
+| --- | --- |
+| Ruff | passed (final import cleanup checked again after documentation) |
+| mypy | no issues in 403 source files |
+| Pyrefly | 0 errors; 48 suppressed, 829 warnings not shown |
+| git diff --check | passed; existing CRLF normalization notices only |
+| Machine contracts | 1087 passed, 15 skipped, 14 subtests; 289.22s; exit 1 for missing required Node.js checks |
+| KoboldCpp native release probes | chat/read/create: 3/3 passed |
+| KoboldCpp UI gate | real Local selection, config popover and Chat completion passed |
+
+Live endpoint: `http://127.0.0.1:5001/v1`; actual model:
+`koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`.
+Release artifacts: `.e2e-artifacts/local-model-release-20261012-101251-9b72e1f673`.
+UI artifacts: `.e2e-artifacts/architecture-ui-20261012-test-migration`.
+The first UI command omitted `LOCAL_OPENAI_BASE_URL` and failed before browser/task
+startup; setting the explicit endpoint resolved that setup failure. Earlier read
+transport failure retained its incomplete HTTP-response evidence; later probes
+passed, so it is not classified as a deterministic decoder regression.
+
+Release Chat remains a connection probe using `provider.send()`, whereas read/create
+exercise real headless tasks and the UI Chat gate exercises the browser task entry.
+These runs are a limited live regression, not the full release matrix. This final
+live run did not cover text Local, web models or Zen upstream generation; their
+deterministic regressions cannot establish live model stability.
+
+### Final full pytest
+
+`python -m pytest -q -ra -o faulthandler_timeout=120`
+
+**8399 passed, 30 skipped, 1508 subtests passed in 985.27s (16:25).**
+Six skips are Windows/POSIX contracts, 23 require Node.js unavailable to this test
+process, and one is opt-in browser E2E. The independent KoboldCpp UI gate above
+ran successfully. Machine contracts remain closed: the 15 required skipped cases
+cover connection display, SSE cursor gaps and upstream pi/opencode compaction
+reference replay. No assertions or skip rules were weakened to pass the gate.
+Documentation was updated after the full run. No release or tag.
+
 ## Shared Chat workspace kernel (2026-10-12)
 
 Baseline: `1a10f658de9bffd4fbb33ae870aa736e95662904`, Windows / Python 3.12.8.

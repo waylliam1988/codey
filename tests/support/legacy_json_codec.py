@@ -4,6 +4,15 @@ import json
 from typing import Any
 
 from codey.policies.permissions import allowed_coding_tool_names, profile_for_name
+from codey.protocols.protocol_errors import (
+    PROTOCOL_DIRECT_ANSWER,
+    PROTOCOL_DISALLOWED_TOOL,
+    PROTOCOL_INVALID_ARGS,
+    PROTOCOL_NATIVE_TOOL_DENIAL,
+    PROTOCOL_NESTED_TOOL_IN_DONE,
+    PROTOCOL_NO_JSON,
+    PROTOCOL_UNKNOWN_TOOL,
+)
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.toolchain import definition as tool_defs
 from codey.toolchain.runtime import (
@@ -25,15 +34,6 @@ _DEFAULT_TOOL_ARG_LIMITS = ToolArgLimits(
     max_replacements=MAX_REPLACEMENTS,
     read_max_lines=READ_MAX_LINES,
 )
-
-
-PROTOCOL_NO_JSON = "no_json"
-PROTOCOL_UNKNOWN_TOOL = "unknown_tool"
-PROTOCOL_INVALID_ARGS = "invalid_args"
-PROTOCOL_DIRECT_ANSWER = "direct_answer"
-PROTOCOL_NATIVE_TOOL_DENIAL = "native_tool_denial"
-PROTOCOL_NESTED_TOOL_IN_DONE = "nested_tool_in_done"
-PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
 
 def _strip_think_blocks(text: str) -> str:

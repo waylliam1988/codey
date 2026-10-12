@@ -5,11 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.operations.kernel_protocol import normalize_turn
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolResult
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 POLICY = TaskPolicy(grants=frozenset({"control", "project.write"}))
 CONTENT = "import unittest\n\nclass TestExample(unittest.TestCase):\n\tpass\n"

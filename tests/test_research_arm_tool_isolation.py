@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from codey.providers.base import tools_from_specs
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 def _strict_policy():
@@ -53,14 +54,16 @@ def test_source_search_arm_shows_source_search_after_open():
 
 
 def test_baseline_arm_rejects_forced_source_search_call():
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel_protocol import build_turn_snapshot
 
     snapshot = build_turn_snapshot(_opened_session(denied=("source_search",)))
     plan = normalize_turn(
         '{"tool": "source_search", "args": {"url": "https://example.com/a", "query": "q"}}',
         snapshot=snapshot,
     )
-    assert getattr(plan, "protocol_error", "") != ""
+    assert plan.protocol_error_kind == "snapshot_tool_mismatch"
+    assert plan.protocol_tool_name == "source_search"
+    assert "source_search" in plan.protocol_error
     assert plan.calls == []
 
 

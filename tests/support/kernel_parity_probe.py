@@ -91,12 +91,12 @@ def protocol(case, legacy):
             from codey.protocols.native_openai import NativeOpenAIToolCodec
             codec = NativeOpenAIToolCodec(permission_profile=case["profile"])
         else:
-            from codey.protocols.json_codec import JsonToolCodec
+            from tests.support.legacy_json_codec import JsonToolCodec
             codec = JsonToolCodec(permission_profile=case["profile"])
         plan = codec.parse_turn(reply) if case["wire"] == "native" else codec.parse(reply)
     else:
-        from codey.operations.kernel_protocol import normalize_turn
         from codey.policies.task_policy import TaskPolicy
+        from tests.support.kernel_protocol_test_helpers import normalize_turn
         grants = {"control", "project.read"}
         if case["domain"] == "research":
             grants = {"control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link"}

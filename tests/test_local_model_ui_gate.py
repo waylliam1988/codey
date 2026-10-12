@@ -7,6 +7,7 @@ import unittest
 from typing import Any
 from unittest import mock
 
+from codey.app.context import AppContext
 from codey.providers import api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.local_discovery import LocalEndpoint
@@ -15,6 +16,48 @@ from tools import local_model_ui_gate as gate
 
 
 class LocalModelUiGateTests(unittest.TestCase):
+    def test_gate_enables_selected_api_model_in_ephemeral_preferences(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            state = AppContext(root)
+            try:
+                gate._configure_provider_model_preferences(state, "local", "test-local-model")
+                self.assertTrue(
+                    state.providers.model_preferences.allows("local", "test-local-model")
+                )
+                sources = state.providers.model_preferences.snapshot()["sources"]
+                self.assertEqual(sources["local"], {"enabled": True, "models": ["test-local-model"]})
+            finally:
+                state.close()
+
+    def test_gate_enables_selected_zen_model_without_enabling_local(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            state = AppContext(root)
+            try:
+                gate._configure_provider_model_preferences(state, "zen", "test-zen-model")
+                self.assertTrue(state.providers.model_preferences.allows("zen", "test-zen-model"))
+                self.assertFalse(state.providers.model_preferences.allows("local", "test-zen-model"))
+                sources = state.providers.model_preferences.snapshot()["sources"]
+                self.assertEqual(sources["zen"], {"enabled": True, "models": ["test-zen-model"]})
+                self.assertEqual(sources["local"], {"enabled": False, "models": []})
+            finally:
+                state.close()
+
+    def test_gate_keeps_web_provider_in_website_preferences(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            state = AppContext(root)
+            try:
+                gate._configure_gate_model_preferences(state, "mimo", "web-model")
+                self.assertTrue(state.providers.model_preferences.allows("mimo"))
+                self.assertFalse(state.providers.model_preferences.allows("local", "web-model"))
+                self.assertFalse(state.providers.model_preferences.allows("zen", "web-model"))
+                sources = state.providers.model_preferences.snapshot()["sources"]
+                self.assertTrue(sources["websites"]["enabled"])
+                self.assertIn("mimo", sources["websites"]["models"])
+                self.assertEqual(sources["local"], {"enabled": False, "models": []})
+                self.assertEqual(sources["zen"], {"enabled": False, "models": []})
+            finally:
+                state.close()
+
     def test_research_setup_enables_only_isolated_knowledge_store(self) -> None:
         class State:
             knowledge_store: Any = None

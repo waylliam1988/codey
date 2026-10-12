@@ -4,11 +4,11 @@ import json
 
 import pytest
 
-from codey.operations.kernel_protocol import normalize_turn
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import TurnFinish
 from codey.providers.local_response_codec import normalize_local_reply
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 def _reply(monkeypatch, *, content, calls=None, finish="stop"):

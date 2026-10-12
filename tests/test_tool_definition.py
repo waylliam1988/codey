@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import unittest
 
-from codey.protocols import JsonToolCodec
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
@@ -18,6 +17,7 @@ from codey.toolchain.definition import (
     render_tool_activity,
 )
 from codey.toolchain.tool_prompt import render_coding_tool_contract_text as render_tool_contract
+from tests.support.legacy_json_codec import JsonToolCodec
 
 
 class ToolDefinitionTests(unittest.TestCase):

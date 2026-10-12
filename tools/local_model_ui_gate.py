@@ -47,7 +47,7 @@ from codey.env_names import (
 )
 from codey.knowledge.store import KnowledgeStore
 from codey.providers import controls as provider_controls
-from codey.providers.catalog import PROVIDER_LABELS
+from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.providers.web_provider import WebChatProvider
 
@@ -107,6 +107,41 @@ def _preflight(provider_id: str = "local") -> tuple[str, str]:
 def _browser_launch_url(server: Any, base_url: str) -> str:
     """Use the server-issued operator bootstrap for a fresh browser context."""
     return str(server.launch_url(base_url))
+
+
+def _configure_provider_model_preferences(state: AppContext, provider_id: str, model: str) -> None:
+    """Pin the selected live API model in the gate's isolated preferences.
+
+    The UI gate creates a fresh ``AppContext`` for every run.  Model
+    preferences intentionally default API sources to disabled, so a fresh
+    state would otherwise hide Local from the provider menu even though the
+    endpoint preflight succeeded.  The gate is explicitly testing that
+    selected endpoint and must seed the same allowlist the user would create
+    in Settings, without touching the user's real state directory.
+    """
+    selected_provider = str(provider_id or "").strip().lower()
+    selected_model = str(model or "").strip()
+    if not selected_provider:
+        raise ValueError("UI gate provider is required")
+    if not selected_model:
+        raise ValueError("local UI gate model is required")
+    preferences = state.providers.model_preferences
+    snapshot = preferences.snapshot()
+    sources = snapshot["sources"]
+    selected = dict(sources.get(selected_provider) or {})
+    if not selected:
+        raise ValueError(f"unsupported API provider: {selected_provider}")
+    selected["enabled"] = True
+    selected["models"] = [selected_model]
+    sources[selected_provider] = selected
+    preferences.save(sources, base_revision=snapshot["revision"])
+
+
+def _configure_gate_model_preferences(state: AppContext, provider_id: str, model: str) -> None:
+    """Seed only API model allowlists; website providers use website settings."""
+    selected_provider = str(provider_id or "").strip().lower()
+    if selected_provider in API_CONNECTIONS:
+        _configure_provider_model_preferences(state, selected_provider, model)
 
 
 def _terminal_succeeded(event: dict[str, Any]) -> bool:
@@ -522,6 +557,7 @@ def run_local_model_ui_gate(
     page_errors: list[str] = []
     try:
         state = AppContext(temp_root / "state")
+        _configure_gate_model_preferences(state, provider_id, model)
         _configure_research_store(state, temp_root, selected_cases)
         codey_server.STATE = state
         provider_controls.set_teach_handler(

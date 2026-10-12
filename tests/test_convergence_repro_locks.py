@@ -167,7 +167,7 @@ class CustomToolTests(unittest.TestCase):
             # JSON parse must accept the registered tool.
             import json
 
-            from codey.operations.kernel_protocol import normalize_turn
+            from tests.support.kernel_protocol_test_helpers import normalize_turn
             plan = normalize_turn(json.dumps({"tool": tool_name, "args": {"q": "hi"}}), policy=policy, controller_allowed=None)
             self.assertEqual(plan.protocol_error, "")
             self.assertEqual(len(plan.calls), 1)

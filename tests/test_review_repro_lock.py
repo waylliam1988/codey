@@ -25,10 +25,10 @@ def test_issue1_strict_hybrid_no_write_without_explicit():
 
 def test_issue1_strict_hybrid_edit_rejected_at_parse_and_execute(tmp_path):
     from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolCall
+    from tests.support.kernel_protocol_test_helpers import normalize_turn
     s = _submission(project=str(tmp_path), requested=(), strict=True)
     policy = build_task_policy(s, task_kind="hybrid", strict_research=True)
     plan = normalize_turn('{"tool":"edit","args":{"path":"a.py","content":"x"}}', policy=policy, controller_allowed=None)

@@ -5,10 +5,11 @@ import json
 
 import pytest
 
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.toolchain.definition import TOOL_DEFINITIONS
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 @pytest.mark.parametrize("native", [False, True])

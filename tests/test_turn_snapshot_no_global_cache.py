@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from codey.operations import kernel_protocol as proto
 from codey.policies.task_policy import TaskPolicy
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
 def test_no_global_snapshot_cache_retains_policies() -> None:
@@ -64,9 +65,13 @@ def test_snapshot_freezes_nested_schema() -> None:
             required=("obj",), executor="custom",
         )
         try:
-            plan = proto.normalize_turn('{"tool":"nested_freeze_probe","args":{"obj":{"n":"not-int"}}}',
-                                        policy=policy, snapshot=snap)
-            assert getattr(plan, "protocol_error", ""), "快照应冻结嵌套 schema，本轮仍应拒绝 string"
+            plan = normalize_turn(
+                '{"tool":"nested_freeze_probe","args":{"obj":{"n":"not-int"}}}',
+                policy=policy, snapshot=snap,
+            )
+            assert plan.protocol_error_kind == "invalid_args"
+            assert plan.protocol_tool_name == "nested_freeze_probe"
+            assert "integer" in plan.protocol_error
         finally:
             # 恢复
             spec_mod.tool_specs()["nested_freeze_probe"] = spec_mod.tool_specs()["nested_freeze_probe"].__class__(
