@@ -40,6 +40,7 @@ class AttemptControl:
         self._leases: list[ConnectionLease] = []
         self._responses: list[Any] = []
         self.cancelled = False
+        self.submission_started = False
         self.phase = "connecting"
         self.last_byte_at = time.monotonic()
 
@@ -65,6 +66,10 @@ class AttemptControl:
             cancelled = self.cancelled
         if cancelled:
             abort_response(response)
+
+    def mark_submission_started(self) -> None:
+        with self._lock:
+            self.submission_started = True
 
     def enter_phase(self, phase: str) -> None:
         with self._lock:
@@ -111,6 +116,8 @@ class AttemptControl:
                 sock.shutdown(socket.SHUT_RDWR)
         with contextlib.suppress(Exception):
             target.shutdown(socket.SHUT_RDWR)
+        if isinstance(target, (http.client.HTTPResponse, urllib.error.HTTPError)):
+            return
         with contextlib.suppress(Exception):
             target.close()
 
@@ -206,16 +213,6 @@ class BoundedBodyReader:
                 return result
             self._line_buffer.extend(chunk)
         raise GenerationUnknownError("generation stream line exceeded its byte limit")
-
-    def read_json(self) -> dict[str, Any]:
-        chunks: list[bytes] = []
-        while True:
-            chunk = self.read_chunk()
-            if not chunk:
-                break
-            chunks.append(chunk)
-        return _json_object(b"".join(chunks))
-
 
 class GenerationUnknownError(RuntimeError):
     provider_failure_kind = "submission_uncertain"
@@ -561,6 +558,8 @@ class _SubmissionHTTPSHandler(urllib.request.HTTPSHandler):
                             raise GenerationUnknownError("generation cancelled after submission started")
                         raise GenerationNotSentError("generation cancelled before submission")
                     submission["attempted"] = True
+                    if tracked_control is not None:
+                        tracked_control.mark_submission_started()
                 super().send(data)
 
             def connect(self) -> None:
@@ -641,8 +640,6 @@ def _open_request_sync(request: urllib.request.Request, timeout: float, *, contr
         except urllib.error.URLError as exc:
             if submission.get("attempted") is not False or not isinstance(exc.reason, ssl.SSLError):
                 raise
-            # TLS failed before HTTP generation headers/body. Reconnect once
-            # for EOF only; certificate failures and exhausted budget stop.
             if (isinstance(exc.reason, ssl.SSLEOFError) and attempt == 0 and time.monotonic() < deadline
                     and (attempt_budget is None or attempt_budget.reserve("tls_reconnect"))):
                 continue
@@ -708,10 +705,14 @@ def open_request(request: urllib.request.Request, timeout: float, *, control: At
         except queue.Empty:
             if control.cancelled:
                 control.cancel()
-                raise GenerationUnknownError("generation cancelled while opening request") from None
+                if control.submission_started:
+                    raise GenerationUnknownError("generation cancelled while opening request") from None
+                raise GenerationNotSentError("generation cancelled before submission") from None
             if time.monotonic() >= deadline:
                 control.cancel()
-                raise GenerationUnknownError("generation deadline exceeded while opening request") from None
+                if control.submission_started:
+                    raise GenerationUnknownError("generation deadline exceeded while opening request") from None
+                raise GenerationNotSentError("generation deadline exceeded before submission") from None
             continue
         if ok:
             if control.cancelled:
@@ -734,6 +735,8 @@ def abort_response(response: Any) -> None:
         sock = _socket_for(response)
         if sock is not None:
             sock.shutdown(socket.SHUT_RDWR)
+    if isinstance(response, (http.client.HTTPResponse, urllib.error.HTTPError)):
+        return
     with contextlib.suppress(Exception):
         response.close()
 

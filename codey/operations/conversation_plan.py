@@ -83,7 +83,10 @@ def build_conversation_plan(  # noqa: C901, PLR0912
         project=project_text,
         # A resumed run reuses the protocol window.  Opening a new window is a
         # separate explicit action and must never be inferred from continue_task.
-        force_rollover=provider_session_changed,
+        # A ResumeRun is already bound to the source window.  A fresh provider
+        # wrapper for the same connection must not turn that explicit resume
+        # into an implicit new-chat rollover.
+        force_rollover=provider_session_changed and not continue_task,
         next_prompt=task,
     )
     if fresh_chat:

@@ -46,6 +46,7 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
 from codey.providers.local_discovery import LOCAL_BASE_URL_CANDIDATES, probe_local_endpoint_detail
 from tools import local_model_gate_attempts as attempts
+from tools.gate_policy import scope_verdict
 from tools.local_model_gate_recovery import run_recovery_case
 
 ARTIFACT_DIR = Path(__file__).resolve().parents[1] / ".e2e-artifacts"
@@ -854,6 +855,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--protocol", choices=("native", "json"), default="native")
     ap.add_argument("--model", default="", help="exact /models id; otherwise use its first id")
     ap.add_argument("--provider", choices=("local", "zen"), default="local")
+    ap.add_argument("--profile", choices=("smoke", "release"), default="release",
+                    help="smoke permits a selected subset; release requires the complete matrix")
     ap.add_argument("--turn-budget", type=_positive_int, default=0,
                     help="explicit per-task model turn budget; otherwise use scenario defaults")
     ap.add_argument("--run-dir", type=Path, help="new artifact directory; existing directories are rejected")
@@ -904,6 +907,12 @@ def main(argv: list[str] | None = None) -> int:
         _log(f"[gate] model={model} protocol={args.protocol} repeat={args.repeat}")
         results = attempts.run_attempts(selected, directory, target, repeat=args.repeat, timeout=args.timeout)
         payload = attempts.summarize(results, expected_cases=tuple(selected), repeat=args.repeat)
+        payload = scope_verdict(
+            payload,
+            profile=args.profile,
+            required_cases=tuple(CASES),
+            selected_cases=tuple(selected),
+        )
     except Exception as exc:
         payload = {"ok": False, "attempts": 0, "results": [], "failure_stage": "preflight_error",
                    "error": f"{type(exc).__name__}: {exc}"}
@@ -914,7 +923,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for item in payload["results"]:
             print(f"{item['case']}: {'PASS' if item.get('ok') else 'FAIL'}")
-    return 0 if payload["ok"] else 1
+    ready = payload.get("release_ready") if args.profile == "release" else payload.get("ok")
+    return 0 if payload.get("ok") is True and ready is True else 1
 
 
 if __name__ == "__main__":

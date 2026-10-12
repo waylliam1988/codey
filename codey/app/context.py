@@ -45,6 +45,7 @@ from codey.runs.trace import RunTraceStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
+from codey.runtime.effects.shell_approval_records import ShellApprovalRecordStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -130,6 +131,7 @@ class AppContext:
         self.runtime_operations = RuntimeOperationStore(self.runtime_log)
         self.runtime_effects = RuntimeEffectStore(self.runtime_log)
         self.tool_result_delivery = ToolResultDeliveryStore(self.runtime_log)
+        self.shell_approval_records = ShellApprovalRecordStore(runtime_state_home)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self._ghost_inbox: GhostInboxStore | None = None

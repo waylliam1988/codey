@@ -27,7 +27,7 @@ def test_release_cli_admits_explicit_zen_model_without_local_probe(monkeypatch, 
         return [{"case": "chat", "attempt": 1, "ok": True}]
 
     monkeypatch.setattr(attempts, "run_attempts", run)
-    assert release.main(["--provider", "zen", "--model", "muse-fixture", "--case", "chat",
+    assert release.main(["--provider", "zen", "--model", "muse-fixture", "--profile", "smoke", "--case", "chat",
                          "--run-dir", str(tmp_path / "release"), "--json"]) == 0
     assert captured[0].provider_id == "zen"
     assert captured[0].api_selection == selection().to_payload()
@@ -45,7 +45,7 @@ def test_release_cli_freezes_explicit_turn_budget_for_live_model_attempts(monkey
         return [{"case": "edit", "attempt": 1, "ok": True}]
 
     monkeypatch.setattr(attempts, "run_attempts", run)
-    assert release.main(["--provider", "zen", "--model", "muse-fixture", "--case", "edit",
+    assert release.main(["--provider", "zen", "--model", "muse-fixture", "--profile", "smoke", "--case", "edit",
                          "--turn-budget", "24", "--run-dir", str(tmp_path / "release"), "--json"]) == 0
     assert targets[0].turn_budget == 24
 

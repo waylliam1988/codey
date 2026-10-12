@@ -178,6 +178,60 @@ class ToolResultDeliveryError(ValueError):
     """Raised when delivery receipt data violates schema, bounds, or invariants."""
 
 
+@dataclass(frozen=True)
+class DeliveryCommit:
+    """Witness that a provider accepted one complete result batch.
+
+    This is deliberately a small value object.  The runtime session log owns
+    persistence; callers can serialize the witness in the same mutation as
+    their provider ledger commit and later reconcile it with delivered rows.
+    """
+
+    window_ref: Mapping[str, Any]
+    batch_id: str
+    provider_effect_id: str
+    results_digest: str
+    invocation_kind: str
+    reply_status: str
+    input_digest: str = ""
+    output_digest: str = ""
+
+    def validate(self) -> None:
+        if not isinstance(self.window_ref, Mapping) or not self.window_ref:
+            raise ToolResultDeliveryError("window_ref must be a non-empty mapping")
+        _require_bounded_str(self.batch_id, "batch_id", MAX_BATCH_ID_CHARS)
+        _require_bounded_str(self.provider_effect_id, "provider_effect_id", MAX_EFFECT_ID_CHARS)
+        _require_bounded_str(self.results_digest, "results_digest", MAX_DIGEST_CHARS)
+        _require_bounded_str(self.invocation_kind, "invocation_kind", 64)
+        _require_bounded_str(self.reply_status, "reply_status", 64)
+        for name, value in (("input_digest", self.input_digest), ("output_digest", self.output_digest)):
+            if value:
+                _require_bounded_str(value, name, MAX_DIGEST_CHARS)
+
+    def to_payload(self) -> dict[str, Any]:
+        self.validate()
+        return {
+            "window_ref": dict(self.window_ref),
+            "batch_id": self.batch_id,
+            "provider_effect_id": self.provider_effect_id,
+            "results_digest": self.results_digest,
+            "invocation_kind": self.invocation_kind,
+            "reply_status": self.reply_status,
+            "input_digest": self.input_digest,
+            "output_digest": self.output_digest,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> DeliveryCommit:
+        expected = {"window_ref", "batch_id", "provider_effect_id", "results_digest",
+                    "invocation_kind", "reply_status", "input_digest", "output_digest"}
+        if set(payload) != expected:
+            raise ToolResultDeliveryError(f"delivery commit keys mismatch: {set(payload) ^ expected}")
+        value = cls(**{key: payload[key] for key in expected})
+        value.validate()
+        return value
+
+
 def _require_nonnegative_int(value: Any, name: str) -> int:
     if type(value) is not int or value < 0:
         raise ToolResultDeliveryError(f"{name} must be a non-negative int, got {value!r}")
@@ -1172,6 +1226,7 @@ __all__ = [
     "DeliveryBatchItem",
     "DeliveryBatchIntent",
     "DeliveryBatchProjection",
+    "DeliveryCommit",
     "DeliveryRecoveredFact",
     "ToolResultDeliveryError",
     "ToolResultDeliveryStore",

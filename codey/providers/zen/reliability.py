@@ -146,7 +146,8 @@ class ZenRequestCoordinator:
                     lease = RequestLease(self._release)
                     lease.receipt = self._probes.get(key)
                     return lease
-                self._condition.wait(min(0.05, max(0.001, min(end, blocked_until or end) - now)))
+                wait_until = min(end, blocked_until or end)
+                self._condition.wait(min(0.05, max(0.0, wait_until - now)))
 
     def _release(self) -> None:
         with self._condition:

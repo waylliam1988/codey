@@ -77,6 +77,21 @@ class TaskSubmission:
     # Empty means fresh review; never a file path.
     review_source_run_id: str = ""
     model_selection: dict[str, object] = field(default_factory=dict)
+    # Canonical structured entry.  Legacy scalar fields above are retained at
+    # the outer scheduling boundary while all new callers can pass one typed
+    # input object and avoid ambiguous boolean combinations.
+    input: TaskInput | None = None
+
+    def resolved_input(self) -> TaskInput:
+        if self.input is not None:
+            return self.input
+        if self.initial_shell_results:
+            first = self.initial_shell_results[0]
+            approval_id = str(first.get("approval_id") or first.get("call_id") or self.previous_run_id or self.run_id)
+            return ResolveShellApproval(approval_id)
+        if self.continue_task:
+            return ResumeRun(self.previous_run_id or self.run_id, self.task)
+        return StartTask(self.task)
 
 
 def derive_project_changes_required(
