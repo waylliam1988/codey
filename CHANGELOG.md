@@ -2,13 +2,31 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Preserve JSON in done.summary (2026-10-12)
+
+- Remove the kernel's secondary `json.loads()` check for `done.summary`.
+  JSON objects, arrays, code blocks, incomplete examples and shell/tool-shaped
+  text are delivered as the final answer body and are never executed.
+- Keep outer `done` validation, summary type/required checks, permissions,
+  completion-gate evidence, Research finalization and native call receipts.
+- Production prompts, web-model reading repairs and `text_turn.py` are unchanged.
+  The remaining ambiguity for bare tool-shaped JSON outside `done.summary` is
+  intentionally unchanged.
+- Add real task-entry delivery coverage, a single complete tool-JSON regression,
+  and full production-prompt capture hashes. Parity records the three intended
+  `done-nested` behavior changes.
+- KoboldCpp release gate: **3/3**; UI gate: real Local Chat passed. Final full
+  pytest: **8411 passed, 30 skipped, 1508 subtests**. Machine contract remains
+  closed because 15 required Node.js/upstream checks were unavailable. No release/tag.
+
 ## Unreleased - Text protocol boundary extraction (2026-10-12)
 
 - Decode task text replies in `protocols/text_turn.py` before kernel validation.
   Preserve structured provider replies, native call IDs, batches, diagnostics,
   authorization and completion requirements; reject raw strings at the kernel.
-- Keep production prompts and existing web reply repairs unchanged. Existing
-  JSON example ambiguity and nested JSON rejection in `done.summary` remain.
+- Keep production prompts and existing web reply repairs unchanged. Bare JSON
+  example ambiguity outside `done.summary` remains; valid outer `done` summaries
+  are delivered as answer content.
 - Move the unused historical `JsonToolCodec` into test support, migrate fixtures
   and navigation targets, and require specific schema/snapshot rejection reasons.
 - Fix isolated UI gate model preferences for API providers; website settings

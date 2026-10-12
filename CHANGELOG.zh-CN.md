@@ -2,12 +2,26 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - 保留 done.summary 中的 JSON 答案（2026-10-12）
+
+- 删除内核对 `done.summary` 的二次 `json.loads()` 判断。摘要中的 JSON 对象、数组、
+  代码块、不完整示例和 Shell/工具形状文本都作为最终答案交付，绝不执行。
+- 保留外层 `done` 的 ToolSpec、摘要类型和必填校验、权限、完成门证据、Research
+  最终化以及原生调用回执。
+- 生产 prompt、网页模型正文读取修复和 `text_turn.py` 均未改变。`done.summary` 之外的
+  裸工具形状 JSON 歧义也保持现状。
+- 增加真实任务入口交付测试、单个完整工具 JSON 回归，以及完整生产 prompt 捕获哈希；
+  parity 明确记录三条有意的 `done-nested` 行为变化。
+- KoboldCpp release gate **3/3**，UI gate 真实 Local Chat 通过；最终全量
+  **8411 passed、30 skipped、1508 subtests**。机器契约仍因 15 个 Node.js/上游检查
+  环境缺失而关闭。不 Release、不打 tag。
+
 ## 未发布 - 文本协议解码边界整理（2026-10-12）
 
 - 任务文本先经 `protocols/text_turn.py` 解码，再交内核校验；保留结构化 provider
   回复、原生调用 ID、批次、诊断、权限与完成要求。内核拒绝原始字符串。
-- 生产提示和既有网页读取修复保持不变；工具形状 JSON 的现有歧义，以及
-  `done.summary` 嵌套 JSON 拒绝行为仍保留，不宣称本轮已解决答案语义问题。
+- 生产提示和既有网页读取修复保持不变；`done.summary` 之外的工具形状 JSON 歧义
+  仍保留，外层合法摘要中的 JSON 已由后续修复作为答案交付。
 - 无生产消费者的旧 `JsonToolCodec` 移入测试支持目录；迁移 fixture、导航评测目标，
   schema 和快照拒绝测试断言具体错误原因，避免因 `raw_text` 提前拒绝而假绿。
 - 修复 UI gate 隔离状态的 API 模型启用设置，网页仍走网站设置。

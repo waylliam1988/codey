@@ -11,6 +11,10 @@ KoboldCpp 本轮 native chat/read/create 与 UI Chat 通过；完整矩阵、网
 上游实机未覆盖。机器契约有 15 项必跑 Node.js 检查因环境未运行，不能称发布门全绿。
 完整数字、首次失败与产物目录见 [TEST_REPORT](../TEST_REPORT.md)。
 
+2026-10-12 `done.summary` 修复只改变合法外层摘要的内容校验：摘要中的 JSON
+不会执行，也不会绕过 completion gate。KoboldCpp release `chat/read/create`
+和 UI Chat 已在修复后重新通过；生产 prompt 与网页兼容链未改动。
+
 ## 0. 结论（给语音输入的你）
 
 - opencode 的门槛 = `unit（linux+windows）` + `e2e（playwright app）` + `typecheck` + `lint` + `generated client 检查` + `HttpApi exerciser（coverage/auth/effect，fail-on-missing/skip）`。

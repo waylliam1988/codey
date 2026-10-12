@@ -29,7 +29,8 @@ canonical ingestion。本文档中 0.5 之后的部分仍是后续 protocol port
 
 2026-10-12：任务文本解码已等价迁入 `protocols/text_turn.py`；生产内核不再
 扫描原始字符串，旧 `JsonToolCodec` 仅保留为测试基线。网页补丁原地保留，
-生产提示、答案与完成规则不变；本次不采用强制 `done.summary` 的新回答约定。
+生产提示与完成规则不变；后续修复仅允许合法外层 `done.summary` 中的 JSON 作为
+答案内容，不执行也不进行摘要二次解析。本次不采用强制 `done.summary` 的新回答约定。
 具体边界见 [Runtime 架构](runtime_architecture.zh-CN.md)。
 
 共享任务内核已经替代旧的 coding/research 生产循环：网页 JSON 与本地 native

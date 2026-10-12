@@ -1,5 +1,61 @@
 # Codey Test Report
 
+## Preserve JSON in done.summary (2026-10-12)
+
+Baseline: `72269c65` (text protocol boundary extraction), Windows / Python 3.12.8.
+This intentional runtime change removes only the kernel's secondary JSON inspection
+of `done.summary`. Production prompts, web-model reply repairs and the text decoder
+are unchanged. The outer `done` request still passes ToolSpec, type, required-arg,
+permission and Research contract validation; the completion gate remains the only
+authority for whether a task is actually complete.
+
+### TDD coverage
+
+- `tests/test_done_summary_json_content_validation.py` first reproduced the old
+  false rejection for a single complete `tool` JSON and a `name` data object, then
+  locked acceptance of JSON objects/arrays, code blocks, incomplete examples and
+  shell-shaped text. Missing/wrong-type summaries, malformed outer JSON and mixed
+  outer calls remain rejected.
+- `tests/test_done_summary_delivery_without_tool_execution.py` uses the real
+  `run_headless()` entry with a scripted provider. It is parameterized for one
+  complete tool JSON and multiple examples, asserts exactly one model request,
+  delivers the exact summary, and observes no edit/run/shell execution.
+- `tests/test_done_summary_production_prompts_unchanged.py` freezes the complete
+  initial prompt captured from `run_headless()` with a fixed normalized workspace,
+  plus the result and protocol-repair prompt surfaces. No hidden `done.summary`
+  instruction was added.
+- Three legacy parity cases are recorded as `INTENTIONAL_ANSWER_CONTENT`; the old
+  `tests/support/legacy_json_codec.py` remains a historical oracle only.
+
+### Verification before final pytest
+
+| Check | Actual result |
+| --- | --- |
+| Ruff | passed |
+| mypy | no issues in 403 source files |
+| Pyrefly | 0 errors; 48 suppressed, 829 warnings not shown |
+| git diff --check | passed |
+| Focused done-summary/parity regression | 744 passed |
+| Machine contracts | 1087 passed, 15 skipped, 14 subtests; 271.36s; required Node.js/upstream checks unavailable |
+| KoboldCpp release gate | chat/read/create: 3/3 passed |
+| KoboldCpp UI gate | real Local selection, config popover and Chat completion passed |
+
+Release artifact: `.e2e-artifacts/local-model-release-20261012-115904-ce2bdc78fc`.
+UI artifact: `.e2e-artifacts/done-summary-ui-20261012-final`.
+The UI provider history recorded one `done` call, zero completion rejections and
+zero transport errors. No web-model or Zen upstream live generation was claimed.
+
+### Final full pytest
+
+`python -m pytest -q -ra -o faulthandler_timeout=120`
+
+**8411 passed, 30 skipped, 1508 subtests passed in 1050.61s (17:30).**
+The 30 skips are Windows/POSIX contracts, unavailable Node.js/upstream compaction
+references and the opt-in browser E2E. A prior run was intentionally stopped at
+94% after the delivery test was strengthened; it is not counted as a result.
+The completed run above is the authoritative result. No assertion or skip rule
+was weakened. Documentation was updated only after this completed run.
+
 ## Text protocol boundary extraction (2026-10-12)
 
 Baseline: `a4c437f5` (Shared Chat workspace kernel), Windows / Python 3.12.8.

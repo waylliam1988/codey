@@ -5739,5 +5739,44 @@
       },
       "snapshot": null
     }
+  },
+  "protocol/coding/coding_writer/json/envelope/done-nested": {
+    "status": "INTENTIONAL_ANSWER_CONTENT",
+    "category": "done-summary-answer-content",
+    "reason": "done.summary is final answer content; JSON resembling a tool call is not parsed, executed, or rejected as a nested request.",
+    "tests": [
+      "tests/test_done_summary_json_content_validation.py",
+      "tests/test_done_summary_delivery_without_tool_execution.py",
+      "tests/test_kernel_parity_regressions.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {"accepted": false, "calls": [], "done": null},
+    "after": {"accepted": true, "calls": [], "done": "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"}
+  },
+  "protocol/coding/planning_readonly/json/envelope/done-nested": {
+    "status": "INTENTIONAL_ANSWER_CONTENT",
+    "category": "done-summary-answer-content",
+    "reason": "done.summary is final answer content; JSON resembling a tool call is not parsed, executed, or rejected as a nested request.",
+    "tests": [
+      "tests/test_done_summary_json_content_validation.py",
+      "tests/test_done_summary_delivery_without_tool_execution.py",
+      "tests/test_kernel_parity_regressions.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {"accepted": false, "calls": [], "done": null},
+    "after": {"accepted": true, "calls": [], "done": "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"}
+  },
+  "protocol/research/research/json/envelope/done-nested": {
+    "status": "INTENTIONAL_ANSWER_CONTENT",
+    "category": "done-summary-answer-content",
+    "reason": "done.summary is final answer content; JSON resembling a tool call is not parsed, executed, or rejected as a nested request.",
+    "tests": [
+      "tests/test_done_summary_json_content_validation.py",
+      "tests/test_done_summary_delivery_without_tool_execution.py",
+      "tests/test_kernel_parity_regressions.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {"accepted": false, "calls": [], "done": null},
+    "after": {"accepted": true, "calls": [], "done": "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium\"}}"}
   }
 }

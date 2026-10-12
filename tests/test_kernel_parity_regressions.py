@@ -51,13 +51,16 @@ def test_list_dir_omitted_path_defaults_to_project_root(wire):
 
 
 @pytest.mark.parametrize("wire", ["json", "native"])
-def test_done_rejects_nested_executable_tool_in_summary(wire):
+def test_done_summary_preserves_nested_executable_tool_json_as_answer(wire):
     args = {"summary": json_call("read_file", path="a.py")}
     reply = json_call("done", **args) if wire == "json" else AssistantTurn(
         text="", tool_calls=(ProviderToolCall(id="c1", name="done", arguments=args),))
     plan = normalize_turn(reply, policy=TaskPolicy(grants=frozenset({"control"})))
-    assert plan.protocol_error
-    assert not plan.calls and plan.control is None
+    assert not plan.protocol_error
+    assert not plan.calls
+    assert plan.control is not None
+    assert plan.control.kind == "done"
+    assert plan.control.body == args["summary"]
 
 
 def test_research_done_keeps_bounded_followup_questions_for_synthesis():

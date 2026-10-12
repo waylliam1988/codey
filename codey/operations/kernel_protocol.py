@@ -396,13 +396,6 @@ def _validate_tool_args(
     if name == "done":
         # ``done`` is a control tool with no runtime executor. Its
         # canonical ToolSpec validation above is the complete contract.
-        summary = str(args.get("summary") or "")
-        try:
-            nested = json.loads(summary)
-        except (ValueError, TypeError):
-            nested = None
-        if isinstance(nested, dict) and (nested.get("tool") or nested.get("name")):
-            return {}, "done summary must be the final user-facing answer, not another tool call"
         from codey.research.tool_contract import validate_tool_args
 
         validated_done = validate_tool_args("done", args)
