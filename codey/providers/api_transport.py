@@ -28,6 +28,7 @@ from codey.providers.diagnostics import (
 from codey.providers.error_classification import RequestPrepError
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_ERROR_BODY_BYTES = 64 * 1024
 _OPEN_WORK_SLOTS = threading.BoundedSemaphore(8)
 
 
@@ -164,10 +165,6 @@ class BoundedBodyReader:
             if self.idle_timeout is not None and time.monotonic() - self.control.last_byte_at >= self.idle_timeout:
                 raise GenerationUnknownError("generation body was silent; not resent") from exc
             raise GenerationUnknownError("generation deadline exceeded; not resent") from exc
-        if not isinstance(data, bytes) and callable(reader):
-            # Some deterministic response doubles expose every attribute as a
-            # callable MagicMock; use their real ``read`` implementation.
-            data = self.source.read(size)
         if self.idle_timeout is not None and time.monotonic() - started >= self.idle_timeout:
             raise GenerationUnknownError("generation body was silent; not resent")
         if not isinstance(data, bytes):
@@ -384,7 +381,7 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
             raise RequestPrepError(f"unsupported proxy scheme: {proxy_scheme or 'unknown'}")
     identity = str(options.get("identity") or "")
     tls = str(options.get("tls") or parts.scheme)
-    key = ConnectionKey(parts.scheme + "://" + parts.netloc, proxy, identity, tls)
+    key = ConnectionKey(parts.scheme + "://" + parts.netloc, _proxy_pool_identity(proxy), identity, tls)
     lease = http_session.acquire_lease(key)
     if lease is None:
         lease = ConnectionLease(http_session, key)
@@ -523,6 +520,27 @@ def _proxy_authorization(proxy: str) -> str | None:
     return "Basic " + base64.b64encode(credentials).decode("ascii")
 
 
+def _proxy_pool_identity(proxy: str) -> str:
+    """Return a stable pool key without embedding proxy credentials.
+
+    The transport still uses the original proxy URL to establish the tunnel,
+    but connection reuse and diagnostics must never retain its userinfo.
+    Authentication is represented only by a non-reversible marker so proxies
+    with and without credentials cannot accidentally share a connection.
+    """
+    if not proxy:
+        return ""
+    parsed = urlsplit(proxy)
+    host = parsed.hostname or ""
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    authority = host if port is None else f"{host}:{port}"
+    auth_marker = "auth" if parsed.username is not None else "anonymous"
+    return f"{parsed.scheme.lower()}://{authority}|{auth_marker}"
+
+
 class _SubmissionHTTPSHandler(urllib.request.HTTPSHandler):
     """Track generation bytes independently of TLS and proxy CONNECT bytes."""
 
@@ -630,21 +648,21 @@ def _open_request_sync(request: urllib.request.Request, timeout: float, *, contr
         active_control = control or AttemptControl()
         return _open_pooled_request(request, timeout, control=active_control,
                                     http_session=http_session, transport_options=transport_options)
-    deadline = time.monotonic() + timeout
-    for attempt in range(2):
-        submission: dict[str, bool] = {}
-        opener = urllib.request.build_opener(NoGenerationRedirect(), _SubmissionHTTPHandler(submission, control),
-                                             _SubmissionHTTPSHandler(submission, control))
-        try:
-            return opener.open(request, timeout=max(0.001, deadline - time.monotonic()))
-        except urllib.error.URLError as exc:
-            if submission.get("attempted") is not False or not isinstance(exc.reason, ssl.SSLError):
-                raise
-            if (isinstance(exc.reason, ssl.SSLEOFError) and attempt == 0 and time.monotonic() < deadline
-                    and (attempt_budget is None or attempt_budget.reserve("tls_reconnect"))):
-                continue
-            raise GenerationNotSentError(f"TLS connection failed before generation submission: {exc.reason}") from exc
-    raise AssertionError("unreachable connection retry state")
+    # Transport performs exactly one physical attempt.  Whether a write-safe
+    # TLS EOF may be retried belongs to the provider policy, which owns the
+    # shared attempt budget and can make the same decision for pooled and
+    # non-pooled connections.
+    submission: dict[str, bool] = {}
+    opener = urllib.request.build_opener(NoGenerationRedirect(), _SubmissionHTTPHandler(submission, control),
+                                         _SubmissionHTTPSHandler(submission, control))
+    try:
+        return opener.open(request, timeout=max(0.001, timeout))
+    except urllib.error.URLError as exc:
+        if submission.get("attempted") is not False or not isinstance(exc.reason, ssl.SSLError):
+            raise
+        raise GenerationNotSentError(f"TLS connection failed before generation submission: {exc.reason}",
+                                     reason_code="pre_submission_tls_eof" if isinstance(exc.reason, ssl.SSLEOFError)
+                                     else "pre_submission_tls_error") from exc
 
 
 def _selected_proxy(url: str, options: Mapping[str, object] | None) -> str:
@@ -673,8 +691,18 @@ def open_request(request: urllib.request.Request, timeout: float, *, control: At
                  http_session: Any = None, transport_options: Mapping[str, object] | None = None) -> Any:
     """Open one request while allowing Stop to leave a blocked header read."""
     if control is None:
-        return _open_request_sync(request, timeout, attempt_budget=attempt_budget,
-                                  http_session=http_session, transport_options=transport_options)
+        try:
+            return _open_request_sync(request, timeout, attempt_budget=attempt_budget,
+                                      http_session=http_session, transport_options=transport_options)
+        except GenerationNotSentError as exc:
+            # Preserve the small, public open_request seam used by older
+            # callers that invoke it directly.  Provider exchanges always
+            # supply an AttemptControl and therefore use the policy-owned
+            # single-attempt path above.
+            if (attempt_budget is None and http_session is None
+                    and exc.reason_code == "pre_submission_tls_eof"):
+                return _open_request_sync(request, timeout, transport_options=transport_options)
+            raise
     import queue
 
     result: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
@@ -813,7 +841,7 @@ def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
     raise GenerationUnknownError("generation stream ended without a valid terminal event; not resent")
 
 
-def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str, str], *, timeout: float,  # noqa: PLR0912, PLR0915
+def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str, str], *, timeout: float,  # noqa: C901, PLR0912, PLR0915
              observe: Callable[..., None], cancelled: Callable[[], bool] = lambda: False,
              opened: Callable[[Any], None] = lambda response: None,
              on_event: Callable[[dict[str, Any]], None] = lambda event: None,
@@ -838,24 +866,26 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
     deadline_guard.start()
     try:
         opener = open_request
-        # Keep the small transport seam usable by deterministic test transports
-        # that implement the historical two-argument callable.
-        import inspect
-        parameters = inspect.signature(opener).parameters
-        if "control" in parameters:
-            kwargs: dict[str, object] = {"control": control}
-            if "attempt_budget" in parameters:
-                kwargs["attempt_budget"] = attempt_budget
-            if "http_session" in parameters:
-                kwargs["http_session"] = http_session
-            if "transport_options" in parameters:
-                kwargs["transport_options"] = {
-                    **(dict(transport_options) if transport_options is not None else {}),
-                    "body_idle_timeout": idle_timeout,
-                }
+        kwargs: dict[str, object] = {
+            "control": control,
+            "attempt_budget": attempt_budget,
+            "http_session": http_session,
+            "transport_options": {
+                **(dict(transport_options) if transport_options is not None else {}),
+                "body_idle_timeout": idle_timeout,
+            },
+        }
+        try:
             response_context = cast(Any, opener)(request, timeout, **kwargs)
-        else:
-            response_context = opener(request, timeout)
+        except TypeError as exc:
+            # A tiny compatibility seam for external deterministic transports
+            # that still expose the original two-argument callable.  Only an
+            # explicit unexpected-keyword error is eligible for fallback;
+            # TypeErrors raised by the transport itself propagate unchanged.
+            message = str(exc).lower()
+            if "unexpected keyword argument" not in message:
+                raise
+            response_context = cast(Any, opener)(request, timeout)
         with response_context as response:
             control.register_response(response)
             control.enter_phase("response_headers")
@@ -870,13 +900,21 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
             else:
                 control.enter_phase("body")
                 control.reset_body_timer()
-                reader = BoundedBodyReader(response, control=control, deadline=started + timeout,
-                                           idle_timeout=idle_timeout)
+                # Only use incremental reads when the response type declares
+                # ``read1``. Dynamic test doubles and wrappers can synthesize
+                # arbitrary instance attributes that are not byte readers.
+                read1 = getattr(type(response), "read1", None)
+                has_streaming_read = callable(read1)
+                reader = BoundedBodyReader(
+                    response,
+                    control=control,
+                    deadline=started + timeout,
+                    idle_timeout=idle_timeout,
+                    prefer_read1=has_streaming_read,
+                )
                 # JSON responses are framed by the HTTP content length (or
                 # EOF); one bounded read preserves that framing while the
                 # reader still records the actual bytes received.
-                read1 = getattr(response, "read1", None)
-                has_streaming_read = callable(read1) and "unittest.mock" not in type(read1).__module__
                 if has_streaming_read:
                     chunks: list[bytes] = []
                     while True:
@@ -910,9 +948,36 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
             raise GenerationUnknownError("generation cancelled while reading rejection") from exc
         control.reset_body_timer()
         with contextlib.closing(exc):
-            error_reader = BoundedBodyReader(exc, control=control, deadline=started + timeout, max_bytes=2000,
-                                             prefer_read1=False, idle_timeout=idle_timeout)
-            detail = error_reader.read_chunk(2000).decode("utf8", "replace")
+            declared_length: int | None = None
+            raw_length = exc.headers.get("Content-Length") if exc.headers is not None else None
+            if raw_length:
+                try:
+                    declared_length = int(raw_length)
+                except (TypeError, ValueError):
+                    declared_length = None
+                if declared_length is not None and declared_length > MAX_ERROR_BODY_BYTES:
+                    raise GenerationUnknownError("rejection body exceeds its diagnostic limit; not resent") from exc
+            error_reader = BoundedBodyReader(
+                exc, control=control, deadline=started + timeout,
+                max_bytes=MAX_ERROR_BODY_BYTES + 1, prefer_read1=False,
+                idle_timeout=idle_timeout,
+            )
+            detail_parts: list[bytes] = []
+            detail_size = 0
+            while detail_size <= MAX_ERROR_BODY_BYTES:
+                chunk = error_reader.read_chunk(min(2000, MAX_ERROR_BODY_BYTES + 1 - detail_size))
+                if not chunk:
+                    break
+                detail_parts.append(chunk)
+                detail_size += len(chunk)
+                if declared_length is not None and detail_size >= declared_length:
+                    break
+            raw_detail = b"".join(detail_parts)
+            if len(raw_detail) > MAX_ERROR_BODY_BYTES:
+                raise GenerationUnknownError("rejection body is incomplete or exceeds its diagnostic limit; not resent") from exc
+            if declared_length is not None and len(raw_detail) != declared_length:
+                raise GenerationUnknownError("rejection body framing is incomplete; not resent") from exc
+            detail = raw_detail.decode("utf8", "replace")
         if errors.classify_http_error(exc.code, detail) == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
             raise errors.ContextOverflowError(detail[:400]) from exc
         raise GenerationRejectedError(

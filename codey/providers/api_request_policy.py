@@ -60,10 +60,14 @@ class RequestLease:
 
 
 class PendingRequest:
-    def __init__(self, close: Any) -> None:
+    def __init__(self, close: Any, *, registration_token: object | None = None) -> None:
         self._close_fn = close
         self._closed = False
         self._lock = threading.Lock()
+        # A request-local identity is required for probe ownership.  It must
+        # remain stable for the entire request and must never be derived from
+        # the object's memory address, which can be reused after cleanup.
+        self.registration_token = registration_token if registration_token is not None else object()
 
     def close(self) -> None:
         with self._lock:
@@ -85,7 +89,6 @@ class RequestPolicy(Protocol):
     def acquire(self, pending: PendingRequest, context: RequestContext) -> RequestLease: ...
     def observe_failure(self, context: RequestContext, receipt: object, failure: BaseException,
                         budget: AttemptBudget) -> RetryDirective: ...
-    def observe_success(self, context: RequestContext, receipt: object) -> None: ...
     def settle(self, context: RequestContext, receipt: object) -> None: ...
 
 
@@ -118,9 +121,6 @@ class LocalRequestPolicy:
         if getattr(failure, "reason_code", "") == "pre_submission_tls_eof" and budget.used < 2:
             return RetryDirective(True, reason="pre_submission_tls_eof")
         return RetryDirective(False, reason=str(failure))
-
-    def observe_success(self, context: RequestContext, receipt: object) -> None:
-        return None
 
     def settle(self, context: RequestContext, receipt: object) -> None:
         return None

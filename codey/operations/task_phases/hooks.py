@@ -198,6 +198,49 @@ class _RunHookCallbacks:
             risk_detail=risk.detail,
             post_approval_instructions=risk.post_approval_instructions,
         )
+        command_ref = ""
+        command_digest = ""
+        managed_outputs = getattr(self.state, "managed_outputs", None)
+        if managed_outputs is not None:
+            from codey.runtime.effects.shell_approval_records import json_digest
+
+            max_turns_raw = pending.get("max_turns")
+            max_turns = max_turns_raw if type(max_turns_raw) is int and max_turns_raw > 0 else 1
+            command_payload = {
+                "command": command,
+                "cwd": str(pending.get("cwd") or "."),
+                "project": str(pending.get("project") or ""),
+                "attached_project": str(pending.get("attached_project") or ""),
+                "intent": str(pending.get("intent") or "chat"),
+                "max_turns": max_turns,
+                "provider": str(pending.get("provider") or ""),
+                "continue_after": bool(pending.get("continue_after")),
+                "call_id": str(pending.get("call_id") or ""),
+                "window_ref": pending.get("window_ref"),
+            }
+            artifact = managed_outputs.write_json_artifact(
+                session_id=self.session_id,
+                run_id=self.run_id,
+                payload=command_payload,
+            )
+            command_ref = artifact.handle
+            command_digest = json_digest(command_payload)
+            pending["command_ref"] = command_ref
+            pending["command_digest"] = command_digest
+        from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+
+        record_fact = getattr(self.state, "record_shell_approval_fact", None)
+        if callable(record_fact):
+            record_fact(ShellApprovalFact(
+                approval_id=approval_id,
+                session_id=self.session_id,
+                source_run_id=self.run_id,
+                kind="requested",
+                invocation_origin="native" if pending.get("call_id") else "text",
+                command_ref=command_ref,
+                command_digest=command_digest,
+                cwd=str(pending.get("cwd") or "."),
+            ))
         self.state.add_pending_shell_approval(approval_id, pending)
         event = pending.get("ui_event")
         if isinstance(event, dict):

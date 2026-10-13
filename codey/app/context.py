@@ -45,7 +45,7 @@ from codey.runs.trace import RunTraceStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
-from codey.runtime.effects.shell_approval_records import ShellApprovalRecordStore
+from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -553,9 +553,50 @@ class AppContext:
                 pending = {**pending, "_api_selection": config}
             self.approvals.add_shell(approval_id, pending)
 
+    def record_shell_approval_fact(self, fact: ShellApprovalFact) -> None:
+        """Append the durable approval fact before publishing its projection."""
+        self.shell_approval_records.append(fact)
+
     def pop_pending_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
         with self.lock:
-            return self.approvals.pop_shell(approval_id)
+            pending = self.approvals.pop_shell(approval_id)
+            if pending is not None:
+                return pending
+            # Rebuild only an untouched request from durable facts after an
+            # application restart.  Any later fact is terminal or execution
+            # uncertain and must fail closed rather than spawning again.
+            fact = self.shell_approval_records.latest(approval_id)
+            if fact is None or fact.kind != "requested" or self.managed_outputs is None:
+                return None
+            try:
+                payload = self.managed_outputs.read_json_artifact({
+                    "session_id": fact.session_id,
+                    "run_id": fact.source_run_id,
+                    "handle": fact.command_ref,
+                    "sha256": fact.command_digest,
+                    "schema_version": 1,
+                })
+            except (OSError, ValueError, TypeError):
+                return None
+            if not isinstance(payload, dict) or not isinstance(payload.get("command"), str):
+                return None
+            return {
+                "approval_id": approval_id,
+                "session_id": fact.session_id,
+                "run_id": fact.source_run_id,
+                "command": payload["command"],
+                "cwd": str(payload.get("cwd") or "."),
+                "project": str(payload.get("project") or ""),
+                "attached_project": str(payload.get("attached_project") or payload.get("project") or ""),
+                "intent": str(payload.get("intent") or "chat"),
+                "provider": str(payload.get("provider") or ""),
+                "continue_after": bool(payload.get("continue_after")),
+                "max_turns": int(payload.get("max_turns") or 1),
+                "call_id": str(payload.get("call_id") or ""),
+                "window_ref": payload.get("window_ref"),
+                "command_ref": fact.command_ref,
+                "command_digest": fact.command_digest,
+            }
 
     def approval_generation(self) -> int:
         with self.lock:

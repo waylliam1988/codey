@@ -10,7 +10,8 @@
 - Preserve the original protocol window through Shell approval, restart recovery and model-switch checks; pending native calls block an unsafe reset without erasing the persisted history.
 - Add the fixed Shell approval release cases and production source fingerprints for the complete HTTP approval-to-final-answer path.
 - Rename the shell gate marker to a brand-neutral value and retain accepted transport history after bounded Zen refusal/output-limit failures without treating it as success.
-- Ruff, Pyrefly, machine contract and final full pytest pass: **8506 passed, 30 skipped, 1508 subtests**. The existing strict mypy tools baseline remains documented; no release or tag.
+- Fix bounded JSON response reads so dynamic response doubles cannot be mistaken for byte-stream `read1` readers; the reasoning-display regressions are covered by the full suite.
+- Ruff, Pyrefly, machine contract and final full pytest pass: **8530 passed, 7 skipped, 1509 subtests**. The existing strict mypy tools baseline remains documented; no release or tag.
 
 ## Unreleased - Zen/API request reliability and connection lifecycle (2026-10-12)
 

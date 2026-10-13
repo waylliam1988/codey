@@ -170,11 +170,14 @@ class ZenProvider:
 
     def send_tool_results_bound(self, results: Any, window_ref: Any,
                                 tools: list[ProviderToolDefinition] | None = None,
-                                timeout: float | None = None) -> Any:
+                                timeout: float | None = None,
+                                delivery_commit: dict[str, Any] | None = None) -> Any:
         declared, inverse = prepare_declarations(tools)
         with self._sending() as generation:
             self._check_generation(generation)
-            turn: Any = self.runtime.send_tool_results_bound(results, window_ref, declared, timeout=timeout)
+            turn: Any = self.runtime.send_tool_results_bound(
+                results, window_ref, declared, timeout=timeout, delivery_commit=delivery_commit,
+            )
             self._check_generation(generation)
         if isinstance(turn, AssistantTurn):
             return replace(turn, tool_calls=tuple(replace(call, name=inverse.get(call.name, call.name)) for call in turn.tool_calls))

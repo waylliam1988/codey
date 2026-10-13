@@ -9,14 +9,16 @@
 | 检查 | 结果 |
 | --- | --- |
 | Ruff | passed |
-| mypy | 仓库既有 tools 全树基线仍有 118 项；本轮生产改动未新增已确认错误 |
+| mypy | **Success: no issues found in 409 source files** |
 | Pyrefly | 0 errors |
-| Machine contract | 1087 passed, 15 skipped, 14 subtests |
+| Machine contract | **1102 passed, 14 subtests passed** |
 | Machine contract 补充检查 | 4 passed, 15 skipped |
 | Shell 审批/协议窗口定向回归 | passed |
-| 最终全量 pytest | **8506 passed, 30 skipped, 1508 subtests passed** |
+| 最终全量 pytest | **8530 passed, 7 skipped, 1509 subtests passed** |
 
 未调用 Zen 实机接口，未 release/tag。最终全量 pytest 在本节更新前已完成；首次全量的 2 个旧 gate 断言已改为显式 smoke profile 后重新验证。
+
+随后一次完整 `python -m pytest -q -o faulthandler_timeout=120` 曾暴露 7 个 reasoning-display 回归：动态响应桩的实例属性被误判为流式 `read1`。传输层已改为只接受响应类型声明的 `read1`，并在修复后重新完成全量验证；上表结果是该修复后的唯一权威结果。
 
 ## Zen/API 请求可靠性与连接生命周期（2026-10-12）
 

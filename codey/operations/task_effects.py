@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -149,6 +150,14 @@ class KernelRecordedProvider(ProviderAdapter):
             sink.session_id, sink.run_id, intent,
             delivery_batch_id=sink.delivery_batch_id,
         )
+        # The provider ledger commit and the runtime delivery receipt are
+        # separate durable records.  Carry a deterministic witness into the
+        # window transaction so recovery can reconcile a committed result
+        # batch without issuing another HTTP request.
+        if name == "send_tool_results_bound" and sink.delivery_batch_id and "delivery_commit" not in kwargs:
+            witness = _delivery_commit_for_send(sink, args, effect_id)
+            if witness is not None:
+                kwargs["delivery_commit"] = witness
         try:
             reply = getattr(self.provider, name)(*args, **kwargs)
         except Exception as exc:
@@ -185,6 +194,34 @@ class KernelRecordedProvider(ProviderAdapter):
         )
         sink.delivery_batch_id = ""
         return reply
+
+
+def _delivery_commit_for_send(sink: KernelEffectSink, args: tuple[Any, ...], effect_id: str) -> dict[str, Any] | None:
+    if len(args) < 2:
+        return None
+    raw_results, raw_window = args[0], args[1]
+    window_payload = raw_window.to_payload() if hasattr(raw_window, "to_payload") else raw_window
+    if not isinstance(window_payload, dict) or not window_payload:
+        return None
+    result_rows = []
+    for result in raw_results or ():
+        result_rows.append({
+            "call_id": str(getattr(result, "call_id", "") or ""),
+            "content": str(getattr(result, "content", "") or ""),
+        })
+    digest = hashlib.sha256(json.dumps(
+        result_rows, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()[:32]
+    from codey.runtime.effects.tool_result_delivery import DeliveryCommit
+
+    return DeliveryCommit(
+        window_ref=window_payload,
+        batch_id=sink.delivery_batch_id,
+        provider_effect_id=effect_id,
+        results_digest=digest,
+        invocation_kind="native_tool_results",
+        reply_status="accepted",
+    ).to_payload()
 
 
 __all__ = ["KernelEffectSink", "KernelRecordedProvider"]

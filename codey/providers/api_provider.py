@@ -304,14 +304,16 @@ class ApiProvider:
 
     def send_tool_results_bound(self, results: list[ProviderToolResult], window_ref: ProtocolWindowRef,
                                 tools: list[ProviderToolDefinition] | None = None,
-                                timeout: float | None = None) -> AssistantTurn:
+                                timeout: float | None = None,
+                                delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
         """Deliver native results only to the exact protocol window that created them."""
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
-                              expected_window_ref=window_ref)
+                              expected_window_ref=window_ref, delivery_commit=delivery_commit)
 
     def _exchange(self, pending: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
                   *, timeout: float | None = None, text_only: bool = False,
-                  expected_window_ref: ProtocolWindowRef | None = None) -> AssistantTurn:
+                   expected_window_ref: ProtocolWindowRef | None = None,
+                   delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
         from codey.providers.error_classification import OutputLengthError
 
@@ -338,17 +340,13 @@ class ApiProvider:
             except Exception:
                 # The service answered this request. A decode failure cannot
                 # erase its valid inputs or results of already executed tools.
-                self._commit_exchange(generation, base_revision, candidate, pending, [], tools, checkpoints)
+                self._commit_exchange(generation, base_revision, candidate, pending, [], tools, checkpoints,
+                                      delivery_commit=delivery_commit)
                 raise
             self._commit_exchange(generation, base_revision, candidate, pending, output or [], tools, checkpoints,
-                                  (turn.text, turn.reasoning) if output is not None else None)
+                                  (turn.text, turn.reasoning) if output is not None else None,
+                                  delivery_commit=delivery_commit)
             committed = output is not None
-            if committed and self._request_context is not None:
-                # Usage/diagnostic observation is optional.  A committed
-                # protocol answer must not become a failed exchange because
-                # an observer is unavailable or malfunctioning.
-                with contextlib.suppress(Exception):
-                    self.request_policy.observe_success(self._request_context, self._request_receipt)
             return turn
         finally:
             main_error = __import__("sys").exc_info()[1]
@@ -382,7 +380,8 @@ class ApiProvider:
     def _commit_exchange(self, generation: int, base_revision: int, candidate: list[dict[str, Any]],
                          pending: list[dict[str, Any]], output: list[dict[str, Any]],
                          tools: list[ProviderToolDefinition] | None, checkpoints: list[dict[str, Any]],
-                         reasoned_reply: tuple[str, str] | None = None) -> None:
+                         reasoned_reply: tuple[str, str] | None = None,
+                         delivery_commit: dict[str, Any] | None = None) -> None:
         from codey.providers import api_transport
 
         with self._state_lock:
@@ -392,7 +391,8 @@ class ApiProvider:
                 candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt, tools=tools)
                 checkpoints = []
             self.context_ledger.commit([*candidate, *output], events=[*pending, *output], window_ref=self._window_ref,
-                checkpoint={"kind": "transaction", "segments": checkpoints} if checkpoints else None)
+                checkpoint={"kind": "transaction", "segments": checkpoints} if checkpoints else None,
+                delivery_commit=delivery_commit)
             self._compaction.accept(checkpoints)
             self._messages = [*candidate, *output]
             self._last_output_estimate = estimate_request({"messages": output}, deadline=time.monotonic()).value or 0

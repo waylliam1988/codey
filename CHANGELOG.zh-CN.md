@@ -10,7 +10,8 @@
 - Shell 审批、进程重启恢复和模型切换都保留原协议窗口；存在待回答原生调用时拒绝不安全重置，且不清空持久历史。
 - 增加固定 Shell 审批发布用例，并把完整 HTTP 审批到最终回答链路的关键源码纳入指纹。
 - Shell gate 标记改为无品牌名称；Zen 有界拒绝或输出超限后保留已接受传输历史，但不把它当作成功回答。
-- Ruff、Pyrefly、machine contract 和最终全量 pytest 通过：**8506 passed、30 skipped、1508 subtests**。严格 mypy tools 基线中的既有问题仍已记录。不 release、不打 tag。
+- 修复有界 JSON 响应读取：动态响应桩不能再被误判为字节流 `read1` 读取器；reasoning-display 回归已由全量测试覆盖。
+- Ruff、Pyrefly、machine contract 和最终全量 pytest 通过：**8530 passed、7 skipped、1509 subtests**。严格 mypy tools 基线中的既有问题仍已记录。不 release、不打 tag。
 
 ## 未发布 - Zen/API 请求可靠性与连接生命周期（2026-10-12）
 

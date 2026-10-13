@@ -7,6 +7,7 @@ are not a model-readable tool surface.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -42,6 +43,26 @@ class ManagedOutputRef:
     sha256: str
     stored_truncated: bool = False
     original_sha256: str = ""
+
+
+@dataclass(frozen=True)
+class ManagedJsonArtifactRef:
+    """Durable, scoped reference for structured recovery artifacts."""
+
+    session_id: str
+    run_id: str
+    handle: str
+    sha256: str
+    schema_version: int
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "session_id": self.session_id,
+            "run_id": self.run_id,
+            "handle": self.handle,
+            "sha256": self.sha256,
+            "schema_version": self.schema_version,
+        }
 
 
 class ManagedOutputStore:
@@ -170,6 +191,87 @@ class ManagedOutputStore:
             raise ValueError(f"managed receipt content mismatch for {safe_handle}")
         return stored_text, {str(k): v for k, v in metadata.items()}
 
+    def write_json_artifact(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        payload: object,
+        schema_version: int = 1,
+    ) -> ManagedJsonArtifactRef:
+        """Atomically persist a bounded JSON artifact and its digest metadata."""
+        if type(schema_version) is not int or schema_version < 1:
+            raise ValueError("schema_version must be a positive integer")
+        raw = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        if len(raw) > MAX_MANAGED_OUTPUT_BYTES:
+            raise ValueError("json artifact exceeds size limit")
+        digest = hashlib.sha256(raw).hexdigest()
+        handle = f"artifact_{digest[:24]}"
+        run_dir = self._run_dir(session_id, run_id)
+        with with_file_lock(run_dir):
+            path = self._handle_path(session_id, run_id, handle, ".json")
+            metadata_path = self._handle_path(session_id, run_id, handle, ".meta.json")
+            write_bytes_atomic(path, raw)
+            write_json_atomic(
+                metadata_path,
+                {
+                    "schema_version": schema_version,
+                    "session_id": session_id,
+                    "run_id": run_id,
+                    "handle": handle,
+                    "sha256": digest,
+                    "bytes": len(raw),
+                },
+                max_bytes=MAX_METADATA_BYTES,
+            )
+        return ManagedJsonArtifactRef(session_id, run_id, handle, digest, schema_version)
+
+    def read_json_artifact(
+        self,
+        ref: ManagedJsonArtifactRef | dict[str, object] | str,
+        *,
+        session_id: str | None = None,
+        run_id: str | None = None,
+    ) -> object:
+        """Read a structured artifact only after scope, schema and digest checks."""
+        expected_schema: object | None
+        if isinstance(ref, ManagedJsonArtifactRef):
+            ref_session, ref_run, handle, expected_digest = ref.session_id, ref.run_id, ref.handle, ref.sha256
+            expected_schema = ref.schema_version
+        elif isinstance(ref, dict):
+            ref_session = str(ref.get("session_id") or session_id or "")
+            ref_run = str(ref.get("run_id") or run_id or "")
+            handle = str(ref.get("handle") or "")
+            expected_digest = str(ref.get("sha256") or "")
+            expected_schema = ref.get("schema_version")
+        else:
+            ref_session, ref_run, handle, expected_digest, expected_schema = (
+                str(session_id or ""), str(run_id or ""), str(ref), "", None,
+            )
+        if not ref_session or not ref_run or not handle:
+            raise ValueError("json artifact reference is incomplete")
+        safe_handle = _safe_artifact_handle(handle)
+        path = self._handle_path(ref_session, ref_run, safe_handle, ".json")
+        metadata_path = self._handle_path(ref_session, ref_run, safe_handle, ".meta.json")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if not isinstance(metadata, dict):
+            raise ValueError("json artifact metadata is invalid")
+        if metadata.get("session_id") != ref_session or metadata.get("run_id") != ref_run:
+            raise ValueError("json artifact scope mismatch")
+        if metadata.get("handle") != safe_handle or metadata.get("schema_version") != expected_schema:
+            raise ValueError("json artifact metadata mismatch")
+        raw = path.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        if digest != metadata.get("sha256") or (expected_digest and digest != expected_digest):
+            raise ValueError("json artifact digest mismatch")
+        return json.loads(raw.decode("utf-8"))
+
     def _run_dir(self, session_id: str, run_id: str) -> Path:
         root = self.root.resolve()
         path = root / session_key(session_id) / _safe_component(run_id, "run")
@@ -184,7 +286,7 @@ class ManagedOutputStore:
         handle: str,
         suffix: str,
     ) -> Path:
-        safe_handle = _safe_handle(handle)
+        safe_handle = _safe_artifact_handle(handle) if str(handle).startswith("artifact_") else _safe_handle(handle)
         path = self._run_dir(session_id, run_id) / f"{safe_handle}{suffix}"
         resolved = path.resolve()
         resolved.relative_to(self.root.resolve())
@@ -285,6 +387,13 @@ def _safe_handle(value: object) -> str:
     text = str(value or "").strip()
     if not re.fullmatch(r"out_[A-Za-z0-9_.-]{1,80}", text):
         raise ValueError("invalid managed output handle")
+    return text
+
+
+def _safe_artifact_handle(value: object) -> str:
+    text = str(value or "").strip()
+    if not re.fullmatch(r"artifact_[A-Za-z0-9_.-]{1,80}", text):
+        raise ValueError("invalid managed artifact handle")
     return text
 
 

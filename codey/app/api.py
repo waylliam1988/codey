@@ -28,6 +28,7 @@ from codey.providers.local_config import (
 from codey.providers.local_discovery import LocalEndpoint, probe_local_endpoint_detail
 from codey.providers.model_preferences import ModelDisabledError
 from codey.runs.details import load_run_details
+from codey.runtime.effects.shell_approval_records import ShellApprovalFact, json_digest
 from codey.storage.local_store import StoreCorruption
 from codey.task.entry_auth import derive_entry_auth
 from codey.workspace.changes import collect_changes, is_git_repository, restore_snapshot_changes
@@ -624,7 +625,49 @@ def _stopped_shell_denial(
         "exit_code": None,
     }
     ctx.record_shell_result(event)
+    _record_shell_fact(ctx, pending, approval_id, "abandoned")
     return 409, {"error": "stopped", "stopped": True, "status": "stopped", "event": event}
+
+
+def _record_shell_fact(ctx: Any, pending: dict[str, Any], approval_id: str, kind: str,
+                       *, result: dict[str, Any] | None = None) -> None:
+    record = getattr(ctx, "record_shell_approval_fact", None)
+    if not callable(record):
+        return
+    result_ref = ""
+    result_digest = ""
+    if result is not None:
+        result_digest = json_digest(result)
+        managed_outputs = getattr(ctx, "managed_outputs", None)
+        if managed_outputs is not None:
+            try:
+                artifact = managed_outputs.write_json_artifact(
+                    session_id=str(pending.get("session_id") or ""),
+                    run_id=str(pending.get("run_id") or ""),
+                    payload=result,
+                )
+            except Exception:
+                # Execution already happened.  Preserve the settlement fact
+                # even if the optional structured artifact cannot be written;
+                # recovery must surface the missing result instead of rerunning
+                # the command.
+                artifact = None
+            if artifact is not None:
+                result_ref = artifact.handle
+                result_digest = artifact.sha256
+    record(ShellApprovalFact(
+        approval_id=approval_id,
+        session_id=str(pending.get("session_id") or ""),
+        source_run_id=str(pending.get("run_id") or ""),
+        kind=kind,
+        invocation_origin="native" if pending.get("call_id") else "text",
+        command_ref=str(pending.get("command_ref") or ""),
+        command_digest=str(pending.get("command_digest") or ""),
+        cwd=str(pending.get("cwd") or "."),
+        result_ref=result_ref,
+        result_digest=result_digest,
+        delivery_batch_id=str(pending.get("delivery_batch_id") or ""),
+    ))
 
 
 def shell_approval_response(
@@ -644,6 +687,7 @@ def shell_approval_response(
             return 404, {"error": "approval not found"}
         pending.pop("_approval_generation", None)
         session_id = pending["session_id"]
+        _record_shell_fact(ctx, pending, approval_id, "denied")
         denied_result = {
             "ok": False,
             "status": "denied",
@@ -707,6 +751,8 @@ def shell_approval_response(
     if ticket is None:
         return _stopped_shell_denial(ctx, pending, approval_id, session_id)
 
+    _record_shell_fact(ctx, pending, approval_id, "approved")
+    _record_shell_fact(ctx, pending, approval_id, "execution_claimed")
     result = shell_service.execute_shell_ticket(ctx, ticket)
     if result.get("status") == "stopped" or result.get("stopped"):
         return _stopped_shell_denial(ctx, pending, approval_id, session_id)
@@ -725,6 +771,7 @@ def shell_approval_response(
         "truncated": bool(result.get("truncated")),
     }
     ctx.record_shell_result(event)
+    _record_shell_fact(ctx, pending, approval_id, "execution_settled", result=result)
     continued = False
     continuation_stopped = False
     continuation_requested = bool(pending.get("continue_after"))

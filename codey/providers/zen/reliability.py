@@ -68,7 +68,7 @@ class ZenRequestCoordinator:
         self._pending: set[int] = set()
         self._inflight = 0
         self._cooldowns: dict[tuple[ControlScope, str], tuple[float, int, str]] = {}
-        self._probes: dict[tuple[ControlScope, str], tuple[int, int]] = {}
+        self._probes: dict[tuple[ControlScope, str], tuple[object, int]] = {}
         self._next_id = 0
         self._waiter_seq = 0
         self._waiters: deque[int] = deque()
@@ -90,7 +90,7 @@ class ZenRequestCoordinator:
             self._next_id += 1
             ident = self._next_id
             self._pending.add(ident)
-        return PendingRequest(lambda: self._remove(ident))
+        return PendingRequest(lambda: self._remove(ident), registration_token=ident)
 
     def _remove(self, ident: int) -> None:
         with self._condition:
@@ -141,7 +141,7 @@ class ZenRequestCoordinator:
                     self._waiters.remove(ticket)
                     self._waiter_meta.pop(ticket, None)
                     if cooldown is not None:
-                        self._probes[key] = (id(pending), cooldown[1])
+                        self._probes[key] = (pending.registration_token, cooldown[1])
                     self._inflight += 1
                     lease = RequestLease(self._release)
                     lease.receipt = self._probes.get(key)
@@ -168,7 +168,7 @@ class ZenRequestCoordinator:
         # Success does not clear cooldown: a late response must never erase a newer 429.
         with self._condition:
             claim = self._probes.get((scope, model_id))
-            if claim is None or claim[0] == id(pending):
+            if claim is None or claim[0] == pending.registration_token:
                 self._probes.pop((scope, model_id), None)
             self._condition.notify_all()
 
@@ -209,10 +209,6 @@ class ZenRequestPolicy:
                                               not_before=result.not_before, reason=result.kind)
         return RetryDirective(True, result.not_before, result.kind)
 
-    def observe_success(self, context: RequestContext, receipt: object) -> None:
-        self.coordinator.settle(scope=self.scope, model_id=context.model_id,
-                                receipt=getattr(receipt, "receipt", None), successful=True)
-
     def settle(self, context: RequestContext, receipt: object) -> None:
         self.coordinator.settle(scope=self.scope, model_id=context.model_id, receipt=getattr(receipt, "receipt", None))
 
@@ -230,6 +226,10 @@ class ZenResourcesRegistry:
             current = cls._resources.get(scope)
             if current is None:
                 current = (ZenRequestCoordinator(), 0)
+            # Cooldown state may outlive the last provider while its HTTP
+            # session has already been closed.  A new provider gets a fresh
+            # session while reusing only the retained coordinator.
+            if scope not in cls._sessions:
                 cls._sessions[scope] = ApiHttpSession()
             cls._resources[scope] = (current[0], current[1] + 1)
             return current[0]
