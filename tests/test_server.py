@@ -5709,7 +5709,9 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("Session B answer.", prompt)
 
     def test_project_continue_starts_fresh_chat_with_original_goal(self) -> None:
-        state = server.AppContext()
+        # This test persists conversation/checkpoint state. Bare AppContext
+        # shares the pytest process home with unrelated session-1 fixtures.
+        state = make_app_state(self)
         first = mock.Mock()
         first.name = "DeepSeek Web"
         first.location = "https://chat.deepseek.com/"

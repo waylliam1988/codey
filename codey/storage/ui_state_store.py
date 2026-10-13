@@ -39,10 +39,14 @@ MESSAGE_KEYS = {
     "sessionId",
     "id",
     "command",
+    "commandSha256",
+    "commandChars",
+    "commandTruncated",
     "cwd",
     "output",
     "exitCode",
     "approved",
+    "shellStatus",
     "count",
     "files",
     "project",
@@ -61,6 +65,7 @@ MESSAGE_KEYS = {
     "toolName",
     "turn",
     "state",
+    "status",
     "requestId",
     "attempts",
     "sendFailure",
@@ -133,6 +138,10 @@ def _clean_message(message: object) -> dict[str, Any] | None:
                 ]
         elif key == "files":
             clean[key] = _clean_files(value)
+        elif key == "exitCode":
+            # Signals have negative exits on POSIX; malformed values are unknown,
+            # never coerced to a successful zero exit.
+            clean[key] = value if type(value) is int else None
         elif isinstance(value, bool):
             clean[key] = value
         elif isinstance(value, (int, float)) and not isinstance(value, bool):

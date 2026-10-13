@@ -16,6 +16,7 @@ from codey.providers.token_accounting import RequestContextCount
 from codey.providers.zen.catalog import ZenCatalog
 from codey.providers.zen.declarations import TEXT_PROMPT_PREFIX, prepare_declarations, transport_identity
 from codey.providers.zen.identity import CONNECTION_REVISION, ZEN_BASE_URL, ZenIdentity
+from codey.providers.zen.node_http import open_request as open_zen_request
 from codey.providers.zen.reliability import ZenRequestPolicy, ZenResourcesRegistry, make_control_scope
 from codey.providers.zen.usage import configure_usage, parser_for
 from codey.runtime.core import cancellation
@@ -279,7 +280,9 @@ def open_selection(selection: ApiRunSelection) -> ZenProvider:
                            budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens,
                            request_policy=ZenRequestPolicy(coordinator, scope),
                            connection_revision=CONNECTION_REVISION,
-                           http_session=http_session, transport_options={"body_idle_timeout": 30.0})
+                           http_session=http_session,
+                           transport_options={"body_idle_timeout": 30.0, "opener": open_zen_request,
+                                              "request_id_headers": ("X-OpenCode-Log-Id",)})
     provider.auxiliary_connection = ZenProvider
     wrapped = ZenProvider(provider,
         on_plain_refused=lambda: catalog().access.record_plain_refusal(selection.model_id, selection.protocol),

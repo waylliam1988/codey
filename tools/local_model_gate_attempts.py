@@ -26,6 +26,7 @@ from codey.runtime.core.cancellation import start_process, wait_process
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OBJECTIVE_CASES = frozenset({"create", "edit", "references", "hybrid", "auto", "tests", "project_review"})
 _TERMINAL_RECEIPT: ContextVar[bool] = ContextVar("gate_terminal_receipt", default=False)
+_RECORDING_PATH: ContextVar[Path | None] = ContextVar("gate_recording_path", default=None)
 
 # These labels are deliberately about the task contract, not implementation
 # details. Unknown/new cases stay visible as their own kind until the matrix
@@ -170,6 +171,9 @@ def record_api_generations(path: Path):
 
     from codey.providers import api_transport
 
+    if _RECORDING_PATH.get() == path.resolve():
+        yield
+        return
     original = api_transport.generate
     lock = threading.Lock()
     counter = 0
@@ -187,7 +191,8 @@ def record_api_generations(path: Path):
         runtime = getattr(callback, "__self__", None)
         identity = getattr(runtime, "_gate_recorder_id", "ui")
         common = {"exchange": exchange, "recorder_id": identity, "model": payload.get("model"),
-                  "terminal": _TERMINAL_RECEIPT.get()}
+                  "terminal": _TERMINAL_RECEIPT.get(),
+                  "logical_attempt": getattr(kwargs.get("attempt_budget"), "used", 1)}
         append({**common, "type": "request", "payload": payload})
         def observe(**event):
             append({**common, "type": "wire_attempt", **{key:value for key,value in event.items() if key != "data"}})
@@ -198,7 +203,10 @@ def record_api_generations(path: Path):
         try:
             body = original(url, payload, headers, **kwargs)
         except Exception as exc:
-            append({**common, "type": "error", "error": f"{type(exc).__name__}: {exc}"})
+            append({**common, "type": "error", "error": f"{type(exc).__name__}: {exc}",
+                    "http_status": getattr(exc, "status", None),
+                    "upstream_request_id": getattr(exc, "upstream_request_id", ""),
+                    "reason_code": getattr(exc, "reason_code", "")})
             raise
         append({**common, "type": "response", "payload": body, "seconds": time.perf_counter() - started})
         return body
@@ -213,8 +221,12 @@ def record_api_generations(path: Path):
         finally:
             _TERMINAL_RECEIPT.reset(token)
 
-    with patch.object(api_transport, "generate", generate), patch.object(ApiProvider, "acknowledge_tool_results", acknowledge):
-        yield
+    token = _RECORDING_PATH.set(path.resolve())
+    try:
+        with patch.object(api_transport, "generate", generate), patch.object(ApiProvider, "acknowledge_tool_results", acknowledge):
+            yield
+    finally:
+        _RECORDING_PATH.reset(token)
 
 
 @contextmanager
@@ -340,9 +352,10 @@ def _provider_metrics(directory: Path) -> dict:
             if type(value) is int:
                 usage[key] += value
     return {
-        "logical_sends": sum(row["type"] == "request" for row in rows),
+        "logical_sends": sum(row["type"] == "request" and row.get("logical_attempt", 1) == 1 for row in rows),
         "http_attempts": sum(row["type"] == "wire_attempt" and row.get("phase") == "request" for row in rows),
-        "http_retries": sum(row["type"] == "wire_attempt" and row.get("phase") == "request" and row.get("attempt", 0) > 1 for row in rows),
+        "http_retries": sum(row["type"] == "wire_attempt" and row.get("phase") == "request"
+                            and max(row.get("logical_attempt", 1), row.get("attempt", 0)) > 1 for row in rows),
         "capture_incomplete": incomplete,
         "reported_models": sorted({str(body["model"]) for body in responses if body.get("model")}),
         "usage": dict(usage) if any("usage" in body for body in responses) else None,

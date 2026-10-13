@@ -9,7 +9,11 @@ from codey.providers.api_transport import GenerationUnknownError, generate
 
 
 @pytest.mark.parametrize("content_type", ["application/json", "text/event-stream"])
-def test_partial_bytes_without_complete_frame_are_interrupted_without_resend(content_type):
+def test_partial_bytes_without_complete_frame_are_interrupted_without_resend(content_type, monkeypatch):
+    def unnecessary_tls_setup(*_args, **_kwargs):
+        raise AssertionError("plain HTTP must not load TLS certificates")
+
+    monkeypatch.setattr("ssl.create_default_context", unnecessary_tls_setup)
     stop, requests = threading.Event(), []
 
     class Handler(BaseHTTPRequestHandler):

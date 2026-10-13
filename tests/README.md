@@ -6,6 +6,49 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+## Current verification and coverage
+
+The latest complete suite is **8574 passed, 7 skipped, 1510 subtests**; required
+machine contracts are **1125 passed, 14 subtests, no skips**. Keep the canonical
+results and platform limits in [TEST_REPORT](../TEST_REPORT.md); older counts
+below describe their historical runs.
+
+```powershell
+python -m tools.machine_contract_gate
+python -m ruff check .
+python -m mypy codey
+pyrefly check codey
+python -m tools.check_javascript
+python -m tools.source_size_inventory
+
+$env:COVERAGE_FILE = (Join-Path (Get-Location) '.e2e-artifacts/coverage/.coverage')
+python -m coverage erase
+python -m coverage run -m pytest -q -o faulthandler_timeout=120
+python -m coverage combine
+python -m coverage json
+python -m coverage xml
+python -m coverage html
+python -m tools.coverage_gate
+```
+
+Install `requirements-ci.txt` for matching direct tool versions. Coverage includes
+all production Python files and subprocesses; unimported modules stay in the
+denominator. Statement/branch minima are **85% / 75%**, measured at **88.54% /
+78.23%**. Full reports belong under ignored `.e2e-artifacts/` and CI artifacts.
+The coverage gate also rejects test-only or incomplete production scopes.
+
+Focused regressions cover SSE identity (`test_api_stream_tool_call_identity.py`),
+partial-frame deadlines, Node submission/cancellation (`test_zen_node_transport.py`),
+retry accounting (`test_gate_records_policy_retries_once.py`), verified approval
+continuation (`test_shell_approval_text_result_reconstruction.py`), UI persistence
+and menu behavior, and coverage scope/minima (`test_coverage_gate.py`).
+
+The live Zen gate is separate from deterministic CI:
+`python -m tools.zen_free_model_gate --run-dir .e2e-artifacts/zen-free-new --timeout 120`.
+The directory must be new. It uses a fresh catalog and tests chat/read/approved
+shell, plus default/Off/On variants for toggle models; retain failed cases.
+Two Ling thinking-enabled cases remain unresolved; see the current report.
+
 ## Native installed OpenCode comparison
 
 `manual/codey_vs_opencode_agent_stability_ab.py` compares native Codey and the
@@ -26,7 +69,7 @@ scores are **18/20 vs 14/20**, not a universal superiority claim. That compariso
 
 ## Candidate continuity without task-specific probes
 
-Current removal checks: **8339 passed, 7 skipped, 1503 subtests**; required machine
+Removal-time snapshot: **8339 passed, 7 skipped, 1503 subtests**; required machine
 contracts: **948 passed, 14 subtests**. See [the test report](../TEST_REPORT.md)
 for red/green evidence and the scope of the removed capability.
 

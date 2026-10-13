@@ -524,9 +524,19 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
                 "ERROR: durable shell approval result is unavailable or uncertain.",
                 current_work=work,
             )
-        # Text protocol calls have no native call id; their continuation
-        # prompt already carries the bounded result, so only native calls
-        # become recovered tool rows.
+        # Typed approval input contains only an id. Reconstruct the text
+        # continuation from the verified durable result, including after a
+        # restart; the legacy scheduling string is not authoritative.
+        from codey.app.shell_service import build_shell_approval_continuation
+
+        continuation = build_shell_approval_continuation(
+            command=str(payload.get("command") or ""),
+            result={"output": payload.get("model_text"), "exit_code": payload.get("exit_code"),
+                    "status": payload.get("error_code"), "truncated": payload.get("truncated")},
+        )
+        setup.request = replace(setup.request, task=continuation)
+        setup.task = continuation
+        # Only native calls become recovered tool rows.
         shell_payloads = ((payload,) if isinstance(payload, dict) and payload.get("call_id") else ())
         source_run_id = str(payload.get("source_run_id") or "") if isinstance(payload, dict) else ""
         if source_run_id and not setup.request.previous_run_id:

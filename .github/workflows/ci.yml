@@ -40,6 +40,9 @@ jobs:
       - name: Ruff
         run: python -m ruff check .
 
+      - name: Source size inventory
+        run: python -m tools.source_size_inventory
+
       - name: Full-tree mypy
         run: python -m mypy codey
 
@@ -51,14 +54,44 @@ jobs:
         run: python -m tools.machine_contract_gate
 
       - name: Pytest
+        if: matrix.python-version != '3.12'
         run: python -m pytest -q -o faulthandler_timeout=120
 
-      - name: JavaScript syntax
+      - name: Full-suite statement and branch coverage
+        if: matrix.python-version == '3.12'
         shell: pwsh
         run: |
-          Get-ChildItem codey/web/assets -Filter *.js | ForEach-Object {
-            node --check $_.FullName
-          }
+          $env:COVERAGE_FILE = "$env:GITHUB_WORKSPACE/.e2e-artifacts/coverage/.coverage"
+          python -m coverage run -m pytest -q -o faulthandler_timeout=120
+          exit $LASTEXITCODE
+
+      - name: Coverage report and gate
+        if: always() && matrix.python-version == '3.12'
+        shell: pwsh
+        run: |
+          $env:COVERAGE_FILE = "$env:GITHUB_WORKSPACE/.e2e-artifacts/coverage/.coverage"
+          python -m coverage combine
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m coverage json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m coverage xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m coverage html
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m tools.coverage_gate
+          exit $LASTEXITCODE
+
+      - name: Upload coverage evidence
+        if: always() && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-windows-py312
+          path: .e2e-artifacts/coverage/
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - name: JavaScript syntax
+        run: python -m tools.check_javascript
 
   test-linux:
     runs-on: ubuntu-latest
@@ -88,6 +121,9 @@ jobs:
       - name: Ruff
         run: python -m ruff check .
 
+      - name: Source size inventory
+        run: python -m tools.source_size_inventory
+
       - name: Full-tree mypy
         run: python -m mypy codey
 
@@ -98,5 +134,4 @@ jobs:
         run: python -m tools.machine_contract_gate
 
       - name: JavaScript syntax
-        run: |
-          for f in codey/web/assets/*.js; do node --check "$f"; done
+        run: python -m tools.check_javascript

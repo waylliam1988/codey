@@ -46,7 +46,7 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
 from codey.providers.local_discovery import LOCAL_BASE_URL_CANDIDATES, probe_local_endpoint_detail
 from tools import local_model_gate_attempts as attempts
-from tools.gate_policy import scope_verdict
+from tools.gate_policy import scope_verdict, source_fingerprints
 from tools.local_model_gate_recovery import run_recovery_case
 
 ARTIFACT_DIR = Path(__file__).resolve().parents[1] / ".e2e-artifacts"
@@ -787,53 +787,13 @@ def _metadata(target: attempts.GateTarget) -> dict:
                             capture_output=True, text=True, check=False, timeout=10)
     metadata = {
         "target": asdict(target), "python": sys.version, "git_commit": commit.stdout.strip(),
-        "harness_hashes": {
-            name: hashlib.sha256((attempts.REPO_ROOT / "tools" / name).read_bytes()).hexdigest()
-            for name in ("local_model_release_gate.py", "local_model_gate_attempts.py", "local_model_gate_recovery.py",
-                         "local_model_gate_review.py", "local_model_gate_project_review.py")
-        },
-        "production_hashes": {
-            path: hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
-            for path in ("codey/toolchain/constants.py", "codey/toolchain/definition.py", "codey/toolchain/runtime.py",
-                         "codey/providers/api_provider.py", "codey/providers/api_codec.py", "codey/providers/api_chat.py",
-                         "codey/providers/api_responses.py", "codey/providers/api_transport.py",
-                         "codey/operations/kernel_transport.py",
-                         "codey/app/event_payloads.py", "codey/app/event_bus.py", "codey/app/context.py",
-                         "codey/app/headless_runner.py", "codey/app/task_services.py", "codey/task/entry_auth.py",
-                         "codey/operations/kernel_recovery.py",
-                         "codey/operations/conversation_plan.py", "codey/operations/conversation_window.py",
-                         "codey/operations/task_entry.py", "codey/operations/task_run.py",
-                         "codey/operations/task_phases/dispatch.py", "codey/operations/kernel_transport.py",
-                         "codey/app/api.py", "codey/app/task_submit.py", "codey/app/shell_service.py",
-                         "codey/agents/shell_approval.py", "codey/runtime/core/protocol_window.py",
-                         "codey/operations/project_adapter.py",
-                         "codey/operations/project_candidate_validation.py",
-                         "codey/operations/task_loop.py", "codey/operations/kernel_prompt.py", "codey/operations/kernel_preparation.py",
-                         "codey/operations/task_guidance.py", "codey/research/completion_guidance.py",
-                         "codey/research/tool_contract.py", "codey/reviews/report_sections.py",
-                         "codey/operations/project_prompt_context.py", "codey/workspace/coding_context.py",
-                         "codey/operations/planning_flow.py", "codey/operations/project_writer_phase.py",
-                         "codey/operations/project_completion_enforcement.py", "codey/operations/task_execution.py",
-                         "codey/research/tools.py", "codey/operations/project_completion_checks.py",
-                         "codey/toolchain/tool_spec.py", "codey/operations/kernel_protocol.py",
-                         "codey/research/connector_search.py", "codey/research/source_gateway.py",
-                         "codey/reviews/core.py", "codey/reviews/input.py", "codey/reviews/identity.py",
-                         "codey/reviews/persistence.py", "codey/reviews/reuse.py",
-                         "codey/app/review_service.py", "codey/operations/project_review_phase.py",
-                         "codey/runtime/core/operation_state.py",
-                         "codey/agents/context_compaction.py", "codey/providers/compaction.py",
-                         "codey/providers/context_checkpoint.py", "codey/providers/context_ledger.py")
-        },
+        **source_fingerprints(attempts.REPO_ROOT, target.provider_id),
         "server_observations": _server_observations(target.base_url) if target.provider_id == "local" else {},
         "chat_template": "not_reported", "quantization": "model_name_only; not independently verified",
         "sampling_seed": "not_sent",
         "output_budget": {"configured": target.api_selection.get("output_tokens", "server_default"),
                           "actual_requests": "see per-case provider_metrics.output_budget"},
     }
-    if target.provider_id == "zen":
-        for path in ("codey/providers/zen/connection.py", "codey/providers/zen/declarations.py",
-                     "codey/providers/zen/identity.py", "codey/providers/zen/catalog.py", "codey/providers/zen/access.py"):
-            metadata["production_hashes"][path] = hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()
     return metadata
 
 

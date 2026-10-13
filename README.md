@@ -197,8 +197,9 @@ isolated so a broken web page integration can be fixed without changing the
 agent core.
 
 Zen's agreed upstream headers and tool-name mapping live only in its connection
-package. They are absent from Local requests and assistant prompts. Generation
-requests are sent once; interrupted/unknown replies are not automatically replayed.
+package. They are absent from Local requests and assistant prompts. Each physical generation
+attempt sends once; only policy-allowed complete rejections or positively proven
+pre-submission failures can retry. Interrupted/unknown replies are not automatically replayed.
 Completion proof and final result delivery are recorded separately.
 
 Zen's temporary request profile adds unavailable transport declarations without
@@ -221,6 +222,18 @@ CI also gates Ruff, full-tree mypy, JavaScript syntax and supported-platform
 regressions. For a matching development toolchain, install `requirements-ci.txt`
 before `pip install -e . --no-deps`. Release checks and their live-model scope
 are defined in the [release gate](docs/release_gate.zh-CN.md).
+
+The model menu has a stable 240px width bounded by the viewport. Approve or deny
+commands in the command card; there is no duplicate composer approval notice.
+Zen alone uses its removable Node fetch adapter; Local keeps Python HTTP. The live
+free-model matrix still has two unresolved Ling thinking-enabled cases.
+
+Current verification and coverage live in [TEST_REPORT](TEST_REPORT.md). CI runs
+Windows Python 3.11/3.12/3.13, the required machine contracts on Windows/Linux,
+full-tree mypy/Pyrefly, and syntax checks for actual JS/MJS assets. Windows 3.12
+also measures all production Python statements/branches, including subprocesses,
+and enforces 85% / 75% minima. See [test commands](tests/README.md) and the
+[maintenance audit](docs/ui_maintenance_audit_2026-10-13.zh-CN.md).
 
 ## License
 

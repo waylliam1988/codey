@@ -19,6 +19,7 @@ from urllib.parse import unquote, urlsplit
 
 from codey.providers.api_http import ConnectionKey, ConnectionLease
 from codey.providers.api_request_policy import AttemptBudget
+from codey.providers.api_stream import read_sse as read_sse
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     FAILURE_RATE_LIMITED,
@@ -42,6 +43,7 @@ class AttemptControl:
         self._responses: list[Any] = []
         self.cancelled = False
         self.submission_started = False
+        self.submission_possible = False
         self.phase = "connecting"
         self.last_byte_at = time.monotonic()
 
@@ -71,6 +73,11 @@ class AttemptControl:
     def mark_submission_started(self) -> None:
         with self._lock:
             self.submission_started = True
+
+    def mark_submission_possible(self) -> None:
+        """An asynchronous peer may write before its receipt reaches us."""
+        with self._lock:
+            self.submission_possible = True
 
     def enter_phase(self, phase: str) -> None:
         with self._lock:
@@ -260,6 +267,7 @@ class GenerationRejectedError(RuntimeError):
                 if isinstance(error.get("message"), str) and error["message"].strip():
                     reason = error["message"]
         label = f" [{self.error_type}]" if self.error_type else ""
+        self.service_message = reason[:400]
         self.provider_failure_kind = (
             FAILURE_AUTHENTICATION_REQUIRED if status == 401 else
             FAILURE_RATE_LIMITED if status == 429 else
@@ -422,7 +430,11 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
                         finally:
                             self.establishing = False
                     if not getattr(self, "establishing", False):
+                        active = getattr(self, "_codey_control", control)
+                        if active.cancelled:
+                            raise GenerationNotSentError("generation cancelled before submission")
                         self._codey_submission_started = True
+                        active.mark_submission_started()
                     http.client.HTTPConnection.send(self, data)
 
             connection = PooledHTTPSConnection(connection_host, connection_port, timeout=timeout,
@@ -432,6 +444,16 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
                 connection.set_tunnel(parts.hostname, parts.port or 443, headers=tunnel_headers)
         else:
             class PooledHTTPConnection(http.client.HTTPConnection):
+                def send(self, data: Any) -> None:
+                    if self.sock is None:
+                        self.connect()
+                    active = getattr(self, "_codey_control", control)
+                    if active.cancelled:
+                        raise GenerationNotSentError("generation cancelled before submission")
+                    self._codey_submission_started = True
+                    active.mark_submission_started()
+                    super().send(data)
+
                 def connect(self) -> None:
                     active = getattr(self, "_codey_control", control)
                     if bool(getattr(active, "cancelled", False)):
@@ -544,13 +566,15 @@ class _SubmissionHTTPSHandler(urllib.request.HTTPSHandler):
     """Track generation bytes independently of TLS and proxy CONNECT bytes."""
 
     def __init__(self, submission: dict[str, bool], control: AttemptControl | None = None) -> None:
-        self.context = ssl.create_default_context()
-        self.context.set_alpn_protocols(["http/1.1"])
-        super().__init__(context=self.context)
+        # Loading the Windows certificate store can exceed a short generation
+        # deadline. Plain HTTP requests must never pay this HTTPS setup cost.
+        super().__init__()
         self.submission = submission
         self.control = control
 
     def https_open(self, request: Any) -> Any:
+        context = ssl.create_default_context()
+        context.set_alpn_protocols(["http/1.1"])
         submission = self.submission
         tracked_control = self.control
 
@@ -585,11 +609,13 @@ class _SubmissionHTTPSHandler(urllib.request.HTTPSHandler):
                 if tracked_control is not None:
                     tracked_control.register_connection(self)
                 super().connect()
+                if tracked_control is not None and self.sock is not None:
+                    tracked_control.register_connection(self.sock)
                 if tracked_control is not None and tracked_control.cancelled:
                     raise GenerationNotSentError("generation cancelled before submission")
 
         submission["attempted"] = False
-        return self.do_open(Connection, request, context=self.context)
+        return self.do_open(Connection, request, context=context)
 
 
 class _SubmissionHTTPHandler(urllib.request.HTTPHandler):
@@ -613,6 +639,8 @@ class _SubmissionHTTPHandler(urllib.request.HTTPHandler):
                 if tracked_control is not None:
                     tracked_control.register_connection(self)
                 super().connect()
+                if tracked_control is not None and self.sock is not None:
+                    tracked_control.register_connection(self.sock)
                 if tracked_control is not None and tracked_control.cancelled:
                     raise GenerationNotSentError("generation cancelled before submission")
 
@@ -633,6 +661,8 @@ class _SubmissionHTTPHandler(urllib.request.HTTPHandler):
                             raise GenerationUnknownError("generation cancelled after submission started")
                         raise GenerationNotSentError("generation cancelled before submission")
                     submission["attempted"] = True
+                    if tracked_control is not None:
+                        tracked_control.mark_submission_started()
                 super().send(data)
 
         submission["attempted"] = False
@@ -642,6 +672,9 @@ class _SubmissionHTTPHandler(urllib.request.HTTPHandler):
 def _open_request_sync(request: urllib.request.Request, timeout: float, *, control: AttemptControl | None = None,
                        attempt_budget: AttemptBudget | None = None,
                        http_session: Any = None, transport_options: Mapping[str, object] | None = None) -> Any:
+    adapter = (transport_options or {}).get("opener")
+    if callable(adapter):
+        return adapter(request, timeout, control=control, transport_options=transport_options)
     _validate_proxy_scheme(transport_options, request.full_url)
     if http_session is not None:
         active_control = control or AttemptControl()
@@ -732,12 +765,12 @@ def open_request(request: urllib.request.Request, timeout: float, *, control: At
         except queue.Empty:
             if control.cancelled:
                 control.cancel()
-                if control.submission_started:
+                if control.submission_started or control.submission_possible:
                     raise GenerationUnknownError("generation cancelled while opening request") from None
                 raise GenerationNotSentError("generation cancelled before submission") from None
             if time.monotonic() >= deadline:
                 control.cancel()
-                if control.submission_started:
+                if control.submission_started or control.submission_possible:
                     raise GenerationUnknownError("generation deadline exceeded while opening request") from None
                 raise GenerationNotSentError("generation deadline exceeded before submission") from None
             continue
@@ -776,68 +809,6 @@ def _json_object(raw: bytes) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise GenerationUnknownError("generation response was not an object; not resent")
     return body
-
-
-def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
-             on_event: Callable[[dict[str, Any]], None] = lambda event: None,
-             control: AttemptControl | None = None,
-             idle_timeout: float | None = None) -> dict[str, Any]:
-    data: list[bytes] = []
-    total = 0
-    chat: dict[str, Any] = {"content": "", "tool_calls": []}
-    calls: dict[int, dict[str, Any]] = {}
-    chat_finish = ""
-    chat_done = False
-    reader = BoundedBodyReader(response, control=control, deadline=deadline, idle_timeout=idle_timeout)
-    while True:
-        if cancelled():
-            raise GenerationUnknownError("generation cancelled; late response discarded")
-        if time.monotonic() >= deadline:
-            raise GenerationUnknownError("generation deadline exceeded; not resent")
-        line = reader.readline(MAX_RESPONSE_BYTES + 1)
-        total += len(line)
-        if total > MAX_RESPONSE_BYTES:
-            raise GenerationUnknownError("generation stream exceeded its byte limit")
-        if not line:
-            break
-        if line.strip():
-            if line.startswith(b"data:"):
-                data.append(line[5:].strip())
-            continue
-        if not data:
-            continue
-        frame = b"\n".join(data)
-        data = []
-        if frame == b"[DONE]":
-            chat_done = True
-            break
-        event = _json_object(frame)
-        on_event(event)
-        kind = event.get("type")
-        if kind in {"response.completed", "response.incomplete", "response.failed"}:
-            result = event.get("response")
-            if not isinstance(result, dict):
-                raise GenerationUnknownError("Responses stream ended without a response object")
-            return result
-        if kind == "error" or "error" in event:
-            raise RuntimeError(f"generation stream error: {str(event.get('error', event))[:400]}")
-        for choice in event.get("choices", []):
-            delta = choice.get("delta") or {}
-            chat["content"] += delta.get("content") or ""
-            for name in ["reasoning_content", "reasoning"]:
-                if delta.get(name):
-                    chat[name] = chat.get(name, "") + delta[name]
-            for call in delta.get("tool_calls") or []:
-                slot = calls.setdefault(call["index"], {"id": "", "type": "function",
-                                                       "function": {"name": "", "arguments": ""}})
-                slot["id"] += call.get("id") or ""
-                for key in ["name", "arguments"]:
-                    slot["function"][key] += (call.get("function") or {}).get(key) or ""
-            chat_finish = choice.get("finish_reason") or chat_finish
-    if chat_finish and chat_done:
-        chat["tool_calls"] = [calls[key] for key in sorted(calls)]
-        return {"choices": [{"message": chat, "finish_reason": chat_finish}]}
-    raise GenerationUnknownError("generation stream ended without a valid terminal event; not resent")
 
 
 def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str, str], *, timeout: float,  # noqa: C901, PLR0912, PLR0915
@@ -979,12 +950,16 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
             detail = raw_detail.decode("utf8", "replace")
         if errors.classify_http_error(exc.code, detail) == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
             raise errors.ContextOverflowError(detail[:400]) from exc
+        request_id = exc.headers.get("X-Request-Id")
+        extra_headers = (transport_options or {}).get("request_id_headers", ())
+        if isinstance(extra_headers, (tuple, list)):
+            request_id = request_id or next((exc.headers.get(name) for name in extra_headers
+                                            if isinstance(name, str) and exc.headers.get(name)), None)
         raise GenerationRejectedError(
             exc.code,
             detail,
             exc.headers.get("Retry-After"),
-            upstream_request_id=exc.headers.get("X-Request-Id") or exc.headers.get("X-Request-ID") or
-            exc.headers.get("X-OpenCode-Log-Id"),
+            upstream_request_id=request_id,
         ) from exc
     except (http.client.IncompleteRead, urllib.error.URLError, TimeoutError, OSError) as exc:
         reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc

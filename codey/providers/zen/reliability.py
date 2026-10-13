@@ -16,7 +16,7 @@ from codey.providers.api_request_policy import (
     RequestQueueFull,
     RetryDirective,
 )
-from codey.providers.api_transport import GenerationRejectedError
+from codey.providers.api_transport import GenerationNotSentError, GenerationRejectedError
 
 Scope = tuple[str, str, str]
 
@@ -57,6 +57,13 @@ def classify_rejection(error: GenerationRejectedError) -> ZenRejection:
     if error.status == 429 and kind in {"ratelimiterror", "rate_limit"} and code in {"", "rate_limit", "too_many_requests"}:
         return ZenRejection("transient", "model", True,
                             time.monotonic() + (error.retry_after or 0.25))
+    # Zen can report an unavailable upstream as 429 server_error rather than
+    # 503. OpenCode retries this complete rejection; it is not a usage quota
+    # or an interrupted stream. Keep unknown server errors out of this rule.
+    if (error.status == 429 and kind == "server_error" and not code
+            and error.service_message == "Upstream request failed: Endpoint is unavailable."):
+        return ZenRejection("transient", "model", True,
+                            time.monotonic() + (error.retry_after or 2.0))
     return ZenRejection("unknown", "unknown", False)
 
 
@@ -186,6 +193,9 @@ class ZenRequestCoordinator:
 class ZenRequestPolicy:
     """Adapter consumed by the shared API provider without importing Zen there."""
 
+    # OpenCode permits five retries in addition to the initial attempt.
+    max_attempts = 6
+
     def __init__(self, coordinator: ZenRequestCoordinator, scope: ControlScope) -> None:
         self.coordinator = coordinator
         self.scope = scope
@@ -198,16 +208,22 @@ class ZenRequestPolicy:
 
     def observe_failure(self, context: RequestContext, receipt: object, failure: BaseException,
                         budget: AttemptBudget) -> RetryDirective:
+        if isinstance(failure, GenerationNotSentError) and failure.reason_code == "pre_submission_network_error":
+            return RetryDirective(True, time.monotonic() + min(30.0, 2.0 ** max(1, budget.used)), "not_submitted")
         if not isinstance(failure, GenerationRejectedError):
             return RetryDirective(False, reason=str(failure))
         result = classify_rejection(failure)
         if not result.retryable:
             self.coordinator.settle(scope=self.scope, model_id=context.model_id, receipt=getattr(receipt, "receipt", None))
             return RetryDirective(False, reason=result.kind)
-        if result.not_before is not None:
+        not_before = result.not_before
+        if not_before is not None:
+            if failure.service_message == "Upstream request failed: Endpoint is unavailable.":
+                delay = max(failure.retry_after or 0.0, min(30.0, 2.0 ** max(1, budget.used)))
+                not_before = time.monotonic() + delay
             self.coordinator.publish_cooldown(self.scope, model_id=context.model_id,
-                                              not_before=result.not_before, reason=result.kind)
-        return RetryDirective(True, result.not_before, result.kind)
+                                              not_before=not_before, reason=result.kind)
+        return RetryDirective(True, not_before, result.kind)
 
     def settle(self, context: RequestContext, receipt: object) -> None:
         self.coordinator.settle(scope=self.scope, model_id=context.model_id, receipt=getattr(receipt, "receipt", None))

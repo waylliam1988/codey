@@ -39,6 +39,7 @@ function init(nextDeps) {
     observer.observe($('provider-button'));
     observer.observe($('effort-button'));
   }
+  window.addEventListener('resize', syncModelMenuWidth);
   window.CodeySettings.init({$:deps.$, applyLocalMetadata});
   refreshLocalMetadata(); refreshApiModels();
 }
@@ -125,11 +126,8 @@ function closeMenu(restoreFocus = false) {
 function syncModelMenuWidth() {
   const menu = $('provider-menu');
   if (!menu.classList.contains('open')) return;
-  const arrow = $('effort-chooser').hidden ? null : $('effort-button').querySelector('.chev');
-  const bounds = arrow?.getBoundingClientRect?.();
-  if (!bounds) { menu.style.removeProperty('--model-menu-width'); return; }
   const left = $('provider-button').getBoundingClientRect().left;
-  menu.style.setProperty('--model-menu-width', Math.max(0, bounds.right - left) + 'px');
+  menu.style.setProperty('--model-menu-width', Math.min(240, Math.max(0, innerWidth - left - 16)) + 'px');
 }
 
 function openMenu() {

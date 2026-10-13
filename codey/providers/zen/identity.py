@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 
 ZEN_BASE_URL = "https://opencode.ai/inference/v1"
-CONNECTION_REVISION = "zen-public-partner-2026-10-07"
+CONNECTION_REVISION = "zen-public-partner"
 _ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 _LOCK = threading.Lock()
 _COUNTER = 0

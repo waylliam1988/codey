@@ -21,16 +21,18 @@ def source_fingerprints(root: Path, connection_id: str) -> dict[str, dict[str, s
     """Hash shared production sources and the selected optional adapter only."""
     optional = {registration[1].rsplit(".", 1)[0].replace(".", "/")
                 for registration in API_CONNECTIONS.values() if registration[1].count(".") > 2}
+    optional.update(path.parent.relative_to(root).as_posix()
+                    for path in (root / "codey/providers").glob("*/connection.py"))
     registration = API_CONNECTIONS.get(connection_id)
     selected = registration[1].rsplit(".", 1)[0].replace(".", "/") if registration else ""
     production = {}
     for path in sorted((root / "codey").rglob("*")):
-        if not path.is_file() or path.suffix not in {".py", ".js", ".html", ".css", ".json"}:
+        if not path.is_file() or path.suffix not in {".py", ".js", ".mjs", ".html", ".css", ".json"}:
             continue
         name = path.relative_to(root).as_posix()
         if any(name.startswith(prefix + "/") and prefix != selected for prefix in optional):
             continue
         production[name] = hashlib.sha256(path.read_bytes()).hexdigest()
     harness = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-               for path in sorted((root / "tools").glob("*.py"))}
+               for path in sorted((root / "tools").rglob("*.py"))}
     return {"production_hashes": production, "harness_hashes": harness}

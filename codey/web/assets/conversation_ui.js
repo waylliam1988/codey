@@ -203,23 +203,6 @@ function updateNotice() {
       open.onclick = () => deps.switchSession(owner.id);
     } else if (open) open.remove();
   }
-  const pendingSession = sessions.find(s => s.messages.some(m => m.type === 'shell_request'));
-  const notice = $('composer-notice');
-  const pending = pendingSession && pendingSession.messages.find(m => m.type === 'shell_request');
-  const key = pending ? pendingSession.id + ':' + pending.id : '';
-  if (notice.dataset.pending === key) return;
-  notice.dataset.pending = key;
-  notice.replaceChildren();
-  notice.hidden = !pending;
-  if (!pending) return;
-  const text = document.createElement('span'); text.textContent = 'Approval required';
-  const review = document.createElement('button'); review.className = 'link-btn'; review.textContent = 'Review command';
-  review.onclick = () => {
-    if (deps.getActiveId() !== pendingSession.id) deps.switchSession(pendingSession.id);
-    const card = Array.from($('chat').querySelectorAll('[data-approval-id]')).find(el => el.dataset.approvalId === String(pending.id));
-    if (card) { card.scrollIntoView({block:'center'}); card.focus({preventScroll:true}); }
-  };
-  notice.append(text, review);
 }
 
 function openFile(path, project = '') {

@@ -506,8 +506,8 @@ function messageCopyText(m) {
 }
 
 // Shell result titles: explicit statuses win, then user denial, then exit.
-// Real denial events carry approved=false with no status ("" / undefined),
-// so only approved exit reads as success; other approved states fail closed.
+// Older saved cards may have lost their status. Unknown is not proof of
+// failure or execution; only an explicit approved exit reads as executed.
 const SHELL_STATUS_VERBS = {
   stopped: 'Stopped',
   timeout: 'Timed out',
@@ -524,7 +524,7 @@ function shellStatusVerb(shellStatus, approved) {
   if (!approved) {
     return 'Denied';
   }
-  return shellStatus === 'exit' ? 'Executed' : 'Failed';
+  return shellStatus === 'exit' ? 'Executed' : 'Result status unknown';
 }
 
 window.CodeyRender = {

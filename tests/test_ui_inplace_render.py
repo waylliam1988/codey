@@ -541,9 +541,9 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             self.assertEqual(result["wait_error|true"], "Failed while waiting")
             self.assertEqual(result["output_read_error|true"], "Failed reading output")
             self.assertEqual(result["drain_timeout|true"], "Output did not finish")
-            # Unknown approved states must fail closed, never read as success.
-            self.assertEqual(result["future_unknown_status|true"], "Failed")
-            self.assertEqual(result["empty|approved"], "Failed")
+            # Lost/unknown status proves neither success nor failure.
+            self.assertEqual(result["future_unknown_status|true"], "Result status unknown")
+            self.assertEqual(result["empty|approved"], "Result status unknown")
         except AssertionError as exc:
             raise AssertionError(f"{exc} :: diag={_format_diagnostics(diag)}") from exc
 

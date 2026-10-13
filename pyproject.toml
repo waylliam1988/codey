@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "coverage>=7.14.2,<8",
     "ruff>=0.6",
     "types-PyYAML>=6.0",
 ]
@@ -41,6 +42,7 @@ codey = [
     "web/assets/*.js",
 ]
 "codey.providers" = ["profiles.json"]
+"*" = ["*.mjs"]
 "codey.research" = ["search_profiles.json"]
 
 [tool.pytest.ini_options]
@@ -102,3 +104,38 @@ warn_unreachable = true
 
 [tool.codey.typecheck]
 gate = "full-tree"
+
+# Explicit form of Pyrefly 1.3.2's existing in-memory mypy migration.
+[tool.pyrefly]
+python-version = "3.11.0"
+preset = "legacy"
+check-unannotated-defs = true
+infer-return-types = "never"
+
+[tool.pyrefly.errors]
+no-any-return = "error"
+redundant-cast = "warn"
+implicit-any-parameter = "error"
+unannotated-return = "error"
+implicit-any = "error"
+
+[tool.coverage.run]
+branch = true
+source = ["codey"]
+parallel = true
+relative_files = true
+patch = ["subprocess"]
+data_file = ".e2e-artifacts/coverage/.coverage"
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+
+[tool.coverage.html]
+directory = ".e2e-artifacts/coverage/html"
+
+[tool.coverage.xml]
+output = ".e2e-artifacts/coverage/coverage.xml"
+
+[tool.coverage.json]
+output = ".e2e-artifacts/coverage/coverage.json"

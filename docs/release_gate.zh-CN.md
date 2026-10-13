@@ -216,3 +216,16 @@ machine gate 必跑任务指导归属、提示渲染无副作用、native 编码
 - Zen 免费目录、合作标识和一次成功不承诺所有任务资格。403/429 保留上游响应和失败分母，
   不扩大执行权限、不偷换模型，不把 UI 面板检查当真实审查。临时请求适配后的 Muse
   chat/read/review 三项实机通过；完整模型/任务矩阵仍未重新验收，见 TEST_REPORT 最新节。
+
+## 覆盖率与证据存放（2026-10-13）
+
+Windows Python 3.12 的完整 pytest 另测完整生产 Python 语句/分支及子进程；
+CI 门槛为 85% / 75%，要求未导入模块进入分母。JSON/HTML/XML 和原始数据上传为 artifacts，
+不提交完整日志。复现命令见[测试索引](../tests/README.md)，当前结果见[TEST_REPORT](../TEST_REPORT.md)。
+
+`tools.check_javascript` 检查实际存在的 JS/MJS，`tools.source_size_inventory` 盘点已跟踪和
+新增源码；行数仅提示审查，不要求机械拆分。Zen 实机矩阵是单独的连接器 gate，
+不把外部服务可用性当成确定性 CI 条件；全部 free 模型当前尚未通过。
+
+TEST_REPORT 保持当前验证索引，双语 CHANGELOG 各保留一个未发布段落；开发实验全文
+通过固定 Git commit 归档。文档更新和提交不等于发布版本或通过新的 GitHub CI。

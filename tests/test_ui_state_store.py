@@ -9,6 +9,39 @@ from codey.storage.ui_state_store import UiStateConflict, UiStateStore
 
 
 class UiStateStoreTests(unittest.TestCase):
+    def test_command_integrity_and_signal_exit_survive_restart(self) -> None:
+        messages = [
+            {"type": "shell_request", "id": "approval", "command": "preview",
+             "commandSha256": "a" * 64, "commandChars": 250_000, "commandTruncated": True},
+            {"type": "shell_result", "approved": True, "shellStatus": "exit", "exitCode": -15},
+            {"type": "tool", "status": "error", "error": True, "result": "failed"},
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            store.save({"sessions": [{"id": "s", "messages": messages}], "revision": 1}, base_revision=0)
+            self.assertEqual(UiStateStore(td).load()["sessions"][0]["messages"], messages)
+
+    def test_malformed_exit_never_becomes_success(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            store.save({"sessions": [{"id": "s", "messages": [
+                {"type": "shell_result", "exitCode": value} for value in [False, "0", 0.5, None]
+            ]}], "revision": 1}, base_revision=0)
+            self.assertTrue(all(m["exitCode"] is None for m in UiStateStore(td).load()["sessions"][0]["messages"]))
+
+    def test_successful_shell_status_survives_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            message = {"type": "shell_result", "id": "shell-1", "approved": True,
+                       "shellStatus": "exit", "command": "python --version", "exitCode": 0,
+                       "output": "Python 3.12.8"}
+            store.save({"active_id": "s", "sessions": [{"id": "s", "messages": [message]}],
+                        "projects": [], "revision": 1}, base_revision=0)
+            restored = UiStateStore(td).load()["sessions"][0]["messages"][0]
+            self.assertEqual(restored["shellStatus"], "exit")
+            self.assertEqual(restored["exitCode"], 0)
+            self.assertEqual(restored["output"], "Python 3.12.8")
+
     def test_research_history_and_pending_tool_fields_survive_round_trip(self) -> None:
         # Regression: the session/message sanitizers used to strip research
         # runs and pending-tool fields, and the UI's restore-then-overwrite

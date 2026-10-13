@@ -329,8 +329,8 @@ def test_supported_effort_controls_and_menu_fit_short_windows(page, size):
         assert box['y'] >= 0 and box['y'] + box['height'] <= size[1]
     page.locator('#provider-button').click()
     model_menu = page.locator('#provider-menu').bounding_box()
-    arrow = page.locator('#effort-button .chev').bounding_box()
-    assert abs(model_menu['x'] + model_menu['width'] - arrow['x'] - arrow['width']) < 1
+    assert model_menu['width'] == 240
+    assert model_menu['x'] >= 0 and model_menu['x'] + model_menu['width'] <= size[0]
     page.locator('#effort-button').click()
     menu = page.locator('#effort-menu').bounding_box()
     assert menu['x'] >= 0 and menu['x'] + menu['width'] <= size[0]
@@ -338,15 +338,14 @@ def test_supported_effort_controls_and_menu_fit_short_windows(page, size):
     page.keyboard.press('Home')
     page.keyboard.press('Enter')
     expect(page.locator('#effort-name')).to_have_text('Off')
-    # Text changes and resizing an already open menu must move its right edge too.
+    # Effort/name changes must not change the menu width; resizing keeps it on-screen.
     for effort in ('minimal', 'medium'):
         page.locator('#effort-button').click()
         page.locator(f'#effort-menu [data-effort="{effort}"]').click()
         page.locator('#provider-button').click()
         page.wait_for_function("""() => {
             const menu = document.getElementById('provider-menu').getBoundingClientRect();
-            const arrow = document.querySelector('#effort-button .chev').getBoundingClientRect();
-            return Math.abs(menu.right - arrow.right) < 1;
+            return menu.width === 240 && menu.left >= 0 && menu.right <= innerWidth;
         }""")
         page.keyboard.press('Escape')
     local['display_name'] = 'A much longer model name'
@@ -355,8 +354,7 @@ def test_supported_effort_controls_and_menu_fit_short_windows(page, size):
     page.set_viewport_size({'width':size[0] - 40, 'height':size[1]})
     page.wait_for_function("""() => {
         const menu = document.getElementById('provider-menu').getBoundingClientRect();
-        const arrow = document.querySelector('#effort-button .chev').getBoundingClientRect();
-        return Math.abs(menu.right - arrow.right) < 1;
+        return menu.width === 240 && menu.left >= 0 && menu.right <= innerWidth;
     }""")
 
 
@@ -471,7 +469,10 @@ def test_model_menu_has_no_search_and_small_catalog_keyboard(page):
     expect(page.locator(".provider-item:visible")).to_have_count(5)
     page.keyboard.press("Enter")
     expect(page.locator("#provider-name")).to_have_text("DeepSeek")
-    page.evaluate("CodeyProviderUI.applyConfig({providers:[{id:'deepseek',label:'DeepSeek'},{id:'mimo',label:'MiMo'}],default:'mimo'})")
+    catalog = {"providers": [{"id": "deepseek", "label": "DeepSeek"}, {"id": "mimo", "label": "MiMo"}], "default": "mimo"}
+    for endpoint in ('providers', 'provider_catalog'):
+        page.route('**/api/' + endpoint, lambda route: route.fulfill(json=catalog))
+    page.evaluate("CodeyProviderUI.applyConfig", catalog)
     page.locator("#provider-button").click()
     expect(page.locator("#provider-menu input")).to_have_count(0)
     page.keyboard.press("ArrowDown")
@@ -575,6 +576,31 @@ def test_model_menu_keyboard_and_focus_return(page):
     expect(trigger).to_be_focused()
 
 
+def test_model_menu_width_does_not_follow_selected_name(page):
+    connection = {"id": "zen", "label": "OpenCode Zen", "models": [
+        {"id": "pickle", "name": "Big Pickle", "efforts": []},
+        {"id": "spark", "name": "Muse Spark 1.3 Free", "efforts": ["low", "high"]},
+    ]}
+    select_connection_models(page, connection)
+    widths = []
+    for provider, model in [("mimo", ""), ("zen", "pickle"), ("zen", "spark")]:
+        page.locator('#provider-button').click()
+        selector = f'.provider-item[data-provider="{provider}"]'
+        if model:
+            selector += f'[data-model="{model}"]'
+        page.locator(selector).click()
+        page.locator('#provider-button').click()
+        menu = page.locator('#provider-menu')
+        bounds = menu.bounding_box()
+        widths.append(bounds['width'])
+        check = menu.locator('.provider-item.active .check').bounding_box()
+        assert bounds['x'] + bounds['width'] - check['x'] - check['width'] >= 10
+        assert menu.evaluate('el => el.scrollWidth <= el.clientWidth')
+        page.keyboard.press('Escape')
+    assert max(widths) - min(widths) <= 1
+    assert min(widths) >= 220
+
+
 def test_running_owner_and_approval_are_discoverable_without_enter_approving(page):
     approvals = []
     page.on("request", lambda request: approvals.append(request.url) if "/api/shell_approval" in request.url else None)
@@ -583,15 +609,16 @@ def test_running_owner_and_approval_are_discoverable_without_enter_approving(pag
         addToSession('a', {type:'shell_request',id:'approval-a',command:'pytest -q',cwd:'E:/project-alpha'});
         switchSession('b');
     }""")
-    expect(page.locator("#composer-notice")).to_contain_text("Approval required")
+    expect(page.locator("#composer-notice")).to_have_count(0)
     expect(page.locator("#status")).to_contain_text("Alpha")
     expect(page.locator("#stop")).to_have_attribute("aria-label", "Stop Alpha")
     page.locator("#task").fill("another draft")
     page.locator("#task").press("Enter")
     assert approvals == []
-    page.get_by_role("button", name="Review command", exact=True).click()
+    page.locator('#status').get_by_role("button", name="Open", exact=True).click()
     expect(page.locator("#sess-title")).to_contain_text("Alpha")
     expect(page.locator(".shell-command")).to_contain_text("pytest -q")
+    expect(page.get_by_text("Approval required", exact=True)).to_have_count(1)
 
 
 def test_reading_position_and_back_to_latest(page):

@@ -80,6 +80,11 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/providers/local_response_codec.py` | Local response envelopes and model dialects, before the kernel |
 | `codey/providers/base.py` | Protocol-neutral tool definitions/results and explicit assistant finish state |
 | `codey/providers/api_provider.py`, `api_transport.py` | One exchange lifecycle owns locks, cancellation and candidate commit; shared bounded transport never replays unknown outcomes |
+| `codey/providers/api_stream.py` | SSE decoding and unambiguous streamed tool-call identity; complete IDs are atomic, ambiguous fragments fail closed |
+| `codey/providers/zen/node_http.py`, `node_http.mjs` | Optional Node fetch bridge, bounded IPC and submission/cancellation evidence; no project-tool execution |
+| `codey/web/assets/provider_ui.js`, `messages.js`, `render.js` | Stable viewport-bounded model menu and single approval card; explicit shell status and unknown historical results |
+| `tools/coverage_gate.py`, `check_javascript.py`, `source_size_inventory.py` | Complete-production coverage minima, actual shipped JS/MJS discovery, and tracked/new source-size inventory |
+| `tools/zen_free_model_gate.py` | Connector-specific live chat/read/approval matrix and thinking variants; evidence under ignored artifacts, outside deterministic CI |
 | `codey/providers/api_codec.py` | Stateless codec contract and generation settings; connection factories resolve budgets, the provider selects its codec once |
 | `codey/providers/api_chat.py`, `api_responses.py` | Protocol-owned tools, results, wire history, closed context units, paired-call validation and reply decoding; Responses replays reasoning items and uses call_id |
 | `codey/providers/context_ledger.py` | Durable accepted protocol events, hash-chained sources and atomic replaceable-view heads |
@@ -174,7 +179,7 @@ separately from completion proof; delivery failure does not erase completed effe
 The manual gate recorder observes bytes at the local provider's request
 boundary. Request hashes diagnose changes; they grant no permission and prove
 neither semantic equivalence nor completion. It distinguishes logical exchanges
-from the single bounded HTTP attempt. HTTP uncertainty, bounded model continuation
+from physical bounded HTTP attempts and policy-authorized retries. HTTP uncertainty, bounded model continuation
 after an explicit output limit, and task recovery are separate mechanisms.
 
 Ghost work queues and affinity each separate `*_model`, `*_sources`,
@@ -192,3 +197,9 @@ The old coding/research loops and production `ResearchIteration` class are
 deleted. A comparison adapter with that name exists only under `tests/support/`.
 Current consumers use the function adapter and owning modules; historical
 fixtures are not a production compatibility promise.
+
+## Current maintenance boundaries
+
+Shared API code accepts connector-owned opener/request-ID options without importing Zen. Local keeps Python HTTP. Optional MJS packaging and syntax checks discover existing files; removing Zen also removes its dedicated tests/gates and manifest entries. UI persistence keeps shell status, signed integer exits, command preview integrity and tool status; malformed exits stay unknown.
+
+See [current verification](../TEST_REPORT.md), [transport diagnosis](provider_ci_diagnosis_2026-10-13.zh-CN.md) and [maintenance audit](ui_maintenance_audit_2026-10-13.zh-CN.md). Historical experiment logs remain in Git; raw new coverage/log output belongs in `.e2e-artifacts/` and CI artifacts.

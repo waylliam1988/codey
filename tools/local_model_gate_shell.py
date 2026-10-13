@@ -81,7 +81,11 @@ def gate_application(target: GateTarget, directory: Path):
     from codey.providers import local_config
 
     directory.mkdir(parents=True, exist_ok=True)
-    state_root = directory / "state"
+    # The parent owns the archive destination. Use its temporary state root
+    # so successful shell cases do not collide with copytree(directory/state).
+    input_path = directory / "input.json"
+    inputs = json.loads(input_path.read_text(encoding="utf8")) if input_path.is_file() else {}
+    state_root = Path(inputs["state"]) if inputs.get("state") else directory / "state"
     events = []
     env = {"NATIVE_TOOLS": "1"}
     if target.provider_id == "local":
@@ -205,7 +209,10 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict:
         from codey.runtime.core.protocol_window import ProtocolWindowRef
 
         ref = ProtocolWindowRef.from_payload(original_window)
-        ledger = ContextLedger.for_protocol_session(directory / "state", ref.session_id, ref)
+        input_path = directory / "input.json"
+        inputs = json.loads(input_path.read_text(encoding="utf8")) if input_path.is_file() else {}
+        state_root = Path(inputs["state"]) if inputs.get("state") else directory / "state"
+        ledger = ContextLedger.for_protocol_session(state_root, ref.session_id, ref)
         if ledger.window_ref != ref:
             raise AssertionError("approval continuation changed the protocol window")
         call_key = "call_id" if target.api_protocol == "openai-responses" else "tool_call_id"

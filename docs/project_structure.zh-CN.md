@@ -78,6 +78,11 @@ Chat、编程、Research、规划与获授权的混合任务共用模型工具�
 | `codey/providers/local_response_codec.py` | 本地响应信封与模型方言，在进入内核前归一 |
 | `codey/providers/base.py` | 协议中立工具声明/结果与明确的回复结束状态 |
 | `codey/providers/api_provider.py`、`api_transport.py` | 统一最终请求计数/裁剪/准入、锁、取消与候选提交；传输交付原始 usage 事件，不重发未知结果 |
+| `codey/providers/api_stream.py` | SSE 解码与明确的流式调用身份；完整 ID 不拼接，歧义片段直接关闭请求 |
+| `codey/providers/zen/node_http.py`、`node_http.mjs` | 可选 Node fetch 桥接、有界 IPC、提交/取消证据；不执行项目工具 |
+| `codey/web/assets/provider_ui.js`、`messages.js`、`render.js` | 固定宽度且受窗口约束的菜单、唯一审批卡片、明确 Shell 状态与历史未知结果 |
+| `tools/coverage_gate.py`、`check_javascript.py`、`source_size_inventory.py` | 完整生产目录覆盖率门、实际 JS/MJS 资源发现、已跟踪与新增源码行数盘点 |
+| `tools/zen_free_model_gate.py` | 连接器专用实机聊天/读取/审批矩阵与思考变体；证据进入忽略目录，不进入确定性 CI |
 | `codey/providers/api_codec.py` | 无状态 codec 契约及生成参数；连接工厂解析预算，Provider 构造时选定协议 |
 | `codey/providers/api_chat.py`、`api_responses.py` | 各自拥有工具、结果、wire 历史、完整上下文单元、调用配对验证和回复解码；Responses 保留 reasoning items 并使用 call_id |
 | `codey/providers/context_ledger.py` | 已接纳协议原文、哈希链来源与可替换视图的原子 head |
@@ -161,8 +166,8 @@ operation state，保存连接版本、模型、协议、能力和生成参数�
 交付失败不会擦掉已成立的完成证明或已执行效果。
 
 手工 gate recorder 在本地 provider 请求边界观察实际字节。请求 hash 用于诊断变化，
-不授予权限、不证明语义等价或任务完成。逻辑 exchange 与显式 `urlopen` 尝试分别计数，
-后者只有单次有界 HTTP 尝试。HTTP 结果未知、明确输出截断后的有限续写和任务恢复
+不授予权限、不证明语义等价或任务完成。逻辑 exchange、物理 HTTP 尝试和策略允许的重试分别计数；
+每个物理尝试都有界，嵌套 recorder 不重复记账。HTTP 结果未知、明确输出截断后的有限续写和任务恢复
 是三个独立机制，不共享一个含糊的 retry。
 
 Ghost 工作队列与 affinity 已分别拆成 `*_model`、`*_sources`、`*_events` 和
@@ -178,3 +183,9 @@ Store 模块；它们是领域所有者，不是新的通用框架。continuity 
 
 旧编程/Research 循环与生产 `ResearchIteration` 类已删除；同名对照适配器只在
 `tests/support/`。当前消费者使用函数适配器与正式所有者，历史夹具不构成生产兼容承诺。
+
+## 当前维护边界
+
+共享 API 只接收连接器自有 opener/日志头选项，不导入 Zen；Local 保持 Python HTTP。MJS 打包及语法检查发现实际文件；删除 Zen 时同步移除专用测试、gate 与清单条目。UI 保存 Shell 状态、带符号整数退出码、命令预览完整性及工具状态；非法退出码保持未知。
+
+详见[当前验证](../TEST_REPORT.md)、[传输诊断](provider_ci_diagnosis_2026-10-13.zh-CN.md)与[维护审计](ui_maintenance_audit_2026-10-13.zh-CN.md)。实验全文保留在 Git；新增完整覆盖率和日志进入 `.e2e-artifacts/` 与 CI artifacts。

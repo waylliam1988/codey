@@ -158,24 +158,12 @@ class ToolOutcome:
             audit["error_code"] = error_code
         # Strict exit: only real ints are projected. Bool/str/float exits
         # are omitted instead of being coerced (bool False must not become 0).
-        try:
-            strict_code: int | None = None
-            if self.exit_code is not None and type(self.exit_code) is int:
-                strict_code = self.exit_code
-            if strict_code is None and audit.get("exit_code") is not None:
-                raw = audit.get("exit_code")
-                strict_code = raw if type(raw) is int else None
-                if strict_code is None:
-                    audit.pop("exit_code", None)
-            if strict_code is not None:
-                audit["exit_code"] = strict_code
-                object.__setattr__(self, "exit_code", strict_code)
-            else:
-                audit.pop("exit_code", None) if "exit_code" in audit and self.exit_code is not None else None
-                if self.exit_code is not None and type(self.exit_code) is not int:
-                    object.__setattr__(self, "exit_code", None)
-        except Exception:
-            pass
+        strict_code = next((value for value in (self.exit_code, audit.get("exit_code")) if type(value) is int), None)
+        object.__setattr__(self, "exit_code", strict_code)
+        if strict_code is not None:
+            audit["exit_code"] = strict_code
+        else:
+            audit.pop("exit_code", None)
         if self.changed:
             audit["changed"] = True
         if self.truncated:

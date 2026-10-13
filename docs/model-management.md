@@ -106,8 +106,8 @@ delivery and package inclusion retain separate integration coverage. Scripted
 Research sources use scoped DNS answers and fresh caches while executing the
 real URL policy, so offline verification does not depend on public DNS.
 
-Latest Windows/Python 3.12 verification: **8405 passed, 7 skipped, 1503 subtests**;
-required machine contracts **1102 passed**. See [the test report](../TEST_REPORT.md)
+Latest Windows/Python 3.12 verification: **8574 passed, 7 skipped, 1510 subtests**;
+required machine contracts **1125 passed, 14 subtests, no skips**. See [the test report](../TEST_REPORT.md)
 for TDD, the interrupted first continuity run, historical replay and platform limits.
 
 Primary tests: `tests/test_model_preferences.py`,
@@ -115,3 +115,17 @@ Primary tests: `tests/test_model_preferences.py`,
 `tests/test_ui_settings_save_scopes_and_refresh.py`,
 `tests/test_optional_zen_removal_preserves_local_api.py`. The visual baseline is
 `DESIGN.md`.
+
+## Composer and connector lifecycle
+
+The model menu stays 240px wide regardless of the selected model/effort, shrinking
+to fit the viewport. Selected checks retain padding; long labels use ellipsis.
+Command approval belongs only to the command card's Allow / Deny buttons, without
+a duplicate composer notice. Model-disabled/removed feedback remains with Settings.
+
+Zen's Node fetch and custom request-ID headers live in its optional package;
+Local keeps Python HTTP. Packaging and CI discover existing JS/MJS resources.
+Remove its registration/package together with dedicated tests, gates and manifest
+entries; old history remains readable, and removed connections cannot send.
+The current live free-model matrix is not all green: two Ling thinking-enabled
+cases remain unresolved. See the [maintenance audit](ui_maintenance_audit_2026-10-13.zh-CN.md).

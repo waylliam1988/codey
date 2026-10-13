@@ -168,7 +168,8 @@ action policy、completion proof 和 Research evidence 检查。审计视图使�
 adapter，不需要改 agent 核心。
 
 Zen 约定的上游请求头与工具名称映射只位于独立连接包，不进入 Local 请求或提示词。
-生成请求只发送一次，断流或结果未知时不自动重发；完成证明与最终结果交付分别记录。
+每个物理生成尝试只发送一次；只有策略允许的完整拒绝或已证实的提交前失败可有限重试，
+断流或结果未知时不自动重发；完成证明与最终结果交付分别记录。
 
 Zen 临时请求适配会补充标为不可用的网络声明，不授予文件或命令权限。
 独立 API 审查固定使用本次所选模型，不会因为打开了网页模型而切换过去。
@@ -187,6 +188,15 @@ python -m pytest -q -o faulthandler_timeout=120
 CI 还检查 Ruff、全树 mypy、JavaScript 语法和支持平台的回归。开发环境需要与 CI
 一致时，先安装 `requirements-ci.txt`，再运行 `pip install -e . --no-deps`。
 发布检查及实机覆盖范围见[发布门槛](docs/release_gate.zh-CN.md)。
+
+模型菜单默认 240px 并受窗口边界约束；命令只在审批卡片中同意或拒绝，不再重复显示输入框通知。
+只有 Zen 使用可移除的 Node fetch 适配，Local 保持 Python HTTP；免费模型实机矩阵仍有两项
+Ling 开启思考的案例未解决。
+
+当前验证和覆盖率集中在 [TEST_REPORT](TEST_REPORT.md)。CI 覆盖 Windows Python 3.11/3.12/3.13、
+Windows/Linux 必跑机器契约、全树 mypy/Pyrefly 和实际 JS/MJS 语法检查；Windows 3.12
+另测完整生产 Python 语句/分支及子进程，门槛为 85% / 75%。详见[测试命令](tests/README.md)
+和[维护审计](docs/ui_maintenance_audit_2026-10-13.zh-CN.md)。
 
 ## 许可证
 

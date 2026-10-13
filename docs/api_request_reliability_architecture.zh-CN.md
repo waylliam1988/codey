@@ -1,27 +1,41 @@
 # API 请求可靠性边界
 
-本轮把请求可靠性拆成共享 API 传输层和 Zen 合作策略层。共享层不导入 Zen 类型；Zen 只提供请求登记、并发、冷却和合作接口错误分类。
+共享 API 层拥有逻辑请求、尝试预算、取消和有界正文读取；连接器提供自己的传输、身份和错误策略。共享层不导入 Zen，也不根据模型名称切换厂商行为。
 
-## 生命周期
+## 逻辑请求与物理尝试
 
-一次逻辑请求在 `_exchange()` 的网络准备完成后登记一次，由同一个 `PendingRequest` 覆盖排队、实际尝试、冷却等待、协议解码和最终结算。每个 HTTP 尝试单独租借 `RequestLease`，释放名额后才进入下一次等待。逻辑请求结束时才注销登记，因此重试不会绕过 `max_pending`。
+一次逻辑请求在 `_exchange()` 的网络准备完成后登记，由同一个 `PendingRequest` 覆盖排队、尝试、冷却、协议解码和结算。每次物理尝试单独租借 `RequestLease`，结束后释放；重试不会绕过 `max_pending`。`AttemptBudget` 限制物理尝试及获准的提交前重连。
 
-`AttemptBudget` 同时限制外层 HTTP 尝试和发送前 TLS 重连。请求开始写入后若结果未知，传输层会保留未知状态并禁止自动重发。
+Gate recorder 区分逻辑发送、物理尝试和重试；同一路径的嵌套 recorder 不重复包裹。HTTP 状态、上游 request ID 和原因码进入有界失败事实，不记录请求密钥或完整头。
 
-## 取消与正文
+## 取消、截止时间与正文
 
-`AttemptControl` 登记连接和响应对象，覆盖建连、请求写入、响应头和正文。Stop 会关闭当前 socket；连接工作槽有界，取消不会无限留下 DNS/建连线程。正文读取通过 `BoundedBodyReader`，按实际收到的 bytes 更新 `last_byte_at`，并分别受响应总 deadline 与正文静默期限约束。进入正文阶段会重置计时；HTTP 错误正文也使用同一控制器。
+`AttemptControl` 登记连接、原始 socket、响应或可关闭的进程桥接对象。Stop 关闭当前资源；工作槽有界，排队和响应头等待也受截止时间约束。普通 HTTP 不加载 Windows TLS 证书库；HTTPS 真正使用时才准备 TLS context，避免短 HTTP 测试的预算被冷启动证书加载消耗。
 
-SSE 必须满足既有终止条件。收到 `[DONE]` 或 Responses 的完成事件只表示协议答案完整；HTTP framing 未消费完时连接不会回池，但已解码答案不会因此重发。
+正文通过 `BoundedBodyReader` 按实际 bytes 更新静默时钟，同时遵守总生成 deadline。持续到达的零碎 bytes 不能无限延长 JSON/SSE 等待；错误正文同样有长度、framing 和时间限制。
 
-## Zen 冷却与分类
+异步交接后，未收到 submitted 标记不等于没有发送。没有确定证明时保持 unknown；只有明确的提交前连接失败可以判定 not_sent。截断、取消和发送后结果未知都不自动重放。
 
-Zen 的共享协调器按 base URL、合作身份和协议版本建立作用域。额度、资格和未知错误关闭当前请求；只有合作接口明确的 `RateLimitError` 短期限流组合允许在同一模型上按 `Retry-After` 继续。`FreeUsageLimitError` 等日/生命周期额度错误不会按 429 子串猜测为可重试。
+## SSE 调用身份
 
-provider 最后一个引用释放时，未到期或已到期但尚未完成 probe 的冷却状态仍保留，后续批次先进行单次探测。探测成功只结算匹配版本，迟到的旧成功不能清除更新后的冷却。连接池空闲连接在最后一个 session 引用释放时关闭。
+`api_stream.py` 独立拥有 SSE 解码。显式 index、完整 call ID 或唯一未歧义的已有调用可以定位片段；完整 ID 不拼接。并行调用无法明确定位时失败关闭，不猜编号。协议完成事件与 HTTP framing 的完整消费是两种证据，不能互相替代。
 
-## 连接池和代理
+## Zen 自有传输与策略
 
-Zen 的 `ApiHttpSession` 按目标、代理、身份和 TLS 配置隔离连接。完整 `Content-Length` 或 chunked framing 才能复用；`Connection: close`、取消、超时、断流和排空失败直接销毁。环境代理发现与绕过规则沿用标准库；普通 HTTP 代理使用绝对目标，HTTPS 代理认证只放在 CONNECT 请求，绝不转发到目标服务。
+`zen/node_http.py` 和 `node_http.mjs` 通过 Node fetch 执行一次物理 POST，并用有界 IPC 交付响应头、正文和提交证据。Node 使用现有 Playwright 附带运行时或 PATH 中的 Node；子进程归连接器所有，取消后终止，不执行项目/Shell 工具。当前每个尝试使用独立进程，不宣称复用桌面版长期连接池。
 
-Local 默认不创建共享池，仍使用原有传输语义。删除 Zen 时，共享取消、正文保护和请求预算仍可由其他 API 使用；没有消费者的 Zen 专用注册和资源可以一起删除。
+`zen/connection.py` 注入通用 opener 和 `request_id_headers`，包括 `X-OpenCode-Log-Id`。合作身份、目录、usage 解释与重试分类都在 Zen 包内。connection revision 不再附日期，但冻结选择的版本校验仍保留；旧版本任务不会被静默改写。
+
+Zen 协调器按连接、身份和协议建立作用域，保留并发、冷却和单次探测规则。策略最多六次物理尝试（包括首次），并受逻辑请求总预算约束。只允许明确短期限流、已证实的提交前网络失败，以及完整 HTTP 429 / server_error / 空 code / 精确消息 `Upstream request failed: Endpoint is unavailable.` 的有界重试。额度、资格、其他未知 429 和发送后未知结果不自动重试；遵守 Retry-After 和有限退避。错误被允许重试不证明模型一定可用。
+
+## 共享 Python 传输与可移除边界
+
+`ApiHttpSession` 仍是共享 Python 传输可显式使用的连接池；当前 Zen Node opener 不通过该池发送。Python 池只有完整消费、可复用 framing 才回池，取消、断流、超时或脏连接销毁；标准库代理发现及 CONNECT 身份隔离仍属于共享层。
+
+Local 默认保持 Python HTTP，不因 Zen 增加 Node 依赖。未来在线 API 使用自己的连接器配置和策略，可复用同一共享层。MJS 打包和 CI 语法检查通用发现实际资源；删除 Zen 注册/目录时同时清理其专用测试、gate、清单和文档，不修改共同工具执行器。
+
+## 验证与限制
+
+见 [当前测试报告](../TEST_REPORT.md)、[传输/CI 诊断](provider_ci_diagnosis_2026-10-13.zh-CN.md)和[维护审计](ui_maintenance_audit_2026-10-13.zh-CN.md)。测试包含真实回环 socket、零碎帧、Stop、Node 提交标记延迟、明确连接拒绝和无 Zen 的 fresh-process Local 协议。
+
+实机免费矩阵初次 36/42 通过；六项复测中四项恢复，两项 Ling thinking=true 仍未解决。不能把客户端差异直接等同于模型永久故障，也不能用确定性回归宣称全部 free 模型已通过。

@@ -321,12 +321,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
             self.assertIn(status, RENDER_JS)
         self.assertIn("shellStatusVerb", RENDER_JS)
         self.assertIn("window.CodeyRender.shellStatusVerb(m.shellStatus, m.approved)", UI_SOURCE)
-        self.assertIn(": 'Failed'", RENDER_JS)
+        self.assertIn(": 'Result status unknown'", RENDER_JS)
         # Real denial has no status: missing/empty status plus approved=false
         # must read as Denied, while only approved exit reads as Executed.
         self.assertIn("if (!approved)", RENDER_JS)
         self.assertIn("return 'Denied'", RENDER_JS)
-        self.assertIn("return shellStatus === 'exit' ? 'Executed' : 'Failed'", RENDER_JS)
+        self.assertIn("return shellStatus === 'exit' ? 'Executed' : 'Result status unknown'", RENDER_JS)
 
     def test_local_save_failure_keeps_popover_open(self) -> None:
         start = SETTINGS_JS.index("async function save()")
@@ -1403,7 +1403,7 @@ global.document = {
   addEventListener: () => {},
 };
 global.localStorage = { getItem: () => null, setItem: () => {} };
-global.window = {CodeySettings:{init:()=>{}, open:()=>{}, close:()=>{}}, CodeyRequests:{refreshActions:()=>{}}};
+global.window = {addEventListener:()=>{}, CodeySettings:{init:()=>{}, open:()=>{}, close:()=>{}}, CodeyRequests:{refreshActions:()=>{}}};
 global.navigator = {};
 const uiStateSrc = loadAsset('assets/ui_state.js');
 const providerUiSrc = loadAsset('assets/provider_ui.js');

@@ -225,3 +225,15 @@ Research 工作流，也不刷新验证或扫描工作区。`project_prompt_cont
 - command/cwd/URL 是完整身份；展示边界可以裁剪，事实和完成关联不裁剪。
 
 可执行检查与准确的证明边界见 [kernel_invariants.zh-CN.md](kernel_invariants.zh-CN.md)。
+
+## Shell 审批交付与展示恢复（2026-10-13）
+
+`ResolveShellApproval` 从服务端已校验的持久结果构建文字 provider 的 continuation，
+同时更新正式 request/task；不会因结构化输入重新解析而退回没有工具结果的通用提示。
+原生 provider 继续按原 call ID 配对交付，审批不强制新建聊天窗口。
+
+执行结算与 UI 展示分开：UI 状态存储保留 shellStatus、命令预览截断/摘要及工具 status；
+exitCode 只接受真实整数并保留 POSIX 负值，非法值保持未知。历史缺失状态不推断为 Failed，
+也不推断为成功。UI 历史不能替代服务端审批事实或授权。
+
+回归与边界见[测试报告](../TEST_REPORT.md)及[维护审计](ui_maintenance_audit_2026-10-13.zh-CN.md)。
