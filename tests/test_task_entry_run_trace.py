@@ -750,13 +750,14 @@ def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None
         assert secret_task not in serialized
 
 
-def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
+def test_preflight_provider_switch_is_recorded_as_fallback(monkeypatch) -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         project = root / "project"
         project.mkdir()
         state = server.AppContext(root / "state")
         state.providers.supervisor = _UnavailableSupervisor()
+        monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", lambda **_kwargs: {})
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state)
