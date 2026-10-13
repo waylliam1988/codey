@@ -1,6 +1,6 @@
 **Codey API 传输与协议窗口生命周期：完整 TDD 修改方案**
 
-> **实施状态（2026-10-13）**：本轮完成确定性传输取消、响应收尾、ResumeRun 窗口复用、durable approval、DeliveryCommit witness、release gate scope 和动态响应桩的 `read1` 误判修复，并通过最终全量 pytest **8530 passed、7 skipped、1509 subtests**。Ruff、mypy（409 个 source files）、Pyrefly 和 machine contract（1102 passed、14 subtests）通过。第 1–12 批的完整架构迁移仍以本文后续验收项为准，不能据此宣称全部完成；证据见 `TEST_REPORT.md`。
+> **实施状态（2026-10-13，最终测试记录）**：本轮完成确定性传输取消、响应收尾、ResumeRun 窗口复用、durable approval、DeliveryCommit witness、release gate scope、动态响应桩的 `read1` 误判、冷启动连接状态协调和 UI 状态回归修复。最终全量 pytest **8539 passed、7 skipped、1510 subtests，976.70s**；machine contract **1102 passed、14 subtests，301.61s**；Ruff、mypy（411 个 source files）和 Pyrefly 通过。本文第 15 节的架构验收项仍是完整完成定义，测试全绿不等于自动豁免未完成的架构迁移；证据见 `TEST_REPORT.md`。
 
 设计基线：`6f4671e9`。本文件同时作为实施方案、TDD 验收基线和后续维护约束；其中的新类型、测试、默认值和错误码已经按实施结果落地，现有代码中的名称仍会明确标为现有入口。
 

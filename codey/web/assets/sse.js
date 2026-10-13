@@ -113,7 +113,7 @@ function connect() {
     if (data.type === 'hello') {
       clearReconnectTimer();
       reconcileRunState();
-      deps.refreshProviderStatus();
+      deps.refreshProviderStatus(true);
       return;
     }
     ingestServerEvent(data);

@@ -191,6 +191,7 @@ def mint_shell_ticket(
     approval_id: str,
     timeout: int,
     output_limit: int,
+    claim_pending: Any = None,
 ) -> tuple[dict[str, Any] | None, ShellExecutionTicket | None]:
     """Atomically consume an approval and mint a spawn ticket.
 
@@ -202,7 +203,7 @@ def mint_shell_ticket(
     """
 
     with lock:
-        pending = approvals.pop_shell(approval_id)
+        pending = claim_pending(approval_id) if callable(claim_pending) else approvals.pop_shell(approval_id)
         if pending is None:
             return None, None
         raw_generation = pending.pop("_approval_generation", 0)
@@ -256,6 +257,7 @@ def claim_shell_ticket(
             approval_id=approval_id,
             timeout=timeout,
             output_limit=output_limit,
+            claim_pending=getattr(ctx, "_claim_pending_shell_approval_locked", None),
         )
 
 

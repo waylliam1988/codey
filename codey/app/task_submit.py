@@ -26,7 +26,7 @@ from codey.operations.task_state import TaskSubmissionState
 from codey.providers.diagnostics import capture_provider_failure
 from codey.providers.model_preferences import ModelDisabledError
 from codey.reviews.review_policy import load_review_policy
-from codey.task.model import TaskSubmission
+from codey.task.model import TaskInput, TaskSubmission
 from codey.workspace.changes import collect_changes
 
 SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
@@ -48,6 +48,7 @@ def run_task(
     denied_capabilities: tuple[str, ...] = (),
     previous_run_id: str = "",
     initial_shell_results: tuple[dict[str, object], ...] = (),
+    input: TaskInput | None = None,
     *,
     get_state: Callable[[], TaskSubmissionState],
     review_policy: str | None = None,
@@ -85,9 +86,25 @@ def run_task(
                 get_state().release_run(run_id)
         raise
     try:
-        run_task_submission(
-            deps,
-            TaskSubmission(
+        if input is not None:
+            submission = TaskSubmission.from_input(
+                session_id=session_id,
+                project=project,
+                max_turns=max_turns,
+                provider_id=provider_id,
+                input=input,
+                intent=intent,
+                run_id=run_id,
+                requested_capabilities=tuple(requested_capabilities or ()),
+                strict_research=bool(strict_research),
+                sources_open_required=bool(sources_open_required),
+                project_changes_required=bool(project_changes_required),
+                denied_capabilities=tuple(denied_capabilities or ()),
+                review_source_run_id=review_source_run_id,
+                model_selection=model_selection.to_payload() if model_selection is not None else {},
+            )
+        else:
+            submission = TaskSubmission(
                 session_id=session_id,
                 project=project,
                 task=task,
@@ -105,7 +122,11 @@ def run_task(
                 initial_shell_results=tuple(initial_shell_results or ()),
                 review_source_run_id=review_source_run_id,
                 model_selection=model_selection.to_payload() if model_selection is not None else {},
+                input=input,
             )
+        run_task_submission(
+            deps,
+            submission,
         )
     finally:
         supervisor = state.self_repair
@@ -134,6 +155,7 @@ def submit_task(
     review_source_run_id: str = "",
     model_selection: ApiRunSelection | None = None,
     run_id: str = "",
+    input: TaskInput | None = None,
 ) -> str | None:
     # Fail fast on config error before taking the slot; the validated value is
     # passed through so the worker never re-reads the environment (no race).
@@ -175,6 +197,7 @@ def submit_task(
             denied_capabilities=tuple(denied_capabilities or ()),
             previous_run_id=str(previous_run_id or ""),
             initial_shell_results=tuple(initial_shell_results or ()),
+            input=input,
             get_state=lambda: state,
             review_policy=review_policy,
             review_source_run_id=review_source_run_id,
@@ -205,6 +228,7 @@ def submit_task_after_slot_release(
     timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
     initial_shell_results: tuple[dict[str, object], ...] = (),
     model_selection: ApiRunSelection | None = None,
+    input: TaskInput | None = None,
 ) -> str | None:
     deadline = time.monotonic() + max(0.0, timeout)
     while True:
@@ -229,6 +253,7 @@ def submit_task_after_slot_release(
             abort_if_stopped=True,
             previous_run_id=previous_run_id,
             initial_shell_results=tuple(initial_shell_results or ()),
+            input=input,
             model_selection=model_selection,
         )
         if run_id is not None:

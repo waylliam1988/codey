@@ -55,7 +55,7 @@ from codey.runtime.observe.terminalizer import (
     task_done_event,
 )
 from codey.task.kind import resolve_task_kind, trace_mode, ui_mode
-from codey.task.model import TaskSubmission
+from codey.task.model import ResolveShellApproval, TaskSubmission
 from codey.workspace.config import ProjectConfigLoadResult, load_project_config
 
 logger = logging.getLogger(__name__)
@@ -513,7 +513,25 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
             setup.request = replace(setup.request, continue_task=True)
             setup.continue_task = True
         setup.recovered_resume = True
-    shell_rows = _shell_redelivery_rows(getattr(setup.request, "initial_shell_results", ()))
+    shell_payloads: Any = getattr(setup.request, "initial_shell_results", ())
+    resolved_input = setup.request.resolved_input()
+    if isinstance(resolved_input, ResolveShellApproval):
+        resolver = getattr(setup.state, "resolve_shell_approval", None)
+        payload = resolver(resolved_input.approval_id) if callable(resolver) else None
+        if payload is None:
+            return None, _fail_early_run(
+                deps, setup,
+                "ERROR: durable shell approval result is unavailable or uncertain.",
+                current_work=work,
+            )
+        # Text protocol calls have no native call id; their continuation
+        # prompt already carries the bounded result, so only native calls
+        # become recovered tool rows.
+        shell_payloads = ((payload,) if isinstance(payload, dict) and payload.get("call_id") else ())
+        source_run_id = str(payload.get("source_run_id") or "") if isinstance(payload, dict) else ""
+        if source_run_id and not setup.request.previous_run_id:
+            setup.request = replace(setup.request, previous_run_id=source_run_id)
+    shell_rows = _shell_redelivery_rows(shell_payloads)
     if shell_rows:
         # 审批 continuation：已裁决 shell 结果作为 turn-0 初始行，首发回答
         # 原 native 调用（同会话 native 优先，异会话文本兜底）。

@@ -31,6 +31,7 @@ from codey.runs.details import load_run_details
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact, json_digest
 from codey.storage.local_store import StoreCorruption
 from codey.task.entry_auth import derive_entry_auth
+from codey.task.model import ResolveShellApproval
 from codey.workspace.changes import collect_changes, is_git_repository, restore_snapshot_changes
 
 
@@ -115,17 +116,28 @@ logger = logging.getLogger(__name__)
 
 def providers_response(ctx: Any) -> tuple[int, dict[str, Any]]:
     try:
-        statuses = provider_services.provider_availability(ctx)
+        ctx._provider_status_snapshot_requested = True
+        legacy_statuses = (
+            provider_services.provider_availability(ctx)
+            if getattr(ctx, "state_home", None) is None else None
+        )
+        provider_rows = (
+            provider_services.provider_payload(legacy_statuses)
+            if legacy_statuses is not None
+            else provider_services.provider_status_payload(ctx)
+        )
+        statuses = {str(item.get("id") or ""): item.get("available") is True for item in provider_rows}
     except Exception:
         logger.exception("provider availability probe failed")
         statuses = dict[str, bool]()
+        provider_rows = provider_services.provider_payload(statuses)
         probe_error = True
     else:
         probe_error = False
     return 200, {
         "default": DEFAULT_PROVIDER_ID,
         "recommended": provider_services.recommended_default_provider(statuses),
-        "providers": provider_services.provider_payload(statuses),
+        "providers": provider_rows,
         "probe_error": probe_error,
     }
 
@@ -141,7 +153,24 @@ def provider_catalog_response() -> tuple[int, dict[str, Any]]:
 def local_provider_response(ctx: Any = None) -> tuple[int, dict[str, Any]]:
     from codey.app.model_settings import preferences_for
 
-    local = local_bootstrap_payload(probe=preferences_for(ctx).enabled("local"))
+    coordinator = getattr(ctx, "connection_status", None)
+    if coordinator is not None and preferences_for(ctx).enabled("local"):
+        force_probe = not bool(getattr(ctx, "_provider_status_snapshot_requested", False))
+        coordinator.refresh("local", force=force_probe)
+        if force_probe:
+            coordinator.wait_for("local", timeout=2.0)
+        status_snapshot = coordinator.current("local")
+        data = coordinator.data("local")
+        local = data.get("local") if isinstance(data.get("local"), dict) else local_bootstrap_payload(probe=False)
+        local = dict(local)
+        local.update({
+            "state": status_snapshot.state,
+            "freshness": status_snapshot.freshness,
+            "source": status_snapshot.source,
+            "status_error": status_snapshot.error,
+        })
+    else:
+        local = local_bootstrap_payload(probe=preferences_for(ctx).enabled("local"))
     _attach_local_metadata(local)
     return 200, {"ok": True, "local": local}
 
@@ -154,6 +183,34 @@ def api_models_response(ctx: Any = None) -> tuple[int, dict[str, Any]]:
     payload: list[dict[str, Any]] = []
     for connection_id in API_CONNECTIONS:
         if not preferences.enabled(connection_id):
+            continue
+        coordinator = getattr(ctx, "connection_status", None)
+        if coordinator is not None:
+            coordinator.refresh(
+                connection_id,
+                force=not bool(getattr(ctx, "_provider_status_snapshot_requested", False)),
+            )
+            current = coordinator.current(connection_id)
+            if connection_id == "local" and current.state == "checking":
+                coordinator.wait_for(connection_id, timeout=2.0)
+                current = coordinator.current(connection_id)
+            cached_data = coordinator.data(connection_id)
+            cached = cached_data.get("payload")
+            if isinstance(cached, dict):
+                item = cached
+                preferences.observe_catalog(item)
+                payload.append(item)
+                continue
+            if cached_data:
+                item = {
+                    "id": connection_id,
+                    "label": API_CONNECTIONS[connection_id][0],
+                    "models": cached_data.get("models", []),
+                }
+                payload.append(item)
+                continue
+            payload.append({"id": connection_id, "label": API_CONNECTIONS[connection_id][0], "models": [],
+                            "state": current.state})
             continue
         try:
             item = connection_for(connection_id).model_payload()
@@ -625,7 +682,18 @@ def _stopped_shell_denial(
         "exit_code": None,
     }
     ctx.record_shell_result(event)
-    _record_shell_fact(ctx, pending, approval_id, "abandoned")
+    _record_shell_fact(
+        ctx,
+        pending,
+        approval_id,
+        "abandoned",
+        result={
+            "ok": False,
+            "status": "stopped",
+            "output": "Task stopped; command approval expired.",
+            "exit_code": None,
+        },
+    )
     return 409, {"error": "stopped", "stopped": True, "status": "stopped", "event": event}
 
 
@@ -682,18 +750,18 @@ def shell_approval_response(
     if approved_raw is not True and approved_raw is not False:
         return 400, {"error": "approved must be a boolean"}
     if approved_raw is False:
-        pending = ctx.pop_pending_shell_approval(approval_id)
+        pending = ctx.claim_pending_shell_approval(approval_id)
         if not pending:
             return 404, {"error": "approval not found"}
         pending.pop("_approval_generation", None)
         session_id = pending["session_id"]
-        _record_shell_fact(ctx, pending, approval_id, "denied")
         denied_result = {
             "ok": False,
             "status": "denied",
             "output": "Denied by user.",
             "exit_code": None,
         }
+        _record_shell_fact(ctx, pending, approval_id, "denied", result=denied_result)
         event = {
             "type": "shell_result",
             "run_id": pending.get("run_id") or "",
@@ -726,8 +794,8 @@ def shell_approval_response(
                 True,
                 continuation_plan.provider_id,
                 pending["intent"],
+                input=ResolveShellApproval(approval_id),
                 previous_run_id=str(pending.get("run_id") or ""),
-                initial_shell_results=tuple(continuation_plan.shell_results or ()),
                 **({"model_selection": pending["_api_selection"]} if pending.get("_api_selection") is not None else {}),
             )
             continued = continuation_run is not None
@@ -797,8 +865,8 @@ def shell_approval_response(
                 True,
                 continuation_plan.provider_id,
                 pending["intent"],
+                input=ResolveShellApproval(approval_id),
                 previous_run_id=str(pending.get("run_id") or ""),
-                initial_shell_results=tuple(continuation_plan.shell_results or ()),
                 **({"model_selection": pending["_api_selection"]} if pending.get("_api_selection") is not None else {}),
             )
             continued = continuation_run is not None

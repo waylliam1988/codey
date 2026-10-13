@@ -12,7 +12,8 @@ from __future__ import annotations
 import threading
 import time as _time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, suppress
 from typing import Any, cast
 
 from codey.automation.browser_worker import submit as submit_browser_task
@@ -52,6 +53,8 @@ def connect_fresh_provider_tab(provider_id: str, **kwargs: object) -> ChatProvid
 
 
 def borrow_open_provider(provider_id: str, owner_page: object) -> ChatProvider | None:
+    # Provider ids are canonically normalized by reviewer_candidates before
+    # this borrowing boundary is reached.
     return cast(ChatProvider | None, _provider_registry().borrow_open_provider(provider_id, owner_page))
 
 
@@ -99,6 +102,9 @@ PROVIDER_AVAILABILITY_TTL_S = 3.0
 _AVAIL_LOCK = threading.Lock()
 _AVAIL_STATUSES: dict[str, bool] = {}
 _AVAIL_AT: list[float] = [0.0]
+_WEB_PROBE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="provider-web-status")
+_WEB_PROBE_LOCK = threading.Lock()
+_WEB_PROBE_RUNNING = False
 
 
 def _note_availability_statuses(raw: dict[str, bool], now: float) -> None:
@@ -111,6 +117,47 @@ def _note_availability_statuses(raw: dict[str, bool], now: float) -> None:
 def reset_provider_availability_cache() -> None:
     """Clear the CDP availability cache; tests call this to avoid cross-test bleed."""
     _note_availability_statuses({}, 0.0)
+
+
+def _schedule_web_probe(ctx: Any, allowed: set[str]) -> None:
+    """Probe browser-backed providers off the HTTP response path."""
+    global _WEB_PROBE_RUNNING
+    if not allowed:
+        return
+    with _WEB_PROBE_LOCK:
+        if _WEB_PROBE_RUNNING:
+            return
+        _WEB_PROBE_RUNNING = True
+
+    def complete(future: Any) -> None:
+        global _WEB_PROBE_RUNNING
+        raw: dict[str, Any]
+        try:
+            result = future.result()
+            raw = result if isinstance(result, dict) else dict[str, Any]()
+        except Exception:
+            raw = dict[str, Any]()
+        _note_availability_statuses(cast(dict[str, bool], raw), _time.monotonic())
+        rows = [
+            {
+                "id": provider_id,
+                "label": PROVIDER_LABELS[provider_id],
+                "available": bool(raw.get(provider_id) is True),
+                "state": "ready" if raw.get(provider_id) is True else "unavailable",
+                "freshness": "fresh",
+                "source": "browser_tab",
+                "checked_at": _time.time(),
+                "error": "",
+            }
+            for provider_id in allowed
+        ]
+        with suppress(Exception):
+            ctx.emit({"type": "providers", "providers": rows})
+        with _WEB_PROBE_LOCK:
+            _WEB_PROBE_RUNNING = False
+
+    future = _WEB_PROBE_EXECUTOR.submit(provider_tab_availability, allowed=allowed)
+    future.add_done_callback(complete)
 
 
 def recommended_default_provider(statuses: dict[str, bool] | None = None) -> str:
@@ -163,6 +210,48 @@ def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict[str, 
         {"id": provider_id, "label": label, "available": statuses.get(provider_id) is True}
         for provider_id, label in PROVIDER_LABELS.items()
     ]
+
+
+def provider_status_payload(ctx: Any) -> list[dict[str, Any]]:
+    """Return a complete UI snapshot, scheduling API probes asynchronously."""
+    coordinator = getattr(ctx, "connection_status", None)
+    if coordinator is None:
+        return provider_payload(provider_availability(ctx))
+    web_statuses: dict[str, Any]
+    try:
+        web_allowed = {provider_id for provider_id in PROVIDER_LABELS
+                       if provider_id not in API_CONNECTIONS and ctx.providers.model_preferences.allows(provider_id)}
+        with _AVAIL_LOCK:
+            cached_at = _AVAIL_AT[0]
+            cached_statuses = dict(_AVAIL_STATUSES)
+        if cached_at and _time.monotonic() - cached_at < PROVIDER_AVAILABILITY_TTL_S:
+            web_statuses = {key: value for key, value in cached_statuses.items() if key in web_allowed}
+        else:
+            web_statuses = {}
+            _schedule_web_probe(ctx, web_allowed)
+    except Exception:
+        web_statuses = dict[str, Any]()
+    api_snapshots = coordinator.snapshot()
+    now = _time.time()
+    rows: list[dict[str, Any]] = []
+    for provider_id, label in PROVIDER_LABELS.items():
+        if provider_id in api_snapshots:
+            rows.append(api_snapshots[provider_id].payload(label))
+            continue
+        enabled = ctx.providers.model_preferences.allows(provider_id)
+        known = provider_id in web_statuses
+        available = bool(web_statuses.get(provider_id)) if known else False
+        rows.append({
+            "id": provider_id,
+            "label": label,
+            "available": available,
+            "state": "ready" if available else ("unavailable" if known or not enabled else "checking"),
+            "freshness": "fresh",
+            "source": "browser_tab",
+            "checked_at": now,
+            "error": "",
+        })
+    return rows
 
 
 def provider_catalog() -> list[dict[str, Any]]:
@@ -257,6 +346,7 @@ __all__ = [
     "provider_availability_from_statuses",
     "provider_catalog",
     "provider_payload",
+    "provider_status_payload",
     "open_provider_session",
     "provider_failover_order",
     "provider_status_update",

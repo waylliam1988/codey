@@ -25,6 +25,25 @@ from codey.storage.local_store import DEFAULT_STATE_HOME
 _CATALOG: ZenCatalog | None = None
 
 
+def status_key() -> str:
+    """Return the connection/catalog identity used by the status cache."""
+    return CONNECTION_REVISION
+
+
+def probe_status(_request: object) -> dict[str, object]:
+    payload = model_payload()
+    models = payload.get("models")
+    usable = isinstance(models, list) and bool(models)
+    return {
+        "state": "ready" if usable else "unavailable",
+        "source": "api_catalog",
+        "stale": payload.get("stale") is True,
+        "error": str(payload.get("error") or ""),
+        "models": models if isinstance(models, list) else [],
+        "payload": payload,
+    }
+
+
 class ZenProvider:
     """Removable partner envelope; it never executes a project or shell tool."""
 

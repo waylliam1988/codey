@@ -61,7 +61,6 @@ REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 SSE_REPLAY_LIMIT = 512
 
-
 def _close_if_discarded(store: object) -> None:
     """Best-effort close for a double-checked loser (e.g. KnowledgeStore index)."""
     close = getattr(store, "close", None)
@@ -70,12 +69,11 @@ def _close_if_discarded(store: object) -> None:
     with contextlib.suppress(Exception):
         close()
 
-
 MAX_CONVERSATION_STATES = 32
 MAX_CHANGE_TRACKERS = 32
 
-
 class AppContext:
+
     def __init__(
         self,
         state_home: str | Path | None = None,
@@ -109,7 +107,8 @@ class AppContext:
             max_states=MAX_CONVERSATION_STATES,
         )
         self.ui_state_store_lock = threading.Lock()
-        self.providers = ProviderRegistry(state_home)
+        self.providers = ProviderRegistry(state_home, emit=self.emit)
+        self.connection_status = self.providers.connection_status
         self.project_facts = (
             ProjectFactsStore(state_home) if state_home else ProjectFactsStore()
         )
@@ -289,6 +288,7 @@ class AppContext:
         self._ghost_affinity = value
 
     @property
+
     def ghost_observations(self) -> GhostObservationStore | None:
         return cast(
             GhostObservationStore | None,
@@ -296,10 +296,12 @@ class AppContext:
         )
 
     @ghost_observations.setter
+
     def ghost_observations(self, value: GhostObservationStore | None) -> None:
         self._ghost_observations = value
 
     @property
+
     def knowledge_store(self) -> KnowledgeStore | None:
         with self.lock:
             if not self._knowledge_store_enabled:
@@ -319,6 +321,7 @@ class AppContext:
         return winner
 
     @knowledge_store.setter
+
     def knowledge_store(self, value: KnowledgeStore | None) -> None:
         with self.lock:
             self._knowledge_store = value
@@ -342,10 +345,12 @@ class AppContext:
         )
 
     @property
+
     def task_submission_stores(self) -> TaskSubmissionStores:
         return self.build_task_submission_stores()
 
     @property
+
     def self_repair(self) -> SelfRepairSupervisor:
         import functools
 
@@ -366,6 +371,7 @@ class AppContext:
             return self._self_repair
 
     @self_repair.setter
+
     def self_repair(self, value: SelfRepairSupervisor | None) -> None:
         with self.lock:
             self._self_repair = value
@@ -557,46 +563,23 @@ class AppContext:
         """Append the durable approval fact before publishing its projection."""
         self.shell_approval_records.append(fact)
 
-    def pop_pending_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
+    def _claim_pending_shell_approval_locked(self, approval_id: str) -> dict[str, Any] | None:
+        from codey.app.shell_approval_state import claim_pending_shell_approval_locked
+
+        return claim_pending_shell_approval_locked(self, approval_id)
+
+    def claim_pending_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
         with self.lock:
-            pending = self.approvals.pop_shell(approval_id)
-            if pending is not None:
-                return pending
-            # Rebuild only an untouched request from durable facts after an
-            # application restart.  Any later fact is terminal or execution
-            # uncertain and must fail closed rather than spawning again.
-            fact = self.shell_approval_records.latest(approval_id)
-            if fact is None or fact.kind != "requested" or self.managed_outputs is None:
-                return None
-            try:
-                payload = self.managed_outputs.read_json_artifact({
-                    "session_id": fact.session_id,
-                    "run_id": fact.source_run_id,
-                    "handle": fact.command_ref,
-                    "sha256": fact.command_digest,
-                    "schema_version": 1,
-                })
-            except (OSError, ValueError, TypeError):
-                return None
-            if not isinstance(payload, dict) or not isinstance(payload.get("command"), str):
-                return None
-            return {
-                "approval_id": approval_id,
-                "session_id": fact.session_id,
-                "run_id": fact.source_run_id,
-                "command": payload["command"],
-                "cwd": str(payload.get("cwd") or "."),
-                "project": str(payload.get("project") or ""),
-                "attached_project": str(payload.get("attached_project") or payload.get("project") or ""),
-                "intent": str(payload.get("intent") or "chat"),
-                "provider": str(payload.get("provider") or ""),
-                "continue_after": bool(payload.get("continue_after")),
-                "max_turns": int(payload.get("max_turns") or 1),
-                "call_id": str(payload.get("call_id") or ""),
-                "window_ref": payload.get("window_ref"),
-                "command_ref": fact.command_ref,
-                "command_digest": fact.command_digest,
-            }
+            return self._claim_pending_shell_approval_locked(approval_id)
+
+    def resolve_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
+        from codey.app.shell_approval_state import resolve_shell_approval
+
+        return resolve_shell_approval(self, approval_id)
+
+    def pop_pending_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
+        """Compatibility alias; production approval code uses ``claim_*``."""
+        return self.claim_pending_shell_approval(approval_id)
 
     def approval_generation(self) -> int:
         with self.lock:
@@ -777,7 +760,6 @@ class AppContext:
             pass
         return payload
 
-
     def subscribe(self) -> EventSubscriber:
         return self.event_bus.subscribe()
 
@@ -872,6 +854,7 @@ class AppContext:
             self.providers.set_session(provider_id, session_id)
 
     @property
+
     def closed(self) -> bool:
         """Return True when resources have been completely released."""
         return self._resources_closed
@@ -895,6 +878,8 @@ class AppContext:
             # request_stop emits synchronously (best-effort, registries are
             # still alive) before durable resources release below.
             self.request_stop()
+
+        self.connection_status.close()
 
         try:
             ghost_done = self.ghost_sleep_daemon.wait(timeout=2.0)

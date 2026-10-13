@@ -71,6 +71,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("function refreshProviderStatus(immediate = false)", PROVIDER_UI_JS)
         self.assertIn("fetch('/api/providers')", PROVIDER_UI_JS)
         self.assertIn("providerStatus[id] ? 'ok' : ''", PROVIDER_UI_JS)
+        self.assertIn("state === 'ready' || state === 'stale' ? 'ok'", PROVIDER_UI_JS)
         self.assertIn(".provider-item.active .check", STYLE_SOURCE)
         self.assertNotIn("providerAvailability(_id) { return 'ok'; }", UI_SOURCE)
         self.assertIn('<script src="/assets/provider_ui.js?v=__APP_VERSION__"></script>', HTML)

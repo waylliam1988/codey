@@ -933,7 +933,7 @@ function handleServerEvent(data) {
   const mayOutliveRun = ['task_start', 'task_done', 'shell_request', 'shell_result', 'teach_request', 'resync_required'];
   if (runId && runningRunId && !mayOutliveRun.includes(data.type) && runId !== runningRunId) return;
   // Server dropped queued events for this client: re-pull authoritative state.
-  if (data.type === 'resync_required') { reconcileRunState(); refreshProviderStatus(); return; }
+  if (data.type === 'resync_required') { reconcileRunState(); refreshProviderStatus(true); return; }
   if (data.type === 'status') {
     window.CodeySse.displayRunStatus(data.status);
     return;
@@ -1641,7 +1641,8 @@ window.CodeyConversationUI.init({ activeSession, activeProject, getSessions: () 
   updateSend();
   syncProviderUI(currentProviderId());
   syncResearchUseProjectButton();
-  refreshProviderStatus();
+  refreshProviderStatus(true);
+  // Legacy form retained for callers without an immediate probe: refreshProviderStatus();
   syncResearchUI();
   setStatus('', 'ok');
   await restoreUiStateFromServer();

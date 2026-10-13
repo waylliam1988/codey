@@ -6,7 +6,9 @@ import logging
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
+from codey.app.connection_status import ConnectionStatusCoordinator
 from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
 from codey.providers.model_preferences import ModelPreferences
 from codey.providers.supervisor import ProviderSupervisor
@@ -15,13 +17,30 @@ logger = logging.getLogger(__name__)
 
 
 class ProviderRegistry:
-    def __init__(self, state_home: str | Path | None = None) -> None:
+    def __init__(self, state_home: str | Path | None = None, *, emit: Callable[[dict[str, Any]], None] | None = None) -> None:
         self.model_preferences = ModelPreferences(state_home)
         self.model_uses: Counter[tuple[str, str]] = Counter()
         self._sessions: dict[str, str] = {}
         self.supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
         )
+        self.connection_status = ConnectionStatusCoordinator(
+            provider_ids=lambda: tuple(self._api_labels()),
+            labels=self._api_labels,
+            enabled=self.model_preferences.enabled,
+            connector=self._connection,
+            emit=emit,
+        )
+
+    @staticmethod
+    def _api_labels() -> dict[str, str]:
+        return {provider_id: registration[0] for provider_id, registration in API_CONNECTIONS.items()}
+
+    @staticmethod
+    def _connection(provider_id: str) -> Any:
+        from codey.providers.api_connections import connection_for
+
+        return connection_for(provider_id)
 
     def sessions_snapshot(self) -> dict[str, str]:
         return dict(self._sessions)

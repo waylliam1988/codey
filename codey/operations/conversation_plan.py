@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
 from codey.agents.handoff import (
     ConversationContext,
     ConversationSnapshot,
+    _normalize_model_summary,
     render_handoff,
     render_recovered_handoff,
+    render_summary_prompt,
 )
 from codey.operations.conversation_window import OpenWindow, ReuseWindow, WindowAction, WindowOpenReason
 from codey.operations.task_state import TaskState
 from codey.providers.token_accounting import ContextBudget
+from codey.runtime.core.cancellation import TaskCancelled
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 from codey.task.kind import conversation_mode
@@ -27,6 +31,51 @@ class ConversationPlan:
     recovered_owner_prompt: str
     provider_session_changed: bool
     window_action: WindowAction | None = None
+    planned_conversation: ConversationContext | None = None
+    needs_model_summary: bool = False
+
+    def apply(self) -> None:
+        """Commit a pure planning snapshot at the activation boundary."""
+        planned = self.planned_conversation
+        if planned is None or planned is self.conversation:
+            return
+        target = self.conversation
+        for name in (
+            "hard_limit", "reserve_tokens", "keep_recent_tokens", "estimated_context_tokens",
+            "provider_id", "mode", "project", "initialized", "handoff_summary", "snapshot",
+        ):
+            setattr(target, name, copy.deepcopy(getattr(planned, name)))
+        target._changed()
+
+    def activate_model_summary(self, provider: Any, trace: Any | None) -> ConversationPlan:
+        """Perform the provider side effect at the activation boundary."""
+        if not self.needs_model_summary:
+            return self
+        conversation = self.conversation
+        prompt = render_summary_prompt(self.prior_snapshot)
+        record_provider_send_prompt(
+            trace,
+            name="conversation_handoff_summary_prompt",
+            text=prompt,
+            purpose="conversation handoff summary prompt sent to provider",
+            source_ref="provider_send:conversation_handoff_summary",
+            capability_id="conversation_handoff",
+        )
+        try:
+            reply = provider.send(prompt)
+        except TaskCancelled:
+            raise
+        except Exception:
+            return self
+        snapshot = replace(
+            conversation.snapshot,
+            conversation_summary=_normalize_model_summary(str(reply)),
+        )
+        conversation.snapshot = snapshot
+        conversation._changed()
+        handoff = render_handoff(snapshot)
+        return replace(self, handoff=handoff,
+                       window_action=OpenWindow(WindowOpenReason.CONTEXT_ROLLOVER, seed=handoff))
 
 
 def build_conversation_plan(  # noqa: C901, PLR0912
@@ -41,7 +90,11 @@ def build_conversation_plan(  # noqa: C901, PLR0912
     task: str,
     continue_task: bool,
     trace: Any | None,
+    pure: bool = False,
 ) -> ConversationPlan:  # noqa: C901, PLR0912
+    source_conversation = conversation
+    if pure:
+        conversation = replace(conversation, on_change=None)
     mode = conversation_mode(task_kind, project)
     project_text = _project_text(project)
     budget = getattr(provider, "context_budget", None)
@@ -101,7 +154,7 @@ def build_conversation_plan(  # noqa: C901, PLR0912
         work_state = export() if callable(export) else ""
         if work_state:
             handoff = "\n\n".join(part for part in (handoff, work_state) if part)
-    if fresh_chat and can_summarize_current_chat and not isinstance(budget, ContextBudget):
+    if fresh_chat and can_summarize_current_chat and not isinstance(budget, ContextBudget) and not pure:
 
         def send_handoff_summary(summary_prompt: str) -> str:
             record_provider_send_prompt(
@@ -149,7 +202,11 @@ def build_conversation_plan(  # noqa: C901, PLR0912
         conversation_summary=prior_snapshot.conversation_summary,
     ))
     recovered_owner_prompt = ""
-    if fresh_chat:
+    if fresh_chat and pure:
+        handoff = render_recovered_handoff(prior_snapshot, visible_excerpt) if (handoff or visible_excerpt) else ""
+        if isinstance(budget, ContextBudget) and work_state:
+            handoff = "\n\n".join(part for part in (handoff, work_state) if part)
+    elif fresh_chat:
         if handoff or visible_excerpt:
             preserved_work_state = work_state if isinstance(budget, ContextBudget) else ""
             handoff = render_recovered_handoff(
@@ -172,7 +229,7 @@ def build_conversation_plan(  # noqa: C901, PLR0912
     else:
         window_action = None
     return ConversationPlan(
-        conversation=conversation,
+        conversation=source_conversation if pure else conversation,
         fresh_chat=fresh_chat,
         handoff=handoff,
         research_handoff=research_handoff,
@@ -180,6 +237,9 @@ def build_conversation_plan(  # noqa: C901, PLR0912
         recovered_owner_prompt=recovered_owner_prompt,
         provider_session_changed=provider_session_changed,
         window_action=window_action,
+        needs_model_summary=(pure and fresh_chat and can_summarize_current_chat
+                             and not isinstance(budget, ContextBudget)),
+        planned_conversation=conversation if pure else None,
     )
 
 
@@ -191,4 +251,14 @@ def _project_text(project: str | None) -> str:
     return str(Path(project).expanduser().resolve())
 
 
-__all__ = ["ConversationPlan", "build_conversation_plan"]
+def plan_conversation(**kwargs: Any) -> ConversationPlan:
+    """Pure planning entry used by production dispatch.
+
+    It computes the action and seed without provider I/O or mutation of the
+    live conversation; :meth:`ConversationPlan.apply` is the activation step.
+    """
+    kwargs["pure"] = True
+    return build_conversation_plan(**kwargs)
+
+
+__all__ = ["ConversationPlan", "build_conversation_plan", "plan_conversation"]

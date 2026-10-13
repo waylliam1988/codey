@@ -9,6 +9,48 @@ from codey.providers.local_usage import configure_usage, parser_for
 from codey.runtime.core.api_selection import ApiRunSelection
 
 
+def status_key() -> str:
+    """Return a non-secret revision for the configured local target."""
+    import hashlib
+
+    saved = _local_config.load_local_config()
+    target = _local_config.select_local_target(saved)
+    material = "\0".join((saved.connection_revision, target.base_url, target.model, target.api_key))
+    return hashlib.sha256(material.encode()).hexdigest()
+
+
+def _model_payload_from_bootstrap(local: dict[str, object]) -> dict[str, object]:
+    from codey.providers.local_selection import model_metadata
+
+    saved = _local_config.load_local_config()
+    target = _local_config.select_local_target(saved)
+    model = str(local.get("model") or "")
+    base = str(local.get("base_url") or "")
+    metadata = model_metadata(base if local.get("connected") else "", model, api_key=target.api_key,
+                              display_name=saved.display_name if model == saved.model else "")
+    raw_models = local.get("models")
+    model_names = [str(item) for item in raw_models] if isinstance(raw_models, list) else []
+    models = list(dict.fromkeys([*model_names, *([model] if model else [])]))
+    return {"id": "local", "label": "Local", "base_url": base, "connected": local.get("connected", False),
+            "models": [{"id": name, "name": metadata["display_name"] if name == model else name,
+                        "protocol": saved.api_protocol, "efforts": metadata["thinking_options"] if name == model else []}
+                       for name in models],
+            "error": local.get("error", ""), "default_model": model, "local": local}
+
+
+def probe_status(_request: object) -> dict[str, object]:
+    local = _local_config.local_bootstrap_payload(probe=True)
+    payload = _model_payload_from_bootstrap(local)
+    return {
+        "state": "ready" if local.get("connected") is True else "unavailable",
+        "source": "local_preflight",
+        "error": str(local.get("error") or local.get("context_error") or ""),
+        "models": payload.get("models", []),
+        "payload": payload,
+        "local": local,
+    }
+
+
 def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
             verify_thinking: bool = False) -> ApiProvider:
     """Connect to the single selected target (address + model + key).
@@ -161,17 +203,7 @@ def validate_selection(selection: ApiRunSelection) -> None:
 
 
 def model_payload() -> dict[str, object]:
-    from codey.providers.local_selection import model_metadata
-
     local = _local_config.local_bootstrap_payload()
-    saved = _local_config.load_local_config()
-    target = _local_config.select_local_target(saved)
-    model = str(local.get("model") or "")
-    base = str(local.get("base_url") or "")
-    metadata = model_metadata(base if local.get("connected") else "", model, api_key=target.api_key,
-                              display_name=saved.display_name if model == saved.model else "")
-    models = list(dict.fromkeys([*(local.get("models") or []), *([model] if model else [])]))
-    return {"id": "local", "label": "Local", "base_url": base, "connected": local.get("connected", False),
-            "models": [{"id": name, "name": metadata["display_name"] if name == model else name, "protocol": saved.api_protocol,
-                        "efforts": metadata["thinking_options"] if name == model else []} for name in models],
-            "error": local.get("error", ""), "default_model": model}
+    payload = _model_payload_from_bootstrap(local)
+    payload.pop("local", None)
+    return payload

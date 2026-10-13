@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.context import RunFrame, RunHooks, RunWork
-from codey.operations.conversation_plan import build_conversation_plan
+from codey.operations.conversation_plan import plan_conversation
 from codey.operations.ghost_context import (
     ghost_continuity,
     ghost_directive,
@@ -102,7 +102,7 @@ def connect_and_build_frame(
     if context_home is not None and callable(getattr(provider, "bind_context", None)):
         provider.bind_context(request.session_id, context_home.parent)
     conversation = state.conversation_for(request.session_id)
-    conversation_plan = build_conversation_plan(
+    conversation_plan = plan_conversation(
         state=state,
         session_id=request.session_id,
         provider_id=provider_id,
@@ -114,6 +114,8 @@ def connect_and_build_frame(
         continue_task=request.continue_task,
         trace=trace,
     )
+    conversation_plan.apply()
+    conversation_plan = conversation_plan.activate_model_summary(provider, trace)
     project_text = str(Path(project).expanduser().resolve()) if project else ""
     frame = RunFrame(
         request=request,

@@ -969,6 +969,13 @@
     background: var(--ok-dot);
     box-shadow: 0 0 0 3px rgba(78, 201, 176, .14);
   }
+  .dot.checking {
+    background: var(--muted);
+    box-shadow: 0 0 0 3px rgba(160, 160, 160, .14);
+    animation: provider-dot-pulse 1.2s ease-in-out infinite;
+  }
+  .dot.stale { background: var(--ok-dot); }
+  @keyframes provider-dot-pulse { 50% { opacity: .35; } }
 
   /* send / stop — square icon buttons, no color */
   .action-slot {

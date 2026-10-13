@@ -28,7 +28,7 @@ from codey.reviews.review_policy import allow_self_review, load_review_policy
 from codey.runtime.observe.events import clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.entry_auth import derive_entry_auth
-from codey.task.model import TaskSubmission
+from codey.task.model import TaskInput, TaskSubmission
 
 HEADLESS_SESSION_PREFIX = "headless_"
 
@@ -55,6 +55,7 @@ class HeadlessRequest:
     continue_task: bool = False
     review_policy: str | None = None
     model_selection: dict[str, Any] = field(default_factory=dict)
+    input: TaskInput | None = None
 
 
 @dataclass(frozen=True)
@@ -316,9 +317,25 @@ def _run_headless_task(
             from codey.providers.api_connections import capture_selection
 
             selection_payload = capture_selection(request.provider_id, request.model_selection).to_payload()
-        run_task_submission(
-            deps,
-            TaskSubmission(
+        if request.input is not None:
+            submission = TaskSubmission.from_input(
+                session_id=session_id,
+                project=str(project) if project is not None else None,
+                max_turns=request.max_turns,
+                provider_id=request.provider_id,
+                input=request.input,
+                intent=_request_intent(request.intent),
+                run_id=pre_reserved_run_id,
+                requested_capabilities=auth.requested_capabilities,
+                strict_research=auth.strict_research,
+                sources_open_required=auth.sources_open_required,
+                project_changes_required=auth.project_changes_required,
+                denied_capabilities=auth.denied_capabilities,
+                review_source_run_id=request.review_source_run_id,
+                model_selection=selection_payload,
+            )
+        else:
+            submission = TaskSubmission(
                 session_id=session_id,
                 project=str(project) if project is not None else None,
                 task=request.task,
@@ -334,8 +351,9 @@ def _run_headless_task(
                 denied_capabilities=auth.denied_capabilities,
                 review_source_run_id=request.review_source_run_id,
                 model_selection=selection_payload,
-            ),
-        )
+                input=request.input,
+            )
+        run_task_submission(deps, submission)
         terminal = dict(state.run_registry.last_terminal_event() or {})
         run_id = str(terminal.get("run_id") or request.run_id or "")
         stop_reason = str(terminal.get("stop_reason") or "error")

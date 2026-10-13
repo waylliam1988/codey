@@ -66,7 +66,12 @@ class ContextLedger:
 
     @classmethod
     def for_session(cls, home: Path, session_id: str, identity: str) -> ContextLedger:
-        return cls(home / "context_history" / session_key(session_id) / identity, identity=identity)
+        # The primary chat ledger is session-scoped.  Provider/model identity
+        # remains window metadata and never selects a second history root.
+        return cls(
+            home / "context_history" / session_key(session_id) / "protocol",
+            identity=f"protocol:{session_id}",
+        )
 
     @classmethod
     def for_protocol_session(cls, home: Path, session_id: str, ref: ProtocolWindowRef) -> ContextLedger:
@@ -79,6 +84,11 @@ class ContextLedger:
     def events(self) -> list[dict[str, Any]]:
         return copy.deepcopy([item for row in self._records for item in row.get("events", [])])
 
+    @property
+    def revision(self) -> int:
+        """The durable view revision used by exchange compare-and-commit."""
+        return self.sequence
+
     def restore(self, expected_ref: ProtocolWindowRef | None = None) -> list[dict[str, Any]]:
         """Return the committed view only when the requested window matches."""
         if expected_ref is not None and self.window_ref != expected_ref:
@@ -89,7 +99,8 @@ class ContextLedger:
 
     def commit(self, view: list[dict[str, Any]], *, events: list[dict[str, Any]] | None = None,
                checkpoint: dict[str, Any] | None = None, window_ref: ProtocolWindowRef | None = None,
-               allow_window_change: bool = False, delivery_commit: dict[str, Any] | None = None) -> None:
+               allow_window_change: bool = False, delivery_commit: dict[str, Any] | None = None,
+               window_open_reason: str = "") -> None:
         previous_ref = self.window_ref
         if (window_ref is not None and self.window_ref is not None
                 and self.window_ref != window_ref and not allow_window_change):
@@ -105,6 +116,8 @@ class ContextLedger:
                              "view": view, "created_at": time.time(), "schema_version": 1})
         if effective_ref is not None:
             row["window_ref"] = effective_ref.to_payload()
+        if window_open_reason:
+            row["window_open_reason"] = window_open_reason
         if delivery_commit is not None:
             from codey.runtime.effects.tool_result_delivery import DeliveryCommit
 
@@ -123,7 +136,7 @@ class ContextLedger:
                         raise ValueError("context journal head disappeared")
                     write_json_atomic(self.root / f"{self.sequence + 1:012d}.json", row, max_bytes=MAX_SEGMENT_BYTES)
                     head_payload: dict[str, Any] = {"schema_version": 1, "identity": self.identity,
-                                      "session_id": effective_ref.session_id if effective_ref is not None else "",
+                                      "session_id": effective_ref.session_id if effective_ref is not None else self.identity.removeprefix("protocol:"),
                                       "sequence": self.sequence + 1,
                                       "chain": chain, "view": view, "view_digest": digest(view)}
                     if effective_ref is not None:
@@ -143,6 +156,7 @@ class ContextLedger:
         expected_ref: ProtocolWindowRef,
         view: list[dict[str, Any]],
         *,
+        expected_revision: int | None = None,
         events: list[dict[str, Any]] | None = None,
         checkpoints: list[dict[str, Any]] | None = None,
         delivery_commit: dict[str, Any] | None = None,
@@ -151,6 +165,8 @@ class ContextLedger:
             from codey.runtime.core.protocol_window import WindowMismatch
 
             raise WindowMismatch("context ledger window reference does not match")
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("context ledger revision mismatch")
         checkpoint = {"kind": "transaction", "segments": checkpoints} if checkpoints else None
         self.commit(view, events=events, checkpoint=checkpoint,
                     window_ref=expected_ref, delivery_commit=delivery_commit)
@@ -161,12 +177,45 @@ class ContextLedger:
         *,
         seed: list[dict[str, Any]] | None = None,
         events: list[dict[str, Any]] | None = None,
+        expected_ref: ProtocolWindowRef | None = None,
+        expected_revision: int | None = None,
+        reset_permit: bool = False,
+        reason: str = "",
     ) -> None:
-        self.commit(seed or [], events=events, window_ref=window_ref, allow_window_change=True)
+        if expected_ref is not None and self.window_ref != expected_ref:
+            from codey.runtime.core.protocol_window import WindowMismatch
+
+            raise WindowMismatch("context ledger window reference does not match")
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("context ledger revision mismatch")
+        if self.window_ref is not None and self.window_ref != window_ref and not reset_permit:
+            raise ValueError("context ledger window reset requires explicit permit")
+        self.commit(seed or [], events=events, window_ref=window_ref,
+                    allow_window_change=reset_permit or self.window_ref is None,
+                    window_open_reason=reason)
 
     def delivery_commits(self) -> tuple[dict[str, Any], ...]:
         return tuple(copy.deepcopy(row["delivery_commit"]) for row in self._records
                      if isinstance(row.get("delivery_commit"), dict))
+
+    def delivery_commit_for(self, batch_id: str) -> dict[str, Any] | None:
+        """Return the accepted witness for one batch, if any."""
+        for commit in reversed(self.delivery_commits()):
+            if commit.get("batch_id") == batch_id:
+                return commit
+        return None
+
+    def unreconciled_delivery_commits(self, delivered_batch_ids: set[str]) -> tuple[dict[str, Any], ...]:
+        """List committed witnesses whose runtime delivery receipt is absent.
+
+        Reconciliation callers use these witnesses to append a local
+        ``recovered``/``delivered`` projection. They must never resend HTTP or
+        re-execute Shell effects.
+        """
+        return tuple(
+            commit for commit in self.delivery_commits()
+            if str(commit.get("batch_id") or "") not in delivered_batch_ids
+        )
 
     def checkpoint_digests(self) -> frozenset[str]:
         return frozenset(checkpoint["item_digest"] for checkpoint in self.checkpoints()

@@ -2,6 +2,13 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Provider cold-start status coordination (2026-10-13)
+
+- Add removable connector-owned Local and OpenCode Zen preflight probes with shared per-connection caching, single-flight execution, revision checks and SSE snapshots. `/api/providers`, `/api/api_models` and `/api/local_provider` now reuse the same result.
+- Return immediately while browser-tab, Local or Zen probes are checking; browser warmup no longer blocks the provider endpoint. Cached Zen catalogs remain `ready` with `stale` freshness instead of appearing disconnected.
+- Preserve the session-scoped protocol ledger identity across both ledger factory paths and cover the mismatch regression with a deterministic test.
+- Add cold-start, adapter, stale-cache, generation-discard, removable-Zen and UI state regressions. Final full pytest: **8539 passed, 7 skipped, 1510 subtests in 976.70s**; machine contract **1102 passed, 14 subtests**, Ruff, mypy and Pyrefly passed.
+
 ## Unreleased - Complete API transport and protocol-window TDD (2026-10-13)
 
 - Classify cancellation and deadline expiry before HTTP submission as `GenerationNotSentError`, avoid racing `HTTPResponse.close()` against blocked body reads, and preserve the bound protocol window across recreated ResumeRun providers.
@@ -11,7 +18,7 @@
 - Add the fixed Shell approval release cases and production source fingerprints for the complete HTTP approval-to-final-answer path.
 - Rename the shell gate marker to a brand-neutral value and retain accepted transport history after bounded Zen refusal/output-limit failures without treating it as success.
 - Fix bounded JSON response reads so dynamic response doubles cannot be mistaken for byte-stream `read1` readers; the reasoning-display regressions are covered by the full suite.
-- Ruff, Pyrefly, machine contract and final full pytest pass: **8530 passed, 7 skipped, 1509 subtests**. The existing strict mypy tools baseline remains documented; no release or tag.
+- Ruff, Pyrefly, machine contract and final full pytest pass: **8539 passed, 7 skipped, 1510 subtests** after the final integration fixes. No release or tag.
 
 ## Unreleased - Zen/API request reliability and connection lifecycle (2026-10-12)
 

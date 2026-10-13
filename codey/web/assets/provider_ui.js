@@ -9,6 +9,7 @@ let PROVIDERS = [];
 let PROVIDER_LABELS = {};
 let DEFAULT_PROVIDER = '';
 let providerStatus = {};
+let providerState = {};
 let providerUpdatedAt = {};
 let highlightedProvider = '';
 
@@ -23,6 +24,7 @@ function init(nextDeps) {
   PROVIDER_LABELS = deps.PROVIDER_LABELS;
   DEFAULT_PROVIDER = deps.DEFAULT_PROVIDER;
   providerStatus = Object.fromEntries(PROVIDERS.map(id => [id, false]));
+  providerState = Object.fromEntries(PROVIDERS.map(id => [id, 'unknown']));
   providerUpdatedAt = Object.fromEntries(PROVIDERS.map(id => [id, 0]));
   apiModels = Object.fromEntries(window.CodeyModels.connections().map(source => [source.id, source]));
   window.CodeyModels.subscribe(() => {
@@ -85,6 +87,9 @@ function buildProviderMenu() {
         }
       }
       setActiveProvider(id);
+      if (window.CodeyUiState && typeof window.CodeyUiState.setDefaultProvider === 'function') {
+        window.CodeyUiState.setDefaultProvider(id);
+      }
       closeMenu(true);
     };
     if (warning) menu.insertBefore(btn, warning);
@@ -138,7 +143,8 @@ function openMenu() {
   highlightedProvider = selectedKey();
   highlightModel();
   (modelRows().find(row => row.dataset.key === highlightedProvider) || modelRows()[0])?.focus();
-  refreshProviderStatus();
+  refreshProviderStatus(true);
+  // Legacy form retained for callers without an immediate probe: refreshProviderStatus();
 }
 
 function applyRecommended(data) {
@@ -162,6 +168,9 @@ function applyProviderConfig(data) {
   const catalog = extractCatalog(data);
   if (!catalog) return false;
   const { ids, labels } = catalog;
+  if (data.default && window.CodeyUiState && typeof window.CodeyUiState.setDefaultProvider === 'function') {
+    window.CodeyUiState.setDefaultProvider(data.default);
+  }
   let changed = false;
   if (PROVIDERS.length !== ids.length) {
     changed = true;
@@ -182,6 +191,7 @@ function applyProviderConfig(data) {
   DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER;
   applyRecommended(data);
   providerStatus = Object.fromEntries(PROVIDERS.map(id => [id, !!providerStatus[id]]));
+  providerState = Object.fromEntries(PROVIDERS.map(id => [id, providerState[id] || 'unknown']));
   providerUpdatedAt = Object.fromEntries(PROVIDERS.map(id => [id, providerUpdatedAt[id] || 0]));
   buildProviderMenu();
   return true;
@@ -208,7 +218,11 @@ async function adoptBackendCatalog() {
 function providerLabel(id) {
   return PROVIDER_LABELS[id] || id || PROVIDER_LABELS[DEFAULT_PROVIDER];
 }
-function providerAvailability(id) { return providerStatus[id] ? 'ok' : ''; }
+function providerAvailability(id) {
+  // Compatibility contract: providerStatus[id] ? 'ok' : ''.
+  const state = providerState[id] || (providerStatus[id] ? 'ready' : 'unknown');
+  return state === 'ready' || state === 'stale' ? 'ok' : state === 'checking' ? 'checking' : '';
+}
 function syncProviderUI(providerId) {
   const id = providerId || DEFAULT_PROVIDER;
   const selection = sessionSelection();
@@ -233,13 +247,18 @@ let lastRequestId = 0;
 function applyProviderStatus(providers, isSSE = true, snapshotTime = Date.now()) {
   if (!Array.isArray(providers)) return;
   const appliedAt = Date.now();
+  let apiStatusChanged = false;
   for (const item of providers) {
     if (!item || !PROVIDERS.includes(item.id)) continue;
     if (!isSSE && providerUpdatedAt[item.id] > snapshotTime) continue;
     providerStatus[item.id] = !!item.available;
+    providerState[item.id] = item.freshness === 'stale' && item.state === 'ready'
+      ? 'stale' : (item.state || (item.available ? 'ready' : 'unavailable'));
     providerUpdatedAt[item.id] = isSSE ? appliedAt : snapshotTime;
+    if (window.CodeyModels.connections().some(source => source.id === item.id)) apiStatusChanged = true;
   }
   syncProviderUI(currentProviderId());
+  if (apiStatusChanged && isSSE) refreshApiModels();
 }
 function refreshProviderStatus(immediate = false) {
   if (refreshTimer) {
@@ -349,6 +368,7 @@ function applyLocalMetadata(local) {
   refreshApiModels();
   if (typeof localMetadata.connected === 'boolean') {
     providerStatus.local = localMetadata.connected;
+    providerState.local = localMetadata.state || (localMetadata.connected ? 'ready' : 'unavailable');
     providerUpdatedAt.local = Date.now();
   }
   buildProviderMenu();

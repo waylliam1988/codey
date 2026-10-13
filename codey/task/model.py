@@ -82,16 +82,74 @@ class TaskSubmission:
     # input object and avoid ambiguous boolean combinations.
     input: TaskInput | None = None
 
+    @classmethod
+    def from_input(
+        cls,
+        *,
+        session_id: str,
+        project: str | None,
+        max_turns: int,
+        provider_id: str,
+        input: TaskInput,
+        intent: str = "auto",
+        run_id: str = "",
+        requested_capabilities: tuple[str, ...] = (),
+        strict_research: bool = False,
+        project_changes_required: bool = False,
+        sources_open_required: bool = False,
+        denied_capabilities: tuple[str, ...] = (),
+        review_source_run_id: str = "",
+        model_selection: dict[str, object] | None = None,
+    ) -> TaskSubmission:
+        task = input.text if isinstance(input, StartTask) else (
+            input.instruction or "Continue the source run"
+            if isinstance(input, ResumeRun)
+            else "Resolve the shell approval"
+        )
+        return cls(
+            session_id=session_id,
+            project=project,
+            task=task,
+            max_turns=max_turns,
+            continue_task=isinstance(input, (ResumeRun, ResolveShellApproval)),
+            provider_id=provider_id,
+            intent=intent,
+            run_id=run_id,
+            requested_capabilities=requested_capabilities,
+            strict_research=strict_research,
+            project_changes_required=project_changes_required,
+            sources_open_required=sources_open_required,
+            denied_capabilities=denied_capabilities,
+            review_source_run_id=review_source_run_id,
+            model_selection=dict(model_selection or {}),
+            input=input,
+        )
+
     def resolved_input(self) -> TaskInput:
+        """Return only the explicit canonical task input.
+
+        Approval resolution is intentionally never inferred from a result
+        payload. Legacy callers that still carry ``initial_shell_results`` can
+        use :meth:`legacy_resolved_input` while they migrate.
+        """
+        if self.input is not None:
+            return self.input
+        if self.continue_task and (self.previous_run_id or self.run_id):
+            return ResumeRun(self.previous_run_id or self.run_id, self.task)
+        return StartTask(self.task)
+
+    def legacy_resolved_input(self) -> TaskInput:
+        """Compatibility adapter for pre-typed callers only."""
         if self.input is not None:
             return self.input
         if self.initial_shell_results:
             first = self.initial_shell_results[0]
-            approval_id = str(first.get("approval_id") or first.get("call_id") or self.previous_run_id or self.run_id)
+            approval_id = str(
+                first.get("approval_id") or first.get("call_id")
+                or self.previous_run_id or self.run_id
+            )
             return ResolveShellApproval(approval_id)
-        if self.continue_task:
-            return ResumeRun(self.previous_run_id or self.run_id, self.task)
-        return StartTask(self.task)
+        return self.resolved_input()
 
 
 def derive_project_changes_required(

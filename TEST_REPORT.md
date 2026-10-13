@@ -1,5 +1,31 @@
 # Codey Test Report
 
+## Provider cold-start status coordination (2026-10-13)
+
+This change adds removable connector-owned probes for Local and OpenCode Zen,
+shared revision-aware single-flight status caching, non-blocking browser-tab
+warmup, and explicit `checking`/`ready`/`unavailable`/`stale` payload fields.
+It also fixes two deterministic regressions found during verification: stale Zen
+catalogs were rendered as disconnected red dots, and the session/protocol ledger
+factories could disagree on the persisted identity.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Targeted cold-start, UI, ledger and architecture regression | **285 passed, 385 subtests** |
+| Ruff | passed |
+| mypy | **Success: no issues found in 411 source files** |
+| Pyrefly | **0 errors** |
+| compileall | passed |
+| git diff --check | passed |
+| Real Local/Zen smoke | First `/api/providers` response **0.142s**; Local became `ready/fresh`; Zen became `ready/stale`, `available=true` from cached catalog |
+| Final full pytest | **8539 passed, 7 skipped, 1510 subtests passed in 976.70s (16:16)** |
+
+The seven skips are Windows/POSIX capability differences and the opt-in real
+browser E2E test. No Zen package import is required when its registration is
+removed.
+
 ## API 传输与协议窗口生命周期 TDD 修复（2026-10-13）
 
 本轮锁定并修复确定性回归：建连前取消被错误分类为 unknown、响应截止时重复关闭 HTTPResponse、ResumeRun 因 provider wrapper 重建而隐式 new_chat，以及 release gate 被单 case 缩减。新增 durable shell approval fact、DeliveryCommit witness、结构化 TaskInput 解析入口和 Zen 等待边界测试。
@@ -9,14 +35,14 @@
 | 检查 | 结果 |
 | --- | --- |
 | Ruff | passed |
-| mypy | **Success: no issues found in 409 source files** |
+| mypy | **Success: no issues found in 411 source files** |
 | Pyrefly | 0 errors |
 | Machine contract | **1102 passed, 14 subtests passed** |
 | Machine contract 补充检查 | 4 passed, 15 skipped |
 | Shell 审批/协议窗口定向回归 | passed |
-| 最终全量 pytest | **8530 passed, 7 skipped, 1509 subtests passed** |
+| 最终全量 pytest（修复后重跑） | **8539 passed, 7 skipped, 1510 subtests passed in 976.70s** |
 
-未调用 Zen 实机接口，未 release/tag。最终全量 pytest 在本节更新前已完成；首次全量的 2 个旧 gate 断言已改为显式 smoke profile 后重新验证。
+Machine contract 最终结果为 **1102 passed, 14 subtests passed in 301.61s**；Ruff、mypy、Pyrefly 也在本次代码状态下通过。未调用 Zen 实机接口，未 release/tag。文档在上述最终全量 pytest 完成后更新。
 
 随后一次完整 `python -m pytest -q -o faulthandler_timeout=120` 曾暴露 7 个 reasoning-display 回归：动态响应桩的实例属性被误判为流式 `read1`。传输层已改为只接受响应类型声明的 `read1`，并在修复后重新完成全量验证；上表结果是该修复后的唯一权威结果。
 

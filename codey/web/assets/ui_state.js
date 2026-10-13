@@ -37,6 +37,13 @@ function setProviders(ids, labels, defaultId) {
   }
 }
 
+function setDefaultProvider(id) {
+  const key = String(id || '').trim();
+  if (!key || !PROVIDER_LABELS[key]) return;
+  DEFAULT_PROVIDER = key;
+  window.CodeyUiState.DEFAULT_PROVIDER = key;
+}
+
 function init(nextDeps) {
   deps = nextDeps || {};
 }
@@ -450,6 +457,7 @@ window.CodeyUiState = {
   PROVIDER_LABELS,
   PROVIDERS,
   setProviders,
+  setDefaultProvider,
   setRecommended,
   uid,
   defaultSession,

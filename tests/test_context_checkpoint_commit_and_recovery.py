@@ -18,6 +18,18 @@ def test_original_events_survive_view_changes_and_reopen(tmp_path):
     assert other._messages == provider._messages
 
 
+def test_session_and_protocol_ledger_factories_share_identity(tmp_path):
+    from codey.providers.context_ledger import ContextLedger
+    from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+
+    session_id = "chat-factory"
+    first = ContextLedger.for_session(tmp_path, session_id, "model")
+    ref = ProtocolWindowRef.new(session_id, ProviderBinding("local", "r", "model", "openai-completions", "contract"))
+    first.open_window(ref, reset_permit=True)
+    reopened = ContextLedger.for_protocol_session(tmp_path, session_id, ref)
+    assert reopened.identity == f"protocol:{session_id}"
+
+
 def test_new_chat_retains_archive_but_starts_an_empty_view(tmp_path):
     provider = ApiProvider("http://localhost:9/v1", "fixture")
     provider.bind_context("chat-a", tmp_path)

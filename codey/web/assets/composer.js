@@ -94,6 +94,9 @@ function setActiveProvider(id) {
   const provider = PROVIDERS.includes(id) ? id : liveDefaultProvider();
   const s = deps.activeSession();
   if (!s) return;
+  if (window.CodeyUiState && typeof window.CodeyUiState.setDefaultProvider === 'function') {
+    window.CodeyUiState.setDefaultProvider(provider);
+  }
   s.provider = provider;
   deps.persistActiveNow();
   deps.syncProviderUI(provider);

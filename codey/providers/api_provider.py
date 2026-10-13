@@ -237,7 +237,13 @@ class ApiProvider:
                 if self._active_response is not None or self._active_control is not None:
                     raise RuntimeError("API provider busy: cannot reset protocol window")
                 next_ref = ProtocolWindowRef.new(self._context_session or "unbound", self._binding())
-                self.context_ledger.commit([], window_ref=next_ref, allow_window_change=True)
+                self.context_ledger.open_window(
+                    next_ref,
+                    expected_ref=current,
+                    expected_revision=self.context_ledger.revision,
+                    reset_permit=True,
+                    reason="provider_reset",
+                )
                 self._generation += 1
                 self._window_ref = next_ref
                 self._messages = []
@@ -390,9 +396,23 @@ class ApiProvider:
             if base_revision != self._history_revision:
                 candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt, tools=tools)
                 checkpoints = []
-            self.context_ledger.commit([*candidate, *output], events=[*pending, *output], window_ref=self._window_ref,
-                checkpoint={"kind": "transaction", "segments": checkpoints} if checkpoints else None,
-                delivery_commit=delivery_commit)
+            if self._window_ref is not None:
+                self.context_ledger.commit_exchange(
+                    self._window_ref,
+                    [*candidate, *output],
+                    expected_revision=self.context_ledger.revision,
+                    events=[*pending, *output],
+                    checkpoints=checkpoints,
+                    delivery_commit=delivery_commit,
+                )
+            else:
+                self.context_ledger.commit(
+                    [*candidate, *output],
+                    events=[*pending, *output],
+                    window_ref=self._window_ref,
+                    checkpoint={"kind": "transaction", "segments": checkpoints} if checkpoints else None,
+                    delivery_commit=delivery_commit,
+                )
             self._compaction.accept(checkpoints)
             self._messages = [*candidate, *output]
             self._last_output_estimate = estimate_request({"messages": output}, deadline=time.monotonic()).value or 0
@@ -574,14 +594,19 @@ class ApiProvider:
                         "cannot switch protocol window while calls are pending: "
                         + ", ".join(sorted(pending))
                     )
-                ledger.commit([], window_ref=ProtocolWindowRef.new(session_id, self._binding()),
-                              allow_window_change=True)
+                ledger.open_window(
+                    ProtocolWindowRef.new(session_id, self._binding()),
+                    expected_ref=ledger.window_ref,
+                    expected_revision=ledger.revision,
+                    reset_permit=True,
+                    reason="binding_change",
+                )
             self.context_ledger = ledger
             self._context_session = session_id
             self._messages = copy.deepcopy(ledger.view)
             self._window_ref = ledger.window_ref or ProtocolWindowRef.new(session_id, self._binding())
             if ledger.sequence == 0:
-                ledger.commit([], window_ref=self._window_ref)
+                ledger.open_window(self._window_ref, reset_permit=True, reason="initial_open")
 
     def export_work_state(self) -> str:
         return self.context_ledger.portable_state()
@@ -695,7 +720,15 @@ class ApiProvider:
         with self._state_lock:
             if revision != self._history_revision or snapshot.generation != self._generation:
                 return False
-            self.context_ledger.commit(live, checkpoint=checkpoint)
+            if self._window_ref is not None:
+                self.context_ledger.commit_exchange(
+                    self._window_ref,
+                    live,
+                    expected_revision=self.context_ledger.revision,
+                    checkpoints=[checkpoint],
+                )
+            else:
+                self.context_ledger.commit(live, checkpoint=checkpoint)
             self._messages = live
             self._history_revision += 1
             return True
@@ -756,7 +789,15 @@ class ApiProvider:
                 pending = self._codec.encode_results(results)
                 candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
                                                  tools=declared_tools)
-                self.context_ledger.commit(candidate, events=pending)
+                if self._window_ref is not None:
+                    self.context_ledger.commit_exchange(
+                        self._window_ref,
+                        candidate,
+                        expected_revision=self.context_ledger.revision,
+                        events=pending,
+                    )
+                else:
+                    self.context_ledger.commit(candidate, events=pending)
                 self._messages = candidate
                 self._history_revision += 1
                 self._last_reasoned_reply = None
@@ -780,7 +821,12 @@ class ApiProvider:
                 pending = self._codec.encode_results(results)
                 candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
                                                  tools=declared_tools)
-                self.context_ledger.commit(candidate, events=pending, window_ref=window_ref)
+                self.context_ledger.commit_exchange(
+                    window_ref,
+                    candidate,
+                    expected_revision=self.context_ledger.revision,
+                    events=pending,
+                )
                 self._messages = candidate
                 self._history_revision += 1
                 self._last_reasoned_reply = None
