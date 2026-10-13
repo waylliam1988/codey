@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -121,9 +122,13 @@ def open_request(request: urllib.request.Request, timeout: float, *, control: At
         raise GenerationNotSentError("Zen fetch requires a prepared byte body")
     if active.cancelled:
         raise GenerationNotSentError("Zen fetch cancelled before launch")
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NO_WINDOW
+    else:
+        creationflags = 0
     process = subprocess.Popen([node_runtime(), str(Path(__file__).with_suffix(".mjs"))],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        creationflags=creationflags)
     response = NodeResponse(process)
     active.register_connection(response)
     try:

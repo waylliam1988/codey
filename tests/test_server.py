@@ -5708,7 +5708,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Session A chose SQLite.", prompt)
         self.assertNotIn("Session B answer.", prompt)
 
-    def test_project_continue_starts_fresh_chat_with_original_goal(self) -> None:
+    def test_project_continue_reuses_chat_with_original_goal(self) -> None:
         # This test persists conversation/checkpoint state. Bare AppContext
         # shares the pytest process home with unrelated session-1 fixtures.
         state = make_app_state(self)
@@ -5719,26 +5719,28 @@ class SessionThreadingTests(unittest.TestCase):
         second = mock.Mock()
         second.name = "DeepSeek Web"
         second.location = "https://chat.deepseek.com/"
-        second.send.side_effect = [
-            '{"goal":"Build the calculator","current_state":"First pass complete"}',
-            '{"tool":"done","args":{"summary":"continued"}}',
-        ]
+        second.send.return_value = '{"tool":"done","args":{"summary":"continued"}}'
 
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", side_effect=[first, second]),
         ):
-            _run_task_with_ghost_wait("session-1", td, "Build the calculator", 8, False, "deepseek", "project")
+            # Windows CI temp paths can contain short-name aliases (RUNNER~1).
+            # Exercise an equivalent noncanonical spelling on every platform.
+            project = str(Path(td) / ".." / Path(td).name)
+            _run_task_with_ghost_wait("session-1", project, "Build the calculator", 8, False, "deepseek", "project")
+            self.assertEqual(state.conversation_for("session-1").project, str(Path(td).resolve()))
             _run_task_with_ghost_wait(
                 "session-1",
-                td,
+                project,
                 "Continue the unfinished task.",
                 8,
                 True,
                 "deepseek",
                 "project",
             )
+            self.assertEqual(state.conversation_for("session-1").snapshot.goal, "Build the calculator")
 
         first.new_chat.assert_called_once_with()
         # Continuing a task reuses the active protocol window.  A browser

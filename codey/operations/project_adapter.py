@@ -181,7 +181,7 @@ def run(request: AgentRequest) -> RunResult:
 
         request.conversation.begin_window(
             display_provider_name(request.provider_id, request.provider),
-            "project", str(request.project),
+            "project", str(request.project.expanduser().resolve()),
         )
     session = request.task_session
     if session is None:
