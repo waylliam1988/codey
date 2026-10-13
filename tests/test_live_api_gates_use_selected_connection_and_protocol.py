@@ -57,7 +57,7 @@ def test_ui_zen_preflight_uses_catalog_instead_of_browser_tab(monkeypatch):
     monkeypatch.setattr(ui.provider_services, "provider_tab_availability",
                         lambda: (_ for _ in ()).throw(AssertionError("Browser probe")))
     monkeypatch.setenv("UI_GATE_MODEL", "muse-fixture")
-    assert ui._preflight("zen") == ("https://opencode.ai/zen/v1", "muse-fixture")
+    assert ui._preflight("zen") == ("https://opencode.ai/inference/v1", "muse-fixture")
 
 
 def test_zen_gate_factory_opens_frozen_connection_without_local_identity(monkeypatch, tmp_path):
@@ -74,7 +74,7 @@ def test_zen_gate_factory_opens_frozen_connection_without_local_identity(monkeyp
         return zen
 
     monkeypatch.setattr(api_connections, "open_selection", connect)
-    target = attempts.GateTarget("https://opencode.ai/zen/v1", "muse-fixture", 32768, 8192, 12000,
+    target = attempts.GateTarget("https://opencode.ai/inference/v1", "muse-fixture", 32768, 8192, 12000,
                                  provider_id="zen", api_selection=selection().to_payload())
     with attempts.record_api_generations(tmp_path / "provider.jsonl"):
         provider = attempts.make_provider(target, tmp_path)
@@ -104,7 +104,7 @@ def test_responses_gate_history_counts_only_new_results_and_real_output(tmp_path
 def test_gate_secondary_model_scope_excludes_personal_local_or_web_targets():
     from codey.app import provider_services
 
-    target = attempts.GateTarget("https://opencode.ai/zen/v1", "muse-fixture", 32768, 8192, 12000,
+    target = attempts.GateTarget("https://opencode.ai/inference/v1", "muse-fixture", 32768, 8192, 12000,
                                  provider_id="zen", api_selection=selection().to_payload())
     with attempts.isolate_gate_secondary_models(target):
         assert provider_services.provider_availability(None) == {"zen": True}

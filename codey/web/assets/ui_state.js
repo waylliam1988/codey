@@ -191,6 +191,7 @@ function normalizeSessions(value) {
         ...(typeof raw.modelSelection.name === 'string' ? {name:raw.modelSelection.name.slice(0,160)} : {}),
         effort: ['off','minimal','low','medium','high','xhigh','max'].includes(raw.modelSelection.effort) ? raw.modelSelection.effort
           : null,
+        ...(typeof raw.modelSelection.thinking === 'boolean' ? {thinking:raw.modelSelection.thinking} : {}),
         efforts: Object.fromEntries(Object.entries(raw.modelSelection.efforts || {}).slice(0,50).filter(([key,value]) => key.length <= 1000 && ['off','minimal','low','medium','high','xhigh','max'].includes(value))),
       }} : {}),
     };

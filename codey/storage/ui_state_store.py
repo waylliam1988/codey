@@ -308,6 +308,7 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
                 "model": _str(selection.get("model")),
                 **({"name": _str(selection["name"], 160)} if isinstance(selection.get("name"), str) else {}),
                 "effort": effort,
+                **({"thinking": selection["thinking"]} if type(selection.get("thinking")) is bool else {}),
                 "efforts": efforts,
             }
         sessions.append(entry)

@@ -112,7 +112,7 @@ class ModelPreferences:
         clean["models"] = [
             {
                 key: copy.deepcopy(model[key])
-                for key in ("id", "name", "efforts", "protocol", "review_eligible")
+                for key in ("id", "name", "efforts", "thinking_toggle", "protocol", "review_eligible")
                 if key in model
             }
             for model in payload.get("models", [])

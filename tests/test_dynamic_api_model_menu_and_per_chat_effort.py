@@ -40,6 +40,28 @@ def test_dynamic_api_menu_selects_responses_model_without_local_headers_or_ui_br
     assert page.evaluate("CodeyUiState.current().sessions[0].modelSelection.model") == "muse-fixture"
 
 
+def test_boolean_reasoning_model_exposes_on_off_control_and_sends_thinking_flag(page):  # noqa: F811 -- imported pytest fixture
+    page.evaluate("""() => CodeyProviderUI.applyConfig({default:'deepseek',providers:[
+      {id:'deepseek',label:'DeepSeek'},{id:'zen',label:'OpenCode Zen'}]})""")
+    payload = {"id": "zen", "label": "OpenCode Zen", "models": [
+        {"id": "ling-fixture", "name": "Ling Fixture", "protocol": "openai-completions",
+         "efforts": [], "thinking_toggle": True},
+    ]}
+    select_connection_models(page, payload)
+    page.locator("#provider-button").click()
+    page.locator('[data-model="ling-fixture"]').click()
+
+    expect(page.locator("#effort-chooser")).to_be_visible()
+    expect(page.locator("#effort-name")).to_have_text("Off")
+    page.locator("#effort-button").click()
+    expect(page.get_by_role("button", name="Thinking: On", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Thinking: On", exact=True).click()
+
+    selection = page.evaluate("CodeyProviderUI.runSelection(CodeyUiState.current().sessions[0], 'zen')")
+    assert selection == {"model_selection": {"connection_id": "zen", "base_url": "", "model": "ling-fixture",
+                                               "effort": None, "thinking": True}}
+
+
 def test_removed_connection_stays_readable_and_cannot_silently_send_to_default(page):  # noqa: F811 -- imported pytest fixture
     state = {"active_id": "a", "projects": [], "sessions": [{"id": "a", "provider": "retired-api", "title": "Old chat",
              "messages": [{"type": "asst", "text": "Stored answer"}],

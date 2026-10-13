@@ -302,7 +302,8 @@ function sessionSelection(s = deps.activeSession?.(), id = currentProviderId()) 
   const connection = apiModels[id] || {};
   const stored = s?.modelSelection;
   const old = stored?.connection_id === id ? stored : {connection_id:id, base_url:connection.base_url || '', model:connection.default_model || connection.models?.[0]?.id || ''};
-  return {...old, effort:old.effort || null, efforts:old.efforts || {}};
+  return {...old, effort:old.effort || null, thinking:typeof old.thinking === 'boolean' ? old.thinking : null,
+    efforts:old.efforts || {}};
 }
 function selectedKey() {
   const id = currentProviderId();
@@ -319,11 +320,14 @@ function modelTitle(model, id = currentProviderId()) {
 }
 function thinkingOptions(s = deps.activeSession?.(), id = currentProviderId()) {
   const selection = sessionSelection(s, id);
-  return apiModels[id]?.models?.find(item => item.id === selection.model)?.efforts || [];
+  const model = apiModels[id]?.models?.find(item => item.id === selection.model);
+  return model?.thinking_toggle ? ['off', 'on'] : model?.efforts || [];
 }
-const effortLabels = {off:'Off', minimal:'Mini', low:'Low', medium:'Med', high:'High', xhigh:'XHigh', max:'Max'};
+const effortLabels = {off:'Off', on:'On', minimal:'Mini', low:'Low', medium:'Med', high:'High', xhigh:'XHigh', max:'Max'};
 function selectedEffort(s = deps.activeSession?.(), id = currentProviderId()) {
-  const options = thinkingOptions(s, id), selected = sessionSelection(s, id).effort;
+  const selection = sessionSelection(s, id), options = thinkingOptions(s, id);
+  const model = apiModels[id]?.models?.find(item => item.id === selection.model);
+  const selected = model?.thinking_toggle ? (selection.thinking === true ? 'on' : 'off') : selection.effort;
   return options.includes(selected) ? selected : options.includes('high') ? 'high' : options.find(value => value !== 'off') || 'off';
 }
 function closeEffortMenu(restoreFocus = false) {
@@ -339,7 +343,8 @@ function syncThinking() {
   button.disabled = $('provider-button').disabled;
   const label = effortLabels[value] || value;
   $('effort-name').textContent = label;
-  button.setAttribute('aria-label', 'Thinking effort: ' + label);
+  const toggle = apiModels[currentProviderId()]?.models?.find(item => item.id === sessionSelection().model)?.thinking_toggle;
+  button.setAttribute('aria-label', (toggle ? 'Thinking: ' : 'Thinking effort: ') + label);
   const menu = $('effort-menu');
   const signature = JSON.stringify([sessionSelection().base_url, sessionSelection().model, options, value]);
   if (menu.dataset.signature === signature) return;
@@ -348,13 +353,16 @@ function syncThinking() {
   options.forEach(option => {
     const row = document.createElement('button'); row.type = 'button'; row.className = 'provider-action';
     row.dataset.effort = option; row.textContent = effortLabels[option] || option;
-    row.setAttribute('aria-label', 'Thinking effort: ' + row.textContent);
+    const toggle = apiModels[currentProviderId()]?.models?.find(item => item.id === sessionSelection().model)?.thinking_toggle;
+    row.setAttribute('aria-label', (toggle ? 'Thinking: ' : 'Thinking effort: ') + row.textContent);
     row.setAttribute('aria-pressed', String(value === option));
     row.onclick = () => {
       const s = deps.activeSession(); if (!s || $('provider-button').disabled) return;
       const selection = sessionSelection(s);
-      s.modelSelection = {...selection, effort:option,
-        efforts:{...selection.efforts, [selection.model]:option}};
+      const model = apiModels[currentProviderId()]?.models?.find(item => item.id === selection.model);
+      s.modelSelection = model?.thinking_toggle
+        ? {...selection, thinking:option === 'on', effort:null}
+        : {...selection, effort:option, efforts:{...selection.efforts, [selection.model]:option}};
       deps.persistActiveNow(); syncProviderUI(currentProviderId()); closeEffortMenu(true);
     };
     menu.appendChild(row);
@@ -404,6 +412,11 @@ function runSelection(s, provider) {
   const selection = sessionSelection(s, provider);
   if (!apiModels[provider] && !selection.model) return {};
   const options = thinkingOptions(s, provider);
+  const model = apiModels[provider]?.models?.find(item => item.id === selection.model);
+  if (model?.thinking_toggle) {
+    return selection.model ? {model_selection:{connection_id:provider, base_url:selection.base_url, model:selection.model,
+      effort:null, thinking:selection.thinking === true}} : {};
+  }
   const effort = options.length ? selectedEffort(s, provider) : selection.effort;
   return selection.model ? {model_selection:{connection_id:provider, base_url:selection.base_url, model:selection.model, effort}} : {};
 }

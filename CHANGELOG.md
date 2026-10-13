@@ -2,6 +2,13 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Zen model capability and endpoint alignment (2026-10-13)
+
+- Preserve Zen models that advertise boolean reasoning controls (`toggle`) and expose them as an explicit Off/On thinking control in the API model UI. The selection now reaches `ApiRunSelection.thinking_enabled` and Chat Completions sends `chat_template_kwargs.enable_thinking`.
+- Align the Zen connection and catalog validation with the current `https://opencode.ai/inference/v1` destination. Preserve `x-opencode-log-id` in structured provider failures so endpoint errors remain diagnosable.
+- Add TDD regressions for toggle parsing, selection, persistence, UI behavior, current catalog destination and Zen failure diagnostics.
+- Verification: targeted regressions **152 passed**; Ruff, mypy, Pyrefly, compileall and diff checks passed. Real Local probe found `http://127.0.0.1:5001/v1`; Muse Spark 1.3 completed a live request; Ling 3.1 Flash returned the same upstream `429 server_error: Endpoint is unavailable` with thinking enabled and disabled, confirming the remaining failure is upstream model endpoint availability. Final full pytest: **8544 passed, 7 skipped, 1510 subtests passed in 967.68s**.
+
 ## Unreleased - Provider cold-start status coordination (2026-10-13)
 
 - Add removable connector-owned Local and OpenCode Zen preflight probes with shared per-connection caching, single-flight execution, revision checks and SSE snapshots. `/api/providers`, `/api/api_models` and `/api/local_provider` now reuse the same result.

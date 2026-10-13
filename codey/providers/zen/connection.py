@@ -237,9 +237,17 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
     effort = selection.get("effort")
     if effort is not None and effort not in model.efforts:
         raise ValueError("selected Zen model does not advertise this reasoning effort")
+    thinking = selection.get("thinking")
+    if thinking is not None and type(thinking) is not bool:
+        raise ValueError("Zen thinking must be true, false, or null")
+    if thinking is not None and not model.thinking_toggle:
+        raise ValueError("selected Zen model does not advertise a thinking toggle")
+    if effort is not None and model.thinking_toggle:
+        raise ValueError("selected Zen toggle model does not advertise reasoning efforts")
     reserve = min(8192, model.context // 4)
     return ApiRunSelection("zen", CONNECTION_REVISION, model.id, model.protocol, True, model.context,
                            reserve, min(12000, model.context - reserve), reasoning_effort=effort,
+                           thinking_enabled=thinking,
                            stream=True, tool_choice="auto", output_tokens=min(model.output, reserve), budget_source="model_catalog",
                            input_limit_tokens=model.input_limit_tokens)
 
@@ -265,6 +273,7 @@ def open_selection(selection: ApiRunSelection) -> ZenProvider:
                            request_headers=headers, native_tools=selection.native_tools,
                            context_window_tokens=selection.context_window_tokens, context_reserve_tokens=selection.context_reserve_tokens,
                            context_keep_recent_tokens=selection.context_keep_recent_tokens, reasoning_effort=selection.reasoning_effort,
+                           thinking_enabled=selection.thinking_enabled,
                            system_prompt="You are a coding assistant.",
                            usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
                            budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens,

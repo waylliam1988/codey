@@ -12,7 +12,7 @@ from codey.providers.zen.identity import ZenIdentity
 
 
 def directory():
-    return {"opencode": {"npm": "@ai-sdk/openai-compatible", "api": "https://opencode.ai/zen/v1", "models": {
+    return {"opencode": {"npm": "@ai-sdk/openai-compatible", "api": "https://opencode.ai/inference/v1", "models": {
         "chat-free": {"name": "Chat Free", "tool_call": True, "cost": {"input": 0, "output": 0}, "limit": {"context": 32768, "output": 4096}},
         "response-free": {"limit": {"context": 131072, "output": 8192}, "name": "Responses Free", "tool_call": True, "cost": {"input": 0, "output": 0}, "provider": {"npm": "@ai-sdk/openai"}},
         "paid": {"tool_call": True, "cost": {"input": 1, "output": 0}},
@@ -24,6 +24,25 @@ def directory():
 def test_catalog_uses_model_protocol_override_and_explicit_zero_cost():
     models = parse_models(directory(), {"chat-free", "response-free", "paid", "unknown-price", "other-protocol"})
     assert {m.id: m.protocol for m in models} == {"chat-free": "openai-completions", "response-free": "openai-responses"}
+
+
+def test_catalog_preserves_boolean_reasoning_toggle_capability():
+    listing = directory()
+    listing["opencode"]["models"]["chat-free"]["reasoning"] = True
+    listing["opencode"]["models"]["chat-free"]["reasoning_options"] = [{"type": "toggle"}]
+
+    model = next(model for model in parse_models(listing, {"chat-free"}) if model.id == "chat-free")
+
+    assert model.thinking_toggle is True
+    assert model.efforts == ()
+    assert model.to_payload()["thinking_toggle"] is True
+
+
+def test_catalog_accepts_current_inference_api_destination():
+    listing = directory()
+    listing["opencode"]["api"] = "https://opencode.ai/inference/v1"
+
+    assert parse_models(listing, {"chat-free"})
 
 
 @pytest.mark.parametrize("status", [304, 403])
@@ -76,8 +95,8 @@ def test_catalog_keeps_cache_on_network_failure_then_removes_delisted_model(tmp_
 
 def test_zen_identity_rejects_other_destinations_and_uses_upstream_session_shape():
     identity = ZenIdentity()
-    first = identity.headers("https://opencode.ai/zen/v1")
-    second = identity.headers("https://opencode.ai/zen/v1")
+    first = identity.headers("https://opencode.ai/inference/v1")
+    second = identity.headers("https://opencode.ai/inference/v1")
     assert re.fullmatch(r"ses_[0-9a-f]{12}[0-9A-Za-z]{14}", first["x-opencode-session-id"])
     assert first["x-opencode-session-id"] == second["x-opencode-session-id"]
     assert first["x-opencode-request"] != second["x-opencode-request"]
@@ -122,3 +141,20 @@ def test_model_output_reservation_fits_small_selected_context(monkeypatch):
         require=lambda _: ZenModel("small", "Small", "openai-completions", 4096, 8192)))
     selection = connection.capture_selection({"model": "small"})
     assert selection.output_tokens == 1024
+
+
+def test_zen_toggle_selection_becomes_explicit_thinking_flag(monkeypatch):
+    from types import SimpleNamespace
+
+    from codey.providers.zen import connection
+    from codey.providers.zen.catalog import ZenModel
+
+    monkeypatch.setattr(connection, "catalog", lambda: SimpleNamespace(
+        require=lambda _: ZenModel("toggle", "Toggle", "openai-completions", 32768, 8192,
+                                   thinking_toggle=True)))
+
+    enabled = connection.capture_selection({"model": "toggle", "thinking": True})
+    disabled = connection.capture_selection({"model": "toggle", "thinking": False})
+
+    assert enabled.thinking_enabled is True and enabled.reasoning_effort is None
+    assert disabled.thinking_enabled is False and disabled.reasoning_effort is None

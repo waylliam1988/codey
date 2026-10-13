@@ -2,6 +2,13 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - Zen 模型能力与 endpoint 对齐（2026-10-13）
+
+- 保留 Zen 目录声明的布尔思考能力（`toggle`），并在 API 模型界面显示明确的 Off/On 思考开关；选择结果传入 `ApiRunSelection.thinking_enabled`，Chat Completions 请求发送 `chat_template_kwargs.enable_thinking`。
+- 将 Zen 连接和目录校验对齐到当前 `https://opencode.ai/inference/v1` 地址；结构化 provider failure 同时保留 `x-opencode-log-id`，便于诊断 endpoint 错误。
+- 增加 toggle 解析、选择、持久化、UI、当前目录地址和 Zen failure 诊断的 TDD 回归测试。
+- 验证结果：定向回归 **152 passed**；Ruff、mypy、Pyrefly、compileall 和 diff 检查通过。实机 Local 探测发现 `http://127.0.0.1:5001/v1`；Muse Spark 1.3 实机请求成功；Ling 3.1 Flash 在开启和关闭思考时都返回相同的上游 `429 server_error: Endpoint is unavailable`，确认剩余失败来自上游模型 endpoint 可用性。最终全量 pytest：**8544 passed、7 skipped、1510 subtests，967.68s**。
+
 ## 未发布 - Provider 冷启动状态协调（2026-10-13）
 
 - 为可独立移除的 Local 和 OpenCode Zen 增加连接器自有预检、按连接缓存、single-flight、连接版本校验和 SSE 快照；`/api/providers`、`/api/api_models` 与 `/api/local_provider` 复用同一份结果。

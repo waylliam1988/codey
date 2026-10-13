@@ -30,6 +30,7 @@ class ZenModel:
     output: int
     efforts: tuple[str, ...] = ()
     input_limit_tokens: int | None = None
+    thinking_toggle: bool = False
 
     def to_payload(self) -> dict[str, Any]:
         return asdict(self)
@@ -80,10 +81,12 @@ def parse_models(directory: object, available: set[str]) -> tuple[ZenModel, ...]
         options = model.get("reasoning_options") or []
         if not isinstance(options, list):
             continue
+        thinking_toggle = any(isinstance(option, dict) and option.get("type") == "toggle" for option in options)
         efforts = tuple(value for option in options if isinstance(option, dict) and option.get("type") == "effort"
                         and isinstance(option.get("values"), list) for value in option["values"]
                         if isinstance(value, str) and value in {"minimal", "low", "medium", "high", "xhigh", "max"})
-        result.append(ZenModel(identity, str(model.get("name") or identity), protocol, context, output, efforts, input_limit))
+        result.append(ZenModel(identity, str(model.get("name") or identity), protocol, context, output, efforts,
+                               input_limit, thinking_toggle))
     return tuple(sorted(result, key=lambda model: model.id))
 
 

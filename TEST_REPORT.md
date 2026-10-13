@@ -1,5 +1,26 @@
 # Codey Test Report
 
+## Zen 模型能力与 endpoint 对齐（2026-10-13）
+
+本轮按 TDD 先增加失败回归，再修改生产代码。锁定并修复了 Zen `reasoning_options: [{"type":"toggle"}]` 被丢弃、模型选择无法传递 `thinking_enabled`、API 目录迁移到 `inference/v1` 后刷新失败，以及 Zen `x-opencode-log-id` 未进入结构化 failure 的问题。Ling 3.1 Flash 的 429 经过实机开启/关闭思考各一次，均为相同的上游 `server_error: Endpoint is unavailable`；Muse Spark 1.3 成功，说明剩余 Ling 失败属于上游模型 endpoint 可用性。
+
+### 最终验证
+
+| 检查 | 结果 |
+| --- | --- |
+| TDD 定向回归 | **152 passed** |
+| Ruff | passed |
+| mypy | **Success: no issues found in 411 source files** |
+| Pyrefly | **0 errors** |
+| compileall | passed |
+| git diff --check | passed |
+| 实机 Zen 目录刷新 | `stale=false`；`https://opencode.ai/inference/v1`；Ling `thinking_toggle=true` |
+| 实机 Zen 请求 | Muse Spark 1.3 **成功**；Ling 3.1 Flash 开关开/关均为 **HTTP 429 server_error**，保留 upstream request ID |
+| 实机 Local 探测 | `http://127.0.0.1:5001/v1`，发现 KoboldCpp Gemma4 模型 |
+| 最终全量 pytest | **8544 passed, 7 skipped, 1510 subtests passed in 967.68s (16:07)** |
+
+全量 pytest 首次执行唯一失败是 `providers/api_transport.py` 超过 1000 行架构护栏；压缩注释后复测通过，最终结果以上述第二次完整运行结果为准。
+
 ## Provider cold-start status coordination (2026-10-13)
 
 This change adds removable connector-owned probes for Local and OpenCode Zen,

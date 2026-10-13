@@ -474,8 +474,7 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
         headers["Proxy-Authorization"] = proxy_auth
     body = request.data
     target = request.full_url if proxy and parts.scheme == "http" else path
-    # Once request() starts, a server may have received bytes.  Cancellation
-    # after this point is therefore an unknown outcome.
+    # Once request() starts, cancellation may race a server that received bytes; outcome is unknown.
     try:
         connection.request(request.method or "GET", target, body=body, headers=headers)
     except (OSError, http.client.HTTPException) as exc:
@@ -984,7 +983,8 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
             exc.code,
             detail,
             exc.headers.get("Retry-After"),
-            upstream_request_id=exc.headers.get("X-Request-Id") or exc.headers.get("X-Request-ID"),
+            upstream_request_id=exc.headers.get("X-Request-Id") or exc.headers.get("X-Request-ID") or
+            exc.headers.get("X-OpenCode-Log-Id"),
         ) from exc
     except (http.client.IncompleteRead, urllib.error.URLError, TimeoutError, OSError) as exc:
         reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
