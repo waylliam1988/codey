@@ -11,6 +11,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from codey.agents.request import AgentRequest
 from codey.operations.project_adapter import run
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
@@ -23,6 +24,7 @@ from codey.reviews.core import (
 from codey.runtime.observe.events import render_run_event
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.workspace.changes import ChangeTracker, collect_changes
+from codey.workspace.revision import WorkspaceRevisionStore
 
 PROVIDER_IDS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
 
@@ -205,15 +207,17 @@ def _run_review_pass(
         _record_event(events, event)
 
     try:
-        fixed = run(
-            writer,
-            root,
-            followup,
+        fixed = run(AgentRequest(
+            provider=writer,
+            project=root,
+            task=followup,
             max_turns=min(max_turns, 12),
             on_event=on_event,
             fresh_chat=False,
             change_tracker=tracker,
-        )
+            provider_id=writer_id,
+            workspace_revision_store=WorkspaceRevisionStore(root.parent / f"{root.name}-state"),
+        ))
     finally:
         writer.close()
     return "changes_requested", fixed.summary, fixed.stop_reason
@@ -231,6 +235,9 @@ def run_smoke(
     root = Path(tempfile.mkdtemp(prefix=f"codey-live-{case}-")).resolve()
     try:
         _make_fixture(root, case)
+        # Keep durable runtime state outside the project so fingerprints scan
+        # fixture files rather than the revision ledger itself.
+        workspace_revisions = WorkspaceRevisionStore(root.parent / f"{root.name}-state")
         events: list[str] = []
         evidence = ExecutionEvidence()
 
@@ -269,15 +276,17 @@ def run_smoke(
                     "then run python -m unittest and finish."
                 )
             tracker = ChangeTracker(root)
-            result = run(
-                provider,
-                root,
-                task,
+            result = run(AgentRequest(
+                provider=provider,
+                project=root,
+                task=task,
                 max_turns=max_turns,
                 on_event=on_event,
                 fresh_chat=True,
                 change_tracker=tracker,
-            )
+                provider_id=provider_id,
+                workspace_revision_store=workspace_revisions,
+            ))
             review_status = "not_run"
             final_summary = result.summary
             final_stop_reason = result.stop_reason

@@ -6,6 +6,7 @@
 
 - 收口 Shell 审批恢复竞态：拒绝、允许、Stop 共用 durable 原子裁决领取；过期审批持久化为 `abandoned`；冷启动重建在执行前恢复完整命令身份字段。
 - 对账已提交的投递 witness 并写入本地 delivered 回执；恢复运行不再复用源运行投递批次；Zen 成功请求清除匹配冷却、试探等待不再零时忙循环；代理连接池按凭据身份隔离。
+- 将 live/bootstrap smoke 流程更新到当前 `AgentRequest` 接口，并把 workspace revision 状态移出被测项目目录。
 - 修复 Shell 审批执行票据的 durable 原子领取：同一审批在并发批准请求下只会产生一条 `execution_claimed` 事实；冷启动重建会恢复源运行的冻结模型选择。
 - 修复 `ResumeRun` 从 `source_run_id` 恢复待处理效果，并保留源运行的授权与模型窗口；新增并发领取、冷启动模型恢复和源运行恢复回归测试。
 - 修复 API 流式工具调用身份、提交截止时间、Shell 审批续接及结果恢复；Zen 的 Node fetch 适配保留在可选连接器内。

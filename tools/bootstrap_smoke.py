@@ -11,6 +11,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from codey.agents.request import AgentRequest
 from codey.operations.project_adapter import run
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
@@ -127,15 +128,16 @@ def _review_pass(
     followup = render_writer_followup(BOOTSTRAP_TASK, review)
     writer = connect_provider(writer_id, port=port)
     try:
-        fixed = run(
-            writer,
-            root,
-            followup,
+        fixed = run(AgentRequest(
+            provider=writer,
+            project=root,
+            task=followup,
             max_turns=min(max_turns, 12),
             on_event=lambda event: _record_event(events, event),
             fresh_chat=False,
             change_tracker=tracker,
-        )
+            provider_id=writer_id,
+        ))
     finally:
         writer.close()
     return "changes_requested", fixed.summary, fixed.stop_reason
@@ -179,15 +181,16 @@ def run_bootstrap_smoke(
         provider = None
         try:
             provider = connect_provider(provider_id, port=port)
-            result = run(
-                provider,
-                project,
-                BOOTSTRAP_TASK,
+            result = run(AgentRequest(
+                provider=provider,
+                project=project,
+                task=BOOTSTRAP_TASK,
                 max_turns=max_turns,
                 on_event=on_event,
                 fresh_chat=True,
                 change_tracker=tracker,
-            )
+                provider_id=provider_id,
+            ))
             review_status = "not_run"
             final_summary = result.summary
             final_stop_reason = result.stop_reason
