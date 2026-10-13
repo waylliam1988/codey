@@ -1451,7 +1451,9 @@ async function main() {
   if (menuButtonCount() !== 2) throw new Error('menu buttons must be 2 after flip, got ' + menuButtonCount());
   // Composer live fallback: no snapshot dep; stale removed-id must resolve to live mimo.
   const composerProviders = window.CodeyUiState.PROVIDERS;
-  const liveSession = { id: 's1', provider: 'removed-id', draft: {text:'',start:0,end:0,direction:'none',revision:0} };
+  const liveSession = { id: 's1', provider: 'removed-id', messages: [
+    { type: 'user', attempts: [{ runId: 'source-run-1' }] },
+  ], draft: {text:'',start:0,end:0,direction:'none',revision:0} };
   let syncedTo = null;
   const runBodies = [];
   global.fetch = async (url, opts) => {
@@ -1489,8 +1491,9 @@ async function main() {
   liveSession.provider = 'mimo';
   runBodies.length = 0;
   await window.CodeyComposer.continueTask('s1');
-  const continued = runBodies.find((r) => r.url === '/api/run' && r.body && r.body.continue_task);
-  if (!continued) throw new Error('continueTask did not POST /api/run with continue_task');
+  const continued = runBodies.find((r) => r.url === '/api/run' && r.body && r.body.input?.kind === 'resume_run');
+  if (!continued) throw new Error('continueTask did not POST /api/run with input.kind=resume_run');
+  if (continued.body.input.source_run_id !== 'source-run-1') throw new Error('continueTask lost source run id');
   if (continued.body.provider !== 'mimo') throw new Error('continueTask must preserve the stored provider, got ' + continued.body.provider);
   // Removed connections keep their identity and cannot submit or substitute.
   liveSession.provider = 'removed-id';
@@ -1520,7 +1523,7 @@ main().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
         # continueTask removed-provider body must be covered.
         self.assertIn("continueTask", harness)
         self.assertIn("/api/run", harness)
-        self.assertIn("continue_task", harness)
+        self.assertIn("input?.kind === 'resume_run'", harness)
         if shutil.which("node") is None:
             self.skipTest("node unavailable for executable JS behavior check")
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tmp:

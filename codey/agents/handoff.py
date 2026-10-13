@@ -282,6 +282,7 @@ class ConversationContext:
         mode: str,
         project: str = "",
         force_rollover: bool = False,
+        resume: bool = False,
         next_prompt: str = "",
     ) -> tuple[bool, str]:
         if not self.initialized:
@@ -293,6 +294,11 @@ class ConversationContext:
                 return True, self.prepare_handoff()
             self.clear()
             return True, ""
+        if resume and provider_id == self.provider_id:
+            # ResumeRun is bound to the source protocol window. Context size
+            # is evaluated by the active provider/ledger; it must not turn an
+            # explicit continuation into an implicit new-chat action.
+            return False, ""
         if (
             force_rollover
             or provider_id != self.provider_id

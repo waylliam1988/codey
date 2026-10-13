@@ -33,3 +33,23 @@ def test_resume_with_recreated_provider_keeps_existing_window() -> None:
 
     assert plan.fresh_chat is False
     provider.new_chat.assert_not_called()
+
+
+def test_resume_does_not_roll_over_when_context_budget_is_exhausted() -> None:
+    project = str(Path("/tmp/p").expanduser().resolve())
+    conversation = ConversationContext(
+        provider_id="deepseek", mode="project", project=project, initialized=True,
+        estimated_context_tokens=180_000,
+    )
+    provider = Mock()
+    provider.context_budget = None
+    provider.has_transport_history = True
+    state = SimpleNamespace(provider_session_changed=lambda *_: False, visible_session_excerpt=lambda **_: "")
+
+    plan = build_conversation_plan(
+        state=state, session_id="s1", provider_id="deepseek", provider=provider,
+        conversation=conversation, task_kind="project", project=project,
+        task="Continue", continue_task=True, trace=None,
+    )
+
+    assert plan.fresh_chat is False

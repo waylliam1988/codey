@@ -87,6 +87,7 @@ def build_conversation_plan(  # noqa: C901, PLR0912
         # wrapper for the same connection must not turn that explicit resume
         # into an implicit new-chat rollover.
         force_rollover=provider_session_changed and not continue_task,
+        resume=continue_task,
         next_prompt=task,
     )
     if fresh_chat:
