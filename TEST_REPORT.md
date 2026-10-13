@@ -6,7 +6,7 @@ This file records the current verification state, not an append-only experiment 
 
 | Check | Result |
 | --- | --- |
-| Final complete pytest | **8579 passed, 7 skipped, 1510 subtests; 966.97s** |
+| Final complete pytest | **8587 passed, 7 skipped, 1510 subtests; 995.94s** |
 | Final required machine contracts | Not rerun in this change (prior baseline: **1125 passed, 14 subtests; no skips**) |
 | Production statement coverage | **88.54%** (55,370 / 62,536); CI minimum **85%** |
 | Production branch coverage | **78.23%** (17,332 / 22,154); CI minimum **75%** |
@@ -16,7 +16,7 @@ This file records the current verification state, not an append-only experiment 
 | JavaScript syntax / wheel assets | Not rerun in this change |
 | Documentation pre-commit architecture/CI/coverage checks | **117 passed, 383 subtests** |
 
-The first validation run exposed two failures in legacy UI-only approval fixtures after durable identity was enforced. The fix now writes a requested fact only when session and source-run identities exist; the UI-only projection remains non-executable. The second complete pytest run is green. The coverage and machine-contract figures shown above are prior measured baselines; they were not rerun in this change.
+This change adds regression coverage for atomic approval verdicts, abandoned approvals, complete cold-start command fields, source-run delivery ownership, delivery-witness reconciliation, Zen probe settlement/waiting, and credential-scoped proxy pools. A first complete run exposed legacy RequestPolicy test doubles and optional ledger mocks; both were corrected and the final complete run is green. The coverage and machine-contract figures shown above are prior measured baselines; they were not rerun in this change.
 
 Live Zen matrix: **36/42** initial cases passed; four of six failed cases passed on retest. Two Ling thinking-enabled cases remain unresolved. The free-model matrix is not all green. Local validation does not claim a new GitHub CI run or a release.
 

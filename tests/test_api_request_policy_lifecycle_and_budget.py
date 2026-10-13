@@ -10,7 +10,14 @@ from codey.providers.api_request_policy import (
     RequestLease,
     RequestQueueFull,
 )
+from codey.providers.api_transport import _proxy_pool_identity
 from codey.providers.zen.reliability import ZenRequestCoordinator, make_control_scope
+
+
+def test_proxy_pool_identity_separates_distinct_credentials() -> None:
+    first = _proxy_pool_identity("http://userA:passA@proxy.example:8080")
+    second = _proxy_pool_identity("http://userB:passB@proxy.example:8080")
+    assert first != second
 
 
 def _context(model: str = "m") -> RequestContext:

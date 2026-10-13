@@ -176,7 +176,26 @@ def build_provider_settle_rows(
     return tuple(rows), prepared
 
 
+def build_delivery_delivered_rows(
+    projection: Any,
+    view: SessionView,
+    *,
+    session_id: str,
+    run_id: str,
+    batch_id: str,
+    provider_effect_id: str,
+) -> tuple[dict[str, object], ...]:
+    """Record a provider ledger witness as a local delivery receipt."""
+    batches = view.batches
+    entry = delivered_entry(
+        session_id, run_id, batch_id=batch_id,
+        provider_effect_id=provider_effect_id, batches=batches,
+    )
+    return (entry,) if entry is not None else ()
+
+
 __all__ = [
     "build_provider_begin_rows",
     "build_provider_settle_rows",
+    "build_delivery_delivered_rows",
 ]

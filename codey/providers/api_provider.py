@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import inspect
 import json
 import threading
 import time
@@ -361,7 +362,11 @@ class ApiProvider:
                 settle = getattr(self.request_policy, "settle", None)
                 if settle is not None:
                     try:
-                        settle(self._request_context, self._request_receipt)
+                        parameters = inspect.signature(settle).parameters
+                        if "successful" in parameters:
+                            settle(self._request_context, self._request_receipt, successful=committed)
+                        else:
+                            settle(self._request_context, self._request_receipt)
                     except BaseException as exc:  # cleanup must continue
                         settle_error = exc
             self._request_context = None

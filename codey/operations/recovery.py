@@ -70,6 +70,9 @@ def recover_effects_for_resume(
     remain part of the task on every restart. No executor runs while loading
     settled facts, and an unavailable receipt never becomes an empty task.
     """
+    _reconcile_delivery_witnesses(
+        deps, session_id=session_id, run_id=run_id,
+    )
     pending = _recover_pending_effects(
         deps, session_id=session_id, run_id=run_id, project=project,
         task_kind=task_kind, ignored_paths=ignored_paths,
@@ -88,6 +91,49 @@ def recover_effects_for_resume(
     except (OSError, ValueError, TypeError, AttributeError):
         return ResumeRecoveryResult(ok=False)
     return replace(pending, settled_tool_outcomes=facts)
+
+
+def _reconcile_delivery_witnesses(deps: Any, *, session_id: str, run_id: str) -> None:
+    """Turn a committed provider witness into a local delivered receipt."""
+    ledger = getattr(deps, "context_ledger", None)
+    if ledger is None:
+        state = getattr(deps, "state", None)
+        ledger = getattr(state, "context_ledger", None)
+        if ledger is None:
+            state_home = getattr(state, "state_home", None)
+            if state_home is not None:
+                from codey.providers.context_ledger import ContextLedger
+
+                try:
+                    ledger = ContextLedger.for_session(state_home, session_id, f"protocol:{session_id}")
+                except (OSError, ValueError, TypeError):
+                    ledger = None
+    mutations = _runtime_mutations(deps)
+    delivery_store = _tool_result_delivery_store(deps)
+    if ledger is None or mutations is None or delivery_store is None:
+        return
+    try:
+        batches = delivery_store.load_batches(session_id, run_id)
+        delivered_ids = {batch.intent.batch_id for batch in batches if batch.is_delivered}
+        witnesses = ledger.unreconciled_delivery_commits(delivered_ids)
+        if not isinstance(witnesses, (tuple, list)):
+            return
+        from codey.runtime.effects.tool_result_delivery import DeliveryCommit
+
+        for payload in witnesses:
+            witness = DeliveryCommit.from_payload(payload)
+            batch = next((item for item in batches if item.intent.batch_id == witness.batch_id), None)
+            if batch is None or witness.provider_effect_id not in batch.send_attempts:
+                raise ValueError("delivery witness does not match a source batch")
+            expected_window = getattr(ledger, "window_ref", None)
+            if expected_window is not None and witness.window_ref != expected_window.to_payload():
+                raise ValueError("delivery witness window does not match the active ledger")
+            mutations.record_delivery_delivered(
+                session_id, run_id, batch_id=witness.batch_id,
+                provider_effect_id=witness.provider_effect_id,
+            )
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        raise RuntimeError(f"delivery witness reconciliation failed: {exc}") from exc
 
 
 def _settled_facts(

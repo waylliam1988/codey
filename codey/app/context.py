@@ -496,9 +496,8 @@ class AppContext:
         expired: tuple[dict[str, Any], ...] = ()
         if str(payload.get("stop_reason") or "") in {"done", "error", "max_turns", "no_progress", "stopped"}:
             with self._shell_spawn_gate, self.lock:
-                expired = self.approvals.expire_shell_results(
-                    run_id=run_id,
-                    output="Run ended; command approval expired.",
+                expired = self._expire_shell_results_locked(
+                    run_id=run_id, output="Run ended; command approval expired."
                 )
         self.emit(payload)
         for expired_event in expired:
@@ -524,7 +523,7 @@ class AppContext:
             self.run_registry.stop_flag.set()
             with self.lock:
                 self.approvals.cancel_teach()
-                events = self.approvals.expire_shell_results()
+                events = self._expire_shell_results_locked()
         for event in events:
             self.record_shell_result(event)
 
@@ -537,7 +536,7 @@ class AppContext:
         """
 
         with self._shell_spawn_gate, self.lock:
-            events = self.approvals.expire_shell_results()
+            events = self._expire_shell_results_locked()
         for event in events:
             self.record_shell_result(event)
 
@@ -545,12 +544,41 @@ class AppContext:
         """Clear approval cards left behind when the user starts new work."""
 
         with self._shell_spawn_gate, self.lock:
-            events = self.approvals.expire_shell_results(
+            events = self._expire_shell_results_locked(
                 exclude_run_id=active_run_id,
                 output="A new task started; command approval expired.",
             )
         for event in events:
             self.record_shell_result(event)
+
+    def _expire_shell_results_locked(self, **kwargs: Any) -> tuple[dict[str, Any], ...]:
+        """Persist an abandoned verdict before removing in-memory approvals."""
+        candidates = []
+        for approval_id, pending in self.approvals.shell_snapshot().items():
+            run_id = str(pending.get("run_id") or "")
+            session_id = str(pending.get("session_id") or "")
+            if kwargs.get("run_id") and run_id != kwargs["run_id"]:
+                continue
+            if kwargs.get("exclude_run_id") and run_id == kwargs["exclude_run_id"]:
+                continue
+            if kwargs.get("session_id") and session_id != kwargs["session_id"]:
+                continue
+            candidates.append((approval_id, pending))
+        events = self.approvals.expire_shell_results(**kwargs)
+        for approval_id, pending in candidates:
+            latest = self.shell_approval_records.latest(approval_id)
+            if latest is not None and latest.kind == "requested":
+                self.shell_approval_records.append(ShellApprovalFact(
+                    approval_id=approval_id,
+                    session_id=str(pending.get("session_id") or ""),
+                    source_run_id=str(pending.get("run_id") or ""),
+                    kind="abandoned",
+                    invocation_origin="native" if pending.get("call_id") else "text",
+                    command_ref=str(pending.get("command_ref") or ""),
+                    command_digest=str(pending.get("command_digest") or ""),
+                    cwd=str(pending.get("cwd") or "."),
+                ))
+        return events
 
     def add_pending_shell_approval(self, approval_id: str, pending: dict[str, Any]) -> None:
         with self.lock:
@@ -834,7 +862,7 @@ class AppContext:
         # session's shell approvals (denied) and drop its restorable research
         # changes. Audit artifacts (run ledgers, managed outputs) are kept.
         with self.lock:
-            approval_events = self.approvals.expire_session(session_id)
+            approval_events = self._expire_shell_results_locked(session_id=session_id)
             orphan_runs = [
                 run_id
                 for run_id, owner in self._research_change_sessions.items()

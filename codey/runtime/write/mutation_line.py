@@ -583,6 +583,26 @@ class RuntimeMutationLine:
 
         self.session_log.mutate(session_id, mutation)
 
+    def record_delivery_delivered(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        batch_id: str,
+        provider_effect_id: str,
+    ) -> None:
+        def mutation(projection: Any, entries: Any) -> Any:
+            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+            from codey.runtime.write.provider_effects import build_delivery_delivered_rows
+
+            rows = build_delivery_delivered_rows(
+                projection, view, session_id=session_id, run_id=run_id,
+                batch_id=batch_id, provider_effect_id=provider_effect_id,
+            )
+            return rows
+
+        self.session_log.mutate(session_id, mutation)
+
 
 def _operation_settled_entry(state: RuntimeOperationState) -> dict[str, object]:
     return {

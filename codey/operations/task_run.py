@@ -553,7 +553,13 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
     return _PhaseWork(
         work=work,
         recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes) + shell_rows,
-        recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
+        # Delivery batches belong to the run whose ledger owns the intent.
+        # A resumed run receives the recovered rows, then creates its own
+        # delivery intent; carrying the source id into its sink is invalid.
+        recovered_tool_result_batch_id=(
+            recovery.recovered_tool_result_batch_id
+            if recovery_run_id == setup.run_id else ""
+        ),
         settled_tool_outcomes=recovery.settled_tool_outcomes,
     ), None
 

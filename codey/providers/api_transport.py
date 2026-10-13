@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import datetime
+import hashlib
 import http.client
 import json
 import socket
@@ -558,7 +559,11 @@ def _proxy_pool_identity(proxy: str) -> str:
     except ValueError:
         port = None
     authority = host if port is None else f"{host}:{port}"
-    auth_marker = "auth" if parsed.username is not None else "anonymous"
+    if parsed.username is None:
+        auth_marker = "anonymous"
+    else:
+        credentials = f"{unquote(parsed.username)}:{unquote(parsed.password or '')}".encode()
+        auth_marker = "auth-" + hashlib.sha256(credentials).hexdigest()[:16]
     return f"{parsed.scheme.lower()}://{authority}|{auth_marker}"
 
 

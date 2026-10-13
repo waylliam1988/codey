@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Close shell approval recovery races: deny/allow/stop now share durable atomic verdict claims; expired approvals persist as `abandoned`, and cold-start reconstruction restores all command identity fields before execution.
+- Reconcile committed delivery witnesses into local delivered receipts, keep source-run delivery batches out of resumed runs, clear matching Zen probe cooldowns after successful requests, avoid zero-time probe waits, and isolate proxy pool keys by credential identity.
 - Make shell approval ticket claims a durable atomic transition so concurrent approval requests can mint only one `execution_claimed` fact, and restore the source run's frozen model selection after cold start.
 - Make `ResumeRun` recover pending effects from its declared `source_run_id` while preserving the source authorization and model window; add concurrency, cold-start and source-run regression coverage.
 - Fix API stream tool-call identities, submission deadlines and shell approval continuation/results. Keep Zen's Node fetch adapter in the optional connector package.

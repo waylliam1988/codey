@@ -154,7 +154,8 @@ class ZenRequestCoordinator:
                     lease.receipt = self._probes.get(key)
                     return lease
                 wait_until = min(end, blocked_until or end)
-                self._condition.wait(min(0.05, max(0.0, wait_until - now)))
+                delay = min(0.05, max(0.001, wait_until - now))
+                self._condition.wait(delay)
 
     def _release(self) -> None:
         with self._condition:
@@ -225,8 +226,13 @@ class ZenRequestPolicy:
                                               not_before=not_before, reason=result.kind)
         return RetryDirective(True, not_before, result.kind)
 
-    def settle(self, context: RequestContext, receipt: object) -> None:
-        self.coordinator.settle(scope=self.scope, model_id=context.model_id, receipt=getattr(receipt, "receipt", None))
+    def settle(self, context: RequestContext, receipt: object, *, successful: bool = False) -> None:
+        self.coordinator.settle(
+            scope=self.scope,
+            model_id=context.model_id,
+            receipt=getattr(receipt, "receipt", None),
+            successful=successful,
+        )
 
 
 class ZenResourcesRegistry:

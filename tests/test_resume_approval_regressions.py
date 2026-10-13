@@ -177,3 +177,63 @@ def test_structured_resume_recovery_reads_the_declared_source_run(monkeypatch) -
     assert workload is not None
     assert seen["run_id"] == "source-run"
     assert request.previous_run_id == "source-run"
+
+
+def test_source_delivery_batch_is_not_reused_by_new_resume_run(monkeypatch) -> None:
+    request = TaskSubmission.from_input(
+        session_id="session", project=None, max_turns=4, provider_id="local",
+        input=ResumeRun("source-run", "continue"), run_id="new-run",
+    )
+    work = SimpleNamespace(operation=None)
+    monkeypatch.setattr(task_run, "build_run_work", lambda *_args, **_kwargs: (work, None))
+    monkeypatch.setattr(
+        task_run, "recover_effects_for_resume",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            ok=True, recovered_tool_outcomes=(), settled_tool_outcomes=(),
+            recovered_tool_result_batch_id="deliv-source-1",
+        ),
+    )
+    setup = SimpleNamespace(
+        request=request, state=SimpleNamespace(), session_id="session", run_id="new-run",
+        project=None, provider_id="local", max_turns=4, task_kind="chat", task=request.task,
+        continue_task=True, recovered_resume=False, trace=None,
+        project_config_result=SimpleNamespace(config=SimpleNamespace(ignored_paths=())),
+    )
+    workload, failure = task_run._build_workload(SimpleNamespace(), setup)
+    assert failure is None and workload is not None
+    assert workload.recovered_tool_result_batch_id == ""
+
+
+def test_stop_persists_abandoned_so_old_approval_cannot_resume(tmp_path) -> None:
+    state = AppContext(tmp_path)
+    try:
+        _durable_requested_approval(state, approval_id="stale", source_run_id="source-run")
+        state.add_pending_shell_approval("stale", {
+            "session_id": "session", "run_id": "source-run", "command": "python -V",
+            "cwd": ".", "project": str(tmp_path), "attached_project": str(tmp_path),
+            "intent": "chat", "provider": "local", "continue_after": False,
+            "max_turns": 1, "call_id": "", "window_ref": None,
+            "command_preview": "python -V", "command_sha256": "".join("0" for _ in range(64)),
+            "command_chars": 10, "command_truncated": False,
+        })
+        state.request_stop()
+    finally:
+        state.close()
+    restarted = AppContext(tmp_path)
+    try:
+        assert restarted.claim_pending_shell_approval("stale") is None
+        assert restarted.shell_approval_records.latest("stale").kind == "abandoned"
+    finally:
+        restarted.close()
+
+
+def test_denial_claim_is_a_durable_verdict_against_later_allow(tmp_path) -> None:
+    state = AppContext(tmp_path)
+    try:
+        _durable_requested_approval(state, approval_id="decision-race", source_run_id="source-run")
+        denied = state.claim_pending_shell_approval("decision-race", claim_execution=False)
+        assert denied is not None
+        assert state.claim_pending_shell_approval("decision-race") is None
+        assert state.shell_approval_records.latest("decision-race").kind == "denied"
+    finally:
+        state.close()

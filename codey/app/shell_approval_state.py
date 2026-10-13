@@ -24,6 +24,25 @@ def _claim_execution_fact(ctx: Any, pending: dict[str, Any], approval_id: str) -
     )))
 
 
+def _claim_decision_fact(ctx: Any, pending: dict[str, Any], approval_id: str, kind: str) -> bool:
+    records = getattr(ctx, "shell_approval_records", None)
+    claim = getattr(records, "claim_decision", None)
+    if not callable(claim):
+        return False
+    from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+
+    return bool(claim(ShellApprovalFact(
+        approval_id=approval_id,
+        session_id=str(pending.get("session_id") or ""),
+        source_run_id=str(pending.get("run_id") or ""),
+        kind=kind,
+        invocation_origin="native" if pending.get("call_id") else "text",
+        command_ref=str(pending.get("command_ref") or ""),
+        command_digest=str(pending.get("command_digest") or ""),
+        cwd=str(pending.get("cwd") or "."),
+    )))
+
+
 def _source_api_selection(ctx: Any, session_id: str, source_run_id: str) -> Any:
     runtime_log = getattr(ctx, "runtime_log", None)
     if runtime_log is None:
@@ -48,7 +67,7 @@ def claim_pending_shell_approval_locked(
         if isinstance(pending, dict):
             claimed = {str(key): value for key, value in pending.items()}
             if not claim_execution:
-                return claimed
+                return claimed if _claim_decision_fact(ctx, claimed, approval_id, "denied") else None
             return claimed if _claim_execution_fact(ctx, claimed, approval_id) else None
         return None
     # Rebuild only an untouched request from durable facts after an
@@ -69,11 +88,18 @@ def claim_pending_shell_approval_locked(
         return None
     if not isinstance(payload, dict) or not isinstance(payload.get("command"), str):
         return None
+    from codey.agents.shell_approval import shell_command_payload
+
+    command_fields = shell_command_payload(payload["command"])
     pending = {
             "approval_id": approval_id,
             "session_id": fact.session_id,
             "run_id": fact.source_run_id,
             "command": payload["command"],
+            "command_preview": command_fields["command"],
+            "command_sha256": command_fields["command_sha256"],
+            "command_chars": command_fields["command_chars"],
+            "command_truncated": command_fields["command_truncated"],
             "cwd": str(payload.get("cwd") or "."),
             "project": str(payload.get("project") or ""),
             "attached_project": str(payload.get("attached_project") or payload.get("project") or ""),
@@ -90,7 +116,9 @@ def claim_pending_shell_approval_locked(
     source_selection = _source_api_selection(ctx, fact.session_id, fact.source_run_id)
     if source_selection is not None:
         pending["_api_selection"] = source_selection
-    return pending if not claim_execution or _claim_execution_fact(ctx, pending, approval_id) else None
+    if not claim_execution:
+        return pending if _claim_decision_fact(ctx, pending, approval_id, "denied") else None
+    return pending if _claim_execution_fact(ctx, pending, approval_id) else None
 
 
 

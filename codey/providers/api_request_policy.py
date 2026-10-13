@@ -89,7 +89,7 @@ class RequestPolicy(Protocol):
     def acquire(self, pending: PendingRequest, context: RequestContext) -> RequestLease: ...
     def observe_failure(self, context: RequestContext, receipt: object, failure: BaseException,
                         budget: AttemptBudget) -> RetryDirective: ...
-    def settle(self, context: RequestContext, receipt: object) -> None: ...
+    def settle(self, context: RequestContext, receipt: object, *, successful: bool = False) -> None: ...
 
 
 def wait_until(when: float, context: RequestContext, *, interval: float = 0.05) -> None:
@@ -122,5 +122,5 @@ class LocalRequestPolicy:
             return RetryDirective(True, reason="pre_submission_tls_eof")
         return RetryDirective(False, reason=str(failure))
 
-    def settle(self, context: RequestContext, receipt: object) -> None:
+    def settle(self, context: RequestContext, receipt: object, *, successful: bool = False) -> None:
         return None
