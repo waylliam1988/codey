@@ -7,7 +7,7 @@
 - 为可独立移除的 Local 和 OpenCode Zen 增加连接器自有预检、按连接缓存、single-flight、连接版本校验和 SSE 快照；`/api/providers`、`/api/api_models` 与 `/api/local_provider` 复用同一份结果。
 - 探测进行时接口立即返回，浏览器标签页探测不再阻塞 provider 接口；Zen 使用缓存目录但刷新失败时显示为 `ready + stale`，不会再被红点误报为断线。
 - 统一 session/protocol ledger 两个工厂入口的 session-scoped identity，并用确定性回归测试锁定 mismatch 问题。
-- 新增冷启动、Local/Zen 适配器、stale 缓存、generation 丢弃、移除 Zen 和 UI 状态回归；最终全量 pytest：**8539 passed、7 skipped、1510 subtests，976.70s**；machine contract **1102 passed、14 subtests**，Ruff、mypy、Pyrefly 全部通过。
+- 新增冷启动、Local/Zen 适配器、stale 缓存、generation 丢弃、移除 Zen 和 UI 状态回归；最终全量 pytest：**8540 passed、7 skipped、1510 subtests，998.05s**；machine contract **1102 passed、14 subtests**，Ruff、mypy、Pyrefly 全部通过。
 
 ## 未发布 - API 传输与协议窗口生命周期完整 TDD（2026-10-13）
 

@@ -7,7 +7,7 @@
 - Add removable connector-owned Local and OpenCode Zen preflight probes with shared per-connection caching, single-flight execution, revision checks and SSE snapshots. `/api/providers`, `/api/api_models` and `/api/local_provider` now reuse the same result.
 - Return immediately while browser-tab, Local or Zen probes are checking; browser warmup no longer blocks the provider endpoint. Cached Zen catalogs remain `ready` with `stale` freshness instead of appearing disconnected.
 - Preserve the session-scoped protocol ledger identity across both ledger factory paths and cover the mismatch regression with a deterministic test.
-- Add cold-start, adapter, stale-cache, generation-discard, removable-Zen and UI state regressions. Final full pytest: **8539 passed, 7 skipped, 1510 subtests in 976.70s**; machine contract **1102 passed, 14 subtests**, Ruff, mypy and Pyrefly passed.
+- Add cold-start, adapter, stale-cache, generation-discard, removable-Zen and UI state regressions. Final full pytest: **8540 passed, 7 skipped, 1510 subtests in 998.05s**; machine contract **1102 passed, 14 subtests**, Ruff, mypy and Pyrefly passed.
 
 ## Unreleased - Complete API transport and protocol-window TDD (2026-10-13)
 

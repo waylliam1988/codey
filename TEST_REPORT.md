@@ -13,14 +13,14 @@ factories could disagree on the persisted identity.
 
 | Check | Result |
 | --- | --- |
-| Targeted cold-start, UI, ledger and architecture regression | **285 passed, 385 subtests** |
+| Targeted cold-start, UI, ledger and architecture regression | **286 passed, 385 subtests** |
 | Ruff | passed |
 | mypy | **Success: no issues found in 411 source files** |
 | Pyrefly | **0 errors** |
 | compileall | passed |
 | git diff --check | passed |
 | Real Local/Zen smoke | First `/api/providers` response **0.142s**; Local became `ready/fresh`; Zen became `ready/stale`, `available=true` from cached catalog |
-| Final full pytest | **8539 passed, 7 skipped, 1510 subtests passed in 976.70s (16:16)** |
+| Final full pytest | **8540 passed, 7 skipped, 1510 subtests passed in 998.05s (16:38)** |
 
 The seven skips are Windows/POSIX capability differences and the opt-in real
 browser E2E test. No Zen package import is required when its registration is
