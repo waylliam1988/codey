@@ -66,6 +66,26 @@ class ShellApprovalRecordStore:
             existing = self.path.read_bytes() if self.path.exists() else b""
             write_bytes_atomic(self.path, existing + line)
 
+    def claim_execution(self, fact: ShellApprovalFact) -> bool:
+        """Atomically convert one untouched request into an execution claim."""
+        if fact.kind != "execution_claimed":
+            raise ValueError("execution claim must use execution_claimed kind")
+        payload = fact.to_payload()
+        line = (json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with with_file_lock(self.path):
+            existing = self.path.read_bytes() if self.path.exists() else b""
+            latest: ShellApprovalFact | None = None
+            for raw_line in existing.splitlines():
+                if raw_line.strip():
+                    candidate = ShellApprovalFact.from_payload(json.loads(raw_line))
+                    if candidate.approval_id == fact.approval_id:
+                        latest = candidate
+            if latest is None or latest.kind != "requested":
+                return False
+            write_bytes_atomic(self.path, existing + line)
+            return True
+
     def read(self, approval_id: str) -> tuple[ShellApprovalFact, ...]:
         if not self.path.exists():
             return ()

@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Make shell approval ticket claims a durable atomic transition so concurrent approval requests can mint only one `execution_claimed` fact, and restore the source run's frozen model selection after cold start.
+- Make `ResumeRun` recover pending effects from its declared `source_run_id` while preserving the source authorization and model window; add concurrency, cold-start and source-run regression coverage.
 - Fix API stream tool-call identities, submission deadlines and shell approval continuation/results. Keep Zen's Node fetch adapter in the optional connector package.
 - Remove the duplicate composer approval notice and give model menus a stable width. Preserve shell status, signed exits, command preview integrity and tool status across UI restores.
 - Add full-production statement/branch coverage, including Python subprocesses, with 85% / 75% CI minima and uploaded reports. Require unimported modules in the denominator.

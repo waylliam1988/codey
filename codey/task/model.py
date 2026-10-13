@@ -120,6 +120,7 @@ class TaskSubmission:
             project_changes_required=project_changes_required,
             sources_open_required=sources_open_required,
             denied_capabilities=denied_capabilities,
+            previous_run_id=input.source_run_id if isinstance(input, ResumeRun) else "",
             review_source_run_id=review_source_run_id,
             model_selection=dict(model_selection or {}),
             input=input,

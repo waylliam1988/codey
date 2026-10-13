@@ -750,7 +750,7 @@ def shell_approval_response(
     if approved_raw is not True and approved_raw is not False:
         return 400, {"error": "approved must be a boolean"}
     if approved_raw is False:
-        pending = ctx.claim_pending_shell_approval(approval_id)
+        pending = ctx.claim_pending_shell_approval(approval_id, claim_execution=False)
         if not pending:
             return 404, {"error": "approval not found"}
         pending.pop("_approval_generation", None)
@@ -820,7 +820,6 @@ def shell_approval_response(
         return _stopped_shell_denial(ctx, pending, approval_id, session_id)
 
     _record_shell_fact(ctx, pending, approval_id, "approved")
-    _record_shell_fact(ctx, pending, approval_id, "execution_claimed")
     result = shell_service.execute_shell_ticket(ctx, ticket)
     if result.get("status") == "stopped" or result.get("stopped"):
         return _stopped_shell_denial(ctx, pending, approval_id, session_id)

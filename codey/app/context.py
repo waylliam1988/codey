@@ -557,20 +557,41 @@ class AppContext:
             config = self.run_registry.api_selection_for(str(pending.get("run_id") or ""))
             if config is not None and pending.get("provider") == config.connection_id:
                 pending = {**pending, "_api_selection": config}
+            session_id = str(pending.get("session_id") or "")
+            source_run_id = str(pending.get("run_id") or "")
+            if (
+                session_id
+                and source_run_id
+                and self.shell_approval_records.latest(approval_id) is None
+            ):
+                self.shell_approval_records.append(ShellApprovalFact(
+                    approval_id=approval_id,
+                    session_id=session_id,
+                    source_run_id=source_run_id,
+                    kind="requested",
+                    invocation_origin="native" if pending.get("call_id") else "text",
+                    command_ref=str(pending.get("command_ref") or ""),
+                    command_digest=str(pending.get("command_digest") or ""),
+                    cwd=str(pending.get("cwd") or "."),
+                ))
             self.approvals.add_shell(approval_id, pending)
 
     def record_shell_approval_fact(self, fact: ShellApprovalFact) -> None:
         """Append the durable approval fact before publishing its projection."""
         self.shell_approval_records.append(fact)
 
-    def _claim_pending_shell_approval_locked(self, approval_id: str) -> dict[str, Any] | None:
+    def _claim_pending_shell_approval_locked(
+        self, approval_id: str, *, claim_execution: bool = True,
+    ) -> dict[str, Any] | None:
         from codey.app.shell_approval_state import claim_pending_shell_approval_locked
 
-        return claim_pending_shell_approval_locked(self, approval_id)
+        return claim_pending_shell_approval_locked(self, approval_id, claim_execution=claim_execution)
 
-    def claim_pending_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
+    def claim_pending_shell_approval(
+        self, approval_id: str, *, claim_execution: bool = True,
+    ) -> dict[str, Any] | None:
         with self.lock:
-            return self._claim_pending_shell_approval_locked(approval_id)
+            return self._claim_pending_shell_approval_locked(approval_id, claim_execution=claim_execution)
 
     def resolve_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
         from codey.app.shell_approval_state import resolve_shell_approval

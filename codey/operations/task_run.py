@@ -494,10 +494,11 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
         if original_kind not in {"chat", "project", "research", "hybrid", "planning", "planning_readonly", "readonly", "review"}:
             return None, _fail_early_run(deps, setup, "ERROR: Unknown recovered task kind.", current_work=work)
         setup.task_kind = original_kind
+    recovery_run_id = setup.request.previous_run_id or setup.run_id
     recovery = recover_effects_for_resume(
         deps,
         session_id=setup.session_id,
-        run_id=setup.run_id,
+        run_id=recovery_run_id,
         project=setup.project or "",
         task_kind=setup.task_kind,
         ignored_paths=tuple(setup.project_config_result.config.ignored_paths),

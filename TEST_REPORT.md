@@ -6,16 +6,17 @@ This file records the current verification state, not an append-only experiment 
 
 | Check | Result |
 | --- | --- |
-| Final complete pytest | **8574 passed, 7 skipped, 1510 subtests; 995.82s** |
-| Final required machine contracts | **1125 passed, 14 subtests; no skips; 289.44s** |
+| Final complete pytest | **8579 passed, 7 skipped, 1510 subtests; 966.97s** |
+| Final required machine contracts | Not rerun in this change (prior baseline: **1125 passed, 14 subtests; no skips**) |
 | Production statement coverage | **88.54%** (55,370 / 62,536); CI minimum **85%** |
 | Production branch coverage | **78.23%** (17,332 / 22,154); CI minimum **75%** |
 | Coverage scope | All **413** production Python files; Python subprocesses included |
 | Full-tree mypy / Pyrefly | **413 source files, 0 errors / 0 errors** |
-| Ruff / JavaScript syntax / wheel assets / diff check | passed |
+| Ruff / diff check | passed |
+| JavaScript syntax / wheel assets | Not rerun in this change |
 | Documentation pre-commit architecture/CI/coverage checks | **117 passed, 383 subtests** |
 
-The first measured suite had two outdated UI tests (an old Failed label assertion and a Node window stub missing resize listeners). Only tests were repaired; final complete pytest and machine contracts above are green. The coverage data measures the same production source. Coverage HTML/JSON/XML and full logs remain under ignored `.e2e-artifacts/` and are uploaded by CI.
+The first validation run exposed two failures in legacy UI-only approval fixtures after durable identity was enforced. The fix now writes a requested fact only when session and source-run identities exist; the UI-only projection remains non-executable. The second complete pytest run is green. The coverage and machine-contract figures shown above are prior measured baselines; they were not rerun in this change.
 
 Live Zen matrix: **36/42** initial cases passed; four of six failed cases passed on retest. Two Ling thinking-enabled cases remain unresolved. The free-model matrix is not all green. Local validation does not claim a new GitHub CI run or a release.
 

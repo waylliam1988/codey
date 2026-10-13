@@ -5,11 +5,51 @@ from __future__ import annotations
 from typing import Any
 
 
-def claim_pending_shell_approval_locked(ctx: Any, approval_id: str) -> dict[str, Any] | None:
+def _claim_execution_fact(ctx: Any, pending: dict[str, Any], approval_id: str) -> bool:
+    records = getattr(ctx, "shell_approval_records", None)
+    claim = getattr(records, "claim_execution", None)
+    if not callable(claim):
+        return False
+    from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+
+    return bool(claim(ShellApprovalFact(
+        approval_id=approval_id,
+        session_id=str(pending.get("session_id") or ""),
+        source_run_id=str(pending.get("run_id") or ""),
+        kind="execution_claimed",
+        invocation_origin="native" if pending.get("call_id") else "text",
+        command_ref=str(pending.get("command_ref") or ""),
+        command_digest=str(pending.get("command_digest") or ""),
+        cwd=str(pending.get("cwd") or "."),
+    )))
+
+
+def _source_api_selection(ctx: Any, session_id: str, source_run_id: str) -> Any:
+    runtime_log = getattr(ctx, "runtime_log", None)
+    if runtime_log is None:
+        return None
+    try:
+        from codey.runtime.core.api_selection import ApiRunSelection
+        from codey.runtime.core.operation_state import RuntimeOperationStore
+
+        operation = RuntimeOperationStore(runtime_log).load(session_id, source_run_id)
+        if operation is None or not operation.model_selection:
+            return None
+        return ApiRunSelection.from_payload(operation.model_selection)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
+def claim_pending_shell_approval_locked(
+    ctx: Any, approval_id: str, *, claim_execution: bool = True,
+) -> dict[str, Any] | None:
     pending = ctx.approvals.pop_shell(approval_id)
     if pending is not None:
         if isinstance(pending, dict):
-            return {str(key): value for key, value in pending.items()}
+            claimed = {str(key): value for key, value in pending.items()}
+            if not claim_execution:
+                return claimed
+            return claimed if _claim_execution_fact(ctx, claimed, approval_id) else None
         return None
     # Rebuild only an untouched request from durable facts after an
     # application restart. Any later fact is terminal or execution
@@ -29,7 +69,7 @@ def claim_pending_shell_approval_locked(ctx: Any, approval_id: str) -> dict[str,
         return None
     if not isinstance(payload, dict) or not isinstance(payload.get("command"), str):
         return None
-    return {
+    pending = {
             "approval_id": approval_id,
             "session_id": fact.session_id,
             "run_id": fact.source_run_id,
@@ -47,6 +87,10 @@ def claim_pending_shell_approval_locked(ctx: Any, approval_id: str) -> dict[str,
             "command_digest": fact.command_digest,
             "_approval_generation": ctx.approvals.current_generation(),
         }
+    source_selection = _source_api_selection(ctx, fact.session_id, fact.source_run_id)
+    if source_selection is not None:
+        pending["_api_selection"] = source_selection
+    return pending if not claim_execution or _claim_execution_fact(ctx, pending, approval_id) else None
 
 
 
