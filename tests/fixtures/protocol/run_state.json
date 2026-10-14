@@ -1,0 +1,17 @@
+{
+  "busy": true,
+  "run_id": "run-state-1",
+  "session_id": "session-fixture-1",
+  "run_status": "awaiting_approval",
+  "research_restore_runs": ["run-research-pure-1"],
+  "pending_event": {
+    "type": "shell_request",
+    "run_id": "run-approval-1",
+    "session_id": "session-fixture-1",
+    "id": "approval-1",
+    "command": "pytest -q tests/test_protocol_fixtures.py",
+    "cwd": "E:/codey"
+  },
+  "last_shell_result": null,
+  "last_terminal_event": null
+}

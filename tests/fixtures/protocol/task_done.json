@@ -1,0 +1,19 @@
+{
+  "type": "task_done",
+  "run_id": "run-task-done-1",
+  "session_id": "session-fixture-1",
+  "summary": "Implemented the requested change and verified it.",
+  "stop_reason": "done",
+  "turns": 3,
+  "max_turns": 12,
+  "provider": "qwen",
+  "mode": "project",
+  "changed": true,
+  "final_delivery": "success",
+  "receipt": {
+    "display": {
+      "summary": "1 file changed · checks passed",
+      "detail": "Updated src/example.py"
+    }
+  }
+}

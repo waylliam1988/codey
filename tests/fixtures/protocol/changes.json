@@ -1,0 +1,30 @@
+{
+  "list": {
+    "ok": true,
+    "mode": "git",
+    "changed_count": 2,
+    "project": "E:/codey",
+    "diff": "diff --git a/src/example.py b/src/example.py\n@@ -1 +1 @@\n-old\n+new\n",
+    "truncated": false,
+    "files": [
+      {"path": "src/example.py", "status": "M", "additions": 1, "deletions": 1, "preview_status": "text"},
+      {"path": "assets/logo.png", "status": "A", "additions": 0, "deletions": 0, "preview_status": "binary"}
+    ]
+  },
+  "truncated": {
+    "ok": true,
+    "mode": "working_tree",
+    "changed_count": 3,
+    "project": "E:/codey",
+    "diff": "",
+    "truncated": true,
+    "files": []
+  },
+  "file_preview": {
+    "ok": true,
+    "path": "bundle.js",
+    "status": "too_large",
+    "size": 184324,
+    "truncated": true
+  }
+}

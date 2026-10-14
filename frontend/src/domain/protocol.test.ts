@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   decodeChangeFilePreview,
@@ -9,7 +12,55 @@ import {
   decodeServerEvent,
 } from './protocol';
 
+const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../tests/fixtures/protocol');
+const fixture = <T>(name: string): T => JSON.parse(readFileSync(resolve(fixtureRoot, name), 'utf8')) as T;
+
 describe('protocol decoders', () => {
+  it('decodes the shared task and research event fixtures without dropping fields', () => {
+    const taskDone = fixture<Record<string, any>>('task_done.json');
+    const research = fixture<Record<string, Record<string, any>>>('research.json');
+    expect(decodeServerEvent(taskDone)).toMatchObject({
+      type: 'task_done',
+      summary: taskDone.summary,
+      receipt: taskDone.receipt,
+      final_delivery: 'success',
+    });
+    for (const mode of ['pure', 'hybrid'] as const) {
+      const event = decodeServerEvent(research[mode]);
+      expect(event).toMatchObject({ type: 'task_done', mode: research[mode].mode, research: research[mode].research });
+    }
+  });
+
+  it('decodes the shared approval, shell result, and run state fixtures', () => {
+    const approval = fixture<Record<string, any>>('approval.json');
+    const shellResult = fixture<Record<string, any>>('shell_result.json');
+    const runState = fixture<Record<string, any>>('run_state.json');
+    expect(decodeServerEvent(approval)).toMatchObject({
+      type: 'shell_request',
+      id: 'approval-1',
+      command: approval.command,
+    });
+    expect(decodeServerEvent(shellResult)).toMatchObject({ type: 'shell_result', approved: true, exit_code: 0 });
+    expect(decodeRunState(runState)).toMatchObject({
+      busy: true,
+      run_id: runState.run_id,
+      run_status: 'awaiting_approval',
+      research_restore_runs: ['run-research-pure-1'],
+      pending_event: { type: 'shell_request', id: 'approval-1' },
+    });
+  });
+
+  it('decodes the shared list, truncated, and file preview changes fixtures', () => {
+    const changes = fixture<Record<string, any>>('changes.json');
+    expect(decodeChangesData(changes.list)).toMatchObject({
+      mode: 'git',
+      changed_count: 2,
+      files: changes.list.files,
+    });
+    expect(decodeChangesData(changes.truncated)).toMatchObject({ truncated: true, changed_count: 3 });
+    expect(decodeChangeFilePreview(changes.file_preview)).toEqual(changes.file_preview);
+  });
+
   it('normalizes a dynamic provider catalog without hardcoded providers', () => {
     expect(
       decodeProviderCatalog({

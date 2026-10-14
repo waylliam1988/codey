@@ -1,0 +1,53 @@
+{
+  "pure": {
+    "type": "task_done",
+    "run_id": "run-research-pure-1",
+    "session_id": "session-fixture-1",
+    "summary": "Research synthesis complete.",
+    "stop_reason": "done",
+    "turns": 2,
+    "max_turns": 8,
+    "provider": "qwen",
+    "mode": "research",
+    "research": {
+      "restoreable": true,
+      "synthesis_id": "synthesis-1",
+      "sources_read": 2,
+      "notes_created": ["note-1"],
+      "notes_updated": [],
+      "source_urls": ["https://example.com/source"],
+      "queries": ["protocol fixtures"],
+      "counterpoints": ["A small counterpoint"],
+      "quality_warnings": [],
+      "search_results": [{"title": "Source", "url": "https://example.com/source"}],
+      "opened_sources": [{"url": "https://example.com/source", "status": "ok"}],
+      "coverage": {"sources": 2, "claims": 3}
+    }
+  },
+  "hybrid": {
+    "type": "task_done",
+    "run_id": "run-research-hybrid-1",
+    "session_id": "session-fixture-1",
+    "summary": "Research and implementation complete.",
+    "stop_reason": "done",
+    "turns": 4,
+    "max_turns": 12,
+    "provider": "qwen",
+    "mode": "hybrid",
+    "changed": true,
+    "research": {
+      "restoreable": false,
+      "synthesis_id": "synthesis-2",
+      "sources_read": 1,
+      "notes_created": [],
+      "notes_updated": ["note-2"],
+      "source_urls": ["https://example.com/hybrid"],
+      "queries": ["hybrid research"],
+      "counterpoints": [],
+      "quality_warnings": ["One source was rate limited"],
+      "search_results": [],
+      "opened_sources": [{"url": "https://example.com/hybrid", "status": "ok"}],
+      "coverage": {"sources": 1, "claims": 1}
+    }
+  }
+}

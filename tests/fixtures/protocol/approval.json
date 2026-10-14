@@ -1,0 +1,12 @@
+{
+  "type": "shell_request",
+  "run_id": "run-approval-1",
+  "session_id": "session-fixture-1",
+  "id": "approval-1",
+  "command": "pytest -q tests/test_protocol_fixtures.py",
+  "command_sha256": "687e2628dd8b9183b39dec6a4ad1bcd742b172529cb84ec6c03cd988d8c60066",
+  "command_chars": 41,
+  "command_truncated": false,
+  "cwd": "E:/codey",
+  "deferred_tool_count": 0
+}
