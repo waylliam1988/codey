@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { Message, UiDeps } from './types/domain';
 interface MessagesDeps extends UiDeps {
   statusRow(prefix: string, text: string, options?: Record<string, unknown>): HTMLElement;
@@ -28,7 +29,7 @@ export interface MessagesApi {
     deps = nextDeps;
   }
   function append(chat: HTMLElement, m: Message): void {
-    if (!window.Process.append(chat, m, appendContent)) appendContent(chat, m);
+    if (!runtime.Process.append(chat, m, appendContent)) appendContent(chat, m);
   }
   function appendContent(chat: HTMLElement, m: Message): void {
     const {
@@ -49,7 +50,7 @@ export interface MessagesApi {
       standaloneToolEl,
       appendOrFoldTool,
       escapeHtml,
-    } = window.Render;
+    } = runtime.Render;
 
     if (m.type === 'user') {
       const div = document.createElement('div');
@@ -61,7 +62,7 @@ export interface MessagesApi {
       addMessageCopyButton(div, messageCopyText(m));
       chat.appendChild(div);
     } else if (m.type === 'request_status') {
-      window.Requests.appendStatus(chat, m);
+      runtime.Requests.appendStatus(chat, m);
     } else if (m.type === 'turn') {
       const div = document.createElement('div');
       div.className = 'turn-divider';
@@ -85,7 +86,7 @@ export interface MessagesApi {
       div.appendChild(body);
       const toggle = document.createElement('button');
       toggle.className = 'toggle';
-      const ctl = window.Render.renderAssistantBody(body, m.text || '', toggle);
+      const ctl = runtime.Render.renderAssistantBody(body, m.text || '', toggle);
       if (ctl.long) {
         toggle.textContent = 'Collapse';
         toggle.onclick = () => {
@@ -108,8 +109,8 @@ export interface MessagesApi {
     } else if (m.type === 'tool_pending') {
       chat.appendChild(standaloneToolEl(m));
     } else if (m.type === 'research_done') {
-      const actions = window.RunDetails.actionsForMessage(m, [
-        { label: 'Open', onclick: () => window.ResearchDrawer.open(m.sessionId || activeId) },
+      const actions = runtime.RunDetails.actionsForMessage(m, [
+        { label: 'Open', onclick: () => runtime.ResearchDrawer.open(m.sessionId || activeId) },
         { label: 'Use in Project', onclick: () => attachCurrentChatToPickedProject() },
       ]);
       chat.appendChild(
@@ -131,7 +132,7 @@ export interface MessagesApi {
       chat.appendChild(
         statusRow('Done', text, {
           kind: 'done',
-          actions: window.RunDetails.actionsForMessage(m, action ? [action] : []),
+          actions: runtime.RunDetails.actionsForMessage(m, action ? [action] : []),
           copyText: text,
         }),
       );
@@ -228,14 +229,14 @@ export interface MessagesApi {
       const out = document.createElement('div');
       out.className = 'shell-output';
       const exit = m.exitCode === null || m.exitCode === undefined ? '' : `exit ${m.exitCode}\n`;
-      const verb = window.Render.shellStatusVerb(m.shellStatus || '', !!m.approved);
+      const verb = runtime.Render.shellStatusVerb(m.shellStatus || '', !!m.approved);
       out.textContent = `${verb}\n$ ${m.command || ''}\n${exit}${m.output || ''}`;
       div.appendChild(out);
       chat.appendChild(div);
     } else if (m.type === 'limit') {
       chat.appendChild(
         statusRow('Limit', m.text || 'Turn limit reached', {
-          actions: window.RunDetails.actionsForMessage(m, [
+          actions: runtime.RunDetails.actionsForMessage(m, [
             { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
           ]),
         }),
@@ -243,7 +244,7 @@ export interface MessagesApi {
     } else if (m.type === 'pause') {
       chat.appendChild(
         statusRow('Paused', m.text || 'No progress for several turns', {
-          actions: window.RunDetails.actionsForMessage(m, [
+          actions: runtime.RunDetails.actionsForMessage(m, [
             { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
           ]),
         }),
@@ -262,7 +263,7 @@ export interface MessagesApi {
       chat.appendChild(
         statusRow('Error', m.text || '', {
           err: true,
-          actions: window.RunDetails.actionsForMessage(m, window.Composer.recoveryActions(m)),
+          actions: runtime.RunDetails.actionsForMessage(m, runtime.Composer.recoveryActions(m)),
         }),
       );
     } else if (m.type === 'info') {
@@ -273,5 +274,5 @@ export interface MessagesApi {
     }
   }
 
-  window.Messages = { init, append };
+  runtime.Messages = { init, append };
 })();

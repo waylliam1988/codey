@@ -152,7 +152,7 @@ def test_copy_remains_visible_and_tappable_without_hover(ui_browser, kind):
     browser, url = ui_browser
     touch = browser.new_page(has_touch=True, is_mobile=True, viewport={"width": 480, "height": 800})
     try:
-        touch.add_init_script("window.EventSource = class { static OPEN = 1; readyState = 1; close() {} };")
+        touch.add_init_script("window.__TEST_BRIDGE__ = true; window.EventSource = class { static OPEN = 1; readyState = 1; close() {} };")
         state = {"active_id": "a", "projects": [], "sessions": [{"id": "a", "title": "Touch", "provider": "deepseek", "messages": []}]}
 
         def api(route):

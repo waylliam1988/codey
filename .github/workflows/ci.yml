@@ -32,12 +32,17 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Frontend checks and production build
+      - name: Install frontend dependencies
         working-directory: frontend
-        run: |
-          npm ci
-          npm run check
-          npm run build
+        run: npm ci
+
+      - name: Frontend check
+        working-directory: frontend
+        run: npm run check
+
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
 
       - name: Verify published frontend
         run: python -m tools.publish_frontend --check
@@ -125,12 +130,17 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Frontend checks and production build
+      - name: Install frontend dependencies
         working-directory: frontend
-        run: |
-          npm ci
-          npm run check
-          npm run build
+        run: npm ci
+
+      - name: Frontend check
+        working-directory: frontend
+        run: npm run check
+
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
 
       - name: Verify published frontend
         run: python -m tools.publish_frontend --check

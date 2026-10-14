@@ -2,23 +2,23 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
-## Current working tree (2026-10-14)
+## Current working tree (2026-10-15)
 
 | Check | Result |
 | --- | --- |
-| Final complete pytest | **8584 passed, 33 skipped, 1520 subtests; 969.87s** |
+| Final complete pytest | **8590 passed, 7 skipped, 1520 subtests; 1068.65s** |
 | Final required machine contracts | Not rerun in this change (prior baseline: **1125 passed, 14 subtests; no skips**) |
 | Production statement coverage | **88.54%** (55,370 / 62,536); CI minimum **85%** |
 | Production branch coverage | **78.23%** (17,332 / 22,154); CI minimum **75%** |
 | Coverage scope | All **413** production Python files; Python subprocesses included |
 | Full-tree mypy / Pyrefly | **417 source files, 0 errors / 0 errors** |
 | Ruff / diff check | passed |
-| TypeScript / Biome / Vitest | **30 tests passed; build passed** |
+| TypeScript / Biome / Vitest | **35 tests passed; build passed** |
 | Real Edge workflow regressions | **3 passed** (hybrid graph, truncated file preview, focus/reopen) |
 | JavaScript syntax / wheel assets | publish check passed |
 | Documentation pre-commit architecture/CI/coverage checks | passed |
 
-This change adds regression coverage for hybrid research result projection and restore ownership, independent Git file previews after aggregate diff truncation, snapshot/Git preview separation, stale preview protection, and focus-path reopening. The proof review implementation is split into `proof_terms.py`, `proof_coverage.py`, `proof_helpers.py`, and `proof_relations.py` without changing its public contract. Real Edge verification covered the hybrid graph entry and truncated file preview workflows. The final complete run is green.
+This change adds regression coverage for terminal-event validation and replay, expanded preview refreshes, Windows CI failure propagation, source archive protocol fixtures, and executable inline-script rejection. It replaces the obsolete migration skips with behavior-focused checks and keeps the module registry internal to production code; the explicit test bridge remains opt-in for browser fixtures and is absent from the normal page boot. The final complete run is green.
 
 CI follow-up: `python -m tools.publish_frontend --check`, frontend build checks, six frontend publication tests, Ruff, mypy, Pyrefly, and `git diff --check` pass after refreshing the committed build metadata. Coverage artifact upload now warns when no coverage files exist, while the coverage gate remains responsible for failing an incomplete coverage run.
 

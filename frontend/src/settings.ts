@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 export interface SettingsModuleDeps {
   $(id: string): HTMLElement;
   applyLocalMetadata(local: Record<string, unknown>): void;
@@ -131,7 +132,7 @@ export interface SettingsModuleDeps {
 
   function init(next: SettingsDeps): void {
     deps = next;
-    window.ModelSettings.init({ close });
+    runtime.ModelSettings.init({ close });
     $('local-connection-editor').ontoggle = () => {
       if ($('local-connection-editor').open && baseline === null) loadConnection();
     };
@@ -209,7 +210,7 @@ export interface SettingsModuleDeps {
     dialog.showModal();
     $('settings-dismiss').focus();
     $('local-connection-editor').open = false;
-    await window.ModelSettings.open();
+    await runtime.ModelSettings.open();
   }
 
   async function loadConnection() {
@@ -311,7 +312,7 @@ export interface SettingsModuleDeps {
     if (!dialog.open) return;
     generation++;
     loading = false;
-    window.ModelSettings.close();
+    runtime.ModelSettings.close();
     dialog.close();
     closeSelects();
     if (returnFocus?.isConnected && !returnFocus.closest('[inert]')) returnFocus.focus();
@@ -391,5 +392,5 @@ export interface SettingsModuleDeps {
     }
   }
 
-  window.Settings = { init, open, close, save };
+  runtime.Settings = { init, open, close, save };
 })();

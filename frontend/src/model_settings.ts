@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { ModelChoice, ModelSource, ModelState, ModelUse } from './types/domain';
 export interface ModelSettingsDeps {
   close(): void;
@@ -207,7 +208,7 @@ export interface ModelSettingsDeps {
           const data = await response.json();
           if (request !== generation) return;
           if (!response.ok) throw new Error(data.error || 'Could not refresh models');
-          window.Models.observeCatalog(data.source);
+          runtime.Models.observeCatalog(data.source);
           Object.assign(source, data.source);
           syncModelRows();
           sync();
@@ -269,10 +270,10 @@ export interface ModelSettingsDeps {
     $('model-settings-loading').hidden = false;
     $('model-source-list').hidden = true;
     try {
-      const loaded = await window.Models.load();
+      const loaded = await runtime.Models.load();
       if (request !== generation) return;
       draft = loaded;
-      baseline = preferenceKey(draft.preferences.sources);
+      baseline = preferenceKey(draft?.preferences.sources ?? {});
       render();
       $('model-source-list').hidden = false;
       updateSaveState();
@@ -305,7 +306,7 @@ export interface ModelSettingsDeps {
       const data = await response.json();
       if (request !== generation) return;
       if (!response.ok) throw new Error(data.error || 'Could not save models');
-      window.Models.applySettings(data);
+      runtime.Models.applySettings(data);
       deps.close();
     } catch (exception) {
       if (request === generation) error(exception instanceof Error ? exception.message : String(exception));
@@ -317,5 +318,5 @@ export interface ModelSettingsDeps {
       }
     }
   }
-  window.ModelSettings = { init, open, close };
+  runtime.ModelSettings = { init, open, close };
 })();

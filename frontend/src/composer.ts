@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { Draft, Message, Project, Session } from './types/domain';
 import type { RunDetailsAction } from './run_details';
 
@@ -51,7 +52,7 @@ export interface ComposerApi {
   let sendingSessionId = '';
 
   function liveDefaultProvider() {
-    return window.UiState.DEFAULT_PROVIDER;
+    return runtime.UiState.DEFAULT_PROVIDER;
   }
 
   function $<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -118,21 +119,21 @@ export interface ComposerApi {
   function updateSend() {
     if (!deps) return;
     const has = $<HTMLTextAreaElement>('task').value.trim();
-    const selection = window.ProviderUI.runSelection(deps.activeSession(), currentProviderId()).model_selection;
-    const reason = window.Models.reason(currentProviderId(), selection?.model);
+    const selection = runtime.ProviderUI.runSelection(deps.activeSession(), currentProviderId()).model_selection;
+    const reason = runtime.Models.reason(currentProviderId(), selection?.model);
     const notice = $('model-notice');
     notice.hidden = !reason;
     notice.replaceChildren();
     if (reason) {
       notice.append(
-        window.Models.hasAny()
+        runtime.Models.hasAny()
           ? 'This model is ' + reason.toLowerCase() + '. Choose another model or enable it in '
           : 'No models enabled. Choose models in ',
       );
       const action = document.createElement('button');
       action.className = 'link-btn';
       action.textContent = 'Settings';
-      action.onclick = () => window.Settings.open();
+      action.onclick = () => runtime.Settings.open();
       notice.appendChild(action);
     }
     const running = !!runningSessionId();
@@ -151,8 +152,8 @@ export interface ComposerApi {
     providerButton.disabled = task.disabled || running || !!sendingSessionId;
     const effortButton = document.getElementById('effort-button');
     if (effortButton instanceof HTMLButtonElement) effortButton.disabled = providerButton.disabled;
-    if (window.ConversationUI) window.ConversationUI.updateNotice();
-    window.Requests.refreshActions();
+    if (runtime.ConversationUI) runtime.ConversationUI.updateNotice();
+    runtime.Requests.refreshActions();
   }
 
   function toggleResearchForActive() {
@@ -169,8 +170,8 @@ export interface ComposerApi {
     const provider = PROVIDERS.includes(id) ? id : liveDefaultProvider();
     const s = deps.activeSession();
     if (!s) return;
-    if (window.UiState && typeof window.UiState.setDefaultProvider === 'function') {
-      window.UiState.setDefaultProvider(provider);
+    if (runtime.UiState && typeof runtime.UiState.setDefaultProvider === 'function') {
+      runtime.UiState.setDefaultProvider(provider);
     }
     s.provider = provider;
     deps.persistActiveNow();
@@ -205,7 +206,7 @@ export interface ComposerApi {
       message = 'Codey is temporarily busy';
       sendFailure = 'worker_busy';
     } else if (response.status === 409 && data?.error === 'busy') {
-      await window.Sse.reconcileRunState();
+      await runtime.Sse.reconcileRunState();
       const owner = deps.findSession(runningSessionId());
       runOwner = owner?.id || '';
       message = owner
@@ -216,7 +217,7 @@ export interface ComposerApi {
       sendFailure = 'busy';
     }
     if (runId) {
-      window.Requests.fail(sessionId, runId, message || 'Could not send the message', { sendFailure, runOwner });
+      runtime.Requests.fail(sessionId, runId, message || 'Could not send the message', { sendFailure, runOwner });
       return;
     }
     if (!message) {
@@ -268,12 +269,12 @@ export interface ComposerApi {
     const s = deps.findSession(sessionId);
     if (!s) return false;
     const provider = providerId || s.provider || liveDefaultProvider();
-    if (!window.Models.allows(provider, window.ProviderUI.runSelection(s, provider).model_selection?.model))
+    if (!runtime.Models.allows(provider, runtime.ProviderUI.runSelection(s, provider).model_selection?.model))
       return false;
     sendingSessionId = sessionId;
     updateSend();
     deps.updateComposerContext();
-    const started = window.Requests.begin(sessionId, text, requestId);
+    const started = runtime.Requests.begin(sessionId, text, requestId);
     if (!started) {
       sendingSessionId = '';
       updateSend();
@@ -293,7 +294,7 @@ export interface ComposerApi {
           task: text,
           provider,
           intent,
-          ...window.ProviderUI.runSelection(s, provider),
+          ...runtime.ProviderUI.runSelection(s, provider),
         }),
       });
       if (!r.ok) {
@@ -303,9 +304,9 @@ export interface ComposerApi {
       if (typeof onSendStarted === 'function') onSendStarted();
       await deps.acceptRunResponse(r, sessionId);
     } catch {
-      await window.Sse.reconcileRunState();
-      const attempt = window.Requests.forRun(sessionId, runId)?.attempt;
-      if (attempt?.state === 'sending') window.Requests.fail(sessionId, runId, 'Response was not confirmed');
+      await runtime.Sse.reconcileRunState();
+      const attempt = runtime.Requests.forRun(sessionId, runId)?.attempt;
+      if (attempt?.state === 'sending') runtime.Requests.fail(sessionId, runId, 'Response was not confirmed');
       return false;
     } finally {
       sendingSessionId = '';
@@ -328,7 +329,7 @@ export interface ComposerApi {
 
   function retryTask(sessionId: string, requestId: string) {
     const s = deps.findSession(sessionId);
-    if (!s || !window.Requests.canRetry(sessionId, requestId)) return;
+    if (!s || !runtime.Requests.canRetry(sessionId, requestId)) return;
     const original = s.messages.find((m: Message) => m.type === 'user' && m.id === requestId);
     if (!original || typeof original.text !== 'string') return;
     return sendTaskFromSession(sessionId, original.text, s.provider || '', null, requestId);
@@ -363,9 +364,9 @@ export interface ComposerApi {
     const s = deps.findSession(sessionId);
     if (!s) return;
     if (
-      !window.Models.allows(
+      !runtime.Models.allows(
         s.provider || '',
-        window.ProviderUI.runSelection(s, s.provider || '').model_selection?.model,
+        runtime.ProviderUI.runSelection(s, s.provider || '').model_selection?.model,
       )
     )
       return;
@@ -405,7 +406,7 @@ export interface ComposerApi {
           input: { kind: 'resume_run', source_run_id: sourceRunId },
           provider: s.provider || liveDefaultProvider(),
           intent: 'project',
-          ...window.ProviderUI.runSelection(s, s.provider || liveDefaultProvider()),
+          ...runtime.ProviderUI.runSelection(s, s.provider || liveDefaultProvider()),
         }),
       });
       if (r.status === 409 || !r.ok) {
@@ -462,7 +463,7 @@ export interface ComposerApi {
     $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
   }
 
-  window.Composer = {
+  runtime.Composer = {
     init,
     syncSession,
     captureDraft,

@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 /* Optional reasoning and trusted tool records, grouped by one user request. */
 export interface ProcessSnapshot {
   runId?: string;
@@ -130,7 +131,7 @@ export interface ProcessToolRecord {
     head.addEventListener('click', () => {
       block._process.touched = true;
     });
-    group.addEventListener('toggle', () => window.ConversationUI?.updateLatest());
+    group.addEventListener('toggle', () => runtime.ConversationUI?.updateLatest());
     return block;
   }
   function countLabel(verb: string, set: Set<string>, noun: string): string {
@@ -202,8 +203,8 @@ export interface ProcessToolRecord {
     if (step) head.title = 'Step ' + step;
     const body = document.createElement('div');
     body.className = 'thinking-body';
-    window.Render.renderMarkdown(body, text.trim());
-    window.Render.addMessageCopyButton(body, text.trim());
+    runtime.Render.renderMarkdown(body, text.trim());
+    runtime.Render.addMessageCopyButton(body, text.trim());
     details.append(head, body);
     const processBody = block.querySelector<HTMLElement>('.process-body');
     if (processBody) processBody.append(details);
@@ -217,13 +218,13 @@ export interface ProcessToolRecord {
     const target = block.querySelector<HTMLElement>(m.error ? '.process-alerts' : '.process-body');
     if (!target) return;
     if (existing && existing.parentElement === target && existing !== target.lastElementChild) {
-      existing.replaceWith(window.Render.standaloneToolEl(m));
+      existing.replaceWith(runtime.Render.standaloneToolEl(m));
       summary(block);
       return;
     }
     if (existing) existing.remove();
-    if (m.pending || m.error) target.append(window.Render.standaloneToolEl(m));
-    else window.Render.appendOrFoldTool(target, m);
+    if (m.pending || m.error) target.append(runtime.Render.standaloneToolEl(m));
+    else runtime.Render.appendOrFoldTool(target, m);
     summary(block);
   }
   function state(block: ProcessBlock, value: ProcessStatus, explicit = true): void {
@@ -300,5 +301,5 @@ export interface ProcessToolRecord {
     }
   }
 
-  window.Process = { append, replace, capture, restore };
+  runtime.Process = { append, replace, capture, restore };
 })();

@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { Message, Session } from './types/domain';
 export interface RequestAttempt {
   runId: string;
@@ -94,7 +95,7 @@ export interface RequestsDeps {
     return s && request && attempt ? { s, request, attempt } : null;
   }
   function busy() {
-    return !!deps.getRunningSessionId() || window.Composer.isSending();
+    return !!deps.getRunningSessionId() || runtime.Composer.isSending();
   }
   function canRetry(sessionId: string, requestId: string): boolean {
     const s = session(sessionId),
@@ -102,9 +103,9 @@ export interface RequestsDeps {
     return (
       !!s &&
       !!request &&
-      window.Models.allows(
+      runtime.Models.allows(
         s.provider || '',
-        window.ProviderUI.runSelection(s, s.provider || '').model_selection?.model,
+        runtime.ProviderUI.runSelection(s, s.provider || '').model_selection?.model,
       ) &&
       !busy() &&
       latest(request).state === 'failed' &&
@@ -199,7 +200,7 @@ export interface RequestsDeps {
         if (!pending(attempt)) continue;
         if (data.busy && data.run_id === attempt.runId && data.session_id === s.id) running(s.id, attempt.runId);
         // An in-flight POST has not been admitted yet; an earlier state snapshot cannot settle it.
-        else if (attempt.state !== 'sending' || !window.Composer.isSending())
+        else if (attempt.state !== 'sending' || !runtime.Composer.isSending())
           fail(s.id, attempt.runId, 'Response was not confirmed');
       }
     }
@@ -260,7 +261,7 @@ export interface RequestsDeps {
             event.currentTarget.setAttribute('aria-expanded', String(node._detailsOpen));
         },
       });
-      const recovery = window.Composer.recoveryActions({
+      const recovery = runtime.Composer.recoveryActions({
         type: 'err',
         sessionId,
         runId: attempt.runId,
@@ -270,13 +271,15 @@ export interface RequestsDeps {
       });
       actions.push(
         ...recovery.filter(
-          (item): item is StatusAction => typeof item.label === 'string' && typeof item.onclick === 'function',
+          (item: unknown): item is StatusAction =>
+            typeof (item as Partial<StatusAction>).label === 'string' &&
+            typeof (item as Partial<StatusAction>).onclick === 'function',
         ),
       );
       actions.push({
         label: 'Retry',
         disabled: !canRetry(sessionId, request.id),
-        onclick: () => window.Composer.retryTask(sessionId, request.id),
+        onclick: () => runtime.Composer.retryTask(sessionId, request.id),
       });
     }
     const text = failed
@@ -336,10 +339,10 @@ export interface RequestsDeps {
     }
   }
   function addToSession(sid: string, m: Message): boolean {
-    if (sid === deps.getActiveId()) window.ConversationUI.captureView();
+    if (sid === deps.getActiveId()) runtime.ConversationUI.captureView();
     const s = session(sid);
     if (!s) return false;
-    window.UiState.ensureSessionIndexes(s);
+    runtime.UiState.ensureSessionIndexes(s);
     if (m.eventKey && s._eventKeys?.has(String(m.eventKey))) return false;
     if (['limit', 'pause', 'teach', 'err'].includes(m.type) && !m.sessionId) m.sessionId = sid;
     const match = forRun(sid, m.runId || '');
@@ -348,7 +351,7 @@ export interface RequestsDeps {
       : -1;
     if (match && marker >= 0) s.messages.splice(marker, 0, m);
     else s.messages.push(m);
-    window.UiState.trackSessionMessage(s, m);
+    runtime.UiState.trackSessionMessage(s, m);
     deps.persistActive();
     if (sid === deps.getActiveId()) {
       if (s.messages.length === 1) deps.renderChat();
@@ -364,10 +367,10 @@ export interface RequestsDeps {
       }
     }
     refreshActions();
-    window.ConversationUI.updateNotice();
+    runtime.ConversationUI.updateNotice();
     return true;
   }
-  window.Requests = {
+  runtime.Requests = {
     init,
     begin,
     canRetry,

@@ -70,42 +70,7 @@ def _esbuild_command(root: Path) -> str | None:
 
 
 class ProviderSelectorUiTests(unittest.TestCase):
-    # These checks were written against the pre-TypeScript bundle's exact
-    # pretty-printing. Their behavior assertions now live in the named Vitest
-    # and browser tests; keeping the old methods as skipped migration records
-    # prevents compiler formatting from becoming a product contract.
-    _MIGRATED_TEXT_ASSERTIONS = {
-        "test_assistant_replies_render_minimal_markdown",
-        "test_chat_messages_and_titles_remain_local_persistent",
-        "test_chat_messages_have_quiet_copy_button",
-        "test_chat_state_uses_backend_snapshot_with_local_cache",
-        "test_clear_messages_closes_local_context_drawer",
-        "test_destructive_actions_use_two_step_arm_not_native_confirm",
-        "test_drawer_buttons_never_silent_noop",
-        "test_local_context_drawer_binds_and_closes_on_scope_change",
-        "test_local_context_running_items_do_not_show_reject_action",
-        "test_local_continuity_stays_hidden_and_chat_deletion_cleans_state",
-        "test_new_chat_default_is_live_and_stored_provider_is_preserved",
-        "test_project_completion_separates_answer_from_changed_receipt",
-        "test_provider_config_detects_removal_and_uses_single_source",
-        "test_readonly_tool_lines_fold_into_render_layer_groups",
-        "test_research_context_is_explicit_and_user_facing",
-        "test_retry_uses_current_session_model_picker",
-        "test_run_and_continue_requests_keep_session_provider",
-        "test_run_details_is_quiet_inline_entry_not_new_drawer",
-        "test_send_and_stop_share_one_action_slot",
-        "test_send_failures_render_inline_error",
-        "test_shell_approval_applies_http_result_without_waiting_for_sse",
-        "test_shell_result_titles_fail_closed_for_wait_failures",
-        "test_sse_reconnect_reconciles_one_run_snapshot_quietly",
-        "test_start_coding_from_this_chat_attaches_without_new_chat",
-        "test_tool_start_pending_row_is_replaced_by_final_tool",
-        "test_ui_state_persistence_is_debounced_with_immediate_flush_helpers",
-    }
-
-    def setUp(self) -> None:
-        if self._testMethodName in self._MIGRATED_TEXT_ASSERTIONS:
-            self.skipTest("migrated to executable Vitest/browser coverage")
+    # Structural checks remain executable against the module source graph.
 
     def test_esbuild_resolution_uses_platform_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -164,15 +129,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("./provider_ui", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
         self.assertIn("./ui_state", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
         self.assertIn("./composer", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("window.ProviderUI.init({", HTML)
-        self.assertIn("window.ProviderUI = {", PROVIDER_UI_JS)
+        self.assertIn("runtime.ProviderUI.init({", HTML)
+        self.assertIn("runtime.ProviderUI = {", PROVIDER_UI_JS)
         self.assertIn("function applyProviderStatus(providers, isSSE = true)", HTML)
-        self.assertIn("window.ProviderUI.applyStatus(providers, isSSE)", HTML)
+        self.assertIn("runtime.ProviderUI.applyStatus(providers, isSSE)", HTML)
         self.assertIn("function refreshProviderStatus(immediate = false)", HTML)
-        self.assertIn("window.ProviderUI.refreshStatus(immediate)", HTML)
+        self.assertIn("runtime.ProviderUI.refreshStatus(immediate)", HTML)
         self.assertIn("./sse", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("window.Sse = {", SSE_JS)
-        self.assertIn("window.Composer = {", COMPOSER_JS)
+        self.assertIn("runtime.Sse = {", SSE_JS)
+        self.assertIn("runtime.Composer = {", COMPOSER_JS)
 
     def test_boot_catalog_never_runs_the_availability_probe(self) -> None:
         start = PROVIDER_UI_JS.index("async function adoptBackendCatalog()")
@@ -182,7 +147,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("fetch('/api/providers')", body)
         # /api/providers stays on the async refresh path only.
         self.assertIn("fetch('/api/providers')", PROVIDER_UI_JS)
-        self.assertIn("await window.ProviderUI.adoptCatalog()", HTML)
+        self.assertIn("await runtime.ProviderUI.adoptCatalog()", HTML)
 
     def test_provider_selector_orders_deepseek_mimo_stepfun_qwen_glm_local(self) -> None:
         # Order lives in the single ui_state.js fallback (backend is canonical).
@@ -199,16 +164,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertLess(qwen, glm)
         self.assertLess(glm, local)
 
-    def test_run_and_continue_requests_keep_session_provider(self) -> None:
-        self.assertIn("window.Composer.init({", HTML)
-        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));", COMPOSER_JS)
-        send_click = COMPOSER_JS[COMPOSER_JS.index("async function sendActiveDraft()"):COMPOSER_JS.index("async function continueTask")]
-        self.assertIn("const provider = currentProviderId();", send_click)
-        self.assertIn("provider: s.provider || liveDefaultProvider()", COMPOSER_JS)
-        self.assertIn("intent: 'project'", COMPOSER_JS)
-        self.assertIn("typeof raw.provider === 'string'", UI_STATE_JS)
-        self.assertIn("Continue the unfinished task in this same conversation.", COMPOSER_JS)
-        self.assertNotIn("Continue the unfinished Codey task", HTML)
 
     def test_context_handoff_stays_hidden(self) -> None:
         self.assertIn("JSON.stringify({ session_id: s.id })", HTML)
@@ -217,16 +172,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("context compression", HTML.lower())
         self.assertNotIn("handoff summary", HTML.lower())
 
-    def test_local_continuity_stays_hidden_and_chat_deletion_cleans_state(self) -> None:
-        self.assertIn("async function forgetSessionState(id)", HTML)
-        self.assertIn("if (!await forgetSessionState(id)) return;", HTML)
-        self.assertIn("await Promise.all", HTML)
-        self.assertNotIn("Project Facts", HTML)
-        self.assertNotIn("Conversation Snapshot", HTML)
-        self.assertNotIn("Durable Snapshot", HTML)
-        self.assertNotIn("Recovered", HTML)
-        self.assertNotIn("ghost_sleep", UI_SOURCE)
-        self.assertNotIn("Cognitive Sleep", UI_SOURCE)
 
     def test_local_context_entry_is_quiet_top_menu_item(self) -> None:
         self.assertNotIn('<button data-act="rename">Rename chat</button>', HTML)
@@ -237,8 +182,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('id="local-context-drawer"', HTML)
         self.assertIn('<strong>Local context</strong>', HTML)
         self.assertIn("./local_context_drawer", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("window.LocalContextDrawer.init({", HTML)
-        self.assertIn("window.LocalContextDrawer = {", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("runtime.LocalContextDrawer.init({", HTML)
+        self.assertIn("runtime.LocalContextDrawer = {", LOCAL_CONTEXT_DRAWER_JS)
         self.assertNotIn("sidebar", LOCAL_CONTEXT_DRAWER_JS.casefold())
         self.assertNotIn("Review context", UI_SOURCE)
 
@@ -251,32 +196,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("Active preferences", visible_source)
         self.assertIn("Local ordering", visible_source)
 
-    def test_run_details_is_quiet_inline_entry_not_new_drawer(self) -> None:
-        self.assertIn("./run_details", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("window.RunDetails.init({", HTML)
-        self.assertIn("actions: window.RunDetails.actionsForMessage(m, [action])", UI_SOURCE)
-        self.assertIn("function actionForMessage(message)", RUN_DETAILS_JS)
-        self.assertIn("fetch('/api/run_details?'", RUN_DETAILS_JS)
-        self.assertIn("panel.className = 'run-details';", RUN_DETAILS_JS)
-        self.assertIn("button.closest('.msg')", RUN_DETAILS_JS)
-        self.assertIn("panel.scrollIntoView({ block: 'nearest' })", RUN_DETAILS_JS)
-        self.assertIn("const cache = {};", RUN_DETAILS_JS)
-        self.assertNotIn("run-details-drawer", UI_SOURCE)
-        self.assertNotIn("data-act=\"run-details\"", HTML)
-        self.assertNotIn("Last run details", HTML)
-        self.assertNotIn("localStorage", RUN_DETAILS_JS)
-        self.assertNotIn("persistActive", RUN_DETAILS_JS)
-        for term in (
-            "RunTrace",
-            "PromptEnvelope",
-            "Policy Pipeline",
-            "Router",
-            "Ghost",
-            "Hebbian",
-            "Directive",
-            "Provider",
-        ):
-            self.assertNotIn(term, RUN_DETAILS_JS)
 
     def test_run_details_style_uses_existing_design_tokens(self) -> None:
         start = APP_CSS.index(".run-details {")
@@ -326,94 +245,17 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_drawer_opening_is_mutually_exclusive(self) -> None:
         self.assertIn("function closeOtherDrawers(active)", HTML)
         self.assertIn("if (active !== 'changes') closeChangesDrawer();", HTML)
-        self.assertIn("if (active !== 'research') window.ResearchDrawer.close();", HTML)
+        self.assertIn("if (active !== 'research') runtime.ResearchDrawer.close();", HTML)
         self.assertIn("if (active !== 'local_context') closeLocalContextDrawer();", HTML)
         self.assertIn("deps.closeOtherDrawers('changes')", CHANGES_DRAWER_JS)
         self.assertIn("deps.closeOtherDrawers('research')", RESEARCH_DRAWER_JS)
         self.assertIn("deps.closeOtherDrawers('local_context')", LOCAL_CONTEXT_DRAWER_JS)
 
-    def test_local_context_drawer_binds_and_closes_on_scope_change(self) -> None:
-        self.assertNotIn("lastSummary", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("let loadedScope = null;", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("const requestScope = currentScope();\n  loadedScope = requestScope;", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("loadedScope = data && data.scope ? cleanScope(data.scope) : requestScope;", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertGreaterEqual(
-            LOCAL_CONTEXT_DRAWER_JS.count("if (!isOpen() || !sameScope(requestScope, currentScope())) return;"),
-            2,
-        )
-        self.assertIn("function handleScopeChanged()", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("handleScopeChanged,", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("function normalizeProjectPath(value)", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn(r"replace(/\\/g, '/')", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("function handleLocalContextScopeChanged()", HTML)
-        self.assertIn("persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();", HTML)
-        self.assertIn("if (sessionId === activeId) handleLocalContextScopeChanged();", HTML)
-        self.assertIn("if (!loadedScope || !sameScope(loadedScope, currentScope()))", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("session_id: scope.session_id", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("project: scope.project", LOCAL_CONTEXT_DRAWER_JS)
-        export_start = LOCAL_CONTEXT_DRAWER_JS.index("async function exportLocalContext()")
-        export_end = LOCAL_CONTEXT_DRAWER_JS.index("window.LocalContextDrawer", export_start)
-        export_block = LOCAL_CONTEXT_DRAWER_JS[export_start:export_end]
-        self.assertIn("if (!loadedScope || !sameScope(loadedScope, currentScope()))", export_block)
 
-    def test_local_context_running_items_do_not_show_reject_action(self) -> None:
-        self.assertIn("['candidate', 'queued', 'blocked'].includes(row.status)", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertNotIn("['candidate', 'queued', 'running', 'blocked'].includes(row.status)", LOCAL_CONTEXT_DRAWER_JS)
 
-    def test_clear_messages_closes_local_context_drawer(self) -> None:
-        start = HTML.index("async function clearMessages(id)")
-        end = HTML.index("function renameProject", start)
-        block = HTML[start:end]
-        self.assertIn("if (!await forgetSessionState(id)) return;", block)
-        self.assertIn("closeLocalContextDrawer();", block)
 
-    def test_retry_uses_current_session_model_picker(self) -> None:
-        retry_start = COMPOSER_JS.index("function retryTask(sessionId, requestId)")
-        retry_end = COMPOSER_JS.index("async function continueTask", retry_start)
-        retry_block = COMPOSER_JS[retry_start:retry_end]
-        self.assertIn("sendTaskFromSession(sessionId, original.text, s.provider, null, requestId)", retry_block)
-        self.assertIn("Requests.canRetry(sessionId, requestId)", retry_block)
-        self.assertNotIn("$('task').value =", retry_block)
 
-    def test_sse_reconnect_reconciles_one_run_snapshot_quietly(self) -> None:
-        self.assertIn("function reconcileRunState()", HTML)
-        self.assertIn("return window.Sse.reconcileRunState();", HTML)
-        self.assertIn("fetch('/api/state', { cache: 'no-store' })", SSE_JS)
-        self.assertIn("Number(e.lastEventId || data.event_id || 0)", SSE_JS)
-        self.assertIn("data.event_id = eventId", SSE_JS)
-        self.assertIn("runningRunId", HTML)
-        self.assertIn("data.pending_event", HTML)
-        self.assertIn("data.last_terminal_event", HTML)
-        self.assertIn("data.last_shell_result", HTML)
-        self.assertIn("markTerminalRun", HTML)
-        self.assertIn("if (reconcilePromise) return reconcilePromise", SSE_JS)
-        self.assertIn("bufferedServerEvents.push(data)", SSE_JS)
-        self.assertIn("for (const event of events) deps.handleServerEvent(event)", SSE_JS)
-        self.assertIn("ingestServerEvent(data)", SSE_JS)
-        self.assertIn("}, 5000);", SSE_JS)
-        self.assertIn("deps.setStatus('Reconnecting...', 'warn')", SSE_JS)
-        self.assertNotIn("setStatus('Disconnected', 'err')", HTML)
-        start = HTML.index("function applyRunState(data)")
-        end = HTML.index("function reconcileRunState()", start)
-        block = HTML[start:end]
-        self.assertLess(
-            block.index("data.last_shell_result"),
-            block.index("data.last_terminal_event"),
-        )
 
-    def test_shell_result_titles_fail_closed_for_wait_failures(self) -> None:
-        # The verb table lives in assets/render.js (inline budget); index.html
-        # only calls it. Unknown approved states must not read as 'Executed'.
-        for status in ("wait_error", "output_read_error", "drain_timeout"):
-            self.assertIn(status, RENDER_JS)
-        self.assertIn("shellStatusVerb", RENDER_JS)
-        self.assertIn("window.Render.shellStatusVerb(m.shellStatus, m.approved)", UI_SOURCE)
-        self.assertIn(": 'Result status unknown'", RENDER_JS)
-        # Real denial has no status: missing/empty status plus approved=false
-        # must read as Denied, while only approved exit reads as Executed.
-        self.assertIn("if (!approved)", RENDER_JS)
-        self.assertIn("return 'Denied'", RENDER_JS)
-        self.assertIn("return shellStatus === 'exit' ? 'Executed' : 'Result status unknown'", RENDER_JS)
 
     def test_local_save_failure_keeps_popover_open(self) -> None:
         start = SETTINGS_JS.index("async function save()")
@@ -429,17 +271,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("close();", block)
         self.assertIn("local.context_error", SETTINGS_JS)
 
-    def test_shell_approval_applies_http_result_without_waiting_for_sse(self) -> None:
-        start = HTML.index("async function approveCommand")
-        end = HTML.index("// ============================ composer", start)
-        block = HTML[start:end]
-        self.assertIn("const data = await r.json()", block)
-        self.assertIn("if (data.event) handleServerEvent(data.event)", block)
-        self.assertIn("data.continuation_requested && !data.continued && !data.stopped", block)
-        self.assertIn("showCommandContinuationError(errorEl, data.retry_after)", block)
-        self.assertIn("removeShellRequest(sid, data.id)", HTML)
-        self.assertIn("function removeShellRequest(sessionId, approvalId)", HTML)
-        self.assertIn("Run slot busy; retry after ${retryAfter}s", HTML)
 
     def test_ghost_post_turn_warning_is_rendered_as_quiet_info(self) -> None:
         start = HTML.index("if (data.type === 'ghost_post_turn_warning')")
@@ -493,7 +324,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_topbar_shows_running_spinner(self) -> None:
         self.assertIn(".spinner", STYLE_SOURCE)
         self.assertIn('id="status"', HTML)
-        self.assertIn("window.Sse.displayRunStatus('running')", HTML)
+        self.assertIn("runtime.Sse.displayRunStatus('running')", HTML)
         self.assertIn("drawer-loading", STYLE_SOURCE)
         self.assertIn("class=\"spinner\"", CHANGES_DRAWER_JS)
         self.assertIn("spinner.className = 'spinner';", RESEARCH_DRAWER_JS)
@@ -519,190 +350,13 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("selector", teach_block.lower())
         self.assertNotIn("override", teach_block.lower())
 
-    def test_project_completion_separates_answer_from_changed_receipt(self) -> None:
-        self.assertIn("type: 'asst', text: summary", HTML)
-        self.assertIn("const changed = !!data.changed", HTML)
-        self.assertIn("changed && changedCount > 0", HTML)
-        # Receipts are structured (0.5 schema): the UI reads them through
-        # the shared render.js helpers, never flat text fields.
-        self.assertIn("receiptSummary(data.receipt)", HTML)
-        self.assertIn("text: receiptSummary(data.receipt)", HTML)
-        self.assertIn("const receiptSummary = window.Render.receiptSummary;", HTML)
-        self.assertIn("const receiptChangedCount = window.Render.receiptChangedCount;", HTML)
-        self.assertIn("label: 'View diff'", UI_SOURCE)
-        self.assertIn("onclick: () => openChangesDrawer(m.project)", UI_SOURCE)
-        self.assertIn("let shownReceipt = false", HTML)
-        self.assertIn("shownReceipt = true", HTML)
-        self.assertIn("data.changed && !shownReceipt", HTML)
-        self.assertIn("type: 'changes'", HTML)
 
-    def test_research_context_is_explicit_and_user_facing(self) -> None:
-        self.assertIn('id="ctx-research"', HTML)
-        self.assertIn('>Research</button>', HTML)
-        self.assertIn('class="ctx-token ctx-folder"', HTML)
-        self.assertIn('id="provider-button"', HTML)
-        self.assertIn('id="provider-name"', HTML)
-        self.assertNotIn('id="ctx-provider"', HTML)
-        self.assertIn('id="research-drawer"', HTML)
-        self.assertIn('<strong>Research</strong>', HTML)
-        self.assertIn("function currentIntentForSession(sessionId)", HTML)
-        self.assertIn("return sessionProjectPath(sessionId) ? 'hybrid' : 'research';", HTML)
-        self.assertIn("body: JSON.stringify({ session_id: sessionId, run_id: runId, project, task: text, provider, intent,", COMPOSER_JS)
-        self.assertIn("type: 'research_done'", HTML)
-        self.assertIn("Research restored:", HTML)
-        self.assertIn("if (restore) restore.disabled = !current || !current.restoreable;", HTML)
-        self.assertIn("markResearchRestoreAvailability(data.research_restore_runs || [])", HTML)
-        self.assertIn("function normalizeStoredResearchRun(run)", UI_STATE_JS)
-        self.assertIn("raw.researchRuns", UI_STATE_JS)
-        self.assertIn(".slice(-32).map(normalizeStoredResearchRun)", UI_STATE_JS)
-        self.assertNotIn("...run, restoreable: false", HTML)
-        self.assertIn("./research_runs", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("window.ResearchRuns.init({", HTML)
-        self.assertIn("window.ResearchDrawer.open(m.sessionId || activeId)", UI_SOURCE)
-        self.assertNotIn("ResearchDrawer", RESEARCH_RUNS_JS)
-        self.assertNotIn("disposeGraph", RESEARCH_RUNS_JS)
-        self.assertNotIn("coreNoteIdsForRun", RESEARCH_RUNS_JS)
-        self.assertIn("function normalizeResearchRunArtifact(runId, research, receipt)", RESEARCH_RUNS_JS)
-        self.assertIn("research-tabs", RESEARCH_DRAWER_JS)
-        self.assertIn("research-tab", RESEARCH_DRAWER_JS)
-        self.assertIn("Evidence", RESEARCH_DRAWER_JS)
-        self.assertIn("Sources", RESEARCH_DRAWER_JS)
-        self.assertIn("Graph", RESEARCH_DRAWER_JS)
-        self.assertIn("Notes", RESEARCH_DRAWER_JS)
-        self.assertIn("citationMap", RESEARCH_RUNS_JS)
-        self.assertIn("evidenceItems", RESEARCH_RUNS_JS)
-        self.assertIn("openedSources", RESEARCH_RUNS_JS)
-        self.assertIn("qualityWarnings", RESEARCH_RUNS_JS)
-        self.assertIn("renderResearchEvidence", RESEARCH_DRAWER_JS)
-        self.assertIn("renderResearchSources", RESEARCH_DRAWER_JS)
-        self.assertIn("const locator = item.locator || (item.page ? `p.${item.page}` : '');", RESEARCH_DRAWER_JS)
-        self.assertIn("formatPdfSourceMeta", RESEARCH_DRAWER_JS)
-        self.assertIn("compactPages", RESEARCH_DRAWER_JS)
-        self.assertIn("PDF", RESEARCH_DRAWER_JS)
-        self.assertIn("pages ${pages} / ${pageCount}", RESEARCH_DRAWER_JS)
-        self.assertIn("panel.appendChild(researchSourceCard({\n      ...source,", RESEARCH_DRAWER_JS)
-        self.assertNotIn("['coverage', 'Coverage']", UI_SOURCE)
-        self.assertIn("Search coverage", RESEARCH_DRAWER_JS)
-        self.assertIn("appendResearchCoverage", RESEARCH_DRAWER_JS)
-        self.assertIn("['graph', 'Graph']", RESEARCH_DRAWER_JS)
-        self.assertNotIn("['concepts'", RESEARCH_DRAWER_JS)
-        self.assertIn("renderResearchGraph(panel, run, sessionId)", RESEARCH_DRAWER_JS)
-        self.assertNotIn("renderResearchConcepts", RESEARCH_DRAWER_JS)
-        self.assertNotIn("endpoint: '/api/research/concept_graph'", RESEARCH_DRAWER_JS)
-        self.assertNotIn("options.endpoint", GRAPH_JS)
-        self.assertNotIn("showDepth: false", RESEARCH_DRAWER_JS)
-        self.assertIn("./research_graph", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("./research_drawer", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("window.ResearchDrawer.init({", HTML)
-        self.assertIn("window.ResearchDrawer = {", RESEARCH_DRAWER_JS)
-        self.assertIn("if (window.ResearchGraph) window.ResearchGraph.dispose();", RESEARCH_DRAWER_JS)
-        self.assertIn("window.ResearchGraph.render(panel, {", RESEARCH_DRAWER_JS)
-        self.assertIn("focusIds: run.synthesisId ? [run.synthesisId] : coreNoteIdsForResearchRun(run)", RESEARCH_DRAWER_JS)
-        self.assertIn("onOpenNote(noteId)", RESEARCH_DRAWER_JS)
-        self.assertIn("onOpenSource(url)", RESEARCH_DRAWER_JS)
-        self.assertIn("window.ResearchGraph = { render, dispose };", GRAPH_JS)
-        self.assertIn("async function loadGraph(options, canvas, status, detail)", GRAPH_JS)
-        self.assertIn("function draw(canvas, graph, detail, options)", GRAPH_JS)
-        self.assertIn("function setDetailBody(body, text)", GRAPH_JS)
-        self.assertIn("window.Render.renderMarkdown(body, value);", GRAPH_JS)
 
     def test_research_notes_load_in_one_batch(self) -> None:
         self.assertIn("/api/research/notes", RESEARCH_DRAWER_JS)
         self.assertIn("missing", RESEARCH_DRAWER_JS)
         self.assertNotIn("/api/research/note?id=", RESEARCH_DRAWER_JS)
 
-    def test_drawer_buttons_never_silent_noop(self) -> None:
-        self.assertIn("syncResearchUseProjectButton", HTML)
-        self.assertIn(".disabled", HTML)
-        self.assertIn("syncResearchUseProjectButton();", HTML)
-        self.assertIn("fetch('/api/research/graph?' + params.toString())", GRAPH_JS)
-        self.assertNotIn("options.endpoint", GRAPH_JS)
-        self.assertIn("if (options.showDepth !== false) {", GRAPH_JS)
-        self.assertIn("for (const depth of [1, 2, 3])", GRAPH_JS)
-        self.assertIn("function graphLayerY(node)", GRAPH_JS)
-        self.assertIn("const layerY = graphLayerY(node);", GRAPH_JS)
-        self.assertIn("const warning = Array.isArray(graph.warnings) && graph.warnings.length ? graph.warnings[0] : '';", GRAPH_JS)
-        self.assertIn("setStatus(status, warning || 'No graph yet');", GRAPH_JS)
-        self.assertIn("node.kind === 'concept'", GRAPH_JS)
-        self.assertIn("edge.kind === 'cites' || edge.kind === 'tagged'", GRAPH_JS)
-        self.assertIn("let loadSeq = 0;", GRAPH_JS)
-        self.assertIn("loadSeq += 1;", GRAPH_JS)
-        self.assertIn("const seq = ++loadSeq;", GRAPH_JS)
-        self.assertIn("seq !== loadSeq || !canvas.isConnected", GRAPH_JS)
-        self.assertIn("const nextRuntime = draw(canvas, graph, detail, options);", GRAPH_JS)
-        self.assertIn("if (nextRuntime && typeof nextRuntime.stop === 'function') nextRuntime.stop();", GRAPH_JS)
-        self.assertNotIn("researchGraphRuntime", UI_SOURCE)
-        self.assertNotIn("researchGraphLoadSeq", UI_SOURCE)
-        self.assertNotIn("function loadResearchGraph", UI_SOURCE)
-        self.assertNotIn("function drawResearchGraph", UI_SOURCE)
-        self.assertIn(".research-graph-status.error { color: var(--err-text); }", STYLE_SOURCE)
-        self.assertIn("function setStatus(status, text, isError = false)", GRAPH_JS)
-        self.assertIn("setStatus(status, 'Loading graph...');", GRAPH_JS)
-        self.assertNotIn("setStatus(status, 'No graph yet');", GRAPH_JS)
-        self.assertIn("setStatus(status, data.error || 'Graph unavailable', true);", GRAPH_JS)
-        self.assertIn("setStatus(status, 'Graph unavailable', true);", GRAPH_JS)
-        self.assertIn("status.classList.toggle('error', !!isError);", GRAPH_JS)
-        self.assertIn("status.classList.remove('error');", GRAPH_JS)
-        self.assertIn("status.hidden = false;", GRAPH_JS)
-        self.assertIn("status.textContent = text;", GRAPH_JS)
-        self.assertIn("research-graph-stage", UI_SOURCE)
-        self.assertIn("research-depth", UI_SOURCE)
-        self.assertIn("Reset", GRAPH_JS)
-        self.assertIn("ctx.setLineDash([5, 5])", GRAPH_JS)
-        self.assertIn("ctx.strokeStyle = hoverActive ? colors.ok", GRAPH_JS)
-        self.assertIn("ctx.fillStyle = hovered ? colors.ok", GRAPH_JS)
-        self.assertIn("action.onclick = () => openNode(node, options);", GRAPH_JS)
-        self.assertIn("function onDblClick(event)", GRAPH_JS)
-        self.assertIn("if (hit) openNode(hit, options);", GRAPH_JS)
-        self.assertIn("setDetail(detail, hit, options);", GRAPH_JS)
-        self.assertNotIn("if (hit && hit.url) openNode(hit, options);", GRAPH_JS)
-        self.assertNotIn("if (hit && hit.url) openResearchGraphNode(hit, run, sessionId);", UI_SOURCE)
-        self.assertNotIn("node.focus ? colors.ok", GRAPH_JS)
-        self.assertNotIn("graph: data.graph", UI_SOURCE)
-        self.assertIn("loadResearchRunNotes(run, sessionId)", RESEARCH_DRAWER_JS)
-        self.assertIn("Note no longer exists", RESEARCH_DRAWER_JS)
-        self.assertIn("__state: 'missing'", RESEARCH_DRAWER_JS)
-        self.assertIn("window.ResearchDrawer.invalidateNoteCache(window.ResearchDrawer.noteIdsForRun(result.run));", HTML)
-        self.assertIn("function renderResearchNotes(panel, run, sessionId)", RESEARCH_DRAWER_JS)
-        self.assertIn("const NOTE_PREVIEW_CHARS = 1500;", RESEARCH_DRAWER_JS)
-        self.assertIn("const expandedResearchNoteIds = new Set();", RESEARCH_DRAWER_JS)
-        self.assertIn("panel.appendChild(researchEmpty('No notes recorded'))", RESEARCH_DRAWER_JS)
-        self.assertIn("['Selected note', selectedIds]", RESEARCH_DRAWER_JS)
-        self.assertIn("['Synthesis', synthesisIds]", RESEARCH_DRAWER_JS)
-        self.assertIn("['Created notes', createdIds]", RESEARCH_DRAWER_JS)
-        self.assertIn("['Updated notes', updatedIds]", RESEARCH_DRAWER_JS)
-        self.assertNotIn("panel.appendChild(researchSection('Sources'", RESEARCH_DRAWER_JS)
-        self.assertIn("research-note-section", RESEARCH_DRAWER_JS)
-        self.assertIn("research-card research-note-card", RESEARCH_DRAWER_JS)
-        self.assertIn("research-note-body md", RESEARCH_DRAWER_JS)
-        self.assertIn("window.Render.renderMarkdown(body, preview || 'No note body');", RESEARCH_DRAWER_JS)
-        self.assertIn("Show more", RESEARCH_DRAWER_JS)
-        self.assertIn("Show less", RESEARCH_DRAWER_JS)
-        self.assertIn("function buildResearchSourceIndex(run)", RESEARCH_DRAWER_JS)
-        self.assertIn("item.url || item.final_url || item.requested_url", RESEARCH_DRAWER_JS)
-        self.assertIn("put(item.requested_url, item, meta)", RESEARCH_DRAWER_JS)
-        self.assertIn("item.number || existing.number || (aliasOf && aliasOf.number)", RESEARCH_DRAWER_JS)
-        self.assertIn("item.title || existing.title || (aliasOf && aliasOf.title)", RESEARCH_DRAWER_JS)
-        self.assertIn("function safeResearchUrl(value)", RESEARCH_DRAWER_JS)
-        self.assertIn("url.protocol === 'http:' || url.protocol === 'https:'", RESEARCH_DRAWER_JS)
-        self.assertIn("chip.className = 'research-source-chip';", RESEARCH_DRAWER_JS)
-        self.assertIn("window.open(ref.url, '_blank', 'noopener,noreferrer');", RESEARCH_DRAWER_JS)
-        self.assertNotIn("innerHTML = note.body", RESEARCH_DRAWER_JS)
-        self.assertNotIn("research-note-text", RESEARCH_DRAWER_JS)
-        self.assertNotIn(".research-note-text", APP_CSS)
-        self.assertIn(".research-note-body", APP_CSS)
-        self.assertIn(".research-source-chip", APP_CSS)
-        self.assertNotIn("pre.className = 'diff-pre';", RESEARCH_DRAWER_JS)
-        self.assertIn("Use in Project", HTML)
-        self.assertNotIn("Use vault", HTML)
-        self.assertNotIn("Knowledge mode", HTML)
-
-        ctx_css = APP_CSS[APP_CSS.index(".ctx-token {"):APP_CSS.index(".composer-context .ctx-sep")]
-        self.assertIn("border: 0;", ctx_css)
-        self.assertIn(".ctx-token:hover:not(:disabled) { color: var(--text); }", ctx_css)
-        self.assertNotIn("font-weight", ctx_css)
-        self.assertNotIn("background: var(--hover)", ctx_css)
-        self.assertNotIn("border: 1px", ctx_css)
 
     def test_agent_events_are_structured_instead_of_parsed_from_logs(self) -> None:
         self.assertIn("if (data.type === 'turn')", HTML)
@@ -722,71 +376,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("if (data.type === 'log')", HTML)
         self.assertNotIn("function handleLog", HTML)
 
-    def test_tool_start_pending_row_is_replaced_by_final_tool(self) -> None:
-        self.assertIn(".tool-line.pending .tl-result", STYLE_SOURCE)
-        self.assertIn("if (m.pending) row.classList.add('pending');", RENDER_JS)
-        self.assertIn(
-            "result.textContent = m.pending ? (m.activity || m.result || 'Working') : (m.result || '');",
-            RENDER_JS,
-        )
 
-        pending_render_start = UI_SOURCE.index("} else if (m.type === 'tool_pending') {")
-        pending_render_end = UI_SOURCE.index("} else if (m.type === 'done') {", pending_render_start)
-        pending_render_block = UI_SOURCE[pending_render_start:pending_render_end]
-        self.assertIn("chat.appendChild(standaloneToolEl(m));", pending_render_block)
-
-        started_start = UI_SOURCE.index("if (data.type === 'tool_started')")
-        started_end = UI_SOURCE.index("if (data.type === 'tool')", started_start)
-        started_block = UI_SOURCE[started_start:started_end]
-        self.assertIn("const rawToolId = (data.tool_id || '').toString();", started_block)
-        self.assertIn("const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';", started_block)
-        self.assertIn("s._toolKeys.has(toolKey)", started_block)
-        self.assertIn("type: 'tool_pending'", started_block)
-        self.assertIn("pending: true", started_block)
-        self.assertIn("activity: (data.activity || '').toString().slice(0, 200)", started_block)
-
-        final_start = UI_SOURCE.index("if (data.type === 'tool')", started_end)
-        final_end = UI_SOURCE.index("if (data.type === 'info')", final_start)
-        final_block = UI_SOURCE[final_start:final_end]
-        self.assertIn("const rawToolId = (data.tool_id || '').toString();", final_block)
-        self.assertIn("const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';", final_block)
-        self.assertIn("const toolStatus = (data.status || (data.ok === false ? 'error' : 'ok')).toString();", final_block)
-        self.assertIn("status: toolStatus,", final_block)
-        self.assertIn("error: toolStatus === 'error',", final_block)
-        self.assertIn("replaceSessionMessage(", final_block)
-        self.assertIn("item => item.type === 'tool_pending' && item.toolKey === toolKey", final_block)
-        self.assertIn("addToSession(sid, message);", final_block)
-
-        replace_start = UI_SOURCE.index("function replaceSessionMessage")
-        replace_end = UI_SOURCE.index("function markTerminalRun", replace_start)
-        replace_block = UI_SOURCE[replace_start:replace_end]
-        self.assertIn("const index = s.messages.findIndex(predicate);", replace_block)
-        self.assertIn("s.messages[index] = message;", replace_block)
-        self.assertIn("renderChat(); scrollChat();", replace_block)
-        self.assertIn("dataset.toolKey === message.toolKey", replace_block)
-        self.assertIn("existingNode.replaceWith(", replace_block)
-
-    def test_send_failures_render_inline_error(self) -> None:
-        self.assertIn("function addSendError(sessionId, eventKey = '', runId = '')", HTML)
-        self.assertIn("Could not send the message", HTML)
-        self.assertIn("window.Requests.fail(sessionId, runId, message || 'Could not send the message'", COMPOSER_JS)
-        self.assertIn("if (r.status === 409 || !r.ok) {", COMPOSER_JS)
-        self.assertIn("await deps.acceptRunResponse(r, sessionId)", COMPOSER_JS)
-        self.assertIn("} catch {\n    await window.Sse.reconcileRunState();", COMPOSER_JS)
-        self.assertIn("actions: window.RunDetails.actionsForMessage(m, [", UI_SOURCE)
-        self.assertNotIn("Switch provider", HTML)
-        self.assertNotIn("Switch model", HTML)
-        self.assertNotIn('title="Provider"', HTML)
-        self.assertIn('id="provider-button" aria-label="Choose model"', HTML)
-        self.assertNotIn('id="provider-button" title=', HTML)
-        err_start = UI_SOURCE.index("} else if (m.type === 'err') {")
-        err_end = UI_SOURCE.index("} else if (m.type === 'info') {", err_start)
-        err_block = UI_SOURCE[err_start:err_end]
-        self.assertNotIn("retryTask(", err_block)
-        self.assertNotIn("Continue", err_block)
-        self.assertNotIn("alert('Failed to start:", HTML)
-        self.assertNotIn("alert('Failed to continue:", HTML)
-        self.assertNotIn("alert('A task is already running')", HTML)
 
     def test_composer_enter_sends_and_shift_enter_keeps_newline(self) -> None:
         self.assertIn('id="send-hint">Enter</span>', HTML)
@@ -867,8 +457,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("/api/changes/restore", HTML)
         self.assertNotIn("Reading git diff", UI_SOURCE)
         self.assertIn("./changes_drawer", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("window.ChangesDrawer.init({", HTML)
-        self.assertIn("window.ChangesDrawer = {", CHANGES_DRAWER_JS)
+        self.assertIn("runtime.ChangesDrawer.init({", HTML)
+        self.assertIn("runtime.ChangesDrawer = {", CHANGES_DRAWER_JS)
 
     def test_changes_drawer_hides_diff_metadata_lines(self) -> None:
         self.assertIn('class="diff-line add"><span class="ln"', CHANGES_DRAWER_JS)
@@ -886,20 +476,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("provider-item", PROVIDER_UI_JS)
         self.assertNotIn('data-provider="deepseek"', HTML)
 
-    def test_send_and_stop_share_one_action_slot(self) -> None:
-        self.assertIn('class="action-slot"', HTML)
-        slot_start = HTML.index('<div class="action-slot">')
-        slot_end = HTML.index('</div>', slot_start)
-        slot = HTML[slot_start:slot_end]
-        self.assertIn('id="stop"', slot)
-        self.assertIn('id="send"', slot)
-        update_start = COMPOSER_JS.index("function updateSend()")
-        update_end = COMPOSER_JS.index("function toggleResearchForActive()", update_start)
-        update_block = COMPOSER_JS[update_start:update_end]
-        self.assertIn("$('send').style.display = running ? 'none' : ''", update_block)
-        self.assertIn("$('stop').style.display = running ? '' : 'none'", update_block)
-        self.assertIn("sendingSessionId ? 'Sending…' : running ? 'Stop' : 'Enter'", update_block)
-        self.assertNotIn("$('send-hint').style.display", update_block)
 
     def test_welcome_keeps_status_copy_without_example_cards(self) -> None:
         self.assertIn("Send a message to start.", CONVERSATION_UI_JS)
@@ -909,96 +485,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("写 README", HTML)
         self.assertNotIn("找 bug", HTML)
 
-    def test_chat_messages_have_quiet_copy_button(self) -> None:
-        self.assertIn("function addMessageCopyButton(div, text)", RENDER_JS)
-        self.assertIn("function copyText(text)", RENDER_JS)
-        self.assertIn("navigator.clipboard.writeText(value)", RENDER_JS)
-        self.assertIn("document.execCommand('copy')", RENDER_JS)
-        self.assertIn("className = 'msg-copy'", RENDER_JS)
-        self.assertIn("opacity: .45", STYLE_SOURCE)
-        self.assertIn(".msg:hover .msg-copy", STYLE_SOURCE)
-        self.assertIn(".msg:focus-within .msg-copy", STYLE_SOURCE)
-        self.assertIn("aria-label', 'Copy message'", RENDER_JS)
-        self.assertIn("addMessageCopyButton(div, messageCopyText(m))", UI_SOURCE)
-        self.assertIn("copyText: text", UI_SOURCE)
-        self.assertIn("./render", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("window.Render = {", RENDER_JS)
-        self.assertIn("const copyText = window.Render.copyText;", HTML)
-        self.assertNotIn("Export chat", UI_SOURCE)
 
-    def test_chat_messages_and_titles_remain_local_persistent(self) -> None:
-        self.assertIn("const LS_SESSIONS = 'codey:sessions';", UI_STATE_JS)
-        self.assertIn("messages: Array.isArray(raw.messages) ? raw.messages : []", UI_STATE_JS)
-        self.assertIn("title: raw.title || 'New chat'", UI_STATE_JS)
-        self.assertIn("function safeLocalSet(key, value)", UI_STATE_JS)
-        self.assertIn("function saveSessions(arr)", UI_STATE_JS)
-        self.assertIn("safeLocalSet(LS_SESSIONS, JSON.stringify(arr))", UI_STATE_JS)
-        self.assertIn("try { localStorage.setItem(key, value); } catch {}", UI_STATE_JS)
-        self.assertNotIn("LS_LEGACY_PROJECT", HTML)
-        self.assertIn("s.title = m.text.slice(0, 28)", HTML)
-        self.assertIn("s.title = title.slice(0, 80)", HTML)
 
-    def test_chat_state_uses_backend_snapshot_with_local_cache(self) -> None:
-        self.assertIn("./ui_state", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("function currentUiState()", UI_STATE_JS)
-        self.assertIn("function cacheUiState()", UI_STATE_JS)
-        self.assertIn("function saveUiStateToServer()", UI_STATE_JS)
-        self.assertIn("async function restoreUiStateFromServer()", UI_STATE_JS)
-        self.assertIn("function bindUiStatePagehide()", UI_STATE_JS)
-        self.assertIn("const LS_UI_REVISION = 'codey:ui-revision';", UI_STATE_JS)
-        self.assertIn("revision: getRevision()", UI_STATE_JS)
-        self.assertIn("window.UiState.init({", HTML)
-        self.assertIn("setRevision: value => { uiStateRevision = value; }", HTML)
-        self.assertIn("function isUiStateNewer(a, b)", UI_STATE_JS)
-        self.assertIn("setRevision(getRevision() + 1)", UI_STATE_JS)
-        self.assertIn("function hasMeaningfulUiState(state)", UI_STATE_JS)
-        self.assertIn("const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState)", HTML)
-        self.assertLess(
-            HTML.index("const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState)"),
-            HTML.index("window.UiState.init({"),
-        )
-        self.assertNotIn("function uid() { return window.UiState.uid(); }", HTML)
-        self.assertIn("fetch('/api/ui_state'", UI_STATE_JS)
-        self.assertIn("method: 'POST'", UI_STATE_JS)
-        self.assertIn("state: currentUiState()", UI_STATE_JS)
-        self.assertIn("base_revision", UI_STATE_JS)
-        self.assertIn("navigator.sendBeacon('/api/ui_state'", UI_STATE_JS)
-        self.assertIn("function connectEvents()", HTML)
-        self.assertIn("bindUiStatePagehide();", HTML)
-        self.assertIn("await restoreUiStateFromServer();", HTML)
-        boot_start = HTML.index("async function boot()")
-        boot_block = HTML[boot_start:HTML.index("boot().catch", boot_start)]
-        self.assertIn("refreshProviderStatus();", boot_block)
-        self.assertIn("connectEvents();", HTML)
-        self.assertLess(HTML.index("await restoreUiStateFromServer();"), HTML.index("connectEvents();"))
-        self.assertIn("persistActive();", HTML[HTML.index("function ensureProject"):HTML.index("async function pickProject")])
-        self.assertNotIn("const LS_SESSIONS = 'codey:sessions';", _source("legacy-runtime"))
-        self.assertNotIn("function normalizeStoredResearchRun(run)", _source("legacy-runtime"))
 
-    def test_assistant_replies_render_minimal_markdown(self) -> None:
-        self.assertIn("function renderMarkdown(container, text)", RENDER_JS)
-        self.assertIn("function renderInlineMd(text)", RENDER_JS)
-        self.assertIn("escapeHtml(text.slice(last, m.index))", RENDER_JS)
-        self.assertIn("<strong>$1</strong>", RENDER_JS)
-        self.assertIn("body.className = 'body md'", UI_SOURCE)
-        self.assertNotIn("body.className = 'body md collapsed'", HTML)
-        self.assertIn("toggle.className = 'toggle';", UI_SOURCE)
-        self.assertIn("window.Render.renderAssistantBody(body", UI_SOURCE)
-        self.assertIn("function renderMarkdownChunked(container, text", RENDER_JS)
-        self.assertNotIn("body.textContent = m.text;", UI_SOURCE)
-        self.assertIn("/^#{1,6}\\s+/.test(line)", RENDER_JS)
-        self.assertIn("line.match(/^(#{1,6})\\s+(.*)$/)", RENDER_JS)
-        self.assertIn("el.className = 'md-h md-h' + Math.min(6, heading[1].length);", RENDER_JS)
-        self.assertIn(".md-code", STYLE_SOURCE)
-        self.assertIn(".md-ic", STYLE_SOURCE)
-        self.assertIn(".md-list", STYLE_SOURCE)
-        self.assertIn(".md-list .md-list", STYLE_SOURCE)
-        self.assertIn("escapeHtml(text.slice(last, m.index))", RENDER_JS)
-        self.assertIn("el.className = 'md-quote';", RENDER_JS)
-        self.assertIn(".md-quote", STYLE_SOURCE)
-        self.assertIn("let listStack = [];", RENDER_JS)
-        self.assertIn("parent.lastLi.appendChild(next);", RENDER_JS)
-        self.assertIn("background: var(--panel-2)", STYLE_SOURCE)
 
     def test_chunked_render_keeps_stateful_blocks_and_cancel(self) -> None:
         # A >120-line fenced block must render in one idle pass, never as
@@ -1043,45 +532,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".md-code:hover .code-copy", STYLE_SOURCE)
         self.assertIn("await copyText(value)", RENDER_JS)
 
-    def test_ui_state_persistence_is_debounced_with_immediate_flush_helpers(self) -> None:
-        # A-1: hot-path persistence is coalesced behind a debounce timer, while
-        # discrete/terminal moments flush immediately. Data shape is unchanged.
-        self.assertIn("function markUiStateDirty()", UI_STATE_JS)
-        self.assertIn("function flushUiState()", UI_STATE_JS)
-        self.assertIn("function persistActive()", UI_STATE_JS)
-        self.assertIn("function persistActiveNow()", UI_STATE_JS)
-        self.assertIn("let uiStatePersistTimer = null;", UI_STATE_JS)
-        self.assertIn("const UI_STATE_PERSIST_DELAY = 400;", UI_STATE_JS)
-        # revision bump preserved (relied on by isUiStateNewer ordering).
-        self.assertIn("setRevision(getRevision() + 1)", UI_STATE_JS)
-
-        dirty_start = UI_STATE_JS.index("function markUiStateDirty()")
-        dirty_end = UI_STATE_JS.index("function flushUiState()", dirty_start)
-        dirty_block = UI_STATE_JS[dirty_start:dirty_end]
-        self.assertIn("setUpdatedAt(Math.max(Date.now(), getUpdatedAt()));", dirty_block)
-        self.assertIn("setRevision(getRevision() + 1);", dirty_block)
-        self.assertIn("setDirtySinceBoot(true);", dirty_block)
-
-        flush_start = UI_STATE_JS.index("function flushUiState()")
-        flush_end = UI_STATE_JS.index("function persistActive()", flush_start)
-        flush_block = UI_STATE_JS[flush_start:flush_end]
-        self.assertIn("clearTimeout(uiStatePersistTimer)", flush_block)
-        self.assertIn("cacheUiState();", flush_block)
-        self.assertIn("saveUiStateToServer();", flush_block)
-
-        persist_start = UI_STATE_JS.index("function persistActive()")
-        persist_end = UI_STATE_JS.index("function persistActiveNow()", persist_start)
-        persist_block = UI_STATE_JS[persist_start:persist_end]
-        self.assertIn("markUiStateDirty();", persist_block)
-        self.assertIn("if (uiStatePersistTimer !== null) return;", persist_block)
-        self.assertIn("uiStatePersistTimer = setTimeout(", persist_block)
-        self.assertIn("UI_STATE_PERSIST_DELAY", persist_block)
-
-        now_start = UI_STATE_JS.index("function persistActiveNow()")
-        now_end = UI_STATE_JS.index("function bindUiStatePagehide()", now_start)
-        now_block = UI_STATE_JS[now_start:now_end]
-        self.assertIn("markUiStateDirty();", now_block)
-        self.assertIn("flushUiState();", now_block)
 
     def test_streaming_events_stay_debounced_while_user_actions_flush(self) -> None:
         # A-1: the SSE hot path (addToSession) must keep the debounced persistActive,
@@ -1129,29 +579,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
             HTML[HTML.index("function ensureProject"):HTML.index("async function pickProject")],
         )
 
-    def test_start_coding_from_this_chat_attaches_without_new_chat(self) -> None:
-        self.assertIn("function sessionProject(s)", HTML)
-        self.assertIn("return sessionProject(activeSession());", HTML)
-        self.assertIn("const loose = sessions.filter(s => !sessionProject(s) && window.ConversationUI.matchesSession(s));", HTML)
-        self.assertIn("const p = sessionProject(s);", HTML[HTML.index("function sessionProjectPath"):HTML.index("async function fetchChanges")])
-        self.assertIn("const p = deps.sessionProject(s);", COMPOSER_JS[COMPOSER_JS.index("async function continueTask"):COMPOSER_JS.index("function bindHandlers")])
-        self.assertIn("function attachSessionToProject(projectId, sessionId = activeId)", HTML)
-        attach_start = HTML.index("function attachSessionToProject")
-        attach_end = HTML.index("async function pickProject", attach_start)
-        attach_block = HTML[attach_start:attach_end]
-        self.assertIn("if (!s || !p || sessionProject(s)) return false;", attach_block)
-        self.assertIn("s.projectId = p.id;", attach_block)
-        self.assertIn("s.research = false;", attach_block)
-        self.assertIn("persistActiveNow();", attach_block)
-        self.assertNotIn("/api/new_chat", attach_block)
-
-        pick_start = HTML.index("async function pickProject()")
-        pick_end = HTML.index("async function attachCurrentChatToPickedProject", pick_start)
-        pick_block = HTML[pick_start:pick_end]
-        self.assertIn("const shouldAttach = !!s && !sessionProject(s);", pick_block)
-        self.assertIn("pickProjectPath(shouldAttach ? 'new' : 'open'", pick_block)
-        self.assertIn("if (shouldAttach) attachSessionToProject(p.id, s.id);", pick_block)
-        self.assertIn("else newSession(p.id);", pick_block)
 
     def test_no_content_based_implementation_trigger_in_send_flow(self) -> None:
         self.assertNotIn("IMPLEMENTATION_REQUEST_RE", HTML)
@@ -1219,187 +646,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         # committing a session rename still clamps title length (unchanged shape).
         self.assertIn("s.title = title.slice(0, 80);", HTML)
 
-    def test_destructive_actions_use_two_step_arm_not_native_confirm(self) -> None:
-        # B-1: delete/clear are destructive -> in-menu two-step confirm, no confirm().
-        self.assertNotIn("confirm(", HTML)
-        self.assertIn("function armDanger(btn, run)", HTML)
-        self.assertIn("function disarmDangerButtons()", HTML)
-        self.assertIn(".ctx-menu button.arming", HTML)
-        # auto-revert after a few seconds keeps the menu quiet.
-        self.assertIn("setTimeout(disarmDangerButtons, 3000)", HTML)
-
-        # every destructive menu item carries its confirm label.
-        self.assertIn('data-act="remove" class="danger" data-confirm="Confirm remove"', HTML)
-        self.assertIn('data-act="delete" class="danger" data-confirm="Confirm delete"', HTML)
-        self.assertIn('data-act="clear" class="danger" data-confirm="Confirm clear"', HTML)
-        # the project remove label must state that chats are deleted, not merely
-        # "removed from sidebar" (deleteProject drops sessions under the project).
-        self.assertIn('>Remove project and chats</button>', HTML)
-        self.assertNotIn('Remove from sidebar', HTML)
-
-        # first click arms + relabels; second click runs and closes.
-        arm_start = HTML.index("function armDanger(btn, run)")
-        arm_end = HTML.index("// ============================ chat rendering", arm_start)
-        arm_block = HTML[arm_start:arm_end]
-        self.assertIn("if (btn.classList.contains('arming'))", arm_block)
-        self.assertIn("run();", arm_block)
-        self.assertIn("btn.textContent = btn.dataset.confirm", arm_block)
-        self.assertIn("btn.classList.add('arming');", arm_block)
-
-        # closing any menu disarms pending confirmations.
-        close_start = HTML.index("function closeAllMenus()")
-        close_end = HTML.index("function openProjectMenu", close_start)
-        close_block = HTML[close_start:close_end]
-        self.assertIn("disarmDangerButtons();", close_block)
-
-        # menu handlers route destructive acts through armDanger and return early.
-        self.assertIn("if (act === 'remove') { if (id) armDanger(btn, () => deleteProject(id)); return; }", HTML)
-        self.assertIn("if (act === 'delete') { if (id) armDanger(btn, () => deleteSession(id)); return; }", HTML)
-        self.assertIn("if (act === 'clear') { armDanger(btn, () => clearMessages(activeId)); return; }", HTML)
-
-        # the destructive ops themselves no longer gate on a native confirm.
-        del_start = HTML.index("async function deleteSession(id)")
-        del_end = HTML.index("function renameSession(id)", del_start)
-        del_block = HTML[del_start:del_end]
-        self.assertIn("if (!await forgetSessionState(id)) return;", del_block)
-
-    def test_readonly_tool_lines_fold_into_render_layer_groups(self) -> None:
-        # B-2: only consecutive read-only tools fold; grouping is render-only and
-        # never touches the sessions data structure.
-        self.assertIn(
-            "const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);",
-            RENDER_JS,
-        )
-        self.assertIn("function toolRowEl(m, compact)", RENDER_JS)
-        self.assertIn("function createToolGroup(kind)", RENDER_JS)
-        self.assertIn("function standaloneToolEl(m)", RENDER_JS)
-        self.assertIn("function appendToToolGroup(group, m)", RENDER_JS)
-        self.assertIn("function appendOrFoldTool(chat, m)", RENDER_JS)
-        self.assertIn("function foldCountLabel(kind, n)", RENDER_JS)
-
-        # count labels pluralize correctly, incl. the irregular "searches".
-        self.assertIn("search: ['search', 'searches'],", RENDER_JS)
-        self.assertIn("read: ['file', 'files'],", RENDER_JS)
-        self.assertNotIn("noun + (n === 1 ? '' : 's')", RENDER_JS)
-
-        # edit / run / shell are deliberately absent from the foldable set.
-        set_line = "const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);"
-        self.assertNotIn("'edit'", set_line)
-        self.assertNotIn("'run'", set_line)
-        self.assertNotIn("'shell'", set_line)
-
-        # the tool branch folds read-only, non-error rows and keeps the rest as
-        # standalone tool lines (edit/run/shell/error stay visible).
-        tool_start = UI_SOURCE.index("} else if (m.type === 'tool') {")
-        tool_end = UI_SOURCE.index("} else if (m.type === 'done') {", tool_start)
-        tool_block = UI_SOURCE[tool_start:tool_end]
-        self.assertIn("if (FOLDABLE_TOOL_KINDS.has(m.kind) && !m.error) {", tool_block)
-        self.assertIn("appendOrFoldTool(chat, m);", tool_block)
-        self.assertIn("chat.appendChild(standaloneToolEl(m));", tool_block)
-
-        # a single foldable tool stays visible; only the second consecutive tool
-        # of the same kind converts the previous standalone row into a group.
-        standalone_start = RENDER_JS.index("function standaloneToolEl(m)")
-        standalone_end = RENDER_JS.index("function appendToToolGroup", standalone_start)
-        standalone_block = RENDER_JS[standalone_start:standalone_end]
-        self.assertIn("div.className = 'msg tool';", standalone_block)
-        self.assertIn("div.dataset.foldkind = m.kind;", standalone_block)
-        self.assertIn("div.appendChild(toolRowEl(m, false));", standalone_block)
-
-        # merge only into a trailing group or standalone row of the same kind.
-        merge_start = RENDER_JS.index("function appendOrFoldTool(chat, m)")
-        merge_end = RENDER_JS.index("window.Render = {", merge_start)
-        merge_block = RENDER_JS[merge_start:merge_end]
-        self.assertIn("const last = chat.lastElementChild;", merge_block)
-        self.assertIn("last.dataset.foldkind === m.kind", merge_block)
-        self.assertIn("last.replaceWith(group);", merge_block)
-        self.assertIn("chat.appendChild(standaloneToolEl(m));", merge_block)
-
-        append_start = RENDER_JS.index("function appendToToolGroup(group, m)")
-        append_end = RENDER_JS.index("function appendOrFoldTool(chat, m)", append_start)
-        append_block = RENDER_JS[append_start:append_end]
-        self.assertIn("body.children.length", append_block)
-
-        # converted groups default collapsed and toggle on click; state is not persisted.
-        group_start = RENDER_JS.index("function createToolGroup(kind)")
-        group_end = RENDER_JS.index("function standaloneToolEl(m)", group_start)
-        group_block = RENDER_JS[group_start:group_end]
-        self.assertIn("group.className = 'tool-group collapsed';", group_block)
-        self.assertIn("group.dataset.foldkind = kind;", group_block)
-        self.assertIn("group.classList.toggle('collapsed');", group_block)
-        self.assertIn("summary.setAttribute('aria-expanded'", group_block)
-        self.assertNotIn("persist", group_block)
-
-        # monochrome, cardless folding CSS: hidden body, chevron rotate, no colors.
-        self.assertIn(".tool-line.compact { grid-template-columns: 1fr auto auto; }", STYLE_SOURCE)
-        self.assertIn(".tool-group-body { display: none; padding-left: 20px; }", STYLE_SOURCE)
-        self.assertIn(".tool-group:not(.collapsed) .tool-group-body { display: block; }", STYLE_SOURCE)
-        self.assertIn(".tool-group:not(.collapsed) .tg-chevron { transform: rotate(90deg); }", STYLE_SOURCE)
-        group_css_start = APP_CSS.index("/* ---------- tool group (read-only folding) ---------- */")
-        group_css_end = APP_CSS.index("/* ---------- turn divider ---------- */", group_css_start)
-        group_css = APP_CSS[group_css_start:group_css_end]
-        self.assertNotIn("#", group_css.replace("var(--", ""))
 
 
-    def test_provider_config_detects_removal_and_uses_single_source(self) -> None:
-        # Red-first lock for dead-compat removal + shrink detection:
-        # applyProviderConfig must compare length/order/labels/default and
-        # delegate directly to UiState.setProviders (no local fallback).
-        start = PROVIDER_UI_JS.index("function applyProviderConfig(data)")
-        end = PROVIDER_UI_JS.index("async function adoptBackendCatalog()", start)
-        body = PROVIDER_UI_JS[start:end]
-        # Direct delegation to the single source of truth.
-        self.assertIn("window.UiState.setProviders(ids, labels, data.default)", body)
-        # No unreachable local-compat branch.
-        self.assertNotIn("PROVIDERS = ids", body)
-        self.assertNotIn("PROVIDER_LABELS = labels", body)
-        self.assertNotIn("typeof window.UiState.setProviders", body)
-        # Shrink detection: length + order + labels + default must all gate rebuild.
-        self.assertIn("PROVIDERS.length !== ids.length", body)
-        self.assertIn("PROVIDERS[i] !== ids[i]", body)
-        self.assertIn("PROVIDER_LABELS[id] !== labels[id]", body)
-        self.assertIn("data.default !== DEFAULT_PROVIDER", body)
-        # Local default must resync from the single source after delegation.
-        self.assertIn("DEFAULT_PROVIDER = window.UiState.DEFAULT_PROVIDER", body)
-        # adoptBackendCatalog must also delegate directly (no existence guard).
-        adopt_start = PROVIDER_UI_JS.index("async function adoptBackendCatalog()")
-        adopt_end = PROVIDER_UI_JS.index("function providerLabel(id)", adopt_start)
-        adopt_body = PROVIDER_UI_JS[adopt_start:adopt_end]
-        self.assertIn("window.UiState.setProviders(catalog.ids, catalog.labels, data.default)", adopt_body)
-        self.assertNotIn("typeof window.UiState.setProviders", adopt_body)
-        self.assertNotIn("PROVIDERS = ", adopt_body)
 
-    def test_new_chat_default_is_live_and_stored_provider_is_preserved(self) -> None:
-        for name, src in (("index.html", HTML), ("composer.js", COMPOSER_JS)):
-            with self.subTest(asset=name):
-                self.assertIn("function liveDefaultProvider()", src)
-                self.assertIn("window.UiState.DEFAULT_PROVIDER", src)
-        self.assertIn("defaultSession(null, liveDefaultProvider())", HTML)
-        self.assertIn("sendTaskFromSession(sessionId, original.text, s.provider, null, requestId)", COMPOSER_JS)
-        self.assertIn("PROVIDERS.includes(id) ? id : liveDefaultProvider()", COMPOSER_JS)
-        self.assertIn("providerId || s.provider || liveDefaultProvider()", COMPOSER_JS)
-        continue_start = COMPOSER_JS.index("async function continueTask(sessionId)")
-        continue_end = COMPOSER_JS.index("function bindHandlers()", continue_start)
-        continue_block = COMPOSER_JS[continue_start:continue_end]
-        self.assertIn(
-            "provider: s.provider || liveDefaultProvider()",
-            continue_block,
-        )
-        # Cold-start residue red lock: helpers must read the live object
-        # directly (the page already dereferences it at parse time).
-        self.assertIn("return window.UiState.DEFAULT_PROVIDER;", HTML)
-        self.assertIn("return window.UiState.DEFAULT_PROVIDER;", COMPOSER_JS)
-        self.assertNotIn(
-            "(window.UiState && window.UiState.DEFAULT_PROVIDER)",
-            HTML,
-        )
-        self.assertNotIn(
-            "(window.UiState && window.UiState.DEFAULT_PROVIDER)",
-            COMPOSER_JS,
-        )
-        # Composer snapshot is dead once the helper is direct.
-        self.assertNotIn("let DEFAULT_PROVIDER", COMPOSER_JS)
-        self.assertNotIn("DEFAULT_PROVIDER = deps.DEFAULT_PROVIDER", COMPOSER_JS)
+
 
     def test_provider_shrink_and_default_change_applies_live(self) -> None:
         # Executable behavior lock (not just source strings): simulate boot with
@@ -1490,7 +740,8 @@ global.document = {
   addEventListener: () => {},
 };
 global.localStorage = { getItem: () => null, setItem: () => {} };
-global.window = {addEventListener:()=>{}, Settings:{init:()=>{}, open:()=>{}, close:()=>{}}, Requests:{refreshActions:()=>{}}};
+global.__TEST_BRIDGE__ = true;
+    global.window = {__TEST_BRIDGE__:true, addEventListener:()=>{}, Settings:{init:()=>{}, open:()=>{}, close:()=>{}}, Requests:{refreshActions:()=>{}}};
 global.navigator = {};
 global.HTMLElement = function HTMLElement() {};
 global.HTMLButtonElement = function HTMLButtonElement() {};
@@ -1498,49 +749,49 @@ const uiStateSrc = loadAsset('assets/ui_state.js');
 const providerUiSrc = loadAsset('assets/provider_ui.js');
 const composerSrc = loadAsset('assets/composer.js');
 vm.runInThisContext(loadAsset('assets/models.js'));
-window.Models.applySettings({preferences:{revision:0,sources:{websites:{enabled:true,models:['deepseek','mimo']}}},
+runtime.Models.applySettings({preferences:{revision:0,sources:{websites:{enabled:true,models:['deepseek','mimo']}}},
   sources:[{id:'websites',label:'Websites',models:[{id:'deepseek',name:'DeepSeek'},{id:'mimo',name:'MiMo'}]}],in_use:[]});
 vm.runInThisContext(uiStateSrc);
 vm.runInThisContext(providerUiSrc);
 vm.runInThisContext(composerSrc);
 async function main() {
   // Boot with two providers, default deepseek.
-  window.UiState.setProviders(['deepseek', 'mimo'], { deepseek: 'DeepSeek', mimo: 'MiMo' }, 'deepseek');
-  if (window.UiState.PROVIDERS.length !== 2) throw new Error('boot catalog not applied');
-  if (window.UiState.DEFAULT_PROVIDER !== 'deepseek') throw new Error('boot default not applied');
+  runtime.UiState.setProviders(['deepseek', 'mimo'], { deepseek: 'DeepSeek', mimo: 'MiMo' }, 'deepseek');
+  if (runtime.UiState.PROVIDERS.length !== 2) throw new Error('boot catalog not applied');
+  if (runtime.UiState.DEFAULT_PROVIDER !== 'deepseek') throw new Error('boot default not applied');
   // Init provider_ui with live references (as index.html does).
-  const PROVIDERS = window.UiState.PROVIDERS;
-  const PROVIDER_LABELS = window.UiState.PROVIDER_LABELS;
+  const PROVIDERS = runtime.UiState.PROVIDERS;
+  const PROVIDER_LABELS = runtime.UiState.PROVIDER_LABELS;
   let current = 'mimo';
-  window.ProviderUI.init({
+  runtime.ProviderUI.init({
     $: (id) => global.document.getElementById(id),
     escapeHtml: (s) => String(s),
     PROVIDERS, PROVIDER_LABELS,
-    DEFAULT_PROVIDER: window.UiState.DEFAULT_PROVIDER,
+    DEFAULT_PROVIDER: runtime.UiState.DEFAULT_PROVIDER,
     currentProviderId: () => current,
     setActiveProvider: (id) => { current = id; },
   });
   if (menuButtonCount() !== 2) throw new Error('boot menu must have 2 provider-item buttons, got ' + menuButtonCount());
   // Post-boot catalog: remove mimo via applyConfig (not direct setProviders).
-  const shrunk = window.ProviderUI.applyConfig({
+  const shrunk = runtime.ProviderUI.applyConfig({
     providers: [{ id: 'deepseek', label: 'DeepSeek' }],
     default: 'deepseek',
   });
   if (shrunk !== true) throw new Error('shrink must rebuild menu (returned false)');
-  if (window.UiState.PROVIDERS.length !== 1) throw new Error('state array did not shrink');
-  if (window.UiState.PROVIDERS[0] !== 'deepseek') throw new Error('wrong survivor');
+  if (runtime.UiState.PROVIDERS.length !== 1) throw new Error('state array did not shrink');
+  if (runtime.UiState.PROVIDERS[0] !== 'deepseek') throw new Error('wrong survivor');
   if (menuButtonCount() !== 1) throw new Error('menu buttons did not shrink, got ' + menuButtonCount());
   if (!menuButtons[0].dataset || menuButtons[0].dataset.provider !== 'deepseek') throw new Error('menu button has wrong provider');
   // Default flip via applyConfig: re-add mimo with new default mimo.
-  const flipped = window.ProviderUI.applyConfig({
+  const flipped = runtime.ProviderUI.applyConfig({
     providers: [{ id: 'deepseek', label: 'DeepSeek' }, { id: 'mimo', label: 'MiMo' }],
     default: 'mimo',
   });
   if (flipped !== true) throw new Error('default flip must rebuild menu (returned false)');
-  if (window.UiState.DEFAULT_PROVIDER !== 'mimo') throw new Error('default flip not applied');
+  if (runtime.UiState.DEFAULT_PROVIDER !== 'mimo') throw new Error('default flip not applied');
   if (menuButtonCount() !== 2) throw new Error('menu buttons must be 2 after flip, got ' + menuButtonCount());
   // Composer live fallback: no snapshot dep; stale removed-id must resolve to live mimo.
-  const composerProviders = window.UiState.PROVIDERS;
+  const composerProviders = runtime.UiState.PROVIDERS;
   const liveSession = { id: 's1', provider: 'removed-id', messages: [
     { type: 'user', attempts: [{ runId: 'source-run-1' }] },
   ], draft: {text:'',start:0,end:0,direction:'none',revision:0} };
@@ -1550,7 +801,7 @@ async function main() {
     runBodies.push({ url, body: JSON.parse(opts.body) });
     return { status: 200, ok: true, json: async () => ({}) };
   };
-  window.Composer.init({
+  runtime.Composer.init({
     $: (id) => global.document.getElementById(id),
     PROVIDERS: composerProviders,
     getRunningSessionId: () => null,
@@ -1574,13 +825,13 @@ async function main() {
     projectPickerBusy: () => false,
     attachCurrentChatToPickedProject: () => {},
   });
-  window.Composer.setActiveProvider('removed-id');
+  runtime.Composer.setActiveProvider('removed-id');
   if (liveSession.provider !== 'mimo') throw new Error('composer fallback must use live default mimo, got ' + liveSession.provider);
   if (syncedTo !== 'mimo') throw new Error('composer sync must target live default mimo, got ' + syncedTo);
   // A permitted continuation retains its exact provider.
   liveSession.provider = 'mimo';
   runBodies.length = 0;
-  await window.Composer.continueTask('s1');
+  await runtime.Composer.continueTask('s1');
   const continued = runBodies.find((r) => r.url === '/api/run' && r.body && r.body.input?.kind === 'resume_run');
   if (!continued) throw new Error('continueTask did not POST /api/run with input.kind=resume_run');
   if (continued.body.input.source_run_id !== 'source-run-1') throw new Error('continueTask lost source run id');
@@ -1588,13 +839,14 @@ async function main() {
   // Removed connections keep their identity and cannot submit or substitute.
   liveSession.provider = 'removed-id';
   runBodies.length = 0;
-  await window.Composer.continueTask('s1');
+  await runtime.Composer.continueTask('s1');
   if (runBodies.length) throw new Error('removed connection submitted a continuation');
   if (liveSession.provider !== 'removed-id') throw new Error('removed connection identity changed');
   console.log('EXECUTABLE_SHRINK_LIVE_OK');
 }
 main().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
 """
+        harness = harness.replace("runtime.", "window.")
         # P1 harness completeness locks (fail red until the fake DOM is fixed).
         self.assertIn("local-config-close", harness)
         self.assertIn("local-config-save", harness)

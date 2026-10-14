@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 export interface ConversationNavDeps {
   getActiveId(): string;
 }
@@ -116,10 +117,10 @@ export interface ConversationNavDeps {
     if (!entry?.anchor.isConnected || !deps || deps.getActiveId() !== sessionId) return;
     closePreview();
     previewSuppressed = true;
-    window.ConversationUI.stopFollowing();
+    runtime.ConversationUI.stopFollowing();
     const rect = area.getBoundingClientRect();
     area.scrollTop += entry.anchor.getBoundingClientRect().top - rect.top - 24;
-    window.ConversationUI.captureView();
+    runtime.ConversationUI.captureView();
     schedule();
   }
   function makeEntry(anchor: HTMLElement): Entry {
@@ -346,5 +347,5 @@ export interface ConversationNavDeps {
     });
     schedule();
   }
-  window.ConversationNav = { init };
+  runtime.ConversationNav = { init };
 })();

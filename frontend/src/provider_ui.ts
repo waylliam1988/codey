@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { Session } from './types/domain';
 import { decodeProviderConfig, decodeProviderStatus } from './domain/protocol';
 export interface ProviderModel {
@@ -114,17 +115,17 @@ export interface ProviderUiApi {
     providerState = Object.fromEntries(PROVIDERS.map((id) => [id, 'unknown']));
     providerUpdatedAt = Object.fromEntries(PROVIDERS.map((id) => [id, 0]));
     apiModels = Object.fromEntries(
-      window.Models.connections().map((source: ProviderConnection) => [source.id, source]),
+      runtime.Models.connections().map((source: ProviderConnection) => [source.id, source]),
     );
-    window.Models.subscribe(() => {
+    runtime.Models.subscribe(() => {
       apiModels = Object.fromEntries(
-        window.Models.connections().map((source: ProviderConnection) => [
+        runtime.Models.connections().map((source: ProviderConnection) => [
           source.id,
           { ...apiModels[source.id], ...source },
         ]),
       );
       buildProviderMenu();
-      window.Composer.updateSend();
+      runtime.Composer.updateSend();
     });
     buildProviderMenu();
     bindHandlers();
@@ -134,7 +135,7 @@ export interface ProviderUiApi {
       observer.observe($('effort-button'));
     }
     window.addEventListener('resize', syncModelMenuWidth);
-    window.Settings.init({ $: deps.$, applyLocalMetadata });
+    runtime.Settings.init({ $: deps.$, applyLocalMetadata });
     refreshLocalMetadata();
     refreshApiModels();
   }
@@ -154,7 +155,7 @@ export interface ProviderUiApi {
       const localModels = connection ? connection.models.map((item: ProviderModel) => item.id) : [''];
       if (connection && !localModels.length) localModels.push('');
       for (const model of localModels) {
-        if (!window.Models.allows(id, model)) continue;
+        if (!runtime.Models.allows(id, model)) continue;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'provider-item';
@@ -197,8 +198,8 @@ export interface ProviderUiApi {
             }
           }
           setActiveProvider(id);
-          if (window.UiState && typeof window.UiState.setDefaultProvider === 'function') {
-            window.UiState.setDefaultProvider(id);
+          if (runtime.UiState && typeof runtime.UiState.setDefaultProvider === 'function') {
+            runtime.UiState.setDefaultProvider(id);
           }
           closeMenu(true);
         };
@@ -264,8 +265,8 @@ export interface ProviderUiApi {
   }
 
   function applyRecommended(data: unknown) {
-    if (isRecord(data) && data.recommended && window.UiState && typeof window.UiState.setRecommended === 'function') {
-      window.UiState.setRecommended(data.recommended);
+    if (isRecord(data) && data.recommended && runtime.UiState && typeof runtime.UiState.setRecommended === 'function') {
+      runtime.UiState.setRecommended(data.recommended);
     }
   }
 
@@ -278,8 +279,8 @@ export interface ProviderUiApi {
     }
     const ids = catalog.providers.map((item) => item.id);
     const labels = catalog.labels;
-    if (catalog.defaultProvider && window.UiState && typeof window.UiState.setDefaultProvider === 'function') {
-      window.UiState.setDefaultProvider(catalog.defaultProvider);
+    if (catalog.defaultProvider && runtime.UiState && typeof runtime.UiState.setDefaultProvider === 'function') {
+      runtime.UiState.setDefaultProvider(catalog.defaultProvider);
     }
     let changed = false;
     if (PROVIDERS.length !== ids.length) {
@@ -304,8 +305,8 @@ export interface ProviderUiApi {
     if (!changed && defaultId && defaultId !== DEFAULT_PROVIDER && labels[defaultId]) changed = true;
     applyRecommended(catalog.recommendedProvider ? { recommended: catalog.recommendedProvider } : {});
     if (!changed) return false;
-    window.UiState.setProviders(ids, labels, defaultId);
-    DEFAULT_PROVIDER = window.UiState.DEFAULT_PROVIDER;
+    runtime.UiState.setProviders(ids, labels, defaultId);
+    DEFAULT_PROVIDER = runtime.UiState.DEFAULT_PROVIDER;
     applyRecommended(catalog.recommendedProvider ? { recommended: catalog.recommendedProvider } : {});
     providerStatus = Object.fromEntries(PROVIDERS.map((id) => [id, !!providerStatus[id]]));
     providerState = Object.fromEntries(PROVIDERS.map((id) => [id, providerState[id] || 'unknown']));
@@ -316,7 +317,7 @@ export interface ProviderUiApi {
 
   async function adoptBackendCatalog() {
     try {
-      await window.Models.load();
+      await runtime.Models.load();
     } catch {}
     // Boot-time only: adopt the backend catalog into ui_state before init.
     // Hits the cheap static catalog (no CDP/network probe); availability
@@ -329,7 +330,7 @@ export interface ProviderUiApi {
       if (!r.ok) return;
       const data = await r.json();
       const catalog = decodeProviderConfig(data);
-      window.UiState.setProviders(
+      runtime.UiState.setProviders(
         catalog.providers.map((item) => item.id),
         catalog.labels,
         catalog.defaultProvider,
@@ -348,7 +349,7 @@ export interface ProviderUiApi {
   function syncProviderUI(providerId: string): void {
     const id = providerId || DEFAULT_PROVIDER;
     const selection = sessionSelection();
-    const reason = window.Models.reason(id, selection.model);
+    const reason = runtime.Models.reason(id, selection.model);
     $('provider-name').textContent =
       (selection.model ? modelTitle(selection.model, id) : providerLabel(id)) + (reason ? ' · ' + reason : '');
     const staleConnection =
@@ -396,7 +397,8 @@ export interface ProviderUiApi {
           ? 'stale'
           : item.state || (item.available ? 'ready' : 'unavailable');
       providerUpdatedAt[item.id] = isSSE ? appliedAt : snapshotTime;
-      if (window.Models.connections().some((source) => source.id === item.id)) apiStatusChanged = true;
+      if (runtime.Models.connections().some((source: ProviderConnection) => source.id === item.id))
+        apiStatusChanged = true;
     }
     syncProviderUI(currentProviderId());
     if (apiStatusChanged && isSSE) refreshApiModels();
@@ -435,10 +437,10 @@ export interface ProviderUiApi {
   }
 
   function openLocalProviderConfig() {
-    return window.Settings.open();
+    return runtime.Settings.open();
   }
   function closeLocalProviderConfig() {
-    return window.Settings.close();
+    return runtime.Settings.close();
   }
 
   let localMetadata: LocalMetadata = {},
@@ -603,7 +605,7 @@ export interface ProviderUiApi {
     buildProviderMenu();
   }
   async function refreshLocalMetadata() {
-    if (!window.Models.snapshot().preferences.sources.local?.enabled) return;
+    if (!runtime.Models.snapshot().preferences.sources.local?.enabled) return;
     const request = ++localRequest;
     try {
       const r = await fetch('/api/local_provider', { cache: 'no-store' });
@@ -616,7 +618,7 @@ export interface ProviderUiApi {
     apiModelsRequest = 0;
   function applyApiModels(connections: ProviderConnection[]): void {
     connections.forEach((connection: ProviderConnection) => {
-      if (window.Models.connections().some((source) => source.id === connection.id))
+      if (runtime.Models.connections().some((source: ProviderConnection) => source.id === connection.id))
         apiModels[connection.id] = connection;
     });
     buildProviderMenu();
@@ -749,7 +751,7 @@ export interface ProviderUiApi {
     );
   }
 
-  window.ProviderUI = {
+  runtime.ProviderUI = {
     init,
     label: providerLabel,
     sync: syncProviderUI,

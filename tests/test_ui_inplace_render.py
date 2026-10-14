@@ -71,6 +71,7 @@ def _goto_restored_ui(page, url):
     # Observe the actual boot restore promise before index.html binds its alias.
     # DOM tests must not race a late renderChat() from server-state restoration.
     page.add_init_script("""
+        window.__TEST_BRIDGE__ = true;
         Object.defineProperty(window, 'UiState', {configurable:true, set(state) {
             Object.defineProperty(window, 'UiState', {
                 value:state, writable:true, configurable:true, enumerable:true});
@@ -210,7 +211,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     const snapshot = rows => ({active_id:sid, projects:[], sessions:[{
                         id:sid, title:'History', provider:'local', messages:rows, terminalRuns:[]
                     }]});
-                    window.UiState.apply(snapshot(messages)); window.renderChat();
+                    UiState.apply(snapshot(messages)); renderChat();
                     const chat = document.getElementById('chat');
                     const first = chat.querySelector('.process-group');
                     const historical = !first.open && first.querySelector('summary').textContent.startsWith('Worked');
@@ -222,11 +223,11 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     getSelection().removeAllRanges(); getSelection().addRange(originalRange);
                     const originalSelected = getSelection().toString();
                     // Equal backend snapshots preserve message DOM and pointer selection.
-                    window.UiState.apply(snapshot(JSON.parse(JSON.stringify(messages)))); window.renderChat();
+                    UiState.apply(snapshot(JSON.parse(JSON.stringify(messages)))); renderChat();
                     const snapshotStable = originalAnswer === chat.querySelector('.msg.asst .body')
                         && getSelection().toString() === originalSelected;
                     // A genuinely changed snapshot rebuilds while keeping disclosure choices.
-                    window.UiState.apply(snapshot([...messages, {type:'info', text:'Reconciled'}])); window.renderChat();
+                    UiState.apply(snapshot([...messages, {type:'info', text:'Reconciled'}])); renderChat();
                     const rebuilt = chat.querySelector('.process-group');
                     const kept = rebuilt.open && rebuilt.querySelector('.thinking').open
                         && !rebuilt.querySelector('.tool-group').classList.contains('collapsed');
@@ -234,7 +235,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     const range = document.createRange(); range.selectNodeContents(answer);
                     getSelection().removeAllRanges(); getSelection().addRange(range);
                     const selected = getSelection().toString();
-                    window.replaceSessionMessage(sid, m => m.toolKey === 'new:1', {type:'tool', kind:'read', path:'two.py',
+                    replaceSessionMessage(sid, m => m.toolKey === 'new:1', {type:'tool', kind:'read', path:'two.py',
                         result:'3 lines', runId:'new', toolKey:'new:1'});
                     return {historical, kept, snapshotStable, groups:chat.querySelectorAll('.process-group').length,
                         selected, after:getSelection().toString(), sameAnswer:answer === chat.querySelector('.msg.asst .body'),
@@ -271,7 +272,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         {type:'asst', text:'The final answer stays readable.', runId:'r'},
                         {type:'run_state', state:'failed', runId:'r'},
                     ];
-                    rows.forEach(m => window.appendMessageNode(chat, m));
+                    rows.forEach(m => appendMessageNode(chat, m));
                     const group = chat.querySelector('.process-group');
                     if (!group) throw new Error('No process group');
                     const visible = node => !!node && !!node.getClientRects().length;
@@ -311,7 +312,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         + '| Name | Result |\\n| --- | --- |\\n| 中文 | **OK** |\\n\\n'
                         + '<img src=x onerror=alert(1)>\\n\\n```js\\nconst x = 1;\\n```'
                         + '\\n\\n* Parent\\n    * First\\n    * Second';
-                    window.appendMessageNode(chat, {type:'asst', text});
+                    appendMessageNode(chat, {type:'asst', text});
                     let copied = '';
                     Object.defineProperty(navigator, 'clipboard', {configurable:true,
                         value:{writeText:async value => {copied=value;}}});
@@ -362,7 +363,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         { type: 'tool_pending', kind: 'edit', toolKey: 'tool-k1', path: 'module.py', activity: 'Applying changes...' }
                     ];
 
-                    window.UiState.apply({
+                    UiState.apply({
                         active_id: sid,
                         sessions: [{
                             id: sid,
@@ -376,7 +377,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     });
 
                     // Initial chat rendering
-                    window.renderChat();
+                    renderChat();
 
                     const chatEl = document.getElementById('chat');
                     const chatArea = document.getElementById('chat-area');
@@ -419,7 +420,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         result: 'Successfully updated 1 line'
                     };
 
-                    const replaced = window.replaceSessionMessage(
+                    const replaced = replaceSessionMessage(
                         sid,
                         m => m.type === 'tool_pending' && m.toolKey === 'tool-k1',
                         finalToolMessage
@@ -520,7 +521,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                             output: 'boom',
                         };
                         if ('shellStatus' in c) event.shellStatus = c.shellStatus;
-                        window.appendMessageNode(chat, event);
+                        appendMessageNode(chat, event);
                         const out = chat.querySelector('.shell-output');
                         if (!out) throw new Error('Expected .shell-output node');
                         titles[c.key] = out.textContent.split('\\n')[0];

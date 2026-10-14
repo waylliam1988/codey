@@ -10,7 +10,6 @@ from typing import Any
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.app.event_payloads import machine_event_payload
 
-
 FIXTURES = Path(__file__).parent / "fixtures" / "protocol"
 
 

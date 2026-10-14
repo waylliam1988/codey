@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { ChangeFilePreview, ChangesData, RestoreChangesResult } from './types/domain';
 export interface ChangesDrawerDeps {
   $(id: string): HTMLElement;
@@ -81,7 +82,7 @@ export interface ChangesDrawerDeps {
     if (!lastData?.diff) return;
     const project = activeProject,
       data = lastData;
-    const ok = await window.Render.copyText(data.diff);
+    const ok = await runtime.Render.copyText(data.diff);
     if (activeProject !== project || lastData !== data) return;
     $('changes-copy').textContent = ok ? 'Copied' : 'Could not copy';
     setTimeout(() => {
@@ -101,9 +102,9 @@ export interface ChangesDrawerDeps {
     activeProject = project;
     selectedPath = path;
     const scope = $('changes-scope');
-    scope.textContent = window.UiState.pathName(project);
+    scope.textContent = runtime.UiState.pathName(project);
     scope.title = project;
-    window.UiState.setDrawerOpen('changes-drawer', true);
+    runtime.UiState.setDrawerOpen('changes-drawer', true);
     pathFocus = document.activeElement;
     await loadChangesDrawer(project);
   }
@@ -153,7 +154,7 @@ export interface ChangesDrawerDeps {
     lastData = null;
     loading = restoring = fresh = failed = false;
     updateControls();
-    window.UiState.setDrawerOpen('changes-drawer', false);
+    runtime.UiState.setDrawerOpen('changes-drawer', false);
   }
   function renderChangesDrawer(data: ChangeData): void {
     lastData = data;
@@ -186,6 +187,12 @@ export interface ChangesDrawerDeps {
     nodes.forEach((node, index) => {
       if (body.children[index] !== node) body.insertBefore(node, body.children[index] || null);
     });
+    if (data.mode === 'git') {
+      for (const node of nodes) {
+        const pre = node.querySelector<HTMLPreElement>('pre');
+        if (pre && !pre.hidden) void loadFilePreview(node, node.dataset.path || '');
+      }
+    }
     if (!files.length) body.innerHTML = '<div class="changes-empty">No changes</div>';
     body.scrollTop = anchor?.isConnected ? body.scrollTop + anchor.getBoundingClientRect().top - top - offset : scroll;
   }
@@ -312,10 +319,11 @@ export interface ChangesDrawerDeps {
           : '<span class="diff-line meta">Open to load file diff</span>';
     const pre = node.querySelector<HTMLPreElement>('pre');
     if (!pre) return;
+    const keepDisplayedContent = lastData?.mode === 'git' && !pre.hidden && pre.childNodes.length > 0;
     delete node.dataset.previewLoading;
     delete node.dataset.previewToken;
     delete node.dataset.previewLoaded;
-    if (node._diffContent !== content) {
+    if (!keepDisplayedContent && node._diffContent !== content) {
       pre.innerHTML = content;
       node._diffContent = content;
     }
@@ -450,7 +458,7 @@ export interface ChangesDrawerDeps {
     return out.join('');
   }
 
-  window.ChangesDrawer = {
+  runtime.ChangesDrawer = {
     init,
     open: openChangesDrawer,
     close: closeChangesDrawer,

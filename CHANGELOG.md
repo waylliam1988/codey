@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- Harden the frontend migration boundary: split Windows check/build failures, validate terminal events before committing state, reload expanded file previews after refresh, include protocol fixtures in sdists, and remove the 26 obsolete migration skips in favor of behavior-focused coverage. Module registries now stay internal in production; the opt-in test bridge is test-only and is not enabled by the shipped page.
 - Project hybrid research facts into `task_done.research`, preserve synthesis identity and explicit restore availability, and keep research restore records tied to the owning run.
 - Load Git file diffs independently after aggregate truncation, preserve snapshot previews, render all staged/unstaged chunks, protect refreshes from stale responses, and keep focus-path navigation expanded.
 - Split deterministic proof review helpers by responsibility while retaining the existing review and trace contracts.

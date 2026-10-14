@@ -1685,7 +1685,8 @@ class WebAssetTests(unittest.TestCase):
 
         self.assertEqual(response.status, 200)
         self.assertIn("application/javascript", ctype)
-        self.assertIn("window.ResearchGraph", body)
+        self.assertNotIn("window.ResearchGraph", body)
+        self.assertIn("ResearchGraph", body)
 
     def test_asset_cache_control_follows_version_pin(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)

@@ -10,5 +10,6 @@ recursive-include frontend/src *.ts
 recursive-include frontend/public *.ico *.css
 include tools/frontend_source.py tools/frontend_source.mjs tools/publish_frontend.py
 recursive-include tests *.py
+recursive-include tests/fixtures/protocol *.json
 prune frontend/node_modules
 prune frontend/dist

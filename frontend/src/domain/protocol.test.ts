@@ -97,6 +97,15 @@ describe('protocol decoders', () => {
       expect(() => decodeServerEvent(data)).toThrow();
   });
 
+  it('rejects malformed research payloads before a terminal event can be applied', () => {
+    expect(() =>
+      decodeServerEvent({
+        type: 'task_done',
+        research: { notes_created: ['note-1', 42] },
+      }),
+    ).toThrow('research notes_created is invalid');
+  });
+
   it('accepts a null exit code for events without a process exit status', () => {
     expect(decodeServerEvent({ type: 'task_done', exit_code: null }).exit_code).toBeNull();
   });
@@ -136,8 +145,14 @@ describe('protocol decoders', () => {
 
   it('rejects present run state fields with invalid types instead of treating them as idle', () => {
     expect(() => decodeRunState({ busy: 'false' })).toThrow('busy');
-    expect(() => decodeRunState({ run_id: 42 })).toThrow('run_id');
-    expect(() => decodeRunState({ research_restore_runs: [42] })).toThrow('research_restore_runs');
+    expect(() => decodeRunState({ busy: false, run_id: 42 })).toThrow('run_id');
+    expect(() => decodeRunState({ busy: false, research_restore_runs: [42] })).toThrow('research_restore_runs');
+  });
+
+  it('requires an explicit busy flag and run scope for busy snapshots', () => {
+    expect(() => decodeRunState({})).toThrow('busy is required');
+    expect(() => decodeRunState({ busy: true, run_id: '', session_id: '' })).toThrow('run and session IDs');
+    expect(decodeRunState({ busy: false, run_id: '', session_id: '' })).toMatchObject({ busy: false });
   });
 
   it('preserves changes mode and metadata required by the drawer', () => {

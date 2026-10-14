@@ -984,7 +984,7 @@ def test_provider_ui_applies_recommended_before_and_after_catalog() -> None:
     assert "function applyRecommended(data)" in text
     before = text.index("applyRecommended(catalog.recommendedProvider")
     after_providers = text.index(
-        "window.UiState.setProviders(catalog.providers.map((item) => item.id), catalog.labels, catalog.defaultProvider);"
+        "runtime.UiState.setProviders(catalog.providers.map((item) => item.id), catalog.labels, catalog.defaultProvider);"
     )
     assert text.count("applyRecommended(catalog.recommendedProvider") == 2
     assert before < after_providers

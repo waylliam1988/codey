@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { Draft, Message, Project, ResearchRun, Session, UiDeps } from './types/domain';
 type Loose = Record<string, unknown>;
 export interface UiStateApi {
@@ -77,7 +78,7 @@ export interface UiStateApi {
     }
     if (typeof defaultId === 'string' && PROVIDER_LABELS[defaultId]) {
       DEFAULT_PROVIDER = defaultId;
-      window.UiState.DEFAULT_PROVIDER = defaultId;
+      runtime.UiState.DEFAULT_PROVIDER = defaultId;
     }
   }
 
@@ -85,7 +86,7 @@ export interface UiStateApi {
     const key = id.trim();
     if (!key || !PROVIDER_LABELS[key]) return;
     DEFAULT_PROVIDER = key;
-    window.UiState.DEFAULT_PROVIDER = key;
+    runtime.UiState.DEFAULT_PROVIDER = key;
   }
 
   function init(nextDeps: UiDeps): void {
@@ -561,7 +562,7 @@ export interface UiStateApi {
       flushUiState();
     };
     window.addEventListener('pagehide', () => {
-      window.Composer.captureDraft();
+      runtime.Composer.captureDraft();
       if (uiStatePersistTimer !== null) {
         clearTimeout(uiStatePersistTimer);
         uiStatePersistTimer = null;
@@ -605,7 +606,7 @@ export interface UiStateApi {
     } catch {}
   }
 
-  window.UiState = {
+  runtime.UiState = {
     init,
     setDrawerOpen,
     DEFAULT_PROVIDER,

@@ -45,28 +45,18 @@ def page(ui_browser):
     boot_errors = []
     page.on("pageerror", lambda error: boot_errors.append(str(error)))
     page.on("requestfailed", lambda request: boot_errors.append(f"{urlsplit(request.url).path}: {request.failure}"))
-    page.add_init_script("window.EventSource = class { static OPEN = 1; readyState = 1; close() {} };")
+    page.add_init_script("window.__TEST_BRIDGE__ = true; window.EventSource = class { static OPEN = 1; readyState = 1; close() {} };")
 
-    dist_root = ROOT / "frontend" / "dist"
-    index_body = (dist_root / "index.html").read_bytes() if (dist_root / "index.html").is_file() else None
     document = mock.Mock(headers={}, wfile=BytesIO())
-    if index_body is None:
-        send_index(document)
-        index_body = document.wfile.getvalue()
+    send_index(document)
+    index_body = document.wfile.getvalue()
     page.route(lambda url: urlsplit(url).path in {"/", "/index.html"},
                lambda route: route.fulfill(body=index_body, content_type="text/html; charset=utf-8"))
 
     def asset(route):
-        # Behavior tests use the exact shipped files. HTTP asset delivery has
-        # separate integration coverage; a loopback failure must not randomly
-        # remove one module and turn every subsequent UI assertion into a timeout.
-        candidate = dist_root / urlsplit(route.request.url).path.removeprefix("/")
-        if candidate.is_file():
-            path, content_type = candidate, "application/javascript; charset=utf-8" if candidate.suffix == ".js" else "text/css; charset=utf-8"
-        else:
-            resolved = resolve_web_asset(urlsplit(route.request.url).path)
-            assert resolved is not None, f"Missing shipped asset: {route.request.url}"
-            path, content_type = resolved
+        resolved = resolve_web_asset(urlsplit(route.request.url).path)
+        assert resolved is not None, f"Missing shipped asset: {route.request.url}"
+        path, content_type = resolved
         route.fulfill(body=path.read_bytes(), content_type=content_type)
 
     page.route("**/assets/**", asset)
@@ -96,11 +86,11 @@ def page(ui_browser):
         try:
             page.goto(url)
             expect(page.locator("#provider-button")).to_be_enabled(timeout=15000)
-            page.wait_for_function("window.UiState.current().active_id === 'a'", polling=100)
+            page.wait_for_function("UiState.current().active_id === 'a'", polling=100)
         except (AssertionError, PlaywrightTimeoutError) as exc:
             status = page.locator(".status-row").all_text_contents()
-            state = page.evaluate("() => ({active_id: window.UiState?.current().active_id, "
-                                  "session_ids: window.UiState?.current().sessions.map(s => s.id), "
+            state = page.evaluate("() => ({active_id: UiState?.current().active_id, "
+                                  "session_ids: UiState?.current().sessions.map(s => s.id), "
                                   "visibility: document.visibilityState})")
             raise AssertionError(f"UI boot failed: {boot_errors}; status: {status}; state: {state}") from exc
         page.wait_for_load_state("networkidle")
@@ -428,7 +418,7 @@ def test_accepted_snapshot_does_not_erase_later_input_or_other_chat(page):
     page.evaluate("switchSession('b')")
     page.locator("#task").fill("beta task")
     page.evaluate("finishSend()")
-    page.wait_for_function("window.UiState.current().sessions[0].messages.some(m => m.type === 'user')")
+    page.wait_for_function("UiState.current().sessions[0].messages.some(m => m.type === 'user')")
     expect(page.locator("#task")).to_have_value("beta task")
     page.evaluate("switchSession('a')")
     expect(page.locator("#task")).to_have_value("later edit")
@@ -542,6 +532,24 @@ def test_hybrid_task_done_research_payload_creates_graph_entry(page):
     expect(page.locator("#research-drawer .research-graph-stage canvas")).to_be_visible()
 
 
+def test_invalid_terminal_event_does_not_consume_run_and_valid_replay_finishes_once(page):
+    result = page.evaluate("""() => {
+        const invalid = {
+            type: 'task_done', run_id: 'replay-run', session_id: 'a',
+            summary: 'FINAL REPLY', stop_reason: 'done', mode: 'chat',
+            research: {notes_created: ['note-1', 42]},
+        };
+        let error = '';
+        try { handleServerEvent(invalid); } catch (exc) { error = String(exc.message || exc); }
+        const valid = {...invalid, research: {notes_created: []}};
+        handleServerEvent(valid);
+        handleServerEvent(valid);
+        return {error};
+    }""")
+    assert 'research notes_created is invalid' in result['error']
+    expect(page.locator('.msg.asst').filter(has_text='FINAL REPLY')).to_have_count(1)
+
+
 def test_truncated_changes_loads_large_file_preview_on_demand(page):
     page.route("**/api/changes**", lambda route: route.fulfill(json={
         "ok": True, "mode": "git", "truncated": True,
@@ -553,12 +561,14 @@ def test_truncated_changes_loads_large_file_preview_on_demand(page):
     page.evaluate("openChangesDrawer('E:/project-alpha')")
     expect(page.locator("#changes-subtitle")).to_contain_text("Diff list truncated")
     expect(page.locator(".change-file[data-path='bundle.js']")).to_have_count(1)
-    page.locator(".change-file[data-path='bundle.js'] button").click()
+    with page.expect_request("**/api/changes/file"):
+        page.locator(".change-file[data-path='bundle.js'] button").click()
     expect(page.locator(".change-file[data-path='bundle.js'] pre")).to_contain_text("too large")
 
 
-def test_partial_git_diff_refreshes_file_preview_and_focus_keeps_it_open(page):
+def test_refresh_reloads_complete_preview_for_expanded_file_and_focus_keeps_it_open(page):
     file_calls = []
+    preview_texts = iter(['complete-v1', 'complete-v2', 'complete-v3'])
     page.route("**/api/changes**", lambda route: route.fulfill(json={
         "ok": True, "mode": "git", "truncated": True,
         "files": [{"path": "bundle.js", "status": "M"}],
@@ -567,17 +577,24 @@ def test_partial_git_diff_refreshes_file_preview_and_focus_keeps_it_open(page):
 
     def file_preview(route):
         file_calls.append(route.request.url)
+        text = next(preview_texts)
         route.fulfill(json={
             "ok": True, "path": "bundle.js", "status": "text",
-            "diff": "diff --git a/bundle.js b/bundle.js\n@@ -1 +1 @@\n-old\n+complete\n",
+            "diff": f"diff --git a/bundle.js b/bundle.js\n@@ -1 +1 @@\n-old\n+{text}\n",
         })
 
     page.route("**/api/changes/file", file_preview)
     page.evaluate("() => openChangesDrawer('E:/project-alpha')")
     expect(page.locator(".change-file[data-path='bundle.js']")).to_have_count(1)
     page.locator(".change-file[data-path='bundle.js'] button").click()
-    expect(page.locator(".change-file[data-path='bundle.js'] pre")).to_contain_text("complete")
+    expect(page.locator(".change-file[data-path='bundle.js'] pre")).to_contain_text("complete-v1")
     assert len(file_calls) == 1
+    page.wait_for_function("!document.querySelector('.change-file[data-path=\\\"bundle.js\\\"]').dataset.previewLoading")
+    expect(page.locator('#changes-refresh')).to_be_enabled()
+    with page.expect_request("**/api/changes/file"):
+        page.locator('#changes-refresh').click()
+    expect(page.locator(".change-file[data-path='bundle.js'] pre")).to_contain_text("complete-v2")
+    assert len(file_calls) == 2
     page.evaluate("() => openChangesDrawer('E:/project-alpha', 'bundle.js')")
     expect(page.locator(".change-file[data-path='bundle.js'] pre")).to_be_visible()
 

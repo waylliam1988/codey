@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { ModelSource, ModelState } from './types/domain';
 /* Source preferences are authoritative; discovery supplies names, never choices. */
 (function () {
@@ -50,7 +51,7 @@ import type { ModelSource, ModelState } from './types/domain';
     state.sources[index] = { ...state.sources[index], ...source };
     listeners.forEach((listener) => listener());
   }
-  window.Models = {
+  runtime.Models = {
     load,
     snapshot,
     applySettings,
@@ -59,6 +60,6 @@ import type { ModelSource, ModelState } from './types/domain';
     connections,
     hasAny,
     observeCatalog,
-    subscribe: (listener) => listeners.add(listener),
+    subscribe: (listener: () => void) => listeners.add(listener),
   };
 })();

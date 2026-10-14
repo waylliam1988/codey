@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { Message, Project, Session } from './types/domain';
 import type { ProcessSnapshot } from './process';
 export interface ConversationUiApi {
@@ -180,7 +181,7 @@ export interface ConversationUiDeps {
     views.set(shownId, {
       messages: session.messages.slice(),
       nodes: Array.from($('chat').childNodes),
-      disclosures: window.Process.capture($('chat')),
+      disclosures: runtime.Process.capture($('chat')),
       scroll: $('chat-area').scrollTop,
       following,
       anchor: readingAnchor(),
@@ -332,7 +333,7 @@ export interface ConversationUiDeps {
     if (!deps) return;
     const s = deps.activeSession();
     if (!s) return;
-    window.Composer.syncSession();
+    runtime.Composer.syncSession();
     const p = deps.activeProject();
     renderTitle(s, p);
     deps.syncProviderUI(deps.currentProviderId());
@@ -351,7 +352,7 @@ export interface ConversationUiDeps {
     if (unchanged(saved, s)) {
       if (changing && saved?.nodes) chat.replaceChildren(...saved.nodes);
     } else {
-      const disclosures = changing ? saved?.disclosures : window.Process.capture(chat);
+      const disclosures = changing ? saved?.disclosures : runtime.Process.capture(chat);
       chat.replaceChildren();
       if (!s.messages.length) {
         const welcome = document.createElement('div');
@@ -359,7 +360,7 @@ export interface ConversationUiDeps {
         welcome.innerHTML = '<h1>Codey</h1><p>Send a message to start.</p>';
         chat.append(welcome);
       } else for (const m of s.messages) deps.appendMessageNode(chat, m);
-      window.Process.restore(chat, disclosures);
+      runtime.Process.restore(chat, disclosures);
     }
     shownId = s.id;
     following = follow;
@@ -409,7 +410,7 @@ export interface ConversationUiDeps {
 
   function openFile(path: string | null, project = '') {
     const target = project || deps.currentProjectPath();
-    if (target && path) return window.ChangesDrawer.open(target, path);
+    if (target && path) return runtime.ChangesDrawer.open(target, path);
   }
   function forget(id: string) {
     views.delete(id);
@@ -614,7 +615,7 @@ export interface ConversationUiDeps {
   function showSelectionMenu(target: Element | null, x: number, y: number, keyboard = false): boolean {
     const snapshot = selectionFor(target);
     deps.closeAllMenus();
-    window.ProviderUI.closeMenu();
+    runtime.ProviderUI.closeMenu();
     if (!snapshot) return false;
     if (snapshot.range && $('chat').contains(snapshot.range.startContainer)) stopFollowing();
     snapshot.scrollPositions = [];
@@ -662,7 +663,7 @@ export interface ConversationUiDeps {
         closeSelectionMenu();
         return;
       }
-      if (window.Composer.quoteInReply(snapshot.sessionId, snapshot.text)) closeSelectionMenu();
+      if (runtime.Composer.quoteInReply(snapshot.sessionId, snapshot.text)) closeSelectionMenu();
       else {
         $('selection-copy-status').textContent = 'Could not insert quote';
         $('selection-copy-status').hidden = false;
@@ -675,7 +676,7 @@ export interface ConversationUiDeps {
       copy.disabled = true;
       let ok = false;
       try {
-        ok = await window.Render.copyText(snapshot.text);
+        ok = await runtime.Render.copyText(snapshot.text);
       } catch {}
       if (generation !== copyGeneration) return;
       restoreSelection(snapshot);
@@ -916,10 +917,10 @@ export interface ConversationUiDeps {
     initSidebarResize();
     initSelectionMenu();
     initTitleRename();
-    window.ConversationNav.init({ getActiveId: nextDeps.getActiveId });
+    runtime.ConversationNav.init({ getActiveId: nextDeps.getActiveId });
   }
 
-  window.ConversationUI = {
+  runtime.ConversationUI = {
     init,
     renderChat,
     scrollChat,

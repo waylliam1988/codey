@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 export interface ResearchSource {
   url?: string;
   final_url?: string;
@@ -101,13 +102,13 @@ export interface ResearchDrawerDeps {
   }
 
   function disposeResearchGraph() {
-    if (window.ResearchGraph) window.ResearchGraph.dispose();
+    if (runtime.ResearchGraph) runtime.ResearchGraph.dispose();
   }
 
   function openResearchDrawer(sessionId: string) {
     if (deps.closeOtherDrawers) deps.closeOtherDrawers('research');
     boundSessionId = sessionId;
-    window.UiState.setDrawerOpen('research-drawer', true);
+    runtime.UiState.setDrawerOpen('research-drawer', true);
     const scope = $('research-scope');
     if (scope && deps.getSessionTitle) scope.textContent = deps.getSessionTitle(sessionId);
     renderResearchDrawer(sessionId);
@@ -116,7 +117,7 @@ export interface ResearchDrawerDeps {
   function closeResearchDrawer() {
     boundSessionId = '';
     disposeResearchGraph();
-    window.UiState.setDrawerOpen('research-drawer', false);
+    runtime.UiState.setDrawerOpen('research-drawer', false);
     $('research-drawer').classList.remove('graph-open');
   }
 
@@ -241,11 +242,11 @@ export interface ResearchDrawerDeps {
   }
 
   function renderResearchGraph(panel: HTMLElement, run: ResearchRun, sessionId: string) {
-    if (!window.ResearchGraph) {
+    if (!runtime.ResearchGraph) {
       panel.appendChild(researchEmpty('Graph unavailable'));
       return;
     }
-    window.ResearchGraph.render(panel, {
+    runtime.ResearchGraph.render(panel, {
       run,
       sessionId,
       activeId: deps.getActiveId(),
@@ -478,8 +479,8 @@ export interface ResearchDrawerDeps {
     const preview = clipped ? bodyText.slice(0, NOTE_PREVIEW_CHARS).trimEnd() + '\n...' : bodyText;
     const body = document.createElement('div');
     body.className = 'research-note-body md';
-    if (window.Render && typeof window.Render.renderMarkdown === 'function') {
-      window.Render.renderMarkdown(body, preview || 'No note body');
+    if (runtime.Render && typeof runtime.Render.renderMarkdown === 'function') {
+      runtime.Render.renderMarkdown(body, preview || 'No note body');
     } else {
       body.textContent = preview || 'No note body';
     }
@@ -678,7 +679,7 @@ export interface ResearchDrawerDeps {
     }
   }
 
-  window.ResearchDrawer = {
+  runtime.ResearchDrawer = {
     init,
     open: openResearchDrawer,
     close: closeResearchDrawer,

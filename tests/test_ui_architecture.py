@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,9 +39,53 @@ def test_frontend_has_no_inline_css() -> None:
     assert not re.search(r"<style\b", _html(), re.I)
 
 def test_business_script_is_not_inline_in_html() -> None:
-    html = _html()
-    assert html.count('<script type="module" src="/src/main.ts"></script>') == 1
-    assert not re.search(r"<script(?![^>]*src)[^>]*>[^<]*function", html, re.I | re.S)
+    class ScriptParser(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.scripts: list[tuple[dict[str, str], str]] = []
+            self._attrs: dict[str, str] | None = None
+            self._body: list[str] = []
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if tag == "script":
+                self._attrs = {key: value or "" for key, value in attrs}
+                self._body = []
+
+        def handle_data(self, data: str) -> None:
+            if self._attrs is not None:
+                self._body.append(data)
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag == "script" and self._attrs is not None:
+                self.scripts.append((self._attrs, "".join(self._body)))
+                self._attrs = None
+
+    parser = ScriptParser()
+    parser.feed(_html())
+    assert len(parser.scripts) == 1
+    attrs, body = parser.scripts[0]
+    assert attrs == {"type": "module", "src": "/src/main.ts"}
+    assert not body.strip()
+
+
+def test_production_runtime_does_not_publish_module_globals() -> None:
+    names = (
+        "Render", "UiState", "ProviderUI", "Composer", "ConversationUI", "Messages",
+        "Sse", "Requests", "Process", "ChangesDrawer", "LocalContextDrawer",
+        "ResearchDrawer", "ResearchRuns", "RunDetails", "OperatorAuth", "Settings",
+        "ModelSettings", "ResearchGraph", "ConversationNav", "Models",
+    )
+    source_files = [
+        path for path in (FRONTEND / "src").glob("*.ts")
+        if not path.name.endswith(".test.ts") and path.name != "runtime.ts"
+    ]
+    source = "\n".join(path.read_text(encoding="utf-8") for path in source_files)
+    for name in names:
+        assert f"window.{name}" not in source
+    bundle = "\n".join(path.read_text(encoding="utf-8") for path in (WEB / "assets").glob("*.js"))
+    for name in names:
+        assert f"window.{name}" not in bundle
+
 
 def test_publish_manifest_is_present_and_matches_build_schema() -> None:
     data = json.loads((WEB / "frontend-build.json").read_text(encoding="utf-8"))

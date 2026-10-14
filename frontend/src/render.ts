@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 export interface ToolDisplay {
   kind?: string;
   path?: string;
@@ -679,4 +680,4 @@ const renderApi = (function () {
 })();
 
 export type RenderApi = typeof renderApi;
-window.Render = renderApi;
+runtime.Render = renderApi;

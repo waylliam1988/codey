@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 // Browser-compatible source module; the bundler supplies the module wrapper.
 async function authorize() {
   const fragment = new URLSearchParams(window.location.hash.slice(1));
@@ -22,4 +23,4 @@ async function authorize() {
   }
 }
 
-window.OperatorAuth = { authorize };
+runtime.OperatorAuth = { authorize };

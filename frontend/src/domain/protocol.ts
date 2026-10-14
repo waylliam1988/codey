@@ -210,6 +210,16 @@ export function decodeResearchPayload(value: unknown): ResearchPayload {
 
 export function decodeRunState(value: unknown): RunState {
   if (!isRecord(value)) throw new Error('run state is invalid');
+  if (typeof value.busy !== 'boolean') throw new Error('run state busy is required');
+  if (
+    value.busy &&
+    (typeof value.run_id !== 'string' ||
+      value.run_id.length === 0 ||
+      typeof value.session_id !== 'string' ||
+      value.session_id.length === 0)
+  ) {
+    throw new Error('busy run state requires run and session IDs');
+  }
   const state: RunState = {};
   for (const key of ['busy', 'run_id', 'session_id', 'run_status', 'research_restore_runs'] as const) {
     const item = value[key];
@@ -301,5 +311,9 @@ export function decodeServerEvent(value: unknown): ServerEvent {
   ) {
     throw new Error('server event providers are invalid');
   }
-  return value as ServerEvent;
+  const research = value.research === undefined ? undefined : decodeResearchPayload(value.research);
+  return {
+    ...value,
+    ...(research === undefined ? {} : { research }),
+  } as ServerEvent;
 }

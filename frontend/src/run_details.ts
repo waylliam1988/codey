@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { Message, RunData } from './types/domain';
 export interface RunDetailsDeps {
   getActiveId?: () => string;
@@ -154,7 +155,7 @@ export interface RunDetailsAction {
     requestAnimationFrame(() => panel.scrollIntoView({ block: 'nearest' }));
   }
 
-  window.RunDetails = {
+  runtime.RunDetails = {
     init,
     actionForMessage,
     actionsForMessage,

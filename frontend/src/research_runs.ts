@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { ResearchPayload, ResearchRestoreResult, ResearchRun, Session, UiDeps } from './types/domain';
 /* Codey research run runtime: session artifacts and restore state. */
 (function () {
@@ -107,7 +108,7 @@ import type { ResearchPayload, ResearchRestoreResult, ResearchRun, Session, UiDe
     return changed;
   }
 
-  window.ResearchRuns = {
+  runtime.ResearchRuns = {
     init,
     normalize: normalizeResearchRunArtifact,
     record: recordResearchRun,

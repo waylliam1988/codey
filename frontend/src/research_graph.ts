@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 export interface GraphOptions {
   sessionId?: string;
   activeId?: string;
@@ -79,15 +80,15 @@ export interface GraphOptions {
     hover: GraphNode | null;
     selected: GraphNode | null;
   }
-  let runtime: GraphRuntime | null = null;
+  let graphStateRuntime: GraphRuntime | null = null;
   let loadSeq = 0;
 
   function dispose() {
     loadSeq += 1;
-    if (runtime && typeof runtime.stop === 'function') {
-      runtime.stop();
+    if (graphStateRuntime && typeof graphStateRuntime.stop === 'function') {
+      graphStateRuntime.stop();
     }
-    runtime = null;
+    graphStateRuntime = null;
   }
 
   function render(panel: HTMLElement, options: GraphOptions) {
@@ -119,8 +120,8 @@ export interface GraphOptions {
     reset.className = 'drawer-btn';
     reset.textContent = 'Reset';
     reset.onclick = () => {
-      if (runtime && typeof runtime.reset === 'function') {
-        runtime.reset();
+      if (graphStateRuntime && typeof graphStateRuntime.reset === 'function') {
+        graphStateRuntime.reset();
       }
     };
     toolbar.appendChild(reset);
@@ -168,7 +169,7 @@ export interface GraphOptions {
         if (nextRuntime && typeof nextRuntime.stop === 'function') nextRuntime.stop();
         return;
       }
-      runtime = nextRuntime;
+      graphStateRuntime = nextRuntime;
       status.classList.remove('error');
       status.hidden = true;
     } catch {
@@ -231,9 +232,9 @@ export interface GraphOptions {
 
   function setDetailBody(body: HTMLElement, text: unknown): void {
     const value = String(text || '');
-    if (window.Render && typeof window.Render.renderMarkdown === 'function') {
+    if (runtime.Render && typeof runtime.Render.renderMarkdown === 'function') {
       body.classList.add('md');
-      window.Render.renderMarkdown(body, value);
+      runtime.Render.renderMarkdown(body, value);
       return;
     }
     body.textContent = value;
@@ -709,5 +710,5 @@ export interface GraphOptions {
     }
     return ((hash >>> 0) % 10000) / 10000;
   }
-  window.ResearchGraph = { render, dispose };
+  runtime.ResearchGraph = { render, dispose };
 })();

@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import type { SseDeps } from './types/domain';
 import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/protocol';
 /* Codey SSE runtime: reconnect, state reconciliation, and accepted-run handoff. */
@@ -98,9 +99,9 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
   async function acceptRunResponse(response: Response, sessionId: string): Promise<void> {
     const data = await response.json();
     const runId = data.run_id || null;
-    const request = window.Requests.forRun(sessionId, runId);
+    const request = runtime.Requests.forRun(sessionId, runId);
     if (request && !['sending', 'running'].includes(request.attempt.state)) return;
-    window.Requests.running(sessionId, runId);
+    runtime.Requests.running(sessionId, runId);
     deps.acceptRun(runId, runId ? sessionId : null);
     if (runId) {
       displayRunStatus('running');
@@ -156,7 +157,7 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
     };
   }
 
-  window.Sse = {
+  runtime.Sse = {
     init,
     displayRunStatus,
     connect,

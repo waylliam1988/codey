@@ -22,7 +22,11 @@ def frontend_source(name: str) -> str:
     key = name.removesuffix(".ts")
     if key == "legacy-runtime":
         key = "app_runtime"
-    return _sources()[key + ".ts"]
+    source = _sources()[key + ".ts"]
+    # Standalone Node regressions execute one transpiled module without the
+    # application entry. The fixture supplies the legacy object namespace.
+    shim = "var runtime = (typeof window !== 'undefined' ? window : globalThis);\nvar decodeServerEvent = globalThis.decodeServerEvent || function(value) { return value; };\n"
+    return shim + source
 
 
 def frontend_source_text(name: str) -> str:

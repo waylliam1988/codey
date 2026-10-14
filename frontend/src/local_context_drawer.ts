@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 type LocalRecord = Record<string, unknown>;
 type LocalAction = [string, string];
 export interface LocalContextDeps {
@@ -48,7 +49,7 @@ function rowsOf(value: unknown): LocalRecord[] {
 
   function openLocalContextDrawer() {
     if (deps.closeOtherDrawers) deps.closeOtherDrawers('local_context');
-    window.UiState.setDrawerOpen('local-context-drawer', true);
+    runtime.UiState.setDrawerOpen('local-context-drawer', true);
     loadLocalContextDrawer();
   }
 
@@ -56,7 +57,7 @@ function rowsOf(value: unknown): LocalRecord[] {
     closeRowMenu();
     disarmDangerButtons();
     loadedScope = null;
-    window.UiState.setDrawerOpen('local-context-drawer', false);
+    runtime.UiState.setDrawerOpen('local-context-drawer', false);
   }
 
   async function loadLocalContextDrawer() {
@@ -525,7 +526,7 @@ function rowsOf(value: unknown): LocalRecord[] {
     }, 1200);
   }
 
-  window.LocalContextDrawer = {
+  runtime.LocalContextDrawer = {
     init,
     open: openLocalContextDrawer,
     load: loadLocalContextDrawer,

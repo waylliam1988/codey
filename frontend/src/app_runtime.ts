@@ -1,3 +1,4 @@
+import { runtime } from './runtime';
 import './operator_auth.ts';
 import './render.ts';
 import './process.ts';
@@ -25,6 +26,7 @@ import {
   decodeChangesData,
   decodeResearchPayload,
   decodeRunState,
+  decodeServerEvent,
   type ServerEvent,
 } from './domain/protocol';
 import type { RunState } from './types/domain';
@@ -118,14 +120,14 @@ type AppElement = HTMLElement & { disabled: boolean };
 const $ = <T extends HTMLElement = AppElement>(id: string): T => document.getElementById(id) as T;
 const eventElement = (event: Event): Element | null => (event.target instanceof Element ? event.target : null);
 // escapeHtml and the receipt schema helpers live in /assets/render.js.
-const escapeHtml = window.Render.escapeHtml;
-const receiptSummary = window.Render.receiptSummary;
-const receiptChangedCount = window.Render.receiptChangedCount;
-let DEFAULT_PROVIDER = window.UiState.DEFAULT_PROVIDER;
-const PROVIDER_LABELS = window.UiState.PROVIDER_LABELS;
-const PROVIDERS = window.UiState.PROVIDERS;
+const escapeHtml = runtime.Render.escapeHtml;
+const receiptSummary = runtime.Render.receiptSummary;
+const receiptChangedCount = runtime.Render.receiptChangedCount;
+let DEFAULT_PROVIDER = runtime.UiState.DEFAULT_PROVIDER;
+const PROVIDER_LABELS = runtime.UiState.PROVIDER_LABELS;
+const PROVIDERS = runtime.UiState.PROVIDERS;
 function liveDefaultProvider() {
-  return window.UiState.DEFAULT_PROVIDER;
+  return runtime.UiState.DEFAULT_PROVIDER;
 }
 
 let sessions: Session[] = [];
@@ -148,16 +150,16 @@ const {
   hasStored: hasStoredUiState,
   isNewer: isUiStateNewer,
   flush: flushUiState,
-} = window.UiState;
-const persistActive = window.UiState.persist;
-const persistActiveNow = window.UiState.persistNow;
-const bindUiStatePagehide = window.UiState.bindPagehide;
-const restoreUiStateFromServer = window.UiState.restoreFromServer;
+} = runtime.UiState;
+const persistActive = runtime.UiState.persist;
+const persistActiveNow = runtime.UiState.persistNow;
+const bindUiStatePagehide = runtime.UiState.bindPagehide;
+const restoreUiStateFromServer = runtime.UiState.restoreFromServer;
 
 const bootCachedState = cachedUiState();
 const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState);
 
-window.UiState.init({
+runtime.UiState.init({
   getSessions: () => sessions,
   setSessions: (value: Session[]) => {
     sessions = value;
@@ -215,13 +217,13 @@ function currentProviderId() {
 }
 // Provider picker UI lives in /assets/provider_ui.js.
 function syncProviderUI(providerId: string) {
-  window.ProviderUI.sync(providerId);
+  runtime.ProviderUI.sync(providerId);
 }
 function applyProviderStatus(providers: unknown, isSSE = true) {
-  window.ProviderUI.applyStatus(providers, isSSE);
+  runtime.ProviderUI.applyStatus(providers, isSSE);
 }
 function refreshProviderStatus(immediate = false) {
-  return window.ProviderUI.refreshStatus(immediate);
+  return runtime.ProviderUI.refreshStatus(immediate);
 }
 
 function updateComposerContext() {
@@ -229,7 +231,7 @@ function updateComposerContext() {
   const s = activeSession();
   const p = activeProject();
   const proj = p ? p.name : 'Choose folder';
-  const disabled = !!runningSessionId || window.Composer.isSending();
+  const disabled = !!runningSessionId || runtime.Composer.isSending();
   const folderDisabled = disabled || !!p || projectPickerBusy;
   const researchActive = !!(s && s.research);
   const pieces = [
@@ -247,7 +249,7 @@ function syncResearchUI() {
   const s = activeSession();
   const active = !!(s && s.research);
   btn.classList.toggle('active', active);
-  btn.disabled = !!runningSessionId || window.Composer.isSending();
+  btn.disabled = !!runningSessionId || runtime.Composer.isSending();
   btn.setAttribute('aria-pressed', String(active));
 }
 function currentIntentForSession(sessionId: string): string {
@@ -260,11 +262,11 @@ function currentIntentForSession(sessionId: string): string {
 function renderSidebar() {
   const list = $('session-list');
   list.innerHTML = '';
-  window.ConversationUI.updateSearch();
+  runtime.ConversationUI.updateSearch();
 
-  window.ConversationUI.appendGroupLabel(list, 'PROJECTS', projects.some(window.ConversationUI.matchesProject));
+  runtime.ConversationUI.appendGroupLabel(list, 'PROJECTS', projects.some(runtime.ConversationUI.matchesProject));
 
-  if (!projects.length && !window.ConversationUI.isSearching()) {
+  if (!projects.length && !runtime.ConversationUI.isSearching()) {
     const empty = document.createElement('div');
     empty.className = 'project-empty';
     empty.textContent = 'No projects';
@@ -272,7 +274,7 @@ function renderSidebar() {
   }
 
   for (const p of projects) {
-    if (!window.ConversationUI.matchesProject(p)) continue;
+    if (!runtime.ConversationUI.matchesProject(p)) continue;
     const node = document.createElement('div');
     node.className = 'project-node';
 
@@ -285,7 +287,7 @@ function renderSidebar() {
     const toggle = document.createElement('button');
     toggle.className = 'project-toggle';
     toggle.innerHTML =
-      p.expanded || window.ConversationUI.isSearching()
+      p.expanded || runtime.ConversationUI.isSearching()
         ? '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>'
         : '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
     toggle.onclick = (e) => {
@@ -322,10 +324,10 @@ function renderSidebar() {
 
     node.appendChild(row);
 
-    if (p.expanded || window.ConversationUI.isSearching()) {
+    if (p.expanded || runtime.ConversationUI.isSearching()) {
       const children = document.createElement('div');
       children.className = 'project-children';
-      const projectSessions = sessions.filter((s) => s.projectId === p.id && window.ConversationUI.matchesSession(s));
+      const projectSessions = sessions.filter((s) => s.projectId === p.id && runtime.ConversationUI.matchesSession(s));
       if (!projectSessions.length) {
         const empty = document.createElement('div');
         empty.className = 'project-empty';
@@ -339,9 +341,9 @@ function renderSidebar() {
     list.appendChild(node);
   }
 
-  const loose = sessions.filter((s) => !sessionProject(s) && window.ConversationUI.matchesSession(s));
-  window.ConversationUI.appendGroupLabel(list, 'CHATS', loose.length);
-  if (!loose.length && !window.ConversationUI.isSearching()) {
+  const loose = sessions.filter((s) => !sessionProject(s) && runtime.ConversationUI.matchesSession(s));
+  runtime.ConversationUI.appendGroupLabel(list, 'CHATS', loose.length);
+  if (!loose.length && !runtime.ConversationUI.isSearching()) {
     const empty = document.createElement('div');
     empty.className = 'project-empty';
     empty.style.marginLeft = '10px';
@@ -485,7 +487,7 @@ function armDanger(btn: HTMLButtonElement, run: () => void) {
 
 // ============================ chat rendering ============================
 function renderChat() {
-  window.ConversationUI.renderChat();
+  runtime.ConversationUI.renderChat();
 }
 
 function statusRow(prefix: string, text: string, opts: StatusRowOptions = {}) {
@@ -517,23 +519,23 @@ function statusRow(prefix: string, text: string, opts: StatusRowOptions = {}) {
   return div;
 }
 
-// Markdown / copy / tool-line helpers live in /assets/render.js (window.Render).
-const messageCopyText = window.Render.messageCopyText;
-const copyText = window.Render.copyText;
-const addMessageCopyButton = window.Render.addMessageCopyButton;
-const renderMarkdown = window.Render.renderMarkdown;
-const FOLDABLE_TOOL_KINDS = window.Render.FOLDABLE_TOOL_KINDS;
-const standaloneToolEl = window.Render.standaloneToolEl;
-const appendOrFoldTool = window.Render.appendOrFoldTool;
-const hydrateSessionIndexes = window.UiState.hydrateSessionIndexes;
-const ensureSessionIndexes = window.UiState.ensureSessionIndexes;
+// Markdown / copy / tool-line helpers live in /assets/render.js (runtime.Render).
+const messageCopyText = runtime.Render.messageCopyText;
+const copyText = runtime.Render.copyText;
+const addMessageCopyButton = runtime.Render.addMessageCopyButton;
+const renderMarkdown = runtime.Render.renderMarkdown;
+const FOLDABLE_TOOL_KINDS = runtime.Render.FOLDABLE_TOOL_KINDS;
+const standaloneToolEl = runtime.Render.standaloneToolEl;
+const appendOrFoldTool = runtime.Render.appendOrFoldTool;
+const hydrateSessionIndexes = runtime.UiState.hydrateSessionIndexes;
+const ensureSessionIndexes = runtime.UiState.ensureSessionIndexes;
 
 function appendMessageNode(chat: HTMLElement, m: Message) {
-  window.Messages.append(chat, m);
+  runtime.Messages.append(chat, m);
 }
 
 function scrollChat() {
-  window.ConversationUI.scrollChat();
+  runtime.ConversationUI.scrollChat();
 }
 
 // ============================ session ops ============================
@@ -587,7 +589,7 @@ async function deleteSession(id: string): Promise<void> {
   if (!(await forgetSessionState(id))) return;
   const fallbackProvider = currentProviderId();
   sessions = sessions.filter((s) => s.id !== id);
-  window.ConversationUI.forget(id);
+  runtime.ConversationUI.forget(id);
   if (!sessions.length) {
     const s = defaultSession(null, fallbackProvider);
     sessions = [s];
@@ -637,7 +639,7 @@ async function deleteProject(id: string): Promise<void> {
   const cleared = await Promise.all(sessions.filter((s) => s.projectId === id).map((s) => forgetSessionState(s.id)));
   if (!cleared.every(Boolean)) return;
   projects = projects.filter((x) => x.id !== id);
-  sessions.filter((s) => s.projectId === id).forEach((s) => window.ConversationUI.forget(s.id));
+  sessions.filter((s) => s.projectId === id).forEach((s) => runtime.ConversationUI.forget(s.id));
   sessions = sessions.filter((s) => s.projectId !== id);
   if (!sessions.length) sessions = [defaultSession(null, liveDefaultProvider())];
   if (!sessions.find((s) => s.id === activeId)) activeId = sessions[0].id;
@@ -729,7 +731,7 @@ async function attachCurrentChatToPickedProject() {
 }
 
 function pushMsgToSession(sid: string, m: Message) {
-  if (sid === activeId) window.ConversationUI.captureView();
+  if (sid === activeId) runtime.ConversationUI.captureView();
   const s = sessions.find((x) => x.id === sid);
   if (!s) return false;
   const wasEmpty = s.messages.length === 0;
@@ -738,7 +740,7 @@ function pushMsgToSession(sid: string, m: Message) {
     s.title === 'New chat' &&
     !s.titleRenamed &&
     sid !== editingSessionId &&
-    !window.ConversationUI.isRenamingSession(sid) &&
+    !runtime.ConversationUI.isRenamingSession(sid) &&
     m.type === 'user' &&
     m.text
   ) {
@@ -770,12 +772,12 @@ function openMenuAt(menu: HTMLElement, anchor: HTMLElement) {
   if (top + mr.height > window.innerHeight - 8) top = rect.top - mr.height - 4;
   menu.style.left = Math.max(8, left) + 'px';
   menu.style.top = Math.max(8, top) + 'px';
-  window.ConversationUI.menuOpened(menu, anchor);
+  runtime.ConversationUI.menuOpened(menu, anchor);
 }
 function closeAllMenus() {
   disarmDangerButtons();
   document.querySelectorAll('.ctx-menu.open').forEach((m) => m.classList.remove('open'));
-  window.ConversationUI.menusClosed();
+  runtime.ConversationUI.menusClosed();
 }
 function openProjectMenu(anchor: HTMLElement, projectId: string) {
   closeAllMenus();
@@ -863,13 +865,11 @@ function setStatus(text: string, kind: string) {
   }
 }
 
-const sseEventKey = (data: ServerEvent, fallback = '') => window.Sse.eventKey(data, fallback);
+const sseEventKey = (data: ServerEvent, fallback = '') => runtime.Sse.eventKey(data, fallback);
 
-function handleServerEvent(raw: ServerEvent) {
-  const data = raw as ServerEventData;
-  const runId = (data.run_id || '').toString();
-  const sid = data.session_id || '';
-  if (data.type === 'task_done' && (!runId || runId === runningRunId)) {
+function handleServerEvent(raw: unknown) {
+  const data = decodeServerEvent(raw) as ServerEventData;
+  if (data.type === 'task_done' && (!data.run_id || data.run_id === runningRunId)) {
     runningRunId = null;
     runningSessionId = null;
     setStatus('', 'ok');
@@ -877,7 +877,9 @@ function handleServerEvent(raw: ServerEvent) {
     updateComposerContext();
     syncResearchUseProjectButton();
   }
-  if (!window.Requests.acceptsEvent(data)) return;
+  const runId = (data.run_id || '').toString();
+  const sid = data.session_id || '';
+  if (!runtime.Requests.acceptsEvent(data)) return;
   const mayOutliveRun = [
     'task_start',
     'task_done',
@@ -894,7 +896,7 @@ function handleServerEvent(raw: ServerEvent) {
     return;
   }
   if (data.type === 'status') {
-    window.Sse.displayRunStatus(data.status);
+    runtime.Sse.displayRunStatus(data.status);
     return;
   }
   if (data.type === 'providers') {
@@ -977,7 +979,7 @@ function handleServerEvent(raw: ServerEvent) {
     return;
   }
   if (data.type === 'ghost_post_turn_warning') {
-    if (window.Requests.warning(sid, runId)) return;
+    if (runtime.Requests.warning(sid, runId)) return;
     addToSession(sid, {
       type: 'info',
       text: 'Local update paused',
@@ -1000,11 +1002,11 @@ function handleServerEvent(raw: ServerEvent) {
     return;
   }
   if (data.type === 'task_start') {
-    window.Requests.running(sid, runId);
+    runtime.Requests.running(sid, runId);
     runningRunId = runId;
     runningSessionId = sid;
     turnCounter = 0;
-    window.Sse.displayRunStatus('running');
+    runtime.Sse.displayRunStatus('running');
     $('send').disabled = true;
     $('provider-button').disabled = true;
     updateSend();
@@ -1014,17 +1016,18 @@ function handleServerEvent(raw: ServerEvent) {
     return;
   }
   if (data.type === 'task_done') {
+    const research = data.research;
     if (!markTerminalRun(sid, runId)) return;
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
-    const requestFailed = window.Requests.finish(data);
+    const requestFailed = runtime.Requests.finish(data);
     addToSession(sid, { type: 'run_state', state: reason, runId, eventKey: `run-end:${runId}` });
     const terminalKey = runId ? `terminal:${runId}` : '';
     const answerKey = terminalKey ? `${terminalKey}:answer` : '';
     const receiptKey = terminalKey ? `${terminalKey}:receipt` : '';
     const project = sessionProjectPath(sid);
     let shownReceipt = false;
-    const researchRun = data.research ? recordResearchRun(sid, runId, data.research, data.receipt) : null;
+    const researchRun = research ? recordResearchRun(sid, runId, research, data.receipt) : null;
     if (reason === 'error' && data.provider_failure && data.provider_failure.action === 'connect') {
       if (data.provider && PROVIDERS.includes(data.provider)) {
         applyProviderStatus([{ id: data.provider, available: false }]);
@@ -1160,18 +1163,17 @@ let researchDrawerTab = 'evidence';
 let researchGraphDepth = 1;
 let researchNoteFocusId = '';
 
-function recordResearchRun(sessionId: string, runId: string, research: unknown, receipt: unknown) {
-  const payload: ResearchPayload = decodeResearchPayload(research);
-  const item = window.ResearchRuns.record(sessionId, runId, payload, receipt);
+function recordResearchRun(sessionId: string, runId: string, research: ResearchPayload, receipt: unknown) {
+  const item = runtime.ResearchRuns.record(sessionId, runId, research, receipt);
   if (!item) return null;
   researchDrawerTab = 'evidence';
   researchNoteFocusId = '';
-  window.ResearchDrawer.invalidateNoteCache(window.ResearchDrawer.noteIdsForRun(item));
+  runtime.ResearchDrawer.invalidateNoteCache(runtime.ResearchDrawer.noteIdsForRun(item));
   return item;
 }
 
 function currentResearchRun(sessionId = activeId) {
-  return window.ResearchRuns.current(sessionId);
+  return runtime.ResearchRuns.current(sessionId);
 }
 
 async function restoreResearchRun() {
@@ -1179,12 +1181,12 @@ async function restoreResearchRun() {
   if (restore) restore.disabled = true;
   const ownerSessionId = activeId;
   try {
-    const result = await window.ResearchRuns.restore(ownerSessionId);
+    const result = await runtime.ResearchRuns.restore(ownerSessionId);
     if (!result) return;
     const subtitle = activeId === ownerSessionId ? $('research-subtitle') : null;
     if (subtitle) subtitle.textContent = String(result.message || '');
     if (result.run) {
-      window.ResearchDrawer.invalidateNoteCache(window.ResearchDrawer.noteIdsForRun(result.run));
+      runtime.ResearchDrawer.invalidateNoteCache(runtime.ResearchDrawer.noteIdsForRun(result.run));
     }
     if (result.ok) {
       addToSession(result.ownerSessionId, {
@@ -1193,7 +1195,7 @@ async function restoreResearchRun() {
         eventKey: `research-restore:${String(result.run.runId || '')}`,
       });
     }
-    if (activeId === result.ownerSessionId) window.ResearchDrawer.render(activeId);
+    if (activeId === result.ownerSessionId) runtime.ResearchDrawer.render(activeId);
   } finally {
     const current = currentResearchRun();
     if (restore) restore.disabled = !current || !current.restoreable;
@@ -1201,10 +1203,10 @@ async function restoreResearchRun() {
 }
 
 function markResearchRestoreAvailability(runIds: unknown) {
-  const changed = window.ResearchRuns.markRestoreAvailability(runIds);
+  const changed = runtime.ResearchRuns.markRestoreAvailability(runIds);
   const drawer = $('research-drawer');
   if (changed && drawer && drawer.classList.contains('open')) {
-    window.ResearchDrawer.render(activeId);
+    runtime.ResearchDrawer.render(activeId);
   }
 }
 
@@ -1217,13 +1219,13 @@ function applyRunState(data: RunState) {
   runningRunId = busy ? (data.run_id ?? null) : null;
   runningSessionId = busy ? (data.session_id ?? null) : null;
   if (busy) {
-    window.Sse.displayRunStatus(data.run_status === 'connecting' ? 'connecting' : 'running');
+    runtime.Sse.displayRunStatus(data.run_status === 'connecting' ? 'connecting' : 'running');
   } else {
     setStatus('', 'ok');
   }
   $('provider-button').disabled = $('effort-button').disabled = busy;
   markResearchRestoreAvailability(data.research_restore_runs || []);
-  window.Requests.reconcile({
+  runtime.Requests.reconcile({
     session_id: data.session_id ?? '',
     run_id: data.run_id ?? '',
     busy: !!data.busy,
@@ -1234,23 +1236,23 @@ function applyRunState(data: RunState) {
 }
 
 function reconcileRunState() {
-  return window.Sse.reconcileRunState();
+  return runtime.Sse.reconcileRunState();
 }
 
 async function acceptRunResponse(response: Response, sessionId: string) {
-  return window.Sse.acceptRunResponse(response, sessionId);
+  return runtime.Sse.acceptRunResponse(response, sessionId);
 }
 
 function connectEvents() {
-  return window.Sse.connect();
+  return runtime.Sse.connect();
 }
 
 function addToSession(sid: string, m: Message) {
-  return window.Requests.addToSession(sid, m);
+  return runtime.Requests.addToSession(sid, m);
 }
 
 function replaceSessionMessage(sid: string, predicate: (message: Message) => boolean, message: Message) {
-  if (sid === activeId) window.ConversationUI.captureView();
+  if (sid === activeId) runtime.ConversationUI.captureView();
   const s = sessions.find((x) => x.id === sid);
   if (!s) return false;
   ensureSessionIndexes(s);
@@ -1258,10 +1260,10 @@ function replaceSessionMessage(sid: string, predicate: (message: Message) => boo
   const index = s.messages.findIndex(predicate);
   if (index < 0) return false;
   s.messages[index] = message;
-  window.UiState.trackSessionMessage(s, message);
+  runtime.UiState.trackSessionMessage(s, message);
   persistActive();
   if (sid === activeId) {
-    if (window.Process.replace($('chat'), message)) {
+    if (runtime.Process.replace($('chat'), message)) {
       scrollChat();
       return true;
     }
@@ -1386,30 +1388,30 @@ async function maybeAddChangesSummary(sid: string, eventKey = '', runId = '') {
 // Changes drawer UI lives in /assets/changes_drawer.js; these thin wrappers
 // keep existing call sites and event handlers stable.
 function openChangesDrawer(project: string) {
-  return window.ChangesDrawer.open(project);
+  return runtime.ChangesDrawer.open(project);
 }
 
 function closeChangesDrawer() {
-  window.ChangesDrawer.close();
+  runtime.ChangesDrawer.close();
 }
 
 function openLocalContextDrawer() {
-  window.LocalContextDrawer.open();
+  runtime.LocalContextDrawer.open();
 }
 
 function closeLocalContextDrawer() {
-  window.LocalContextDrawer.close();
+  runtime.LocalContextDrawer.close();
 }
 
 function handleLocalContextScopeChanged() {
   closeChangesDrawer();
-  window.ResearchDrawer.close();
-  if (window.LocalContextDrawer) window.LocalContextDrawer.handleScopeChanged();
+  runtime.ResearchDrawer.close();
+  if (runtime.LocalContextDrawer) runtime.LocalContextDrawer.handleScopeChanged();
 }
 
 function closeOtherDrawers(active: string | undefined) {
   if (active !== 'changes') closeChangesDrawer();
-  if (active !== 'research') window.ResearchDrawer.close();
+  if (active !== 'research') runtime.ResearchDrawer.close();
   if (active !== 'local_context') closeLocalContextDrawer();
 }
 
@@ -1472,36 +1474,36 @@ async function approveCommand(
 
 // ============================ composer ============================
 function resizeTask() {
-  return window.Composer.resizeTask();
+  return runtime.Composer.resizeTask();
 }
 function updateSend() {
-  return window.Composer.updateSend();
+  return runtime.Composer.updateSend();
 }
 
 function toggleResearchForActive() {
-  return window.Composer.toggleResearchForActive();
+  return runtime.Composer.toggleResearchForActive();
 }
 
 // Local provider config popover lives in /assets/provider_ui.js.
 function openLocalProviderConfig() {
-  return window.ProviderUI.openLocalConfig();
+  return runtime.ProviderUI.openLocalConfig();
 }
 
 function closeLocalProviderConfig() {
-  window.ProviderUI.closeLocalConfig();
+  runtime.ProviderUI.closeLocalConfig();
 }
 
 function setActiveProvider(id: string) {
-  return window.Composer.setActiveProvider(id);
+  return runtime.Composer.setActiveProvider(id);
 }
-// Provider menu handlers are bound by window.ProviderUI.init().
+// Provider menu handlers are bound by runtime.ProviderUI.init().
 
 function continueTask(sessionId: string) {
-  return window.Composer.continueTask(sessionId);
+  return runtime.Composer.continueTask(sessionId);
 }
 $('changes-close').onclick = closeChangesDrawer;
 const researchClose = $('research-close');
-if (researchClose) researchClose.onclick = () => window.ResearchDrawer.close();
+if (researchClose) researchClose.onclick = () => runtime.ResearchDrawer.close();
 const researchRestore = $('research-restore');
 if (researchRestore) researchRestore.onclick = restoreResearchRun;
 function syncResearchUseProjectButton() {
@@ -1548,17 +1550,17 @@ document.addEventListener('keydown', (e) => {
     if (eventElement(e)?.closest('.rename-input')) return;
     closeAllMenus();
     closeOtherDrawers(undefined);
-    window.ProviderUI.closeMenu($('provider-menu').classList.contains('open'));
-    if (window.ProviderUI) window.ProviderUI.closeLocalConfig();
+    runtime.ProviderUI.closeMenu($('provider-menu').classList.contains('open'));
+    if (runtime.ProviderUI) runtime.ProviderUI.closeLocalConfig();
   }
 });
 // ============================ boot ============================
 async function boot() {
-  await window.OperatorAuth.authorize();
-  await window.ProviderUI.adoptCatalog();
-  DEFAULT_PROVIDER = window.UiState.DEFAULT_PROVIDER;
+  await runtime.OperatorAuth.authorize();
+  await runtime.ProviderUI.adoptCatalog();
+  DEFAULT_PROVIDER = runtime.UiState.DEFAULT_PROVIDER;
   bindUiStatePagehide();
-  window.ResearchRuns.init({
+  runtime.ResearchRuns.init({
     getActiveId: () => activeId,
     getSessions: () => sessions,
     activeSession,
@@ -1566,7 +1568,7 @@ async function boot() {
     persistActive,
     persistActiveNow,
   });
-  window.ResearchDrawer.init({
+  runtime.ResearchDrawer.init({
     $,
     getActiveId: () => activeId,
     getSessionTitle: (id: string) => (sessions.find((s) => s.id === id) || {}).title || 'Chat',
@@ -1586,7 +1588,7 @@ async function boot() {
     copyText,
     closeOtherDrawers,
   });
-  window.ChangesDrawer.init({
+  runtime.ChangesDrawer.init({
     $,
     fetchChanges,
     fetchChangeFile,
@@ -1594,7 +1596,7 @@ async function boot() {
     escapeHtml,
     closeOtherDrawers,
   });
-  window.LocalContextDrawer.init({
+  runtime.LocalContextDrawer.init({
     $,
     getActiveId: () => activeId,
     currentProjectPath: () => currentProjectPath(),
@@ -1603,8 +1605,8 @@ async function boot() {
     closeOtherDrawers,
     copyText,
   });
-  window.RunDetails.init({ getActiveId: () => activeId });
-  window.ProviderUI.init({
+  runtime.RunDetails.init({ getActiveId: () => activeId });
+  runtime.ProviderUI.init({
     $,
     escapeHtml,
     PROVIDERS,
@@ -1615,7 +1617,7 @@ async function boot() {
     activeSession,
     persistActiveNow,
   });
-  window.Sse.init({
+  runtime.Sse.init({
     setStatus,
     applyRunState,
     handleServerEvent,
@@ -1631,7 +1633,7 @@ async function boot() {
     updateSend,
     updateComposerContext,
   });
-  window.Requests.init({
+  runtime.Requests.init({
     $,
     getSessions: () => sessions,
     getActiveId: () => activeId,
@@ -1645,7 +1647,7 @@ async function boot() {
     scrollChat,
     statusRow,
   });
-  window.Composer.init({
+  runtime.Composer.init({
     $,
     PROVIDERS,
     getActiveId: () => activeId,
@@ -1670,7 +1672,7 @@ async function boot() {
     projectPickerBusy: () => projectPickerBusy,
     attachCurrentChatToPickedProject,
   });
-  window.Messages.init({
+  runtime.Messages.init({
     statusRow,
     currentProjectPath,
     openChangesDrawer,
@@ -1681,7 +1683,7 @@ async function boot() {
     getActiveId: () => activeId,
     getRunningSessionId: () => runningSessionId,
   });
-  window.ConversationUI.init({
+  runtime.ConversationUI.init({
     activeSession,
     activeProject,
     getSessions: () => sessions,
@@ -1719,52 +1721,54 @@ async function boot() {
   connectEvents();
 }
 
-// Transitional test and embedding bridge. Product code uses the module entry;
-// existing Playwright fixtures can still inspect live state while they migrate
-// to user-facing actions and typed test helpers.
-Object.assign(window, {
-  activeSession,
-  projectById,
-  activeProject,
-  currentProjectPath,
-  renderSidebar,
-  renderChat,
-  switchSession,
-  openProject,
-  newSession,
-  setActiveProvider,
-  continueTask,
-  addToSession,
-  openChangesDrawer,
-  applyRunState,
-  clearMessages,
-  deleteSession,
-  appendMessageNode,
-  replaceSessionMessage,
-  handleServerEvent,
-  statusRow,
-  pushMsgToSession,
-  setStatus,
-  updateSend,
-  updateComposerContext,
-});
-Object.defineProperties(window, {
-  sessions: { configurable: true, get: () => sessions },
-  projects: { configurable: true, get: () => projects },
-  activeId: { configurable: true, get: () => activeId },
-  runningSessionId: {
-    configurable: true,
-    get: () => runningSessionId,
-    set: (value) => {
-      runningSessionId = value;
+// Transitional test bridge is opt-in so the shipped page does not expose
+// mutable application state or internal handlers by default.
+const testBridgeWindow = window as Window & { __TEST_BRIDGE__?: boolean };
+if (testBridgeWindow.__TEST_BRIDGE__)
+  Object.assign(window, {
+    activeSession,
+    projectById,
+    activeProject,
+    currentProjectPath,
+    renderSidebar,
+    renderChat,
+    switchSession,
+    openProject,
+    newSession,
+    setActiveProvider,
+    continueTask,
+    addToSession,
+    openChangesDrawer,
+    applyRunState,
+    clearMessages,
+    deleteSession,
+    appendMessageNode,
+    replaceSessionMessage,
+    handleServerEvent,
+    statusRow,
+    pushMsgToSession,
+    setStatus,
+    updateSend,
+    updateComposerContext,
+  });
+if (testBridgeWindow.__TEST_BRIDGE__)
+  Object.defineProperties(window, {
+    sessions: { configurable: true, get: () => sessions },
+    projects: { configurable: true, get: () => projects },
+    activeId: { configurable: true, get: () => activeId },
+    runningSessionId: {
+      configurable: true,
+      get: () => runningSessionId,
+      set: (value) => {
+        runningSessionId = value;
+      },
     },
-  },
-  runningRunId: {
-    configurable: true,
-    get: () => runningRunId,
-    set: (value) => {
-      runningRunId = value;
+    runningRunId: {
+      configurable: true,
+      get: () => runningRunId,
+      set: (value) => {
+        runningRunId = value;
+      },
     },
-  },
-});
+  });
 boot().catch((error) => setStatus(error.message, 'warn'));
