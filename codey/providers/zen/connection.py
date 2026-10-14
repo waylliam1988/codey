@@ -4,7 +4,7 @@ from __future__ import annotations
 import contextlib
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from dataclasses import replace
 from typing import Any
 
@@ -95,7 +95,7 @@ class ZenProvider:
             self.on_close()
 
     @contextlib.contextmanager
-    def _sending(self) -> Iterator[int]:
+    def _sending(self) -> Generator[int, None, None]:
         if not self._send_lock.acquire(blocking=False):
             raise RuntimeError("Zen provider busy: concurrent sends are not supported")
         try:

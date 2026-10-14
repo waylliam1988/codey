@@ -400,7 +400,7 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
     if lease is None:
         lease = ConnectionLease(http_session, key)
     control.register_lease(lease)
-    connection = lease.connection
+    connection: Any = lease.connection
     if connection is None:
         if proxy:
             proxy_parts = urlsplit(proxy)
@@ -472,15 +472,20 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
             connection = PooledHTTPConnection(connection_host, connection_port, timeout=timeout)
     else:
         connection.timeout = timeout
-    connection._codey_submission_started = False
-    setattr(connection, "_codey_control", control)  # noqa: B010
-    if getattr(connection, "sock", None) is not None:
+    attached: Any = lease.connection
+    if attached is None:
+        if not lease.attach(connection):
+            http_session.discard_connection(connection)
+            raise GenerationNotSentError("generation connection ownership was not established")
+        attached = lease.connection
+    if attached is None:
+        raise GenerationNotSentError("generation connection ownership was not established")
+    active_connection: Any = attached
+    active_connection._codey_submission_started = False
+    setattr(active_connection, "_codey_control", control)  # noqa: B010
+    if getattr(active_connection, "sock", None) is not None:
         with contextlib.suppress(OSError):
-            connection.sock.settimeout(timeout)
-    if lease.connection is None and not lease.attach(connection):
-        http_session.discard_connection(connection)
-        raise GenerationNotSentError("generation cancelled before connection ownership", reason_code="cancelled_before_submission")
-
+            active_connection.sock.settimeout(timeout)
     def cancel_lease() -> None:
         owned = lease.cancel()
         if owned is None:
@@ -504,7 +509,7 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
     target = request.full_url if proxy and parts.scheme == "http" else path
     # Once request() starts, cancellation may race a server that received bytes; outcome is unknown.
     try:
-        connection.request(request.method or "GET", target, body=body, headers=headers)
+        active_connection.request(request.method or "GET", target, body=body, headers=headers)
     except (OSError, http.client.HTTPException) as exc:
         if bool(getattr(control, "cancelled", False)):
             cancel_lease()
@@ -512,7 +517,7 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
         cancel_lease()
         reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
         if isinstance(reason, ssl.SSLEOFError):
-            if bool(getattr(connection, "_codey_submission_started", False)):
+            if bool(getattr(active_connection, "_codey_submission_started", False)):
                 raise GenerationUnknownError("TLS connection closed after generation write",
                                              reason_code="post_submission_tls_eof") from exc
             raise GenerationNotSentError("TLS connection closed before generation submission",
@@ -524,7 +529,7 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
         cancel_lease()
         raise GenerationUnknownError("generation cancelled after submission started")
     try:
-        response = connection.getresponse()
+        response = active_connection.getresponse()
     except (OSError, http.client.HTTPException) as exc:
         cancel_lease()
         if control.cancelled:
@@ -582,7 +587,8 @@ class _SubmissionHTTPSHandler(urllib.request.HTTPSHandler):
         self.submission = submission
         self.control = control
 
-    def https_open(self, request: Any) -> Any:
+    def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+        request = req
         context = ssl.create_default_context()
         context.set_alpn_protocols(["http/1.1"])
         submission = self.submission
@@ -638,7 +644,8 @@ class _SubmissionHTTPHandler(urllib.request.HTTPHandler):
         self.submission = submission
         self.control = control
 
-    def http_open(self, request: Any) -> Any:
+    def http_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+        request = req
         submission = self.submission
         tracked_control = self.control
 

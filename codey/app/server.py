@@ -57,7 +57,9 @@ from codey.app.http_plumbing import (
     write_sse_event,
 )
 from codey.app.operator_auth import OperatorAuth
+from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import DEFAULT_STATE_HOME
+from codey.task.model import TaskInput
 
 FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_CONTINUATION_IDLE_TIMEOUT = task_submit.SHELL_CONTINUATION_IDLE_TIMEOUT
@@ -169,8 +171,18 @@ def _submit_task(
     provider_id: str,
     intent: str = "auto",
     *,
+    requested_capabilities: tuple[str, ...] = (),
+    strict_research: bool = False,
+    sources_open_required: bool = False,
+    project_changes_required: bool = False,
+    denied_capabilities: tuple[str, ...] = (),
+    previous_run_id: str = "",
+    initial_shell_results: tuple[dict[str, object], ...] = (),
+    review_source_run_id: str = "",
+    model_selection: ApiRunSelection | None = None,
+    run_id: str = "",
+    input: TaskInput | None = None,
     abort_if_stopped: bool = False,
-    **kwargs: object,
 ) -> str | None:
     return task_submit.submit_task(
         session_id,
@@ -182,7 +194,17 @@ def _submit_task(
         intent,
         get_state=get_state,
         abort_if_stopped=abort_if_stopped,
-        **kwargs,  # type: ignore[arg-type]
+        requested_capabilities=requested_capabilities,
+        strict_research=strict_research,
+        sources_open_required=sources_open_required,
+        project_changes_required=project_changes_required,
+        denied_capabilities=denied_capabilities,
+        previous_run_id=previous_run_id,
+        initial_shell_results=initial_shell_results,
+        review_source_run_id=review_source_run_id,
+        model_selection=model_selection,
+        run_id=run_id,
+        input=input,
     )
 
 
@@ -197,7 +219,9 @@ def _submit_task_after_slot_release(
     *,
     previous_run_id: str = "",
     timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
-    **kwargs: object,
+    initial_shell_results: tuple[dict[str, object], ...] = (),
+    model_selection: ApiRunSelection | None = None,
+    input: TaskInput | None = None,
 ) -> str | None:
     return task_submit.submit_task_after_slot_release(
         session_id,
@@ -210,7 +234,9 @@ def _submit_task_after_slot_release(
         get_state=get_state,
         previous_run_id=previous_run_id,
         timeout=timeout,
-        **kwargs,  # type: ignore[arg-type]
+        initial_shell_results=initial_shell_results,
+        model_selection=model_selection,
+        input=input,
     )
 
 
@@ -287,7 +313,7 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
 class Handler(BaseHTTPRequestHandler):
     server_version = f"Codey/{__version__}"
 
-    def log_message(self, fmt: Any, *args: Any) -> None:
+    def log_message(self, format: str, *args: Any) -> None:
         # Quiet the default access log.
         pass
 

@@ -7,7 +7,7 @@ Host-trust tables live in ``source_domains``; the similar historical name
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Iterable, Iterator
 
 MEDICAL_CONNECTOR_TERMS = frozenset({
     "biomedical",
@@ -84,16 +84,17 @@ def preferred_connector_ids(
     return tuple(preferred)
 
 
-def _iter_terms(value: object) -> Any:
+def _iter_terms(value: object) -> Iterator[str]:
     if isinstance(value, str):
         yield from value.split()
         return
-    try:
-        yield from value  # type: ignore[misc]
-    except TypeError:
-        text = str(value or "")
-        if text:
-            yield text
+    if isinstance(value, Iterable):
+        for item in value:
+            yield str(item)
+        return
+    text = str(value or "")
+    if text:
+        yield text
 
 
 __all__ = [

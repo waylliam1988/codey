@@ -53,10 +53,11 @@ class CompactionCoordinator:
             return None
         started = time.time()
         reduced, reduction_counts = self._reduce_outputs(items, tools, deadline, snapshot.result_refs)
+        checkpoint: dict[str, Any]
         if reduced != items:
             selected = ContextRange(0, len(items), digest(items))
             replacement = reduced
-            checkpoint: dict[str, Any] = {"kind": "output_reduction", "source": items}
+            checkpoint = {"kind": "output_reduction", "source": items}
         else:
             if deterministic_only:
                 return None

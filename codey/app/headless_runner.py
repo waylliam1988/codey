@@ -100,10 +100,11 @@ class HeadlessAppContext(AppContext):  # type: ignore[misc,unused-ignore]
         self.emit({"type": "status", "status": "running"})
         return provider
 
-    def _on_event_emitted(self, payload_event: dict[str, Any]) -> None:
-        payload = machine_event_payload(payload_event)
-        if payload is not None:
-            self._emit_jsonl(payload)
+    def _on_event_emitted(self, payload: dict[str, Any]) -> None:
+        payload_event = payload
+        machine_payload = machine_event_payload(payload_event)
+        if machine_payload is not None:
+            self._emit_jsonl(machine_payload)
         if payload_event.get("type") == "shell_request":
             self.shell_rejected = True
             with contextlib.suppress(Exception):

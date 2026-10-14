@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,7 +18,7 @@ from codey.providers.submission import (
 
 
 @contextmanager
-def response_watch(page: Any, provider_id: str) -> Iterator[None]:
+def response_watch(page: Any, provider_id: str) -> Generator[None, None, None]:
     controls.start_response_watch(page, provider_id)
     try:
         yield

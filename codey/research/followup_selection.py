@@ -154,8 +154,10 @@ def answer_status_rank(status: object) -> int:
 
 
 def bounded_score(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return 0.0
     try:
-        parsed = float(value)  # type: ignore[arg-type]
+        parsed = float(value)
     except (TypeError, ValueError, OverflowError):
         return 0.0
     if not math.isfinite(parsed):

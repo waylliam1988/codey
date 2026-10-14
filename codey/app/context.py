@@ -352,21 +352,20 @@ class AppContext:
     @property
 
     def self_repair(self) -> SelfRepairSupervisor:
-        import functools
-
+        from codey.repairs.adapter_repair import AdapterRepairResult
         from codey.repairs.self_repair import SelfRepairSupervisor, run_self_repair_job
+        from codey.repairs.self_repair_job import SelfRepairJob
 
         with self.lock:
             if self._self_repair is None:
-                repair_runner = (
-                    functools.partial(
-                        run_self_repair_job,
-                        state_home=self.state_home,
-                        providers=self.providers,
-                    )
-                    if self.state_home is not None and self.state_home == DEFAULT_STATE_HOME
-                    else None
-                )
+                repair_runner: Callable[[SelfRepairJob], AdapterRepairResult] | None = None
+                if self.state_home is not None and self.state_home == DEFAULT_STATE_HOME:
+                    def repair_runner(job: SelfRepairJob) -> AdapterRepairResult:
+                        return run_self_repair_job(
+                            state_home=self.state_home,
+                            providers=self.providers,
+                            job=job,
+                        )
                 self._self_repair = SelfRepairSupervisor(self.state_home, runner=repair_runner)
             return self._self_repair
 

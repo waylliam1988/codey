@@ -6,7 +6,7 @@ import argparse
 import contextlib
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 @contextlib.contextmanager
-def _adapter_logs_to_stderr() -> Iterator[None]:
+def _adapter_logs_to_stderr() -> Generator[None, None, None]:
     """Keep stdout a strict JSONL protocol: adapter prints go to stderr.
 
     The parent reader condemns any non-JSON frame, so ordinary adapter

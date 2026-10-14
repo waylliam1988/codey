@@ -16,7 +16,7 @@ import os
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -147,7 +147,7 @@ def with_file_lock(
     path: str | Path,
     *,
     timeout_seconds: float | None = None,
-) -> Iterator[None]:
+) -> Generator[None, None, None]:
     """Serialize execution across processes and threads using OS advisory lock."""
     timeout = LOCK_TIMEOUT_SECONDS if timeout_seconds is None else max(0.0, float(timeout_seconds))
     lock_path = _lock_path_for(Path(path))

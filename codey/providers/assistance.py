@@ -17,14 +17,14 @@ hole in the middle. Callers keep using
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 _context = threading.local()
 
 
 @contextmanager
-def suppress_assistance() -> Iterator[None]:
+def suppress_assistance() -> Generator[None, None, None]:
     depth = int(getattr(_context, "assistance_depth", 0))
     epoch = int(getattr(_context, "assistance_epoch", 0))
     _context.assistance_depth = depth + 1

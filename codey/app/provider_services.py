@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import threading
 import time as _time
-from collections.abc import Iterator
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, suppress
 from typing import Any, cast
@@ -82,7 +82,7 @@ def reviewer_candidates(
 
 
 @contextmanager
-def use_model(ctx: TaskState, provider_id: str, model_id: str = "") -> Iterator[None]:
+def use_model(ctx: TaskState, provider_id: str, model_id: str = "") -> Generator[None, None, None]:
     """Hold an exact model while a secondary operation owns it."""
     key = provider_id, model_id
     with ctx.lock:

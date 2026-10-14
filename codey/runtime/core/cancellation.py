@@ -9,7 +9,7 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol, SupportsIndex, SupportsInt, TypeAlias, TypedDict, cast
@@ -59,7 +59,9 @@ def _safe_timeout(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
     try:
-        number = float(value)  # type: ignore[arg-type]
+        if not isinstance(value, (str, int, float)):
+            return 0.0
+        number = float(value)
     except (TypeError, ValueError, OverflowError):
         return 0.0
     import math as _math
@@ -230,7 +232,7 @@ def set_event(event: threading.Event | None) -> threading.Event | None:
 
 
 @contextmanager
-def scope(event: threading.Event | None) -> Iterator[None]:
+def scope(event: threading.Event | None) -> Generator[None, None, None]:
     previous = set_event(event)
     try:
         yield
@@ -239,7 +241,7 @@ def scope(event: threading.Event | None) -> Iterator[None]:
 
 
 @contextmanager
-def deadline_scope(deadline: float | None) -> Iterator[None]:
+def deadline_scope(deadline: float | None) -> Generator[None, None, None]:
     previous = current_deadline()
     active = deadline
     if previous is not None and (active is None or previous < active):

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import TypedDict
 
 from codey.research.evidence_runtime import (
     EvidenceRuntimeSnapshot,
@@ -29,6 +30,11 @@ FINDING_MISSING_COUNTEREVIDENCE = "missing_counterevidence"
 FINDING_CONTRADICTORY_SOURCES = "contradictory_sources"
 FINDING_SOURCE_CONFLICT = "source_conflict"
 FINDING_QUALIFIED_SUPPORT = "qualified_support"
+
+
+class FindingGroup(TypedDict):
+    severity: str
+    reasons: list[str]
 
 FINDING_KINDS = frozenset({
     FINDING_UNSUPPORTED_CLAIM,
@@ -157,7 +163,7 @@ def findings_from_proof_review(
     diagnostics = _diagnostics_of(review)
     proof_ref = _generated_ref(_field(review, "proof_ref"), "research_proof")
     record_ref = _generated_ref(_field(review, "record_id"), "research_record")
-    groups: dict[tuple[str, ...], dict[str, object]] = {}
+    groups: dict[tuple[str, ...], FindingGroup] = {}
 
     def add(
         kind: str,
@@ -173,14 +179,14 @@ def findings_from_proof_review(
         if not target:
             return
         key = (kind, target, claim_ref, evidence_ref, source_ref, analysis_run_ref)
-        group: dict[str, object] | None = groups.get(key)
+        group: FindingGroup | None = groups.get(key)
         if group is None:
             group = {"severity": severity, "reasons": list[str]()}
             groups[key] = group
-        reasons: list[str] = group["reasons"]  # type: ignore[assignment]
+        reasons = group["reasons"]
         if reason_code and reason_code not in reasons:
             reasons.append(reason_code)
-        if _SEVERITY_RANK[severity] > _SEVERITY_RANK[group["severity"]]:  # type: ignore[index]
+        if _SEVERITY_RANK[severity] > _SEVERITY_RANK[group["severity"]]:
             group["severity"] = severity
 
     for diag in diagnostics:
@@ -390,10 +396,8 @@ def _items(values: object) -> tuple[object, ...]:
         return ()
     if isinstance(values, (list, tuple)):
         return tuple(values)
-    try:
-        return tuple(values)  # type: ignore[arg-type]
-    except TypeError:
-        pass
+    if isinstance(values, Iterable) and not isinstance(values, (str, bytes)):
+        return tuple(values)
     return (values,)
 
 

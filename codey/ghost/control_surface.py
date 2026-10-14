@@ -241,13 +241,16 @@ class GhostControlSurface:
                 errors.append(f"{name}_export_failed: {type(exc).__name__}")
                 return {"error": f"{name}_export_failed"}
 
-        payload["inbox"] = _export("inbox", lambda: self.inbox.export_state()) if self.inbox is not None else dict[str, object]()
-        payload["hebbian"] = _export("hebbian", lambda: self.hebbian.export_state()) if self.hebbian is not None else dict[str, object]()
-        payload["continuity"] = _export("continuity", lambda: self.continuity.export_state()) if self.continuity is not None else dict[str, object]()
-        payload["sleep"] = _export("sleep", lambda: self.sleep.export_state()) if self.sleep is not None else dict[str, object]()
-        payload["work_queue"] = _export("work_queue", lambda: self.work_queue.export_state()) if self.work_queue is not None else dict[str, object]()
-        payload["affinity"] = _export("affinity", lambda: self.affinity.export_state()) if self.affinity is not None else dict[str, object]()
-        payload["observations"] = _export("observations", lambda: self.observations.export_state()) if self.observations is not None else dict[str, object]()
+        def export_store(name: str, store: Any) -> object:
+            empty: dict[str, object] = {}
+            return empty if store is None else _export(name, store.export_state)
+        payload["inbox"] = export_store("inbox", self.inbox)
+        payload["hebbian"] = export_store("hebbian", self.hebbian)
+        payload["continuity"] = export_store("continuity", self.continuity)
+        payload["sleep"] = export_store("sleep", self.sleep)
+        payload["work_queue"] = export_store("work_queue", self.work_queue)
+        payload["affinity"] = export_store("affinity", self.affinity)
+        payload["observations"] = export_store("observations", self.observations)
         if errors:
             payload["ok"] = False
             payload["errors"] = errors
@@ -761,7 +764,9 @@ def _confidence_label(value: object) -> str:
     if isinstance(value, bool):
         return "Unknown confidence"
     try:
-        confidence = float(value)  # type: ignore[arg-type]
+        if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+            return "Unknown confidence"
+        confidence = float(value)
     except (TypeError, ValueError, OverflowError):
         return "Unknown confidence"
     if not math.isfinite(confidence):

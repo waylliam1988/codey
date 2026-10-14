@@ -67,6 +67,10 @@ jobs:
         if: matrix.python-version == '3.12'
         run: pyrefly check codey
 
+      - name: Full-tree ty
+        if: matrix.python-version == '3.12'
+        run: ty check codey
+
       - name: Required machine contracts (no skips)
         run: python -m tools.machine_contract_gate
 
