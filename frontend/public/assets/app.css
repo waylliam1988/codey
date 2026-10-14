@@ -469,7 +469,7 @@
   /* ---------- tool line ---------- */
   .tool-line {
     display: grid;
-    grid-template-columns: 12px 7ch 1fr auto auto;
+    grid-template-columns: 12px fit-content(18ch) minmax(0, 1fr) auto minmax(0, 2fr);
     align-items: baseline;
     gap: 8px;
     font-family: var(--font-mono);
@@ -478,16 +478,19 @@
     color: var(--text-dim);
   }
   .tool-line .tl-dot { color: var(--faint); }
-  .tool-line .tl-kind { color: var(--text-dim); }
+  .tool-line .tl-kind { color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; }
   .tool-line .tl-path {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--text-dim);
   }
   .tool-line .tl-arrow { color: var(--faint); }
-  .tool-line .tl-result { color: var(--text-dim); }
+  .tool-line .tl-result { color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
   .tool-line .tl-result.err { color: var(--err-text); }
   .tool-line.pending .tl-result { color: var(--muted); }
-  .tool-line.compact { grid-template-columns: 1fr auto auto; }
+  .tool-line.compact { grid-template-columns: minmax(0, 1fr) auto minmax(0, 2fr); }
+  .tool-line.error .tl-arrow { display: none; }
+  .tool-line.error .tl-result { grid-column: 2 / -1; }
+  .tool-line.compact.error .tl-result { grid-column: 1 / -1; }
   .msg.tool { margin: 0; }
   .msg.tool + .msg.tool { margin-top: 0; }
 

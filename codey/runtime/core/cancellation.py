@@ -12,7 +12,7 @@ import time
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, BinaryIO, Protocol, SupportsIndex, SupportsInt, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, SupportsIndex, SupportsInt, TypeAlias, TypedDict, cast
 
 from codey.runtime.core.output_capture import (
     DRAIN_TIMEOUT_SECONDS,
@@ -71,7 +71,7 @@ def _safe_timeout(value: object) -> float:
 _context = threading.local()
 
 
-if os.name == "nt":
+if os.name == "nt" or TYPE_CHECKING:
     import ctypes
     from ctypes import wintypes
 
@@ -120,6 +120,8 @@ if os.name == "nt":
 
 class _WindowsJob:
     """Own a Windows process tree and terminate it when the handle closes."""
+
+    _kernel32: Any
 
     def __init__(self, proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -> None:
         if os.name != "nt":

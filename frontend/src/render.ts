@@ -506,6 +506,7 @@ const renderApi = (function () {
     const path = document.createElement('span');
     path.className = 'tl-path';
     path.textContent = m.path || m.command || '';
+    path.title = path.textContent;
     const arrow = document.createElement('span');
     arrow.className = 'tl-arrow';
     arrow.textContent = '→';

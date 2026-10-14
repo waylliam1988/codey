@@ -1,5 +1,6 @@
 """Reading an execution receipt never reruns a command or accepts arbitrary paths."""
 from types import SimpleNamespace
+from unittest import mock
 
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
@@ -35,3 +36,21 @@ def test_modified_managed_output_does_not_return_unverified_bytes(tmp_path):
     delegate = ExecutionDelegate(session=session, managed_outputs=store, session_id="s", run_id="r")
     result, ok, _ = delegate.execute(ToolCall("read_tool_result", {"result_ref": "exec-17"}))
     assert not ok and "tampered" not in result.model_text
+
+
+def test_repeated_missing_result_reads_do_not_repeat_search_or_execution():
+    session = TaskSession(policy=SimpleNamespace(allows=lambda _: True))
+    delegate = ExecutionDelegate(session=session)
+    with (
+        mock.patch.object(delegate, "_execute_project") as project,
+        mock.patch.object(delegate, "_execute_research") as research,
+        mock.patch.object(delegate, "_resolve_custom_executor") as custom,
+    ):
+        for _ in range(2):
+            result, ok, _ = delegate.execute(ToolCall("read_tool_result", {"result_ref": "missing-search"}))
+            assert not ok
+            assert "stored result unavailable in this task" in result.model_text
+        project.assert_not_called()
+        research.assert_not_called()
+        custom.assert_not_called()
+    assert session._memory_results == {}

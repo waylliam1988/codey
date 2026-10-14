@@ -48,10 +48,14 @@ jobs:
         run: python -m tools.publish_frontend --check
 
       - name: Install Python dependencies
+        shell: pwsh
         run: |
           python -m pip install "pip==26.1.2"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip install -r requirements-ci.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip install -e . --no-deps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m playwright install chromium
 
       - name: Ruff
@@ -61,15 +65,13 @@ jobs:
         run: python -m tools.source_size_inventory
 
       - name: Full-tree mypy
-        run: python -m mypy codey
+        run: python -m mypy codey --python-version ${{ matrix.python-version }}
 
       - name: Full-tree Pyrefly
-        if: matrix.python-version == '3.12'
-        run: pyrefly check codey
+        run: pyrefly check codey --python-version ${{ matrix.python-version }}
 
       - name: Full-tree ty
-        if: matrix.python-version == '3.12'
-        run: ty check codey
+        run: ty check codey --python-version ${{ matrix.python-version }}
 
       - name: Required machine contracts (no skips)
         run: python -m tools.machine_contract_gate
@@ -163,7 +165,13 @@ jobs:
         run: python -m tools.source_size_inventory
 
       - name: Full-tree mypy
-        run: python -m mypy codey
+        run: python -m mypy codey --python-version 3.12
+
+      - name: Full-tree Pyrefly
+        run: pyrefly check codey --python-version 3.12
+
+      - name: Full-tree ty
+        run: ty check codey --python-version 3.12
 
       - name: POSIX file-boundary regressions
         run: python -m pytest -q -o faulthandler_timeout=120 tests/test_changes.py tests/test_workspace_paths.py tests/test_bounded_capture_and_context.py tests/test_coldstart_hardening.py

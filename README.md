@@ -230,7 +230,10 @@ free-model matrix still has two unresolved Ling thinking-enabled cases.
 
 Current verification and coverage live in [TEST_REPORT](TEST_REPORT.md). CI runs
 Windows Python 3.11/3.12/3.13, the required machine contracts on Windows/Linux,
-full-tree mypy/Pyrefly, and syntax checks for actual JS/MJS assets. Windows 3.12
+and syntax checks for actual JS/MJS assets. Full-tree mypy/Pyrefly/ty run on each
+Windows version and Linux 3.12 with an explicit target Python version. Linux runs
+focused POSIX regressions and machine contracts; the full pytest suite runs on
+all three Windows versions. Windows 3.12
 also measures all production Python statements/branches, including subprocesses,
 and enforces 85% / 75% minima. See [test commands](tests/README.md) and the
 [maintenance audit](docs/ui_maintenance_audit_2026-10-13.zh-CN.md).

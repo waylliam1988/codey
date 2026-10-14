@@ -18,6 +18,7 @@ python -m tools.machine_contract_gate
 python -m ruff check .
 python -m mypy codey
 pyrefly check codey
+ty check codey
 python -m tools.check_javascript
 python -m tools.source_size_inventory
 
@@ -36,6 +37,12 @@ all production Python files and subprocesses; unimported modules stay in the
 denominator. Statement/branch minima are **85% / 75%**, measured at **88.54% /
 78.23%**. Full reports belong under ignored `.e2e-artifacts/` and CI artifacts.
 The coverage gate also rejects test-only or incomplete production scopes.
+
+CI runs mypy, Pyrefly, and ty on Windows Python 3.11/3.12/3.13 and Linux 3.12,
+passing `--python-version` explicitly to each checker. Locally the commands above
+use the project's minimum supported Python version; append `--python-version
+3.12` or `--python-version 3.13` to check those targets. CI configuration tests
+reject conditional or nonblocking type gates and missing target-version flags.
 
 Focused regressions cover SSE identity (`test_api_stream_tool_call_identity.py`),
 partial-frame deadlines, Node submission/cancellation (`test_zen_node_transport.py`),

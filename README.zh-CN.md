@@ -194,7 +194,9 @@ CI 还检查 Ruff、全树 mypy、JavaScript 语法和支持平台的回归。�
 Ling 开启思考的案例未解决。
 
 当前验证和覆盖率集中在 [TEST_REPORT](TEST_REPORT.md)。CI 覆盖 Windows Python 3.11/3.12/3.13、
-Windows/Linux 必跑机器契约、全树 mypy/Pyrefly 和实际 JS/MJS 语法检查；Windows 3.12
+Windows/Linux 必跑机器契约和实际 JS/MJS 语法检查。全树 mypy/Pyrefly/ty 在每个 Windows
+版本及 Linux 3.12 执行，并显式指定目标 Python 版本。Linux 跑 POSIX 定向回归和机器契约，
+三个 Windows 版本跑完整 pytest；Windows 3.12
 另测完整生产 Python 语句/分支及子进程，门槛为 85% / 75%。详见[测试命令](tests/README.md)
 和[维护审计](docs/ui_maintenance_audit_2026-10-13.zh-CN.md)。
 

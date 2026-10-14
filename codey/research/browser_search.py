@@ -155,6 +155,10 @@ class BrowserSearchProvider:
 
     def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = "") -> Any:
         if self._session is not None:
+            connected = getattr(self._session.browser, "is_connected", None)
+            if callable(connected) and not connected():
+                self._close_on_browser_thread()
+        if self._session is not None:
             return self._session
         target_reuse = "" if self.isolated else reuse_url_contains
         self._session = open_chat_page(
@@ -182,6 +186,8 @@ class BrowserSearchProvider:
         session = self._ensure_session_on_browser_thread(reuse_url_contains=self._reuse_url_contains)
         if self._page_closed_on_browser_thread(self._search_page):
             self._search_page = session.page
+            if self._page_closed_on_browser_thread(self._search_page):
+                self._search_page = self._page_context_on_browser_thread(session.page).new_page()
             if self.bring_to_front:
                 self._bring_to_front_on_browser_thread(self._search_page)
         return self._prepare_page_on_browser_thread(self._search_page)
@@ -248,22 +254,28 @@ class BrowserSearchProvider:
         deadline = time.monotonic() + _SEARCH_TOTAL_TIMEOUT_SECONDS
         for engine_index, engine in enumerate(self._engine_order):
             profile = self._profiles[engine]
+            # Reserve time for the remaining engines instead of letting the
+            # first engine consume the entire search deadline with retries.
+            engine_deadline = time.monotonic() + max(0.0, deadline - time.monotonic()) / (
+                len(self._engine_order) - engine_index
+            )
             for attempt in range(_SEARCH_NAV_ATTEMPTS):
-                if time.monotonic() >= deadline:
+                if time.monotonic() >= engine_deadline:
                     break
-                page = (
-                    self._ensure_search_page_on_browser_thread()
-                    if engine_index == 0 and attempt == 0
-                    else self._replace_search_page_on_browser_thread()
-                )
+                page = None
                 try:
+                    page = (
+                        self._ensure_search_page_on_browser_thread()
+                        if engine_index == 0 and attempt == 0
+                        else self._replace_search_page_on_browser_thread()
+                    )
                     return self._search_page_results_on_browser_thread(
                         page,
                         query,
                         limit,
                         profile=profile,
                         engine=engine,
-                        deadline=deadline,
+                        deadline=engine_deadline,
                     )
                 except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                     self._discard_search_page_on_browser_thread(page)
@@ -272,11 +284,16 @@ class BrowserSearchProvider:
                     last_error = exc
                     self._record_search_error(engine, exc)
                     self._discard_search_page_on_browser_thread(page)
+                    if "has been closed" in str(exc).lower():
+                        # A dead context cannot create a replacement page.
+                        # Drop the cached connection before the bounded retry.
+                        with contextlib.suppress(Exception):
+                            self._close_on_browser_thread()
         if time.monotonic() >= deadline and not isinstance(last_error, SearchUnavailableError):
             last_error = SearchUnavailableError(
                 "search_timeout",
                 engine=self._engine_order[-1] if self._engine_order else self.engine,
-                detail="search budget exhausted",
+                detail="search time budget exhausted",
             )
         if last_error is not None:
             if not self.last_search_failure:
