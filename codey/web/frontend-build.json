@@ -1,11 +1,11 @@
 {
   "files": {
-    "assets/app.css": "622a14d99f760ea744d26a9a3c9c7e28c07aabac4d68b64324114bfb753e9b35",
+    "assets/app.css": "8af029d314aa29245c42b5b5568811d07cbbed4a4d4f319a2de595286da90fb9",
     "assets/codey-DmItVQgb.js": "47526274e507aa68cb426920ff0a3c6bd1d29d2d39acf6544b9604d90dc56bd6",
     "assets/tokens.css": "3af28b089487dbbf56c592fd6794f98410d80df00be00cad85c5babe29918b43",
     "icon.ico": "3760f945274958a729eb5e39252ea810f3817c9b66addd0ceeb027408c47109f",
     "index.html": "929e01e0d5c1e1c2d038b5e10e11ecc6eb0c42e6e713048a30b2ea767d0bb728"
   },
   "schema": 1,
-  "source_sha256": "52ca213d41ea9ca5a34d077ab7c6db9232d0e1ddb66cce3537ec75b293a645d0"
+  "source_sha256": "8c724020e5aee683bf76a5ce35314b5be5d8743d3c9fe632b2f870309cf8d5fe"
 }

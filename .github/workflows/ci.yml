@@ -100,7 +100,7 @@ jobs:
           name: coverage-windows-py312
           path: .e2e-artifacts/coverage/
           include-hidden-files: true
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: JavaScript syntax
         run: python -m tools.check_javascript

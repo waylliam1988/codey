@@ -11,6 +11,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
+from codey.research import proof_relations as _proof_relations
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.guards import status_token as _status_token
 from codey.research.guards import valid_digest_ref
@@ -32,7 +33,6 @@ from codey.research.proof_helpers import (
     _sequence_values,
     _source_map,
 )
-from codey.research.proof_relations import _review_relation_rows, _review_relations
 from codey.research.proof_terms import (
     is_safe_signal_text as _is_safe_signal_text,
 )
@@ -47,6 +47,9 @@ from codey.utils.refs import (
     nonnegative_int,
     stable_ref,
 )
+
+_review_relation_rows = _proof_relations._review_relation_rows
+_review_relations = _proof_relations._review_relations
 
 MAX_GAPS = 12
 MAX_SIGNALS = 8

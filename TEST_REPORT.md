@@ -20,6 +20,8 @@ This file records the current verification state, not an append-only experiment 
 
 This change adds regression coverage for hybrid research result projection and restore ownership, independent Git file previews after aggregate diff truncation, snapshot/Git preview separation, stale preview protection, and focus-path reopening. The proof review implementation is split into `proof_terms.py`, `proof_coverage.py`, `proof_helpers.py`, and `proof_relations.py` without changing its public contract. Real Edge verification covered the hybrid graph entry and truncated file preview workflows. The final complete run is green.
 
+CI follow-up: `python -m tools.publish_frontend --check`, frontend build checks, six frontend publication tests, Ruff, mypy, Pyrefly, and `git diff --check` pass after refreshing the committed build metadata. Coverage artifact upload now warns when no coverage files exist, while the coverage gate remains responsible for failing an incomplete coverage run.
+
 Live Zen matrix: **36/42** initial cases passed; four of six failed cases passed on retest. Two Ling thinking-enabled cases remain unresolved. The free-model matrix is not all green. Local validation does not claim a new GitHub CI run or a release.
 
 ## Reports and reproduction

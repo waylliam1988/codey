@@ -7,6 +7,7 @@
 - Project hybrid research facts into `task_done.research`, preserve synthesis identity and explicit restore availability, and keep research restore records tied to the owning run.
 - Load Git file diffs independently after aggregate truncation, preserve snapshot previews, render all staged/unstaged chunks, protect refreshes from stale responses, and keep focus-path navigation expanded.
 - Split deterministic proof review helpers by responsibility while retaining the existing review and trace contracts.
+- Keep the published frontend metadata synchronized with the production bundle and make coverage artifact upload non-blocking when an earlier coverage step fails.
 
 - Close shell approval recovery races: deny/allow/stop now share durable atomic verdict claims; expired approvals persist as `abandoned`, and cold-start reconstruction restores all command identity fields before execution.
 - Reconcile committed delivery witnesses into local delivered receipts, keep source-run delivery batches out of resumed runs, clear matching Zen probe cooldowns after successful requests, avoid zero-time probe waits, and isolate proxy pool keys by credential identity.
